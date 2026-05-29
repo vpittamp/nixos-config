@@ -25,22 +25,77 @@ Conservative default:
   available in the target location. Check `hcloud server-type describe` before
   changing the claim.
 
-## Kubernetes Upgrade Guidance
+## Hetzner ISO vs Kubernetes Version Constraint
 
-Do not assume a direct minor-version jump is supported. In the dev rebuild,
-Kubernetes `1.32` could not be upgraded directly to `1.35`, and the stepwise
-path was blocked by Talos/Kubernetes compatibility checks. For disposable spokes,
-prefer a controlled recreate when the safe in-place path is unclear.
+This is the most common bootstrap wall for a fresh Hetzner spoke recreate.
 
-Before attempting an in-place upgrade:
+- The Hetzner public catalog ships only a Talos `1.12.4` ISO. There is no
+  custom-ISO upload API; a custom ISO requires a Hetzner support ticket with a
+  direct `factory.talos.dev` URL.
+- `install.image` is derived from the claim's `talos.version` inside the
+  Terraform `talos_machine_configuration` data source (the composition module
+  itself sets only `install.disk=/dev/sda` + `wipe=true`, NOT `install.image`).
+  `install.image` governs the Talos version that gets WRITTEN TO DISK, even when
+  the node boots the older `1.12.4` ISO.
+- BUT while still in maintenance mode (before the install completes) the node
+  validates the REQUESTED `kubernetesVersion` against the RUNNING ISO Talos
+  (`1.12.4`). A new Kubernetes minor that the running `1.12.4` Talos does not
+  support will fail the bootstrap before the newer Talos is ever on disk.
+
+Net effect: a one-shot claim of Talos `1.13.2` + Kubernetes `1.36` on the
+`1.12.4` ISO CANNOT bootstrap. This is not a Talos failure; it is the
+maintenance-mode k8s-version validation against the ISO's running version.
+
+## Kubernetes Upgrade Guidance (Supported In-Place Path)
+
+For the `1.12.4`-ISO-vs-newer-Talos case, the supported recovery is a transient
+two-step Kubernetes version, performed by patching the LIVE claim:
+
+1. Set `kubernetesVersion` to a value the running `1.12.4` ISO accepts (e.g.
+   `1.35.0`) while keeping `talos.version: 1.13.2`. Because `install.image`
+   follows `talos.version`, the node still installs Talos `1.13.x` to disk; it
+   just bootstraps Kubernetes `1.35` first.
+
+   ```bash
+   kubectl --kubeconfig ~/.kube/hub-config -n crossplane-system patch \
+     talospokeclusterclaims.platform.pittampalli.io <spoke> --type=merge \
+     -p '{"spec":{"parameters":{"talos":{"kubernetesVersion":"1.35.0"}}}}'
+   ```
+
+2. Let the cluster finish bootstrapping on k8s `1.35` (now running Talos
+   `1.13.x`, which DOES support k8s `1.36`).
+
+3. Raise `kubernetesVersion` back to `1.36.0`:
+
+   ```bash
+   kubectl --kubeconfig ~/.kube/hub-config -n crossplane-system patch \
+     talospokeclusterclaims.platform.pittampalli.io <spoke> --type=merge \
+     -p '{"spec":{"parameters":{"talos":{"kubernetesVersion":"1.36.0"}}}}'
+   ```
+
+Patch the LIVE claim, not just Git. `crossplane-hcloud-compositions` auto-syncs
+from `main` with selfHeal, so a Git edit alone may be overwritten in flight; the
+live patch is what drives the in-flight reconcile (commit the final desired
+value to Git afterward so it persists).
+
+Verify the installed Talos via the OS-IMAGE column (NOT the claim value):
+
+```bash
+KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl get nodes -o wide
+# OS-IMAGE should read Talos (v1.13.x); k8s VERSION the requested 1.36.0
+talosctl --talosconfig /tmp/<spoke>-talosconfig version
+```
+
+If you cannot reason about ISO-vs-target compatibility, you can still dry-run a
+stepwise in-place k8s upgrade before patching:
 
 ```bash
 talosctl --talosconfig /tmp/<spoke>-talosconfig version
 talosctl --talosconfig /tmp/<spoke>-talosconfig upgrade-k8s --to <next-minor> --dry-run
 ```
 
-If the dry run or compatibility check fails, stop and plan a recreate or Talos
-OS upgrade sequence instead of forcing the Kubernetes version.
+For a fully disposable spoke, a clean recreate from the committed claim plus the
+two-step `kubernetesVersion` sequence above is the reliable end-to-end path.
 
 ## Worker Labels
 
@@ -86,9 +141,14 @@ KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl get nodes -o wide
 talosctl --talosconfig /tmp/<spoke>-talosconfig version
 ```
 
-If Kubernetes reports a node OS version different from the claim, treat it as a
-real finding. Check the ISO ID, Terraform Talos install image, and composition
-defaults before assuming the claim value won.
+The installed Talos version is set by `install.image` (derived from
+`talos.version`), NOT by the booted ISO ID, so the OS-IMAGE column should match
+`talos.version` even though nodes boot the older Hetzner `1.12.4` ISO. If the
+OS-IMAGE differs from `talos.version`, treat it as a real finding: check the
+Terraform `talos_machine_configuration` `install.image`, the claim
+`talos.version`, the ISO ID, and composition defaults before assuming the claim
+value won. The booted ISO version still matters for one thing only: the
+maintenance-mode Kubernetes-version validation described above.
 
 ## Validation
 

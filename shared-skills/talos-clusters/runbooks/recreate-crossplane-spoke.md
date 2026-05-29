@@ -81,8 +81,17 @@ and OpenShell sandboxes before deleting infrastructure.
        nodeLabels:
          stacks.io/swebench-pool: dev-benchmark
      talos:
-       kubernetesVersion: "1.35.0"
+       version: "1.13.2"          # drives install.image (Talos written to disk)
+       kubernetesVersion: "1.36.0" # see two-step note below
+       isoId: "125127"            # Hetzner catalog = Talos 1.12.4 ISO only
    ```
+
+   ISO/k8s constraint: the Hetzner `1.12.4` ISO cannot bootstrap a one-shot
+   Talos `1.13.2` + k8s `1.36` claim (maintenance mode validates the k8s
+   version against the running `1.12.4` ISO). Patch the LIVE claim to
+   `kubernetesVersion: 1.35.0` for the first bootstrap, then raise it to
+   `1.36.0`. Full sequence in `resize-or-upgrade.md`. Verify the installed Talos
+   via the OS-IMAGE column of `kubectl get nodes -o wide`.
 
 2. If worker count, schema, or generated resources change, update:
 

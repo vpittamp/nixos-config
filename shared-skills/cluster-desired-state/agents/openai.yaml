@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cluster Desired State (hub/ryzen/dev)"
+  short_description: "End-to-end guide to the PittampalliOrg hub-and-spoke fleet desired state and the ordered path to reach it: provision -> GitOps register -> Tailscale secret transport -> hub connectivity -> workloads -> verify, plus recovery runbooks and gotchas."
+  default_prompt: "Use $cluster-desired-state to plan or audit a fresh build or full recreate of the hub, ryzen, or dev cluster."

@@ -10,11 +10,22 @@ Operational workflow for PittampalliOrg Talos clusters managed through the
 
 ## Orientation
 
-- The hub is a Talos cluster on Hetzner and owns spoke lifecycle through
-  Crossplane.
+- The hub is a 5-node Talos `v1.12.x` / Kubernetes `v1.32.0` cluster on Hetzner
+  (Flannel CNI, NOT Cilium, kube-proxy enabled). It owns spoke lifecycle through
+  Crossplane and is provisioned imperatively (`docs/hub-cluster-setup.md`), not
+  by a TalosSpokeClusterClaim. The hub keeps Azure Workload Identity + Key Vault
+  as the canonical secret source.
 - Dev and staging should be treated as GitOps/Crossplane spokes, not manually
   maintained HCloud clusters. Prefer committed claims and compositions over
   one-off `hcloud` and `talosctl` steps.
+- This skill is for the Crossplane-driven Hetzner spokes (dev/staging). The
+  `ryzen` spoke is NOT in scope here: it is a bare-metal Talos-in-Docker cluster
+  bootstrapped imperatively (`deployment/scripts/bootstrap-spoke-cluster.sh`),
+  not provisioned by a claim. Use the `ryzen-spoke-bootstrap` skill for ryzen.
+- Spokes no longer use Azure Workload Identity for workload secrets. They read
+  hub-mirrored secrets over Tailscale via a `hub-secrets-store` ClusterSecretStore
+  (ESO kubernetes provider) against the hub `spoke-secrets` namespace Secret
+  `<cluster>-shared-secrets`. See `references/system-model.md`.
 - The current Hetzner shape is tuned for US placement: `ash` maps to
   `us-east`, `hil` maps to `us-west`, and dev may use Hillsboro when Ashburn
   capacity is unavailable. Check server-type support before choosing a size.
@@ -70,10 +81,20 @@ Operational workflow for PittampalliOrg Talos clusters managed through the
   `stacks.io/swebench-pool=dev-benchmark`. Prefer `ash` when capacity exists;
   use `hil`/`us-west` when a US fallback is needed. Do not assume `cpx42` or
   `cpx62` are placeable in US regions.
-- A direct Kubernetes `1.32` to `1.35` in-place upgrade is not the safe path for
-  these spokes. If Talos/Kubernetes compatibility blocks the stepwise path,
-  recreate the disposable spoke from the committed claim instead of forcing the
-  live cluster forward.
+- The Hetzner public catalog ships only a Talos `1.12.4` ISO (no custom-ISO
+  upload API; a custom ISO requires a Hetzner support ticket with a direct
+  `factory.talos.dev` URL). `install.image` (derived from the claim's
+  `talos.version` inside the Terraform `talos_machine_configuration` data source)
+  governs the INSTALLED Talos version even when the node boots the `1.12.4` ISO,
+  but the maintenance-mode node validates the REQUESTED Kubernetes version
+  against the RUNNING (`1.12.4`) Talos. So a one-shot claim of Talos `1.13.2` +
+  k8s `1.36` on the `1.12.4` ISO cannot bootstrap. Recovery is an in-place
+  upgrade: transiently set `kubernetesVersion` to `1.35` (keep
+  `version: 1.13.2` so `install.image` installs Talos `1.13.x`), let it bootstrap
+  on k8s `1.35`, then raise `kubernetesVersion` back to `1.36`. Patch the LIVE
+  claim, not just Git; `crossplane-hcloud-compositions` auto-syncs from `main`
+  with selfHeal. Verify the installed Talos via `kubectl get nodes -o wide`
+  (OS-IMAGE column). See `runbooks/resize-or-upgrade.md`.
 - Worker labels have two layers. `machine.nodeLabels` belongs in Talos machine
   config, but labels that must appear immediately on Kubernetes Nodes also need
   kubelet `extraArgs.node-labels`. Only pass custom labels there; kubelet rejects

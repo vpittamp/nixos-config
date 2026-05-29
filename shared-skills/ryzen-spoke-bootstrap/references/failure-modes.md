@@ -8,13 +8,40 @@
 
 **Fix**: Already committed in stacks `83ce11f0f` (2026-05-28). Source `Deployment-operator.yaml` now has `APISERVER_PROXY: "true"`. Operators upgrading an existing cluster need ArgoCD to sync `ryzen-tailscale-operator` Application AND must NOT block on Kueue webhook (see next mode); during the validation we had to direct-patch the live Deployment to break a chicken-and-egg deadlock — `kubectl --context admin@ryzen patch deployment operator -n tailscale ...` with the desired env block.
 
-## Tailscale ACL pattern: TLS SNI mismatch — cluster Secret needs tlsClientConfig.serverName
+## Tailscale ACL pattern: TLS SNI mismatch — server URL must be the operator FQDN + HUB CoreDNS rewrite (NOT tlsClientConfig.serverName)
 
 **Symptom**: After enabling APISERVER_PROXY=true and adding the ACL grant, ArgoCD's cluster-list shows the spoke as Failed with `tls: internal error`. Operator pod logs show `TLS handshake error from <hub-egress-IP>:NNNN: 500 Internal Server Error: invalid domain "ryzen-api-egress.tailscale.svc.cluster.local"; must be one of ["ryzen-operator.tail286401.ts.net"]`.
 
-**Cause**: The operator's API server proxy validates the TLS SNI against its own tailnet hostname. Our cluster Secret's `server` field is the in-cluster ExternalName (`ryzen-api-egress.tailscale.svc.cluster.local`) so ArgoCD's client sends that as SNI. The proxy rejects.
+**Cause**: The spoke operator's apiserver-proxy (v1.92.4+) STRICTLY validates the wire TLS SNI against its own tailnet hostname (`ryzen-operator.tail286401.ts.net`). If the cluster Secret's `server` field is the in-cluster ExternalName (`ryzen-api-egress.tailscale.svc.cluster.local`), ArgoCD sends that as the wire SNI and the proxy rejects it.
 
-**Fix**: Already committed in stacks `42ddb16cd` (2026-05-28). The cluster Secret now sets `tlsClientConfig.serverName: "ryzen-operator.tail286401.ts.net"` so ArgoCD overrides SNI on the TLS handshake to match what the proxy accepts. Pattern is the same for any spoke — set serverName to `<spoke-operator-hostname>.tail286401.ts.net` (the OPERATOR_HOSTNAME env on the spoke's operator Deployment).
+**Fix (CURRENT, verified 2026-05-29)**: ArgoCD does NOT apply `tlsClientConfig.serverName` as the wire SNI — setting `serverName` (even with `caData`) still sent the *server-URL host* as the SNI. So the SNI must come from the server-URL host itself. The static `cluster-ryzen` Secret therefore sets:
+
+```yaml
+stringData:
+  server: https://ryzen-operator.tail286401.ts.net   # <- this host becomes the wire SNI
+  config: |
+    { "tlsClientConfig": { "insecure": true, "serverName": "ryzen-operator.tail286401.ts.net" }, "bearerToken": "unused" }
+```
+
+and a HUB CoreDNS rewrite routes that tailnet name to the in-cluster egress so the SNI stays correct while the connection reaches the egress pod:
+
+```
+rewrite name exact ryzen-operator.tail286401.ts.net ryzen-api-egress.tailscale.svc.cluster.local
+```
+
+The `ryzen-api-egress` ExternalName Service (ns `tailscale` on the hub, `tailscale.com/tailnet-fqdn: ryzen-operator.tail286401.ts.net`) is defined inline in `packages/components/hub-management/apps/headlamp.yaml`. Verify with `curl --connect-to` forcing the `ryzen-operator` SNI → expect HTTP 200. Pattern generalizes to any Tailscale-apiserver-proxy spoke: `server = https://<spoke>-operator.tail286401.ts.net` + a HUB CoreDNS rewrite `<spoke>-operator.tail286401.ts.net → <spoke>-api-egress.tailscale.svc.cluster.local`. (The earlier `42ddb16cd` `tlsClientConfig.serverName`-only fix was superseded; `serverName` is kept in the config but is not what carries the SNI.)
+
+## Stale duplicate `<spoke>-operator` tailnet device after recreate
+
+**Symptom**: After a recreate, hub→spoke ArgoCD sync keeps failing SNI validation or the egress can't reach the proxy; `tailscale status` shows TWO `ryzen-operator` entries (one offline/stale), and the new operator may have registered under `ryzen-operator-1`.
+
+**Cause**: A recreate leaves the previous cluster's `ryzen-operator` device on the tailnet. Tailscale's name-collision avoidance forces the new operator to a `-1` suffix, so the canonical `ryzen-operator.tail286401.ts.net` that the cluster Secret + CoreDNS rewrite target no longer points at the live cluster.
+
+**Fix**: Delete the stale device via the TS API (token minted from the operator-oauth Secret) BEFORE/at recreate so the new operator claims the canonical hostname. `cleanup-tailnet-devices.sh` (invoked by `--recreate`) covers this; match `^ryzen-operator($|-)` in addition to `ryzen-api-*`. Then verify SNI:
+```bash
+curl -sk --connect-to ryzen-operator.tail286401.ts.net:443:<egress-or-tailnet-ip>:443 \
+  https://ryzen-operator.tail286401.ts.net/version  # expect HTTP 200
+```
 
 ## Tailscale ACL pattern: tag mismatch between hub egress and spoke operator (need explicit ACL grant)
 
@@ -63,6 +90,8 @@ kubectl --context admin@<cluster> patch deployment kueue-controller-manager -n k
 **Cause**: The previous `STACKS_DIR="${STACKS_DIR:-$(git rev-parse --show-toplevel)}"` derived STACKS_DIR from the operator's current working directory, not from the script's location. Running from any other repo (e.g., from `~/repos/vpittamp/nixos-config/main` after committing skill docs there) pointed STACKS_DIR at the wrong tree.
 
 **Fix**: Already committed in stacks `d98d6d7a7` (2026-05-28). STACKS_DIR is now derived from SCRIPT_DIR (`$SCRIPT_DIR/../..`), location-independent. Operators with a real need to override can still set STACKS_DIR explicitly in env.
+
+> **SUPERSEDED for ryzen (kept for the bearer-token / dev-staging context).** The three modes below — JWKS storage-account pollution, the `register-spoke-with-hub.sh` CSS→ArgoCD circular deadlock, and "ESO ClusterSecretStore stays InvalidProviderConfig" — all assume the spoke runs `azure-keyvault-store` resolved via Azure Workload Identity. **Ryzen no longer does**: the spoke has no Azure (verified live: `azure-workload-identity-system` empty, no `azure-keyvault-store` CSS), reads secrets via `hub-secrets-store` over Tailscale, and `--ts-acl-mode` skips the KV-token round-trip + JWKS sync entirely. For ryzen failures see "ESO hub-secrets-store" and "Tailscale ACL pattern" modes instead. JWKS sync still matters only for the HUB's own AWI.
 
 ## sync-jwks-to-azure.sh uploads to wrong storage account due to polluted shell env
 
@@ -188,7 +217,9 @@ kubectl --kubeconfig ~/.kube/hub-config delete pods -n tailscale \
 ```
 `register-spoke-with-hub.sh` step 6.5 now handles this automatically after CSS Ready (Phase 2 of P1 backlog, 2026-05-28). Same recovery applies if running an older script.
 
-## ESO ClusterSecretStore stays `InvalidProviderConfig` forever
+## (SUPERSEDED for ryzen) ESO `azure-keyvault-store` stays `InvalidProviderConfig` forever
+
+> **Ryzen does not run `azure-keyvault-store` anymore** — this is retained for the dev/staging bearer-token + AWI context only. For ryzen secret-transport failures use the "ESO hub-secrets-store" mode below.
 
 **Symptom**: `kubectl get clustersecretstore azure-keyvault-store -o jsonpath='{.status.conditions}'` keeps showing `reason: InvalidProviderConfig, message: unable to create client`. Events show AADSTS7000272 — "certificate with identifier X used to sign the federated credential could not be found in the metadata of identity provider".
 
@@ -204,26 +235,47 @@ kubectl get --raw /openid/v1/jwks | jq -r '.keys[0].kid'
 # Should match
 ```
 
+## ESO `hub-secrets-store` NotReady / ExternalSecrets SecretSyncedError on ryzen (the CURRENT transport)
+
+**Symptom**: `kubectl --context admin@ryzen get clustersecretstore hub-secrets-store` shows Ready=False, or workload ExternalSecrets show `SecretSyncedError`. Common messages: TLS / x509 verification failure against the hub Ingress cert, `dial tcp ... i/o timeout` / `no such host`, or `selfsubjectrulesreviews` forbidden.
+
+**Cause** (one of):
+1. **caBundle mismatch** — ESO v0.9.13 REQUIRES `caBundle` on the store; it must be the **ISRG Root X1** root (the LE cert on the hub `k8s-api-hub-ingress` device chains to it). A missing/wrong caBundle → x509 failure. (Hard-set in `packages/components/spoke-tailscale-secrets/manifests/spoke-transport/ClusterSecretStore-hub-secrets-store.yaml`.)
+2. **RYZEN CoreDNS rewrite missing** — Talos resets the Corefile every recreate, so `rewrite name exact k8s-api-hub-ingress.tail286401.ts.net k8s-api-hub-egress.tailscale.svc.cluster.local` (inserted by `spoke-transport-bootstrap.sh`) is gone → SNI/host mismatch or no-route. The store host must be `k8s-api-hub-ingress.tail286401.ts.net` (the standalone hub Tailscale **Ingress DEVICE**, NOT the k8s-api-hub ProxyGroup VIP — the VIP route never propagates into a spoke egress netmap).
+3. **`hub-secrets-token` Secret absent** — the scoped hub SA token must live at `external-secrets/hub-secrets-token` (key `token`) on the spoke; re-minted by `spoke-transport-bootstrap.sh`.
+4. **ACL grant missing** — `policy.hujson` needs `tag:k8s → tag:k8s` impersonate group `tailscale:spoke-secrets-reader` (the ryzen→hub read path), plus the hub-side RBAC (`spoke-secrets-reader` SA/Group: get/list/watch secrets in `spoke-secrets` + cluster-wide create on `selfsubjectrulesreviews` for ESO store validation).
+
+**Fix**:
+```bash
+# Re-run the imperative transport bootstrap (idempotent)
+bash deployment/scripts/lib/spoke-transport-bootstrap.sh --apply-manifests deployment/manifests/spoke-transport/
+# Verify the pieces
+kubectl --context admin@ryzen -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' | grep k8s-api-hub-ingress
+kubectl --context admin@ryzen -n external-secrets get secret hub-secrets-token
+kubectl --context admin@ryzen get clustersecretstore hub-secrets-store -o jsonpath='{.status.conditions}'
+# Hub mirror must be populated
+kubectl --kubeconfig ~/.kube/hub-config -n spoke-secrets get externalsecret ryzen-shared-secrets   # SecretSynced
+```
+
 ## Hub-side Tailscale egress pod fails with "Tailscale node not found"
 
-**Symptom**: `ts-ryzen-api-egress-*` pod on hub logs `Tailscale node "ryzen-api-v3.tail286401.ts.net." not found; it either does not exist, or not reachable because of ACLs`.
+**Symptom**: `ts-ryzen-api-egress-*` pod on hub logs `Tailscale node "ryzen-operator.tail286401.ts.net." not found; it either does not exist, or not reachable because of ACLs`.
 
 **Causes** (any one):
-1. The new ryzen registered under a different hostname (e.g., `ryzen-api-v3-1`) because the stale `ryzen-api-v3` device wasn't deleted before bootstrap.
-2. Hub's `ryzen-api-egress` Service annotation `tailscale.com/tailnet-fqdn` points at an old device name (e.g., `ryzen-api-headlamp-6`).
-3. ProxyGroup-style exposure creates a Service VIP, not a tailnet device — the operator's egress mechanism only resolves device FQDNs.
+1. The new ryzen operator registered under a different hostname (e.g., `ryzen-operator-1`) because the stale `ryzen-operator` device wasn't deleted before bootstrap (see "Stale duplicate `<spoke>-operator` tailnet device after recreate").
+2. Hub's `ryzen-api-egress` Service annotation `tailscale.com/tailnet-fqdn` points at an old device name.
+3. The ACL grant `tag:k8s → tag:k8s-operator` (impersonate system:masters) is missing, so the egress can't reach the operator proxy.
 
 **Fixes**:
-1. Verify the new device hostname: `tailscale status | grep ryzen-api`. If it has a `-N` suffix, delete it + delete stale devices + delete stale Service VIP via API, then force the operator to re-register cleanly.
-2. Patch the hub-side Service annotation:
+1. Verify the new device hostname: `tailscale status | grep ryzen-operator`. If it has a `-N` suffix, delete the stale device via the TS API and force the operator to re-register cleanly so it claims the canonical `ryzen-operator`.
+2. Confirm/patch the hub-side Service annotation (source of truth: `packages/components/hub-management/apps/headlamp.yaml`):
    ```bash
-   kubectl --context hub annotate svc ryzen-api-egress -n tailscale \
-     "tailscale.com/tailnet-fqdn=ryzen-api-v3.tail286401.ts.net" --overwrite
-   kubectl --context hub delete pod -n tailscale \
+   kubectl --kubeconfig ~/.kube/hub-config annotate svc ryzen-api-egress -n tailscale \
+     "tailscale.com/tailnet-fqdn=ryzen-operator.tail286401.ts.net" --overwrite
+   kubectl --kubeconfig ~/.kube/hub-config delete pod -n tailscale \
      -l tailscale.com/parent-resource=ryzen-api-egress --grace-period=0 --force
    ```
-   Then commit the same value to `packages/components/hub-management/apps/headlamp.yaml` so it survives ArgoCD selfHeal.
-3. Use the `tailscale.com/expose: "true"` Service pattern instead of ProxyGroup-kube-apiserver — that registers a regular device that the egress can target.
+3. Ensure `policy.hujson` carries the `tag:k8s → tag:k8s-operator` impersonation grant and that the spoke operator has `APISERVER_PROXY=true` (so it actually listens on :443 of its device).
 
 ## Hub's argocd-application-controller can't reach kube-api: "connection refused"
 
@@ -270,19 +322,19 @@ kubectl --context hub get svc ryzen-api-egress -n tailscale -o jsonpath='{.spec.
 
 ## ryzen-* Apps stuck OutOfSync — auto-sync disabled
 
-**Symptom**: Apps like `ryzen-external-secrets`, `ryzen-azure-keyvault-store`, `ryzen-tailscale-operator` show OutOfSync/Healthy and never converge automatically.
+**Symptom**: Apps like `ryzen-external-secrets`, `ryzen-tailscale-operator` show OutOfSync/Healthy and never converge automatically. (NOTE: `ryzen-azure-keyvault-store` and `ryzen-azure-workload-identity` no longer exist on ryzen — `local-core-ryzen` deletes those Applications, post-AWI-removal.)
 
 **Cause**: An old patch in `packages/components/profiles/local-core-ryzen/kustomization.yaml` removed `/spec/syncPolicy/automated` from these Apps (intended to avoid races with AWI admission webhook during standalone-ryzen bootstrap).
 
 **Fix**: Already removed in commit `a07e038d4` (May 2026). If it reappears, look for `op: remove path: /spec/syncPolicy/automated` patches and delete them.
 
-## Ingresses with class=nginx stuck ADDRESS=<none>
+## Ingresses with class=nginx stuck ADDRESS=<none> (ryzen = Contour + Kourier, NOT nginx)
 
 **Symptom**: `kubectl get ingress -n workflow-builder` shows nginx-class Ingresses (`workflow-builder`, `workflow-builder-mcp-gateway`) with empty ADDRESS. Parent Applications stuck Synced/Progressing.
 
-**Cause**: Ryzen has no nginx-ingress-controller — only `tailscale` IngressClass is available. External access on ryzen goes via Tailscale, not nginx.
+**Cause**: **Ryzen runs Contour + Kourier (+ Knative serving net-kourier), NOT ingress-nginx** — only the `tailscale` IngressClass and Contour/Kourier are available. External access on ryzen goes via Tailscale, not nginx. Relatedly, gitea on ryzen is `idpbuilder-local` and there is NO hub-managed `gitea` namespace, so `local-core-ryzen` excludes the `gitea-secretstore` + `nginx-tls-secret` Applications and the `gitea-tailscale-backend` Service (target ns `gitea`, absent on ryzen).
 
-**Fix**: Add ryzen-overlay kustomize patches that `$patch: delete` the nginx Ingresses for affected Apps. dev/staging still get them (they run nginx-ingress).
+**Fix**: Add ryzen-overlay kustomize patches that `$patch: delete` the nginx Ingresses for affected Apps. dev/staging still get them (they run nginx-ingress). The `gitea-secretstore` / `nginx-tls-secret` / `gitea-tailscale-backend` deletions live in `packages/components/profiles/local-core-ryzen/kustomization.yaml` (~lines 465-505).
 
 ## SWE-bench sandbox pods stuck Pending for ~6 min — node labels missing
 
@@ -407,3 +459,25 @@ kubectl --context hub-cluster patch app <name> -n argocd --type=merge \
   -p '{"operation":{"sync":{"syncOptions":["ServerSideApply=true"]}}}'
 ```
 If still stuck (Argo's cached comparison), add `argocd.argoproj.io/refresh=hard` annotation first to bust the repo-server cache.
+
+## kueue large-CRD wedge — ArgoCD 3.4.2 ClientSideApplyMigration writes a >262144-byte annotation (ryzen-only)
+
+**Symptom**: `ryzen-kueue` won't sync. ArgoCD reports the apply of the `workloads.kueue.x-k8s.io` CRD failing with `metadata.annotations: Too long: must have at most 262144 bytes` (or a wedged sync that never completes on that CRD). This surfaces on ryzen but not on a clean dev/staging.
+
+**Cause**: ArgoCD 3.4.2 runs a **ClientSideApplyMigration** step before SSA whenever a live object is not yet owned by `argocd-controller`. For the ~1.4MB `workloads.kueue.x-k8s.io` CRD, that intermediate client-side apply writes the entire object into the `kubectl.kubernetes.io/last-applied-configuration` annotation, which exceeds the 262144-byte annotation limit and wedges the apply (argo-cd#26279). Triggered on ryzen because the CRD had been hand-applied with `kubectl` during recovery, so the live managedFields owners are `[kubectl, argocd-controller, kube-apiserver, kueue]` — `argocd-controller` is not the sole owner, so the migration step fires.
+
+**Fix**: Set `ClientSideApplyMigration=false` as a syncOption on the **ryzen-only** overlay patch. Verified present at `packages/overlays/ryzen/kustomization.yaml:~261`:
+```yaml
+- op: add
+  path: /spec/syncPolicy/syncOptions/-
+  value: ClientSideApplyMigration=false
+```
+This forces pure SSA — a clean field-ownership transfer with no Workload CR data loss and no oversized annotation. It is a harmless no-op on a clean recreate (where `argocd-controller` already owns the CRD), so keep it while `kubectl` co-owns the CRD.
+
+## kustomize RFC6902 `op: add /spec/source/kustomize` clobber — co-located patches overwrite each other
+
+**Symptom**: After a ryzen sync, an Application that should have a `$patch: delete` (e.g., the `gitea-tailscale-backend` Service) instead fails with `namespaces "gitea" not found`, OR the tailscale-operator's `PROXY_IMAGE` override disappears. `argocd app diff` shows only one of the two intended modifications took effect.
+
+**Cause**: A kustomize `op: add` to `/spec/source/kustomize` REPLACES the whole node (last-writer-wins) — it is NOT a merge. Both `packages/components/profiles/local-core-ryzen/kustomization.yaml` AND `packages/overlays/ryzen/kustomization.yaml` op:add to the **same** `/spec/source/kustomize` path on the tailscale-operator Application. The overlay runs AFTER the component, so the overlay's block wins and silently clobbers the component's block.
+
+**Fix**: The WINNING (overlay) block must carry EVERYTHING that path needs: for tailscale-operator that means BOTH the `PROXY_IMAGE=v1.92.4` env AND the `gitea-tailscale-backend` Service `$patch:delete`, co-located in the `overlays/ryzen` block. If you move the Service delete into the profile block, it gets clobbered and the sync fails "namespaces gitea not found". This clobber rule governs every co-located `op: add /spec/source/kustomize` between `profiles/local-core-ryzen` and `overlays/ryzen` — always put the complete set in the overlay.

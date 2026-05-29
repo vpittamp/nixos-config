@@ -11,7 +11,7 @@
 |---|---|
 | Pre-destroy cleanup (Tailscale devices, kubeconfig) | ~10s |
 | talosctl cluster destroy + create | ~1m40s |
-| Helms (cert-manager, ESO, AWI, Tailscale operator) | ~3m |
+| Helms (cert-manager, ESO, Tailscale operator — NO AWI on the spoke post-removal) | ~3m |
 | Kueue pre-install + label patch + rollout-status wait | ~1m20s |
 | Spoke-registration manifests | ~5s |
 | Tailscale ProxyGroup advertise wait | ~2m |
@@ -131,7 +131,9 @@ kubectl label namespace tailscale pod-security.kubernetes.io/enforce=privileged 
 
 **P1.2 — Auto-rename new Tailscale device to canonical name** (demoted to P2): if `cleanup-tailnet-devices.sh` ran successfully, the new device should get the canonical name on first registration. The pre-destroy cleanup makes this collision unlikely in practice — kept as a belt-and-suspenders item.
 
-### P2 — architectural evaluation: Tailscale ACL impersonation in place of Azure WI for spoke registration  ✅ DONE
+### P2 — architectural evaluation: Tailscale ACL impersonation in place of Azure WI for spoke registration  ✅ DONE — and since EXTENDED to ALL spoke workload secrets
+
+> **Update (2026-05-29)**: This P2 only removed the spoke-*registration* KV round-trip. Since then the AWI→Tailscale migration was extended so that **ALL** ryzen workload secrets also flow off Azure: ryzen now runs NO `azure-keyvault-store` ClusterSecretStore and NO azure-workload-identity webhook (verified live NotFound). Workload ESes resolve `hub-secrets-store` (ESO kubernetes provider) → hub ns `spoke-secrets` Secret `ryzen-shared-secrets` over Tailscale. The hub keeps AWI + Key Vault as the canonical source and mirrors per-cluster bundles. So the "hub still needs AWI for other KV secrets" tradeoff below is now true ONLY of the HUB, not the spoke. See `references/desired-state.md` "Secrets" + the "ESO hub-secrets-store" mode in `references/failure-modes.md`.
 
 **Outcome** (2026-05-28): Validated end-to-end on ryzen. Measured wall-clock improvement: bootstrap + register-spoke went from ~31 min (bearer-token path) to **8m30s** (Tailscale ACL path). Steps 2-6 of register-spoke-with-hub.sh entirely eliminated. Pattern works exactly as documented in the Tailscale ArgoCD multi-cluster guide, with three architectural requirements that we had to surface during validation (now codified — see failure-modes.md):
 

@@ -2,24 +2,82 @@
 
 Use this when changing or debugging Talos clusters in `PittampalliOrg/stacks`.
 
-## Architecture
+## Hub vs Spoke Topology
 
-The hub is a Hetzner/Talos Kubernetes cluster. It runs Crossplane, ArgoCD,
-source-hydrator, GitOps Promoter, Tailscale operator, and hub Tekton. Dev and
-staging are spokes. Their infrastructure is created from Crossplane claims on
-the hub, then their workload Applications are registered into hub ArgoCD.
+The hub is a 5-node Hetzner/Talos cluster (Talos `v1.12.x`, Kubernetes
+`v1.32.0`, Flannel CNI, kube-proxy enabled): 3x cpx41 control-plane/management +
+2x ccx33 dedicated build nodes (labeled/tainted `stacks.io/build-pool=hub`). It
+is provisioned IMPERATIVELY (`docs/hub-cluster-setup.md`), NOT by a
+TalosSpokeClusterClaim. It runs Crossplane, ArgoCD, source-hydrator, GitOps
+Promoter, the Tailscale operator, hub Tekton, and External Secrets Operator. The
+hub keeps Azure Workload Identity + Key Vault (`keyvault-thcmfmoo5oeow`) as the
+canonical secret source for the whole fleet.
 
-The expected control path is:
+Spokes differ by how they are provisioned:
 
-1. Edit and commit a spoke claim/composition in `stacks`.
-2. Hub Argo applies Crossplane providers, XRDs, compositions, and claims.
-3. Crossplane creates HCloud network/firewall/servers and a Terraform Workspace
-   for Talos config/bootstrap.
-4. Onboarding jobs register the spoke with hub ArgoCD and key vault, create
-   spoke bootstrap resources, and authenticate the Kubernetes API ProxyGroup.
+- `dev` and `staging` are Crossplane-driven Hetzner Talos spokes
+  (TalosSpokeClusterClaim -> XR -> Composition). This skill is about these.
+- `ryzen` is a bare-metal Talos-in-Docker spoke bootstrapped imperatively
+  (`deployment/scripts/bootstrap-spoke-cluster.sh`); it is NOT a claim spoke.
+  Use the `ryzen-spoke-bootstrap` skill for it.
+
+The Crossplane spoke control path is:
+
+1. Edit and commit a spoke claim/composition in `stacks` (on `main`; dev/staging
+   track `main`, ryzen tracks `inner-loop`).
+2. Hub Argo applies Crossplane providers, XRDs, compositions, and claims. The
+   `crossplane-hcloud-compositions` Application auto-syncs from `main` with
+   selfHeal, so live claim patches can be overwritten by Git in flight.
+3. Crossplane (provider-hetzner + provider-terraform with the talos provider)
+   creates HCloud network/firewall/servers and runs a Terraform module for Talos
+   machine secrets/config/apply/bootstrap, writing a `<spoke>-kubeconfig`
+   connection Secret.
+4. Onboarding jobs register the spoke with hub ArgoCD, create spoke bootstrap
+   resources + the Tailscale operator OAuth Secret, wire the Tailscale-native
+   secret transport, and authenticate the Kubernetes API ProxyGroup.
 5. Source-hydrator renders the spoke overlay and Promoter merges the generated
-   branch.
+   branch (`env/spokes-<name>-next` -> `env/spokes-<name>`).
 6. Hub ArgoCD syncs the spoke workload Applications to the new cluster.
+
+## Crossplane Provisioning Pipeline
+
+`Composition-talospokecluster.yaml` drives a function-sequencer ordered fan-out.
+Approximate group order (verify against the live composition before editing):
+
+- group-1-network: Network / Subnet / Firewall (opens 6443, 50000, 4789, 41641,
+  22, icmp).
+- group-2-servers: control-plane + worker servers booted from the Hetzner ISO id
+  in the claim (`isoId`), debian-12 base, `ignoreRemoteFirewallIds`.
+- group-3-talos-workspace: provider-terraform Inline module (talos provider):
+  `talos_machine_secrets` -> `talos_machine_configuration` (cp/worker; CNI
+  none/Cilium on dev/staging, proxy disabled, etcd+kubelet on the spoke subnet,
+  worker `nodeLabels`) -> `talos_machine_configuration_apply` ->
+  `talos_machine_bootstrap` -> `talos_cluster_kubeconfig`. The module sets only
+  `install.disk=/dev/sda` + `wipe=true`; the INSTALLED Talos version comes from
+  `talos_version` (= claim `talos.version`) which derives `install.image`.
+- group-4-iso-detach: a long-running converger Job (hetznercloud/cli) that polls
+  the Talos API :50000 on each node, detaches the ISO, and resets. It can run
+  for tens of minutes and gate later groups' readiness reporting (a benign
+  source of claim `Ready=False`).
+- Onboarding (group-5 spoke-register, group-7 spoke-bootstrap, group-9
+  proxygroup-auth; group-6 hub-connectivity + group-8 hub-argocd are
+  dependency-ordered): see the onboarding-job notes below.
+
+### Onboarding job images (AWI removal in progress)
+
+- group-5 spoke-register now runs `alpine/k8s:1.36.0` (NO `az`): waits for the
+  spoke API, mints an `argocd-remote-manager` SA + token, writes the
+  `cluster-<spoke>` argocd Secret directly to the hub, then wires the
+  Tailscale-native transport glue (scoped hub token -> spoke
+  `external-secrets/hub-secrets-token`; CoreDNS rewrite inserted via `jq`, NOT
+  `awk`, because the slim image lacks awk).
+- group-7 spoke-bootstrap still runs `mcr.microsoft.com/azure-cli:latest` and
+  still uses `az keyvault secret show` to mint the Tailscale operator OAuth
+  Secret. This is the LAST Azure tendril in dev provisioning and is deferred.
+- group-9 proxygroup-auth (`alpine/k8s:1.36.0` + tailscale TF provider): cleans
+  stale ArgoCD apps / Tailscale Services / stale devices, generates a
+  pre-authorized auth key, creates the spoke ProxyGroup `k8s-api-<spoke>`, waits
+  for the StatefulSet, injects `TS_AUTHKEY`.
 
 ## Important Resources
 
@@ -58,9 +116,13 @@ parameters:
     nodeLabels:
       stacks.io/swebench-pool: dev-benchmark
   talos:
-    version: "1.12.4" # Verify live node OS; ISO/defaults may install newer Talos.
-    kubernetesVersion: "1.35.0"
-    isoId: "125127"
+    # version drives install.image (the Talos WRITTEN TO DISK). Target is 1.13.2.
+    # The booted Hetzner ISO is 1.12.4 regardless; maintenance mode validates
+    # kubernetesVersion against the RUNNING 1.12.4 ISO, so bootstrap k8s on 1.35
+    # first, then raise to 1.36. See "ISO vs Kubernetes Version Constraint".
+    version: "1.13.2" # Verify live OS-IMAGE via kubectl get nodes -o wide.
+    kubernetesVersion: "1.36.0" # transiently 1.35.0 during first bootstrap.
+    isoId: "125127" # Hetzner public catalog = Talos 1.12.4 ISO only.
   onboarding:
     enableOnboarding: true
     tailnetDomain: tail286401.ts.net
@@ -69,6 +131,25 @@ parameters:
     repoUrl: https://github.com/PittampalliOrg/stacks.git
     overlayPath: packages/overlays/dev
 ```
+
+## ISO vs Kubernetes Version Constraint
+
+The Hetzner public catalog ships only a Talos `1.12.4` ISO (no custom-ISO upload
+API; a custom ISO requires a support ticket with a `factory.talos.dev` URL).
+Two version selectors interact:
+
+- `install.image` (derived from claim `talos.version`) sets the Talos version
+  WRITTEN TO DISK. A claim of `talos.version: 1.13.2` installs Talos `1.13.x`
+  even though nodes boot the `1.12.4` ISO.
+- The maintenance-mode node validates the REQUESTED `kubernetesVersion` against
+  the RUNNING ISO Talos (`1.12.4`) BEFORE the new Talos is on disk.
+
+So a one-shot `talos.version: 1.13.2` + `kubernetesVersion: 1.36` claim cannot
+bootstrap. Supported recovery (full sequence in
+`runbooks/resize-or-upgrade.md`): patch the LIVE claim to
+`kubernetesVersion: 1.35.0` (keep `version: 1.13.2`), let it bootstrap, then
+raise `kubernetesVersion` back to `1.36.0`. Confirm with the OS-IMAGE column of
+`kubectl get nodes -o wide` (expect Talos `1.13.x`), not the claim value.
 
 ## HCloud Placement
 
@@ -109,14 +190,51 @@ packages/components/crossplane-hetzner-talos/
     CompositeResourceDefinition-talospokecluster.yaml
     Composition-talospokecluster.yaml
     TalosSpokeClusterClaim-dev.yaml
-packages/overlays/dev/
+packages/overlays/dev/        # components: [../../components/spoke-tailscale-secrets]
 packages/overlays/staging/
 packages/base/manifests/tailscale-ingresses/
 packages/components/hub-base/manifests/ProxyGroup-kube-apiserver.yaml
+# AWI -> Tailscale spoke secret transport
+packages/components/spoke-tailscale-secrets/
+  CONTRACT.md
+  apps/spoke-transport.yaml
+  manifests/spoke-transport/ClusterSecretStore-hub-secrets-store.yaml  # caBundle = ISRG Root X1 (required by ESO v0.9.13)
+  manifests/spoke-transport/Service-k8s-api-hub-egress.yaml
+packages/components/hub-management/manifests/spoke-secrets/
+  Namespace-spoke-secrets.yaml
+  ExternalSecret-dev-shared-secrets.yaml      # from azure-keyvault-store, hub-canonical
+  ExternalSecret-ryzen-shared-secrets.yaml
+  RBAC-spoke-secrets-reader.yaml
+  Ingress-k8s-api-hub-ingress.yaml            # standalone Tailscale Ingress DEVICE (not a ProxyGroup VIP)
+scripts/gitops/render-workflow-builder-release-overlays.sh  # per-cluster ES repoints (dev-gated)
 docs/recreate-disposable-dev.md
+docs/crossplane-spoke-onboarding.md
 docs/tailscale-naming.md
 docs/tailscale-hostname-reuse-strategy.md
 ```
+
+## Spoke Secret Transport (AWI -> Tailscale)
+
+Dev/staging spokes no longer authenticate to Azure. They read hub-mirrored
+secrets over Tailscale:
+
+- The hub mirrors every spoke-consumed Key Vault secret into ns `spoke-secrets`
+  as a Secret `<cluster>-shared-secrets` (via an ExternalSecret on
+  `azure-keyvault-store`). The hub stays the canonical AWI + Key Vault source.
+- The spoke resolves a `hub-secrets-store` ClusterSecretStore (ESO kubernetes
+  provider) that reads ns `spoke-secrets` on the hub through the standalone
+  Tailscale Ingress DEVICE `k8s-api-hub-ingress.tail286401.ts.net` (LE cert
+  chaining to ISRG Root X1; the store's `caBundle` is hard-set to ISRG Root X1,
+  REQUIRED by ESO v0.9.13). A scoped read-only bearer token (SA
+  `spoke-secrets-reader`) authorizes it. A spoke CoreDNS rewrite maps the
+  Ingress FQDN to `k8s-api-hub-egress.tailscale.svc.cluster.local`.
+- For dev, `scripts/gitops/render-workflow-builder-release-overlays.sh` injects
+  dev-gated kustomize patches repointing workload ExternalSecrets'
+  `remoteRef.key` to `dev-shared-secrets` on `secretStoreRef: hub-secrets-store`
+  (shared workload manifests otherwise hardcode `ryzen-shared-secrets`).
+- A recreate must have the hub mirror + the `spoke-secrets-reader` RBAC + the
+  CoreDNS rewrite working; `azure-keyvault-store` on the spoke is gone. Verify
+  `kubectl get clustersecretstore hub-secrets-store` is Ready on the spoke.
 
 ## Naming Models
 
@@ -171,11 +289,15 @@ shred -u /tmp/<spoke>-kubeconfig
 
 ## Dev Rebuild Reflection
 
-The dev Kubernetes `1.35.0` rebuild succeeded because the manual cluster was
-replaced by a committed claim and the runtime restoration moved into idempotent
-repo fixtures. The risky parts were not Talos bootstrap itself; they were
-ownership boundaries and generated configuration:
+The dev rebuild succeeded because the manual cluster was replaced by a committed
+claim and the runtime restoration moved into idempotent repo fixtures. The risky
+parts were not Talos bootstrap itself; they were ownership boundaries, generated
+configuration, and the ISO-vs-Kubernetes-version constraint:
 
+- The Hetzner `1.12.4` ISO cannot bootstrap a one-shot Talos `1.13.2` + k8s
+  `1.36` claim. Bootstrap k8s on `1.35` first (with `version: 1.13.2` so
+  `install.image` installs Talos `1.13.x`), then raise `kubernetesVersion` to
+  `1.36`. See "ISO vs Kubernetes Version Constraint".
 - Delete manual HCloud resources only after the claim is ready to recreate them.
 - If the user narrows scope to dev only, remove staging from Git and live
   Crossplane/Argo ownership before pruning provider resources so staging is not

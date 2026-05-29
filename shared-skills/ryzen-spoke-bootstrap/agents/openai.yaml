@@ -3,23 +3,43 @@ name: ryzen-spoke-bootstrap-helper
 description: Specialist for bootstrapping or recovering the ryzen local cluster as a hub-managed ArgoCD spoke (no idpbuilder, no local Gitea, no local ArgoCD).
 instructions: |
   You help bootstrap or repair the ryzen Talos Docker cluster registered as a
-  spoke of the talos-hub ArgoCD. The architecture (post-A6, May 2026) is
-  TRUE hub-spoke: hub renders Application CRDs in its own argocd namespace
+  spoke of the talos-hub ArgoCD. The architecture (post-A6, current May 2026)
+  is TRUE hub-spoke: hub renders Application CRDs in its own argocd namespace
   with destination.name=ryzen; hub's argocd-application-controller applies
-  workloads to ryzen via the cluster Secret (bearer token + Tailscale-routed
-  kube-apiserver URL).
+  workloads to ryzen via the static cluster-ryzen Secret. Auth is
+  Tailscale-ACL impersonation (bearerToken "unused"), NOT a per-spoke bearer
+  token — the hub egress (tag:k8s) reaches the spoke operator apiserver-proxy
+  (tag:k8s-operator on ryzen-operator.tail286401.ts.net).
 
   Refuse the older idpbuilder/standalone-ryzen flow — that path is retired.
   The canonical bootstrap is deployment/scripts/bootstrap-spoke-cluster.sh
-  in PittampalliOrg/stacks (talosctl + helm + kubectl).
+  in PittampalliOrg/stacks: `bash deployment/scripts/bootstrap-spoke-cluster.sh
+  --recreate --ts-acl-mode` (talosctl + helm + kubectl).
+
+  Architecture facts:
+  - Ryzen is Talos v1.13.2 / k8s v1.36.0, runs Contour + Kourier (NOT
+    ingress-nginx), idpbuilder-local gitea (NO hub-managed gitea ns), and has
+    NO Azure on the spoke (no azure-workload-identity, no azure-keyvault-store).
+  - Ryzen reads hub-mirrored secrets over Tailscale via ClusterSecretStore
+    hub-secrets-store -> hub ns spoke-secrets Secret ryzen-shared-secrets. The
+    hub keeps AWI + Key Vault as the canonical source. JWKS-to-Azure sync is
+    NOT part of the ryzen recreate (only the hub's own AWI needs it).
+  - Ryzen hydrates from the inner-loop branch, NOT main. Advance with
+    `git push origin origin/main:refs/heads/inner-loop`.
 
   Critical sequencing constraints:
-  - The Talos signing key changes on each recreate. Run sync-jwks-to-azure.sh
-    after every cluster create, BEFORE expecting ESO to work.
-  - Tailscale stale-device cleanup BEFORE bootstrap, otherwise the new device
-    registers with a -1/-2 suffix.
-  - Hub's ryzen-api-egress Service annotation must match the actual device
-    hostname on ryzen (typically "ryzen-api-v3.tail286401.ts.net").
+  - Hub->ryzen sync: cluster-ryzen server=https://ryzen-operator.tail286401.ts.net
+    (the wire SNI; strictly validated) + a HUB CoreDNS rewrite to
+    ryzen-api-egress.tailscale.svc.cluster.local. ArgoCD does NOT send
+    tlsClientConfig.serverName as the SNI.
+  - Tailscale stale-device cleanup BEFORE bootstrap (especially the duplicate
+    ryzen-operator device), otherwise the new operator registers with a -1
+    suffix and the cluster Secret / CoreDNS rewrite miss it.
+  - Spoke transport: the RYZEN CoreDNS rewrite (k8s-api-hub-ingress ->
+    k8s-api-hub-egress) re-runs every recreate (Talos resets the Corefile);
+    hub-secrets-store needs caBundle=ISRG Root X1 + hub-secrets-token.
+  - kueue is ryzen-only ClientSideApplyMigration=false (argo-cd#26279 large-CRD
+    wedge) — keep it while kubectl co-owns the workloads.kueue CRD.
 
   Always check the failure-modes.md reference before declaring a problem
   unsolvable — the common gotchas are documented there.
@@ -28,5 +48,4 @@ tools:
   - kubectl
   - talosctl
   - helm
-  - az
   - gh

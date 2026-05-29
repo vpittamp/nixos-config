@@ -45,7 +45,7 @@ kubectl config delete-user admin@ryzen 2>/dev/null
 
 ## Clean up stale Tailscale devices
 
-When the cluster is recreated, the Tailscale operator registers fresh devices. But the OLD devices linger and can steal the `ryzen-api-v3` hostname (Tailscale's name-collision avoidance appends `-1`, `-2`...). Delete them via the Tailscale API before bootstrap.
+When the cluster is recreated, the Tailscale operator registers fresh devices. But the OLD devices linger and can steal a hostname (Tailscale's name-collision avoidance appends `-1`, `-2`...). The critical one is the **`ryzen-operator`** apiserver-proxy device — if a stale duplicate keeps it, the new operator becomes `ryzen-operator-1` and the cluster Secret `server: https://ryzen-operator.tail286401.ts.net` + HUB CoreDNS rewrite no longer point at the live cluster (hub→ryzen ArgoCD sync stays broken). Delete the stale devices via the Tailscale API before bootstrap.
 
 ```bash
 # Get OAuth token from the old cluster's operator Secret (or new env vars)
@@ -64,6 +64,7 @@ d = json.load(sys.stdin)
 patterns = [
   re.compile(r'^ryzen-'),
   re.compile(r'-ryzen($|-)'),
+  re.compile(r'^ryzen-operator($|-)'),  # the apiserver-proxy device — MUST be cleared so the new operator claims the canonical hostname
   re.compile(r'^k8s-api-cluster-'),  # old ProxyGroup pod hostnames
 ]
 for x in d.get('devices', []):
@@ -84,21 +85,52 @@ curl -s -X DELETE -H "Authorization: Bearer $TOKEN" \
 
 ## Reset hub-side state that pinned to old cluster
 
-The hub's `tailscale/ryzen-api-egress` Service has annotation `tailscale.com/tailnet-fqdn: <previous-device>`. If the device name changes on recreate, update the annotation OR commit the right value to source manifest (`packages/components/hub-management/apps/headlamp.yaml`):
+The hub's `tailscale/ryzen-api-egress` ExternalName Service has annotation `tailscale.com/tailnet-fqdn: ryzen-operator.tail286401.ts.net` (it targets the spoke operator's apiserver-proxy device — NOT a separate `ryzen-api-v3` device anymore). The operator reads the annotation only at pod create, so after a recreate force the StatefulSet pod to recreate so it reconnects to the freshly-registered `ryzen-operator` device:
 
 ```bash
-# Quick hub-side patch (will be reverted by ArgoCD selfHeal — also commit to source)
-kubectl --context hub annotate svc ryzen-api-egress -n tailscale \
-  "tailscale.com/tailnet-fqdn=ryzen-api-v3.tail286401.ts.net" --overwrite
+# Source of truth for the annotation: packages/components/hub-management/apps/headlamp.yaml
+# Force operator to recreate the StatefulSet pod (reconnects to the new device)
+kubectl --kubeconfig ~/.kube/hub-config delete pod -n tailscale \
+  -l tailscale.com/parent-resource=ryzen-api-egress --grace-period=0 --force
+```
 
-# Force operator to recreate the StatefulSet pod
-kubectl --context hub delete pod -n tailscale -l tailscale.com/parent-resource=ryzen-api-egress --grace-period=0 --force
+Confirm the HUB CoreDNS rewrite that routes the operator FQDN to the egress is present:
+```bash
+kubectl --kubeconfig ~/.kube/hub-config -n kube-system get cm coredns \
+  -o jsonpath='{.data.Corefile}' | grep ryzen-operator
+# expect: rewrite name exact ryzen-operator.tail286401.ts.net ryzen-api-egress.tailscale.svc.cluster.local
 ```
 
 ## Now run the main bootstrap
 
-Return to the main SKILL.md workflow from step 1.
+Return to the main SKILL.md workflow from step 1. Canonical recreate command:
+```bash
+cd /home/vpittamp/repos/PittampalliOrg/stacks/main
+bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate --ts-acl-mode
+```
 
-## Post-bootstrap: re-merge env/hub Promoter PRs
+## Post-bootstrap: spoke secret-transport re-apply (RYZEN CoreDNS rewrite)
 
-If any in-flight Promoter PRs for env/hub are open, merge them so hub's reconciled state matches the source. The Promoter sometimes gets confused after cluster Secret changes; manual `gh pr create --base env/hub --head env/hub-next` + merge unblocks it.
+`bootstrap-spoke-cluster.sh` applies the imperative spoke-transport half (`deployment/scripts/lib/spoke-transport-bootstrap.sh --apply-manifests deployment/manifests/spoke-transport/`), but because Talos resets the coredns ConfigMap on every recreate, the SPOKE rewrite must be (re-)inserted each time. Confirm it landed:
+```bash
+kubectl --context admin@ryzen -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' | grep k8s-api-hub-ingress
+# expect: rewrite name exact k8s-api-hub-ingress.tail286401.ts.net k8s-api-hub-egress.tailscale.svc.cluster.local
+kubectl --context admin@ryzen get clustersecretstore hub-secrets-store   # Ready=True
+kubectl --context admin@ryzen -n external-secrets get secret hub-secrets-token
+```
+If the rewrite is missing or `hub-secrets-store` is NotReady, re-run `spoke-transport-bootstrap.sh` (idempotent). See `references/failure-modes.md` "ESO hub-secrets-store".
+
+## Post-bootstrap: verify hub→ryzen SNI + advance inner-loop
+
+```bash
+# SNI must be accepted by the operator apiserver-proxy
+curl -sk --connect-to ryzen-operator.tail286401.ts.net:443:<egress-or-tailnet-ip>:443 \
+  -o /dev/null -w "%{http_code}\n" https://ryzen-operator.tail286401.ts.net/version   # expect 200
+
+# Ryzen reads inner-loop, NOT main — advance it so the overlay reaches ryzen:
+git -C /home/vpittamp/repos/PittampalliOrg/stacks/main push origin origin/main:refs/heads/inner-loop
+```
+
+## Post-bootstrap: re-merge env/hub Promoter PRs (only if hub-state changed)
+
+If the recreate changed hub-side state (e.g., the static `cluster-ryzen` Secret or appset definitions) and in-flight Promoter PRs for env/hub are open, merge them so hub's reconciled state matches the source. Manual `gh pr create --base env/hub --head env/hub-next` + merge unblocks a stuck Promoter. NOTE: ryzen workloads (`packages/overlays/ryzen` → `env/spokes-ryzen`) have NO Promoter — they advance via the `inner-loop` branch push above.

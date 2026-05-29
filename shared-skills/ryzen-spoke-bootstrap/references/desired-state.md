@@ -4,8 +4,10 @@ This is the authoritative description of "what a freshly-bootstrapped ryzen clus
 
 ## Cluster shape
 
-- **Talos Docker**, 1 control plane + 2 workers, subnet `10.6.0.0/24`.
-- **No local ArgoCD**, no local Gitea, no local Tekton.
+- **Talos Docker**, 3 nodes (`ryzen-controlplane-1` + `ryzen-worker-1/2`), OS-IMAGE Talos `v1.13.2`, k8s `v1.36.0`, containerd 2.2.3, subnet `10.6.0.0/24`.
+- **No local ArgoCD**, no local Tekton. gitea is `idpbuilder-local` — there is NO hub-managed `gitea` namespace (verified live: ns `gitea` = NotFound).
+- **Ingress is Contour + Kourier (+ Knative serving net-kourier), NOT ingress-nginx** (verified live: projectcontour + kourier-system + knative-serving pods running; zero nginx-controller pods).
+- **No Azure on the spoke** — `azure-workload-identity-system` ns is empty; the only ClusterSecretStores are `argocd`, `default-namespace`, and `hub-secrets-store`.
 - The local kubectl context is `admin@ryzen`; hub kubeconfig (for admin work against hub from the ryzen host) is at `~/.kube/hub-config` and `~/.kube/hub-kubeconfig` (the latter via the spoke-egress).
 - Worker nodes have `stacks.io/swebench-pool=dev-benchmark` + `node-role.kubernetes.io/worker=` labels (applied automatically by bootstrap-spoke-cluster.sh).
 
@@ -13,21 +15,25 @@ This is the authoritative description of "what a freshly-bootstrapped ryzen clus
 
 | Component | Version / Source | Notes |
 |---|---|---|
-| Talos | `talosctl cluster create docker` default | signing key rotates on every recreate → JWKS sync required |
+| Talos | Talos `v1.13.2`, k8s `v1.36.0` | Talos-Docker, imperatively bootstrapped (NOT Crossplane) |
 | cert-manager | jetstack chart `v1.14.4` | Tailscale operator dependency |
-| external-secrets | chart `0.9.13` | resolves ClusterSecretStore `azure-keyvault-store` via Azure Workload Identity |
-| Azure Workload Identity webhook | chart from `azure.github.io/azure-workload-identity/charts` | uses `AZURE_TENANT_ID` |
-| Tailscale operator | chart from `pkgs.tailscale.com/helmcharts`, `apiServerProxyConfig.mode=auth` | exposes ryzen kube-api as device `ryzen-api-v3.tail286401.ts.net` |
+| external-secrets | chart `0.9.13` | resolves ClusterSecretStore **`hub-secrets-store`** (kubernetes provider) over Tailscale — NOT `azure-keyvault-store`. ESO v0.9.13 REQUIRES `caBundle=ISRG Root X1` on the store. |
+| ~~Azure Workload Identity webhook~~ | — | NOT installed on the spoke (post-AWI-removal). AWI lives only on the hub as the canonical KV source. |
+| Tailscale operator | chart from `pkgs.tailscale.com/helmcharts`, `apiServerProxyConfig.mode=true` + `allowImpersonation=true` | `OPERATOR_HOSTNAME=ryzen-operator`, `APISERVER_PROXY=true`, exposes ryzen kube-api as device `ryzen-operator.tail286401.ts.net` |
+| Contour + Kourier | ArgoCD-managed | ingress (NOT ingress-nginx); Knative serving uses net-kourier |
 | local-path-provisioner | `apps/local-path-provisioner.yaml` (ArgoCD-managed) | host-path StorageClass for PVCs |
-| ArgoCD (HUB only) | controller `v3.4.2`, chart `9.5.15` | exec.enabled=true for web terminal |
-| GitOps Promoter (HUB only) | controller `v0.30.0`, chart `0.9.2` | manages `env/hub-next → env/hub` and `env/spokes-{dev,staging}-next → env/spokes-{dev,staging}` PRs |
+| ArgoCD (HUB only) | controller `v3.4.x`, chart `9.5.x` | exec.enabled=true for web terminal |
+| GitOps Promoter (HUB only) | controller `v0.30.0`, chart `0.9.2` | manages `env/hub-next → env/hub` and `env/spokes-{dev,staging}-next → env/spokes-{dev,staging}` PRs. NOTE: ryzen's `env/spokes-ryzen` has NO Promoter. |
 
 ## Networking + access paths
 
+**Two DISTINCT Tailscale paths — do not conflate:** (a) hub→ryzen ArgoCD sync, and (b) ryzen→hub ESO secret fetch. Different devices, different CoreDNS rewrites, different clusters.
+
 | From | To | Path |
 |---|---|---|
-| Hub `argocd-application-controller` | ryzen kube-api | ExternalName Service `ryzen-api-egress.tailscale.svc.cluster.local` → operator-rendered egress pod → tailnet device `ryzen-api-v3` |
-| Hub Headlamp | ryzen kube-api | same `ryzen-api-egress` Service, separate kubeconfig from initContainer |
+| Hub `argocd-application-controller` | ryzen kube-api | cluster Secret `server: https://ryzen-operator.tail286401.ts.net` (wire SNI = the operator's own hostname, strictly validated) → HUB CoreDNS rewrite `ryzen-operator.tail286401.ts.net → ryzen-api-egress.tailscale.svc.cluster.local` → ExternalName Service (`tailscale.com/tailnet-fqdn: ryzen-operator.tail286401.ts.net`) → operator-rendered egress pod → spoke operator apiserver-proxy. Auth = Tailscale-ACL impersonation (`bearerToken "unused"`, ACL `tag:k8s → tag:k8s-operator` impersonate system:masters). |
+| **Ryzen ESO** (`hub-secrets-store`) | **hub kube-api** (ns `spoke-secrets`) | RYZEN CoreDNS rewrite `k8s-api-hub-ingress.tail286401.ts.net → k8s-api-hub-egress.tailscale.svc.cluster.local` → ryzen egress → standalone hub Tailscale **Ingress DEVICE** `k8s-api-hub-ingress` (NOT the k8s-api-hub ProxyGroup VIP) → hub kube-api. Auth = SA token (`external-secrets/hub-secrets-token`); ACL `tag:k8s → tag:k8s` impersonate `tailscale:spoke-secrets-reader`. `caBundle = ISRG Root X1`. |
+| Hub Headlamp | ryzen kube-api | same `ryzen-api-egress` path, separate kubeconfig from initContainer |
 | Browser | workflow-builder UI on ryzen | Tailscale Ingress (class `tailscale`) → device `workflow-builder-ryzen.tail286401.ts.net` → ryzen Service `workflow-builder:3000` |
 | Ryzen pods | hub Postgres / ClickHouse / MLflow / Headlamp / ArgoCD | tailnet egress ExternalName Services in ryzen's `tailscale` namespace (`*-hub-egress`, `*-hub-node`) |
 | Ryzen pods | dev/staging Postgres | tailnet egress Services in ryzen's `tailscale` namespace (`*-workflow-builder-postgres-egress`) |
@@ -53,17 +59,17 @@ GitHub PittampalliOrg/stacks
 - The `ghcr-pull-credentials` Secret is materialized into every workload namespace by ESO from KV secret `GITHUB-PAT` (NOT `GHCR-PAT` — that name doesn't exist).
 - ImagePullSecret name in Pod specs: `ghcr-pull-credentials` (note: NOT `gitea-registry-creds` even though some legacy Pod specs may still reference it as a fallback).
 
-## Secrets (post-bootstrap, all materialized by ESO)
+## Secrets (post-bootstrap — AWI→Tailscale transport)
 
-| KV secret name | Where it lands |
+The hub keeps **Azure Key Vault (`keyvault-thcmfmoo5oeow`) + AWI as the canonical source**. It mirrors every ryzen-consumed KV secret into hub ns `spoke-secrets` as Secret **`ryzen-shared-secrets`** (~77 keys incl. the `*-RYZEN` OAuth overrides) via the hub ExternalSecret `ryzen-shared-secrets` (from `azure-keyvault-store`). Ryzen's ESO ClusterSecretStore `hub-secrets-store` reads that Secret over Tailscale and ESO on ryzen materializes the per-workload Secrets. The spoke never authenticates to Azure.
+
+| Source | How it reaches ryzen |
 |---|---|
-| `ARGOCD-CLUSTER-RYZEN-TOKEN` | `cluster-ryzen` Secret on hub's argocd ns (bearer token for ArgoCD to talk to ryzen kube-api) |
-| `ARGOCD-CLUSTER-RYZEN-CA` | same Secret's `caData` field |
-| `GITHUB-PAT` | `ghcr-pull-credentials` in all workload namespaces |
-| `GITHUB-OAUTH-CLIENT-ID-RYZEN` / `-SECRET-RYZEN` | `workflow-builder-secrets.GITHUB_CLIENT_ID/SECRET` on ryzen |
-| `OAUTH-APP-GITHUB-CLIENT-ID-RYZEN` / `-SECRET-RYZEN` | same Secret's `OAUTH_APP_GITHUB_*` keys |
-| `OPENAI-API-KEY`, `ANTHROPIC-API-KEY`, etc. | `mlflow-ai-gateway-secrets` on hub mlflow ns |
-| Many others | see `packages/components/hub-management/manifests/spoke-credentials/` and per-component ExternalSecret manifests |
+| `cluster-ryzen` (hub registration) | STATIC GitOps Secret in hub argocd ns — `server: https://ryzen-operator.tail286401.ts.net`, `bearerToken: "unused"` (Tailscale-ACL impersonation). NOT a KV token (the old `ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}` ExternalSecret path is retired). |
+| `GITHUB-PAT` | hub mirror key → `ryzen-shared-secrets` → ryzen ESO → `ghcr-pull-credentials` in all workload namespaces |
+| `GITHUB-OAUTH-CLIENT-ID-RYZEN` / `-SECRET-RYZEN`, `OAUTH-APP-GITHUB-CLIENT-ID-RYZEN` / `-SECRET-RYZEN` | hub mirror → ryzen ESO. The ryzen overlay repoints `workflow-builder-secrets` data[9,10,21,22] to these `*-RYZEN` keys. |
+| `OPENAI-API-KEY`, `ANTHROPIC-API-KEY`, etc. | resolved through `ryzen-shared-secrets` / `hub-secrets-store` for ryzen workloads; `mlflow-ai-gateway-secrets` is on the hub mlflow ns |
+| Many others | see hub mirror `packages/components/hub-management/manifests/spoke-secrets/ExternalSecret-ryzen-shared-secrets.yaml` + the per-cluster ES repoints in `packages/overlays/ryzen/kustomization.yaml` |
 
 ## What a healthy state looks like
 
@@ -76,9 +82,14 @@ ssh vpittamp@ryzen "kubectl --kubeconfig ~/.kube/hub-kubeconfig get app -n argoc
 ssh vpittamp@ryzen "argocd --server argocd-hub.tail286401.ts.net cluster list | grep ryzen"
 # expected: ryzen ... Successful
 
-# ClusterSecretStore Ready
-kubectl get clustersecretstore azure-keyvault-store
-# STATUS=Ready
+# ClusterSecretStore Ready (the spoke uses hub-secrets-store over Tailscale — NOT azure-keyvault-store)
+kubectl --context admin@ryzen get clustersecretstore hub-secrets-store
+# Ready=True
+kubectl --context admin@ryzen -n external-secrets get secret hub-secrets-token   # the scoped hub SA token
+kubectl --context admin@ryzen get externalsecrets -A | grep -vE 'SecretSynced|Valid'  # expect empty
+# Profile fit
+kubectl --context admin@ryzen get pods -A | grep -iE 'contour|kourier|nginx'   # contour+kourier, ZERO nginx
+kubectl --context admin@ryzen get ns gitea                                      # NotFound
 
 # Workflow-builder UI reachable
 curl -sk -o /dev/null -w "%{http_code}\n" https://workflow-builder-ryzen.tail286401.ts.net/
@@ -95,17 +106,17 @@ ssh vpittamp@ryzen "kubectl get nodes --selector=stacks.io/swebench-pool=dev-ben
 
 ## Path to current state from a fresh box
 
-1. **Pre-flight**: ensure prereqs from `SKILL.md` Step 1, including `TS_OAUTH_*`, `AZURE_*` env vars and `az login`.
-2. **Cleanup any prior state** (if recreating): `recreate-runbook.md` covers Tailscale device cleanup, Service VIP deletion, hub-side egress repointing.
-3. **Bootstrap**: `bash deployment/scripts/bootstrap-spoke-cluster.sh` (in stacks repo). Script labels worker nodes for SWE-bench Kueue, installs cert-manager + ESO + AWI + Tailscale operator, applies spoke-registration overlay.
-4. **Register with hub**: extract bearer token (long-lived, 1y), push to KV, refresh hub's ESO so `cluster-ryzen` Secret is populated (SKILL.md Step 3).
-5. **Sync JWKS to Azure** (SKILL.md Step 4) — mandatory after every cluster create; without it ESO is broken for ~5-15min while AAD caches.
-6. **Verify connectivity** (SKILL.md Step 5).
-7. **Push spoke-ryzen + merge Promoter PR** (SKILL.md Step 6).
-8. **Run data migrations** (SKILL.md Step 7).
-9. **Restart Headlamp Deployments** so they pick up the new ryzen bearer token (failure-modes.md "Failed to get authentication information").
+1. **Pre-flight**: ensure prereqs from `SKILL.md` Step 1 — only `TS_OAUTH_*` is required under `--ts-acl-mode`. No `AZURE_*` / `az login` for a ryzen recreate.
+2. **Cleanup any prior state** (if recreating): `recreate-runbook.md` covers Tailscale device cleanup (including the stale duplicate `ryzen-operator` device), kubeconfig cleanup, hub-side egress repointing.
+3. **Bootstrap**: `bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate --ts-acl-mode` (in stacks repo). Script labels worker nodes for SWE-bench Kueue, installs cert-manager + ESO + Tailscale operator (NO AWI webhook on the spoke), pre-installs Kueue, applies spoke-registration overlay, and applies the imperative spoke-transport half (ClusterSecretStore `hub-secrets-store`, egress Service, `hub-secrets-token`, SPOKE CoreDNS rewrite).
+4. **Hub registration is GitOps**: the static `cluster-ryzen` Secret already registers ryzen on the hub via Tailscale-ACL impersonation — no per-spoke bearer token, no KV round-trip (SKILL.md Step 3). Ensure the HUB CoreDNS rewrite (`ryzen-operator → ryzen-api-egress`) and `ryzen-api-egress` Service are live.
+5. **NO JWKS sync** for the ryzen path (spoke has no Azure). JWKS-to-Azure only matters for the hub's own AWI.
+6. **Verify connectivity** (SKILL.md Step 4 checks) — `curl --connect-to` forcing the `ryzen-operator` SNI → HTTP 200; `hub-secrets-store` Ready; ESes SecretSynced.
+7. **Advance inner-loop + (if hub-state changed) merge Promoter PR** (SKILL.md Step 5). `git push origin origin/main:refs/heads/inner-loop`.
+8. **Run data migrations** (SKILL.md Step 6).
+9. **Restart Headlamp Deployments** so they pick up the new ryzen connection (failure-modes.md "Failed to get authentication information").
 
-Total elapsed: ~20-30 min for steps 1-7, plus ~10 min if data migrations are needed.
+Total elapsed: ~8-10 min bootstrap+register under `--ts-acl-mode`, plus ~5-10 min hub convergence, plus ~10 min if data migrations are needed.
 
 ## What's NOT documented here
 
