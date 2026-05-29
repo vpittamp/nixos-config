@@ -82,6 +82,7 @@ in
     ../tools/postman.nix
     ../tools/kubernetes-apps.nix
     ../tools/remote-kubeconfig.nix
+    ../tools/fleet-kubeconfigs.nix  # token-free tailnet kubectl access to fleet clusters
     ../tools/konsole-profiles.nix
     ../tools/walker-commands.nix  # Dynamic command management for Walker (Feature 050)
     ../tools/voxtype.nix  # Push-to-talk speech-to-text config (Sway handles keybinding)
@@ -115,6 +116,7 @@ in
   modules.tools.fzf-file-search.enable = true;  # Floating fzf file search
   modules.tools.docker.enable = true; # Docker with 1Password integration
   modules.tools.remoteKubeconfig.enable = true;
+  modules.tools.fleetKubeconfigs.enable = true;  # `sync-fleet-kubeconfigs` → token-free fleet kubectl over Tailscale
   programs.pwa-url-router.enable = false;  # Feature 113: DISABLED - using Chrome as default browser
 
   # VSCode profile configuration
