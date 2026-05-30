@@ -111,4 +111,10 @@ if [[ -n "${CLAUDE_ENV_FILE:-}" && -n "$SESSION_ID" ]]; then
   } >> "$CLAUDE_ENV_FILE"
 fi
 
+# Emit an OTLP trace span so the cross-host panel can see this session. The
+# Node interceptor that would normally do this never loads (claude-code SEA
+# doesn't honor NODE_OPTIONS=--require) so the hook is the next-best place.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"$SCRIPT_DIR/otel-emit-span.sh" "$SESSION_ID" "claude_code.session_start" || true
+
 exit 0

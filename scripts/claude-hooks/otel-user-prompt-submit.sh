@@ -73,5 +73,11 @@ if [[ -n "$PROMPT" ]]; then
     }' > "$PROMPT_FILE" 2>/dev/null || true
 fi
 
+# Emit an OTLP trace span on every user prompt — refreshes the panel's
+# 10-minute activity window so the session stays visible while the user
+# is actively prompting. See otel-emit-span.sh for the SEA workaround context.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"$SCRIPT_DIR/otel-emit-span.sh" "$SESSION_ID" "claude_code.user_prompt" || true
+
 exit 0
 
