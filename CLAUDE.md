@@ -182,15 +182,15 @@ journalctl --user -u otel-ai-monitor -f            # Watch telemetry
 
 ## Observability Stack (Feature 129)
 
-Unified telemetry collection via Grafana Alloy, exporting to the ryzen K8s cluster's OTEL collector over Tailscale.
+Unified telemetry collection via Grafana Alloy, exporting to the hub K8s cluster's OTEL collector over Tailscale. The hub is the canonical observability sink (otel-collector + otel-clickhouse + grafana + tempo, 27d+ uptime); spokes forward in-cluster traces to it via `clickhouse-hub-egress`, and host AI CLI telemetry goes straight to it via the `otel-collector-hub.tail286401.ts.net` Tailscale Ingress.
 
 **Architecture**:
 ```
 AI CLIs → Alloy :4318 → [batch] → otel-ai-monitor :4320 (local Quickshell panel)
-                               → otel-collector-dev.tail286401.ts.net (Tailscale Ingress on dev spoke)
-                                 → K8s otel-collector (observability ns)
-                                   → clickhouse-hub-egress    (durable storage on hub)
-                                   → otlphttp/mlflow          (per-CLI MLflow experiments)
+                               → otel-collector-hub.tail286401.ts.net (Tailscale Ingress on hub)
+                                 → K8s otel-collector (hub observability ns)
+                                   → otel-clickhouse-tailnet (hub)         (durable storage)
+                                   → otlphttp/mlflow                       (per-CLI MLflow experiments)
 
 Cross-host panel view:
   each host's monitoring_data.py → clickhouse-hub.tail286401.ts.net:8123 (direct SQL)
@@ -222,10 +222,10 @@ curl -sk http://clickhouse-hub.tail286401.ts.net:8123/ping   # ClickHouse reacha
 ```nix
 services.grafana-alloy = {
   enable = true;
-  # k8sEndpoint default = https://otel-collector-dev.tail286401.ts.net (Tailscale Ingress on dev spoke; ryzen Ingress was retired post-A6)
+  # k8sEndpoint default = https://otel-collector-hub.tail286401.ts.net (Tailscale Ingress on hub; dev/ryzen spoke Ingresses retired post-A6)
   # NOTE: lokiEndpoint/mimirEndpoint still default to legacy *.cnoe.localtest.me:8443 URLs
-  # and silently fail (Loki/Mimir aren't deployed on ryzen — they're hub-side via
-  # clickhouse-hub-egress). Logs/metrics flow through the K8s otel-collector instead.
+  # and silently fail (Loki/Mimir aren't deployed; observability is hub-side). Logs/metrics
+  # flow through the K8s otel-collector on hub instead.
   enableNodeExporter = true;
   enableJournald = true;
   journaldUnits = [ "grafana-alloy.service" "otel-ai-monitor.service" ];
@@ -246,10 +246,10 @@ services.otel-ai-monitor = {
 
 **Known Issues / Troubleshooting**:
 - OTLP gRPC `4317` may be taken by `docker-proxy`; prefer OTLP HTTP on `4318` (Alloy default).
-- `*.cnoe.localtest.me:8443` URLs no longer work — they were idpbuilder/kind legacy that resolved to `::1`. The Talos migration moved everything to Tailscale Ingresses (`*-ryzen.tail286401.ts.net`) and hub-side ClickHouse (`clickhouse-hub.tail286401.ts.net`).
-- Quick checks for cross-host panel view:
-  - `curl -sk http://clickhouse-hub.tail286401.ts.net:8123/ping`       (returns "Ok.")
-  - `curl -sk https://otel-collector-dev.tail286401.ts.net/`           (HTTP 404 = healthy, no listener at /)
+- `*.cnoe.localtest.me:8443` URLs no longer work — they were idpbuilder/kind legacy that resolved to `::1`. Post-A6 hub-managed mode moved observability to hub-side Tailscale Ingresses (`otel-collector-hub.tail286401.ts.net`, `clickhouse-hub.tail286401.ts.net`, `grafana-hub.tail286401.ts.net`, etc.). The dev/ryzen spoke Ingresses for observability were retired (see stacks `389291160`, `ab457a041`).
+- Quick checks for the AI CLI telemetry pipeline:
+  - `curl -sk http://clickhouse-hub.tail286401.ts.net:8123/ping`                                          (returns "Ok.")
+  - `curl -sk -X POST https://otel-collector-hub.tail286401.ts.net/v1/traces -w "%{http_code}\n"`       (HTTP 200 = healthy)
   - Run the same SQL the panel runs: see `_CLICKHOUSE_SESSIONS_QUERY` in `home-modules/tools/i3_project_manager/cli/monitoring_data.py`.
 
 ## Testing

@@ -526,13 +526,16 @@ in
 
     k8sEndpoint = mkOption {
       type = types.str;
-      # Post-A6 hub-managed migration retired the ryzen-local tailscale Ingress
-      # (otel-collector-ryzen.tail286401.ts.net) — that hostname no longer
-      # resolves. The canonical OTEL collector endpoint is now the dev spoke's
-      # tailscale Ingress, which terminates TLS on port 443 and writes to the
-      # same hub ClickHouse via clickhouse-hub-egress.
-      default = "https://otel-collector-dev.tail286401.ts.net";
-      description = "Kubernetes OTEL collector endpoint (Tailscale-served Ingress on dev spoke).";
+      # The hub cluster is the canonical observability sink: it runs the
+      # central otel-collector + otel-clickhouse + grafana + tempo stack
+      # that spokes already forward to via clickhouse-hub-egress. Routing
+      # host Alloy at the hub-side Tailscale Ingress bypasses the spokes
+      # entirely and avoids the dev-spoke endpoint churn that followed the
+      # 2026-05-28 Tailscale-native secrets migration. Spokes' own
+      # collectors continue handling in-cluster K8s telemetry independently.
+      # See stacks: packages/components/addons/observability-clickhouse-shared/manifests/otel-collector-tailnet/Ingress-otel-collector-hub-tailnet.yaml
+      default = "https://otel-collector-hub.tail286401.ts.net";
+      description = "Kubernetes OTEL collector endpoint (Tailscale-served Ingress on hub).";
     };
 
     phoenixEndpoint = mkOption {

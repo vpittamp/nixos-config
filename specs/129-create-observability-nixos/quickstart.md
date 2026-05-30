@@ -15,10 +15,11 @@ Add to your host configuration (e.g., `configurations/thinkpad.nix`):
 {
   services.grafana-alloy = {
     enable = true;
-    # Use the current cluster (ryzen/thinkpad) service suffix:
-    # - otel-collector-ryzen.tail286401.ts.net
-    # - otel-collector-thinkpad.tail286401.ts.net
-    k8sEndpoint = "https://otel-collector-<cluster>.tail286401.ts.net";
+    # Canonical post-A6 endpoint: hub-side Tailscale Ingress for the central
+    # otel-collector. Dev/ryzen spoke Ingresses for observability were retired
+    # (stacks 389291160 dropped ryzen; the dev one was unstable after the
+    # Tailscale-native-secrets migration). The hub is the canonical sink.
+    k8sEndpoint = "https://otel-collector-hub.tail286401.ts.net";
   };
 
   # Optional: eBPF auto-instrumentation
