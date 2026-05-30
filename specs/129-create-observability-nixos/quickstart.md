@@ -19,7 +19,7 @@ Add to your host configuration (e.g., `configurations/thinkpad.nix`):
     # otel-collector. Dev/ryzen spoke Ingresses for observability were retired
     # (stacks 389291160 dropped ryzen; the dev one was unstable after the
     # Tailscale-native-secrets migration). The hub is the canonical sink.
-    k8sEndpoint = "http://otel-collector-hub.tail286401.ts.net:4318";
+    k8sEndpoint = "http://otel-collector-hub-1.tail286401.ts.net:4318";
   };
 
   # Optional: eBPF auto-instrumentation
