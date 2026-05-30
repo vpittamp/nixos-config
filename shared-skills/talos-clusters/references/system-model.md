@@ -193,6 +193,13 @@ packages/components/crossplane-hetzner-talos/
 packages/overlays/dev/        # components: [../../components/spoke-tailscale-secrets]
 packages/overlays/staging/
 packages/base/manifests/tailscale-ingresses/
+  Service-workflow-builder-tailnet.yaml       # L4 Tailscale LoadBalancer (NOT Ingress, NO LE); dev/staging
+packages/base/apps/tailnet-ca.yaml            # spoke-only app delivering packages/components/tailnet-ca
+packages/components/tailnet-ca/               # ES restores hub tailnet-ca -> cert-manager/tailnet-dev-ca + ClusterIssuer
+packages/components/workloads/workflow-builder-tailnet-lb/   # ryzen L4 LoadBalancer Service
+packages/components/workloads/workflow-builder/manifests/
+  ConfigMap-workflow-builder-tls-terminator.yaml   # nginx sidecar config (proxy buffers tuned, PR #2327)
+  Certificate-tailnet-wildcard.yaml                # *.tail286401.ts.net signed by tailnet-dev-ca
 packages/components/hub-base/manifests/ProxyGroup-kube-apiserver.yaml
 # AWI -> Tailscale spoke secret transport
 packages/components/spoke-tailscale-secrets/
@@ -204,6 +211,7 @@ packages/components/hub-management/manifests/spoke-secrets/
   Namespace-spoke-secrets.yaml
   ExternalSecret-dev-shared-secrets.yaml      # from azure-keyvault-store, hub-canonical
   ExternalSecret-ryzen-shared-secrets.yaml
+  ExternalSecret-tailnet-ca.yaml              # CLUSTER-NEUTRAL tailnet-ca (shared by all spokes)
   RBAC-spoke-secrets-reader.yaml
   Ingress-k8s-api-hub-ingress.yaml            # standalone Tailscale Ingress DEVICE (not a ProxyGroup VIP)
 scripts/gitops/render-workflow-builder-release-overlays.sh  # per-cluster ES repoints (dev-gated)
@@ -236,16 +244,92 @@ secrets over Tailscale:
   CoreDNS rewrite working; `azure-keyvault-store` on the spoke is gone. Verify
   `kubectl get clustersecretstore hub-secrets-store` is Ready on the spoke.
 
+## Tailnet Web Exposure (L4 LoadBalancer + in-cluster TLS)
+
+Spoke web apps on the tailnet no longer use a Tailscale-class Ingress with a
+per-hostname Let's Encrypt cert (the old `ingressClassName: tailscale` +
+ProxyClass `development-prod-cert`). Recreate churn exhausted LE's 5-certs/168h
+limit and made the apps unreachable (429). The current uniform pattern (PR
+#2319) is:
+
+- A Tailscale **L4 LoadBalancer Service** (`type: LoadBalancer`,
+  `loadBalancerClass: tailscale`, annotation `tailscale.com/hostname`, NO LE).
+- **HTTPS terminated IN-CLUSTER** by a per-pod nginx `tls-terminator` sidecar
+  serving a persistent self-signed wildcard `*.tail286401.ts.net`. Access stays
+  `https://workflow-builder-{dev,ryzen,staging}.tail286401.ts.net`;
+  `ORIGIN` / `APP_PUBLIC_URL` are unchanged.
+- `mcp-gateway` is dropped from the tailnet (in-cluster only);
+  `MCP_GATEWAY_BASE_URL` is
+  `http://mcp-gateway.workflow-builder.svc.cluster.local:8080`.
+
+Files: base
+`packages/base/manifests/tailscale-ingresses/Service-workflow-builder-tailnet.yaml`
+(dev/staging, CLUSTER-templated, 443->https-tls); ryzen
+`packages/components/workloads/workflow-builder-tailnet-lb/`; the sidecar +
+ConfigMap + wildcard Certificate in
+`packages/components/workloads/workflow-builder/manifests/`
+(`ConfigMap-workflow-builder-tls-terminator.yaml`,
+`Certificate-tailnet-wildcard.yaml`). The dev/staging overlays
+`$patch:delete` the old workflow-builder/mcp-gateway Tailscale Ingresses.
+
+The wildcard cert is signed by a persistent self-signed CA shared across the
+whole fleet (see "Tailnet Dev CA" below), so clients trust it once and the trust
+survives cluster recreation.
+
+### 502 "upstream sent too big header" gotcha (PR #2327)
+
+The tls-terminator nginx default 8k proxy header buffer overflows on SvelteKit
+auth's large `Set-Cookie` headers, returning **502 for BROWSERS while bare
+`curl` (small headers) returns 302** — the curl 302 masks the browser failure.
+Fix in the sidecar ConfigMap: `proxy_buffer_size 32k; proxy_buffers 8 32k;
+proxy_busy_buffers_size 64k; large_client_header_buffers 4 32k`. Verify HTTPS
+exposure with a real browser (or curl with full browser headers), and diagnose
+via the sidecar nginx error log.
+
+## Tailnet Dev CA (persistent self-signed CA contract)
+
+A self-signed CA **"PittampalliOrg Tailnet Dev CA"** is generated once (offline,
+10-year) and stored in Azure Key Vault as `TAILNET-DEV-CA-CRT` /
+`TAILNET-DEV-CA-KEY`. It is stable across cluster recreation. This is a
+cross-cutting contract alongside the cluster-Secret and spoke-transport
+contracts (PR #2319; CA `ignoreDifferences` + sweeper in PR #2322).
+
+- The hub mirrors it CLUSTER-NEUTRALLY into ns `spoke-secrets` Secret
+  `tailnet-ca`
+  (`packages/components/hub-management/manifests/spoke-secrets/ExternalSecret-tailnet-ca.yaml`).
+  The `spoke-secrets-reader` Role is namespace-wide, so every spoke reads the
+  SAME key — there is no per-cluster CA key.
+- Spoke base app `packages/components/tailnet-ca` (delivered via
+  `packages/base/apps/tailnet-ca.yaml`, spoke-only — the hub does not consume
+  `packages/base`): an ExternalSecret (`hub-secrets-store`) restores the CA into
+  `cert-manager/tailnet-dev-ca`, and a `tailnet-dev-ca` CA `ClusterIssuer` signs
+  the `*.tail286401.ts.net` wildcard Certificate (in the workflow-builder ns)
+  consumed by the tls-terminator sidecar.
+- Because the CA is identical on every cluster, clients trust it once and the
+  trust survives recreation (an improvement over idpbuilder, which regenerates
+  per-install). Workstation trust lives in `vpittamp/nixos-config`
+  (`modules/services/cluster-certs.nix` for system/curl/git +
+  `home-modules/tools/chromium.nix` for the Chrome NSS db seed, REQUIRED on
+  NixOS because `security.pki` does not cover Chrome; commit 44ba6324).
+
 ## Naming Models
 
 ProxyGroup service-hosts create Tailscale Services, e.g. `dev-api-v2`. They need
 tailnet policy `autoApprovers.services["svc:<hostname>"]` and the right
 ProxyGroup device tags/grants.
 
-Device-backed Tailscale Ingresses create tailnet devices, e.g.
-`workflow-builder-dev`, `mcp-gateway-dev`, and `openshell-dev`. Do not add
-`svc:*` approvals for these; stale service-host records can reserve the desired
-name and force the real device to register as `<name>-1`.
+Device-backed Tailscale exposures create tailnet devices, e.g.
+`workflow-builder-dev` and `openshell-dev`. Do not add `svc:*` approvals for
+these; stale service-host records can reserve the desired name and force the
+real device to register as `<name>-1`.
+
+`workflow-builder` is exposed via a Tailscale **L4 LoadBalancer Service**
+(`type: LoadBalancer`, `loadBalancerClass: tailscale`,
+`tailscale.com/hostname` annotation), NOT a Tailscale Ingress, and NOT Let's
+Encrypt (PR #2319). It still registers a device hostname
+(`workflow-builder-<spoke>`) and is still subject to `-1` suffix drift from stale
+devices. `mcp-gateway` was DROPPED from the tailnet (in-cluster only) — do not
+expect a `mcp-gateway-<spoke>` device. See "Tailnet Web Exposure" below.
 
 ## Headlamp Hub Connection
 

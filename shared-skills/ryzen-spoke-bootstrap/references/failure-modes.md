@@ -314,11 +314,13 @@ kubectl --context hub get svc ryzen-api-egress -n tailscale -o jsonpath='{.spec.
 
 ## ExternalSecrets failing on the gitea ClusterSecretStore
 
-**Symptom**: ExternalSecrets like `workflow-builder-gitea-admin`, `gitea-registry-creds-external` show `STATUS: SecretSyncedError, error: the desired SecretStore gitea is not ready`.
+**Symptom**: ExternalSecrets like `workflow-builder-gitea-admin` show `STATUS: SecretSyncedError, error: the desired SecretStore gitea is not ready`.
 
 **Cause**: The `gitea` ClusterSecretStore on ryzen expects a local Gitea instance. Post-A6 there's no local Gitea.
 
 **Fix**: Drop these ExternalSecrets from their source kustomizations. If a stub Secret is needed for compatibility, `kubectl create secret generic <name> --from-literal=username=disabled --from-literal=password=disabled`.
+
+> **Note (PR #2317):** The `gitea-registry-creds` imagePullSecret was a dead reference (the Secret was never produced on any cluster) and has been REMOVED fleet-wide from 23 manifests + 2 SAs. All images pull via `ghcr-pull-credentials` from `ghcr.io/pittampalliorg/*`. Do NOT re-add `gitea-registry-creds` (the only legitimate use left is build-side PUSH in `deployment/scripts/trigger-tekton-builds.sh`).
 
 ## ryzen-* Apps stuck OutOfSync — auto-sync disabled
 
@@ -364,11 +366,28 @@ kubectl --kubeconfig ~/.kube/config label node \
 
 **Symptom**: `https://workflow-builder-ryzen.tail286401.ts.net/` doesn't resolve. `kubectl get ingress -A` on ryzen shows nothing.
 
-**Cause**: Ryzen has no nginx-ingress-controller; the base `Ingress-workflow-builder.yaml` uses `ingressClassName: nginx`. Post-A6 the ryzen overlay deletes it, but historically the replacement (a Tailscale-class Ingress) wasn't added.
+**Cause**: Ryzen has no nginx-ingress-controller; the base `Ingress-workflow-builder.yaml` uses `ingressClassName: nginx`. Post-A6 the ryzen overlay deletes it.
 
-**Fix**: The ryzen overlay's workflow-builder kustomize patches list now includes JSON-6902 ops that mutate the base Ingress in place: replace `ingressClassName` → `tailscale`, replace `host` → `workflow-builder-ryzen`, add `tailscale.com/hostname` annotation + `tailscale.com/proxy-class: development-prod-cert` label, remove nginx-specific annotations. The Tailscale operator then registers a tailnet device named `workflow-builder-ryzen` automatically. (Commit `502bccd3c`.)
+**Fix (CURRENT, PR #2319):** workflow-builder is exposed via a Tailscale **L4 LoadBalancer Service** (`type: LoadBalancer`, `loadBalancerClass: tailscale`, annotation `tailscale.com/hostname: workflow-builder-ryzen`) — NOT an Ingress, and NO Let's Encrypt. HTTPS is terminated **in-cluster** by a per-pod nginx `tls-terminator` sidecar serving the self-signed `*.tail286401.ts.net` wildcard, so the LB only forwards TCP. The ryzen LB Service lives at `packages/components/workloads/workflow-builder-tailnet-lb/`; the sidecar + its ConfigMap + the wildcard Certificate live in `packages/components/workloads/workflow-builder/manifests/`. The Tailscale operator registers the tailnet device `workflow-builder-ryzen` automatically. Access: `https://workflow-builder-ryzen.tail286401.ts.net`.
 
-Note: `$patch: replace` strategic merge DOES NOT fully replace an Ingress in kustomize — fields end up merged, not replaced. Use JSON-6902 `op: replace` per field instead.
+> **History:** earlier this was a Tailscale-class **Ingress** with a per-hostname **Let's Encrypt** cert (ProxyClass `development-prod-cert`) — recreate churn exhausted LE's 5-certs/168h limit → 429 → unreachable (commit `502bccd3c`). ryzen then briefly used a plain-HTTP Tailscale LoadBalancer (PRs #2314/#2316). Both are SUPERSEDED by the L4-LB + in-cluster self-signed-CA HTTPS model (PR #2319). Do NOT re-add `ingressClassName: tailscale` or `development-prod-cert`.
+
+> **CA trust:** the wildcard is signed by the self-signed "PittampalliOrg Tailnet Dev CA" (KV `TAILNET-DEV-CA-CRT`/`-KEY`, mirrored hub → ns `spoke-secrets` Secret `tailnet-ca`, restored on the spoke into `cert-manager/tailnet-dev-ca` by the `tailnet-ca` app, signed by the `tailnet-dev-ca` `ClusterIssuer`). The SAME CA is reused on every cluster, so it survives recreation (improves on idpbuilder's per-install regeneration). Workstation trust is seeded by nixos-config (`modules/services/cluster-certs.nix` for system/curl/git + `home-modules/tools/chromium.nix` certutil seed of `~/.pki/nssdb` — REQUIRED because `security.pki` does NOT cover Chrome's own NSS db; nixos-config commit `44ba6324`).
+
+## workflow-builder 502 for browsers only — tls-terminator proxy buffers too small
+
+**Symptom**: `https://workflow-builder-ryzen.tail286401.ts.net/` returns **502** in a real browser, but `curl -sk` (which sends small headers) returns **302** — the curl success masks the browser failure.
+
+**Cause**: The `tls-terminator` sidecar's nginx ships an 8k default proxy header buffer. SvelteKit auth's large `Set-Cookie` response headers overflow it → nginx 502 ("upstream sent too big header"). Bare curl never trips it because its request/response headers are tiny.
+
+**Fix (PR #2327)**: Raise the buffers in the sidecar ConfigMap (`ConfigMap-workflow-builder-tls-terminator.yaml`):
+```nginx
+proxy_buffer_size       32k;
+proxy_buffers           8 32k;
+proxy_busy_buffers_size 64k;
+large_client_header_buffers 4 32k;
+```
+**LESSON**: verify HTTPS app exposure with a REAL browser (or curl carrying full browser-sized headers), not bare curl. Diagnose via the sidecar nginx error log.
 
 ## Headlamp UI: "Failed to get authentication information: ryzen"
 

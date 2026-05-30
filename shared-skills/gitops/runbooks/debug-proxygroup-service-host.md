@@ -12,7 +12,7 @@ Symptoms:
 
 This is different from Funnel. If GitHub webhooks to `tekton-hub.tail286401.ts.net` return `status_code: 0` or DNS is NXDOMAIN, use `debug-funnel-orphan-tag.md` instead.
 
-This is also different from device-backed promoted-spoke app Ingresses such as `workflow-builder-staging`, `mcp-gateway-staging`, and `phoenix-staging` when they do not set `tailscale.com/proxy-group`. Those register as Tailscale devices, not `svc:*` service-hosts. If a canonical hostname is missing, has a `-1` suffix, or has an empty Ingress address despite a working device, use `debug-device-backed-tailscale-ingress.md`.
+This is also different from device-backed promoted-spoke app Ingresses such as `phoenix-staging` when they do not set `tailscale.com/proxy-group`. Those register as Tailscale devices, not `svc:*` service-hosts. If a canonical hostname is missing, has a `-1` suffix, or has an empty Ingress address despite a working device, use `debug-device-backed-tailscale-ingress.md`. (`workflow-builder-*` is also a `tag:k8s` device — but as an L4 LoadBalancer Service, not an Ingress, since PR #2319; `mcp-gateway` is in-cluster only. See `reference/access-paths.md`.)
 
 This is also different from spoke cluster egress. Workflow-builder pods do **not** egress to `gitops-inventory-hub.tail286401.ts.net`; that hostname is a service-host VIP. They egress to the node-backed `gitops-inventory-hub-node.tail286401.ts.net:8080` through `gitops-inventory-hub-egress.tailscale.svc.cluster.local:8080`. If the failure is `/admin/deployments` showing "fetch failed" while the public VIP works, use `runbooks/track-promotion-state.md` and inspect the egress Service target.
 

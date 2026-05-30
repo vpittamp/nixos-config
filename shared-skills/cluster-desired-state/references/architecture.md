@@ -236,7 +236,72 @@ non-ryzen cluster must re-point its workload ExternalSecrets onto its OWN mirror
 
 ---
 
-## 7. Where everything lives (file map)
+## 7. Contract 3 — web exposure + persistent self-signed CA
+
+workflow-builder is reachable at `https://workflow-builder-{dev,ryzen,staging}.tail286401.ts.net`
+over a **Tailscale L4 LoadBalancer**, with HTTPS terminated **in-cluster** by a per-pod
+nginx `tls-terminator` sidecar serving a **persistent self-signed `*.tail286401.ts.net`
+wildcard**. NO Let's Encrypt, NO Tailscale Ingress. PR #2319.
+
+> **Why this replaced the old LE Tailscale Ingress.** dev/staging/ryzen used to expose
+> workflow-builder + mcp-gateway via a Tailscale-class Ingress (`ingressClassName: tailscale`)
+> with a per-hostname **Let's Encrypt** cert (ProxyClass `development-prod-cert`). Recreate
+> churn exhausted LE's 5-certs/168h limit -> 429 -> unreachable. (ryzen briefly used a plain-HTTP
+> Tailscale LoadBalancer, PRs #2314/#2316 — also superseded.) The dev/staging overlays now
+> `$patch:delete` the old workflow-builder/mcp-gateway Tailscale Ingresses.
+
+The end-to-end chain:
+
+```
+Azure KV  TAILNET-DEV-CA-CRT / TAILNET-DEV-CA-KEY   ("PittampalliOrg Tailnet Dev CA", 10-yr, offline-generated once)
+        |  hub ExternalSecret-tailnet-ca.yaml  (CLUSTER-NEUTRAL mirror)
+        v
+hub ns spoke-secrets  Secret `tailnet-ca`           (namespace-wide spoke-secrets-reader Role -> every spoke reads the SAME key)
+        |  spoke ExternalSecret over hub-secrets-store (Contract 2 transport)
+        v
+spoke cert-manager  Secret `tailnet-dev-ca`         (CA restored on the spoke)
+        |  CA ClusterIssuer `tailnet-dev-ca`
+        v
+`*.tail286401.ts.net` wildcard Certificate          (in the workflow-builder ns)
+        |  mounted by the tls-terminator nginx sidecar
+        v
+Tailscale L4 LoadBalancer Service -> sidecar :443 (HTTPS) -> workflow-builder
+```
+
+**Pieces:**
+- **CA in KV.** `TAILNET-DEV-CA-CRT` / `TAILNET-DEV-CA-KEY` — generated once offline,
+  10-year, stable across cluster recreation. Same CA on every cluster, so clients trust
+  it ONCE and the trust survives recreation (improves on idpbuilder's per-install CA).
+- **Hub mirror** (`packages/components/hub-management/manifests/spoke-secrets/ExternalSecret-tailnet-ca.yaml`):
+  mirrors the CA CLUSTER-NEUTRALLY into ns `spoke-secrets` Secret `tailnet-ca`. The
+  `spoke-secrets-reader` Role is namespace-wide, so there is **no per-cluster CA key**.
+  (ignoreDifferences for the ESO-added fields, PR #2322.)
+- **Spoke restore** (`packages/components/tailnet-ca`, delivered via
+  `packages/base/apps/tailnet-ca.yaml` — **spoke-only**; the hub does NOT consume
+  `packages/base`): an ExternalSecret (`hub-secrets-store`) restores the CA into
+  `cert-manager/tailnet-dev-ca`; the `tailnet-dev-ca` **CA `ClusterIssuer`** signs the
+  `*.tail286401.ts.net` wildcard Certificate (`Certificate-tailnet-wildcard.yaml`, in the
+  workflow-builder ns).
+- **L4 LoadBalancer + sidecar.** `type: LoadBalancer`, `loadBalancerClass: tailscale`,
+  annotation `tailscale.com/hostname`, 443->https-tls. The nginx `tls-terminator` sidecar
+  + its ConfigMap live in `packages/components/workloads/workflow-builder/manifests/`
+  (Deployment sidecar + `ConfigMap-workflow-builder-tls-terminator.yaml`). Service files:
+  base `packages/base/manifests/tailscale-ingresses/Service-workflow-builder-tailnet.yaml`
+  (dev/staging, CLUSTER-templated); ryzen `packages/components/workloads/workflow-builder-tailnet-lb/`.
+- **mcp-gateway is in-cluster ONLY** now (dropped from the tailnet). `MCP_GATEWAY_BASE_URL`
+  -> `http://mcp-gateway.workflow-builder.svc.cluster.local:8080`. `ORIGIN` /
+  `APP_PUBLIC_URL` stay `https://workflow-builder-<cluster>.tail286401.ts.net` (ryzen's
+  #2316 http flip was reverted).
+- **Workstation trust** (vpittamp/nixos-config, commit 44ba6324): to open the URLs without
+  a cert warning clients must trust the CA — `modules/services/cluster-certs.nix`
+  (`security.pki.certificates` for system/curl/git) AND `home-modules/tools/chromium.nix`
+  (`home.activation` certutil seed of `~/.pki/nssdb` — REQUIRED because `security.pki` does
+  NOT cover Chrome's own NSS db on NixOS). The old `CNOE Local Development CA`
+  (`*.cnoe.localtest.me`) idpbuilder trust is still present.
+
+---
+
+## 8. Where everything lives (file map)
 
 ```
 packages/overlays/hub/kustomization.yaml                 # hub root composition + cluster-config
@@ -247,7 +312,14 @@ packages/components/hub-management/                       # Promoter, headlamp, 
   .../spoke-credentials/ExternalSecret-cluster-ryzen.yaml # ryzen registration (KV ARGOCD-CLUSTER-RYZEN-*, host TCP passthrough)
   .../spoke-credentials/ExternalSecret-cluster-talos.yaml # dev/staging registration
   .../spoke-secrets/{Namespace,ExternalSecret-<c>-shared-secrets,RBAC-spoke-secrets-reader,Ingress-k8s-api-hub-ingress}.yaml
+  .../spoke-secrets/ExternalSecret-tailnet-ca.yaml        # Contract 3: cluster-neutral CA mirror -> Secret tailnet-ca
+  .../manifests/tailnet-device-sweeper/CronJob-tailnet-device-sweeper.yaml  # offline stale-device hygiene backstop (every 15m)
   .../apps/headlamp.yaml                                  # ryzen-api-egress Service (inline extraManifests)
+packages/components/tailnet-ca/manifests/{ExternalSecret-tailnet-ca,ClusterIssuer-tailnet-ca}.yaml  # spoke CA restore + CA ClusterIssuer
+packages/base/apps/tailnet-ca.yaml                       # spoke-only tailnet-ca App (hub does NOT consume packages/base)
+packages/base/manifests/tailscale-ingresses/Service-workflow-builder-tailnet.yaml  # dev/staging L4 LB (CLUSTER-templated, 443->https-tls)
+packages/components/workloads/workflow-builder-tailnet-lb/                # ryzen L4 LB Service
+packages/components/workloads/workflow-builder/manifests/{ConfigMap-workflow-builder-tls-terminator,Certificate-tailnet-wildcard}.yaml  # nginx sidecar + wildcard cert
 packages/components/hub-spoke-appsets/apps/{spoke-clusters,spoke-workloads}-appset.yaml
 packages/components/spoke-tailscale-secrets/             # CONTRACT.md + spoke-transport manifests
 packages/components/profiles/local-core-ryzen/           # ryzen profile (Contour+Kourier, AWI/profile exclusions)

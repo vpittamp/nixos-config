@@ -141,6 +141,21 @@ gh pr list --repo PittampalliOrg/stacks --state open --base env/hub --json numbe
 
 Expected: the proposed dry SHA advances to the latest main commit and a new `env/hub` PR appears. Merge it after checking the diff is expected.
 
+## Recover a MISSING `env/hub-next` branch after a hub promotion PR merges
+
+Symptom: after an `env/hub` promotion PR merges, GitOps Promoter logs `ChangeTransferPolicyNotReady` / "couldn't find remote ref env/hub-next" and `PromotionStrategy stacks-environments` goes NotReady, flooding warning events.
+
+This is NOT GitHub auto-deleting the branch (`delete_branch_on_merge=false`). Only `env/hub-next` is affected — the spoke `-next` branches self-heal because their hydrators are busy, but the idle hub hydrator does not recreate it. When `active == proposed` dry SHA (i.e. no pending hub change), just recreate the branch from `env/hub` and the Promoter reconciles to Ready:
+
+```bash
+# Confirm there is no pending hub change first.
+kubectl --kubeconfig ~/.kube/hub-config get changetransferpolicy stacks-environments-env-hub-8c9641d5 -n argocd -o json |
+  jq '{activeDry:.status.active.dry.sha, proposedDry:.status.proposed.dry.sha}'
+
+# Recreate the missing -next branch from env/hub.
+git push origin origin/env/hub:refs/heads/env/hub-next
+```
+
 ## Recover a failed UI patch hook
 
 Symptoms:

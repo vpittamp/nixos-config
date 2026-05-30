@@ -43,6 +43,17 @@ re-running db-seed creates no duplicate SWE-bench rows
 (`SEED_SWEBENCH_FIXTURES_SKIP_WHEN_ACTIVE=true`); SWE-bench Lite=300 / Verified=500;
 Kimi/DeepSeek agents registered.
 
+**Web exposure** (Contract 3, `architecture.md` §7): workflow-builder reachable at
+`https://workflow-builder-dev.tail286401.ts.net` via a Tailscale **L4 LoadBalancer**
+Service (base `Service-workflow-builder-tailnet.yaml`, CLUSTER-templated, 443->https-tls)
++ an in-cluster nginx `tls-terminator` sidecar serving the persistent self-signed
+`*.tail286401.ts.net` wildcard — **NO Let's Encrypt, NO Tailscale Ingress** (the dev
+overlay `$patch:delete`s the old workflow-builder/mcp-gateway Tailscale Ingresses). The
+`tailnet-ca` app (`packages/base/apps/tailnet-ca.yaml`) restores the shared CA into a
+`tailnet-dev-ca` CA ClusterIssuer that issues the wildcard cert. **mcp-gateway is
+in-cluster only** (`MCP_GATEWAY_BASE_URL=http://mcp-gateway.workflow-builder.svc.cluster.local:8080`);
+`ORIGIN`/`APP_PUBLIC_URL` stay `https://workflow-builder-dev...`. PR #2319.
+
 ## Path to state (ordered)
 
 0. **PREFLIGHT** — back up SWE-bench fixtures from the CURRENT dev BEFORE deleting

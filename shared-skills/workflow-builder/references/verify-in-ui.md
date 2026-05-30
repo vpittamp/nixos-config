@@ -22,7 +22,11 @@ If `spec_bytes = 0` or NULL, you only ran the POST and skipped the PUT. Run the 
 
 ## Open the canvas
 
-URL pattern: `https://workflow-builder-{cluster}.tail286401.ts.net/workspaces/<workspace-slug>/workflows/<workflow-id>` for promoted spokes; on ryzen typically `https://workflow-builder-ryzen.tail286401.ts.net/...`. See `Ingress-workflow-builder.yaml` in stacks for canonical hostnames.
+URL pattern: `https://workflow-builder-{cluster}.tail286401.ts.net/workspaces/<workspace-slug>/workflows/<workflow-id>` for promoted spokes; on ryzen typically `https://workflow-builder-ryzen.tail286401.ts.net/...`.
+
+Exposure (as of PR #2319): the app is reached over a Tailscale **L4 LoadBalancer Service** (`type: LoadBalancer`, `loadBalancerClass: tailscale`, `tailscale.com/hostname` annotation — NO Let's Encrypt / Tailscale Ingress); HTTPS is terminated **in-cluster** by a per-pod nginx `tls-terminator` sidecar serving a persistent self-signed wildcard `*.tail286401.ts.net` (signed by the `tailnet-dev-ca` ClusterIssuer; CA `"PittampalliOrg Tailnet Dev CA"`). Clients must trust that CA to avoid a cert warning (nixos-config seeds it system-wide + into Chrome's NSS db). For canonical hostnames see `Service-workflow-builder-tailnet.yaml` (dev/staging, in `packages/base/manifests/tailscale-ingresses/`) and `packages/components/workloads/workflow-builder-tailnet-lb/` (ryzen) in stacks — there is no longer an `Ingress-workflow-builder.yaml`.
+
+If a browser gets a **502 while `curl` returns 302**, the tls-terminator nginx header buffers overflowed on SvelteKit's large auth Set-Cookie headers — fixed via the sidecar ConfigMap proxy-buffer bump (PR #2327); verify HTTPS exposure with a real browser, not bare curl.
 
 Look for:
 

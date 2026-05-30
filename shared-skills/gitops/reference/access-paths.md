@@ -146,7 +146,23 @@ kubectl --kubeconfig ~/.kube/hub-config -n tailscale exec cluster-ingress-0 -- \
 
 If a ProxyGroup-hosted Ingress has no address, `tailscale cert <host>.tail286401.ts.net` says the domain is invalid, or `curl` to the VIP times out despite a healthy backing Service, use `runbooks/debug-proxygroup-service-host.md`.
 
-Promoted-spoke app URLs such as `workflow-builder-staging`, `mcp-gateway-staging`, and `phoenix-staging` are normally device-backed Tailscale Ingresses unless they explicitly set `tailscale.com/proxy-group`. They should not have `svc:*` service approvals. If one gets a `-1` suffix or its Ingress address is empty while the device works, use `runbooks/debug-device-backed-tailscale-ingress.md`.
+Promoted-spoke app URLs such as `phoenix-staging` are normally device-backed Tailscale Ingresses unless they explicitly set `tailscale.com/proxy-group`. They should not have `svc:*` service approvals. If one gets a `-1` suffix or its Ingress address is empty while the device works, use `runbooks/debug-device-backed-tailscale-ingress.md`.
+
+### Workflow-builder web URLs (L4 LoadBalancer + in-cluster TLS)
+
+`workflow-builder` is reached at `https://workflow-builder-{dev,ryzen,staging}.tail286401.ts.net`. As of PR #2319 it is **not** a Tailscale Ingress and uses **no Let's Encrypt**:
+
+- A Tailscale **L4 LoadBalancer Service** (`type: LoadBalancer`, `loadBalancerClass: tailscale`, annotation `tailscale.com/hostname`) puts the device on the tailnet and forwards `443` to the pod's `https-tls` port.
+- HTTPS is terminated **in-cluster** by a per-pod nginx `tls-terminator` sidecar serving a persistent self-signed wildcard `*.tail286401.ts.net` (signed by the `tailnet-dev-ca` `ClusterIssuer`, see below).
+- Because the CA is stable across cluster recreation, this avoids LE's 5-certs/168h exact-hostname limit (the recreate-churn failure mode the old `ingressClassName: tailscale` + `development-prod-cert` exposure kept hitting).
+
+Manifests: base `packages/base/manifests/tailscale-ingresses/Service-workflow-builder-tailnet.yaml` (dev/staging, CLUSTER-templated, 443→`https-tls`); ryzen `packages/components/workloads/workflow-builder-tailnet-lb/`; sidecar + `ConfigMap-workflow-builder-tls-terminator.yaml` + `Certificate-tailnet-wildcard.yaml` under `packages/components/workloads/workflow-builder/manifests/`. The dev/staging overlays `$patch:delete` the old workflow-builder/mcp-gateway Tailscale Ingresses.
+
+**`mcp-gateway` is no longer on the tailnet** — it is in-cluster only; workflow-builder reaches it at `MCP_GATEWAY_BASE_URL=http://mcp-gateway.workflow-builder.svc.cluster.local:8080`. `ORIGIN`/`APP_PUBLIC_URL` stay `https://workflow-builder-<cluster>.tail286401.ts.net` (ryzen's #2316 plain-HTTP flip was reverted).
+
+**Workstation CA trust.** To open these URLs without a cert warning, the client must trust the self-signed **"PittampalliOrg Tailnet Dev CA"**. nixos-config trusts it (commit `44ba6324`) in `modules/services/cluster-certs.nix` (system/curl/git) AND `home-modules/tools/chromium.nix` (NSS seed of `~/.pki/nssdb` — REQUIRED because `security.pki` does not cover Chrome on NixOS). Otherwise use `curl -k`.
+
+**502 for browsers but 302 for curl (PR #2327):** the `tls-terminator` nginx default 8k proxy header buffer overflows on SvelteKit auth's large `Set-Cookie` headers, so **browsers get 502 while bare `curl` (small headers) returns 302**, masking it. Fix is already in the sidecar ConfigMap (`proxy_buffer_size 32k; proxy_buffers 8 32k; proxy_busy_buffers_size 64k; large_client_header_buffers 4 32k`). Lesson: verify HTTPS app exposure with a real browser (or `curl` with full browser headers), and diagnose via the sidecar nginx error log.
 
 ### Workflow-builder deployment inventory paths
 

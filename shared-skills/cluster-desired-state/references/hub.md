@@ -48,9 +48,16 @@ whole fleet. Shared model in `architecture.md`; build steps in
   source**, KV `keyvault-thcmfmoo5oeow` via Workload Identity) + `argocd` healthy.
 - ns `spoke-secrets`: ExternalSecrets `dev-shared-secrets` (~80 keys) and
   `ryzen-shared-secrets` (~77 keys) both SecretSynced — the hub-side mirror spokes
-  read over Tailscale.
+  read over Tailscale. PLUS `tailnet-ca` (Contract 3): a CLUSTER-NEUTRAL mirror of the
+  persistent self-signed CA (`TAILNET-DEV-CA-CRT/KEY`) into Secret `tailnet-ca` that
+  every spoke reads via the namespace-wide `spoke-secrets-reader` Role — no per-cluster
+  CA (`ExternalSecret-tailnet-ca.yaml`, `architecture.md` §7). PR #2319.
+- ns `tailscale`: CronJob `tailnet-device-sweeper` (every 15m) deletes OFFLINE stale
+  spoke tailnet devices (`lastSeen > 30m`) as a hygiene BACKSTOP so dead devices don't
+  force `-N` hostname collisions; the hard on-recreate guarantee is still the gated
+  `cleanup-tailnet-devices.sh` (`../runbooks/recovery-and-gotchas.md` §F). PRs #2322/#2325.
 - `env/hub` branch exists on origin (the branch hub ArgoCD syncs from); `env/hub-next`
-  for hydration.
+  for hydration (can go MISSING after a hub promotion PR merges — see gotchas).
 
 ## Path to state (ordered)
 
@@ -96,7 +103,9 @@ whole fleet. Shared model in `architecture.md`; build steps in
 7. **TAILSCALE-NATIVE SPOKE SECRET TRANSPORT** (hub side of Contract 2). The
    `spoke-secrets` mirror + standalone `k8s-api-hub-ingress` device + the
    spoke-secrets-reader RBAC + the `tag:k8s->tag:k8s` impersonate ACL grant — see
-   `architecture.md` §4.
+   `architecture.md` §4. Plus the **Contract 3** cluster-neutral `tailnet-ca` mirror
+   (`ExternalSecret-tailnet-ca.yaml`) and the `tailnet-device-sweeper` CronJob (ns
+   tailscale) — see `architecture.md` §7.
 8. **CROSSPLANE SPOKE LIFECYCLE** (crossplane-hetzner-talos). Crossplane + providers +
    functions; CRDs `platform.pittampalli.io` (claim -> XR -> Composition). hcloud token
    from `ExternalSecret-hcloud-api-token`.
@@ -132,6 +141,13 @@ git ls-remote origin env/hub                                                    
 - ArgoCD Lua health overrides for Promoter CRDs are REQUIRED or sync deadlocks when
   spokes are unreachable; ESO `certController.enabled=false` for Talos/Flannel webhook
   timeouts. `ClientSideApplyMigration=false` is a **ryzen-only** overlay patch, NOT hub.
+- **`env/hub-next` can go MISSING after a hub promotion PR merges** — GitOps Promoter
+  `ChangeTransferPolicyNotReady` "couldn't find remote ref env/hub-next" -> PromotionStrategy
+  `stacks-environments` NotReady (floods warning events). NOT GitHub auto-delete
+  (`delete_branch_on_merge=false`); ONLY `env/hub-next` is affected (spoke `-next` branches
+  self-heal via their busy hydrators; the idle hub hydrator does not recreate it). Fix when
+  active==proposed dry SHA (no pending hub change): recreate it
+  `git push origin origin/env/hub:refs/heads/env/hub-next` — the Promoter reconciles to Ready.
 - The shared operator manifest hardcodes `OPERATOR_HOSTNAME=ryzen-operator` — the hub
   operator device is also `ryzen-operator` (latent naming collision). Now purely
   cosmetic for connectivity: hub->ryzen rides the ryzen HOST device's raw TCP

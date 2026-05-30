@@ -5,7 +5,8 @@
 Use this when workflow-builder or one of its system services works on ryzen but fails after promotion to dev or staging. Typical symptoms:
 
 - `workflow-builder-dev` loads but backend calls point at ryzen, localhost, or missing hostnames.
-- `mcp-gateway-dev.tail286401.ts.net` or `phoenix-dev.tail286401.ts.net` does not resolve, times out, or is not declared.
+- `phoenix-dev.tail286401.ts.net` does not resolve, times out, or is not declared.
+- `https://workflow-builder-dev.tail286401.ts.net` is unreachable, or returns 502 in a browser while `curl` returns 302 (see the tls-terminator buffer gotcha in Notes).
 - The dev/staging Deployment lacks `MCP_GATEWAY_BASE_URL`, `PUBLIC_PHOENIX_URL`, `PHOENIX_BASE_URL`, or `PHOENIX_API_BASE_URL`.
 - `kubectl --context dev-api-v2.tail286401.ts.net get nodes` fails even though the Crossplane fallback kubeconfig works.
 - A stale ExternalSecret, Service, or registry credential remains from an old ryzen/local-only app shape.
@@ -17,7 +18,7 @@ Ryzen proves the hub-managed-spoke shape on local Talos Docker. Dev and staging 
 | Concern | Declarative owner |
 |---|---|
 | Runtime URLs for workflow-builder pods | `packages/components/hub-spoke-appsets/apps/spoke-workloads-appset.yaml` |
-| Tailscale Ingresses for app/service hostnames | `packages/base/manifests/tailscale-ingresses/` plus per-spoke overlays |
+| Tailnet app/service exposures (device-backed Ingresses like `phoenix-*`, plus the workflow-builder L4 LoadBalancer Service) | `packages/base/manifests/tailscale-ingresses/` plus per-spoke overlays |
 | Tailscale ACL policy and Kubernetes API grants | `policy.hujson` |
 | Hub/root ApplicationSet changes | `origin/main` → `env/hub-next` → `env/hub` through `stacks-environments` |
 | Dev/staging rendered workload changes | `origin/main` → `env/spokes-<env>-next` → `env/spokes-<env>` through `workflow-builder-release` |
@@ -32,9 +33,10 @@ Start with the rendered desired state before touching the live cluster:
 cd /path/to/stacks/main
 
 kubectl kustomize packages/overlays/dev/tailscale-ingresses | \
-  rg 'workflow-builder-dev|mcp-gateway-dev|phoenix-dev'
+  rg 'workflow-builder-dev|phoenix-dev'
 kubectl kustomize packages/overlays/staging/tailscale-ingresses | \
-  rg 'workflow-builder-staging|mcp-gateway-staging|phoenix-staging'
+  rg 'workflow-builder-staging|phoenix-staging'
+# workflow-builder is an L4 LoadBalancer Service (not an Ingress); mcp-gateway is no longer on the tailnet.
 
 kubectl kustomize packages/overlays/hub | \
   rg 'MCP_GATEWAY_BASE_URL|PUBLIC_PHOENIX_URL|PHOENIX_BASE_URL|PHOENIX_API_BASE_URL'
@@ -56,11 +58,11 @@ If `dev-api-v2` is unavailable, use `runbooks/access-spoke-cluster-fallback.md` 
 
 ## Fix steps
 
-1. Declare missing runtime URLs in the `spoke-workloads` ApplicationSet patch for workflow-builder. Use cluster-derived hostnames:
+1. Declare missing runtime URLs in the `spoke-workloads` ApplicationSet patch for workflow-builder. Use cluster-derived hostnames for tailnet-exposed services, and the in-cluster Service DNS for `mcp-gateway` (dropped from the tailnet in PR #2319):
 
 ```yaml
 - name: MCP_GATEWAY_BASE_URL
-  value: https://mcp-gateway-{{cluster}}.tail286401.ts.net
+  value: http://mcp-gateway.workflow-builder.svc.cluster.local:8080
 - name: PUBLIC_PHOENIX_URL
   value: https://phoenix-{{cluster}}.tail286401.ts.net
 - name: PHOENIX_BASE_URL
@@ -69,33 +71,39 @@ If `dev-api-v2` is unavailable, use `runbooks/access-spoke-cluster-fallback.md` 
   value: https://phoenix-{{cluster}}.tail286401.ts.net
 ```
 
-2. Add missing Tailscale Ingresses to `packages/base/manifests/tailscale-ingresses/`. Use the `*-CLUSTER` placeholder plus `stacks.io/hostname-segments` so dev/staging/talos overlays rewrite the hostname. Promoted-spoke app Ingresses are normally device-backed and do not set `tailscale.com/proxy-group`:
+`ORIGIN` and `APP_PUBLIC_URL` stay `https://workflow-builder-{{cluster}}.tail286401.ts.net` (ryzen's #2316 plain-HTTP flip was reverted).
+
+2. Add missing tailnet exposures to `packages/base/manifests/tailscale-ingresses/`. Use the `*-CLUSTER` placeholder plus `stacks.io/hostname-segments` so dev/staging/talos overlays rewrite the hostname.
+
+   - **workflow-builder** is an L4 **LoadBalancer Service** + in-cluster `tls-terminator` sidecar (PR #2319), declared in `Service-workflow-builder-tailnet.yaml` (443→`https-tls`, NO Let's Encrypt). The dev/staging overlays `$patch:delete` the old workflow-builder/mcp-gateway Tailscale Ingresses — do not re-add them.
+   - **Remaining device-backed Ingresses** (e.g. `phoenix-*`) do not set `tailscale.com/proxy-group`:
 
 ```yaml
 metadata:
   annotations:
     stacks.io/hostname-segments: "3"
-    tailscale.com/hostname: mcp-gateway-CLUSTER
+    tailscale.com/hostname: phoenix-CLUSTER
 spec:
+  ingressClassName: tailscale
   tls:
     - hosts:
-        - mcp-gateway-CLUSTER
+        - phoenix-CLUSTER
   rules:
-    - host: mcp-gateway-CLUSTER
+    - host: phoenix-CLUSTER
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: mcp-gateway
+                name: phoenix
                 port:
-                  number: 8080
+                  number: 6006
 ```
 
 3. Add or remove Tailscale ACL entries in `policy.hujson` according to the resource type.
 
-Do **not** add `autoApprovers.services["svc:<hostname>"]` for device-backed app Ingresses such as `workflow-builder-dev`, `workflow-builder-staging`, `mcp-gateway-dev`, `mcp-gateway-staging`, `phoenix-dev`, or `phoenix-staging` unless the manifest explicitly uses a ProxyGroup/service-host model. These hostnames register as Tailscale devices, usually tagged `tag:k8s`.
+Do **not** add `autoApprovers.services["svc:<hostname>"]` for device-backed app Ingresses such as `phoenix-dev` or `phoenix-staging` unless the manifest explicitly uses a ProxyGroup/service-host model. These hostnames register as Tailscale devices, usually tagged `tag:k8s`. (`workflow-builder-{dev,staging}` is an L4 LoadBalancer Service that also registers as a `tag:k8s` device, not a `svc:*` service — same rule applies; `mcp-gateway` is in-cluster only and needs no ACL.)
 
 Only add `autoApprovers.services` entries for real service-host or Tailscale Service resources. For spoke Kubernetes API VIPs, ensure `svc:dev-api-v2` and `svc:staging-api-v2` are approved and `tag:spoke-api` has a Kubernetes impersonation grant to `tag:k8s` with `system:masters`.
 
@@ -104,9 +112,11 @@ If a device-backed hostname was previously declared as `svc:<hostname>`, remove 
 4. Remove orphaned live objects only when they are not owned by a current Argo Application. Prefer declarative deletion by removing the source manifest, but stale resources from an older app name may require one live cleanup:
 
 ```bash
-KUBECONFIG=/tmp/dev-kubeconfig kubectl -n workflow-builder delete externalsecret \
-  gitea-registry-creds-external --ignore-not-found
+KUBECONFIG=/tmp/dev-kubeconfig kubectl -n workflow-builder delete ingress \
+  mcp-gateway-tailscale --ignore-not-found   # retired in PR #2319; mcp-gateway is in-cluster only now
 ```
+
+Do **not** re-create a `gitea-registry-creds` imagePullSecret. PR #2317 removed it fleet-wide (23 manifests + 2 SAs) because the secret was never produced on any cluster; it was a dead reference. All images pull from `ghcr.io/pittampalliorg/*` via `ghcr-pull-credentials`. (`deployment/scripts/trigger-tekton-builds.sh` keeps a same-named build-side PUSH credential — that is different and intentionally retained.)
 
 5. Commit and push exact paths:
 
@@ -149,9 +159,9 @@ kubectl --context dev-api-v2.tail286401.ts.net -n workflow-builder get deploy wo
 # Public hostnames and in-cluster service path work.
 dig +short workflow-builder-dev.tail286401.ts.net
 dig +short workflow-builder-dev-1.tail286401.ts.net  # should be empty
-curl -sSI --max-time 10 https://workflow-builder-dev.tail286401.ts.net | head -3
-curl -sSI --max-time 10 https://phoenix-dev.tail286401.ts.net | head -3
-curl -sSI --max-time 10 https://mcp-gateway-dev.tail286401.ts.net/health | head -3
+# Use -k unless the workstation trusts the Tailnet Dev CA (nixos-config 44ba6324).
+curl -k -sSI --max-time 10 https://workflow-builder-dev.tail286401.ts.net | head -3
+curl -k -sSI --max-time 10 https://phoenix-dev.tail286401.ts.net | head -3
 kubectl --context dev-api-v2.tail286401.ts.net -n workflow-builder run curl-mcp-check \
   --rm -i --restart=Never --image=curlimages/curl:8.10.1 --command -- \
   curl -sS -I --max-time 10 http://mcp-gateway.workflow-builder.svc.cluster.local:8080/health
@@ -160,8 +170,8 @@ kubectl --context dev-api-v2.tail286401.ts.net -n workflow-builder run curl-mcp-
 Expected:
 - Argo apps are `Synced` and `Healthy`.
 - `WORKFLOW_BUILDER_ENV=dev`.
-- MCP and Phoenix URLs are `*-dev.tail286401.ts.net`.
-- `mcp-gateway-dev` and in-cluster `mcp-gateway` both return `200`.
+- `MCP_GATEWAY_BASE_URL` is the in-cluster `http://mcp-gateway...:8080`; Phoenix URLs are `*-dev.tail286401.ts.net`.
+- `workflow-builder-dev` returns `200` in a browser (not just `curl`) and in-cluster `mcp-gateway` returns `200`.
 - `workflow-builder-release` promotes `env/spokes-dev` first; staging follows after dev `argocd-health` is successful.
 
 ## Notes
@@ -170,3 +180,4 @@ Expected:
 - Do not hand-patch Deployment env values except to prove a hypothesis; live patches will be reverted by ArgoCD and hide the missing declaration.
 - Tailscale ACL changes are asynchronous through `.github/workflows/tailscale-acl.yml`. Re-authenticate ProxyGroups only after the policy workflow succeeds.
 - `argocd app get --hard-refresh` can trigger an existing operation; if an app reports `operation already in progress`, poll the app before forcing a sync.
+- **`workflow-builder-<cluster>` 502 for browsers, 302 for curl (PR #2327).** The `tls-terminator` nginx default 8k proxy header buffer overflows on SvelteKit auth's large `Set-Cookie` headers, so browsers get 502 while bare `curl` (small headers) returns 302 — masking it. Fix lives in the sidecar `ConfigMap-workflow-builder-tls-terminator.yaml` (`proxy_buffer_size 32k; proxy_buffers 8 32k; proxy_busy_buffers_size 64k; large_client_header_buffers 4 32k`). Always verify HTTPS exposure with a real browser (or `curl` with full browser headers), and diagnose via the sidecar nginx error log.

@@ -22,6 +22,7 @@ This is the authoritative description of "what a freshly-bootstrapped ryzen clus
 | Tailscale operator | chart from `pkgs.tailscale.com/helmcharts`, `apiServerProxyConfig.mode=true` + `allowImpersonation=true` | `OPERATOR_HOSTNAME=ryzen-operator`, `APISERVER_PROXY=true`, exposes ryzen kube-api as device `ryzen-operator.tail286401.ts.net` |
 | Contour + Kourier | ArgoCD-managed | ingress (NOT ingress-nginx); Knative serving uses net-kourier |
 | local-path-provisioner | `apps/local-path-provisioner.yaml` (ArgoCD-managed) | host-path StorageClass for PVCs |
+| tailnet-ca | spoke base app `packages/base/apps/tailnet-ca.yaml` → component `packages/components/tailnet-ca` (spoke-only — hub does not consume `packages/base`) | restores the shared self-signed CA into `cert-manager/tailnet-dev-ca` (ExternalSecret on `hub-secrets-store`), defines the `tailnet-dev-ca` CA `ClusterIssuer` that signs the `*.tail286401.ts.net` wildcard Certificate for the tls-terminator sidecar (PR #2319) |
 | ArgoCD (HUB only) | controller `v3.4.x`, chart `9.5.x` | exec.enabled=true for web terminal |
 | GitOps Promoter (HUB only) | controller `v0.30.0`, chart `0.9.2` | manages `env/hub-next → env/hub` and `env/spokes-{dev,staging}-next → env/spokes-{dev,staging}` PRs. NOTE: ryzen's `env/spokes-ryzen` has NO Promoter. |
 
@@ -34,7 +35,7 @@ This is the authoritative description of "what a freshly-bootstrapped ryzen clus
 | Hub `argocd-application-controller` | ryzen kube-api | cluster Secret `server: https://ryzen-operator.tail286401.ts.net` (wire SNI = the operator's own hostname, strictly validated) → HUB CoreDNS rewrite `ryzen-operator.tail286401.ts.net → ryzen-api-egress.tailscale.svc.cluster.local` → ExternalName Service (`tailscale.com/tailnet-fqdn: ryzen-operator.tail286401.ts.net`) → operator-rendered egress pod → spoke operator apiserver-proxy. Auth = Tailscale-ACL impersonation (`bearerToken "unused"`, ACL `tag:k8s → tag:k8s-operator` impersonate system:masters). |
 | **Ryzen ESO** (`hub-secrets-store`) | **hub kube-api** (ns `spoke-secrets`) | RYZEN CoreDNS rewrite `k8s-api-hub-ingress.tail286401.ts.net → k8s-api-hub-egress.tailscale.svc.cluster.local` → ryzen egress → standalone hub Tailscale **Ingress DEVICE** `k8s-api-hub-ingress` (NOT the k8s-api-hub ProxyGroup VIP) → hub kube-api. Auth = SA token (`external-secrets/hub-secrets-token`); ACL `tag:k8s → tag:k8s` impersonate `tailscale:spoke-secrets-reader`. `caBundle = ISRG Root X1`. |
 | Hub Headlamp | ryzen kube-api | same `ryzen-api-egress` path, separate kubeconfig from initContainer |
-| Browser | workflow-builder UI on ryzen | Tailscale Ingress (class `tailscale`) → device `workflow-builder-ryzen.tail286401.ts.net` → ryzen Service `workflow-builder:3000` |
+| Browser | workflow-builder UI on ryzen | Tailscale **L4 LoadBalancer** Service (`type: LoadBalancer`, `loadBalancerClass: tailscale`, annotation `tailscale.com/hostname: workflow-builder-ryzen`, NO Let's Encrypt) → device `workflow-builder-ryzen.tail286401.ts.net` → per-pod nginx **`tls-terminator` sidecar** (terminates HTTPS with the self-signed `*.tail286401.ts.net` wildcard) → ryzen Service `workflow-builder:3000`. mcp-gateway is NO LONGER on the tailnet (in-cluster only). (PR #2319) |
 | Ryzen pods | hub Postgres / ClickHouse / MLflow / Headlamp / ArgoCD | tailnet egress ExternalName Services in ryzen's `tailscale` namespace (`*-hub-egress`, `*-hub-node`) |
 | Ryzen pods | dev/staging Postgres | tailnet egress Services in ryzen's `tailscale` namespace (`*-workflow-builder-postgres-egress`) |
 
@@ -57,7 +58,7 @@ GitHub PittampalliOrg/stacks
 
 - All clusters pull from `ghcr.io/pittampalliorg/*`. Pre-A6 local Gitea registry on ryzen is retired.
 - The `ghcr-pull-credentials` Secret is materialized into every workload namespace by ESO from KV secret `GITHUB-PAT` (NOT `GHCR-PAT` — that name doesn't exist).
-- ImagePullSecret name in Pod specs: `ghcr-pull-credentials` (note: NOT `gitea-registry-creds` even though some legacy Pod specs may still reference it as a fallback).
+- ImagePullSecret name in Pod specs: `ghcr-pull-credentials`. The `gitea-registry-creds` imagePullSecret was a dead reference (the Secret was never produced on any cluster) and was REMOVED fleet-wide from 23 manifests + 2 SAs (PR #2317) — do NOT re-add it. (`deployment/scripts/trigger-tekton-builds.sh` still uses `gitea-registry-creds` as a build-side PUSH credential — different thing, kept.)
 
 ## Secrets (post-bootstrap — AWI→Tailscale transport)
 
@@ -91,9 +92,13 @@ kubectl --context admin@ryzen get externalsecrets -A | grep -vE 'SecretSynced|Va
 kubectl --context admin@ryzen get pods -A | grep -iE 'contour|kourier|nginx'   # contour+kourier, ZERO nginx
 kubectl --context admin@ryzen get ns gitea                                      # NotFound
 
-# Workflow-builder UI reachable
+# Workflow-builder UI reachable (HTTPS terminated by the in-cluster tls-terminator sidecar; -k because
+# the wildcard is signed by the self-signed "PittampalliOrg Tailnet Dev CA")
 curl -sk -o /dev/null -w "%{http_code}\n" https://workflow-builder-ryzen.tail286401.ts.net/
 # expected: 302 (redirect to /auth/sign-in)
+# NOTE: bare curl sends small headers — it can return 302 while a REAL browser gets a 502
+# ("upstream sent too big header") from the sidecar's default proxy buffers. Verify with a
+# browser too. See failure-modes.md "workflow-builder 502 for browsers only".
 
 # SWE-bench can launch (BENCHMARK_ARGOCD env vars unset on ryzen workflow-builder)
 ssh vpittamp@ryzen "kubectl get deploy workflow-builder -n workflow-builder -o yaml | grep BENCHMARK_ARGOCD"

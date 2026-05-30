@@ -27,9 +27,11 @@ bootstrap `--config-patch` adds `cluster.apiServer.certSANs:
 [ryzen.tail286401.ts.net, 100.96.102.1]` so the apiserver's own cert verifies end-to-end
 (no operator apiserver-proxy, no Let's Encrypt — `../references/architecture.md` §5). It
 also restarts the host `tailscale-serve-k8s-apiserver` unit (Docker re-maps the port).
-The `--recreate` path also runs `cleanup-tailnet-devices.sh` to delete stale devices
-(see `recovery-and-gotchas.md` §F), `talosctl cluster destroy`, and deletes the old kube
-context. It produces a bare Talos-Docker cluster — the hub deploys everything else.
+The `--recreate` path also runs the gated `cleanup-tailnet-devices.sh` to delete stale
+devices (the HARD pre-recreate guarantee; the hub `tailnet-device-sweeper` CronJob is only
+an offline-device hygiene backstop — see `recovery-and-gotchas.md` §F), `talosctl cluster
+destroy`, and deletes the old kube context. It produces a bare Talos-Docker cluster — the
+hub deploys everything else.
 (Legacy `--ts-acl-mode` = the deprecated operator apiserver-proxy + impersonation path;
 do not use it for ryzen.)
 
@@ -101,6 +103,18 @@ Run the full block in `../references/ryzen.md` "Verification". Pass = Talos v1.1
 k8s v1.36.0, contour+kourier (zero nginx), ns gitea NotFound, `hub-secrets-store`
 Ready=True, all `ryzen-*` apps Synced/Healthy on the hub, cluster-ryzen server =
 `https://ryzen.tail286401.ts.net:6443` (`insecure:false` + caData), inner-loop count 0.
+
+**Web exposure post-sync** (Contract 3, `../references/architecture.md` §7). Confirm the
+CA/wildcard/sidecar chain comes up: the `tailnet-dev-ca` CA `ClusterIssuer` Ready -> the
+`*.tail286401.ts.net` wildcard Certificate issued -> the workflow-builder `tls-terminator`
+sidecar serves :443, so `https://workflow-builder-ryzen.tail286401.ts.net` loads in a REAL
+browser (NOT bare curl — 502 buffer gotcha, `recovery-and-gotchas.md` §I). NO Let's Encrypt.
+```bash
+C="kubectl --context admin@ryzen"
+$C get clusterissuer tailnet-dev-ca                                       # Ready=True
+$C -n workflow-builder get certificate                                    # tailnet wildcard Ready=True
+$C -n workflow-builder get svc workflow-builder-tailnet -o wide           # type LoadBalancer (loadBalancerClass tailscale), EXTERNAL-IP assigned
+```
 
 ## 8. Post-bootstrap data migrations (optional)
 

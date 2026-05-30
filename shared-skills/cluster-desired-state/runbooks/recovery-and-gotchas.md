@@ -183,8 +183,20 @@ suffixes. Hub's `<spoke>-api-egress` Service may also stay pinned to the OLD dev
 **Fix.** Delete the stale devices via the Tailscale API (token minted from the
 operator-oauth Secret / OAuth client), BEFORE or right after bootstrap. For
 Crossplane spokes, group-9 proxygroup-auth already cleans `svc:k8s-api-<spoke>` + stale
-devices; for ryzen, `cleanup-tailnet-devices.sh` runs in the `--recreate` path. Then
-patch/restart the hub egress Service or the operator StatefulSet pod so it re-resolves.
+devices; for ryzen, the gated `deployment/scripts/cleanup-tailnet-devices.sh` runs in the
+`--recreate` path. Then patch/restart the hub egress Service or the operator StatefulSet pod
+so it re-resolves.
+
+**Backstop = `tailnet-device-sweeper` CronJob** (hub ns `tailscale`, every 15m, PRs
+#2322/#2325). Deletes OFFLINE stale spoke tailnet devices (offline-only via
+`lastSeen > 30m`, best-effort, matches/logs the MagicDNS `name`) so dead devices don't
+accumulate and force `-N` collisions. It is hygiene, NOT the guarantee — the hard
+on-recreate guarantee remains the gated pre-recreate `cleanup-tailnet-devices.sh`.
+API gotcha: the Tailscale device `hostname` field DROPS the `-N` suffix (a live device and
+its dead `-N` twin share one hostname) — match on the MagicDNS `name`; `lastSeen` IS a
+reliable liveness signal (control-plane keepalives keep it fresh for connected devices). An
+in-Composition pre-onboarding cleanup was deliberately NOT built (a function-pipeline error
+would halt ALL spoke provisioning).
 
 **Verify.** The canonical hostname (no `-1` suffix) is present; no stale offline devices
 remain in the tailnet admin list. (ryzen hub->spoke no longer uses the operator device —
@@ -217,3 +229,64 @@ pin `--iface=enp7s0`, and a Talos upgrade resets it.
 upgrade (post-provision manual fix, `docs/hub-cluster-setup.md`).
 
 **Verify.** Cross-node pod-to-pod connectivity; flannel pods Ready on all 5 nodes.
+
+---
+
+## I. workflow-builder 502 "upstream sent too big header" — tls-terminator buffers (PR #2327)
+
+**Symptom.** `https://workflow-builder-<cluster>.tail286401.ts.net` returns **502 in a
+real BROWSER** while a bare `curl` returns 302 — so the failure HIDES from a quick
+curl smoke test.
+
+**Diagnosis.** Web exposure terminates HTTPS in the in-cluster nginx `tls-terminator`
+sidecar (`../references/architecture.md` §7). nginx's default 8k proxy header buffer
+overflows on SvelteKit auth's large `Set-Cookie` headers; bare curl sends small headers
+so it slips under the limit and returns 302, masking the browser 502. Diagnose via the
+sidecar nginx **error log** (`upstream sent too big header while reading response header
+from upstream`).
+
+**Fix.** Raise the buffers in the sidecar ConfigMap
+(`packages/components/workloads/workflow-builder/manifests/ConfigMap-workflow-builder-tls-terminator.yaml`):
+`proxy_buffer_size 32k; proxy_buffers 8 32k; proxy_busy_buffers_size 64k;
+large_client_header_buffers 4 32k`.
+
+**Verify / LESSON.** Verify HTTPS app exposure with a REAL browser (or curl WITH full
+browser headers), not bare curl. After the fix the browser loads past auth (no 502).
+
+---
+
+## J. env/hub-next MISSING after a hub promotion PR merges
+
+**Symptom.** GitOps Promoter `ChangeTransferPolicyNotReady` "couldn't find remote ref
+env/hub-next"; PromotionStrategy `stacks-environments` NotReady, flooding warning events.
+
+**Diagnosis.** NOT GitHub auto-delete (`delete_branch_on_merge=false`). ONLY `env/hub-next`
+is affected — spoke `-next` branches self-heal via their busy hydrators, but the idle hub
+hydrator does not recreate it after the PR merges.
+
+**Fix.** When active==proposed dry SHA (no pending hub change), recreate the branch:
+```bash
+git -C /home/vpittamp/repos/PittampalliOrg/stacks/main push origin origin/env/hub:refs/heads/env/hub-next
+```
+The Promoter reconciles `stacks-environments` back to Ready.
+
+**Verify.** `git ls-remote origin env/hub-next` returns a ref; PromotionStrategy
+`stacks-environments` READY; warning-event flood stops.
+
+---
+
+## K. gitea container registry RETIRED fleet-wide — do NOT re-add gitea-registry-creds (PR #2317)
+
+**Symptom.** A manifest or ServiceAccount references the `gitea-registry-creds`
+imagePullSecret; you are tempted to "fix" a pull by re-adding it.
+
+**Diagnosis.** `gitea-registry-creds` was a DEAD reference — the secret was never produced
+on any cluster. PR #2317 removed it from 23 manifests + 2 SAs. All images are
+`ghcr.io/pittampalliorg/*` pulled via `ghcr-pull-credentials`.
+
+**Fix.** Do NOT re-add `gitea-registry-creds`. Ensure the imagePullSecret is
+`ghcr-pull-credentials`. (NOTE: `deployment/scripts/trigger-tekton-builds.sh` uses
+`gitea-registry-creds` as a build-side PUSH credential — that is a DIFFERENT use, kept.)
+
+**Verify.** No `gitea-registry-creds` imagePullSecret on any workload SA; pods pull
+`ghcr.io/pittampalliorg/*` images cleanly.

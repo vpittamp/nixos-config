@@ -139,15 +139,30 @@ Dev and staging are not just ryzen with a different image registry. Workflow-bui
 
 | Runtime dependency | Dev/staging declaration |
 |---|---|
-| workflow-builder app URL | Device-backed Tailscale Ingress `workflow-builder-CLUSTER` rendered by the spoke tailscale-ingresses overlay |
-| MCP gateway URL | `MCP_GATEWAY_BASE_URL=https://mcp-gateway-{{cluster}}.tail286401.ts.net` in `spoke-workloads-appset.yaml`; matching device-backed `mcp-gateway-CLUSTER` Ingress |
+| workflow-builder app URL | Tailscale **L4 LoadBalancer** Service `workflow-builder-CLUSTER` + in-cluster `tls-terminator` sidecar (PR #2319). NOT an Ingress, NO Let's Encrypt. `https://workflow-builder-{{cluster}}.tail286401.ts.net`. See "Tailnet web HTTPS" below. |
+| MCP gateway URL | In-cluster only (PR #2319): `MCP_GATEWAY_BASE_URL=http://mcp-gateway.workflow-builder.svc.cluster.local:8080`. The old `mcp-gateway-CLUSTER` Tailscale Ingress was removed (dev/staging overlays `$patch:delete` it). |
 | Phoenix URL | `PUBLIC_PHOENIX_URL`, `PHOENIX_BASE_URL`, and `PHOENIX_API_BASE_URL` set to `https://phoenix-{{cluster}}.tail286401.ts.net` in `spoke-workloads-appset.yaml`; matching device-backed Phoenix Ingress |
-| Tailscale policy | Device-backed app Ingresses register as Tailscale devices, not `svc:*` services. Reserve `policy.hujson` `autoApprovers.services` entries for real ProxyGroup/Tailscale Service hostnames. |
+| Tailscale policy | Device-backed app Ingresses (e.g. `phoenix-*`) register as Tailscale devices, not `svc:*` services. Reserve `policy.hujson` `autoApprovers.services` entries for real ProxyGroup/Tailscale Service hostnames. |
 | Spoke Kubernetes API | `svc:dev-api-v2` / `svc:staging-api-v2` service-host approvals plus a `tag:spoke-api` Kubernetes grant to `tag:k8s` as `system:masters` |
+
+### Tailnet web HTTPS: L4 LoadBalancer + self-signed CA (PR #2319)
+
+`workflow-builder` was migrated off the per-hostname **Let's Encrypt** Tailscale Ingress (ProxyClass `development-prod-cert`) because recreate churn exhausted LE's 5-certs/168h limit → 429 → unreachable. (ryzen also briefly used a plain-HTTP Tailscale LoadBalancer, PRs #2314/#2316 — also superseded.) The uniform replacement:
+
+- A Tailscale **L4 LoadBalancer Service** (`type: LoadBalancer`, `loadBalancerClass: tailscale`, `tailscale.com/hostname`) advertises the device and forwards `443` → the pod's `https-tls` port. No LE.
+- HTTPS is terminated **in-cluster** by a per-pod nginx `tls-terminator` sidecar serving a persistent self-signed wildcard `*.tail286401.ts.net`.
+- Manifests: base `packages/base/manifests/tailscale-ingresses/Service-workflow-builder-tailnet.yaml` (dev/staging, CLUSTER-templated); ryzen `packages/components/workloads/workflow-builder-tailnet-lb/`; sidecar + `ConfigMap-workflow-builder-tls-terminator.yaml` + `Certificate-tailnet-wildcard.yaml` under `packages/components/workloads/workflow-builder/manifests/`.
+
+This rides on a **new cross-cutting contract: a persistent self-signed CA** (alongside the cluster-Secret and spoke-transport contracts):
+
+- A self-signed CA **"PittampalliOrg Tailnet Dev CA"** was generated once (offline) and stored in Azure Key Vault as `TAILNET-DEV-CA-CRT` / `TAILNET-DEV-CA-KEY` (10-year, stable across cluster recreation — an improvement over idpbuilder, which regenerates per-install).
+- The hub mirrors it **cluster-neutrally** into ns `spoke-secrets` Secret `tailnet-ca` (`packages/components/hub-management/manifests/spoke-secrets/ExternalSecret-tailnet-ca.yaml`). The namespace-wide `spoke-secrets-reader` Role means every spoke reads the SAME key — no per-cluster key.
+- New spoke base app `packages/components/tailnet-ca` (delivered via `packages/base/apps/tailnet-ca.yaml`, **spoke-only** — the hub does not consume `packages/base`): an ExternalSecret (`hub-secrets-store`) restores the CA into `cert-manager/tailnet-dev-ca`; the `tailnet-dev-ca` CA `ClusterIssuer` signs the `*.tail286401.ts.net` wildcard Certificate consumed by the tls-terminator sidecar.
+- Because the CA is identical on every cluster, clients trust it once and the trust survives recreation. Workstation trust is in nixos-config commit `44ba6324` (system/curl/git + a Chrome NSS seed, which is REQUIRED on NixOS because `security.pki` does not cover Chrome). PR #2322 adds `ignoreDifferences` so the cert/CA material doesn't show as drift.
 
 If a promoted spoke fails because it is using ryzen/localhost hostnames or a hostname is missing from the tailnet, fix the declaration in stacks and let source-hydrator + Promoter reconcile it. Do not leave live Deployment patches behind.
 
-If a promoted-spoke app hostname resolves as `<name>-1.tail286401.ts.net`, look for a stale tailnet `svc:<name>` Service or old offline device that is reserving the canonical name. Remove the stale tailnet record and remove the matching `svc:*` ACL entry from `policy.hujson` if the hostname is device-backed.
+If a promoted-spoke app hostname resolves as `<name>-1.tail286401.ts.net`, look for a stale tailnet `svc:<name>` Service or old offline device that is reserving the canonical name. Remove the stale tailnet record and remove the matching `svc:*` ACL entry from `policy.hujson` if the hostname is device-backed. The hard on-recreate guarantee against `-N` collisions is the gated `deployment/scripts/cleanup-tailnet-devices.sh` run pre-recreate; as a hygiene backstop the hub CronJob `tailnet-device-sweeper` (ns `tailscale`, every 15m, PRs #2322/#2325) deletes OFFLINE stale spoke devices (`lastSeen > 30m`, best-effort, matched by MagicDNS `name` because the device `hostname` field drops the `-N` suffix). `lastSeen` is a reliable liveness signal. An in-Composition pre-onboarding cleanup was deliberately NOT built (a function-pipeline error would halt ALL spoke provisioning).
 
 ## Workflow-builder MCP/auth runtime
 
@@ -355,7 +370,7 @@ ryzen **proves the stack works in the local platform shape**. The outer-loop **p
 | `packages/overlays/{dev,staging,ryzen}` | Per-spoke base overlay |
 | `packages/components/hub-spoke-appsets/release-pins/workflow-builder-images.yaml` | dev/staging release metadata: tags, digests, image refs, source SHAs, PipelineRuns |
 | `packages/components/hub-spoke-appsets/apps/spoke-workloads-appset.yaml` | Matrix AppSet generator + Kustomize patches per spoke, including promoted-spoke MCP/Phoenix runtime env |
-| `packages/base/manifests/tailscale-ingresses/` | Shared device-backed Tailscale Ingresses with `*-CLUSTER` placeholders for dev/staging/talos app hostnames |
+| `packages/base/manifests/tailscale-ingresses/` | Shared `*-CLUSTER`-placeholder tailnet exposures for dev/staging/talos app hostnames: device-backed Tailscale Ingresses (e.g. `phoenix-*`) plus the workflow-builder L4 LoadBalancer `Service-workflow-builder-tailnet.yaml` (PR #2319) |
 | `packages/components/workloads/activepieces-mcps/manifests/` | CronJob/RBAC/script that turns workflow-builder DB `mcp_connection` rows into piece MCP Knative Services and catalog entries |
 | `packages/base/manifests/knative-serving/kustomization.yaml` | Knative Serving and autoscaler settings, including `allow-zero-initial-scale` for piece MCP scale-to-zero |
 | `packages/components/hub-management/manifests/gitops-promoter/PromotionStrategy-workflow-builder-release.yaml` | dev → staging promotion (autoMerge true; gates: argocd-health + timer) |

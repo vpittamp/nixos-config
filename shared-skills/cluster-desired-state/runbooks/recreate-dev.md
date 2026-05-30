@@ -21,7 +21,10 @@ confirm nothing is mid-benchmark.
 
 Delete legacy manual HCloud servers/network/firewall; remove a stale hub `cluster-dev`
 Secret if not owned by the current claim; clean stale Tailscale devices/service-hosts
-(esp. `dev-operator` / `k8s-api-dev` VIPService) — `recovery-and-gotchas.md` §F.
+(esp. `dev-operator` / `k8s-api-dev` VIPService) — `recovery-and-gotchas.md` §F. The hard
+pre-recreate guarantee is the gated `deployment/scripts/cleanup-tailnet-devices.sh` (for
+dev, group-9 proxygroup-auth also cleans `svc:k8s-api-dev` + stale devices); the hub
+`tailnet-device-sweeper` CronJob is only an offline-device hygiene backstop.
 
 ## 2. Recreate (apply the claim)
 
@@ -87,3 +90,14 @@ Run the full block in `../references/dev.md` "Verification". Pass = 9 nodes Talo
 6 workers Ready DiskPressure=False, db-migrate-before-db-seed, no dup SWE-bench rows,
 Lite=300/Verified=500, `spoke-dev` + all `dev-*` apps Synced/Healthy, `dev-shared-secrets`
 SecretSynced. Gate any benchmark ramp with the `evaluations` skill's capacity diagnostics.
+
+**Web exposure post-sync** (Contract 3, `../references/architecture.md` §7). Once the
+spoke syncs, confirm the CA/wildcard/sidecar chain comes up: the `tailnet-dev-ca` CA
+`ClusterIssuer` Ready -> the `*.tail286401.ts.net` wildcard Certificate issued (Ready) ->
+the workflow-builder `tls-terminator` sidecar serves :443. Then `https://workflow-builder-dev.tail286401.ts.net`
+loads in a REAL browser (NOT bare curl — see the 502 buffer gotcha, `recovery-and-gotchas.md` §I).
+```bash
+kubectl --context dev get clusterissuer tailnet-dev-ca                              # Ready=True (NO Let's Encrypt)
+kubectl --context dev -n workflow-builder get certificate                           # tailnet wildcard Ready=True
+kubectl --context dev -n workflow-builder get svc workflow-builder-tailnet -o wide  # type LoadBalancer (loadBalancerClass tailscale), EXTERNAL-IP assigned
+```

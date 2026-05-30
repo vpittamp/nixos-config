@@ -45,10 +45,10 @@ matter today:
 
 ## The desired-state mental model (all three clusters)
 
-Every cluster is healthy when **all six layers** below are green. The reference
+Every cluster is healthy when **all seven layers** below are green. The reference
 and runbook files walk each layer in order. A cluster is **not** "done" when nodes
-are Ready — Argo child apps, secret transport, hub connectivity, and workload data
-must all be healthy too.
+are Ready — Argo child apps, secret transport, hub connectivity, web exposure, and
+workload data must all be healthy too.
 
 ```
 1. PROVISION        nodes Ready, correct Talos/k8s version, CNI + build/pool labels
@@ -61,7 +61,11 @@ must all be healthy too.
         |           host-device raw TCP passthrough over Tailscale + CoreDNS egress)
 5. WORKLOADS        all <name>-* child apps Synced/Healthy; DB migrate-then-seed;
         |           per-cluster ExternalSecret repointing applied
-6. VERIFY           the per-cluster verification command block passes clean
+6. WEB EXPOSURE     workflow-builder reachable at https://workflow-builder-<cluster>.tail286401.ts.net
+        |           via a Tailscale L4 LoadBalancer Service + in-cluster nginx tls-terminator
+        |           sidecar serving the persistent self-signed *.tail286401.ts.net wildcard
+        |           (NO Let's Encrypt, NO Tailscale Ingress). mcp-gateway is in-cluster only.
+7. VERIFY           the per-cluster verification command block passes clean
 ```
 
 ## Cross-cutting architecture (one-screen summary)
@@ -96,6 +100,16 @@ Full detail in `references/architecture.md`. The load-bearing pieces:
   `caBundle` is hard-set to it, REQUIRED by ESO v0.9.13), authenticating with a
   scoped read-only SA token. A spoke CoreDNS rewrite maps that FQDN ->
   `k8s-api-hub-egress.tailscale.svc.cluster.local`.
+- **Persistent self-signed CA** (Contract 3, web exposure). A 10-year offline CA
+  ("PittampalliOrg Tailnet Dev CA") lives in Azure KV as `TAILNET-DEV-CA-CRT/KEY`;
+  the hub mirrors it CLUSTER-NEUTRALLY into ns `spoke-secrets` Secret `tailnet-ca`
+  (`ExternalSecret-tailnet-ca.yaml`; the namespace-wide `spoke-secrets-reader` Role
+  means every spoke reads the SAME key — no per-cluster CA). The spoke base app
+  `packages/components/tailnet-ca` (via `packages/base/apps/tailnet-ca.yaml`, spoke-only)
+  restores it into a `tailnet-dev-ca` CA `ClusterIssuer` that signs the
+  `*.tail286401.ts.net` wildcard Certificate consumed by the workflow-builder
+  `tls-terminator` sidecar. Same CA on every cluster -> clients trust it ONCE and it
+  SURVIVES recreation (improves on idpbuilder's per-install CA). PR #2319.
 - **Host-device raw TCP passthrough** (ryzen-only, hub->spoke direction). hub->ryzen
   reaches the ryzen Talos kube-apiserver DIRECTLY over Tailscale via the ryzen HOST
   device (`ryzen.tail286401.ts.net`, `100.96.102.1`, `tag:k8s`) running

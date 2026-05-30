@@ -46,6 +46,19 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
   `ryzen-shared-secrets` over Tailscale. Ready=True; `hub-secrets-token` in ns
   external-secrets; spoke CoreDNS rewrite present; ESes SecretSynced/Valid.
 
+**Web exposure** (Contract 3, `architecture.md` §7)
+- workflow-builder reachable at `https://workflow-builder-ryzen.tail286401.ts.net` via a
+  Tailscale **L4 LoadBalancer** Service (`packages/components/workloads/workflow-builder-tailnet-lb/`)
+  + an in-cluster nginx `tls-terminator` sidecar serving the persistent self-signed
+  `*.tail286401.ts.net` wildcard — **NO Let's Encrypt, NO Tailscale Ingress**, and NOT the
+  old plain-HTTP LB (PRs #2314/#2316 superseded by #2319). The `tailnet-ca` app
+  (`packages/base/apps/tailnet-ca.yaml`) restores the shared CA into a `tailnet-dev-ca` CA
+  ClusterIssuer that issues the wildcard cert (in the workflow-builder ns).
+- **mcp-gateway is in-cluster only** now
+  (`MCP_GATEWAY_BASE_URL=http://mcp-gateway.workflow-builder.svc.cluster.local:8080`);
+  `ORIGIN`/`APP_PUBLIC_URL` stay `https://workflow-builder-ryzen...` (the #2316 http flip
+  was reverted).
+
 **Hub->ryzen connectivity** (host-device raw TCP passthrough — the ryzen-only path)
 - hub ArgoCD reaches the ryzen Talos kube-apiserver DIRECTLY over Tailscale via the
   ryzen HOST device (`ryzen.tail286401.ts.net`, `100.96.102.1`, `tag:k8s`) running
