@@ -1099,6 +1099,46 @@ let
     -----END CERTIFICATE-----
   '';
 
+  # Persistent self-signed CA for *.tail286401.ts.net (private-tailnet HTTPS, no
+  # Let's Encrypt). Signs the workflow-builder LB sidecar wildcard on dev/ryzen
+  # (and staging/future) — needed for the workflow-builder-* PWAs to load without
+  # a cert warning. Azure Key Vault TAILNET-DEV-CA-CRT; 10-year, stable across
+  # cluster recreation.
+  tailnetDevCaCert = pkgs.writeText "tailnet-dev-ca.pem" ''
+    -----BEGIN CERTIFICATE-----
+    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
+    OVc1x3Hlkbq2mA==
+    -----END CERTIFICATE-----
+  '';
+
 in
 {
   # Expose the i3pm URL bridge extension to other home-manager modules
@@ -1272,5 +1312,17 @@ in
     # Add the cluster CA certificate as trusted for SSL (CT,C,C = trusted for SSL/email/code)
     echo "Adding cluster CA certificate to Chrome trust store..."
     ${pkgs.nssTools}/bin/certutil -d sql:"$NSS_DB" -A -n "$CERT_NICKNAME" -t "CT,C,C" -i "${clusterCaCert}"
+
+    # Tailnet HTTPS CA (*.tail286401.ts.net) — required for the workflow-builder-*
+    # PWAs (dev/ryzen/staging) which serve self-signed HTTPS via the LB sidecar.
+    TAILNET_NICKNAME="PittampalliOrg-Tailnet-Dev-CA"
+    # Remove the imperatively-imported variant (spaced nickname) if present, so
+    # there's a single declarative entry.
+    ${pkgs.nssTools}/bin/certutil -d sql:"$NSS_DB" -D -n "PittampalliOrg Tailnet Dev CA" 2>/dev/null || true
+    if ${pkgs.nssTools}/bin/certutil -d sql:"$NSS_DB" -L -n "$TAILNET_NICKNAME" >/dev/null 2>&1; then
+      ${pkgs.nssTools}/bin/certutil -d sql:"$NSS_DB" -D -n "$TAILNET_NICKNAME" 2>/dev/null || true
+    fi
+    echo "Adding tailnet dev CA certificate to Chrome trust store..."
+    ${pkgs.nssTools}/bin/certutil -d sql:"$NSS_DB" -A -n "$TAILNET_NICKNAME" -t "CT,C,C" -i "${tailnetDevCaCert}"
   '';
 }
