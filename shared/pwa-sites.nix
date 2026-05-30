@@ -959,13 +959,13 @@ let
     # Workflow Builder (Ryzen K8s via Tailscale)
     {
       name = "Workflow Builder Ryzen";
-      url = "http://workflow-builder-ryzen.tail286401.ts.net";
+      url = "https://workflow-builder-ryzen.tail286401.ts.net";
       domain = "workflow-builder-ryzen.tail286401.ts.net";
       icon = iconPath "workflow-builder-ryzen.png";
       description = "Workflow Builder - Visual node-based workflow automation editor";
       categories = "Development;Network;";
       keywords = "workflow;builder;visual;editor;automation;ai;nodes;react-flow;nextjs;ryzen;";
-      scope = "http://workflow-builder-ryzen.tail286401.ts.net/";
+      scope = "https://workflow-builder-ryzen.tail286401.ts.net/";
       ulid = "31EYAA8SZG1WY6TCVYB2PJDNBM";  # Generated 2026-01-29
       # App registry metadata
       app_scope = "global";
