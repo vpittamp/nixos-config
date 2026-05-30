@@ -41,35 +41,50 @@ nodes Ready on the target k8s.
 
 ---
 
-## B. hub -> spoke ArgoCD apiserver-proxy SNI mismatch (ryzen / Tailscale-proxy spokes)
+## B. hub -> ryzen Tailscale host TCP-passthrough failures
 
-**Symptom.** `spoke-ryzen` (or any Tailscale-apiserver-proxy spoke) can't connect; TLS
-SNI/cert errors at the operator proxy; "x509"/handshake failures in the ArgoCD
+**Symptom.** `spoke-ryzen` / all `ryzen-*` apps can't connect; TLS or connection-refused
+errors reaching `https://ryzen.tail286401.ts.net:6443` in the ArgoCD
 application-controller logs.
 
-**Diagnosis.** The Tailscale operator apiserver-proxy (v1.92.4) STRICTLY validates the
-wire SNI == its own hostname (`<spoke>-operator.tail286401.ts.net`). ArgoCD does NOT
-apply `tlsClientConfig.serverName` as the wire SNI — it sends the **server-URL host** as
-SNI (verified: even with `serverName` + `caData`, the server-URL host is still sent).
+**Diagnosis & context.** hub->ryzen no longer rides the Tailscale operator
+apiserver-proxy. It reaches the Talos kube-apiserver DIRECTLY over Tailscale via the ryzen
+HOST device (`ryzen.tail286401.ts.net`, `100.96.102.1`, `tag:k8s`) running `tailscale serve
+--bg --tcp=6443` as a raw TCP passthrough — the hub does a FULL TLS verify
+(`insecure:false`) against the Talos CA (`../references/architecture.md` §5). This dropped
+the per-hostname Let's Encrypt cert whose 5-dup-certs/week limit recreate churn exhausted
+(2026-05-29 fleet-0-healthy incident, PRs #2305/#2307). The three live failure modes:
 
-**Fix.**
-1. Set the cluster Secret `server` to the operator FQDN so the SNI matches:
-   `server: https://<spoke>-operator.tail286401.ts.net` (config: `insecure:true`,
-   `serverName:<spoke>-operator...`, `bearerToken:"unused"`).
-2. Add a **HUB** CoreDNS rewrite so the name resolves to the in-cluster egress while the
-   SNI stays correct:
-   `rewrite name exact <spoke>-operator.tail286401.ts.net <spoke>-api-egress.tailscale.svc.cluster.local`.
-   The `<spoke>-api-egress` ExternalName Service (ns tailscale, annotation
-   `tailscale.com/tailnet-fqdn: <spoke>-operator...`) is defined inline in
-   `packages/components/hub-management/apps/headlamp.yaml` extraManifests.
-3. Spoke operator must set `OPERATOR_HOSTNAME=<spoke>-operator` + `APISERVER_PROXY=true`
-   (`packages/components/tailscale-serve/manifests/tailscale-operator/Deployment-operator.yaml`).
+(a) **Host serve not configured / pointing at the wrong Docker port after a recreate**
+(connection refused, or hitting a dead port). Fix: `sudo systemctl restart
+tailscale-serve-k8s-apiserver` on the ryzen host (the unit auto-discovers the current
+Talos-in-Docker apiserver host port), or just re-run bootstrap which does this.
+
+(b) **Apiserver serving cert missing the tailnet certSANs** (TLS verify fails: the hub
+trusts the Talos CA but the cert's SANs don't include the FQDN/IP it dialed). Fix: ensure
+the bootstrap `--config-patch` adds `cluster.apiServer.certSANs:
+[ryzen.tail286401.ts.net, 100.96.102.1]`; to add live, `talosctl patch mc` the same.
+
+(c) **KV token stale after a recreate** (a recreate mints a new SA token; the old
+`cluster-ryzen` materializes a dead bearer token → 401). Fix: re-run `register-spoke
+--ts-host-passthrough` (the bootstrap does this) to re-mint
+`ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}` into KV; the `ExternalSecret-cluster-ryzen` refreshes
+`cluster-ryzen`.
+
+**Legacy SNI note.** The operator apiserver-proxy SNI mismatch (proxy STRICTLY validates
+wire SNI == `<spoke>-operator.tail286401.ts.net`; ArgoCD sends the server-URL host as SNI,
+not `serverName`) is NO LONGER a ryzen failure mode. It only applies if someone uses the
+deprecated `--ts-acl-mode` operator-proxy path. dev/staging use the direct public IP, not
+the proxy, so it does not apply to them either.
 
 **Verify.**
 ```bash
-curl -k --connect-to <spoke>-operator.tail286401.ts.net:443:<egress>:443 \
-  https://<spoke>-operator.tail286401.ts.net/version    # expect HTTP 200
-kubectl --kubeconfig ~/.kube/hub-config -n argocd get application spoke-<spoke>   # Synced/Healthy
+kubectl --kubeconfig ~/.kube/hub-config -n argocd get secret cluster-ryzen \
+  -o jsonpath='{.data.server}' | base64 -d    # https://ryzen.tail286401.ts.net:6443
+kubectl --kubeconfig ~/.kube/hub-config -n argocd get application spoke-ryzen   # Synced/Healthy
+# optional real-TLS reachability (no --insecure):
+kubectl --server=https://ryzen.tail286401.ts.net:6443 \
+  --certificate-authority=<Talos CA> --token=<SA token> get nodes
 ```
 
 ---
@@ -171,9 +186,10 @@ Crossplane spokes, group-9 proxygroup-auth already cleans `svc:k8s-api-<spoke>` 
 devices; for ryzen, `cleanup-tailnet-devices.sh` runs in the `--recreate` path. Then
 patch/restart the hub egress Service or the operator StatefulSet pod so it re-resolves.
 
-**Verify.** The canonical hostname (no `-1` suffix) is present; the SNI curl in §B
-returns HTTP 200; no stale offline devices remain in the tailnet admin list. See the
-`talos-clusters` skill `runbooks/tailscale-name-recovery.md` and the `gitops` skill for
+**Verify.** The canonical hostname (no `-1` suffix) is present; no stale offline devices
+remain in the tailnet admin list. (ryzen hub->spoke no longer uses the operator device —
+see §B; this still matters for the ESO transport device and operator-proxy spokes.) See
+the `talos-clusters` skill `runbooks/tailscale-name-recovery.md` and the `gitops` skill for
 device-backed Ingress DNS recovery.
 
 ---

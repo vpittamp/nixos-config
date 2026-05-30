@@ -82,10 +82,13 @@ How each cluster supplies it:
   from KV `ARGOCD-CLUSTER-{TALOS,...}-TOKEN/CA`; OR the Crossplane group-5
   spoke-register job writes it directly to the hub (`server` = direct public IP
   `https://<ip>:6443`).
-- **ryzen**: STATIC committed
-  `packages/components/hub-management/manifests/spoke-credentials/Secret-cluster-ryzen.yaml`
-  (`server: https://ryzen-operator.tail286401.ts.net`, `bearerToken: "unused"`,
-  `auth-mode=tailscale-acl-impersonation`, no KV token / no JWKS).
+- **ryzen**: `ExternalSecret-cluster-ryzen.yaml` materializes `cluster-ryzen` from KV
+  `ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}` (minted per-recreate by `register-spoke
+  --ts-host-passthrough`): `server: https://ryzen.tail286401.ts.net:6443`,
+  `insecure:false` + `caData` (Talos CA), real SA `bearerToken`. The old static
+  `Secret-cluster-ryzen.yaml` (operator FQDN, `bearerToken:"unused"`,
+  `auth-mode=tailscale-acl-impersonation`) was DELETED (PR #2308) — ryzen now reaches its
+  apiserver via the Tailscale host TCP passthrough (§5).
 
 The **spoke-clusters-appset** (cluster generator,
 `packages/components/hub-spoke-appsets/apps/spoke-clusters-appset.yaml`) templates a
@@ -146,44 +149,66 @@ Delivery differs by cluster:
 
 ACL grants (`policy.hujson`):
 - ryzen->hub ESO read: `src tag:k8s -> dst tag:k8s impersonate.groups=[tailscale:spoke-secrets-reader]`.
-- hub->ryzen ArgoCD: `src tag:k8s -> dst tag:k8s-operator app tailscale.com/cap/kubernetes impersonate.groups=[system:masters]`.
+- hub->ryzen ArgoCD: now plain tailnet TCP to the ryzen host serve (`tag:k8s -> tag:k8s`,
+  port 6443); the SA bearer token (not impersonation) authenticates. The legacy
+  `tag:k8s -> tag:k8s-operator app tailscale.com/cap/kubernetes
+  impersonate.groups=[system:masters]` grant only applies to the deprecated `--ts-acl-mode`
+  operator-proxy path (§5).
 
 ---
 
-## 5. hub -> spoke connectivity (apiserver-proxy SNI/CoreDNS, ryzen-only)
+## 5. hub -> spoke connectivity (ryzen = Tailscale host TCP passthrough)
 
 dev's public API is reachable, so its cluster-Secret `server` is the **direct IP**
 `https://<ip>:6443` — no SNI workaround.
 
-ryzen sits behind the Tailscale operator apiserver-proxy (operator v1.92.4) which
-**STRICTLY validates the wire SNI == its own hostname**, and ArgoCD does **not** send
-`tlsClientConfig.serverName` as the wire SNI (verified: even with `serverName` +
-`caData`, ArgoCD sends the server-URL host as SNI). So:
-- cluster-Secret `server: https://ryzen-operator.tail286401.ts.net` (the SNI comes
-  from the server-URL host); config carries `insecure:true`, `serverName:ryzen-operator...`,
-  `bearerToken:"unused"`.
-- **HUB** CoreDNS rewrite
-  `ryzen-operator.tail286401.ts.net -> ryzen-api-egress.tailscale.svc.cluster.local`
-  routes the name to the in-cluster egress while the SNI stays correct.
-- `ryzen-api-egress` ExternalName Service (ns `tailscale`, annotation
-  `tailscale.com/tailnet-fqdn: ryzen-operator.tail286401.ts.net`) is defined inline
-  in `packages/components/hub-management/apps/headlamp.yaml` (extraManifests).
-- Spoke operator (`packages/components/tailscale-serve/manifests/tailscale-operator/Deployment-operator.yaml`):
-  `OPERATOR_HOSTNAME=ryzen-operator`, `APISERVER_PROXY=true`,
-  `OPERATOR_INITIAL_TAGS=tag:k8s-operator`, `PROXY_TAGS=tag:k8s`.
+ryzen reaches its Talos kube-apiserver **DIRECTLY over Tailscale via the ryzen HOST
+device** (`ryzen.tail286401.ts.net`, `100.96.102.1`, `tag:k8s`) running
+`tailscale serve --bg --tcp=6443` as a **raw TCP passthrough** to the Talos apiserver.
+This is the CANONICAL, durable path — it drops the Tailscale operator apiserver-proxy
+(and its per-hostname Let's Encrypt cert) entirely. No SNI workaround.
 
-Verify with curl forcing the SNI:
+- **Host serve.** nixos-config `services.tailscaleK8sApiserver` defines a
+  `tailscale-serve-k8s-apiserver` oneshot unit that auto-discovers the Talos-in-Docker
+  apiserver host port and runs `tailscale serve --bg --tcp=6443`. The stacks bootstrap
+  restarts this unit after each cluster create (Docker re-maps the port).
+- **End-to-end TLS, no termination.** Raw TCP passthrough does NOT terminate TLS, so
+  the **Talos apiserver's own serving cert reaches the hub end-to-end** and the hub does
+  a **FULL TLS verify (`insecure:false`)** against the Talos CA. The apiserver cert
+  carries `cluster.apiServer.certSANs: [ryzen.tail286401.ts.net, 100.96.102.1]`
+  (added by the bootstrap `--config-patch`). No `serverName` / no SNI hack.
+- **Auth = per-recreate ServiceAccount bearer token.** `register-spoke
+  --ts-host-passthrough` mints an SA token + Talos CA into Azure KV
+  (`ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}`). The hub
+  `ExternalSecret-cluster-ryzen.yaml` (NOT a static Secret — the static one was deleted,
+  PR #2308) materializes `cluster-ryzen` from KV: `server:
+  https://ryzen.tail286401.ts.net:6443`, `insecure:false` + `caData`, `bearerToken`.
+- **Hub egress + CoreDNS.** `ryzen-api-egress` ExternalName Service (ns `tailscale`,
+  annotation `tailscale.com/tailnet-fqdn: ryzen.tail286401.ts.net`, port `6443`) is
+  defined inline in `packages/components/hub-management/apps/headlamp.yaml`
+  (extraManifests). A self-healing hub CoreDNS rewrite
+  `ryzen.tail286401.ts.net -> ryzen-api-egress.tailscale.svc.cluster.local`
+  (maintained by `CronJob-coredns-spoke-rewrites`) routes the name to the in-cluster egress.
+
+**WHY this replaced the operator apiserver-proxy.** The old path rode the operator
+apiserver-proxy's per-hostname Let's Encrypt cert. Recreate churn exhausted LE's
+5-duplicate-certs/week limit and took the whole ryzen fleet to 0-healthy (2026-05-29
+incident). Host passthrough drops the LE dependency: a recreate now consumes ZERO LE
+quota (validated). PRs #2305 / #2307.
+
+Verify by confirming the materialized cluster-Secret `server` and ryzen app health:
 ```bash
-curl -k --connect-to ryzen-operator.tail286401.ts.net:443:<egress>:443 \
-  https://ryzen-operator.tail286401.ts.net/version   # expect HTTP 200
+kubectl --kubeconfig ~/.kube/hub-config -n argocd get secret cluster-ryzen \
+  -o jsonpath='{.data.server}' | base64 -d    # https://ryzen.tail286401.ts.net:6443
+# optional full verify (real TLS, no --insecure):
+kubectl --server=https://ryzen.tail286401.ts.net:6443 \
+  --certificate-authority=<Talos CA> --token=<SA token> get nodes
 ```
+The old SNI `curl --connect-to ... :443` check is obsolete.
 
-> NOTE: the shared operator manifest hardcodes `OPERATOR_HOSTNAME=ryzen-operator`,
-> so the HUB operator device is also named `ryzen-operator` — a latent collision
-> risk, flag it if hub operator device-name issues arise. The hub does NOT depend on
-> its own operator apiserver-proxy for spoke connectivity (spokes reach hub kube-api
-> via the separate `k8s-api-hub-ingress` device; remote kubectl via the `k8s-api-hub`
-> ProxyGroup VIP).
+> LEGACY: `--ts-acl-mode` (operator apiserver-proxy + impersonation +
+> `OPERATOR_HOSTNAME=ryzen-operator`) still exists for other Tailscale-proxy spokes but is
+> **deprecated for ryzen**. dev/staging use the direct public IP, not the proxy.
 
 ---
 
@@ -219,7 +244,7 @@ packages/overlays/ryzen/kustomization.yaml               # ryzen overlay (namePr
 packages/overlays/dev/kustomization.yaml                 # dev overlay (inherits ../talos)
 packages/components/hub-base/                             # hub- infra apps, ProxyGroup-kube-apiserver.yaml
 packages/components/hub-management/                       # Promoter, headlamp, spoke-credentials/, spoke-secrets/
-  .../spoke-credentials/Secret-cluster-ryzen.yaml         # static ryzen registration
+  .../spoke-credentials/ExternalSecret-cluster-ryzen.yaml # ryzen registration (KV ARGOCD-CLUSTER-RYZEN-*, host TCP passthrough)
   .../spoke-credentials/ExternalSecret-cluster-talos.yaml # dev/staging registration
   .../spoke-secrets/{Namespace,ExternalSecret-<c>-shared-secrets,RBAC-spoke-secrets-reader,Ingress-k8s-api-hub-ingress}.yaml
   .../apps/headlamp.yaml                                  # ryzen-api-egress Service (inline extraManifests)

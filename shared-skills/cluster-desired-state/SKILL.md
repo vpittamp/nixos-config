@@ -1,6 +1,6 @@
 ---
 name: cluster-desired-state
-description: "Authoritative end-to-end guide to how PittampalliOrg reaches the DESIRED STATE for every cluster in the hub-and-spoke fleet — hub, ryzen, and dev. Use whenever you need the ordered path from nothing to a healthy cluster (provisioning -> GitOps registration -> Tailscale secret transport -> hub->spoke connectivity -> workloads -> verification), the cross-cutting architecture (cluster-Secret contract, spoke-transport contract, source-hydrator + GitOps Promoter, env/hub / env/spokes-* / inner-loop branch flow, AWI->Tailscale secret migration, the apiserver-proxy SNI/CoreDNS egress pattern, per-cluster ExternalSecret parameterization), or the recovery runbooks and gotchas (Talos ISO vs k8s in-place upgrade, kueue ClientSideApplyMigration wedge, RFC6902 op:add clobber, env-table SWE-bench restore, stale tailnet device cleanup). Use this to plan or audit a fresh build or a full recreate of hub/ryzen/dev; for narrow tasks defer to the talos-clusters, ryzen-spoke-bootstrap, or gitops skills it cross-references."
+description: "Authoritative end-to-end guide to how PittampalliOrg reaches the DESIRED STATE for every cluster in the hub-and-spoke fleet — hub, ryzen, and dev. Use whenever you need the ordered path from nothing to a healthy cluster (provisioning -> GitOps registration -> Tailscale secret transport -> hub->spoke connectivity -> workloads -> verification), the cross-cutting architecture (cluster-Secret contract, spoke-transport contract, source-hydrator + GitOps Promoter, env/hub / env/spokes-* / inner-loop branch flow, AWI->Tailscale secret migration, the ryzen host-device raw-TCP-passthrough connectivity pattern, per-cluster ExternalSecret parameterization), or the recovery runbooks and gotchas (Talos ISO vs k8s in-place upgrade, kueue ClientSideApplyMigration wedge, RFC6902 op:add clobber, env-table SWE-bench restore, stale tailnet device cleanup). Use this to plan or audit a fresh build or a full recreate of hub/ryzen/dev; for narrow tasks defer to the talos-clusters, ryzen-spoke-bootstrap, or gitops skills it cross-references."
 ---
 
 # Cluster Desired State (hub / ryzen / dev)
@@ -13,7 +13,7 @@ matter today:
 | Cluster | Role | Provisioning | Branch it syncs | API reach | Secrets |
 |---|---|---|---|---|---|
 | **hub** | management plane + central Tekton build pool | manual Talos/Hetzner (`docs/hub-cluster-setup.md`) | `env/hub` (path `hub-apps/`) | `k8s-api-hub.tail286401.ts.net` ProxyGroup VIP | **canonical** Azure KV + AWI |
-| **ryzen** | bare-metal local-dev spoke | imperative `bootstrap-spoke-cluster.sh` (Talos-in-Docker) | `inner-loop` -> `env/spokes-ryzen` | `ryzen-operator.tail286401.ts.net` (Tailscale apiserver-proxy + SNI fix) | hub mirror over Tailscale |
+| **ryzen** | bare-metal local-dev spoke | imperative `bootstrap-spoke-cluster.sh` (Talos-in-Docker) | `inner-loop` -> `env/spokes-ryzen` | `ryzen.tail286401.ts.net:6443` (host-device raw TCP passthrough, full TLS verify) | hub mirror over Tailscale |
 | **dev** | disposable Hetzner SWE-bench spoke | Crossplane `TalosSpokeClusterClaim` | `main` -> `env/spokes-dev` | direct public IP `:6443` | hub mirror over Tailscale |
 
 > **The hub keeps Azure Key Vault + Azure Workload Identity as the single source of
@@ -31,10 +31,10 @@ matter today:
    - Build/recreate **dev** (Crossplane Hetzner spoke) -> `references/dev.md`,
      then `runbooks/recreate-dev.md`.
 2. **Need the shared model?** (cluster-Secret contract, transport contract,
-   source-hydrator/Promoter, branch flow, AWI->Tailscale, SNI/CoreDNS egress,
-   per-cluster ES parameterization) -> `references/architecture.md`.
+   source-hydrator/Promoter, branch flow, AWI->Tailscale, ryzen host-passthrough
+   connectivity, per-cluster ES parameterization) -> `references/architecture.md`.
 3. **Hit a known failure?** -> `runbooks/recovery-and-gotchas.md` (Talos ISO/k8s
-   in-place upgrade, apiserver-proxy SNI fix, kueue `ClientSideApplyMigration`,
+   in-place upgrade, ryzen host-passthrough connectivity, kueue `ClientSideApplyMigration`,
    RFC6902 `op: add` clobber, env-table SWE-bench restore, stale tailnet device
    cleanup).
 4. **Cross-reference the focused skills** for the deep mechanics:
@@ -57,8 +57,8 @@ must all be healthy too.
         |           -> appset materializes the spoke-<name> root Application
 3. SECRET TRANSPORT spoke ESO reads hub ns spoke-secrets over Tailscale
         |           (hub-secrets-store CSS; AWI/KV stays hub-only canonical)
-4. HUB CONNECTIVITY hub ArgoCD can reach the spoke API (direct IP, or operator
-        |           apiserver-proxy + SNI/CoreDNS egress for Tailscale spokes)
+4. HUB CONNECTIVITY hub ArgoCD can reach the spoke API (direct IP, or ryzen
+        |           host-device raw TCP passthrough over Tailscale + CoreDNS egress)
 5. WORKLOADS        all <name>-* child apps Synced/Healthy; DB migrate-then-seed;
         |           per-cluster ExternalSecret repointing applied
 6. VERIFY           the per-cluster verification command block passes clean
@@ -71,9 +71,11 @@ Full detail in `references/architecture.md`. The load-bearing pieces:
 - **Cluster-Secret contract** (Contract 1). A Secret in ns `argocd` labeled
   `argocd.argoproj.io/secret-type=cluster` + `stacks.io/hub-managed=true` +
   `stacks.io/cluster-role=spoke` + `stacks.io/platform=talos`, annotated
-  `spoke-cluster=<name>`. dev/staging materialize it from KV via an ExternalSecret;
-  **ryzen uses a STATIC committed Secret** (`Secret-cluster-ryzen.yaml`,
-  `auth-mode=tailscale-acl-impersonation`, `source-branch=inner-loop`).
+  `spoke-cluster=<name>`. dev/staging AND ryzen materialize it from KV via an
+  ExternalSecret. **ryzen uses `ExternalSecret-cluster-ryzen.yaml`** (the old static
+  `Secret-cluster-ryzen.yaml` was deleted): `server=https://ryzen.tail286401.ts.net:6443`,
+  `insecure:false`+caData, a per-recreate ServiceAccount bearerToken,
+  `source-branch=inner-loop`.
 - **spoke-clusters-appset** (cluster generator) turns each cluster Secret into a
   `spoke-<name>` Application: `drySource` path `packages/overlays/<name>`,
   `targetRevision` from the `stacks.io/source-branch` annotation (default `main`,
@@ -94,11 +96,21 @@ Full detail in `references/architecture.md`. The load-bearing pieces:
   `caBundle` is hard-set to it, REQUIRED by ESO v0.9.13), authenticating with a
   scoped read-only SA token. A spoke CoreDNS rewrite maps that FQDN ->
   `k8s-api-hub-egress.tailscale.svc.cluster.local`.
-- **apiserver-proxy SNI/CoreDNS egress** (ryzen-only, hub->spoke direction). The
-  Tailscale operator apiserver-proxy STRICTLY validates wire SNI = its own
-  hostname; ArgoCD does not send `tlsClientConfig.serverName` as the wire SNI.
-  Fix: cluster-Secret `server: https://ryzen-operator.tail286401.ts.net` + a HUB
-  CoreDNS rewrite `ryzen-operator... -> ryzen-api-egress.tailscale.svc.cluster.local`.
+- **Host-device raw TCP passthrough** (ryzen-only, hub->spoke direction). hub->ryzen
+  reaches the ryzen Talos kube-apiserver DIRECTLY over Tailscale via the ryzen HOST
+  device (`ryzen.tail286401.ts.net`, `100.96.102.1`, `tag:k8s`) running
+  `tailscale serve --bg --tcp=6443` as a RAW TCP passthrough to the local apiserver
+  (nixos-config `services.tailscaleK8sApiserver` / the `tailscale-serve-k8s-apiserver`
+  oneshot; the stacks bootstrap restarts it after each cluster create). No TLS
+  termination, so the Talos apiserver's own serving cert reaches the hub end-to-end;
+  the hub does FULL TLS verify (`insecure:false`) against the Talos CA, and the cert's
+  `apiServer.certSANs` cover `ryzen.tail286401.ts.net`+`100.96.102.1` — **no SNI
+  workaround needed**. HUB CoreDNS rewrite `ryzen.tail286401.ts.net -> ryzen-api-egress`
+  (self-healing CronJob) points at the egress; the Tailscale operator apiserver-proxy
+  is NO LONGER in this path (so it never provisions an LE cert). WHY: the operator
+  proxy's per-hostname Let's Encrypt cert (5 dup-certs/week limit) was exhausted by
+  recreate churn, taking the ryzen fleet to 0-healthy (2026-05-29). Host-passthrough
+  consumes ZERO LE quota. PRs #2305 (hub cutover), #2307 (`--ts-host-passthrough`).
 - **Per-cluster ExternalSecret parameterization.** Shared workload manifests
   hardcode `remoteRef.key=ryzen-shared-secrets`. dev re-points them onto
   `dev-shared-secrets` via `scripts/gitops/render-workflow-builder-release-overlays.sh`
@@ -109,7 +121,7 @@ Full detail in `references/architecture.md`. The load-bearing pieces:
 
 | Direction | Used for | FQDN | Rewrite location -> target |
 |---|---|---|---|
-| **hub -> ryzen** | ArgoCD sync to spoke API | `ryzen-operator.tail286401.ts.net` | **HUB** CoreDNS -> `ryzen-api-egress.tailscale.svc.cluster.local` |
+| **hub -> ryzen** | ArgoCD sync to spoke API (raw TCP passthrough via ryzen HOST device) | `ryzen.tail286401.ts.net:6443` | **HUB** CoreDNS -> `ryzen-api-egress.tailscale.svc.cluster.local` |
 | **ryzen/dev -> hub** | ESO secret fetch | `k8s-api-hub-ingress.tail286401.ts.net` | **SPOKE** CoreDNS -> `k8s-api-hub-egress.tailscale.svc.cluster.local` |
 
 Different devices, different rewrites, different clusters. ESO uses the

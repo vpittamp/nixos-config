@@ -133,5 +133,8 @@ git ls-remote origin env/hub                                                    
   spokes are unreachable; ESO `certController.enabled=false` for Talos/Flannel webhook
   timeouts. `ClientSideApplyMigration=false` is a **ryzen-only** overlay patch, NOT hub.
 - The shared operator manifest hardcodes `OPERATOR_HOSTNAME=ryzen-operator` — the hub
-  operator device is also `ryzen-operator` (latent collision; the hub does not rely on
-  its own operator proxy for spoke connectivity).
+  operator device is also `ryzen-operator` (latent naming collision). Now purely
+  cosmetic for connectivity: hub->ryzen rides the ryzen HOST device's raw TCP
+  passthrough (`ryzen.tail286401.ts.net:6443`), so NO Tailscale operator
+  apiserver-proxy (hub's or ryzen's) is in the spoke-connectivity path — and no
+  per-hostname Let's Encrypt cert is provisioned for it.

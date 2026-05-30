@@ -12,12 +12,18 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
 - 3 nodes (ryzen-controlplane-1 + ryzen-worker-1/2), OS-IMAGE `Talos (v1.13.2)`,
   k8s v1.36.0, containerd 2.2.3, subnet 10.6.0.0/24. (CP 4GiB/3cpu, 2 workers
   13GiB/5cpu, exposes 9443:443.)
-- Registered by the STATIC argocd cluster Secret `cluster-ryzen`
-  (`packages/components/hub-management/manifests/spoke-credentials/Secret-cluster-ryzen.yaml`):
-  labels secret-type=cluster, cluster-role=spoke, hub-managed=true, platform=talos;
+- Registered by the argocd cluster Secret `cluster-ryzen`, materialized from Azure
+  Key Vault by `ExternalSecret-cluster-ryzen.yaml`
+  (`packages/components/hub-management/manifests/spoke-credentials/`; the old static
+  `Secret-cluster-ryzen.yaml` was deleted): labels secret-type=cluster,
+  cluster-role=spoke, hub-managed=true, platform=talos;
   `workload.stacks.io/workflow-builder` is **intentionally OMITTED** (the overlay
   composes workflow-builder-system directly). Annotations spoke-cluster=ryzen,
-  `stacks.io/source-branch=inner-loop`, `stacks.io/auth-mode=tailscale-acl-impersonation`.
+  `stacks.io/source-branch=inner-loop`. Connection fields:
+  `server=https://ryzen.tail286401.ts.net:6443`, `insecure:false`+caData (Talos
+  cluster CA), per-recreate ServiceAccount bearerToken (NOT impersonation) — all
+  sourced from KV keys `ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}` minted by register-spoke
+  `--ts-host-passthrough`.
 
 **Rendering / sync**
 - The hub spoke-clusters appset materializes `spoke-ryzen`: drySource path
@@ -40,12 +46,26 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
   `ryzen-shared-secrets` over Tailscale. Ready=True; `hub-secrets-token` in ns
   external-secrets; spoke CoreDNS rewrite present; ESes SecretSynced/Valid.
 
-**Hub->ryzen connectivity** (SNI/CoreDNS — the ryzen-only path)
-- cluster-ryzen `server = https://ryzen-operator.tail286401.ts.net`; HUB CoreDNS
-  rewrite `ryzen-operator... -> ryzen-api-egress.tailscale.svc.cluster.local`; hub ns
-  `tailscale` Service `ryzen-api-egress` ExternalName with
-  `tailnet-fqdn=ryzen-operator.tail286401.ts.net`; spoke operator
-  OPERATOR_HOSTNAME=ryzen-operator, APISERVER_PROXY=true. See `architecture.md` §5.
+**Hub->ryzen connectivity** (host-device raw TCP passthrough — the ryzen-only path)
+- hub ArgoCD reaches the ryzen Talos kube-apiserver DIRECTLY over Tailscale via the
+  ryzen HOST device (`ryzen.tail286401.ts.net`, `100.96.102.1`, `tag:k8s`) running
+  `tailscale serve --bg --tcp=6443` as a RAW TCP passthrough to the local apiserver
+  (nixos-config `services.tailscaleK8sApiserver` / the `tailscale-serve-k8s-apiserver`
+  oneshot auto-discovers the Docker host port; the stacks bootstrap restarts it after
+  each cluster create).
+- Raw passthrough = NO TLS termination, so the Talos apiserver's OWN serving cert
+  reaches the hub end-to-end and the hub does FULL TLS verify (`insecure:false`)
+  against the Talos cluster CA. The cert carries `apiServer.certSANs:
+  [ryzen.tail286401.ts.net, 100.96.102.1]` (set by the bootstrap `--config-patch`),
+  so verification passes — **no SNI workaround needed** (the cert legitimately covers
+  the hostname).
+- cluster-ryzen `server = https://ryzen.tail286401.ts.net:6443`; HUB CoreDNS rewrite
+  `ryzen.tail286401.ts.net -> ryzen-api-egress.tailscale.svc.cluster.local`
+  (self-healing CronJob); hub ns `tailscale` Service `ryzen-api-egress` ExternalName
+  with `tailnet-fqdn=ryzen.tail286401.ts.net`, port 6443. The Tailscale operator
+  apiserver-proxy is NO LONGER in this path (it still runs for other tailnet
+  exposures but never provisions an LE cert because nothing connects to its
+  hostname). See `architecture.md` §5.
 
 **Branch**: ryzen tracks `inner-loop`, NOT `main`.
 
@@ -53,18 +73,23 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
 
 1. **PROVISION (imperative).** `deployment/scripts/bootstrap-spoke-cluster.sh` on the
    ryzen host. Canonical recreate:
-   `bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate --ts-acl-mode`
-   (`--ts-acl-mode` = Tailscale-ACL hub<->spoke, no Azure bearer token / no JWKS+AAD
-   wait). Produces bare Talos-Docker with ONLY: Tailscale operator (helm), the
+   `bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate --ts-host-passthrough`
+   (`--ts-host-passthrough` = hub->ryzen over the ryzen host device's raw TCP
+   passthrough + a per-recreate ServiceAccount bearer token; register-spoke mints the
+   SA token, extracts the Talos CA, and pushes both to KV as
+   `ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}`; restarts the `tailscale-serve-k8s-apiserver`
+   oneshot). The legacy `--ts-acl-mode` (operator apiserver-proxy + ACL impersonation)
+   is **deprecated for ryzen** — it reintroduces the Let's Encrypt dependency.
+   Produces bare Talos-Docker with ONLY: Tailscale operator (helm), the
    ProxyGroup/ProxyClass for kube-api exposure, hub-spoke SA+CRB. It does NOT install
    cert-manager/ESO/ArgoCD/gitea/tekton/observability/workflow-builder — the hub
    deploys all of those via rendered child Applications. Requires env
    `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_CLIENT_SECRET`.
-2. **GITOPS REGISTRATION** (Contract 1). The static `Secret-cluster-ryzen.yaml` is
-   GitOps-delivered (referenced from `hub-management/kustomization.yaml`). The
-   **hub-spoke-appsets** spoke-clusters-appset templates `spoke-ryzen` with
-   `targetRevision=inner-loop`. (Edit the hub-spoke-appsets copy, not the hub-base
-   copy — see `architecture.md` §3.)
+2. **GITOPS REGISTRATION** (Contract 1). `ExternalSecret-cluster-ryzen.yaml` is
+   GitOps-delivered (referenced from `hub-management/kustomization.yaml`) and
+   materializes the cluster-ryzen Secret from KV. The **hub-spoke-appsets**
+   spoke-clusters-appset templates `spoke-ryzen` with `targetRevision=inner-loop`.
+   (Edit the hub-spoke-appsets copy, not the hub-base copy — see `architecture.md` §3.)
 3. **SECRET TRANSPORT** (Contract 2, spoke side is IMPERATIVE for ryzen). The
    `hub-secrets-store` CSS + egress Service are applied by
    `deployment/scripts/lib/spoke-transport-bootstrap.sh` (invoked from
@@ -73,10 +98,14 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
    re-applied every recreate (Talos resets the Corefile). The hub mirror
    (`ExternalSecret-ryzen-shared-secrets.yaml`) + RBAC + Ingress device are GitOps on
    the hub side. See `architecture.md` §4.
-4. **HUB->RYZEN CONNECTIVITY** (SNI/CoreDNS, §5). After a recreate a **stale duplicate
-   `ryzen-operator` tailnet device** lingers — delete it via the TS API (token minted
-   from the operator-oauth Secret), else the operator suffixes `-1`. Verify SNI with
-   `curl --connect-to` -> HTTP 200.
+4. **HUB->RYZEN CONNECTIVITY** (host-device raw TCP passthrough, §5). Confirm the ryzen
+   HOST device's `tailscale serve --bg --tcp=6443` is up and the hub CoreDNS rewrite
+   (`ryzen.tail286401.ts.net -> ryzen-api-egress`) is present. Verify with a
+   full-verify kubectl through the hub's cluster-ryzen connection (NOT an SNI curl) —
+   `insecure:false`+caData must validate the Talos serving cert. No operator
+   apiserver-proxy or LE cert is in this path, so the stale-`ryzen-operator`-device
+   cleanup is **moot for hub->ryzen connectivity** (the operator device, if present,
+   no longer affects sync).
 5. **WORKLOAD ES REPOINTING** (inline in `packages/overlays/ryzen/kustomization.yaml`):
    `workflow-builder-secrets` data[9,10,21,22] -> `*-RYZEN` OAuth keys;
    `github-clone-credentials` + `gitea-registry-credentials` -> `hub-secrets-store`,
@@ -101,9 +130,9 @@ $C get externalsecrets -A                               # all SecretSynced/Valid
 K=~/.kube/hub-config
 kubectl --kubeconfig $K -n argocd get application spoke-ryzen           # Synced/Healthy, rev=inner-loop
 kubectl --kubeconfig $K -n argocd get applications | grep '^ryzen-'     # all Synced/Healthy
-kubectl --kubeconfig $K -n argocd get secret cluster-ryzen -o jsonpath='{.data.server}' | base64 -d   # https://ryzen-operator.tail286401.ts.net
-kubectl --kubeconfig $K -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' | grep ryzen-operator
-kubectl --kubeconfig $K -n tailscale get svc ryzen-api-egress
+kubectl --kubeconfig $K -n argocd get secret cluster-ryzen -o jsonpath='{.data.server}' | base64 -d   # https://ryzen.tail286401.ts.net:6443
+kubectl --kubeconfig $K -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' | grep ryzen.tail286401   # rewrite -> ryzen-api-egress
+kubectl --kubeconfig $K -n tailscale get svc ryzen-api-egress                                          # ExternalName tailnet-fqdn=ryzen.tail286401.ts.net, port 6443
 git -C /home/vpittamp/repos/PittampalliOrg/stacks/main rev-list --count origin/inner-loop..origin/main   # 0 = current
 ```
 
@@ -124,4 +153,7 @@ git -C /home/vpittamp/repos/PittampalliOrg/stacks/main rev-list --count origin/i
 - **ryzen reads inner-loop NOT main.** Do not mis-diagnose a frozen ryzen as the
   empty-`drySource.kustomize` hydrator-stall bug — spoke-ryzen is path-based; check
   `targetRevision`/inner-loop freshness first.
-- **Stale duplicate `ryzen-operator` device** after every recreate — delete via TS API.
+- **Stale duplicate `ryzen-operator` device** after a recreate is now **moot for
+  hub->ryzen connectivity** (host-passthrough doesn't use the operator proxy). The
+  operator still runs for other tailnet exposures, so optionally delete the duplicate
+  via TS API for hygiene, but it no longer blocks sync.
