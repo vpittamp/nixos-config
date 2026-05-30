@@ -529,13 +529,21 @@ in
       # The hub cluster is the canonical observability sink: it runs the
       # central otel-collector + otel-clickhouse + grafana + tempo stack
       # that spokes already forward to via clickhouse-hub-egress. Routing
-      # host Alloy at the hub-side Tailscale Ingress bypasses the spokes
-      # entirely and avoids the dev-spoke endpoint churn that followed the
-      # 2026-05-28 Tailscale-native secrets migration. Spokes' own
-      # collectors continue handling in-cluster K8s telemetry independently.
-      # See stacks: packages/components/addons/observability-clickhouse-shared/manifests/otel-collector-tailnet/Ingress-otel-collector-hub-tailnet.yaml
-      default = "https://otel-collector-hub.tail286401.ts.net";
-      description = "Kubernetes OTEL collector endpoint (Tailscale-served Ingress on hub).";
+      # host Alloy at the hub-side Tailscale LoadBalancer bypasses the
+      # spokes entirely and avoids the dev-spoke endpoint churn that
+      # followed the 2026-05-28 Tailscale-native secrets migration. Spokes'
+      # own collectors continue handling in-cluster K8s telemetry
+      # independently.
+      #
+      # Plain HTTP on port 4318: this is a Tailscale LoadBalancer Service
+      # (mirroring otel-clickhouse-tailnet), not an Ingress — the
+      # tailnet-ca ClusterIssuer is spoke-only so hub Tailscale Ingresses
+      # can't acquire TLS certs. Tailscale's WireGuard transport already
+      # encrypts the link, so HTTPS termination is redundant.
+      #
+      # See stacks: packages/components/addons/observability-clickhouse-shared/manifests/otel-collector-tailnet/Service-otel-collector-hub-tailnet.yaml
+      default = "http://otel-collector-hub.tail286401.ts.net:4318";
+      description = "Kubernetes OTEL collector endpoint (Tailscale LoadBalancer Service on hub).";
     };
 
     phoenixEndpoint = mkOption {

@@ -187,7 +187,7 @@ Unified telemetry collection via Grafana Alloy, exporting to the hub K8s cluster
 **Architecture**:
 ```
 AI CLIs → Alloy :4318 → [batch] → otel-ai-monitor :4320 (local Quickshell panel)
-                               → otel-collector-hub.tail286401.ts.net (Tailscale Ingress on hub)
+                               → otel-collector-hub.tail286401.ts.net:4318 (Tailscale LoadBalancer on hub, plain HTTP)
                                  → K8s otel-collector (hub observability ns)
                                    → otel-clickhouse-tailnet (hub)         (durable storage)
                                    → otlphttp/mlflow                       (per-CLI MLflow experiments)
@@ -222,7 +222,7 @@ curl -sk http://clickhouse-hub.tail286401.ts.net:8123/ping   # ClickHouse reacha
 ```nix
 services.grafana-alloy = {
   enable = true;
-  # k8sEndpoint default = https://otel-collector-hub.tail286401.ts.net (Tailscale Ingress on hub; dev/ryzen spoke Ingresses retired post-A6)
+  # k8sEndpoint default = http://otel-collector-hub.tail286401.ts.net:4318 (Tailscale LoadBalancer on hub; dev/ryzen spoke Ingresses retired post-A6)
   # NOTE: lokiEndpoint/mimirEndpoint still default to legacy *.cnoe.localtest.me:8443 URLs
   # and silently fail (Loki/Mimir aren't deployed; observability is hub-side). Logs/metrics
   # flow through the K8s otel-collector on hub instead.
@@ -249,7 +249,7 @@ services.otel-ai-monitor = {
 - `*.cnoe.localtest.me:8443` URLs no longer work — they were idpbuilder/kind legacy that resolved to `::1`. Post-A6 hub-managed mode moved observability to hub-side Tailscale Ingresses (`otel-collector-hub.tail286401.ts.net`, `clickhouse-hub.tail286401.ts.net`, `grafana-hub.tail286401.ts.net`, etc.). The dev/ryzen spoke Ingresses for observability were retired (see stacks `389291160`, `ab457a041`).
 - Quick checks for the AI CLI telemetry pipeline:
   - `curl -sk http://clickhouse-hub.tail286401.ts.net:8123/ping`                                          (returns "Ok.")
-  - `curl -sk -X POST https://otel-collector-hub.tail286401.ts.net/v1/traces -w "%{http_code}\n"`       (HTTP 200 = healthy)
+  - `curl -s -X POST http://otel-collector-hub.tail286401.ts.net:4318/v1/traces -w "%{http_code}\n"`   (HTTP 200 = healthy)
   - Run the same SQL the panel runs: see `_CLICKHOUSE_SESSIONS_QUERY` in `home-modules/tools/i3_project_manager/cli/monitoring_data.py`.
 
 ## Testing
