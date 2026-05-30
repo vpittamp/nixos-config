@@ -323,6 +323,13 @@ done
 # remove the orphan v0.9.13 webhook + cert-controller (not chart-managed under webhook.create:false; inert once strategy=None)
 kubectl delete deploy external-secrets-webhook external-secrets-cert-controller -n external-secrets --ignore-not-found
 kubectl delete svc  external-secrets-webhook -n external-secrets --ignore-not-found
+# CRITICAL — also delete the orphan VALIDATING webhook configs, else they keep pointing at
+# the deleted external-secrets-webhook service and EVERY ExternalSecret/SecretStore apply
+# fails with `failed calling webhook "validate.externalsecret.external-secrets.io": failed
+# to call webhook` -> apps that manage ES (ryzen-workflow-builder/function-router/
+# browserstation) get stuck "Syncing" (op Running, retrying) even though sync=Synced
+# health=Healthy. controller-only ESO v2 does NOT use them (dev runs without them).
+kubectl delete validatingwebhookconfiguration externalsecret-validate secretstore-validate --ignore-not-found
 # then sync the app to apply the v1 CRD selectableFields
 argocd app sync <cluster>-external-secrets --grpc-web
 ```
