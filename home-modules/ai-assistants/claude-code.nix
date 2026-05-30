@@ -124,6 +124,15 @@ lib.mkIf enableClaudeCode {
         force = true;
       };
 
+      # The claude-code HM module symlinks ~/.claude/settings.json into the
+      # read-only Nix store, so Claude Code's own writes (e.g. `/tui fullscreen`,
+      # theme toggles) fail with EROFS. Suppress the symlink here; the
+      # writableClaudeSettings activation below installs a writable copy of the
+      # same generated content instead. Declarative settings stay the source of
+      # truth (the copy is refreshed on every rebuild); runtime tweaks persist
+      # between rebuilds.
+      ".claude/settings.json".enable = lib.mkForce false;
+
       # LSP plugin for Claude Code — provides code intelligence via language servers
       # All binaries are Nix-managed and available in PATH
       ".claude/plugins/nix-lsp/.claude-plugin/plugin.json".text = builtins.toJSON {
@@ -179,6 +188,20 @@ lib.mkIf enableClaudeCode {
   # Problem: Plugins from the marketplace use #!/bin/bash which doesn't exist on NixOS
   # Solution: Replace with #!/usr/bin/env bash which is portable
   # This runs on every home-manager activation to handle plugin updates
+  # Install ~/.claude/settings.json as a WRITABLE copy of the Nix-generated
+  # settings (see the `.claude/settings.json".enable = false` note above).
+  # Without this, Claude Code can't persist any runtime setting because the
+  # store-backed symlink is read-only (EROFS).
+  home.activation.writableClaudeSettings = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    _src='${config.home.file.".claude/settings.json".source}'
+    _dst="$HOME/.claude/settings.json"
+    run ${pkgs.coreutils}/bin/mkdir -p "$HOME/.claude"
+    # Drop any leftover read-only symlink from a previous generation, then
+    # refresh the writable copy. Declarative settings win on every rebuild.
+    if [ -L "$_dst" ]; then run ${pkgs.coreutils}/bin/rm -f "$_dst"; fi
+    run ${pkgs.coreutils}/bin/install -m 0644 "$_src" "$_dst"
+  '';
+
   home.activation.patchClaudePlugins = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     PLUGIN_CACHE="$HOME/.claude/plugins/cache/claude-code-plugins"
     if [ -d "$PLUGIN_CACHE" ]; then
@@ -284,6 +307,9 @@ lib.mkIf enableClaudeCode {
 
       # Model selection removed - will use default or user's choice
       theme = "dark";
+      # Terminal UI renderer: "fullscreen" uses the flicker-free alt-screen
+      # renderer with virtualized scrollback (equivalent to /tui fullscreen).
+      tui = "fullscreen";
       editorMode = "vim";
       autoCompactEnabled = true;
       todoFeatureEnabled = true;
