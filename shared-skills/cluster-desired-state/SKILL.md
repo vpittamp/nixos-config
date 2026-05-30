@@ -97,9 +97,27 @@ Full detail in `references/architecture.md`. The load-bearing pieces:
   The spoke ESO `ClusterSecretStore hub-secrets-store` (kubernetes provider) reads
   them over Tailscale via the standalone hub Ingress **device**
   `k8s-api-hub-ingress.tail286401.ts.net` (LE cert chaining to **ISRG Root X1** —
-  `caBundle` is hard-set to it, REQUIRED by ESO v0.9.13), authenticating with a
+  `caBundle` is hard-set to it, still REQUIRED on ESO v2.4.1), authenticating with a
   scoped read-only SA token. A spoke CoreDNS rewrite maps that FQDN ->
   `k8s-api-hub-egress.tailscale.svc.cluster.local`.
+- **External Secrets Operator is `2.4.1` fleet-wide on the `external-secrets.io/v1`
+  API** (2026-05-30). Chart `2.4.1` is pinned in `packages/base/apps/external-secrets.yaml`
+  (spoke default) and `packages/components/hub-base/apps/external-secrets.yaml` (hub),
+  both with `crds.unsafeServeV1Beta1: true` so the CRDs serve `v1` (storage) **and**
+  the deprecated `v1beta1` (lets any lingering v1beta1 manifest keep working). **All
+  ES/CSS manifests are `external-secrets.io/v1`** (PushSecret/ClusterPushSecret stay
+  `v1alpha1` — no v1). Spokes run ESO **controller-only** (`webhook.create:false`,
+  `certController.create:false`; v2 renders the same shape). A global `argocd-cm`
+  `resource.customizations.ignoreDifferences.external-secrets.io_ExternalSecret`
+  (via the `argocd-cm-patches` Job) ignores the server-defaulted fields
+  (`conversionStrategy`/`decodingStrategy`/`metadataPolicy`/`nullBytePolicy` +
+  `target.deletionPolicy`/`template.engineVersion`/`mergePolicy`) so ArgoCD's
+  client-side diff doesn't flag them. **ESO version is per-cluster — ALWAYS check
+  `kubectl get crd externalsecrets.external-secrets.io -o jsonpath='{.spec.versions[*].name}'`
+  on EACH target before migrating manifest apiVersions** (the hub was bumped to v2
+  before the spokes; flipping spoke manifests to `v1` while a spoke still served only
+  `v1beta1` broke every spoke ES app with `resource mapping not found`). See
+  `runbooks/recovery-and-gotchas.md` for the webhook-spoke in-place-upgrade fix.
 - **Persistent self-signed CA** (Contract 3, web exposure). A 10-year offline CA
   ("PittampalliOrg Tailnet Dev CA") lives in Azure KV as `TAILNET-DEV-CA-CRT/KEY`;
   the hub mirrors it CLUSTER-NEUTRALLY into ns `spoke-secrets` Secret `tailnet-ca`

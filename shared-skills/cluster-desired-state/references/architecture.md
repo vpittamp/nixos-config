@@ -130,8 +130,11 @@ Spokes no longer authenticate to Azure AD. Contract spec:
 (`packages/components/spoke-tailscale-secrets/manifests/spoke-transport/`):
 - `ClusterSecretStore-hub-secrets-store.yaml` — ESO kubernetes provider, server
   `https://k8s-api-hub-ingress.tail286401.ts.net`, **`caBundle` hard-coded to ISRG
-  Root X1** (REQUIRED by ESO v0.9.13's webhook), bearerToken = SA token minted onto
-  the spoke as Secret `external-secrets/hub-secrets-token` (key `token`).
+  Root X1** (REQUIRED — the hub Ingress device's LE serving cert chains to ISRG Root
+  X1; still required on ESO v2.4.1, validated), bearerToken = SA token minted onto
+  the spoke as Secret `external-secrets/hub-secrets-token` (key `token`). The manifest
+  is `apiVersion: external-secrets.io/v1` (fleet migrated off v1beta1 2026-05-30;
+  see `runbooks/recovery-and-gotchas.md` §L).
 - `Service-k8s-api-hub-egress.yaml` — ExternalName egress (operator rewrites
   `.spec.externalName` at runtime; the `dev-spoke-transport` app shows this Service
   permanently OutOfSync/Healthy — EXPECTED, do not chase).

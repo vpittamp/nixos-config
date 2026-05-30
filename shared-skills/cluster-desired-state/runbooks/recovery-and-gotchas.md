@@ -290,3 +290,60 @@ on any cluster. PR #2317 removed it from 23 manifests + 2 SAs. All images are
 
 **Verify.** No `gitea-registry-creds` imagePullSecret on any workload SA; pods pull
 `ghcr.io/pittampalliorg/*` images cleanly.
+
+## L. External Secrets Operator: v2.4.1 + `external-secrets.io/v1` (2026-05-30 migration)
+
+**Desired state.** ESO chart `2.4.1` fleet-wide (hub `hub-base/apps/external-secrets.yaml`,
+spokes `base/apps/external-secrets.yaml`), both with `crds.unsafeServeV1Beta1: true`
+(CRDs serve `v1` storage + deprecated `v1beta1`). **ALL ExternalSecret/ClusterSecretStore
+manifests are `external-secrets.io/v1`** (PushSecret/ClusterPushSecret stay `v1alpha1`).
+Spokes run ESO controller-only (no webhook/cert-controller).
+
+**Pre-flight before ANY manifest apiVersion migration — ESO version is per-cluster.**
+The hub is bumped to v2 ahead of spokes. Run on EACH target cluster:
+`kubectl get crd externalsecrets.external-secrets.io -o jsonpath='{.spec.versions[*].name}'`.
+If a cluster does NOT list `v1`, do NOT flip its manifests to `v1` — that breaks every
+ES app with `unable to resolve parseableType for GroupVersionKind: external-secrets.io/v1`
+/ `resource mapping not found` (no secret outage — existing objects untouched — but
+apps can't apply/compare). This is exactly why the first fleet flip was reverted.
+
+**In-place ESO upgrade of a spoke that has a webhook+cert-controller (e.g. ryzen's
+old 0.9.13 install) — REQUIRED one-time fix.** After the controller bumps to v2.4.1,
+the CRDs still carry `conversion.strategy: Webhook` pointing at the now-stale v0.9.13
+webhook, which can't convert to `v1` → ExternalSecrets become UNREADABLE
+(`conversion webhook ... no kind ExternalSecret is registered for version v1`). Fix
+(live, one-time; the v2 chart leaves `conversion` unset so FRESH rebuilds default to
+None and are clean):
+```bash
+# set every external-secrets.io + generators.external-secrets.io CRD with strategy=Webhook to None
+for c in $(kubectl get crd -o name | grep external-secrets.io); do
+  [ "$(kubectl get $c -o jsonpath='{.spec.conversion.strategy}')" = Webhook ] && \
+    kubectl patch $c --type=json -p '[{"op":"replace","path":"/spec/conversion","value":{"strategy":"None"}}]'
+done
+# remove the orphan v0.9.13 webhook + cert-controller (not chart-managed under webhook.create:false; inert once strategy=None)
+kubectl delete deploy external-secrets-webhook external-secrets-cert-controller -n external-secrets --ignore-not-found
+kubectl delete svc  external-secrets-webhook -n external-secrets --ignore-not-found
+# then sync the app to apply the v1 CRD selectableFields
+argocd app sync <cluster>-external-secrets --grpc-web
+```
+dev was controller-only on 0.9.13 so it needed NONE of this; ryzen did.
+
+**ESO-defaults / nullBytePolicy drift is muted globally — do NOT chase it per-app.**
+The v1 schema server-defaults `data[].remoteRef.{conversionStrategy,decodingStrategy,
+metadataPolicy,nullBytePolicy}` + `target.{deletionPolicy,template.engineVersion,
+template.mergePolicy}` onto stored objects; ArgoCD's client-side diff would flag them
+(empty `argocd app diff` but persistent OutOfSync — check the **UI Diff tab**, not the
+CLI). Neutralized fleet-wide by a global `argocd-cm`
+`resource.customizations.ignoreDifferences.external-secrets.io_ExternalSecret`
+(added via the `argocd-cm-patches` Job). Per-app ESO-default `ignoreDifferences`
+(tailnet-ca, etc.) are now redundant.
+
+**Migration object-state note.** Flipping a manifest to `v1` only fails the SSA apply
+if the live object has `managedFields` pinned to `external-secrets.io/v1beta1` that own
+`.spec.data` (then `nullBytePolicy: field not declared in schema`). Fix = reset that
+object's managedFields: `kubectl patch <obj> --type=merge -p '{"metadata":{"managedFields":[{}]}}'`
+then re-apply at v1. Objects with empty/v1 managedFields apply clean (most do).
+
+**Delivery PRs (history):** spoke ESO upgrade #2339(dev)/#2341(ryzen)/#2342(promote-to-base);
+v1 manifest migration #2343; global ignore #2334. End state verified: hub/dev/ryzen all
+v2.4.1, all ES served at v1, all SecretSynced, 0/194 OutOfSync.

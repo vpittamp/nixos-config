@@ -68,18 +68,29 @@ kubectl --kubeconfig ~/.kube/hub-config logs -n argocd statefulset/argocd-applic
 
 ## Common drift patterns
 
-### ExternalSecret defaults
+### ExternalSecret defaults (handled fleet-wide since 2026-05-30 — `argocd-cm` global ignore)
 
-External Secrets Operator defaults fields such as:
+External Secrets Operator (now `v2.4.1`, `external-secrets.io/v1` API) server-defaults
+these fields onto stored objects:
 
 - `remoteRef.conversionStrategy: Default`
 - `remoteRef.decodingStrategy: None`
 - `remoteRef.metadataPolicy: None`
+- `remoteRef.nullBytePolicy: Ignore` ← **v1-only field**
 - `target.deletionPolicy: Retain`
 - `target.template.engineVersion: v2`
 - `target.template.mergePolicy: Replace`
 
-Prefer declaring these defaults in Git when they cause persistent Argo drift.
+ArgoCD's **client-side** diff flags these (live has them; the manifest doesn't), which
+shows as **persistent OutOfSync with an EMPTY `argocd app diff`** — the CLI/SSA
+normalize them away, so **check the ArgoCD UI Diff tab, not the CLI**. This is now
+neutralized **fleet-wide** by a global `argocd-cm`
+`resource.customizations.ignoreDifferences.external-secrets.io_ExternalSecret`
+(jqPathExpressions covering all the fields above), applied via the `argocd-cm-patches`
+Job — so you should NOT see ESO-default drift anymore. Per-app `ignoreDifferences`
+(tailnet-ca, etc.) are now redundant. Do NOT re-diagnose this as "stale Argo status."
+For the per-cluster ESO version + v1-migration mechanics, see the `cluster-desired-state`
+skill (`runbooks/recovery-and-gotchas.md` §L).
 
 ### Tekton defaults
 

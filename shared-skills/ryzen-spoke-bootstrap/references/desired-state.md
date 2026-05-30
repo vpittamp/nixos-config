@@ -17,7 +17,7 @@ This is the authoritative description of "what a freshly-bootstrapped ryzen clus
 |---|---|---|
 | Talos | Talos `v1.13.2`, k8s `v1.36.0` | Talos-Docker, imperatively bootstrapped (NOT Crossplane) |
 | cert-manager | jetstack chart `v1.14.4` | Tailscale operator dependency |
-| external-secrets | chart `0.9.13` | resolves ClusterSecretStore **`hub-secrets-store`** (kubernetes provider) over Tailscale — NOT `azure-keyvault-store`. ESO v0.9.13 REQUIRES `caBundle=ISRG Root X1` on the store. |
+| external-secrets | chart `2.4.1` (was 0.9.13) | resolves ClusterSecretStore **`hub-secrets-store`** (kubernetes provider) over Tailscale — NOT `azure-keyvault-store`. ESO (now v2.4.1) still REQUIRES `caBundle=ISRG Root X1` on the store. Manifest is external-secrets.io/v1. |
 | ~~Azure Workload Identity webhook~~ | — | NOT installed on the spoke (post-AWI-removal). AWI lives only on the hub as the canonical KV source. |
 | Tailscale operator | chart from `pkgs.tailscale.com/helmcharts`, `apiServerProxyConfig.mode=true` + `allowImpersonation=true` | `OPERATOR_HOSTNAME=ryzen-operator`, `APISERVER_PROXY=true`, exposes ryzen kube-api as device `ryzen-operator.tail286401.ts.net` |
 | Contour + Kourier | ArgoCD-managed | ingress (NOT ingress-nginx); Knative serving uses net-kourier |

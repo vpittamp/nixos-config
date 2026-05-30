@@ -205,7 +205,7 @@ packages/components/hub-base/manifests/ProxyGroup-kube-apiserver.yaml
 packages/components/spoke-tailscale-secrets/
   CONTRACT.md
   apps/spoke-transport.yaml
-  manifests/spoke-transport/ClusterSecretStore-hub-secrets-store.yaml  # caBundle = ISRG Root X1 (required by ESO v0.9.13)
+  manifests/spoke-transport/ClusterSecretStore-hub-secrets-store.yaml  # caBundle = ISRG Root X1 (required; still on ESO v2.4.1; manifest is external-secrets.io/v1)
   manifests/spoke-transport/Service-k8s-api-hub-egress.yaml
 packages/components/hub-management/manifests/spoke-secrets/
   Namespace-spoke-secrets.yaml
@@ -233,7 +233,7 @@ secrets over Tailscale:
   provider) that reads ns `spoke-secrets` on the hub through the standalone
   Tailscale Ingress DEVICE `k8s-api-hub-ingress.tail286401.ts.net` (LE cert
   chaining to ISRG Root X1; the store's `caBundle` is hard-set to ISRG Root X1,
-  REQUIRED by ESO v0.9.13). A scoped read-only bearer token (SA
+  REQUIRED; still on ESO v2.4.1). A scoped read-only bearer token (SA
   `spoke-secrets-reader`) authorizes it. A spoke CoreDNS rewrite maps the
   Ingress FQDN to `k8s-api-hub-egress.tailscale.svc.cluster.local`.
 - For dev, `scripts/gitops/render-workflow-builder-release-overlays.sh` injects
