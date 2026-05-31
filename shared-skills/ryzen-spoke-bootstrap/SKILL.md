@@ -7,7 +7,9 @@ description: Use this skill when creating, recreating, or repairing the ryzen lo
 
 ## What this skill covers
 
-Bootstrap a fresh ryzen Talos Docker cluster so the hub ArgoCD (running on talos-hub at Hetzner) can register it as a spoke and apply all workloads (workflow-builder, dapr, observability, etc.) via cluster Secret + bearer token. This replaces the retired idpbuilder-based standalone-ryzen flow.
+Bootstrap a fresh ryzen Talos Docker cluster so the hub ArgoCD (running on talos-hub at Hetzner) can register it as a spoke and apply all workloads (workflow-builder, dapr, observability, etc.) via the `cluster-ryzen` Secret. Auth on ryzen is **Tailscale-ACL impersonation** (`bearerToken: "unused"`) over the spoke operator's apiserver-proxy path — NOT a per-spoke bearer token. This replaces the retired idpbuilder-based standalone-ryzen flow.
+
+**Control plane (argocd-agent v0.8.1):** the fleet now runs argocd-agent — the hub runs the PRINCIPAL (single pane, ns `argocd`) and each spoke runs a LOCAL ArgoCD + an agent dialing the principal OUTBOUND over tailnet mTLS (8443). **ryzen = AUTONOMOUS agent** (reconciles its own apps locally; the hub aggregates status). **dev = MANAGED agent** (the hub authors Application objects in ns `dev` and the principal pushes them to the dev agent). Sync OPERATIONS run on the spoke's local controller, so the hub pane shows sync+health but not operation lifecycle ("Unknown operation status" on the hub is architectural/benign). See the `cluster-desired-state` skill for the full end-to-end model and `cluster-desired-state/references/tailscale-and-certs.md` for the cert/Tailscale detail. (NOTE: the ryzen-specific apiserver-proxy SNI + static-`cluster-ryzen`-Secret material below documents the pre-agent hub→spoke kube-API reach pattern; cross-check against current stacks before relying on it during an agent-era recreate.)
 
 **Quick reference for the steady-state architecture**: `references/desired-state.md` — describes the component inventory, networking paths, GitOps source-of-truth, and what a healthy ryzen cluster looks like. Read this first if you're trying to understand the current system without going through the full bootstrap.
 
@@ -156,7 +158,7 @@ kubectl exec -n workflow-builder postgresql-0 -- psql -U postgres -d workflow_bu
 
 - For day-to-day GitOps changes — those go through the `inner-loop` branch (no Promoter on the ryzen lane; see `gitops` skill)
 - For Skaffold inner-loop iteration — see `skaffold-dev-loop` skill
-- For dev/staging spoke management — those are Crossplane-provisioned Hetzner Talos clusters with a different bootstrap path
+- For dev/staging spoke management — dev is now SCRIPT-provisioned (`provision-spoke.sh` + `bootstrap-spoke-deps.sh` + `enroll-dev-agent.sh`), the SAME imperative path as ryzen (Crossplane was removed in Phase D — no `TalosSpokeClusterClaim`, no Composition). dev runs as a MANAGED argocd-agent (hub authors its Application objects in ns `dev`). See the `cluster-desired-state` skill for the full dev provisioning + enrollment path.
 
 ## Critical files (in the stacks repo)
 

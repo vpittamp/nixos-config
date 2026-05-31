@@ -259,9 +259,17 @@ After the push, source-hydrator re-dispatches the new dry SHA → renders `packa
 
 Hub's argocd-application-controller applies all 60+ ryzen-* Applications to the ryzen cluster via the `cluster-ryzen` Secret in hub argocd ns. The kube-api connectivity for that is the Tailscale-apiserver-proxy SNI path described in "Hub → spoke ArgoCD connectivity" below.
 
+## Control plane: argocd-agent v0.8.1
+
+The fleet's control plane is **argocd-agent v0.8.1**. The hub runs the **principal** (single pane, ns `argocd`); each spoke runs a **local ArgoCD + an agent** that dials the principal **OUTBOUND** over tailnet mTLS (8443). **dev = MANAGED agent** (the hub authors Application objects in ns `dev` == the agent name; the principal pushes them to the dev agent; its local controller reconciles — observe via `kubectl -n dev get applications` on the hub). **ryzen = AUTONOMOUS agent** (reconciles its own apps; the hub aggregates status). Sync OPERATIONS run on the spoke's local controller, so the hub pane shows sync+health but NOT operation lifecycle — "Unknown operation status" on the hub is architectural/benign.
+
+For cert-avoidance and the full Tailscale design, see `cluster-desired-state/references/tailscale-and-certs.md` (canonical home). For the end-to-end recreate path (provision → enroll → connectivity → workloads), see the `cluster-desired-state` skill.
+
 ## Spoke registration: the cluster-Secret contract + appsets
 
 Spokes are registered on the hub by an Argo CD **cluster Secret** (label `argocd.argoproj.io/secret-type: cluster`) in the hub `argocd` namespace, and two ApplicationSets fan those Secrets out into Applications.
+
+**Agent-mapping cluster Secret (current, for migrated spokes).** Under argocd-agent the `cluster-<spoke>` Secret is an **AGENT MAPPING**, not a direct kube-API endpoint: `server: https://argocd-agent-resource-proxy:9090?agentName=<spoke>` plus embedded mTLS `certData` / `keyData` / `caData` and **NO `bearerToken`**. This replaced the old direct-server + per-spoke-bearerToken shape (now LEGACY). The per-spoke mTLS cert is minted on the hub and delivered to the spoke over the ESO transport. NOTE: a Headlamp restart would otherwise drop all spokes because these mappings carry no bearerToken — Headlamp reads SEPARATE dedicated `headlamp.dev/cluster=true` Secrets (per-spoke real endpoint + read-only SA token + CA), not the argocd-agent mappings.
 
 **Cluster-Secret contract** (`packages/components/hub-management/manifests/spoke-credentials/`):
 
@@ -274,11 +282,11 @@ Spokes are registered on the hub by an Argo CD **cluster Secret** (label `argocd
 | label `workload.stacks.io/workflow-builder` | `"true"` | **Opt-in** to `spoke-workloads-appset` (dev/staging set it; **ryzen OMITS it** — its overlay composes `workflow-builder-system` directly) |
 | annotation `spoke-cluster` | `<name>` | Drives the templated Application name (`spoke-<name>`) and overlay path (`packages/overlays/<name>`) |
 | annotation `stacks.io/source-branch` | `inner-loop` (ryzen) / unset = `main` (dev/staging) | Selects `drySource.targetRevision` |
-| `stringData.server` | spoke API URL — see SNI note below | Where Argo CD connects |
-| dev/staging | server = **direct public IP** `https://<ip>:6443`, bearer token from a Crossplane-minted SA | Direct API reachable; no SNI workaround |
-| ryzen | server = `https://ryzen-operator.tail286401.ts.net`, `bearerToken: "unused"`, `auth-mode: tailscale-acl-impersonation` | Tailscale-apiserver-proxy + ACL impersonation; no token, no JWKS |
+| `stringData.server` | migrated (agent): `https://argocd-agent-resource-proxy:9090?agentName=<spoke>` + embedded mTLS `certData`/`keyData`/`caData`, NO bearerToken. Legacy: a direct kube-API URL — see SNI note below | Where Argo CD connects / which agent the mapping targets |
+| dev (legacy shape, now superseded by agent mapping) | server = **direct public IP** `https://<ip>:6443`, bearer token from a minted SA | Direct API reachable; no SNI workaround |
+| ryzen (legacy shape) | server = `https://ryzen-operator.tail286401.ts.net`, `bearerToken: "unused"`, `auth-mode: tailscale-acl-impersonation` | Tailscale-apiserver-proxy + ACL impersonation; no token, no JWKS |
 
-dev/staging cluster Secrets are minted by the Crossplane onboarding pipeline (group-5 spoke-register writes `cluster-dev`/`cluster-staging` directly to the hub). **ryzen's `cluster-ryzen` is a STATIC GitOps-delivered Secret** (`Secret-cluster-ryzen.yaml`, referenced from `hub-management/kustomization.yaml`).
+The direct-server + bearerToken Secret shapes above are LEGACY; migrated spokes use the agent-mapping shape (see "Control plane: argocd-agent v0.8.1" above). **dev is now SCRIPT-provisioned + enrolled** (`provision-spoke.sh` + `bootstrap-spoke-deps.sh` + `enroll-dev-agent.sh`) — Crossplane was removed in Phase D (no `TalosSpokeClusterClaim`, no group-N spoke-register). The enroll script mints the dev agent mTLS cert on the hub, delivers it via ESO, and creates `cluster-dev` as a `?agentName=dev` mapping. **ryzen's `cluster-ryzen`** is a STATIC GitOps-delivered Secret (`Secret-cluster-ryzen.yaml`, referenced from `hub-management/kustomization.yaml`).
 
 **The two ApplicationSets** (`packages/components/hub-spoke-appsets/apps/`):
 

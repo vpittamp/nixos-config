@@ -12,18 +12,22 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
 - 3 nodes (ryzen-controlplane-1 + ryzen-worker-1/2), OS-IMAGE `Talos (v1.13.2)`,
   k8s v1.36.0, containerd 2.2.3, subnet 10.6.0.0/24. (CP 4GiB/3cpu, 2 workers
   13GiB/5cpu, exposes 9443:443.)
-- Registered by the argocd cluster Secret `cluster-ryzen`, materialized from Azure
-  Key Vault by `ExternalSecret-cluster-ryzen.yaml`
-  (`packages/components/hub-management/manifests/spoke-credentials/`; the old static
-  `Secret-cluster-ryzen.yaml` was deleted): labels secret-type=cluster,
-  cluster-role=spoke, hub-managed=true, platform=talos;
-  `workload.stacks.io/workflow-builder` is **intentionally OMITTED** (the overlay
-  composes workflow-builder-system directly). Annotations spoke-cluster=ryzen,
-  `stacks.io/source-branch=inner-loop`. Connection fields:
-  `server=https://ryzen.tail286401.ts.net:6443`, `insecure:false`+caData (Talos
-  cluster CA), per-recreate ServiceAccount bearerToken (NOT impersonation) — all
-  sourced from KV keys `ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}` minted by register-spoke
-  `--ts-host-passthrough`.
+- Registered as an **argocd-agent AUTONOMOUS agent**. The argocd cluster Secret
+  `cluster-ryzen` is now an **agent MAPPING** (`managed-by: argocd-agent`, label
+  `argocd-agent.argoproj-labs.io/agent-name=ryzen`, annotation `spoke-cluster=ryzen`):
+  `server=https://argocd-agent-resource-proxy:9090?agentName=ryzen` with embedded mTLS
+  certData/keyData/caData and **no bearerToken**, created by
+  `argocd-agentctl agent create ryzen`. ryzen's local controller reconciles its own
+  apps (autonomous); the hub principal aggregates status. `source-branch=inner-loop`
+  still drives what ryzen hydrates.
+  > The legacy `ExternalSecret-cluster-ryzen.yaml` (KV-materialized
+  > `server=https://ryzen.tail286401.ts.net:6443`, `insecure:false`+caData, per-recreate
+  > SA bearerToken minted by register-spoke `--ts-host-passthrough`) is now **vestigial**
+  > for ArgoCD — the agent mapping supersedes it. That host-passthrough kube-API endpoint
+  > + SA token is what **Headlamp** uses to reach ryzen (via the dedicated
+  > `headlamp-cluster-ryzen` Secret). `workload.stacks.io/workflow-builder` is still
+  > intentionally OMITTED (ryzen's overlay composes workflow-builder-system directly).
+  > See `tailscale-and-certs.md` for the host-passthrough + Headlamp-Secret detail.
 
 **Rendering / sync**
 - The hub spoke-clusters appset materializes `spoke-ryzen`: drySource path
@@ -98,11 +102,13 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
    cert-manager/ESO/ArgoCD/gitea/tekton/observability/workflow-builder — the hub
    deploys all of those via rendered child Applications. Requires env
    `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_CLIENT_SECRET`.
-2. **GITOPS REGISTRATION** (Contract 1). `ExternalSecret-cluster-ryzen.yaml` is
-   GitOps-delivered (referenced from `hub-management/kustomization.yaml`) and
-   materializes the cluster-ryzen Secret from KV. The **hub-spoke-appsets**
-   spoke-clusters-appset templates `spoke-ryzen` with `targetRevision=inner-loop`.
-   (Edit the hub-spoke-appsets copy, not the hub-base copy — see `architecture.md` §3.)
+2. **AGENT ENROLLMENT** (Contract 1, argocd-agent). `argocd-agentctl agent create ryzen`
+   writes the `cluster-ryzen` AGENT MAPPING Secret on the hub (`?agentName=ryzen` +
+   embedded mTLS, `managed-by: argocd-agent`). ryzen runs as an **AUTONOMOUS** agent: its
+   local controller reconciles its own apps (hydrated from `inner-loop`) and reports
+   status to the principal — the hub does NOT reconcile ryzen's apps through a kube-API
+   connection. (The legacy `ExternalSecret-cluster-ryzen.yaml` + spoke-clusters-appset
+   `spoke-ryzen` templating are vestigial now; the agent mapping supersedes them.)
 3. **SECRET TRANSPORT** (Contract 2, spoke side is IMPERATIVE for ryzen). The
    `hub-secrets-store` CSS + egress Service are applied by
    `deployment/scripts/lib/spoke-transport-bootstrap.sh` (invoked from

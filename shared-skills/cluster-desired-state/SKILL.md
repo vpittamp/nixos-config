@@ -14,7 +14,7 @@ matter today:
 |---|---|---|---|---|---|
 | **hub** | management plane + central Tekton build pool | manual Talos/Hetzner (`docs/hub-cluster-setup.md`) | `env/hub` (path `hub-apps/`) | `k8s-api-hub.tail286401.ts.net` ProxyGroup VIP | **canonical** Azure KV + AWI |
 | **ryzen** | bare-metal local-dev spoke | imperative `bootstrap-spoke-cluster.sh` (Talos-in-Docker) | `inner-loop` -> `env/spokes-ryzen` | `ryzen.tail286401.ts.net:6443` (host-device raw TCP passthrough, full TLS verify) | hub mirror over Tailscale |
-| **dev** | disposable Hetzner SWE-bench spoke | Crossplane `TalosSpokeClusterClaim` | `main` -> `env/spokes-dev` | direct public IP `:6443` | hub mirror over Tailscale |
+| **dev** | disposable Hetzner SWE-bench spoke | scripts: `provision-spoke.sh` + `bootstrap-spoke-deps.sh` + `enroll-dev-agent.sh` | `main` -> `env/spokes-dev` | no ArgoCD kube-API reach (managed agent, gRPC out) | hub mirror over Tailscale |
 
 > **The hub keeps Azure Key Vault + Azure Workload Identity as the single source of
 > truth. The AWI->Tailscale migration moved only the SPOKES off Azure** — spokes now
@@ -28,7 +28,7 @@ matter today:
    - Build/recreate the **hub** -> `references/hub.md`, then `runbooks/build-hub.md`.
    - Build/recreate **ryzen** (bare-metal Docker spoke) -> `references/ryzen.md`,
      then `runbooks/recreate-ryzen.md`.
-   - Build/recreate **dev** (Crossplane Hetzner spoke) -> `references/dev.md`,
+   - Build/recreate **dev** (script-provisioned Hetzner spoke) -> `references/dev.md`,
      then `runbooks/recreate-dev.md`.
 2. **Need the shared model?** (cluster-Secret contract, transport contract,
    source-hydrator/Promoter, branch flow, AWI->Tailscale, ryzen host-passthrough
@@ -39,7 +39,9 @@ matter today:
    cleanup).
 4. **Cross-reference the focused skills** for the deep mechanics:
    - `gitops` — ArgoCD health/drift, Promoter/source-hydrator recovery, image pins.
-   - `talos-clusters` — Crossplane spoke lifecycle, ProxyGroups, SWE-bench capacity.
+   - `talos-clusters` — hub Talos provisioning + (removed) Crossplane history;
+     **dev is NOT Crossplane-provisioned** (Crossplane removed in Phase D — dev is
+     script-provisioned + agent-enrolled, the same imperative path as hub & ryzen).
    - `ryzen-spoke-bootstrap` — the imperative ryzen Docker bootstrap mechanics.
    - `evaluations` / `workflow-builder` — workload-level validation after a rebuild.
 
@@ -72,14 +74,32 @@ workload data must all be healthy too.
 
 Full detail in `references/architecture.md`. The load-bearing pieces:
 
+- **Control plane = argocd-agent v0.8.1.** The hub runs the **principal** (single pane,
+  ns `argocd`); each spoke runs a **local ArgoCD + an agent** dialing the principal
+  OUTBOUND over tailnet mTLS (`:8443`). **dev = MANAGED agent** — the hub authors the
+  `Application` objects in ns `dev` (== the agent name), the principal pushes them to
+  the dev agent, and dev's LOCAL controller reconciles (single pane: hub
+  `kubectl -n dev get applications`). **ryzen = AUTONOMOUS agent** — reconciles its own
+  apps; the hub only aggregates status. Sync **operations run on the SPOKE's local
+  controller**, so the hub pane shows sync + health but NOT operation lifecycle —
+  `"Unknown operation status"` on the hub is architectural and **benign**. The
+  `cluster-<spoke>` Secret is now an agent MAPPING (Contract 1 below), not a direct
+  server+bearerToken.
 - **Cluster-Secret contract** (Contract 1). A Secret in ns `argocd` labeled
   `argocd.argoproj.io/secret-type=cluster` + `stacks.io/hub-managed=true` +
   `stacks.io/cluster-role=spoke` + `stacks.io/platform=talos`, annotated
-  `spoke-cluster=<name>`. dev/staging AND ryzen materialize it from KV via an
-  ExternalSecret. **ryzen uses `ExternalSecret-cluster-ryzen.yaml`** (the old static
-  `Secret-cluster-ryzen.yaml` was deleted): `server=https://ryzen.tail286401.ts.net:6443`,
-  `insecure:false`+caData, a per-recreate ServiceAccount bearerToken,
-  `source-branch=inner-loop`.
+  `spoke-cluster=<name>`. **BOTH dev and ryzen are now argocd-agent MAPPINGS**
+  (`managed-by: argocd-agent`, label `argocd-agent.argoproj-labs.io/agent-name`):
+  `server=https://argocd-agent-resource-proxy:9090?agentName=<name>` with embedded mTLS
+  certData/keyData/caData and **no bearerToken**. dev's is created by `enroll-dev-agent.sh`
+  (it replaced the old group-5 spoke-register + `ExternalSecret-cluster-talos.yaml`
+  direct-IP+token Secret); ryzen's by `argocd-agentctl agent create ryzen`. The two spokes
+  differ only in agent **mode** (dev = MANAGED, ryzen = AUTONOMOUS), NOT in Secret shape.
+  > The legacy `ExternalSecret-cluster-ryzen.yaml` (a real `server=https://ryzen.tail286401.ts.net:6443`
+  > + caData + SA bearerToken) is now **vestigial** — superseded by the agent mapping. That
+  > host-passthrough kube-API endpoint + SA token is what **Headlamp** uses to reach ryzen
+  > (via the dedicated `headlamp-cluster-ryzen` Secret), NOT the ArgoCD cluster Secret. ryzen
+  > still hydrates from `inner-loop` (its `source-branch`). See `references/tailscale-and-certs.md`.
 - **spoke-clusters-appset** (cluster generator) turns each cluster Secret into a
   `spoke-<name>` Application: `drySource` path `packages/overlays/<name>`,
   `targetRevision` from the `stacks.io/source-branch` annotation (default `main`,
@@ -148,6 +168,12 @@ Full detail in `references/architecture.md`. The load-bearing pieces:
   `dev-shared-secrets` via `scripts/gitops/render-workflow-builder-release-overlays.sh`
   (dev-gated `emit_es_key_repoint` / `emit_es_store_repoint` / `emit_oauth_op`).
   ryzen re-points its OAuth + swebench ESes inline in `packages/overlays/ryzen`.
+
+> **Canonical Tailscale/cert doc.** `references/tailscale-and-certs.md` is the SINGLE
+> canonical home for the full Tailscale topology + Let's-Encrypt-avoidance rationale
+> (host raw-TCP passthrough, tailnet LoadBalancer Services, per-cluster operator
+> hostname, the one stable hub-Ingress LE cert, ESO transport, stale-device cleanup).
+> Read it for the WHY; the bullets above and the table below are the quick reference.
 
 ## Two distinct Tailscale paths — do not conflate
 

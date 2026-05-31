@@ -10,17 +10,20 @@ All file paths are relative to `/home/vpittamp/repos/PittampalliOrg/stacks/main`
 
 ## 1. Topology
 
-One **hub** (Talos/Hetzner, 5 nodes, Flannel CNI, k8s v1.32.0) is the sole ArgoCD
-instance and the central Tekton build pool. It renders each spoke from
-`packages/overlays/<spoke>` and reconciles workloads onto the spoke through an
-argocd **cluster Secret**. Spokes run **no** local ArgoCD/Gitea/Tekton.
+One **hub** (Talos/Hetzner, 5 nodes, Flannel CNI, k8s v1.32.0) runs the **argocd-agent
+principal** (single pane, ns `argocd`) and the central Tekton build pool. Each spoke
+runs a **local ArgoCD + an agent** that dials the principal outbound over tailnet mTLS;
+the hub authors/aggregates `Application`s while the spoke's local controller does the
+actual reconcile. (See §3a for the control-plane semantics — managed vs autonomous.)
 
-- **hub**: management plane + builds. 3x cpx41 control-plane + 2x ccx33 build nodes
-  (labeled/tainted `stacks.io/build-pool=hub`).
+- **hub**: management plane (principal) + builds. 3x cpx41 control-plane + 2x ccx33
+  build nodes (labeled/tainted `stacks.io/build-pool=hub`).
 - **ryzen**: bare-metal Talos-in-Docker local-dev spoke on the ryzen workstation
-  (3 nodes, Talos v1.13.2 / k8s v1.36.0). Imperatively bootstrapped.
+  (3 nodes, Talos v1.13.2 / k8s v1.36.0). Imperatively bootstrapped. **Autonomous** agent.
 - **dev**: disposable Hetzner Talos spoke (3 cpx41 CP + 6 cpx51 workers labeled
-  `stacks.io/swebench-pool=dev-benchmark`). Crossplane-provisioned.
+  `stacks.io/swebench-pool=dev-benchmark`). **Script-provisioned + agent-enrolled** —
+  the same imperative path as hub & ryzen (Crossplane was REMOVED in Phase D; see §3b).
+  **Managed** agent.
 
 ---
 
@@ -65,9 +68,69 @@ git ls-remote origin env/hub env/spokes-dev                                     
 
 ---
 
-## 3. Contract 1 — the argocd cluster-Secret (registration)
+## 3a. argocd-agent control plane (v0.8.1)
 
-A spoke is registered on the hub by a Secret in ns `argocd`:
+The control plane is **argocd-agent v0.8.1**, not a hub-reconciles-everything model.
+
+- **Hub = principal** (ns `argocd`). It is the single pane: `kubectl -n <agent> get
+  applications` on the hub shows every spoke's apps.
+- **Each spoke = a local ArgoCD + an agent** that dials the principal **OUTBOUND over
+  tailnet mTLS on `:8443`** (the hub never dials INTO the spoke for ArgoCD).
+- **dev = MANAGED agent.** The hub authors the `Application` objects in ns `dev`
+  (the namespace == the agent name); the principal pushes them to the dev agent; dev's
+  LOCAL controller reconciles. Authoring on the hub, reconcile on the spoke.
+- **ryzen = AUTONOMOUS agent.** It reconciles its own apps; the hub only aggregates
+  status.
+- **Sync OPERATIONS run on the spoke's local controller.** The hub pane therefore shows
+  sync state + health but NOT operation lifecycle — `"Unknown operation status"` on the
+  hub is **architectural and benign**, not a stuck op.
+- The principal manifests live in
+  `packages/components/hub-management/manifests/argocd-agent-principal/`. Each spoke is
+  attached via the `cluster-<spoke>` agent-mapping Secret (§3, below) — there is NO
+  hub->spoke kube-API reach for ArgoCD on a managed agent.
+
+## 3b. Crossplane (REMOVED in Phase D)
+
+Crossplane is **no longer in the provisioning or registration path** for any cluster.
+dev was the only live composite (`TalosSpokeClusterClaim-dev`); its registration role
+(the group-5 `spoke-register` job that wrote the hub cluster-Secret) is **gone**. dev,
+ryzen, and the hub are now **all script-provisioned + agent-enrolled** — the same
+imperative path (no `TalosSpokeClusterClaim`, no Composition/group-N functions). The
+`packages/components/crossplane-hetzner-talos/` manifests may still sit on disk as inert
+history, but they are not wired into the dev overlay and do not register dev.
+
+The dev provision + enroll scripts (the SAME shape as hub/ryzen):
+1. `deployment/scripts/talos-hetzner/provision-spoke.sh` — Hetzner + Talos. PUBLIC ISO
+   (Talos 1.12.4 amd64); k8s **1.35** (the 1.12.4 ISO REJECTS 1.36); Cilium CNI
+   (`cni: none` in the machine config); disk-first boot after install. Has a `--destroy`
+   mode.
+2. `deployment/scripts/talos-hetzner/bootstrap-spoke-deps.sh` — cert-manager v1.14.4 +
+   ESO 2.4.1 (controller-only) + Tailscale operator + the spoke->hub ESO transport
+   (§4). Also seeds privileged namespaces, but that is now a **REDUNDANT backstop**:
+   privileged PodSecurity is PRIMARILY declarative — `managedNamespaceMetadata` on the
+   `CreateNamespace` Helm apps + privileged-labelled `Namespace` manifests (PR #2359).
+3. `deployment/scripts/argocd-agent/enroll-dev-agent.sh` — the managed-agent enroll:
+   mint the agent mTLS cert on the hub and deliver it via ESO; create the `cluster-dev`
+   agent-mapping Secret (`?agentName=dev`); create the `AppProject`; create the
+   principal-egress Service; add the CoreDNS principal rewrite; and stage the hub
+   Headlamp read SA Secret (§7a).
+
+## 3. Contract 1 — the argocd cluster-Secret (agent mapping)
+
+Post-cutover, the `cluster-<spoke>` Secret in ns `argocd` is an **agent MAPPING** to the
+in-cluster resource-proxy, NOT a direct server endpoint + bearer token:
+
+```
+server:   https://argocd-agent-resource-proxy:9090?agentName=<spoke>
+tlsClientConfig: embedded mTLS certData / keyData / caData    # NO bearerToken
+```
+
+This replaced the old direct-server + bearerToken cluster-Secret. The principal routes
+to the right agent by the `agentName` query param; the embedded mTLS is the agent
+client cert. (Headlamp can NOT use this Secret to reach the spoke — it carries no
+bearerToken — so Headlamp gets its own dedicated read Secret; see §7a.)
+
+It still carries the appset-driver labels/annotations:
 
 - Labels: `argocd.argoproj.io/secret-type=cluster`, `stacks.io/hub-managed=true`,
   `stacks.io/cluster-role=spoke`, `stacks.io/platform=talos`. Add
@@ -78,10 +141,11 @@ A spoke is registered on the hub by a Secret in ns `argocd`:
   (ryzen=`inner-loop`, others default `main`), `stacks.io/auth-mode=<mode>`.
 
 How each cluster supplies it:
-- **dev/staging**: `ExternalSecret-cluster-talos.yaml` materializes `cluster-<name>`
-  from KV `ARGOCD-CLUSTER-{TALOS,...}-TOKEN/CA`; OR the Crossplane group-5
-  spoke-register job writes it directly to the hub (`server` = direct public IP
-  `https://<ip>:6443`).
+- **dev**: `deployment/scripts/argocd-agent/enroll-dev-agent.sh` mints the agent mTLS
+  cert (delivered via ESO) and creates the `cluster-dev` resource-proxy mapping
+  (`server: https://argocd-agent-resource-proxy:9090?agentName=dev`, embedded
+  certData/keyData/caData, **no bearerToken**). This replaced the old group-5
+  spoke-register job + `ExternalSecret-cluster-talos.yaml` direct-IP+token Secret.
 - **ryzen**: `ExternalSecret-cluster-ryzen.yaml` materializes `cluster-ryzen` from KV
   `ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}` (minted per-recreate by `register-spoke
   --ts-host-passthrough`): `server: https://ryzen.tail286401.ts.net:6443`,
@@ -162,8 +226,11 @@ ACL grants (`policy.hujson`):
 
 ## 5. hub -> spoke connectivity (ryzen = Tailscale host TCP passthrough)
 
-dev's public API is reachable, so its cluster-Secret `server` is the **direct IP**
-`https://<ip>:6443` — no SNI workaround.
+**dev needs NO hub->spoke kube-API reach for ArgoCD.** dev is a MANAGED argocd-agent
+(§3a): its agent dials the principal OUTBOUND (gRPC mTLS, `:8443`) and reconciles
+locally, so the `cluster-dev` Secret is the resource-proxy agent mapping (§3), not a
+server endpoint. The dev cluster's **direct public IP** `https://<ip>:6443` + a
+read-only SA token is used ONLY by **Headlamp** (the hub dashboard, §7a), not by ArgoCD.
 
 ryzen reaches its Talos kube-apiserver **DIRECTLY over Tailscale via the ryzen HOST
 device** (`ryzen.tail286401.ts.net`, `100.96.102.1`, `tag:k8s`) running
@@ -193,11 +260,12 @@ This is the CANONICAL, durable path — it drops the Tailscale operator apiserve
   `ryzen.tail286401.ts.net -> ryzen-api-egress.tailscale.svc.cluster.local`
   (maintained by `CronJob-coredns-spoke-rewrites`) routes the name to the in-cluster egress.
 
-**WHY this replaced the operator apiserver-proxy.** The old path rode the operator
-apiserver-proxy's per-hostname Let's Encrypt cert. Recreate churn exhausted LE's
-5-duplicate-certs/week limit and took the whole ryzen fleet to 0-healthy (2026-05-29
-incident). Host passthrough drops the LE dependency: a recreate now consumes ZERO LE
-quota (validated). PRs #2305 / #2307.
+**WHY this replaced the operator apiserver-proxy** (the operator's per-hostname Let's
+Encrypt cert + recreate churn -> LE rate-limit -> 0-healthy fleet): the full
+cert-avoidance rationale, the three historical cert incidents, and the current
+LE-free design (host passthrough, tailnet LoadBalancer Services, per-cluster operator
+hostname, the single stable hub-Ingress LE cert, stale-device cleanup) are CANONICAL in
+`references/tailscale-and-certs.md`. PRs #2305 / #2307.
 
 Verify by confirming the materialized cluster-Secret `server` and ryzen app health:
 ```bash
@@ -246,12 +314,12 @@ over a **Tailscale L4 LoadBalancer**, with HTTPS terminated **in-cluster** by a 
 nginx `tls-terminator` sidecar serving a **persistent self-signed `*.tail286401.ts.net`
 wildcard**. NO Let's Encrypt, NO Tailscale Ingress. PR #2319.
 
-> **Why this replaced the old LE Tailscale Ingress.** dev/staging/ryzen used to expose
-> workflow-builder + mcp-gateway via a Tailscale-class Ingress (`ingressClassName: tailscale`)
-> with a per-hostname **Let's Encrypt** cert (ProxyClass `development-prod-cert`). Recreate
-> churn exhausted LE's 5-certs/168h limit -> 429 -> unreachable. (ryzen briefly used a plain-HTTP
-> Tailscale LoadBalancer, PRs #2314/#2316 — also superseded.) The dev/staging overlays now
-> `$patch:delete` the old workflow-builder/mcp-gateway Tailscale Ingresses.
+> **Why this replaced the old LE Tailscale Ingress** (per-hostname Let's Encrypt cert ->
+> recreate churn -> LE 5-certs/168h limit -> 429 -> unreachable; the dev/staging overlays
+> now `$patch:delete` the old workflow-builder/mcp-gateway Tailscale Ingresses; ryzen's
+> brief plain-HTTP LB, PRs #2314/#2316, was also superseded): the full cert-avoidance
+> rationale is CANONICAL in `references/tailscale-and-certs.md`. The mechanism (chain,
+> CA, sidecar, LB) below stays here.
 
 The end-to-end chain:
 
@@ -304,6 +372,24 @@ Tailscale L4 LoadBalancer Service -> sidecar :443 (HTTPS) -> workflow-builder
 
 ---
 
+## 7a. Headlamp spoke access (dedicated read Secrets, not the agent mapping)
+
+The hub Headlamp dashboard CANNOT use the `cluster-<spoke>` argocd-agent mapping Secret
+to reach a spoke — post-cutover that Secret carries **no bearerToken** (§3), so a
+Headlamp restart would otherwise drop all spokes. Instead Headlamp reads **dedicated
+`headlamp.dev/cluster=true` Secrets** carrying each spoke's REAL endpoint + a read-only
+SA token + CA (PRs #2366/#2368):
+
+- **dev**: real endpoint = the cluster's **direct public IP** `https://<ip>:6443`
+  + read-only SA token. `enroll-dev-agent.sh` stages the hub
+  `headlamp-cluster-<spoke>` Secret.
+- The spoke read SA itself is **GitOps** — `base/manifests/headlamp-reader` (reaches dev
+  via `overlays/dev` -> `talos` -> `base`).
+- The two hub generators (`headlamp` + `headlamp-embedded`) select the
+  `headlamp.dev/cluster=true` label.
+
+---
+
 ## 8. Where everything lives (file map)
 
 ```
@@ -311,9 +397,11 @@ packages/overlays/hub/kustomization.yaml                 # hub root composition 
 packages/overlays/ryzen/kustomization.yaml               # ryzen overlay (namePrefix ryzen-, ES repoints, kueue patch)
 packages/overlays/dev/kustomization.yaml                 # dev overlay (inherits ../talos)
 packages/components/hub-base/                             # hub- infra apps, ProxyGroup-kube-apiserver.yaml
-packages/components/hub-management/                       # Promoter, headlamp, spoke-credentials/, spoke-secrets/
-  .../spoke-credentials/ExternalSecret-cluster-ryzen.yaml # ryzen registration (KV ARGOCD-CLUSTER-RYZEN-*, host TCP passthrough)
-  .../spoke-credentials/ExternalSecret-cluster-talos.yaml # dev/staging registration
+packages/components/hub-management/                       # Promoter, headlamp, argocd-agent-principal/, spoke-credentials/, spoke-secrets/
+  .../manifests/argocd-agent-principal/                  # the hub PRINCIPAL (single pane) + resource-proxy TLS
+  .../spoke-credentials/ExternalSecret-cluster-ryzen.yaml # ryzen registration (autonomous; KV ARGOCD-CLUSTER-RYZEN-*, host TCP passthrough)
+  # dev registration is NO LONGER an ExternalSecret/Crossplane job — cluster-dev is the
+  #   resource-proxy agent mapping created by deployment/scripts/argocd-agent/enroll-dev-agent.sh
   .../spoke-secrets/{Namespace,ExternalSecret-<c>-shared-secrets,RBAC-spoke-secrets-reader,Ingress-k8s-api-hub-ingress}.yaml
   .../spoke-secrets/ExternalSecret-tailnet-ca.yaml        # Contract 3: cluster-neutral CA mirror -> Secret tailnet-ca
   .../manifests/tailnet-device-sweeper/CronJob-tailnet-device-sweeper.yaml  # offline stale-device hygiene backstop (every 15m)
@@ -326,9 +414,12 @@ packages/components/workloads/workflow-builder/manifests/{ConfigMap-workflow-bui
 packages/components/hub-spoke-appsets/apps/{spoke-clusters,spoke-workloads}-appset.yaml
 packages/components/spoke-tailscale-secrets/             # CONTRACT.md + spoke-transport manifests
 packages/components/profiles/local-core-ryzen/           # ryzen profile (Contour+Kourier, AWI/profile exclusions)
-packages/components/crossplane-hetzner-talos/manifests/crossplane-hcloud-compositions/
-  TalosSpokeClusterClaim-dev.yaml, Composition-talospokecluster.yaml, CompositeResourceDefinition-talospokecluster.yaml
-packages/components/tailscale-serve/manifests/tailscale-operator/Deployment-operator.yaml
+# packages/components/crossplane-hetzner-talos/ is INERT history — Crossplane was REMOVED
+#   in Phase D; it no longer provisions or registers dev (or any cluster). See §3b.
+packages/components/tailscale-serve/manifests/tailscale-operator/Deployment-operator.yaml  # hardcodes OPERATOR_HOSTNAME=ryzen-operator; non-ryzen clusters MUST override (dev: PR #2364)
+deployment/scripts/talos-hetzner/provision-spoke.sh      # dev: Hetzner + Talos provision (public 1.12.4 ISO, k8s 1.35, Cilium); --destroy mode
+deployment/scripts/talos-hetzner/bootstrap-spoke-deps.sh # dev: cert-manager + ESO 2.4.1 + Tailscale operator + spoke->hub ESO transport
+deployment/scripts/argocd-agent/enroll-dev-agent.sh      # dev: managed-agent enroll (agent mTLS cert, cluster-dev mapping, AppProject, principal egress, CoreDNS, hub Headlamp SA)
 deployment/scripts/bootstrap-spoke-cluster.sh            # ryzen imperative bootstrap
 deployment/scripts/lib/spoke-transport-bootstrap.sh      # ryzen imperative transport apply
 scripts/gitops/render-workflow-builder-release-overlays.sh
@@ -343,9 +434,8 @@ kubectl --kubeconfig ~/.kube/hub-config ...          # context admin@hub-cluster
 # remote VIP: context hub-cluster (k8s-api-hub.tail286401.ts.net)
 # ryzen
 kubectl --context admin@ryzen ...
-# dev
-kubectl --context admin@dev ...                      # refresh after recreate; may point at a stale worker IP
-# break-glass spoke kubeconfig from the hub (Crossplane spokes):
-kubectl --kubeconfig ~/.kube/hub-config -n crossplane-system get secret <spoke>-XXXXX-kubeconfig \
-  -o jsonpath='{.data.kubeconfig}' | base64 -d > /tmp/<spoke>-kubeconfig
+# dev (direct public IP; refresh after recreate — provision-spoke.sh writes the kubeconfig)
+kubectl --context admin@dev ...
+# break-glass: dev's admin kubeconfig is emitted locally by provision-spoke.sh (no longer a
+# crossplane-system <spoke>-XXXXX-kubeconfig Secret on the hub — Crossplane was removed, §3b).
 ```
