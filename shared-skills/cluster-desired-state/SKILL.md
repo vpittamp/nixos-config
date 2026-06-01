@@ -12,27 +12,45 @@ matter today:
 
 | Cluster | Role | Provisioning | Branch it syncs | API reach | Secrets |
 |---|---|---|---|---|---|
-| **hub** | management plane + central Tekton build pool | manual Talos/Hetzner (`docs/hub-cluster-setup.md`) | `env/hub` (path `hub-apps/`) | `k8s-api-hub.tail286401.ts.net` ProxyGroup VIP | **canonical** Azure KV + AWI |
-| **ryzen** | bare-metal local-dev spoke | imperative `bootstrap-spoke-cluster.sh` (Talos-in-Docker) | `inner-loop` -> `env/spokes-ryzen` | `ryzen.tail286401.ts.net:6443` (host-device raw TCP passthrough, full TLS verify) | hub mirror over Tailscale |
-| **dev** | disposable Hetzner SWE-bench spoke | scripts: `provision-spoke.sh` + `bootstrap-spoke-deps.sh` + `enroll-dev-agent.sh` | `main` -> `env/spokes-dev` | no ArgoCD kube-API reach (managed agent, gRPC out) | hub mirror over Tailscale |
+| **hub** | management plane + central Tekton build pool | manual Talos/Hetzner + `deployment/scripts/recreate-hub.sh` | `env/hub` (path `hub-apps/`) | `k8s-api-hub.tail286401.ts.net` ProxyGroup VIP | **canonical** 1Password `hub-eso` vault via `onepassword-store` |
+| **ryzen** | bare-metal local-dev spoke | `bootstrap-spoke-cluster.sh --recreate` -> `enroll-ryzen-agent.sh` (Talos-in-Docker) | `inner-loop` -> `env/spokes-ryzen` | `ryzen.tail286401.ts.net:6443` (host-device raw TCP passthrough, full TLS verify) | hub mirror over Tailscale |
+| **dev** | disposable Hetzner SWE-bench spoke | `recreate-dev.sh` = `provision-spoke.sh` + `bootstrap-spoke-deps.sh` + `enroll-dev-agent.sh` | `main` -> `env/spokes-dev` | no ArgoCD kube-API reach (managed agent, gRPC out) | hub mirror over Tailscale |
 
-> **The hub keeps Azure Key Vault + Azure Workload Identity as the single source of
-> truth. The AWI->Tailscale migration moved only the SPOKES off Azure** — spokes now
-> read hub-mirrored secrets via an ESO kubernetes-provider `ClusterSecretStore`
-> (`hub-secrets-store`) over Tailscale. Do not re-introduce `azure-keyvault-store`
-> on a spoke.
+> **The HUB's own secret root migrated Azure Workload Identity -> 1Password (2026-06).**
+> The 21 hub `ExternalSecret`s now resolve from the `onepassword-store` `ClusterSecretStore`
+> (ESO `onepasswordSDK` -> the dedicated **`hub-eso`** 1Password vault), bootstrapped from a
+> single scoped read-only 1Password Service-Account token (`hub-eso-reader`) in the
+> `onepassword-sa-token` Secret (ns `external-secrets`), persisted at
+> `op://CLI/<id>/credential`. **Azure Key Vault (`keyvault-thcmfmoo5oeow`) + the AD App +
+> `azure-keyvault-store` are left DORMANT (not deleted); `sync-jwks-to-azure.sh` is no longer
+> in the hub path** (it is a spoke-only tool now). **Spokes are unaffected** — they still read
+> hub-mirrored secrets via the ESO kubernetes-provider `ClusterSecretStore` (`hub-secrets-store`)
+> over Tailscale, regardless of how the hub populates them. Do not re-introduce
+> `azure-keyvault-store` on a spoke, and do not re-add Azure WI as the hub root.
+> See `references/secrets-1password.md`.
 
 ## Start Here
 
-1. **Pick the cluster + operation** and read its reference, then its runbook:
-   - Build/recreate the **hub** -> `references/hub.md`, then `runbooks/build-hub.md`.
-   - Build/recreate **ryzen** (bare-metal Docker spoke) -> `references/ryzen.md`,
-     then `runbooks/recreate-ryzen.md`.
-   - Build/recreate **dev** (script-provisioned Hetzner spoke) -> `references/dev.md`,
-     then `runbooks/recreate-dev.md`.
+1. **Pick the cluster + operation** and read its reference, then its runbook. Each
+   recreate is now a **hands-off script** (the runbook explains + wraps it):
+   - **hub** -> `references/hub.md` + `runbooks/build-hub.md`; entrypoint
+     **`deployment/scripts/recreate-hub.sh`** (`--verify-only` / `--seed-secret` /
+     `--fixups` / `--dry-run-clone` / `--in-place --confirm-wipe hub-cluster`; reuses the
+     `talos-cluster` configs + `hub-secrets.yaml`, NEVER deletes the ash servers) +
+     **`hub-verify-gate.sh`** (9-check convergence) + the self-healing **kube-system-fixups**
+     CronJob.
+   - **ryzen** (bare-metal Docker spoke) -> `references/ryzen.md` + `runbooks/recreate-ryzen.md`;
+     entrypoint **`bootstrap-spoke-cluster.sh --recreate`**, which enrolls the AUTONOMOUS
+     agent via **`deployment/scripts/argocd-agent/enroll-ryzen-agent.sh`** (+ the
+     `ryzen-agent-bootstrap` component). `register-spoke-with-hub.sh` is RETIRED.
+   - **dev** (script-provisioned Hetzner spoke) -> `references/dev.md` + `runbooks/recreate-dev.md`;
+     entrypoint **`deployment/scripts/talos-hetzner/recreate-dev.sh`** (data backup/restore +
+     provision + bootstrap-deps + `enroll-dev-agent.sh` + verify-gate).
 2. **Need the shared model?** (cluster-Secret contract, transport contract,
-   source-hydrator/Promoter, branch flow, AWI->Tailscale, ryzen host-passthrough
-   connectivity, per-cluster ES parameterization) -> `references/architecture.md`.
+   source-hydrator/Promoter, branch flow, the 1Password hub secret root + AWI->Tailscale
+   spoke transport, ryzen host-passthrough connectivity, per-cluster ES parameterization)
+   -> `references/architecture.md`; for the hub secret backend specifically ->
+   `references/secrets-1password.md`.
 3. **Hit a known failure?** -> `runbooks/recovery-and-gotchas.md` (Talos ISO/k8s
    in-place upgrade, ryzen host-passthrough connectivity, kueue `ClientSideApplyMigration`,
    RFC6902 `op: add` clobber, env-table SWE-bench restore, stale tailnet device
@@ -139,7 +157,10 @@ Full detail in `references/architecture.md`. The load-bearing pieces:
   `v1beta1` broke every spoke ES app with `resource mapping not found`). See
   `runbooks/recovery-and-gotchas.md` for the webhook-spoke in-place-upgrade fix.
 - **Persistent self-signed CA** (Contract 3, web exposure). A 10-year offline CA
-  ("PittampalliOrg Tailnet Dev CA") lives in Azure KV as `TAILNET-DEV-CA-CRT/KEY`;
+  ("PittampalliOrg Tailnet Dev CA") lives in the 1Password `hub-eso` vault as
+  `TAILNET-DEV-CA-CRT/KEY` (the hub's `tailnet-ca` ExternalSecret reads it via
+  `onepassword-store`; note its `decodingStrategy: Base64`, so those two items hold the
+  **base64** form — see `references/secrets-1password.md`);
   the hub mirrors it CLUSTER-NEUTRALLY into ns `spoke-secrets` Secret `tailnet-ca`
   (`ExternalSecret-tailnet-ca.yaml`; the namespace-wide `spoke-secrets-reader` Role
   means every spoke reads the SAME key — no per-cluster CA). The spoke base app
@@ -208,3 +229,10 @@ major procedure change.
 - `docs/crossplane-spoke-onboarding.md`, `docs/recreate-disposable-dev.md`, `docs/hcloud-server-setup.md`
 - `docs/outer-loop-promotion.md`, `docs/spoke-cluster-access.md`
 - `packages/components/spoke-tailscale-secrets/CONTRACT.md` (the spoke transport contract)
+- `packages/components/hub-onepassword/README.md` (the 1Password hub-secret-root contract + bootstrap)
+- **Recreate automation** (the hands-off scripts these runbooks wrap):
+  `deployment/scripts/recreate-hub.sh` + `hub-verify-gate.sh`,
+  `deployment/scripts/talos-hetzner/recreate-dev.sh`,
+  `deployment/scripts/argocd-agent/{enroll-dev-agent.sh,enroll-ryzen-agent.sh}`,
+  `deployment/scripts/bootstrap-spoke-cluster.sh`,
+  `packages/components/hub-management/manifests/kube-system-fixups/`

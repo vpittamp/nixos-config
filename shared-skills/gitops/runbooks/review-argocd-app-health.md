@@ -119,6 +119,16 @@ Apps that own egress Services should ignore those fields. Do not "fix" the live 
 
 Build cache PVCs using `WaitForFirstConsumer` can remain Pending until a build runs. If they are labelled cache PVCs, customize Argo health to treat them as Healthy instead of deleting them or forcing a pod.
 
+### Hub kube-system drift after a recreate (self-healed by CronJob)
+
+After a hub recreate, Talos does NOT persist two kube-system patches: the Flannel
+`--iface` flag and the CoreDNS anti-affinity. A self-healing hub `kube-system-fixups`
+CronJob (`packages/components/hub-management/manifests/kube-system-fixups/`) re-applies
+both, so transient post-recreate drift on those resources is expected and converges
+on its own — don't hand-patch them or treat them as a stuck app. The read-only
+`deployment/scripts/hub-verify-gate.sh` (9-check convergence gate) confirms the hub
+has settled. See the `cluster-desired-state` skill for the full hub recreate path.
+
 ## Apply declarative fixes
 
 For platform/app-spec changes:

@@ -99,7 +99,11 @@ imperative path (no `TalosSpokeClusterClaim`, no Composition/group-N functions).
 `packages/components/crossplane-hetzner-talos/` manifests may still sit on disk as inert
 history, but they are not wired into the dev overlay and do not register dev.
 
-The dev provision + enroll scripts (the SAME shape as hub/ryzen):
+The dev provision + enroll scripts (the SAME shape as hub/ryzen) — the entry point is the
+**orchestrator** `deployment/scripts/talos-hetzner/recreate-dev.sh`, which wraps data
+backup/restore (`environment_image_builds` / agents / workflows) + `provision-spoke.sh` +
+`bootstrap-spoke-deps.sh` + `argocd-agent/enroll-dev-agent.sh` + the verify gate. Use it as
+the dev rebuild entry point. The wrapped steps:
 1. `deployment/scripts/talos-hetzner/provision-spoke.sh` — Hetzner + Talos. PUBLIC ISO
    (Talos 1.12.4 amd64); k8s **1.35** (the 1.12.4 ISO REJECTS 1.36); Cilium CNI
    (`cni: none` in the machine config); disk-first boot after install. Has a `--destroy`
@@ -146,13 +150,17 @@ How each cluster supplies it:
   (`server: https://argocd-agent-resource-proxy:9090?agentName=dev`, embedded
   certData/keyData/caData, **no bearerToken**). This replaced the old group-5
   spoke-register job + `ExternalSecret-cluster-talos.yaml` direct-IP+token Secret.
-- **ryzen**: `ExternalSecret-cluster-ryzen.yaml` materializes `cluster-ryzen` from KV
-  `ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}` (minted per-recreate by `register-spoke
-  --ts-host-passthrough`): `server: https://ryzen.tail286401.ts.net:6443`,
-  `insecure:false` + `caData` (Talos CA), real SA `bearerToken`. The old static
-  `Secret-cluster-ryzen.yaml` (operator FQDN, `bearerToken:"unused"`,
-  `auth-mode=tailscale-acl-impersonation`) was DELETED (PR #2308) — ryzen now reaches its
-  apiserver via the Tailscale host TCP passthrough (§5).
+- **ryzen** (AUTONOMOUS agent): `cluster-ryzen` is the argocd-agent MAPPING
+  (`server: https://argocd-agent-resource-proxy:9090?agentName=ryzen`, embedded mTLS,
+  **no bearerToken**), written by `argocd-agentctl agent create ryzen` from
+  `deployment/scripts/argocd-agent/enroll-ryzen-agent.sh` (invoked by
+  `bootstrap-spoke-cluster.sh --recreate`). `ExternalSecret-cluster-ryzen.yaml`
+  (materializing `server: https://ryzen.tail286401.ts.net:6443` from KV
+  `ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}`, `insecure:false` + `caData`, real SA `bearerToken`)
+  is now **VESTIGIAL — used ONLY by Headlamp** (§7a), not by ArgoCD sync (the agent
+  reconciles locally and dials the principal outbound, §3a). The old static
+  `Secret-cluster-ryzen.yaml` was DELETED (PR #2308); the ryzen host TCP passthrough (§5)
+  remains the Headlamp/break-glass kube endpoint.
 
 The **spoke-clusters-appset** (cluster generator,
 `packages/components/hub-spoke-appsets/apps/spoke-clusters-appset.yaml`) templates a
@@ -169,16 +177,19 @@ hydrateTo:   { targetBranch: '<...>-next for dev/staging, else env/spokes-<name>
 
 ---
 
-## 4. Contract 2 — AWI -> Tailscale secret transport
+## 4. Contract 2 — hub-canonical -> Tailscale secret transport
 
-The hub stays canonical (Azure KV `keyvault-thcmfmoo5oeow` + Workload Identity).
-Spokes no longer authenticate to Azure AD. Contract spec:
-`packages/components/spoke-tailscale-secrets/CONTRACT.md`.
+The hub stays canonical via **1Password** (`onepassword-store` ClusterSecretStore, ESO
+`onepasswordSDK` provider -> the `hub-eso` vault) since the 2026-06 AWI->1Password
+migration. Azure KV `keyvault-thcmfmoo5oeow` + Workload Identity is now DORMANT (not
+deleted). Spokes are UNAFFECTED — they read the hub-mirrored Secrets via the ESO
+kubernetes-provider `hub-secrets-store` over Tailscale regardless of how the hub
+populates them. Contract spec: `packages/components/spoke-tailscale-secrets/CONTRACT.md`.
 
 **Hub side** (GitOps, `packages/components/hub-management/manifests/spoke-secrets/`):
 - `Namespace-spoke-secrets.yaml`.
-- `ExternalSecret-<cluster>-shared-secrets.yaml` — mirrors every KV secret the
-  cluster consumes from `azure-keyvault-store` into Secret `<cluster>-shared-secrets`
+- `ExternalSecret-<cluster>-shared-secrets.yaml` — mirrors every secret the
+  cluster consumes from `onepassword-store` into Secret `<cluster>-shared-secrets`
   (dev ~79-80 keys, ryzen ~77 keys, incl. `*-DEV` / `*-RYZEN` OAuth overrides).
 - `RBAC-spoke-secrets-reader.yaml` — dual-path: ServiceAccount `spoke-secrets-reader`
   (bearer-token, the active standalone-Ingress path) AND Group
@@ -247,12 +258,15 @@ This is the CANONICAL, durable path — it drops the Tailscale operator apiserve
   a **FULL TLS verify (`insecure:false`)** against the Talos CA. The apiserver cert
   carries `cluster.apiServer.certSANs: [ryzen.tail286401.ts.net, 100.96.102.1]`
   (added by the bootstrap `--config-patch`). No `serverName` / no SNI hack.
-- **Auth = per-recreate ServiceAccount bearer token.** `register-spoke
-  --ts-host-passthrough` mints an SA token + Talos CA into Azure KV
-  (`ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}`). The hub
-  `ExternalSecret-cluster-ryzen.yaml` (NOT a static Secret — the static one was deleted,
-  PR #2308) materializes `cluster-ryzen` from KV: `server:
+- **Auth = per-recreate ServiceAccount bearer token (Headlamp/break-glass only).** An SA
+  token + Talos CA are minted into KV (`ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}`); the
+  `ExternalSecret-cluster-ryzen.yaml` materializes a Headlamp-only Secret: `server:
   https://ryzen.tail286401.ts.net:6443`, `insecure:false` + `caData`, `bearerToken`.
+  This is NO LONGER ArgoCD's path — ArgoCD reaches ryzen via the argocd-agent mapping
+  (§3). The old `register-spoke-with-hub.sh` is **RETIRED and no longer called** by
+  `bootstrap-spoke-cluster.sh`; the `--ts-acl-mode` / `--ts-host-passthrough` flags are
+  **VESTIGIAL** (parsed for compat, ignored). The static `Secret-cluster-ryzen.yaml` was
+  deleted (PR #2308).
 - **Hub egress + CoreDNS.** `ryzen-api-egress` ExternalName Service (ns `tailscale`,
   annotation `tailscale.com/tailnet-fqdn: ryzen.tail286401.ts.net`, port `6443`) is
   defined inline in `packages/components/hub-management/apps/headlamp.yaml`
@@ -399,7 +413,9 @@ packages/overlays/dev/kustomization.yaml                 # dev overlay (inherits
 packages/components/hub-base/                             # hub- infra apps, ProxyGroup-kube-apiserver.yaml
 packages/components/hub-management/                       # Promoter, headlamp, argocd-agent-principal/, spoke-credentials/, spoke-secrets/
   .../manifests/argocd-agent-principal/                  # the hub PRINCIPAL (single pane) + resource-proxy TLS
-  .../spoke-credentials/ExternalSecret-cluster-ryzen.yaml # ryzen registration (autonomous; KV ARGOCD-CLUSTER-RYZEN-*, host TCP passthrough)
+  .../manifests/ryzen-agent-bootstrap/                   # ryzen autonomous-agent bootstrap kustomize component (applied by enroll-ryzen-agent.sh)
+  .../manifests/kube-system-fixups/                      # self-healing CronJob: re-applies Flannel --iface + CoreDNS anti-affinity Talos drops
+  .../spoke-credentials/ExternalSecret-cluster-ryzen.yaml # ryzen Headlamp-only Secret (VESTIGIAL for ArgoCD; KV ARGOCD-CLUSTER-RYZEN-*, host TCP passthrough). cluster-ryzen ArgoCD mapping is written by argocd-agentctl, not this.
   # dev registration is NO LONGER an ExternalSecret/Crossplane job — cluster-dev is the
   #   resource-proxy agent mapping created by deployment/scripts/argocd-agent/enroll-dev-agent.sh
   .../spoke-secrets/{Namespace,ExternalSecret-<c>-shared-secrets,RBAC-spoke-secrets-reader,Ingress-k8s-api-hub-ingress}.yaml
@@ -417,10 +433,14 @@ packages/components/profiles/local-core-ryzen/           # ryzen profile (Contou
 # packages/components/crossplane-hetzner-talos/ is INERT history — Crossplane was REMOVED
 #   in Phase D; it no longer provisions or registers dev (or any cluster). See §3b.
 packages/components/tailscale-serve/manifests/tailscale-operator/Deployment-operator.yaml  # hardcodes OPERATOR_HOSTNAME=ryzen-operator; non-ryzen clusters MUST override (dev: PR #2364)
+deployment/scripts/talos-hetzner/recreate-dev.sh        # dev: ORCHESTRATOR rebuild entry point (data backup/restore + provision + deps + enroll-dev-agent + verify)
 deployment/scripts/talos-hetzner/provision-spoke.sh      # dev: Hetzner + Talos provision (public 1.12.4 ISO, k8s 1.35, Cilium); --destroy mode
 deployment/scripts/talos-hetzner/bootstrap-spoke-deps.sh # dev: cert-manager + ESO 2.4.1 + Tailscale operator + spoke->hub ESO transport
 deployment/scripts/argocd-agent/enroll-dev-agent.sh      # dev: managed-agent enroll (agent mTLS cert, cluster-dev mapping, AppProject, principal egress, CoreDNS, hub Headlamp SA)
-deployment/scripts/bootstrap-spoke-cluster.sh            # ryzen imperative bootstrap
+deployment/scripts/argocd-agent/enroll-ryzen-agent.sh    # ryzen: autonomous-agent enroll (mint agent mTLS cert, apply ryzen-agent-bootstrap component, argocd-agentctl agent create ryzen -> cluster-ryzen mapping, stage Headlamp Secret, advance inner-loop)
+deployment/scripts/bootstrap-spoke-cluster.sh            # ryzen imperative bootstrap; --recreate calls enroll-ryzen-agent.sh (register-spoke-with-hub.sh RETIRED; --ts-acl-mode/--ts-host-passthrough vestigial)
+deployment/scripts/recreate-hub.sh                       # hub: rebuild/recover (--verify-only/--seed-secret/--fixups/--dry-run-clone/--in-place --confirm-wipe; never hcloud-deletes the 5 ash servers; seeds onepassword-sa-token via op read)
+deployment/scripts/hub-verify-gate.sh                    # hub: 9-check read-only convergence gate
 deployment/scripts/lib/spoke-transport-bootstrap.sh      # ryzen imperative transport apply
 scripts/gitops/render-workflow-builder-release-overlays.sh
 policy.hujson                                            # Tailscale ACL grants

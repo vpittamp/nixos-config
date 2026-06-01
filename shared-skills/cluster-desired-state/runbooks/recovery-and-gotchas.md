@@ -9,51 +9,48 @@ mechanics defer to the `gitops` skill; for Crossplane spoke specifics, `talos-cl
 
 ## A. Talos ISO vs Kubernetes version — in-place upgrade (dev/staging recreate)
 
-**Symptom.** A fresh Crossplane claim of Talos 1.13.2 + k8s 1.36 never bootstraps;
-the maintenance-mode node rejects the requested Kubernetes version.
+**Symptom.** A fresh dev cluster of Talos 1.13.2 + k8s 1.36 never bootstraps; the
+maintenance-mode node rejects the requested Kubernetes version (`version of Kubernetes
+1.36.0 is too new to be used with Talos 1.12.4`).
 
-**Diagnosis.** Hetzner's public catalog has ONLY a Talos **1.12.4** ISO (no
+**Diagnosis.** Hetzner's public catalog has ONLY a Talos **1.12.4** maintenance ISO (no
 custom-ISO upload API; a custom ISO = a Hetzner support ticket with a direct
-`factory.talos.dev` URL). `install.image` (derived from `talos.version` inside the TF
-`talos_machine_configuration` data source — the Composition module sets only
-`install.disk=/dev/sda` + `wipe=true`, NOT `install.image` directly) governs the
-INSTALLED Talos version even when booting the 1.12.4 ISO. BUT the maintenance-mode node
+`factory.talos.dev` URL). The pinned `TALOS_VERSION` (`apply-config` install image) governs
+the INSTALLED Talos version even when booting the 1.12.4 ISO. BUT the maintenance-mode node
 validates the REQUESTED k8s version against the RUNNING (1.12.4) Talos. So 1.36 on a
 1.12.4 ISO can't one-shot.
 
-**Fix (supported in-place path).** Patch the LIVE claim to transiently lower k8s while
-keeping the newer Talos version (so `install.image` still installs Talos 1.13.x):
-```bash
-K=~/.kube/hub-config
-# 1. bootstrap on k8s 1.35 (keep talos version 1.13.2)
-kubectl --kubeconfig $K -n crossplane-system patch talospokeclusterclaims.platform.pittampalli.io dev \
-  --type=merge -p '{"spec":{"parameters":{"talos":{"kubernetesVersion":"1.35.0"}}}}'
-# ...wait for bootstrap / nodes Ready...
-# 2. raise to 1.36
-kubectl --kubeconfig $K -n crossplane-system patch talospokeclusterclaims.platform.pittampalli.io dev \
-  --type=merge -p '{"spec":{"parameters":{"talos":{"kubernetesVersion":"1.36.0"}}}}'
-```
-`crossplane-hcloud-compositions` auto-syncs from main with selfHeal — patch the **live**
-claim; a git-only edit alone won't stick if the app overwrites it.
+**Fix (now automatic in the recreate path).** `deployment/scripts/talos-hetzner/provision-spoke.sh`
+already encodes the supported in-place path: it bootstraps at `BOOTSTRAP_K8S_VERSION`
+(default `1.35.0`) against the 1.12.4 maintenance ISO while installing the pinned
+`TALOS_VERSION` (`1.13.2`) to disk, then upgrades k8s to `K8S_VERSION` (`1.36.0`) once the
+installed Talos is running and CNI is up. The dev orchestrator
+`deployment/scripts/talos-hetzner/recreate-dev.sh` wraps this (data backup -> destroy ->
+device cleanup -> provision-spoke.sh -> bootstrap-spoke-deps.sh -> enroll-dev-agent.sh ->
+data restore -> verify-gate); use it as the dev rebuild entry point. (The historical
+Crossplane `talospokeclusterclaims` two-step `kubernetesVersion` patch is RETIRED — the
+Crossplane spoke path was removed.)
 
 **Verify.** `kubectl --context dev get nodes -o wide` — OS-IMAGE shows Talos 1.13.x and
-nodes Ready on the target k8s.
+nodes Ready on the target k8s (1.36).
 
 ---
 
-## B. hub -> ryzen Tailscale host TCP-passthrough failures
+## B. hub -> ryzen Tailscale host TCP-passthrough failures (Headlamp-only)
 
-**Symptom.** `spoke-ryzen` / all `ryzen-*` apps can't connect; TLS or connection-refused
-errors reaching `https://ryzen.tail286401.ts.net:6443` in the ArgoCD
-application-controller logs.
+**Symptom.** Headlamp can't reach ryzen; TLS or connection-refused errors reaching
+`https://ryzen.tail286401.ts.net:6443`. (This is NO LONGER an ArgoCD-sync symptom —
+sync rides the argocd-agent, §B-note below.)
 
-**Diagnosis & context.** hub->ryzen no longer rides the Tailscale operator
-apiserver-proxy. It reaches the Talos kube-apiserver DIRECTLY over Tailscale via the ryzen
-HOST device (`ryzen.tail286401.ts.net`, `100.96.102.1`, `tag:k8s`) running `tailscale serve
---bg --tcp=6443` as a raw TCP passthrough — the hub does a FULL TLS verify
-(`insecure:false`) against the Talos CA (`../references/architecture.md` §5). This dropped
-the per-hostname Let's Encrypt cert whose 5-dup-certs/week limit recreate churn exhausted
-(2026-05-29 fleet-0-healthy incident, PRs #2305/#2307). The three live failure modes:
+**Diagnosis & context.** ArgoCD sync no longer rides a hub->ryzen kube connection at all —
+ryzen is an AUTONOMOUS argocd-agent whose local controller reconciles its own apps and
+reports to the hub principal. The host TCP-passthrough kube endpoint now serves ONLY
+**Headlamp**: the Talos kube-apiserver reached DIRECTLY over Tailscale via the ryzen HOST
+device (`ryzen.tail286401.ts.net`, `100.96.102.1`, `tag:k8s`) running `tailscale serve
+--bg --tcp=6443` as a raw TCP passthrough — a FULL TLS verify (`insecure:false`) against
+the Talos CA (`../references/architecture.md` §5). This dropped the per-hostname Let's
+Encrypt cert whose 5-dup-certs/week limit recreate churn exhausted (2026-05-29
+fleet-0-healthy incident, PRs #2305/#2307). The two live Headlamp failure modes:
 
 (a) **Host serve not configured / pointing at the wrong Docker port after a recreate**
 (connection refused, or hitting a dead port). Fix: `sudo systemctl restart
@@ -65,24 +62,19 @@ trusts the Talos CA but the cert's SANs don't include the FQDN/IP it dialed). Fi
 the bootstrap `--config-patch` adds `cluster.apiServer.certSANs:
 [ryzen.tail286401.ts.net, 100.96.102.1]`; to add live, `talosctl patch mc` the same.
 
-(c) **KV token stale after a recreate** (a recreate mints a new SA token; the old
-`cluster-ryzen` materializes a dead bearer token → 401). Fix: re-run `register-spoke
---ts-host-passthrough` (the bootstrap does this) to re-mint
-`ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}` into KV; the `ExternalSecret-cluster-ryzen` refreshes
-`cluster-ryzen`.
-
-**Legacy SNI note.** The operator apiserver-proxy SNI mismatch (proxy STRICTLY validates
-wire SNI == `<spoke>-operator.tail286401.ts.net`; ArgoCD sends the server-URL host as SNI,
-not `serverName`) is NO LONGER a ryzen failure mode. It only applies if someone uses the
-deprecated `--ts-acl-mode` operator-proxy path. dev/staging use the direct public IP, not
-the proxy, so it does not apply to them either.
+**Agent-sync note.** If `ryzen-*` apps are OutOfSync/unknown on the hub, the problem is the
+argocd-agent (principal/agent mTLS or the autonomous agent itself), NOT this kube path —
+the `cluster-ryzen` agent mapping has no bearerToken to go stale. `register-spoke-with-hub.sh`
+is RETIRED; do NOT re-mint `ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}` to "fix" sync. The
+operator apiserver-proxy SNI mismatch likewise no longer applies (dev/staging are also
+managed agents now, not direct-IP kube connections).
 
 **Verify.**
 ```bash
 kubectl --kubeconfig ~/.kube/hub-config -n argocd get secret cluster-ryzen \
-  -o jsonpath='{.data.server}' | base64 -d    # https://ryzen.tail286401.ts.net:6443
-kubectl --kubeconfig ~/.kube/hub-config -n argocd get application spoke-ryzen   # Synced/Healthy
-# optional real-TLS reachability (no --insecure):
+  -o jsonpath='{.data.server}' | base64 -d    # https://argocd-agent-resource-proxy:9090?agentName=ryzen
+kubectl --kubeconfig ~/.kube/hub-config -n argocd get applications | grep '^ryzen-'   # Synced/Healthy
+# optional Headlamp real-TLS reachability (no --insecure):
 kubectl --server=https://ryzen.tail286401.ts.net:6443 \
   --certificate-authority=<Talos CA> --token=<SA token> get nodes
 ```
@@ -218,17 +210,22 @@ device-backed Ingress DNS recovery.
 
 ---
 
-## H. Flannel `--iface` after Talos upgrade (hub)
+## H. Flannel `--iface` after Talos upgrade (hub) — now self-healed
 
 **Symptom.** Cross-node pod networking silently breaks on the hub after a Talos upgrade.
 
 **Diagnosis.** Hetzner blocks VXLAN over the public IP; the kube-flannel DaemonSet must
-pin `--iface=enp7s0`, and a Talos upgrade resets it.
+pin `--iface=enp7s0`, and a Talos upgrade (or a hub recreate) resets it. CoreDNS anti-affinity
+is similarly not persisted by Talos.
 
-**Fix.** Re-apply the kube-flannel DaemonSet `--iface=enp7s0` patch after every hub Talos
-upgrade (post-provision manual fix, `docs/hub-cluster-setup.md`).
+**Fix.** This is now self-healing via the **`kube-system-fixups` CronJob**
+(`packages/components/hub-management/manifests/kube-system-fixups/`), which re-applies the
+Flannel `--iface=enp7s0` patch AND the CoreDNS anti-affinity patch that Talos does not
+persist. The hub recreate path (`deployment/scripts/recreate-hub.sh`) also applies these as
+fixups (`--fixups` mode). Only re-apply by hand if the CronJob is absent/disabled.
 
-**Verify.** Cross-node pod-to-pod connectivity; flannel pods Ready on all 5 nodes.
+**Verify.** Cross-node pod-to-pod connectivity; flannel pods Ready on all 5 nodes; the
+`kube-system-fixups` CronJob is scheduled and its last run succeeded.
 
 ---
 

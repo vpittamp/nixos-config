@@ -5,8 +5,15 @@ Ordered checklist to bring the hub from nothing (or recover it) to the desired s
 `docs/hub-gitops-bootstrap.md` (ArgoCD/ESO/Tailscale/Promoter), `docs/hub-recovery-runbook.md`.
 Paths relative to `/home/vpittamp/repos/PittampalliOrg/stacks/main`.
 
-> The hub is rebuilt rarely and manually — there is no one-shot script. Follow the docs;
-> this runbook is the ordered spine + the manual fixes that are easy to miss.
+> The hub is rebuilt rarely. `deployment/scripts/recreate-hub.sh` now drives
+> recovery/rebuild (modes `--verify-only` / `--seed-secret` / `--fixups` /
+> `--dry-run-clone` / `--in-place --confirm-wipe hub-cluster`); it NEVER hcloud-deletes
+> the 5 ash servers (no spare inventory). `--in-place` does a rolling `talosctl reset`
+> reusing `talos-cluster/main/secrets/hub-secrets.yaml` (preserves etcd identity),
+> re-apply, re-bootstrap ONE CP, and seeds `onepassword-sa-token` via `op read` (NOT
+> JWKS); `--dry-run-clone` rehearses on a throwaway cluster via `provision-spoke.sh`.
+> Convergence is checked by `deployment/scripts/hub-verify-gate.sh` (9-check read-only
+> gate). This runbook is the ordered spine + the manual fixes that are easy to miss.
 
 ## 0. Decide: full rebuild vs recovery
 
@@ -28,21 +35,28 @@ etcd on hub-cp-1; rewrite kubeconfig 10.1.1.1 -> public CP IP.
 - Patch kube-flannel DaemonSet `--iface=enp7s0` (see `recovery-and-gotchas.md` §H —
   re-apply after every Talos upgrade).
 - Patch coredns podAntiAffinity across nodes.
+- (The two Talos-non-persisted patches above are also re-applied by the self-healing
+  `kube-system-fixups` CronJob — `packages/components/hub-management/manifests/kube-system-fixups/`;
+  `recreate-hub.sh --fixups` applies it.)
 
-## 2. Azure OIDC federation
+## 2. Bootstrap the 1Password Service-Account token
 
-`kubectl get --raw /openid/v1/jwks` -> upload to Azure storage `oidcissuer04a3332f`
-(`$web/openid/v1/jwks` + `.well-known/openid-configuration`). Confirm AD App
-`gitops-kind-localdev` federated credential subject
-`system:serviceaccount:external-secrets:external-secrets`. Wait 15-30 min for AAD cache.
+The hub secret root is now **1Password** (2026-06 AWI->1Password migration), not Azure.
+Seed the single bootstrap secret — one scoped read-only 1Password Service-Account token
+(`hub-eso-reader`) into Secret `onepassword-sa-token` (ns `external-secrets`), persisted
+at `op://CLI/<id>/credential` and read at recreate via the operator's developer SA token
+(`op read`). `recreate-hub.sh --seed-secret` does this. The Azure OIDC/JWKS federation
+(`oidcissuer04a3332f`, AD App `gitops-kind-localdev`, `sync-jwks-to-azure.sh`) is
+**DORMANT — no longer in the hub path** (`sync-jwks-to-azure.sh` is a SPOKE-only tool now).
 
 ## 3. Core platform (helm)
 
 ArgoCD chart (hydrator + commitServer + server.insecure); patch `argocd-cmd-params-cm`
 hydrator commit identity (DCO) and `argocd-cm` Lua health overrides for the Promoter
 CRDs (REQUIRED — else sync deadlocks when spokes unreachable). Install ESO
-(`certController.enabled=false`); annotate the external-secrets SA for Workload Identity;
-create ClusterSecretStore `azure-keyvault-store`.
+(`certController.enabled=false`); seed the `onepassword-sa-token` Secret (step 2);
+create ClusterSecretStore `onepassword-store` (ESO `onepasswordSDK` provider ->
+`hub-eso` vault).
 
 ## 4. Root application + first promotion
 
@@ -67,6 +81,7 @@ PR `env/hub-next -> env/hub`** (autoMerge:false) — child apps only appear afte
 
 ## 10. Verify
 
-Run the full block in `../references/hub.md` "Verification". Pass = only
-`root-application` + `dev-spoke-transport` OutOfSync; everything else Synced/Healthy;
-5 nodes Ready v1.32.0; ProxyGroups Ready; both ClusterSecretStores Valid; Promoter 2/2.
+Run the full block in `../references/hub.md` "Verification" (or
+`deployment/scripts/hub-verify-gate.sh`). Pass = only `root-application` +
+`dev-spoke-transport` OutOfSync; everything else Synced/Healthy; 5 nodes Ready v1.32.0;
+ProxyGroups Ready; ClusterSecretStores `onepassword-store` + `argocd` Valid; Promoter 2/2.

@@ -21,7 +21,7 @@ whole fleet. Shared model in `architecture.md`; build steps in
 
 **ArgoCD / apps** (~189 Applications in ns argocd)
 - Hub-self apps are `hub-` prefixed (hub-cert-manager, hub-external-secrets,
-  hub-azure-keyvault-store, hub-azure-workload-identity, hub-tailscale-{crds,operator,...},
+  hub-onepassword-store, hub-tailscale-{crds,operator,...},
   hub-tekton-{pipelines,triggers,dashboard}, hub-outer-loop-builds, hub-kueue,
   hub-mlflow, hub-headlamp, ...) plus un-prefixed gitops-promoter, spoke
   appsets, crossplane(+hcloud-providers/compositions), nocodb*, redash*,
@@ -44,14 +44,25 @@ whole fleet. Shared model in `architecture.md`; build steps in
 - GitOps Promoter pod 2/2 (ns gitops-promoter-system); PromotionStrategies
   `stacks-environments` (env/hub, autoMerge:false) + `workflow-builder-release`
   READY; GitRepository `stacks-repo` + ScmProvider `github` READY.
-- ClusterSecretStores `azure-keyvault-store` (Valid/Ready — **THE CANONICAL secret
-  source**, KV `keyvault-thcmfmoo5oeow` via Workload Identity) + `argocd` healthy.
+- ClusterSecretStores `onepassword-store` (Valid/Ready — **THE CANONICAL secret
+  source** since 2026-06, ESO `onepasswordSDK` provider -> the dedicated `hub-eso`
+  1Password vault; the 21 hub ExternalSecrets resolve from it) + `argocd` healthy.
+  `azure-keyvault-store` (KV `keyvault-thcmfmoo5oeow` via Workload Identity) is now
+  **DORMANT — not deleted** (the AD App + Azure OIDC/JWKS federation are likewise
+  dormant); it is no longer the canonical source.
 - ns `spoke-secrets`: ExternalSecrets `dev-shared-secrets` (~80 keys) and
   `ryzen-shared-secrets` (~77 keys) both SecretSynced — the hub-side mirror spokes
-  read over Tailscale. PLUS `tailnet-ca` (Contract 3): a CLUSTER-NEUTRAL mirror of the
+  read over Tailscale. These spoke-secrets ExternalSecrets now read from
+  `onepassword-store` (not `azure-keyvault-store`); spokes are UNAFFECTED — they still
+  read the hub-mirrored Secrets via the ESO kubernetes-provider `hub-secrets-store` over
+  Tailscale regardless of how the hub populates them. PLUS `tailnet-ca` (Contract 3): a CLUSTER-NEUTRAL mirror of the
   persistent self-signed CA (`TAILNET-DEV-CA-CRT/KEY`) into Secret `tailnet-ca` that
   every spoke reads via the namespace-wide `spoke-secrets-reader` Role — no per-cluster
   CA (`ExternalSecret-tailnet-ca.yaml`, `architecture.md` §7). PR #2319.
+- ns `kube-system`: self-healing CronJob `kube-system-fixups`
+  (`packages/components/hub-management/manifests/kube-system-fixups/`) re-applies the
+  Flannel `--iface=enp7s0` + CoreDNS anti-affinity patches that Talos does not persist
+  (so the post-provision manual fixes survive reboots/upgrades).
 - ns `tailscale`: CronJob `tailnet-device-sweeper` (every 15m) deletes OFFLINE stale
   spoke tailnet devices (`lastSeen > 30m`) as a hygiene BACKSTOP so dead devices don't
   force `-N` hostname collisions; the hard on-recreate guarantee is still the gated
@@ -61,28 +72,43 @@ whole fleet. Shared model in `architecture.md`; build steps in
 
 ## Path to state (ordered)
 
+> **Recreate automation.** `deployment/scripts/recreate-hub.sh` drives recovery/rebuild
+> (modes `--verify-only` / `--seed-secret` / `--fixups` / `--dry-run-clone` /
+> `--in-place --confirm-wipe hub-cluster`). It NEVER hcloud-deletes the 5 ash servers
+> (no spare inventory); `--in-place` does a rolling `talosctl reset` reusing
+> `talos-cluster/main/secrets/hub-secrets.yaml` (preserves etcd identity), re-apply,
+> re-bootstrap ONE CP, and bootstraps `onepassword-sa-token` via `op read` (NOT JWKS);
+> `--dry-run-clone` rehearses on a throwaway cluster via `provision-spoke.sh`.
+> Convergence is checked by `deployment/scripts/hub-verify-gate.sh` (a 9-check read-only
+> gate). The steps below are the ordered spine the script and the docs follow.
+
 1. **PROVISION** (`docs/hub-cluster-setup.md`). hcloud net/subnet/firewall; create
    3x cpx41 + 2x ccx33, attach Talos ISO, poweron. `talosctl gen secrets` ->
    `secrets/hub-secrets.yaml` (git-crypt). Gen config with patches: hub-common
    (kubelet nodeIP validSubnets 10.1.0.0/16, `cni.name=flannel`, `proxy.disabled=false`,
-   allowSchedulingOnControlPlanes), controlplane (clusterName=hub-cluster, apiServer
-   service-account-issuer/jwks-uri = the Azure OIDC issuer URL). apply-config +
+   allowSchedulingOnControlPlanes), controlplane (clusterName=hub-cluster). apply-config +
    bootstrap etcd on hub-cp-1. **POST-PROVISION manual fixes**: label+taint build
    nodes; patch kube-flannel DaemonSet `--iface=enp7s0` (Hetzner blocks VXLAN over
    public IP — **re-apply after every Talos upgrade**); patch coredns podAntiAffinity.
-2. **AZURE OIDC FEDERATION** (`docs/hub-gitops-bootstrap.md` Step 1). Fresh bootstrap
-   mints new SA signing keys: `kubectl get --raw /openid/v1/jwks` -> upload to Azure
-   storage `oidcissuer04a3332f` `$web/openid/v1/jwks` + `.well-known/openid-configuration`.
-   AD App `gitops-kind-localdev` (clientID 137fbb08-..., tenant 0c4da9c5-...) needs
-   federated credential subject `system:serviceaccount:external-secrets:external-secrets`,
-   audience `api://AzureADTokenExchange`. Wait 15-30 min for AAD JWKS cache (AADSTS700211).
+   (These two Talos-non-persisted patches are now also re-applied by the self-healing
+   `kube-system-fixups` CronJob — see step 3 and `recovery-and-gotchas.md` §H.)
+2. **BOOTSTRAP 1PASSWORD SERVICE ACCOUNT TOKEN** (root-of-trust since 2026-06). The hub
+   secret root is now **1Password**, not Azure. The single bootstrap secret is one scoped
+   read-only 1Password Service-Account token (`hub-eso-reader`) in Secret
+   `onepassword-sa-token` (ns `external-secrets`), persisted at
+   `op://CLI/<id>/credential` and read at recreate via the operator's developer SA token
+   (`op read`). `recreate-hub.sh --seed-secret` does this (NOT a JWKS upload). The Azure
+   OIDC/JWKS federation (`oidcissuer04a3332f`, AD App `gitops-kind-localdev`,
+   `sync-jwks-to-azure.sh`) is **DORMANT — no longer in the hub recreate path**
+   (`sync-jwks-to-azure.sh` is a SPOKE-only tool now).
 3. **INSTALL CORE PLATFORM** (helm). ArgoCD v7.8.28 chart (now 3.4.x) with
    hydrator.enabled, commitServer.enabled, server.insecure; patch
    `argocd-cmd-params-cm` hydrator commit identity (DCO Signed-off-by) and `argocd-cm`
    Lua health overrides for promoter.argoproj.io PromotionStrategy/ArgoCDCommitStatus
    (else sync deadlocks when spokes unreachable). Install ESO
-   (`certController.enabled=false` for Talos/Flannel); annotate the external-secrets SA
-   for Workload Identity; create ClusterSecretStore `azure-keyvault-store`.
+   (`certController.enabled=false` for Talos/Flannel); seed the `onepassword-sa-token`
+   Secret (step 2); create ClusterSecretStore `onepassword-store` (ESO `onepasswordSDK`
+   provider -> `hub-eso` vault).
 4. **ROOT APPLICATION + SOURCE-HYDRATION** (Step 4). Apply `root-application` with
    sourceHydrator: drySource repoURL stacks path `packages/overlays/hub` targetRevision
    `main` kustomize:{}; hydrateTo `env/hub-next`; syncSource `env/hub` path `hub-apps`.
@@ -121,7 +147,7 @@ whole fleet. Shared model in `architecture.md`; build steps in
 K=~/.kube/hub-config
 kubectl --kubeconfig $K get applications -n argocd | grep -vE 'Synced +Healthy'   # expect only root-application + dev-spoke-transport
 kubectl --kubeconfig $K get proxygroup -o wide                                    # k8s-api-hub ProxyGroupReady
-kubectl --kubeconfig $K get clustersecretstore                                    # azure-keyvault-store + argocd Valid/Ready
+kubectl --kubeconfig $K get clustersecretstore                                    # onepassword-store + argocd Valid/Ready
 kubectl --kubeconfig $K get externalsecret -n spoke-secrets                       # dev/ryzen-shared-secrets SecretSynced
 kubectl --kubeconfig $K get providers.pkg.crossplane.io                           # all Healthy
 kubectl --kubeconfig $K get pods -n gitops-promoter-system                        # 2/2

@@ -21,18 +21,21 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
   apps (autonomous); the hub principal aggregates status. `source-branch=inner-loop`
   still drives what ryzen hydrates.
   > The legacy `ExternalSecret-cluster-ryzen.yaml` (KV-materialized
-  > `server=https://ryzen.tail286401.ts.net:6443`, `insecure:false`+caData, per-recreate
-  > SA bearerToken minted by register-spoke `--ts-host-passthrough`) is now **vestigial**
-  > for ArgoCD — the agent mapping supersedes it. That host-passthrough kube-API endpoint
-  > + SA token is what **Headlamp** uses to reach ryzen (via the dedicated
+  > `server=https://ryzen.tail286401.ts.net:6443`, `insecure:false`+caData, SA bearerToken)
+  > is now **vestigial** for ArgoCD — the agent mapping supersedes it (the
+  > `register-spoke-with-hub.sh` step that used to mint it is RETIRED). That host-passthrough
+  > kube-API endpoint + SA token is what **Headlamp** uses to reach ryzen (via the dedicated
   > `headlamp-cluster-ryzen` Secret). `workload.stacks.io/workflow-builder` is still
   > intentionally OMITTED (ryzen's overlay composes workflow-builder-system directly).
   > See `tailscale-and-certs.md` for the host-passthrough + Headlamp-Secret detail.
 
 **Rendering / sync**
-- The hub spoke-clusters appset materializes `spoke-ryzen`: drySource path
-  `packages/overlays/ryzen`, `targetRevision=inner-loop`, hydrateTo/syncSource
-  `env/spokes-ryzen` path `ryzen-apps`. (Path-based, no `kustomize` field.)
+- The source-hydrator renders drySource path `packages/overlays/ryzen`
+  (`targetRevision=inner-loop`) -> hydrateTo/syncSource `env/spokes-ryzen` path
+  `ryzen-apps`. (Path-based, no `kustomize` field.) Under the agent model ryzen's LOCAL
+  controller reconciles these via the `root-ryzen` app-of-apps applied by
+  `enroll-ryzen-agent.sh`; the old hub spoke-clusters-appset `spoke-ryzen` Application is
+  vestigial (the agent mapping + local controller supersede a hub-driven kube sync).
 - `packages/overlays/ryzen` applies namePrefix `ryzen-` and rewrites every child
   Application's destination from `kubernetes.default.svc` to `destination.name=ryzen`.
   It composes 3 components: `profiles/local-core-ryzen`, `workloads/workflow-builder-system`,
@@ -63,9 +66,11 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
   `ORIGIN`/`APP_PUBLIC_URL` stay `https://workflow-builder-ryzen...` (the #2316 http flip
   was reverted).
 
-**Hub->ryzen connectivity** (host-device raw TCP passthrough — the ryzen-only path)
-- hub ArgoCD reaches the ryzen Talos kube-apiserver DIRECTLY over Tailscale via the
-  ryzen HOST device (`ryzen.tail286401.ts.net`, `100.96.102.1`, `tag:k8s`) running
+**Hub->ryzen connectivity** (host-device raw TCP passthrough — Headlamp-only; NOT ArgoCD sync)
+- ArgoCD sync does NOT use this path: ryzen is an autonomous agent whose local controller
+  reconciles its own apps. The host-device kube reach exists ONLY for **Headlamp**.
+- For Headlamp, the hub reaches the ryzen Talos kube-apiserver DIRECTLY over Tailscale via
+  the ryzen HOST device (`ryzen.tail286401.ts.net`, `100.96.102.1`, `tag:k8s`) running
   `tailscale serve --bg --tcp=6443` as a RAW TCP passthrough to the local apiserver
   (nixos-config `services.tailscaleK8sApiserver` / the `tailscale-serve-k8s-apiserver`
   oneshot auto-discovers the Docker host port; the stacks bootstrap restarts it after
@@ -76,9 +81,11 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
   [ryzen.tail286401.ts.net, 100.96.102.1]` (set by the bootstrap `--config-patch`),
   so verification passes — **no SNI workaround needed** (the cert legitimately covers
   the hostname).
-- cluster-ryzen `server = https://ryzen.tail286401.ts.net:6443`; HUB CoreDNS rewrite
-  `ryzen.tail286401.ts.net -> ryzen-api-egress.tailscale.svc.cluster.local`
-  (self-healing CronJob); hub ns `tailscale` Service `ryzen-api-egress` ExternalName
+- The ArgoCD `cluster-ryzen` Secret is the agent MAPPING
+  (`server=https://argocd-agent-resource-proxy:9090?agentName=ryzen`, no bearerToken). The
+  `https://ryzen.tail286401.ts.net:6443` endpoint is the Headlamp target, reached via the
+  HUB CoreDNS rewrite `ryzen.tail286401.ts.net -> ryzen-api-egress.tailscale.svc.cluster.local`
+  (self-healing CronJob) + hub ns `tailscale` Service `ryzen-api-egress` ExternalName
   with `tailnet-fqdn=ryzen.tail286401.ts.net`, port 6443. The Tailscale operator
   apiserver-proxy is NO LONGER in this path (it still runs for other tailnet
   exposures but never provisions an LE cert because nothing connects to its
@@ -90,24 +97,28 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
 
 1. **PROVISION (imperative).** `deployment/scripts/bootstrap-spoke-cluster.sh` on the
    ryzen host. Canonical recreate:
-   `bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate --ts-host-passthrough`
-   (`--ts-host-passthrough` = hub->ryzen over the ryzen host device's raw TCP
-   passthrough + a per-recreate ServiceAccount bearer token; register-spoke mints the
-   SA token, extracts the Talos CA, and pushes both to KV as
-   `ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}`; restarts the `tailscale-serve-k8s-apiserver`
-   oneshot). The legacy `--ts-acl-mode` (operator apiserver-proxy + ACL impersonation)
-   is **deprecated for ryzen** — it reintroduces the Let's Encrypt dependency.
-   Produces bare Talos-Docker with ONLY: Tailscale operator (helm), the
+   `bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate`
+   (the `--ts-acl-mode` / `--ts-host-passthrough` flags are **VESTIGIAL** — still parsed
+   for compat but ignored; `register-spoke-with-hub.sh` is RETIRED and NO LONGER called.
+   The ryzen host device's `tailscale serve --bg --tcp=6443` raw passthrough +
+   `apiServer.certSANs` still come up, but serve ONLY Headlamp's kube-API reach, NOT
+   ArgoCD sync — §4.) Produces bare Talos-Docker with ONLY: Tailscale operator (helm), the
    ProxyGroup/ProxyClass for kube-api exposure, hub-spoke SA+CRB. It does NOT install
-   cert-manager/ESO/ArgoCD/gitea/tekton/observability/workflow-builder — the hub
-   deploys all of those via rendered child Applications. Requires env
+   cert-manager/ESO/ArgoCD/gitea/tekton/observability/workflow-builder — ryzen's own
+   local controller deploys all of those. Requires env
    `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_CLIENT_SECRET`.
-2. **AGENT ENROLLMENT** (Contract 1, argocd-agent). `argocd-agentctl agent create ryzen`
-   writes the `cluster-ryzen` AGENT MAPPING Secret on the hub (`?agentName=ryzen` +
-   embedded mTLS, `managed-by: argocd-agent`). ryzen runs as an **AUTONOMOUS** agent: its
-   local controller reconciles its own apps (hydrated from `inner-loop`) and reports
-   status to the principal — the hub does NOT reconcile ryzen's apps through a kube-API
-   connection. (The legacy `ExternalSecret-cluster-ryzen.yaml` + spoke-clusters-appset
+2. **AGENT ENROLLMENT** (Contract 1, argocd-agent). The `--recreate` path runs
+   `deployment/scripts/argocd-agent/enroll-ryzen-agent.sh`, which mints the agent mTLS
+   cert, applies the
+   `packages/components/hub-management/manifests/ryzen-agent-bootstrap` kustomize component
+   (agent-autonomous bundle + params `mode=autonomous` + `cluster-ryzen-local` alias +
+   `stacks-repo-read` + cert ExternalSecrets + the `root-ryzen` app-of-apps), runs
+   `argocd-agentctl agent create ryzen` to write the `cluster-ryzen` AGENT MAPPING Secret on
+   the hub (`?agentName=ryzen` + embedded mTLS, `managed-by: argocd-agent`, no bearerToken),
+   stages the Headlamp Secret, and advances inner-loop. ryzen runs as an **AUTONOMOUS**
+   agent: its local controller reconciles its own apps (hydrated from `inner-loop`) and
+   reports status to the principal — the hub does NOT reconcile ryzen's apps through a
+   kube-API connection. (The legacy `ExternalSecret-cluster-ryzen.yaml` + spoke-clusters-appset
    `spoke-ryzen` templating are vestigial now; the agent mapping supersedes them.)
 3. **SECRET TRANSPORT** (Contract 2, spoke side is IMPERATIVE for ryzen). The
    `hub-secrets-store` CSS + egress Service are applied by
@@ -147,11 +158,10 @@ $C -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' | grep 'rewrite 
 $C get externalsecrets -A                               # all SecretSynced/Valid
 
 K=~/.kube/hub-config
-kubectl --kubeconfig $K -n argocd get application spoke-ryzen           # Synced/Healthy, rev=inner-loop
-kubectl --kubeconfig $K -n argocd get applications | grep '^ryzen-'     # all Synced/Healthy
-kubectl --kubeconfig $K -n argocd get secret cluster-ryzen -o jsonpath='{.data.server}' | base64 -d   # https://ryzen.tail286401.ts.net:6443
-kubectl --kubeconfig $K -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' | grep ryzen.tail286401   # rewrite -> ryzen-api-egress
-kubectl --kubeconfig $K -n tailscale get svc ryzen-api-egress                                          # ExternalName tailnet-fqdn=ryzen.tail286401.ts.net, port 6443
+kubectl --kubeconfig $K -n argocd get applications | grep '^ryzen-'     # all Synced/Healthy (via principal)
+kubectl --kubeconfig $K -n argocd get secret cluster-ryzen -o jsonpath='{.data.server}' | base64 -d   # https://argocd-agent-resource-proxy:9090?agentName=ryzen
+kubectl --kubeconfig $K -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' | grep ryzen.tail286401   # Headlamp rewrite -> ryzen-api-egress
+kubectl --kubeconfig $K -n tailscale get svc ryzen-api-egress                                          # ExternalName tailnet-fqdn=ryzen.tail286401.ts.net, port 6443 (Headlamp)
 git -C /home/vpittamp/repos/PittampalliOrg/stacks/main rev-list --count origin/inner-loop..origin/main   # 0 = current
 ```
 

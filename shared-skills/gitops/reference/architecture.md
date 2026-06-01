@@ -32,7 +32,14 @@
 - dev: `dev-cp-1/2/3` (178.156.225.243, .239.75, .226.121), `dev-worker-1/2` on `dev-network` (10.0.1.0/24)
 - staging: `staging-cp-1/2/3`, `staging-worker-1/2` on `staging-network`
 
-ryzen is the user's local workstation (`hostname` returns `ryzen`). The Talos-in-Docker cluster (formerly kind; bootstrapped imperatively by `deployment/scripts/bootstrap-spoke-cluster.sh`, **not** Crossplane-provisioned like dev/staging) is registered with the hub ArgoCD as cluster `ryzen`. **Post-A6 (May 2026): ryzen has NO local ArgoCD, NO local Gitea, and NO idpbuilder.** All ryzen-* Applications run on hub ArgoCD with `destination.name: ryzen`. dev/staging are Crossplane `TalosSpokeClusterClaim` spokes; ryzen is imperative.
+ryzen is the user's local workstation (`hostname` returns `ryzen`). The Talos-in-Docker cluster (formerly kind; bootstrapped imperatively by `deployment/scripts/bootstrap-spoke-cluster.sh`, **not** Crossplane-provisioned like dev/staging) is registered with the hub ArgoCD as cluster `ryzen`. **Post-A6 (May 2026): ryzen has NO local ArgoCD, NO local Gitea, and NO idpbuilder.** All ryzen-* Applications run on hub ArgoCD with `destination.name: ryzen`. dev is now SCRIPT-provisioned + enrolled (Crossplane `TalosSpokeClusterClaim` removed in Phase D); ryzen is imperative.
+
+**Recreate-automation entry points (named scripts):**
+- **dev:** `deployment/scripts/talos-hetzner/recreate-dev.sh` — ORCHESTRATOR wrapping data backup/restore (`environment_image_builds`/agents/workflows) + `provision-spoke.sh` + `bootstrap-spoke-deps.sh` + `argocd-agent/enroll-dev-agent.sh` + the verify gate.
+- **ryzen:** `deployment/scripts/bootstrap-spoke-cluster.sh --recreate` — enrolls the autonomous agent via `deployment/scripts/argocd-agent/enroll-ryzen-agent.sh` + the `packages/components/hub-management/manifests/ryzen-agent-bootstrap` kustomize component (`argocd-agentctl agent create ryzen` writes the `cluster-ryzen` agent mapping). `register-spoke-with-hub.sh` is RETIRED/uncalled; `--ts-acl-mode` / `--ts-host-passthrough` are vestigial flags.
+- **hub:** `deployment/scripts/recreate-hub.sh` (modes `--verify-only` / `--seed-secret` / `--fixups` / `--dry-run-clone` / `--in-place --confirm-wipe hub-cluster`; never hcloud-deletes the 5 ash servers; `--in-place` is a rolling `talosctl reset` reusing `talos-cluster/main/secrets/hub-secrets.yaml`; bootstraps `onepassword-sa-token` via `op read`, NOT JWKS) + `deployment/scripts/hub-verify-gate.sh` (9-check read-only convergence gate) + the self-healing `kube-system-fixups` CronJob (`packages/components/hub-management/manifests/kube-system-fixups/`) re-applying the Flannel `--iface` + CoreDNS anti-affinity patches Talos drops.
+
+For the full ordered recreate path see the `cluster-desired-state` skill.
 
 ## Hub build lane, image pins, and ryzen sync
 
@@ -155,8 +162,8 @@ Dev and staging are not just ryzen with a different image registry. Workflow-bui
 
 This rides on a **new cross-cutting contract: a persistent self-signed CA** (alongside the cluster-Secret and spoke-transport contracts):
 
-- A self-signed CA **"PittampalliOrg Tailnet Dev CA"** was generated once (offline) and stored in Azure Key Vault as `TAILNET-DEV-CA-CRT` / `TAILNET-DEV-CA-KEY` (10-year, stable across cluster recreation — an improvement over idpbuilder, which regenerates per-install).
-- The hub mirrors it **cluster-neutrally** into ns `spoke-secrets` Secret `tailnet-ca` (`packages/components/hub-management/manifests/spoke-secrets/ExternalSecret-tailnet-ca.yaml`). The namespace-wide `spoke-secrets-reader` Role means every spoke reads the SAME key — no per-cluster key.
+- A self-signed CA **"PittampalliOrg Tailnet Dev CA"** was generated once (offline) as `TAILNET-DEV-CA-CRT` / `TAILNET-DEV-CA-KEY` (10-year, stable across cluster recreation — an improvement over idpbuilder, which regenerates per-install). It now lives in the `hub-eso` 1Password vault (the Azure KV copy is dormant after the 2026-06 AWI → 1Password migration).
+- The hub mirrors it **cluster-neutrally** into ns `spoke-secrets` Secret `tailnet-ca` (`packages/components/hub-management/manifests/spoke-secrets/ExternalSecret-tailnet-ca.yaml`); that hub spoke-secrets ExternalSecret now reads from the `onepassword-store` ClusterSecretStore (not `azure-keyvault-store`). The namespace-wide `spoke-secrets-reader` Role means every spoke reads the SAME key — no per-cluster key.
 - New spoke base app `packages/components/tailnet-ca` (delivered via `packages/base/apps/tailnet-ca.yaml`, **spoke-only** — the hub does not consume `packages/base`): an ExternalSecret (`hub-secrets-store`) restores the CA into `cert-manager/tailnet-dev-ca`; the `tailnet-dev-ca` CA `ClusterIssuer` signs the `*.tail286401.ts.net` wildcard Certificate consumed by the tls-terminator sidecar.
 - Because the CA is identical on every cluster, clients trust it once and the trust survives recreation. Workstation trust is in nixos-config commit `44ba6324` (system/curl/git + a Chrome NSS seed, which is REQUIRED on NixOS because `security.pki` does not cover Chrome). PR #2322 adds `ignoreDifferences` so the cert/CA material doesn't show as drift.
 
@@ -257,7 +264,7 @@ git push origin origin/main:refs/heads/inner-loop   # clean FF when inner-loop i
 
 After the push, source-hydrator re-dispatches the new dry SHA → renders `packages/overlays/ryzen` → pushes `env/spokes-ryzen`; the `ryzen-*` apps (sync from `env/spokes-ryzen` path `ryzen-apps`) reconcile. `commit-pin.sh` does the same push for ryzen-only image bumps. Do **not** mis-diagnose a frozen ryzen as the empty-`drySource.kustomize` hydrator-stall bug — `spoke-ryzen` is path-based (no `kustomize` field), so check `targetRevision`/`inner-loop` first.
 
-Hub's argocd-application-controller applies all 60+ ryzen-* Applications to the ryzen cluster via the `cluster-ryzen` Secret in hub argocd ns. The kube-api connectivity for that is the Tailscale-apiserver-proxy SNI path described in "Hub → spoke ArgoCD connectivity" below.
+Under argocd-agent v0.8.1 ryzen reconciles all 60+ ryzen-* Applications with its OWN local controller (autonomous agent); the hub principal aggregates status, and the agent dials the principal OUTBOUND (8443). The hub does NOT push kube-API syncs to ryzen. The `cluster-ryzen` Secret is an AGENT MAPPING, not a kube-API endpoint; the legacy Tailscale-apiserver-proxy SNI path in "Hub → spoke ArgoCD connectivity" below is RETIRED for sync and survives ONLY for Headlamp.
 
 ## Control plane: argocd-agent v0.8.1
 
@@ -294,9 +301,11 @@ The direct-server + bearerToken Secret shapes above are LEGACY; migrated spokes 
   - GOTCHA: there is a SECOND, unused `spoke-clusters-appset.yaml` under `packages/components/hub-base/apps/` that hardcodes `targetRevision: main` and has the buggy empty `kustomize: {}` (the hydrator-stall trap). The hub references only the `hub-spoke-appsets` copy via `packages/overlays/hub/kustomization.yaml`. **Edit the `hub-spoke-appsets` copy, not `hub-base`.**
 - `spoke-workloads-appset.yaml` — adds the `workload.stacks.io/workflow-builder=true` selector; generates `spoke-<name>-workflow-builder` from `packages/components/workloads/workflow-builder-system-overlays/<name>`. dev/staging opt in; ryzen does not.
 
-## Hub → spoke ArgoCD connectivity (Tailscale-apiserver-proxy SNI)
+## Hub → spoke kube-API reach (RETIRED for sync — Headlamp-only)
 
-dev/staging expose a **direct public kube-API** (`https://<ip>:6443`), so their cluster Secret just points Argo CD at the IP — no SNI workaround.
+**This whole section is RETIRED as the ArgoCD sync path under argocd-agent v0.8.1.** Spokes reconcile locally and dial the hub principal OUTBOUND (8443); the hub no longer pushes kube-API syncs. The hub→spoke kube endpoint now survives ONLY for **Headlamp** (read via the dedicated `headlamp.dev/cluster=true` Secret, not the `cluster-<spoke>` agent mapping), and ryzen also serves a host raw-TCP `tailscale serve --tcp=6443` passthrough for that. The SNI mechanics below remain accurate for that Headlamp path and as historical context; they no longer gate any Application sync.
+
+dev/staging expose a **direct public kube-API** (`https://<ip>:6443`), so a Headlamp cluster Secret just points at the IP — no SNI workaround.
 
 **ryzen has no public API; it's reached through the spoke Tailscale operator's apiserver-proxy**, and the proxy (Tailscale operator **v1.92.4+**) **STRICTLY validates the wire TLS SNI** — it only accepts its own hostname (`ryzen-operator.tail286401.ts.net`), otherwise returns `500 Internal Server Error: invalid domain ... must be one of [ryzen-operator.tail286401.ts.net]`.
 
@@ -356,7 +365,7 @@ As of 2026-04-24, the live controller is `quay.io/argoprojlabs/gitops-promoter:v
 Default placement policy:
 
 - **Hub**: multi-cluster control plane, release automation, lifecycle automation, cross-cluster inventory/reporting, and shared operator UIs. Examples: ArgoCD, GitOps Promoter, hub Tekton outer-loop, Crossplane, deployment inventory, NocoDB, Redash, and any future shared Backstage/Keycloak deployment.
-- **Spokes**: workload runtime and failure-domain-local infrastructure. Examples: workflow-builder runtime services, Dapr runtime, cert-manager, External Secrets Operator (resolving the **`hub-secrets-store`** ClusterSecretStore over Tailscale, NOT Azure Workload Identity), CNI/ingress/storage, Tailscale resources needed for that cluster, and per-environment databases/caches/queues. **AWI + Azure Key Vault now live ONLY on the hub** as the canonical secret source; spokes no longer authenticate to Azure AD. See `reference/secret-flow.md`.
+- **Spokes**: workload runtime and failure-domain-local infrastructure. Examples: workflow-builder runtime services, Dapr runtime, cert-manager, External Secrets Operator (resolving the **`hub-secrets-store`** ClusterSecretStore over Tailscale, NOT Azure Workload Identity), CNI/ingress/storage, Tailscale resources needed for that cluster, and per-environment databases/caches/queues. **The hub secret root migrated AWI → 1Password (2026-06):** the hub's 21 ExternalSecrets resolve from the `onepassword-store` ClusterSecretStore (ESO `onepasswordSDK` provider → the dedicated `hub-eso` 1Password vault); the old Azure KV + AD App + OIDC/JWKS federation are DORMANT (not deleted). Spokes are UNAFFECTED — they read hub-mirrored secrets via the ESO kubernetes-provider `hub-secrets-store` ClusterSecretStore over Tailscale regardless of how the hub populates its k8s Secrets. See `reference/secret-flow.md`.
 - **Ryzen-local**: developer-workstation paths only — Skaffold inner-loop hot reload (HMR sync into a running pod via local kubeconfig). Local Gitea/Tekton/ArgoCD are retired (post-A6).
 
 If production traffic depends on a service during hub outage, keep it per-spoke. If operators use it to manage multiple clusters, centralize it on hub and add spoke agents/access only where needed. See `reference/app-placement.md`.

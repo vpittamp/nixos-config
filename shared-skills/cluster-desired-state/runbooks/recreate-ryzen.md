@@ -18,33 +18,40 @@ needed" is the default posture for ryzen prototypes. Paths relative to
 ## 1. Provision (imperative bootstrap)
 
 ```bash
-bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate --ts-host-passthrough
+bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate
 ```
-`--ts-host-passthrough` = hub->ryzen reaches the Talos apiserver DIRECTLY over Tailscale
-via the ryzen HOST device's raw TCP serve (`tailscale serve --bg --tcp=6443`), with a
-per-recreate SA bearer token + Talos CA into KV (`ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}`); the
-bootstrap `--config-patch` adds `cluster.apiServer.certSANs:
-[ryzen.tail286401.ts.net, 100.96.102.1]` so the apiserver's own cert verifies end-to-end
-(no operator apiserver-proxy, no Let's Encrypt — `../references/architecture.md` §5). It
-also restarts the host `tailscale-serve-k8s-apiserver` unit (Docker re-maps the port).
-The `--recreate` path also runs the gated `cleanup-tailnet-devices.sh` to delete stale
+The `--recreate` path provisions a bare Talos-Docker cluster, then ENROLLS the autonomous
+argocd-agent via `deployment/scripts/argocd-agent/enroll-ryzen-agent.sh` (the canonical
+registration — see §2). It also runs the gated `cleanup-tailnet-devices.sh` to delete stale
 devices (the HARD pre-recreate guarantee; the hub `tailnet-device-sweeper` CronJob is only
 an offline-device hygiene backstop — see `recovery-and-gotchas.md` §F), `talosctl cluster
-destroy`, and deletes the old kube context. It produces a bare Talos-Docker cluster — the
-hub deploys everything else.
-(Legacy `--ts-acl-mode` = the deprecated operator apiserver-proxy + impersonation path;
-do not use it for ryzen.)
+destroy`, and deletes the old kube context. The hub principal aggregates status; ryzen's
+local controller deploys everything else.
+(`register-spoke-with-hub.sh` is RETIRED and NO LONGER called by the bootstrap. The
+`--ts-acl-mode` / `--ts-host-passthrough` flags are VESTIGIAL — still parsed for compat but
+ignored; the agent-mapping registration does not depend on either. The ryzen HOST device's
+raw TCP serve `tailscale serve --bg --tcp=6443` + `apiServer.certSANs` still exist, but ONLY
+to serve Headlamp's kube-API reach — `../references/architecture.md` §5 — NOT ArgoCD sync.)
 
-## 2. GitOps registration (Contract 1, already committed)
+## 2. GitOps registration (Contract 1 — argocd-agent mapping)
 
+The CANONICAL registration is the `cluster-ryzen` AGENT MAPPING Secret on the hub, created
+by `argocd-agentctl agent create ryzen` (run by `enroll-ryzen-agent.sh`):
+`server=https://argocd-agent-resource-proxy:9090?agentName=ryzen` with embedded mTLS
+certData/keyData/caData and **no bearerToken** (`managed-by: argocd-agent`,
+`argocd-agent.argoproj-labs.io/agent-name=ryzen`). `enroll-ryzen-agent.sh` mints the agent
+mTLS cert, applies the
+`packages/components/hub-management/manifests/ryzen-agent-bootstrap` kustomize component
+(agent-autonomous bundle + params `mode=autonomous` + `cluster-ryzen-local` alias +
+`stacks-repo-read` + the cert ExternalSecrets + the `root-ryzen` app-of-apps), runs
+`argocd-agentctl agent create ryzen`, stages the Headlamp Secret, and advances inner-loop.
+The legacy
 `packages/components/hub-management/manifests/spoke-credentials/ExternalSecret-cluster-ryzen.yaml`
-materializes `cluster-ryzen` from KV `ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}` (the static
-`Secret-cluster-ryzen.yaml` was deleted, PR #2308). The bootstrap `--ts-host-passthrough`
-register-spoke step mints those KV values per-recreate, so a fresh recreate refreshes the
-registration automatically. The hub-spoke-appsets spoke-clusters-appset materializes
-`spoke-ryzen` (`targetRevision=inner-loop`). Nothing to do unless the ExternalSecret /
-appset changed on `main` — if so, advance the hub: merge the `env/hub-next -> env/hub`
-Promoter PR (`gitops` skill).
+(KV-materialized `server=https://ryzen.tail286401.ts.net:6443` + SA bearerToken) is now
+**vestigial for ArgoCD** — the agent mapping supersedes it; its host-passthrough endpoint is
+only what **Headlamp** uses (via the `headlamp-cluster-ryzen` Secret). Nothing to do unless
+the bootstrap component / appset changed on `main` — if so, advance the hub: merge the
+`env/hub-next -> env/hub` Promoter PR (`gitops` skill).
 
 ## 3. Secret transport (Contract 2 — spoke side is IMPERATIVE for ryzen)
 
@@ -58,24 +65,24 @@ bootstrap script) using `deployment/manifests/spoke-transport/`:
 The hub side (mirror ExternalSecret + RBAC + Ingress device + ACL grant) is GitOps and
 should already be live (`../references/hub.md` step 7).
 
-## 4. Hub -> ryzen connectivity (Tailscale host TCP passthrough)
+## 4. Hub -> ryzen connectivity (Headlamp-only — NOT the sync path)
 
-The durable path is a raw TCP passthrough on the ryzen HOST device
-(`ryzen.tail286401.ts.net`, `tailscale serve --bg --tcp=6443`) — the hub does a full TLS
-verify against the Talos CA, no operator apiserver-proxy / no Let's Encrypt
-(`../references/architecture.md` §5). Mostly handled by the bootstrap:
-- `--ts-host-passthrough` mints the SA token + Talos CA into KV
-  (`ARGOCD-CLUSTER-RYZEN-{TOKEN,CA}`) and restarts the host
-  `tailscale-serve-k8s-apiserver` unit. If the serve is not pointing at the current
-  Docker apiserver port after a recreate: `sudo systemctl restart
-  tailscale-serve-k8s-apiserver` on the ryzen host (or re-run bootstrap).
+ArgoCD sync NO LONGER rides a hub->ryzen kube connection — ryzen's local controller
+reconciles its own apps (autonomous agent, §2). The hub->ryzen kube-API reach now exists
+ONLY for **Headlamp**: a raw TCP passthrough on the ryzen HOST device
+(`ryzen.tail286401.ts.net`, `tailscale serve --bg --tcp=6443`), full TLS verify against the
+Talos CA, no operator apiserver-proxy / no Let's Encrypt (`../references/architecture.md`
+§5). If Headlamp can't reach ryzen after a recreate:
+- The host serve may be pointing at a stale Docker apiserver port: `sudo systemctl restart
+  tailscale-serve-k8s-apiserver` on the ryzen host.
 - The hub CoreDNS rewrite (`CronJob-coredns-spoke-rewrites`) and `ryzen-api-egress`
   Service (`tailnet-fqdn: ryzen.tail286401.ts.net`, port 6443) are committed/self-healing.
 
-Verify by confirming the materialized cluster-Secret `server` is
-`https://ryzen.tail286401.ts.net:6443` and `ryzen-*` apps are Synced; optionally full-verify
-with a real-TLS `kubectl --server=... --certificate-authority=<Talos CA> --token=<SA> get
-nodes` (no `--insecure`). The old SNI `curl --connect-to` check is obsolete.
+Verify the agent path by confirming `cluster-ryzen` is the agent mapping
+(`server=https://argocd-agent-resource-proxy:9090?agentName=ryzen`) and `ryzen-*` apps are
+Synced via the principal. Headlamp reach (optional) is a real-TLS
+`kubectl --server=https://ryzen.tail286401.ts.net:6443 --certificate-authority=<Talos CA>
+--token=<SA> get nodes` (no `--insecure`). The old SNI `curl --connect-to` check is obsolete.
 
 ## 5. Deploy content (advance inner-loop)
 
@@ -101,8 +108,9 @@ path-based) — check `targetRevision=inner-loop` and inner-loop freshness first
 
 Run the full block in `../references/ryzen.md` "Verification". Pass = Talos v1.13.2 /
 k8s v1.36.0, contour+kourier (zero nginx), ns gitea NotFound, `hub-secrets-store`
-Ready=True, all `ryzen-*` apps Synced/Healthy on the hub, cluster-ryzen server =
-`https://ryzen.tail286401.ts.net:6443` (`insecure:false` + caData), inner-loop count 0.
+Ready=True, all `ryzen-*` apps Synced/Healthy via the principal, cluster-ryzen is the agent
+mapping (`server=https://argocd-agent-resource-proxy:9090?agentName=ryzen`, no bearerToken),
+inner-loop count 0.
 
 **Web exposure post-sync** (Contract 3, `../references/architecture.md` §7). Confirm the
 CA/wildcard/sidecar chain comes up: the `tailnet-dev-ca` CA `ClusterIssuer` Ready -> the

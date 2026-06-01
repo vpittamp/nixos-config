@@ -10,9 +10,17 @@ The hub is a 5-node Hetzner/Talos cluster (Talos `v1.12.x`, Kubernetes
 is provisioned IMPERATIVELY (`docs/hub-cluster-setup.md`). It runs the
 **argocd-agent v0.8.1 PRINCIPAL** (single ArgoCD pane, ns `argocd`),
 source-hydrator, GitOps Promoter, the Tailscale operator, hub Tekton, and
-External Secrets Operator. The hub keeps Azure Workload Identity + Key Vault
-(`keyvault-thcmfmoo5oeow`) as the canonical secret source for the whole fleet.
-**Crossplane was removed in Phase D** — it is no longer a fleet dependency.
+External Secrets Operator. As of 2026-06 the hub's 21 ExternalSecrets resolve from
+the **`onepassword-store`** ClusterSecretStore (ESO `onepasswordSDK` provider ->
+the dedicated **`hub-eso`** 1Password vault); root-of-trust is one scoped
+read-only 1Password Service-Account token (`hub-eso-reader`) in Secret
+`onepassword-sa-token` (ns `external-secrets`), persisted at
+`op://CLI/<id>/credential` and read at recreate via the operator's developer SA
+token (`op read`). **Azure Workload Identity + Key Vault
+(`keyvault-thcmfmoo5oeow`) + the AD App + the OIDC/JWKS federation are DORMANT
+(not deleted)**; `sync-jwks-to-azure.sh` is NO LONGER in the hub recreate path (it
+is a SPOKE-only tool now). **Crossplane was removed in Phase D** — it is no longer
+a fleet dependency.
 
 Spokes differ by how they are provisioned, but all three use imperative scripts:
 
@@ -155,12 +163,21 @@ Current lessons:
 ```text
 # Script-based provisioning (current; replaces crossplane-hetzner-talos)
 deployment/scripts/talos-hetzner/
+  recreate-dev.sh             # dev ORCHESTRATOR: backup/restore (environment_image_builds/agents/workflows) + provision + bootstrap-deps + enroll-dev-agent + verify gate
   provision-spoke.sh          # Hetzner+Talos: network/firewall/servers, talosctl gen/apply/bootstrap, Cilium, k8s upgrade; --destroy
   bootstrap-spoke-deps.sh     # cert-manager + ESO + Tailscale operator + spoke->hub ESO transport
   lib/spoke-transport-bootstrap.sh
   README.md
 deployment/scripts/argocd-agent/
   enroll-dev-agent.sh         # managed-agent enroll: agent mTLS cert, cluster-dev mapping, AppProject, egress Svc, CoreDNS, Headlamp Secret
+  enroll-ryzen-agent.sh       # autonomous-agent enroll (ryzen): mint agent mTLS cert, apply ryzen-agent-bootstrap component, argocd-agentctl agent create ryzen (cluster-ryzen mapping), stage Headlamp Secret, advance inner-loop
+  # register-spoke-with-hub.sh is RETIRED — replaced by enroll-{dev,ryzen}-agent.sh
+deployment/scripts/
+  recreate-hub.sh             # hub recreate: --verify-only / --seed-secret / --fixups / --dry-run-clone / --in-place --confirm-wipe; NEVER hcloud-deletes the 5 ash servers; --in-place = rolling talosctl reset reusing hub-secrets.yaml, bootstrap ONE CP, seed onepassword-sa-token via op read (NOT JWKS)
+  hub-verify-gate.sh          # 9-check read-only hub convergence gate
+packages/components/hub-management/manifests/
+  ryzen-agent-bootstrap/      # kustomize component applied by enroll-ryzen-agent.sh (agent-autonomous bundle + params mode=autonomous + cluster-ryzen-local alias + stacks-repo-read + cert ExternalSecrets + root-ryzen app-of-apps)
+  kube-system-fixups/         # self-healing CronJob re-applying Flannel --iface + CoreDNS anti-affinity patches Talos does not persist
 packages/overlays/dev/        # components: [../../components/spoke-tailscale-secrets]; dev-operator hostname override (PR #2364)
 packages/base/manifests/tailscale-ingresses/
   Service-workflow-builder-tailnet.yaml       # L4 Tailscale LoadBalancer (NOT Ingress, NO LE); dev/staging
@@ -179,7 +196,7 @@ packages/components/spoke-tailscale-secrets/
   manifests/spoke-transport/Service-k8s-api-hub-egress.yaml
 packages/components/hub-management/manifests/spoke-secrets/
   Namespace-spoke-secrets.yaml
-  ExternalSecret-dev-shared-secrets.yaml      # from azure-keyvault-store, hub-canonical
+  ExternalSecret-dev-shared-secrets.yaml      # from onepassword-store (Azure dormant), hub-canonical
   ExternalSecret-ryzen-shared-secrets.yaml
   ExternalSecret-tailnet-ca.yaml              # CLUSTER-NEUTRAL tailnet-ca (shared by all spokes)
   RBAC-spoke-secrets-reader.yaml
@@ -198,9 +215,11 @@ docs/tailscale-hostname-reuse-strategy.md
 Dev/staging spokes no longer authenticate to Azure. They read hub-mirrored
 secrets over Tailscale:
 
-- The hub mirrors every spoke-consumed Key Vault secret into ns `spoke-secrets`
-  as a Secret `<cluster>-shared-secrets` (via an ExternalSecret on
-  `azure-keyvault-store`). The hub stays the canonical AWI + Key Vault source.
+- The hub mirrors every spoke-consumed secret into ns `spoke-secrets` as a Secret
+  `<cluster>-shared-secrets` (via an ExternalSecret on `onepassword-store`, the
+  `hub-eso` 1Password vault; `azure-keyvault-store` is dormant). SPOKES ARE
+  UNAFFECTED by how the hub populates these k8s Secrets — they read the
+  hub-mirrored result over Tailscale via the ESO kubernetes-provider store below.
 - The spoke resolves a `hub-secrets-store` ClusterSecretStore (ESO kubernetes
   provider) that reads ns `spoke-secrets` on the hub through the standalone
   Tailscale Ingress DEVICE `k8s-api-hub-ingress.tail286401.ts.net` (LE cert
@@ -271,13 +290,14 @@ via the sidecar nginx error log.
 ## Tailnet Dev CA (persistent self-signed CA contract)
 
 A self-signed CA **"PittampalliOrg Tailnet Dev CA"** is generated once (offline,
-10-year) and stored in Azure Key Vault as `TAILNET-DEV-CA-CRT` /
-`TAILNET-DEV-CA-KEY`. It is stable across cluster recreation. This is a
+10-year) and stored as `TAILNET-DEV-CA-CRT` / `TAILNET-DEV-CA-KEY` (canonical
+source is now the `hub-eso` 1Password vault via `onepassword-store`; Azure Key
+Vault is dormant). It is stable across cluster recreation. This is a
 cross-cutting contract alongside the cluster-Secret and spoke-transport
 contracts (PR #2319; CA `ignoreDifferences` + sweeper in PR #2322).
 
 - The hub mirrors it CLUSTER-NEUTRALLY into ns `spoke-secrets` Secret
-  `tailnet-ca`
+  `tailnet-ca` (via an ExternalSecret on `onepassword-store`)
   (`packages/components/hub-management/manifests/spoke-secrets/ExternalSecret-tailnet-ca.yaml`).
   The `spoke-secrets-reader` Role is namespace-wide, so every spoke reads the
   SAME key — there is no per-cluster CA key.

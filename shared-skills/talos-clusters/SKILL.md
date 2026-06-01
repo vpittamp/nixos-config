@@ -23,8 +23,13 @@ script-provisioned Hetzner Talos spoke (`dev`).
 - The hub is a 5-node Talos `v1.12.x` / Kubernetes `v1.32.0` cluster on Hetzner
   (Flannel CNI, NOT Cilium, kube-proxy enabled). It is provisioned imperatively
   (`docs/hub-cluster-setup.md`) and runs the **argocd-agent v0.8.1 PRINCIPAL**
-  (single ArgoCD pane, ns `argocd`). The hub keeps Azure Workload Identity + Key
-  Vault as the canonical secret source.
+  (single ArgoCD pane, ns `argocd`). The hub's 21 ExternalSecrets resolve from
+  the **`onepassword-store`** ClusterSecretStore (ESO `onepasswordSDK` provider ->
+  the dedicated **`hub-eso`** 1Password vault) as of 2026-06; root-of-trust is one
+  scoped read-only 1Password Service-Account token (`hub-eso-reader`) in Secret
+  `onepassword-sa-token` (ns `external-secrets`). Azure Workload Identity + Key
+  Vault (`keyvault-thcmfmoo5oeow`) + the AD App + the OIDC/JWKS federation are
+  DORMANT (not deleted).
 - Control plane = **argocd-agent v0.8.1**. Each spoke runs a LOCAL ArgoCD + an
   agent that dials the hub principal OUTBOUND over tailnet mTLS (8443). dev is a
   **MANAGED agent** (hub authors `Application` objects in ns `dev` == agent name;
@@ -76,9 +81,13 @@ script-provisioned Hetzner Talos spoke (`dev`).
 ## New / Rebuilt Spoke (the 3-script flow)
 
 A fresh or rebuilt Hetzner Talos spoke (`dev`) is provisioned + enrolled by three
-imperative scripts in `PittampalliOrg/stacks`, run in order. The authoritative
-end-to-end runbook is `cluster-desired-state` `runbooks/recreate-dev.md`; this is
-the summary:
+imperative scripts in `PittampalliOrg/stacks`, run in order. The ORCHESTRATOR that
+wraps all three (plus data backup/restore of
+`environment_image_builds`/`agents`/`workflows` and the verify gate) is
+`deployment/scripts/talos-hetzner/recreate-dev.sh` — use it as the dev rebuild
+entry point. `register-spoke-with-hub.sh` is RETIRED (replaced by
+`enroll-dev-agent.sh`). The authoritative end-to-end runbook is
+`cluster-desired-state` `runbooks/recreate-dev.md`; this is the summary:
 
 1. `deployment/scripts/talos-hetzner/provision-spoke.sh` — Hetzner network +
    firewall + servers (boots the PUBLIC Talos `1.12.4` amd64 ISO), `talosctl
@@ -180,6 +189,7 @@ kubectl --kubeconfig ~/.kube/hub-config -n argocd get secret cluster-dev \
   -o jsonpath='{.data.config}' | base64 -d   # resource-proxy mapping (?agentName=dev), no bearerToken
 
 # Provision / recreate (run from PittampalliOrg/stacks; see cluster-desired-state recreate-dev.md)
+deployment/scripts/talos-hetzner/recreate-dev.sh                               # 0. ORCHESTRATOR (backup/restore + 1-3 + verify)
 CLUSTER_NAME=dev deployment/scripts/talos-hetzner/provision-spoke.sh           # 1. Hetzner+Talos
 CLUSTER_NAME=dev TS_OAUTH_CLIENT_ID=… TS_OAUTH_CLIENT_SECRET=… \
   deployment/scripts/talos-hetzner/bootstrap-spoke-deps.sh                     # 2. deps + transport
@@ -194,9 +204,12 @@ kubectl --kubeconfig <spoke-kubeconfig> get pods -A \
 
 ## Edit Targets
 
+- Dev recreate orchestrator: `deployment/scripts/talos-hetzner/recreate-dev.sh`
+  (wraps backup/restore + the 3 scripts + the verify gate)
 - Provisioning scripts (Hetzner+Talos): `deployment/scripts/talos-hetzner/`
   (`provision-spoke.sh`, `bootstrap-spoke-deps.sh`, `README.md`)
 - Agent enrollment: `deployment/scripts/argocd-agent/enroll-dev-agent.sh`
+  (`register-spoke-with-hub.sh` is RETIRED)
 - Spoke workload overlay: `packages/overlays/<spoke>/`
 - Authoritative recreate runbook: `cluster-desired-state` `runbooks/recreate-dev.md`
 - Tailscale + cert detail: `cluster-desired-state` `references/architecture.md`

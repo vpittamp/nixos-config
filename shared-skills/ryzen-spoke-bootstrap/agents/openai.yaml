@@ -22,8 +22,12 @@ instructions: |
     NO Azure on the spoke (no azure-workload-identity, no azure-keyvault-store).
   - Ryzen reads hub-mirrored secrets over Tailscale via ClusterSecretStore
     hub-secrets-store -> hub ns spoke-secrets Secret ryzen-shared-secrets. The
-    hub keeps AWI + Key Vault as the canonical source. JWKS-to-Azure sync is
-    NOT part of the ryzen recreate (only the hub's own AWI needs it).
+    hub keeps 1Password (onepassword-store -> hub-eso vault) as the canonical
+    secret source (Azure WI + Key Vault are DORMANT as of 2026-06). JWKS-to-Azure
+    sync is NOT part of any recreate now (the hub bootstraps the onepassword-sa-token,
+    not JWKS). Ryzen registers as an AUTONOMOUS argocd-agent via
+    deployment/scripts/argocd-agent/enroll-ryzen-agent.sh (register-spoke-with-hub.sh
+    is RETIRED). See the cluster-desired-state skill for the authoritative model.
   - Ryzen hydrates from the inner-loop branch, NOT main. Advance with
     `git push origin origin/main:refs/heads/inner-loop`.
 

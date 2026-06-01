@@ -47,7 +47,7 @@ kubectl config delete-user admin@ryzen 2>/dev/null
 
 When the cluster is recreated, the Tailscale operator registers fresh devices. But the OLD devices linger and can steal a hostname (Tailscale's name-collision avoidance appends `-1`, `-2`...). The critical one is the **`ryzen-operator`** apiserver-proxy device — if a stale duplicate keeps it, the new operator becomes `ryzen-operator-1` and the cluster Secret `server: https://ryzen-operator.tail286401.ts.net` + HUB CoreDNS rewrite no longer point at the live cluster (hub→ryzen ArgoCD sync stays broken). The `workflow-builder-ryzen` LB device collides the same way. Delete the stale devices via the Tailscale API before bootstrap.
 
-> **The hard on-recreate guarantee is the gated `deployment/scripts/cleanup-tailnet-devices.sh`** run pre-destroy (invoked automatically by `--recreate` before `talosctl cluster destroy`; see `automation-backlog.md` P0.5). The manual snippet below is the same logic, for ad-hoc use. A SECOND, best-effort backstop is the hub CronJob **`tailnet-device-sweeper`** (ns `tailscale`, every 15m, PR #2322/#2325): it deletes OFFLINE stale spoke devices (`lastSeen > 30m`) so dead devices don't accumulate. API gotcha: the device `hostname` field DROPS the `-N` suffix (a live device and its dead `-N` twin share one `hostname`), so match on the MagicDNS `name`; `lastSeen` IS a reliable liveness signal (control-plane keepalives keep it fresh for connected devices). An in-Composition pre-onboarding cleanup was deliberately NOT built — a function-pipeline error there would halt ALL spoke provisioning.
+> **The hard on-recreate guarantee is the gated `deployment/scripts/cleanup-tailnet-devices.sh`** run pre-destroy (invoked automatically by `--recreate` before `talosctl cluster destroy`). The manual snippet below is the same logic, for ad-hoc use. A SECOND, best-effort backstop is the hub CronJob **`tailnet-device-sweeper`** (ns `tailscale`, every 15m, PR #2322/#2325): it deletes OFFLINE stale spoke devices (`lastSeen > 30m`) so dead devices don't accumulate. API gotcha: the device `hostname` field DROPS the `-N` suffix (a live device and its dead `-N` twin share one `hostname`), so match on the MagicDNS `name`; `lastSeen` IS a reliable liveness signal (control-plane keepalives keep it fresh for connected devices). An in-Composition pre-onboarding cleanup was deliberately NOT built — a function-pipeline error there would halt ALL spoke provisioning.
 
 ```bash
 # Get OAuth token from the old cluster's operator Secret (or new env vars)
@@ -85,7 +85,13 @@ curl -s -X DELETE -H "Authorization: Bearer $TOKEN" \
   "https://api.tailscale.com/api/v2/tailnet/tail286401.ts.net/services/svc:ryzen-api-v3"
 ```
 
-## Reset hub-side state that pinned to old cluster
+## Reset hub-side state that pinned to old cluster (LEGACY — pre-agent hub→ryzen sync wiring)
+
+> **LEGACY / OPTIONAL DIAGNOSTICS (post argocd-agent cutover, 2026-06):** the hub no longer
+> reconciles ryzen's apps over the `ryzen-api-egress` + hub-CoreDNS-rewrite hub→spoke kube path
+> (ryzen reconciles LOCALLY as an autonomous agent). This section is NOT required for an agent-era
+> recreate. The `ryzen-api-egress` path survives only as the kube endpoint **Headlamp** uses, so
+> re-point/verify it if Headlamp can't reach ryzen — otherwise skip.
 
 The hub's `tailscale/ryzen-api-egress` ExternalName Service has annotation `tailscale.com/tailnet-fqdn: ryzen-operator.tail286401.ts.net` (it targets the spoke operator's apiserver-proxy device — NOT a separate `ryzen-api-v3` device anymore). The operator reads the annotation only at pod create, so after a recreate force the StatefulSet pod to recreate so it reconnects to the freshly-registered `ryzen-operator` device:
 
@@ -96,7 +102,7 @@ kubectl --kubeconfig ~/.kube/hub-config delete pod -n tailscale \
   -l tailscale.com/parent-resource=ryzen-api-egress --grace-period=0 --force
 ```
 
-Confirm the HUB CoreDNS rewrite that routes the operator FQDN to the egress is present:
+Confirm the HUB CoreDNS rewrite that routes the operator FQDN to the egress is present (LEGACY — only relevant for the Headlamp kube endpoint now, NOT ArgoCD sync):
 ```bash
 kubectl --kubeconfig ~/.kube/hub-config -n kube-system get cm coredns \
   -o jsonpath='{.data.Corefile}' | grep ryzen-operator
@@ -135,15 +141,16 @@ kubectl --context admin@ryzen -n external-secrets get secret hub-secrets-token
 ```
 If the rewrite is missing or `hub-secrets-store` is NotReady, re-run `spoke-transport-bootstrap.sh` (idempotent). See `references/failure-modes.md` "ESO hub-secrets-store".
 
-## Post-bootstrap: verify hub→ryzen SNI + advance inner-loop
+## Post-bootstrap: advance inner-loop (+ LEGACY SNI check)
 
 ```bash
-# SNI must be accepted by the operator apiserver-proxy
-curl -sk --connect-to ryzen-operator.tail286401.ts.net:443:<egress-or-tailnet-ip>:443 \
-  -o /dev/null -w "%{http_code}\n" https://ryzen-operator.tail286401.ts.net/version   # expect 200
-
 # Ryzen reads inner-loop, NOT main — advance it so the overlay reaches ryzen:
 git -C /home/vpittamp/repos/PittampalliOrg/stacks/main push origin origin/main:refs/heads/inner-loop
+
+# LEGACY/diagnostics only — the operator apiserver-proxy SNI is no longer the sync path
+# (ryzen reconciles locally); useful only to confirm the Headlamp/ESO Tailscale endpoint:
+curl -sk --connect-to ryzen-operator.tail286401.ts.net:443:<egress-or-tailnet-ip>:443 \
+  -o /dev/null -w "%{http_code}\n" https://ryzen-operator.tail286401.ts.net/version   # expect 200
 ```
 
 ## Post-bootstrap: re-merge env/hub Promoter PRs (only if hub-state changed)
