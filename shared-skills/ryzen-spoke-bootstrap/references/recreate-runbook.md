@@ -105,10 +105,23 @@ kubectl --kubeconfig ~/.kube/hub-config -n kube-system get cm coredns \
 
 ## Now run the main bootstrap
 
+> **AGENT-MODEL UPDATE (argocd-agent cutover, 2026-06).** ryzen is now an **AUTONOMOUS
+> argocd-agent** (it reconciles its own apps locally + pushes status to the hub principal;
+> the agent dials OUTBOUND over the tailnet). The pre-bootstrap hub→ryzen apiserver-proxy
+> SNI / static-`cluster-ryzen`-Secret / operator-FQDN-CoreDNS-rewrite steps ABOVE are
+> **obsolete** for an agent-era recreate — the hub no longer reconciles ryzen's apps over a
+> hub→spoke kube path. `bootstrap-spoke-cluster.sh` step 9 now ENROLLS the agent via
+> `deployment/scripts/argocd-agent/enroll-ryzen-agent.sh` (replacing the retired
+> `register-spoke-with-hub.sh`). The `--ts-acl-mode` / `--ts-host-passthrough` flags are
+> vestigial (parsed for compat, ignored). See the **`cluster-desired-state`** skill for the
+> authoritative current model.
+
 Return to the main SKILL.md workflow from step 1. Canonical recreate command:
 ```bash
 cd /home/vpittamp/repos/PittampalliOrg/stacks/main
-bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate --ts-acl-mode
+# Provisions the Talos cluster + seeds deps + transport, then enrolls the autonomous agent
+# (enroll-ryzen-agent.sh) + advances inner-loop. --ts-acl-mode no longer needed.
+bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate
 ```
 
 ## Post-bootstrap: spoke secret-transport re-apply (RYZEN CoreDNS rewrite)
