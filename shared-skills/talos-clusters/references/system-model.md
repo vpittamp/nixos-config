@@ -210,6 +210,26 @@ docs/tailscale-hostname-reuse-strategy.md
 #   runbooks/recreate-dev.md  +  references/architecture.md
 ```
 
+### Recent hardening fixes (PR #2395)
+
+Four recreate-hardening fixes landed on these scripts (validated: ryzen
+`bootstrap-spoke-cluster.sh --recreate` = 13m9s hands-off 64/65; dev
+`recreate-dev.sh` = 20m32s hands-off):
+
+- `bootstrap-spoke-cluster.sh` is STANDALONE (does NOT source `lib/common.sh`),
+  so `TS_OPERATOR_CHART_VERSION` was unbound under `set -u` and ryzen recreate
+  ABORTED at the tailscale-operator helm install (post-destroy = ryzen DOWN).
+  Now self-defaulted (`:-1.96.5`); keep in lockstep with `lib/common.sh`.
+- `enroll-ryzen-agent.sh` step 6b waits for the local `argocd-repo-server` then
+  hard-refreshes `root-ryzen` (cold-start dial-`:8081` ComparisonError that the
+  controller would not re-queue for ~5min); `bootstrap-spoke-cluster.sh` step 10
+  hard-refreshes again after the inner-loop advance.
+- `enroll-{dev,ryzen}-agent.sh` step 5b now `rollout restart`s hub Headlamp
+  after staging the `headlamp-cluster-<spoke>` Secret (stale pre-recreate pod).
+- `provision-spoke.sh --destroy` deletes Hetzner servers in parallel (~156s -> ~20s).
+
+Full gotcha detail: `cluster-desired-state` `runbooks/recovery-and-gotchas.md`.
+
 ## Spoke Secret Transport (AWI -> Tailscale)
 
 Dev/staging spokes no longer authenticate to Azure. They read hub-mirrored

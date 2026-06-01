@@ -27,7 +27,9 @@ Destroy the prior dev infra and clean stale identity:
 ```bash
 CLUSTER_NAME=dev deployment/scripts/talos-hetzner/provision-spoke.sh --destroy
 ```
-This removes the dev Hetzner servers/network/firewall. Then remove a stale hub
+This removes the dev Hetzner servers/network/firewall. `--destroy` now deletes the N
+Hetzner servers **in parallel** (no inter-server ordering), mirroring the parallel create
+(PR #2395 Fix 4: ~156s -> ~20s for 9 servers; was ~18s each sequential). Then remove a stale hub
 `cluster-dev` Secret if it is not the current agent mapping, and clean stale Tailscale
 devices (esp. the `dev-operator` proxy device) via the TS API — the stale `-N` device
 cleanup pattern is documented in `../references/tailscale-and-certs.md`. The gated
@@ -96,7 +98,14 @@ Idempotent + re-runnable. It:
    ns `dev`, then re-restarts).
 6. **Stages the hub Headlamp read Secret** `headlamp-cluster-dev` (dev's PUBLIC API
    endpoint + read-only SA token + CA, label `headlamp.dev/cluster=true`) — Headlamp uses
-   this, NOT the agent cluster mapping (which has no bearerToken post-cutover).
+   this, NOT the agent cluster mapping (which has no bearerToken post-cutover). **Step 5b
+   then rolls `deploy/hub-headlamp{,-embedded}` on the hub** so Headlamp rebuilds its
+   kubeconfig for the rebuilt dev cluster (PR #2395 Fix 3). The hub Headlamp builds its
+   kubeconfig ONLY in its `generate-kubeconfig` init-container at pod start, so a pod
+   predating the recreate keeps serving the OLD dev endpoint/CA/token and can't auth to the
+   rebuilt cluster — the staged Secret alone is inert. The rollout is guarded on deploy
+   existence and non-fatal (Headlamp is off the critical path). Full detail:
+   `recovery-and-gotchas.md`.
 
 The AppProject, principal-egress Service, and CoreDNS principal rewrite come from the agent
 bootstrap kustomize (`packages/components/hub-management/manifests/dev-agent-bootstrap`).

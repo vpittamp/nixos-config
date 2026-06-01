@@ -81,7 +81,12 @@ Secrets. The agent mapping Secrets carry NO bearerToken post-cutover, so if Head
 them a restart would drop all spokes. PRs #2366/#2368. The spoke read SA is GitOps
 (`base/manifests/headlamp-reader`, reaches dev via overlays/dev->talos->base); the enroll
 script stages the hub `headlamp-cluster-<spoke>` Secret; both Headlamp generators (headlamp +
-headlamp-embedded) select the label.
+headlamp-embedded) select the label. **Post-recreate freshness (Fix 3, PR #2395):** Headlamp
+builds its kubeconfig only in its `generate-kubeconfig` init-container (at pod start), so a pod
+predating a spoke recreate keeps serving the OLD endpoint/CA/token. Both `enroll-{dev,ryzen}-agent.sh`
+(step 5b) now `kubectl -n headlamp rollout restart deploy/hub-headlamp deploy/hub-headlamp-embedded`
+on the hub after staging the Secret (guarded on deploy existence, non-fatal). See
+`cluster-desired-state/runbooks/recovery-and-gotchas.md`.
 
 ---
 
@@ -128,6 +133,11 @@ deletes OFFLINE stale devices best-effort. It is hygiene, NOT the guarantee — 
 on-recreate guarantee is the gated pre-recreate `cleanup-tailnet-devices.sh`. (ryzen's hub->spoke
 no longer uses an operator device per the host passthrough; this still matters for the ESO
 transport device and any operator-proxy spokes.)
+
+**Destroy speed (Fix 4, PR #2395).** `provision-spoke.sh --destroy` now deletes the N Hetzner
+servers concurrently (no inter-server ordering) instead of sequentially (~18s each), mirroring
+the parallel create — ~156s down to ~20s for a 9-node dev. See
+`cluster-desired-state/runbooks/recovery-and-gotchas.md`.
 
 ---
 

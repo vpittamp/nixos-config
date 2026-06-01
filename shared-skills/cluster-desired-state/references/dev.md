@@ -113,6 +113,11 @@ in-cluster only** (`MCP_GATEWAY_BASE_URL=http://mcp-gateway.workflow-builder.svc
    CLUSTER_NAME=dev deployment/scripts/talos-hetzner/bootstrap-spoke-deps.sh
    # needs TS_OAUTH_CLIENT_ID / TS_OAUTH_CLIENT_SECRET (1Password or hub Key Vault)
    ```
+   - The Tailscale-operator chart pin (`TS_OPERATOR_CHART_VERSION`, 1.96.5) now
+     **self-defaults** in the standalone bootstrap (PR #2395, Fix 1); it does not source
+     `lib/common.sh` where the shared pin lives, so previously it was unbound under `set -u`
+     and the recreate aborted at the operator helm install. See
+     `../runbooks/recovery-and-gotchas.md`.
 4. **ENROLL** (managed-agent) —
    `deployment/scripts/argocd-agent/enroll-dev-agent.sh dev`. Idempotent + re-runnable.
    It: asserts the hub principal is live and `principal.allowed-namespaces` includes `dev`;
@@ -129,6 +134,12 @@ in-cluster only** (`MCP_GATEWAY_BASE_URL=http://mcp-gateway.workflow-builder.svc
    ```bash
    deployment/scripts/argocd-agent/enroll-dev-agent.sh dev
    ```
+   - **Step 5b** restarts the hub Headlamp deployments (`kubectl -n headlamp rollout restart
+     deploy/hub-headlamp deploy/hub-headlamp-embedded`) after staging the
+     `headlamp-cluster-dev` Secret (PR #2395, Fix 3). The hub Headlamp builds its kubeconfig
+     only in its generate-kubeconfig init-container, so a pod predating the recreate keeps
+     serving the OLD dev endpoint/CA/token and the staged Secret is inert without the bounce.
+     Guarded on deploy existence + non-fatal. See `../runbooks/recovery-and-gotchas.md`.
 5. **GITOPS SYNC** — once enrolled, the hub principal PUSHES the dev Application objects
    (authored in hub ns `dev`) to the dev agent, whose local controller reconciles them.
    GitOps delivery is source-hydrator + GitOps Promoter: `overlays/dev` -> `env/spokes-dev-next`

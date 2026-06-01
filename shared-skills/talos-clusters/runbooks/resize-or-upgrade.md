@@ -3,6 +3,14 @@
 Use when changing control-plane/worker counts, HCloud server types, Talos
 version, Kubernetes version, ISO ID, or worker labels.
 
+> **NOTE (stale — Crossplane retired, Phase D):** Crossplane no longer
+> provisions the dev spoke. dev is now script-provisioned via
+> `deployment/scripts/talos-hetzner/provision-spoke.sh` and agent-enrolled. For a
+> full recreate see `cluster-desired-state/runbooks/recreate-dev.md`. The
+> Crossplane XRD/Composition/claim steps below are HISTORICAL — read them for
+> background, but drive resize/recreate from the script path. Recreate gotchas
+> live in `cluster-desired-state/runbooks/recovery-and-gotchas.md`.
+
 ## Decide Whether This Is Mutable
 
 Small GitOps workload changes are mutable. Many Talos/HCloud infrastructure

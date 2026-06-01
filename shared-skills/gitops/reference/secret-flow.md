@@ -13,6 +13,12 @@ keyvault-thcmfmoo5oeow    →     ExternalSecret CR with        →    workflow-
                                  - annotation force-sync=<ts>
 ```
 
+> **NOTE (2026-06): hub secret root migrated to 1Password.** The chain diagram above
+> still shows Azure KeyVault as the hub root, but hub ExternalSecrets now resolve from the
+> `onepassword-store` ClusterSecretStore (ESO `onepasswordSDK` → `hub-eso` vault) instead of
+> Azure KeyVault. Spokes are unaffected — they still read hub-mirrored secrets over Tailscale.
+> See `cluster-desired-state/references/secrets-1password.md` for the migration detail.
+
 ## Per-spoke secret naming
 
 Each spoke gets its own copy of every credential it needs. The `spoke-workloads` ApplicationSet template (`packages/components/hub-spoke-appsets/apps/spoke-workloads-appset.yaml`) patches the `workflow-builder-secrets` ExternalSecret to substitute the per-spoke KeyVault key:

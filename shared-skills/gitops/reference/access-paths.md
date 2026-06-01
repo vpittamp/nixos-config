@@ -64,6 +64,10 @@ The kubeconfig points at the spoke's first control-plane public IP (e.g. `https:
 
 The full procedure is in `runbooks/access-spoke-cluster-fallback.md`.
 
+## Headlamp (hub UI → spokes)
+
+ryzen Headlamp connectivity uses a dedicated `headlamp-cluster-ryzen` Secret (real kube-API endpoint = the ryzen host's raw-TCP Tailscale passthrough + read-only SA token + CA, label `headlamp.dev/cluster=true`) — **separate** from the ArgoCD agent path. `enroll-ryzen-agent.sh` step 5b re-stages it on every recreate, and now also auto-restarts hub Headlamp (`kubectl -n headlamp rollout restart deploy/hub-headlamp deploy/hub-headlamp-embedded`) so the new endpoint/token take effect (Fix 3) — the hub Headlamp only builds its kubeconfig in its init-container at pod start, so a pod predating the recreate keeps serving the stale spoke. Same pattern for dev via `enroll-dev-agent.sh` step 5b. Full detail in `cluster-desired-state/runbooks/recovery-and-gotchas.md`.
+
 ## ArgoCD CLI
 
 ArgoCD on the hub is exposed via its own Tailscale ProxyGroup (`argocd-hub.tail286401.ts.net`), which is **independent** of the per-spoke ProxyGroups. So `argocd` works whenever the hub argocd-server is up and Tailscale's funnel ingress for argocd is healthy — even when individual spoke connectivity is broken.

@@ -21,8 +21,10 @@ Device-backed (LoadBalancer or Ingress):
 - `workflow-builder` is now a Tailscale **L4 LoadBalancer Service**
   (`loadBalancerClass: tailscale`), NOT an Ingress and NOT Let's Encrypt (PR
   #2319) — it still owns the `workflow-builder-<spoke>` device and is still
-  subject to `-1` drift. `mcp-gateway` is gone from the tailnet (in-cluster
-  only); there is no `mcp-gateway-<spoke>` device to recover.
+  subject to `-1` drift. HTTPS terminates in-cluster via the `tls-terminator`
+  sidecar (self-signed wildcard cert, no LE), so there is no per-hostname LE cert
+  to churn. `mcp-gateway` is gone from the tailnet (in-cluster only); there is no
+  `mcp-gateway-<spoke>` device to recover.
 
 ## Inventory
 

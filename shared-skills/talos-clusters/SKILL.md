@@ -176,6 +176,21 @@ entry point. `register-spoke-with-hub.sh` is RETIRED (replaced by
 - A green capacity API is a better launch gate than manual arithmetic. It caught
   the Dapr state-store scoping issue even after the cluster had enough CPU,
   memory, and nodefs headroom.
+- Recent hardening (PR #2395): four recreate fixes — Headlamp on the hub is now
+  rollout-restarted by `enroll-dev-agent.sh` (step 5b) after the
+  `headlamp.dev/cluster=true` Secret is re-staged (the init-container builds its
+  kubeconfig only at pod start, so a pre-recreate pod serves the stale spoke
+  endpoint); `provision-spoke.sh --destroy` now deletes the Hetzner servers
+  concurrently (~156s -> ~20s for 9, mirroring the parallel create);
+  `root-<spoke>` gets a hard-refresh after its local repo-server is Available to
+  skip the ~5min cold-start ComparisonError stall; and the standalone bootstrap
+  scripts now self-default the Tailscale-operator chart pin. INVARIANT: a
+  standalone script that does NOT source `deployment/scripts/lib/common.sh` (e.g.
+  `bootstrap-spoke-cluster.sh`, where `TS_OPERATOR_CHART_VERSION` was unbound
+  under `set -u`) MUST self-default any version pin it shares with `common.sh`
+  (now `TS_OPERATOR_CHART_VERSION:-1.96.5`), kept in lockstep with the GitOps
+  tailscale-operator manifests. Full detail:
+  `cluster-desired-state` `runbooks/recovery-and-gotchas.md`.
 
 ## Common Commands
 

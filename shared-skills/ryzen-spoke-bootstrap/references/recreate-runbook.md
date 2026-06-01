@@ -2,6 +2,15 @@
 
 Use this when ryzen already exists and you need to tear it down and rebuild — e.g., upgrading Talos, recovering from corruption, or testing the bootstrap flow.
 
+> **Recreate hardening (PR #2395, branch `chore/recreate-hardening-headlamp-destroy`).** A
+> `bootstrap-spoke-cluster.sh --recreate` is now fully hands-off — three previously-manual fixups are
+> AUTOMATED by the scripts (Fix 1 `TS_OPERATOR_CHART_VERSION` self-default, Fix 2 `root-ryzen`
+> cold-start hard-refresh, Fix 3 hub Headlamp restart; each marked AUTOMATED in the relevant section
+> below). VALIDATION: ryzen `--recreate` = 13m9s hands-off, 64/65 Synced/Healthy, ZERO manual
+> intervention; dev `recreate-dev.sh` = 20m32s hands-off. The canonical home for the full text of
+> these gotchas (plus the dev-only Fix 4 parallel `provision-spoke.sh --destroy`, ~156s→~20s) is
+> `shared-skills/cluster-desired-state/runbooks/recovery-and-gotchas.md` — see it for full detail.
+
 ## Pre-destruction capture
 
 Save anything you'll need from the existing cluster:
@@ -109,6 +118,23 @@ kubectl --kubeconfig ~/.kube/hub-config -n kube-system get cm coredns \
 # expect: rewrite name exact ryzen-operator.tail286401.ts.net ryzen-api-egress.tailscale.svc.cluster.local
 ```
 
+### Hub Headlamp connection refresh (AUTOMATED — do NOT do manually) — Fix 3, PR #2395
+
+> **AUTOMATED by `enroll-ryzen-agent.sh` step 5b (and `enroll-dev-agent.sh` for dev) — the
+> operator does NOT do this by hand.** After EVERY spoke recreate the staged
+> `headlamp-cluster-<spoke>` Secret (fresh kube-API endpoint + read-only SA token + CA, label
+> `headlamp.dev/cluster=true`) is INERT against a hub Headlamp pod that predates the recreate:
+> Headlamp builds its kubeconfig ONLY in its `generate-kubeconfig` init-container at pod start,
+> so an old pod keeps serving the stale spoke endpoint/CA/token and cannot auth to the rebuilt
+> cluster. The enroll script now (commit 6cee88a70) restarts both hub Headlamp deployments on the
+> hub right after staging the Secret — guarded on deployment existence, non-fatal (Headlamp is off
+> the critical path):
+> ```bash
+> # AUTOMATED in enroll-ryzen-agent.sh step 5b — shown only for the manual fallback on older scripts:
+> kubectl --kubeconfig ~/.kube/hub-config -n headlamp \
+>   rollout restart deploy/hub-headlamp deploy/hub-headlamp-embedded
+> ```
+
 ## Now run the main bootstrap
 
 > **AGENT-MODEL UPDATE (argocd-agent cutover, 2026-06).** ryzen is now an **AUTONOMOUS
@@ -129,6 +155,16 @@ cd /home/vpittamp/repos/PittampalliOrg/stacks/main
 # (enroll-ryzen-agent.sh) + advances inner-loop. --ts-acl-mode no longer needed.
 bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate
 ```
+
+> **Fix 1 — `TS_OPERATOR_CHART_VERSION` self-default (PR #2395, commit a395874dc).**
+> `bootstrap-spoke-cluster.sh` is STANDALONE — it does NOT source `deployment/scripts/lib/common.sh`
+> (where the Tailscale-operator chart pin `1.96.5` lives). Before the fix `${TS_OPERATOR_CHART_VERSION}`
+> was unbound under `set -u`, so the recreate ABORTED at the `tailscale-operator` helm install (right
+> after external-secrets) — AFTER destroy had already run, leaving ryzen DOWN. The script now
+> self-defaults it next to the other version pins (~line 125):
+> `TS_OPERATOR_CHART_VERSION="${TS_OPERATOR_CHART_VERSION:-1.96.5}"`.
+> INVARIANT: keep this pin in lockstep with `lib/common.sh` + the GitOps tailscale-operator manifests;
+> ANY var this standalone script shares with `common.sh` MUST be self-defaulted here.
 
 ## Post-bootstrap: spoke secret-transport re-apply (RYZEN CoreDNS rewrite)
 
@@ -152,6 +188,28 @@ git -C /home/vpittamp/repos/PittampalliOrg/stacks/main push origin origin/main:r
 curl -sk --connect-to ryzen-operator.tail286401.ts.net:443:<egress-or-tailnet-ip>:443 \
   -o /dev/null -w "%{http_code}\n" https://ryzen-operator.tail286401.ts.net/version   # expect 200
 ```
+
+### root-ryzen cold-start hard-refresh (AUTOMATED — do NOT do manually) — Fix 2, PR #2395
+
+> **AUTOMATED by `enroll-ryzen-agent.sh` step 6b + `bootstrap-spoke-cluster.sh` step 10 — the
+> operator does NOT do this by hand (commit 89fd0df8b).** On a fresh recreate the local
+> `argocd-application-controller` runs `root-ryzen`'s FIRST comparison BEFORE the local
+> `argocd-repo-server` is accepting connections (dial `:8081` connection refused) → `root-ryzen`
+> sticks in `ComparisonError` (sync=Unknown). The controller does NOT re-queue the errored app for a
+> full resync window (~5min observed), so convergence stalls with ZERO child apps rendered until a
+> manual refresh. The fix forces a clean first comparison once the local repo-server is Available:
+> - `enroll-ryzen-agent.sh` step 6b: wait for the local repo-server, then hard-refresh root-ryzen.
+> - `bootstrap-spoke-cluster.sh` step 10: after the inner-loop advance above, hard-refresh root-ryzen
+>   AGAIN (re-compare vs the advanced HEAD).
+>
+> Both steps are non-fatal (the resync timer would eventually heal it; this just makes the recreate
+> hands-off + fast). Manual fallback for older scripts that lack the steps:
+> ```bash
+> # Wait until the local repo-server is up, then force a clean comparison:
+> kubectl --context admin@ryzen -n argocd rollout status deploy/argocd-repo-server --timeout=120s
+> kubectl --context admin@ryzen -n argocd annotate application root-ryzen \
+>   argocd.argoproj.io/refresh=hard --overwrite
+> ```
 
 ## Post-bootstrap: re-merge env/hub Promoter PRs (only if hub-state changed)
 

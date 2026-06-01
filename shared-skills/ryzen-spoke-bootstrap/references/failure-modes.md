@@ -184,6 +184,18 @@ done
 
 **Fix**: Already committed in stacks `f3c345e1e`. Script now sets both `apiServerProxyConfig.mode=true` and `apiServerProxyConfig.allowImpersonation=true`. If a future chart drops these too, check the live chart's `helm show values tailscale/tailscale-operator | grep -A 15 apiServerProxyConfig`.
 
+## bootstrap-spoke-cluster.sh `TS_OPERATOR_CHART_VERSION` unbound-variable abort (PR #2395)
+
+**Symptom**: `bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate` destroys the cluster, installs external-secrets, then ABORTS at the `tailscale-operator` helm install with `TS_OPERATOR_CHART_VERSION: unbound variable` (under `set -u`). Because the abort lands AFTER destroy already ran, ryzen is left DOWN with no kube-api.
+
+**Cause**: `bootstrap-spoke-cluster.sh` is STANDALONE — it does NOT source `deployment/scripts/lib/common.sh`, which is where the Tailscale-operator chart pin (`1.96.5`) lives. So `${TS_OPERATOR_CHART_VERSION}` was unbound under `set -u` and the recreate aborted at the helm install (right after external-secrets).
+
+**Fix**: Already committed in stacks `a395874dc` (PR #2395). The script now self-defaults the pin next to the other version pins (~line 125):
+```bash
+TS_OPERATOR_CHART_VERSION="${TS_OPERATOR_CHART_VERSION:-1.96.5}"
+```
+**INVARIANT**: keep this in lockstep with `lib/common.sh` + the GitOps `tailscale-operator` manifests; any variable this standalone script shares with `common.sh` MUST be self-defaulted (the script never sources `common.sh`). Full detail: `shared-skills/cluster-desired-state/runbooks/recovery-and-gotchas.md`.
+
 ## OIDC issuer YAML key in config-patch (script bug)
 
 **Symptom**: `talosctl cluster create docker` errors with `error parsing config patch: unknown keys found during decoding: cluster.serviceAccount.issuerURL`.
@@ -389,7 +401,9 @@ large_client_header_buffers 4 32k;
 ```
 **LESSON**: verify HTTPS app exposure with a REAL browser (or curl carrying full browser-sized headers), not bare curl. Diagnose via the sidecar nginx error log.
 
-## Headlamp UI: "Failed to get authentication information: ryzen"
+## Headlamp UI: "Failed to get authentication information: ryzen" (FIXED BY PR #2395)
+
+> **FIXED BY PR #2395** — the enroll scripts now auto-restart hub Headlamp after re-staging the spoke kubeconfig Secret, so this no longer surfaces on a recreate. See "Hub Headlamp kubeconfig stale after spoke recreate" below. The manual recovery here is still valid for a LIVE token rotation that didn't go through enroll.
 
 **Symptom**: Open `https://headlamp-hub.tail286401.ts.net/` → click the `ryzen` cluster tab → red banner "Failed to get authentication information". Hub Headlamp Pod is otherwise healthy.
 
@@ -401,6 +415,18 @@ kubectl --context hub-cluster rollout restart deploy -n headlamp hub-headlamp hu
 ```
 
 To make this automatic going forward, consider adding the Reloader annotation (`reloader.stakater.com/auto: "true"`) on the Headlamp Deployments so they restart whenever the `cluster-ryzen` Secret changes.
+
+## Hub Headlamp kubeconfig stale after spoke recreate (PR #2395)
+
+**Symptom**: After EVERY spoke recreate (dev + ryzen), the hub Headlamp can't auth to the rebuilt cluster — the spoke tab shows "Failed to get authentication information" even though the staged `headlamp-cluster-<spoke>` Secret on the hub already carries the fresh endpoint/CA/token.
+
+**Cause**: `enroll-{dev,ryzen}-agent.sh` step 5b re-stages the `headlamp-cluster-<spoke>` Secret (fresh kube-API endpoint + read-only SA token + CA, label `headlamp.dev/cluster=true`), but the hub Headlamp builds its kubeconfig ONLY in its `generate-kubeconfig` init-container at pod start. A pod that predates the recreate keeps serving the OLD spoke endpoint/CA/token and cannot auth to the rebuilt cluster, so the freshly staged Secret is inert.
+
+**Fix**: Already committed in stacks `6cee88a70` (PR #2395). Both enroll scripts now restart hub Headlamp on the hub after staging the Secret (step 5b):
+```bash
+kubectl -n headlamp rollout restart deploy/hub-headlamp deploy/hub-headlamp-embedded
+```
+The restart is guarded on the Deployments existing and is non-fatal (Headlamp is off the critical path). Full detail: `shared-skills/cluster-desired-state/runbooks/recovery-and-gotchas.md`.
 
 ## Tekton Pipelines/Tasks stuck OutOfSync after ArgoCD 3.4 upgrade
 
@@ -478,6 +504,22 @@ kubectl --context hub-cluster patch app <name> -n argocd --type=merge \
   -p '{"operation":{"sync":{"syncOptions":["ServerSideApply=true"]}}}'
 ```
 If still stuck (Argo's cached comparison), add `argocd.argoproj.io/refresh=hard` annotation first to bust the repo-server cache.
+
+## Local repo-server not ready when controller first syncs `root-ryzen` (PR #2395, ~5min stall)
+
+**Symptom**: On a fresh recreate, `root-ryzen` sticks in `ComparisonError` (sync=Unknown) with ZERO child apps rendered, and convergence stalls for ~5 min before anything happens. The app's message references `dial tcp ...:8081: connect: connection refused` to the local `argocd-repo-server`.
+
+**Cause**: The local `argocd-application-controller` runs `root-ryzen`'s FIRST comparison before the local `argocd-repo-server` is accepting connections (dial `:8081` connection refused) → `root-ryzen` goes `ComparisonError`. The controller does NOT re-queue the errored app for a full resync window (~5 min observed), so convergence stalls with no child apps until a manual refresh.
+
+**Fix**: Already committed in stacks `89fd0df8b` (PR #2395). Force a clean first comparison after the local repo-server is Available:
+- `enroll-ryzen-agent.sh` step 6b waits then hard-refreshes:
+  ```bash
+  kspoke -n argocd rollout status deploy/argocd-repo-server --timeout=120s
+  kubectl -n argocd annotate application root-ryzen argocd.argoproj.io/refresh=hard --overwrite
+  ```
+- `bootstrap-spoke-cluster.sh` step 10: after the inner-loop advance, hard-refresh `root-ryzen` again (so it re-compares against the advanced HEAD).
+
+Both steps are NON-FATAL (the resync timer would eventually heal it on its own; this just makes the recreate hands-off and fast). Full detail: `shared-skills/cluster-desired-state/runbooks/recovery-and-gotchas.md`.
 
 ## kueue large-CRD wedge — ArgoCD 3.4.2 ClientSideApplyMigration writes a >262144-byte annotation (ryzen-only)
 

@@ -64,6 +64,11 @@ Apply `root-application` (sourceHydrator drySource `packages/overlays/hub` @main
 hydrateTo `env/hub-next` -> syncSource `env/hub` path `hub-apps`). **Merge the Promoter
 PR `env/hub-next -> env/hub`** (autoMerge:false) — child apps only appear after the merge.
 
+> Gotcha: unlike the spoke hydrators, the hub hydrator does **NOT** auto-recreate
+> `env/hub-next` after the Promoter PR merges. A stuck `PromotionStrategy`
+> (`ChangeTransferPolicyNotReady` / missing `env/hub-next` ref) may need a manual
+> `env/hub-next` recreate. See `recovery-and-gotchas.md`.
+
 ## 5-9. Platform layers
 
 - **5 Tailscale + ProxyGroup auth**: hub-base operator + ProxyGroups

@@ -27,6 +27,17 @@ devices (the HARD pre-recreate guarantee; the hub `tailnet-device-sweeper` CronJ
 an offline-device hygiene backstop — see `recovery-and-gotchas.md` §F), `talosctl cluster
 destroy`, and deletes the old kube context. The hub principal aggregates status; ryzen's
 local controller deploys everything else.
+
+`bootstrap-spoke-cluster.sh` is **standalone** — it does NOT source
+`deployment/scripts/lib/common.sh`, where the Tailscale-operator chart pin lives. So
+`TS_OPERATOR_CHART_VERSION` now **self-defaults to 1.96.5** at the version-pin block (~line
+125): `TS_OPERATOR_CHART_VERSION="${TS_OPERATOR_CHART_VERSION:-1.96.5}"` (PR #2395, Fix 1).
+This matters because before the self-default the var was unbound under `set -u` and the
+recreate ABORTED at the `tailscale-operator` helm install (right after external-secrets) —
+*after* destroy had already run, leaving ryzen DOWN. INVARIANT: keep the pin in lockstep with
+`lib/common.sh` + the GitOps tailscale-operator manifests; any var this standalone script
+shares with `common.sh` MUST be self-defaulted. See `recovery-and-gotchas.md` for the
+operator-version gotcha.
 (`register-spoke-with-hub.sh` is RETIRED and NO LONGER called by the bootstrap. The
 `--ts-acl-mode` / `--ts-host-passthrough` flags are VESTIGIAL — still parsed for compat but
 ignored; the agent-mapping registration does not depend on either. The ryzen HOST device's
@@ -45,6 +56,30 @@ mTLS cert, applies the
 (agent-autonomous bundle + params `mode=autonomous` + `cluster-ryzen-local` alias +
 `stacks-repo-read` + the cert ExternalSecrets + the `root-ryzen` app-of-apps), runs
 `argocd-agentctl agent create ryzen`, stages the Headlamp Secret, and advances inner-loop.
+
+After enroll, **step 6b** waits for the local repo-server then hard-refreshes `root-ryzen`
+(PR #2395, Fix 2): `kspoke -n argocd rollout status deploy/argocd-repo-server --timeout=120s`
+then `kubectl -n argocd annotate application root-ryzen
+argocd.argoproj.io/refresh=hard --overwrite`. On a fresh recreate the local
+argocd-application-controller runs `root-ryzen`'s FIRST comparison before the local
+argocd-repo-server is accepting connections (dial `:8081` connection refused) → `root-ryzen`
+sticks in `ComparisonError` (sync=Unknown) and the controller does NOT re-queue the errored
+app for a full resync window (~5min observed) → convergence stalls with ZERO child apps
+rendered until a manual refresh. The step forces a clean first comparison once the repo-server
+is Available; non-fatal (the resync timer would eventually heal it — this makes the recreate
+hands-off + fast). `bootstrap-spoke-cluster.sh` step 10 hard-refreshes `root-ryzen` **again**
+after the inner-loop advance (re-compare vs the advanced HEAD). See `recovery-and-gotchas.md`
+for the cold-start gotcha.
+
+**Step 5b** re-stages the `headlamp-cluster-ryzen` Secret (fresh kube-API endpoint +
+read-only SA token + CA, label `headlamp.dev/cluster=true`) AND restarts hub Headlamp
+(PR #2395, Fix 3): `kubectl -n headlamp rollout restart deploy/hub-headlamp
+deploy/hub-headlamp-embedded` on the hub (guarded on deploy existence, non-fatal — Headlamp
+is off the critical path). The hub Headlamp builds its kubeconfig ONLY in its
+generate-kubeconfig init-container at pod start, so a pod predating the recreate keeps serving
+the OLD spoke endpoint/CA/token and cannot auth to the rebuilt cluster — the staged Secret is
+inert without the restart.
+
 The legacy
 `packages/components/hub-management/manifests/spoke-credentials/ExternalSecret-cluster-ryzen.yaml`
 (KV-materialized `server=https://ryzen.tail286401.ts.net:6443` + SA bearerToken) is now
@@ -111,6 +146,9 @@ k8s v1.36.0, contour+kourier (zero nginx), ns gitea NotFound, `hub-secrets-store
 Ready=True, all `ryzen-*` apps Synced/Healthy via the principal, cluster-ryzen is the agent
 mapping (`server=https://argocd-agent-resource-proxy:9090?agentName=ryzen`, no bearerToken),
 inner-loop count 0.
+
+Hands-off validation result (PR #2395): `bootstrap-spoke-cluster.sh --recreate` =
+**13m9s hands-off, 64/65 Synced/Healthy, ZERO manual intervention**.
 
 **Web exposure post-sync** (Contract 3, `../references/architecture.md` §7). Confirm the
 CA/wildcard/sidecar chain comes up: the `tailnet-dev-ca` CA `ClusterIssuer` Ready -> the

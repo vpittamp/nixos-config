@@ -119,6 +119,18 @@ the dev rebuild entry point. The wrapped steps:
    principal-egress Service; add the CoreDNS principal rewrite; and stage the hub
    Headlamp read SA Secret (§7a).
 
+> **Recreate hardening (PR #2395).** Four hands-off-recreate fixes: (1)
+> `bootstrap-spoke-cluster.sh` self-defaults `TS_OPERATOR_CHART_VERSION` (it's
+> STANDALONE — does not source `lib/common.sh` where the 1.96.5 pin lives — so the
+> var was unbound under `set -u` and aborted ryzen AFTER destroy); (2) a repo-server
+> cold-start hard-refresh of `root-ryzen` after the local repo-server is Available
+> (`enroll-ryzen-agent.sh` step 6b + `bootstrap-spoke-cluster.sh` step 10) to clear the
+> ~5min ComparisonError stall; (3) `enroll-{dev,ryzen}-agent.sh` step 5b restarts the hub
+> Headlamp Deployments after staging the read Secret (§7a) so its init-container rebuilds
+> the kubeconfig against the new endpoint; (4) `provision-spoke.sh --destroy` deletes
+> Hetzner servers in parallel (~156s -> ~20s). Full detail in
+> `runbooks/recovery-and-gotchas.md`.
+
 ## 3. Contract 1 — the argocd cluster-Secret (agent mapping)
 
 Post-cutover, the `cluster-<spoke>` Secret in ns `argocd` is an **agent MAPPING** to the

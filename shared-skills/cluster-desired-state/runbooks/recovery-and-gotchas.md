@@ -62,6 +62,17 @@ trusts the Talos CA but the cert's SANs don't include the FQDN/IP it dialed). Fi
 the bootstrap `--config-patch` adds `cluster.apiServer.certSANs:
 [ryzen.tail286401.ts.net, 100.96.102.1]`; to add live, `talosctl patch mc` the same.
 
+(c) **Stale Headlamp pod serving the OLD spoke endpoint after a recreate** (Headlamp can
+auth the hub but cannot reach the rebuilt spoke; cluster list shows the old endpoint/CA).
+The hub Headlamp builds its kubeconfig ONLY in its `generate-kubeconfig` init-container at
+pod start, so a pod predating the recreate keeps the stale `headlamp-cluster-<spoke>`
+endpoint/CA/token and the freshly re-staged Secret is inert. Fix: bounce the hub Headlamp
+pods so the init-container rebuilds the kubeconfig — `kubectl -n headlamp rollout restart
+deploy/hub-headlamp deploy/hub-headlamp-embedded`. `enroll-{dev,ryzen}-agent.sh` step 5b
+now does this automatically (after re-staging the `headlamp-cluster-<spoke>` Secret with the
+fresh kube-API endpoint + read-only SA token + CA + label `headlamp.dev/cluster=true`),
+guarded on deploy existence and non-fatal — Headlamp is off the critical path (PR #2395).
+
 **Agent-sync note.** If `ryzen-*` apps are OutOfSync/unknown on the hub, the problem is the
 argocd-agent (principal/agent mTLS or the autonomous agent itself), NOT this kube path —
 the `cluster-ryzen` agent mapping has no bearerToken to go stale. `register-spoke-with-hub.sh`
@@ -351,3 +362,74 @@ then re-apply at v1. Objects with empty/v1 managedFields apply clean (most do).
 **Delivery PRs (history):** spoke ESO upgrade #2339(dev)/#2341(ryzen)/#2342(promote-to-base);
 v1 manifest migration #2343; global ignore #2334. End state verified: hub/dev/ryzen all
 v2.4.1, all ES served at v1, all SecretSynced, 0/194 OutOfSync.
+
+---
+
+## M. `TS_OPERATOR_CHART_VERSION` unbound abort (ryzen recreate — hard blocker)
+
+**Symptom.** A ryzen `--recreate` ABORTS at the Tailscale-operator helm install (right
+after external-secrets) under `set -u` — `TS_OPERATOR_CHART_VERSION: unbound variable`.
+Because destroy has ALREADY run by this point, ryzen is left DOWN.
+
+**Diagnosis.** `deployment/scripts/talos-hetzner/bootstrap-spoke-cluster.sh` is a
+STANDALONE script — it does NOT source `deployment/scripts/lib/common.sh`, which is where
+the Tailscale-operator chart pin (`1.96.5`) lives. So `${TS_OPERATOR_CHART_VERSION}` was
+never defined and the recreate died at the helm install.
+
+**Fix.** Self-default the var next to the other version pins in
+`bootstrap-spoke-cluster.sh` (~line 125):
+```bash
+TS_OPERATOR_CHART_VERSION="${TS_OPERATOR_CHART_VERSION:-1.96.5}"
+```
+(a395874dc, PR #2395). **INVARIANT:** keep this pin in lockstep with `lib/common.sh` AND
+the GitOps tailscale-operator manifests; ANY variable this standalone script shares with
+`common.sh` MUST be self-defaulted here (it cannot rely on `common.sh` being sourced).
+
+**Verify.** `bootstrap-spoke-cluster.sh --recreate` runs hands-off through the
+tailscale-operator helm install without an unbound-variable abort; the operator chart that
+lands matches `lib/common.sh` (`1.96.5`).
+
+---
+
+## N. `root-ryzen` ComparisonError repo-server cold-start race (ryzen recreate)
+
+**Symptom.** On a fresh ryzen recreate, convergence stalls ~5 min with ZERO child apps
+rendered: `root-ryzen` sits in **ComparisonError** (sync=Unknown) and nothing under it
+renders until a manual refresh.
+
+**Diagnosis.** The local `argocd-application-controller` runs `root-ryzen`'s FIRST
+comparison BEFORE the local `argocd-repo-server` is accepting connections (`dial :8081
+connection refused`), so the app sticks in ComparisonError. The controller does NOT re-queue
+an errored app for a full resync window (~5 min observed) — so convergence stalls hands-off
+until that timer fires.
+
+**Fix.** Force a clean first comparison once the local repo-server is Available
+(89fd0df8b, PR #2395; both non-fatal — the resync timer would eventually heal it, this
+just makes the recreate hands-off + fast):
+- `enroll-ryzen-agent.sh` step 6b — wait for the repo-server, then hard-refresh:
+  ```bash
+  kspoke -n argocd rollout status deploy/argocd-repo-server --timeout=120s
+  kubectl -n argocd annotate application root-ryzen argocd.argoproj.io/refresh=hard --overwrite
+  ```
+- `bootstrap-spoke-cluster.sh` step 10 — after the inner-loop advance, hard-refresh
+  `root-ryzen` again so it re-compares against the advanced HEAD.
+
+For older scripts that lack step 6b (or if you hit the stall live), unblock manually:
+```bash
+kubectl -n argocd annotate application root-ryzen argocd.argoproj.io/refresh=hard --overwrite
+```
+
+**Verify.** `kspoke -n argocd get application root-ryzen` leaves ComparisonError and goes
+Synced/Healthy; child apps render without waiting out the ~5 min resync window.
+
+---
+
+## Recreate timing & destroy parallelism (validation reference)
+
+- **ryzen** `bootstrap-spoke-cluster.sh --recreate` = **13m9s** hands-off, **64/65**
+  Synced/Healthy, ZERO manual intervention (PR #2395, with §M + §N fixes in place).
+- **dev** `recreate-dev.sh` = **20m32s** hands-off.
+- **Parallel Hetzner destroy (dev).** `provision-spoke.sh --destroy` now deletes the N
+  Hetzner servers CONCURRENTLY (no inter-server ordering) instead of sequentially
+  (~18s each, ~156s for 9), mirroring the parallel create — ~156s down to ~20s
+  (6cee88a70, PR #2395).
