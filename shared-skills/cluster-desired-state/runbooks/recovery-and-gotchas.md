@@ -454,12 +454,17 @@ the child apps (installing CRDs) and skip-then-retries the CRD-dependent raw res
 already-stuck sync op does NOT pick up the option — applied fresh it works first try; to unstick a
 running one, delete+reapply the app (`kubectl delete app root-application --cascade=orphan` then apply).
 
-**Related serialization (improvement candidate).** Even after the cold-start fix, hub convergence
-SERIALIZES behind a sync-wave health-gate on the `argocd-hub` Tailscale Ingress
-(`root-application` msg `waiting for healthy state of Ingress/argocd-hub`). On the real hub this is
-satisfied (it owns the tailnet identity); on the `--dry-run-clone` it can't be (the clone gets `-N`
-suffixed hostnames) → ~24 later-wave apps never render (the clone's documented ceiling). De-serializing
-that gate would speed + harden every hub recreate.
+**Related serialization (FIXED — PR #2398).** Even after the cold-start fix, hub convergence
+SERIALIZED behind a sync-wave health-gate on async Tailscale-operator RAW resources in `env/hub/hub-apps`
+(`root-application` msg `waiting for healthy state of Ingress/argocd-hub`): 4 in wave 0 (`argocd-hub`
+Ingress, `argocd-agent-principal-tailnet` Svc, `cluster-ingress` + `k8s-api-hub` ProxyGroups) gated
+waves 12-70 (~24 child apps); 2 in wave 60 gated waves 65-70. **Fix:** all 6 moved to **sync-wave 100**
+(after the last child app at 70) — their source manifests in `packages/components/hub-base|hub-management`
+carry `argocd.argoproj.io/sync-wave: "100"`. Nothing in waves -120..70 needs them during its own sync
+(apps are in-cluster; spokes reconnect via the principal LB / kube-api VIP only AFTER convergence;
+the argocd-hub UI is cosmetic), so the child apps now apply without gating and the tailnet exposure
+comes up last. This is also why the `--dry-run-clone` couldn't fully converge (it can't provision the
+hub's tailnet identity) — now a non-issue for the child apps.
 
 ## P. Hub "revert to original state" — etcd snapshot/restore (NOT Hetzner snapshots)
 

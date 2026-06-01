@@ -123,8 +123,10 @@ What it validates (2026-06): full topology + 1Password secret root + ArgoCD + th
 identity) → ~24 later-wave apps don't render on the clone. Full convergence is validated only on
 the real hub (`--in-place`). The verify-gate runs with `SPOKES=""`, `EXPECT_NODES=5`, and a
 clone-specific `BENIGN_APPS` allowlist (dormant Azure KV, spoke-only `dev-agent-bootstrap`, etc.).
-**Recommendation (future improvement):** de-serialize that Ingress health-gate so a slow/unprovisioned
-Ingress doesn't stall the other ~24 apps — would speed + harden every hub recreate.
+**De-serialized (PR #2398):** the 6 async Tailscale-operator raw resources that gated the app-of-apps
+(`argocd-hub` Ingress, `argocd-agent-principal-tailnet` + `argocd-server-tailnet` Svcs, `k8s-api-hub-ingress`,
+`cluster-ingress` + `k8s-api-hub` ProxyGroups) were moved to sync-wave 100 (after the child apps at <=70),
+so a slow/unprovisioned tailnet device no longer stalls the other ~24 apps — see recovery-and-gotchas.md §O.
 
 > **Stateful hub data is EPHEMERAL on recreate** (by decision): observability TSDB
 > (Mimir/Tempo/Loki/Grafana), MLflow runs, Langfuse (postgres/clickhouse/redis) restart EMPTY —
