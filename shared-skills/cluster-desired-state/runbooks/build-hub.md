@@ -6,8 +6,14 @@ Ordered checklist to bring the hub from nothing (or recover it) to the desired s
 Paths relative to `/home/vpittamp/repos/PittampalliOrg/stacks/main`.
 
 > The hub is rebuilt rarely. `deployment/scripts/recreate-hub.sh` now drives
-> recovery/rebuild (modes `--verify-only` / `--seed-secret` / `--fixups` /
+> recovery/rebuild (modes `--verify-only` / `--seed-secret` / `--fixups` / `--reconcile` /
 > `--dry-run-clone` / `--in-place --confirm-wipe hub-cluster` [+ `--restore-from <snap>`]);
+> **`--reconcile`** (PR #2400) is the NON-DESTRUCTIVE way to roll refined setup logic onto a
+> RUNNING hub (the `--in-place` path minus the wipe): etcd-snapshot baseline + seed-secret +
+> fixups + an ADDITIVE patch of the live root-app's syncPolicy (SkipDryRunOnMissingResource +
+> retry — the one piece GitOps can't deliver, since the root-app doesn't manage itself) +
+> unstick-hydrator + verify. Most other refined logic reaches the live hub via GitOps already
+> (e.g. the #2398 sync-wave de-serialization flows main->env/hub->root-app sync automatically).
 > it NEVER hcloud-deletes the 5 ash servers (no spare inventory). `--in-place` is now
 > HANDS-OFF (PR #2397): rolling `talosctl reset` reusing `talos-cluster/main/secrets/hub-secrets.yaml`
 > (preserves etcd identity, build nodes reset concurrently), re-bootstrap ONE CP, seed
