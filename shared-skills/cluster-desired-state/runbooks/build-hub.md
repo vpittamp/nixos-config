@@ -7,11 +7,17 @@ Paths relative to `/home/vpittamp/repos/PittampalliOrg/stacks/main`.
 
 > The hub is rebuilt rarely. `deployment/scripts/recreate-hub.sh` now drives
 > recovery/rebuild (modes `--verify-only` / `--seed-secret` / `--fixups` /
-> `--dry-run-clone` / `--in-place --confirm-wipe hub-cluster`); it NEVER hcloud-deletes
-> the 5 ash servers (no spare inventory). `--in-place` does a rolling `talosctl reset`
-> reusing `talos-cluster/main/secrets/hub-secrets.yaml` (preserves etcd identity),
-> re-apply, re-bootstrap ONE CP, and seeds `onepassword-sa-token` via `op read` (NOT
-> JWKS); `--dry-run-clone` rehearses on a throwaway cluster via `provision-spoke.sh`.
+> `--dry-run-clone` / `--in-place --confirm-wipe hub-cluster` [+ `--restore-from <snap>`]);
+> it NEVER hcloud-deletes the 5 ash servers (no spare inventory). `--in-place` is now
+> HANDS-OFF (PR #2397): rolling `talosctl reset` reusing `talos-cluster/main/secrets/hub-secrets.yaml`
+> (preserves etcd identity, build nodes reset concurrently), re-bootstrap ONE CP, seed
+> `onepassword-sa-token` via `op read`, then AUTO-apply the root-application + `unstick_hydrator`
+> + wait for the autoMerge promotion + verify-gate (see §4). It takes a REAL `talosctl etcd snapshot`
+> BEFORE the wipe (the "revert to original" net; off-cluster via `ETCD_SNAPSHOT_UPLOAD_CMD`;
+> restore with `--restore-from`). **Test NON-DESTRUCTIVELY with `--dry-run-clone`** — a faithful
+> hub-shaped throwaway (3 CP + 2 build, build-pool taint) in `hil` that applies `env/hub` read-only
+> + runs the verify-gate, never touching ash (see §Non-destructive test below). Hetzner
+> snapshot-rollback is NOT viable (rebuild-from-image requires deleting the server).
 > Convergence is checked by `deployment/scripts/hub-verify-gate.sh` (9-check read-only
 > gate). This runbook is the ordered spine + the manual fixes that are easy to miss.
 
@@ -60,10 +66,19 @@ create ClusterSecretStore `onepassword-store` (ESO `onepasswordSDK` provider ->
 
 ## 4. Root application + first promotion
 
-Apply `root-application` (sourceHydrator drySource `packages/overlays/hub` @main ->
-hydrateTo `env/hub-next` -> syncSource `env/hub` path `hub-apps`). **Merge the Promoter
-PR `env/hub-next -> env/hub`** (autoMerge:false) — child apps only appear after the merge.
+`recreate-hub.sh --in-place` now AUTO-applies `root-application` (`apply_root_application`,
+inlined: sourceHydrator drySource `packages/overlays/hub` @main -> hydrateTo `env/hub-next`
+-> syncSource `env/hub` path `hub-apps`) — it was previously a manual step. **env/hub is
+`autoMerge: true`** now (PromotionStrategy `stacks-environments`), so the Promoter
+auto-merges `env/hub-next -> env/hub` — no manual PR merge; `promote_env_hub` just waits.
 
+> **COLD-START (PR #2397, found via the dry-run clone):** the root-app MUST carry
+> `SkipDryRunOnMissingResource=true`. `env/hub/hub-apps` includes raw resources whose CRDs
+> are installed by sibling child apps (e.g. `tailscale.com/ProxyGroup` from the
+> tailscale-operator); without the option ArgoCD rejects the FIRST sync wholesale
+> ("synchronization tasks are not valid") and NONE of the 62 child apps render. `recreate-hub.sh`
+> also runs `unstick_hydrator` (clear a stuck Source-Hydrator `currentOperation` + hard-refresh —
+> the hub analog of the ryzen repo-server kick).
 > Gotcha: unlike the spoke hydrators, the hub hydrator does **NOT** auto-recreate
 > `env/hub-next` after the Promoter PR merges. A stuck `PromotionStrategy`
 > (`ChangeTransferPolicyNotReady` / missing `env/hub-next` ref) may need a manual
@@ -80,7 +95,8 @@ PR `env/hub-next -> env/hub`** (autoMerge:false) — child apps only appear afte
 - **7 Spoke secret transport (hub side)**: the `spoke-secrets` mirror, standalone
   `k8s-api-hub-ingress` device, spoke-secrets-reader RBAC, `tag:k8s->tag:k8s` impersonate
   ACL grant (`../references/architecture.md` §4).
-- **8 Crossplane**: providers + functions Healthy; hcloud token ExternalSecret.
+- **8 (Crossplane — RETIRED Phase D)**: spokes are now script-provisioned (`provision-spoke.sh`)
+  + argocd-agent-enrolled, NOT Crossplane-composed. No Crossplane providers/functions to verify.
 - **9 Build pool (hub-tekton)**: Tekton + outer-loop builds + kueue capacity; verify ALL
   build PipelineRuns carry the `stacks.io/build-pool=hub` nodeSelector + toleration.
 
@@ -90,3 +106,27 @@ Run the full block in `../references/hub.md` "Verification" (or
 `deployment/scripts/hub-verify-gate.sh`). Pass = only `root-application` +
 `dev-spoke-transport` OutOfSync; everything else Synced/Healthy; 5 nodes Ready v1.32.0;
 ProxyGroups Ready; ClusterSecretStores `onepassword-store` + `argocd` Valid; Promoter 2/2.
+
+## Non-destructive test (`--dry-run-clone`) — validate without touching ash
+
+`recreate-hub.sh --dry-run-clone` provisions a **faithful hub-shaped throwaway** in `hil`
+(3 CP + 2 build, build-pool taint/label; CIDR 10.9.0.0/16), seeds the 1Password secret root,
+installs ArgoCD, applies the hub desired state **READ-ONLY from `env/hub`** (plain sync, NO
+hydrator — so it never force-pushes the shared `env/hub-next` and clobbers the live hub), runs
+the verify-gate, then tears the clone down (servers + tailnet devices, incl. the `-N` collision
+reaper). `KEEP_CLONE=true` leaves it up to iterate. **Never touches the 5 ash servers.**
+
+What it validates (2026-06): full topology + 1Password secret root + ArgoCD + the
+`SkipDryRunOnMissingResource` cold-start fix + **bulk convergence (~34/38 apps hands-off)**.
+**Irreducible ceiling:** the app-of-apps serializes behind a sync-wave health-gate on the
+`argocd-hub` Tailscale Ingress, which the clone can't satisfy (the real hub owns that tailnet
+identity) → ~24 later-wave apps don't render on the clone. Full convergence is validated only on
+the real hub (`--in-place`). The verify-gate runs with `SPOKES=""`, `EXPECT_NODES=5`, and a
+clone-specific `BENIGN_APPS` allowlist (dormant Azure KV, spoke-only `dev-agent-bootstrap`, etc.).
+**Recommendation (future improvement):** de-serialize that Ingress health-gate so a slow/unprovisioned
+Ingress doesn't stall the other ~24 apps — would speed + harden every hub recreate.
+
+> **Stateful hub data is EPHEMERAL on recreate** (by decision): observability TSDB
+> (Mimir/Tempo/Loki/Grafana), MLflow runs, Langfuse (postgres/clickhouse/redis) restart EMPTY —
+> there is no backup/restore (unlike dev's env-table pg_dump). The recreate reconstitutes
+> workloads from GitOps + 1Password, not their historical data.

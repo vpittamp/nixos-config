@@ -433,3 +433,52 @@ Synced/Healthy; child apps render without waiting out the ~5 min resync window.
   Hetzner servers CONCURRENTLY (no inter-server ordering) instead of sequentially
   (~18s each, ~156s for 9), mirroring the parallel create — ~156s down to ~20s
   (6cee88a70, PR #2395).
+
+## O. Hub `root-application` cold-start: `SkipDryRunOnMissingResource` (hub recreate — hard blocker)
+
+**Symptom.** On a fresh hub recreate the `root-application` sits `OutOfSync` with
+`operationState.message = "one or more synchronization tasks are not valid. Retrying attempt #N"`,
+**ZERO of the ~62 child apps render**, and the only `SyncFailed` resources are
+`tailscale.com/ProxyGroup` (`could not find tailscale.com/ProxyGroup ... Make sure the CRD is installed`).
+
+**Diagnosis.** `env/hub/hub-apps` mixes 62 child `Application`s with raw resources whose CRDs are
+installed by SIBLING child apps — notably 2 `ProxyGroup`s whose CRD comes from the
+`hub-tailscale-operator`/`hub-tailscale-crds` child app. ArgoCD's sync PLANNING rejects the whole
+batch when a resource's GVK is unknown (`SkipDryRunOnMissingResource` was NOT set), so nothing
+applies → the operator/CRD never install → permanent deadlock. (Found via the `--dry-run-clone`,
+2026-06; the manual hub bootstraps masked it because CRDs were already present.)
+
+**Fix (PR #2397).** The hub `root-application` (`recreate-hub.sh apply_root_application`, inlined)
+now sets `syncOptions: [..., SkipDryRunOnMissingResource=true]` + `retry`. The first sync then applies
+the child apps (installing CRDs) and skip-then-retries the CRD-dependent raw resources. NOTE: an
+already-stuck sync op does NOT pick up the option — applied fresh it works first try; to unstick a
+running one, delete+reapply the app (`kubectl delete app root-application --cascade=orphan` then apply).
+
+**Related serialization (improvement candidate).** Even after the cold-start fix, hub convergence
+SERIALIZES behind a sync-wave health-gate on the `argocd-hub` Tailscale Ingress
+(`root-application` msg `waiting for healthy state of Ingress/argocd-hub`). On the real hub this is
+satisfied (it owns the tailnet identity); on the `--dry-run-clone` it can't be (the clone gets `-N`
+suffixed hostnames) → ~24 later-wave apps never render (the clone's documented ceiling). De-serializing
+that gate would speed + harden every hub recreate.
+
+## P. Hub "revert to original state" — etcd snapshot/restore (NOT Hetzner snapshots)
+
+**The net (PR #2397).** `recreate-hub.sh` takes a REAL `talosctl etcd snapshot` in
+`snapshot_inventory` BEFORE any `--in-place` wipe (was member-list metadata only; the constitution
+requires etcd backups), saved to `~/.recreate-hub/snapshot/etcd-<ts>.snapshot` (+ `etcd-latest.snapshot`)
+and pushed off-cluster via the `ETCD_SNAPSHOT_UPLOAD_CMD` hook (set it to an rclone/s3/scp to a Storage
+Box — local-only otherwise). Capture validated on the clone (34 MB, hash + key count reported).
+
+**Restore.** `recreate-hub.sh --in-place --confirm-wipe hub-cluster --restore-from <snapshot>` wires
+`talosctl bootstrap --recover-from <snapshot>` into the bootstrap step — recovers the exact prior etcd
+state on the same (preserved) ash servers. Validate a full restore drill on a `KEEP_CLONE=true` clone
+before trusting it on the hub.
+
+**Hetzner snapshots are NOT viable for rollback.** `hcloud server create-image` + rebuild-from-image
+requires DELETING the server (servers are immutable) — that releases the ash inventory we must keep.
+Reproducible baseline = the git-committed Talos machineconfig + the PINNED
+`talos-cluster/main/secrets/hub-secrets.yaml` (NEVER regenerate it — orphans etcd identity).
+
+**Stateful data is EPHEMERAL (by decision).** Observability TSDB (Mimir/Tempo/Loki/Grafana), MLflow
+runs, Langfuse restart EMPTY on a hub recreate — no backup/restore. Workloads reconstitute from GitOps
++ 1Password, not their history.
