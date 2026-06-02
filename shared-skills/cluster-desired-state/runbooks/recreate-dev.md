@@ -9,6 +9,15 @@ Composition, no group-N pipeline). The three scripts:
 `../references/tailscale-and-certs.md`. Paths relative to
 `/home/vpittamp/repos/PittampalliOrg/stacks/main`.
 
+> **The hands-off entrypoint is `deployment/scripts/talos-hetzner/recreate-dev.sh`** — it runs
+> this whole flow end-to-end with ZERO manual steps: **backup env data -> destroy -> gated
+> tailnet device cleanup -> provision -> bootstrap-deps -> enroll-dev-agent -> verify-gate ->
+> step 8b Headlamp re-stage**. Validated green hands-off (2026-06). It self-guards `CLUSTER_NAME`
+> (a leaked non-dev value is forced back to `dev`; intentional override = `ALLOW_NONDEV_CLUSTER=1`).
+> Modes: `--recreate` (default), `--resume` (bootstrap+enroll+gate on an existing cluster, no
+> destroy), `--skip-destroy`, `--verify-only`, `--destroy`. The sections below break down what it
+> does (and double as the manual recovery path).
+
 ## 0. Preflight (BEFORE destroying — data lives in the disposable cluster)
 
 Confirm no active work and back up SWE-bench fixtures (`recovery-and-gotchas.md` §E):
@@ -100,12 +109,22 @@ Idempotent + re-runnable. It:
    endpoint + read-only SA token + CA, label `headlamp.dev/cluster=true`) — Headlamp uses
    this, NOT the agent cluster mapping (which has no bearerToken post-cutover). **Step 5b
    then rolls `deploy/hub-headlamp{,-embedded}` on the hub** so Headlamp rebuilds its
-   kubeconfig for the rebuilt dev cluster (PR #2395 Fix 3). The hub Headlamp builds its
-   kubeconfig ONLY in its `generate-kubeconfig` init-container at pod start, so a pod
-   predating the recreate keeps serving the OLD dev endpoint/CA/token and can't auth to the
-   rebuilt cluster — the staged Secret alone is inert. The rollout is guarded on deploy
-   existence and non-fatal (Headlamp is off the critical path). Full detail:
-   `recovery-and-gotchas.md`.
+   kubeconfig for the rebuilt dev cluster. The hub Headlamp builds its kubeconfig ONLY in its
+   `generate-kubeconfig` init-container at pod start, so a pod predating the recreate keeps
+   serving the OLD dev endpoint/CA/token and can't auth to the rebuilt cluster — the staged
+   Secret alone is inert. The rollout is guarded on deploy existence and non-fatal (Headlamp
+   is off the critical path).
+   > **Hardened 2026-06** (`reference_headlamp_recreate_token_race`): step 5b is now a
+   > `stage_headlamp()` function with a `HEADLAMP_ONLY=true` re-run mode, and its wait for the
+   > spoke `headlamp-reader-token` is **180s** (was 60s) requiring **both** `token` AND `ca.crt`.
+   > WHY: on the slower Talos cluster the 60s window elapsed before the token controller
+   > populated the SA token, so 5b warn-skipped and left the PREVIOUS cluster's token+CA in
+   > `headlamp-cluster-dev` -> hub Headlamp got `x509: certificate signed by unknown authority`
+   > (stale CA) + `HTTP 401` (stale token). ryzen's fast local cluster won the race, masking the
+   > bug. The durable guarantee is **step 8b** below (re-stage AFTER convergence, token certainly
+   > ready). Live recovery if a connection is ever stale:
+   > `HEADLAMP_ONLY=true SPOKE_KUBECONFIG=/tmp/talos-spoke-dev/kubeconfig HUB_CONTEXT=hub-cluster bash deployment/scripts/argocd-agent/enroll-dev-agent.sh dev`.
+   > Full detail: `recovery-and-gotchas.md`.
 
 The AppProject, principal-egress Service, and CoreDNS principal rewrite come from the agent
 bootstrap kustomize (`packages/components/hub-management/manifests/dev-agent-bootstrap`).
@@ -144,8 +163,31 @@ All dev repoints are gated `[ "${cluster}" = "dev" ]` (`../references/architectu
   `operatorConfig.hostname=dev-operator`; if the operator collided as `ryzen-operator-N`,
   clean the stale device via the TS API (`../references/tailscale-and-certs.md`).
 
-## 8. Restore data + verify
+## 8. Restore data + verify-gate (automated by recreate-dev.sh)
 
+`recreate-dev.sh` does the data restore AND convergence check for you in a **verify-gate**
+(`--verify-only` runs just this against an existing cluster). The gate polls until, with a 30-min
+cap (`VERIFY_TIMEOUT`):
+1. **`argocd-agent-agent` Ready** on the spoke.
+2. **Every hub-pane dev app `Synced`/`Healthy` (0 bad)** — with ONE tolerance: an app that is
+   `health=Progressing` AND **owns a `PersistentVolumeClaim` named `*cache*`** is tolerated and
+   logged (not counted bad). WHY: `dev-swebench-runtime-builds` owns the persistent buildah-cache
+   PVC `buildah-cache-swebench-inference` (`local-path` = WaitForFirstConsumer) which stays
+   `Pending` at rest (no build = no consumer), so ArgoCD reports the app `Progressing` forever — a
+   benign by-design state, not a recreate failure. The tolerance keys on the **owned `*cache*` PVC
+   resource** (`.status.resources[]`), NOT the transient sync-op message (which flips to
+   "successfully synced" once the Tekton resources apply — keying on the message false-failed on a
+   converged cluster). A genuinely-stuck workload/data PVC (no "cache" in its name) or any
+   `Degraded`/`OutOfSync`-without-a-cache-PVC app STILL fails the gate.
+3. **Backed-up env data restored** (`restore_data_if_ready`, schema-aware + `timeout`-bounded, runs
+   opportunistically each loop once Postgres + the db-migrate schema are up — no blocking wait).
+4. **Step 8b: re-stage the hub Headlamp connection** (`HEADLAMP_ONLY=true` -> `stage_headlamp`),
+   AFTER the gate, when the spoke token is guaranteed ready — the durable fix for the §4.6 race.
+
+Success prints: `CONVERGED: agent ready, N dev apps green (0 bad), data restored [tolerated benign
+PVC-wait: dev-swebench-runtime-builds]` then `recreate-dev dev ... success`.
+
+Manual restore (only if doing the steps by hand instead of the script):
 ```bash
 kubectl --kubeconfig /tmp/talos-spoke-dev/kubeconfig cp /tmp/eib.sql workflow-builder/postgresql-0:/tmp/eib.sql
 kubectl --kubeconfig /tmp/talos-spoke-dev/kubeconfig exec -n workflow-builder postgresql-0 -- psql -U postgres -d workflow_builder -f /tmp/eib.sql

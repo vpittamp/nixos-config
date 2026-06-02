@@ -73,6 +73,20 @@ now does this automatically (after re-staging the `headlamp-cluster-<spoke>` Sec
 fresh kube-API endpoint + read-only SA token + CA + label `headlamp.dev/cluster=true`),
 guarded on deploy existence and non-fatal — Headlamp is off the critical path (PR #2395).
 
+(c2) **Stale `headlamp-cluster-<spoke>` Secret (token+CA) after a recreate -> `x509` + `401`**
+(2026-06, `reference_headlamp_recreate_token_race`). DIFFERENT from (c): here the Secret ITSELF
+is stale (the prior cluster's bearer token + CA), so even a freshly-restarted Headlamp gets
+`x509: certificate signed by unknown authority` (stale CA) + `HTTP 401` (stale token) for that
+spoke; reachability is fine (a 401, not a timeout). Cause: enroll step 5b's spoke-token wait
+(then 60s) elapsed before the slower **dev** Talos cluster's `headlamp-reader-token` was
+populated, so 5b warn-skipped and never refreshed the Secret. ryzen's fast local cluster won the
+race. FIXED: step 5b is now `stage_headlamp()` with a **`HEADLAMP_ONLY=true`** re-run mode, a
+**180s** wait for BOTH token AND ca.crt, and a POST-convergence re-stage (`recreate-dev.sh` step
+8b / `bootstrap-spoke-cluster.sh` step 10b). **Live fix any time it's stale:**
+`HEADLAMP_ONLY=true SPOKE_KUBECONFIG=/tmp/talos-spoke-dev/kubeconfig HUB_CONTEXT=hub-cluster bash deployment/scripts/argocd-agent/enroll-dev-agent.sh dev`
+(ryzen: `HEADLAMP_ONLY=true RYZEN_CONTEXT=admin@ryzen bash deployment/scripts/argocd-agent/enroll-ryzen-agent.sh ryzen`).
+Verify: from a `hub-headlamp` pod, `wget -H "Authorization: Bearer <staged token>" https://<spoke-fqdn>:6443/version` -> 200.
+
 **Agent-sync note.** If `ryzen-*` apps are OutOfSync/unknown on the hub, the problem is the
 argocd-agent (principal/agent mTLS or the autonomous agent itself), NOT this kube path —
 the `cluster-ryzen` agent mapping has no bearerToken to go stale. `register-spoke-with-hub.sh`
@@ -218,8 +232,8 @@ device-backed Ingress DNS recovery.
   `invalid.tailnet.internal` placeholder. The ClusterSecretStore itself is Synced.
 - ProxyGroup `ProxyGroupInvalid`/`ProxyGroupCreating` on a leaked spoke-owned PG in the
   hub view (transient/stale). **Never delete a working VIP** to "fix" it.
-- **"Unknown" operation status on a HANDFUL of spoke apps** (validated 2026-06: `cert-manager`,
-  `ingress-nginx-cert`, `mlflow` × dev+ryzen = 6 apps). They are Synced/Healthy with auto-sync, but
+- **"Unknown" operation status on a HANDFUL of spoke apps** (`cert-manager`, `mlflow`, and on
+  KIND/ryzen also `ingress-nginx-cert`). They are Synced/Healthy with auto-sync, but
   `status.operationState` is EMPTY because a sync OPERATION never had to RUN — they were already in
   their desired state at creation, and auto-sync only operates on DRIFT. The UI renders "no operation
   run" as **"Unknown."** WHY already-in-sync: `cert-manager` is installed by the spoke BOOTSTRAP
@@ -228,8 +242,21 @@ device-backed Ingress DNS recovery.
   Benign + somewhat inherent (recurs every recreate since cert-manager is always bootstrap-installed).
   A one-time `argocd app sync` records a `Succeeded` op and flips the indicator green; not worth chasing.
   (NOT the same as the hub's architectural per-spoke "Unknown" — that's a separate, also-benign thing
-  where ALL agent apps lack the operation lifecycle because it runs on the spoke. These 6 are distinct:
+  where ALL agent apps lack the operation lifecycle because it runs on the spoke. These are distinct:
   they lack an op because none was needed.)
+  > **`ingress-nginx-cert` is now KIND-only** (2026-06): moved `packages/base/apps` ->
+  > `packages/components/kind-only/apps`. Its copy-tls-cert Job sources `gitops-cert` (produced ONLY
+  > by the kind-only idpbuilder ExternalSecret) and its output `persistent-tls-cert` is unreferenced;
+  > on Talos the real TLS is the tailnet wildcard cert, so the Job only ever failed there (perpetual
+  > "Sync failed"). KIND + **ryzen** (includes the kind-only component) keep it; **dev/staging/hub drop
+  > it**. So a dev recreate no longer shows a `dev-ingress-nginx-cert` app at all.
+- **`dev-swebench-runtime-builds` is `Progressing` forever — BENIGN, not a failure**
+  (`reference_recreate_gate_cache_pvc`). It owns the persistent buildah-cache PVC
+  `buildah-cache-swebench-inference` (`local-path` = WaitForFirstConsumer), which has no consumer at
+  rest, so the PVC stays `Pending` and ArgoCD never marks the app Healthy. The PVC is CORRECTLY
+  persistent (shared layer cache across builds — do NOT make it ephemeral). `recreate-dev.sh`'s
+  verify-gate tolerates this specific case (Progressing app that OWNS a `*cache*` PVC); a stuck
+  WORKLOAD/data PVC still fails the gate. Same app is Progressing-forever on every spoke.
 
 ---
 

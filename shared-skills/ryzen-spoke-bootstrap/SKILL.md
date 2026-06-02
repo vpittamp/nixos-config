@@ -83,6 +83,7 @@ The script does, in order:
 8. Wait for the spoke operator apiserver-proxy device to advertise on the tailnet (still used for the spoke→hub ESO transport and the Headlamp kube endpoint)
 9. **Auto-invoke the autonomous agent enrollment** (`enroll-ryzen-agent.sh`) — see step 3 below
 10. **(step 10) After the inner-loop advance, hard-refresh `root-ryzen` again** (`kubectl -n argocd annotate application root-ryzen argocd.argoproj.io/refresh=hard --overwrite`) so it re-compares against the advanced HEAD — the second leg of the repo-server cold-start fix (PR #2395 commit `89fd0df8b`; the first leg is enroll-ryzen-agent.sh step 6b). Non-fatal.
+11. **(step 10b) Post-convergence Headlamp re-stage** (2026-06): after the cluster has settled, `bootstrap-spoke-cluster.sh` re-runs ONLY the Headlamp staging — `HEADLAMP_ONLY=true AGENT_NAME=ryzen RYZEN_CONTEXT=$KCTX bash enroll-ryzen-agent.sh` — so the `headlamp-cluster-ryzen` Secret carries the new cluster's token+CA even if enroll's step-5b staging raced the token controller. Idempotent + non-fatal. (Mirror of `recreate-dev.sh` step 8b.)
 
 ### 3. Autonomous agent enrollment (automated by `--recreate`)
 
@@ -93,6 +94,7 @@ ryzen reconciles its own apps locally; the hub principal only aggregates status.
 3. **Runs `argocd-agentctl agent create ryzen`** on the hub — this writes the `cluster-ryzen` AGENT MAPPING Secret (`server: https://argocd-agent-resource-proxy:9090?agentName=ryzen`, embedded mTLS, NO bearerToken).
 4. **Stages the Headlamp Secret** (Headlamp still reaches ryzen kube-api via the host raw-TCP passthrough) and **restarts the hub Headlamp** (step 5b — see below) and **advances the inner-loop branch**.
 5. **(step 5b) Re-stages the `headlamp-cluster-ryzen` Secret** (fresh kube-API endpoint + read-only SA token + CA, label `headlamp.dev/cluster=true`) on the hub, then **`kubectl -n headlamp rollout restart deploy/hub-headlamp deploy/hub-headlamp-embedded`** (PR #2395 commit `6cee88a70`). The hub Headlamp builds its kubeconfig ONLY in its `generate-kubeconfig` init-container at pod start, so a pod predating the recreate keeps serving the OLD spoke endpoint/CA/token and the staged Secret is inert — the restart forces a kubeconfig rebuild. Guarded on deploy existence, non-fatal (Headlamp is off the critical path).
+   > **Token-race hardening (2026-06, `reference_headlamp_recreate_token_race`).** Step 5b is now a `stage_headlamp()` function with a **`HEADLAMP_ONLY=true`** re-run mode and a **180s** wait for BOTH `token` AND `ca.crt`. The race only bit **dev** (its slower Talos cluster left a stale token+CA -> Headlamp `x509`+`401`); ryzen's fast local cluster won the race, but it carries the same hardening for parity. Live fix if ever stale: `HEADLAMP_ONLY=true RYZEN_CONTEXT=admin@ryzen bash deployment/scripts/argocd-agent/enroll-ryzen-agent.sh ryzen`. The durable guarantee is the POST-convergence re-stage — `bootstrap-spoke-cluster.sh` **step 10b** (below).
 6. **(step 6b) Hard-refreshes `root-ryzen` after the local repo-server is Available** (PR #2395 commit `89fd0df8b`): `kspoke -n argocd rollout status deploy/argocd-repo-server --timeout=120s` then `kubectl -n argocd annotate application root-ryzen argocd.argoproj.io/refresh=hard --overwrite`. On a fresh recreate the local `argocd-application-controller` runs `root-ryzen`'s FIRST comparison before the local `argocd-repo-server` accepts connections (dial `:8081` connection refused) → `root-ryzen` sticks in `ComparisonError` (sync=Unknown), and the controller does NOT re-queue the errored app for a full resync window (~5min observed) → convergence stalls with ZERO child apps rendered until a manual refresh. The hard-refresh forces a clean first comparison. Non-fatal (the resync timer would eventually heal it; this makes the recreate hands-off + fast).
 7. **Advances the inner-loop branch**, then **hard-refreshes `root-ryzen` again** to re-compare against the advanced HEAD — this is `bootstrap-spoke-cluster.sh` step 10 (after the inner-loop advance), the second leg of the cold-start fix.
 
@@ -130,10 +132,14 @@ kubectl --context admin@ryzen -n external-secrets get secret hub-secrets-token  
 kubectl --context admin@ryzen -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' | grep 'rewrite name'
 kubectl --context admin@ryzen get externalsecrets -A | grep -vE 'SecretSynced|Valid'  # expect empty
 
-# Hub->ryzen wiring
+# Hub<-ryzen agent + Headlamp wiring (agent model — NOT a hub->ryzen kube credential)
 kubectl --kubeconfig ~/.kube/hub-config -n argocd get secret cluster-ryzen -o jsonpath='{.data.server}' | base64 -d
-# expect: https://ryzen-operator.tail286401.ts.net
-kubectl --kubeconfig ~/.kube/hub-config -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' | grep ryzen-operator
+# expect: https://argocd-agent-resource-proxy:9090?agentName=ryzen   (the AGENT MAPPING; NO bearerToken)
+argocd-agentctl agent list --principal-context hub-cluster --principal-namespace argocd | grep ryzen   # agent connected
+# Headlamp reaches ryzen kube-api via the host raw-TCP passthrough (ryzen HOST runs
+# `tailscale serve --tcp=6443` -> Talos apiserver; NOT the operator apiserver-proxy). Verify the
+# headlamp-cluster-ryzen Secret is fresh (auth) — from a hub-headlamp pod, /version returns 200:
+kubectl --kubeconfig ~/.kube/hub-config -n argocd get secret headlamp-cluster-ryzen -o jsonpath='{.data.server}' | base64 -d  # ryzen.tail286401.ts.net:6443
 
 # Branch currency (0 = inner-loop fully caught up to main)
 git -C /home/vpittamp/repos/PittampalliOrg/stacks/main rev-list --count origin/inner-loop..origin/main

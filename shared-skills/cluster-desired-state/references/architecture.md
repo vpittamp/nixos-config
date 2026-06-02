@@ -21,9 +21,14 @@ actual reconcile. (See §3a for the control-plane semantics — managed vs auton
 - **ryzen**: bare-metal Talos-in-Docker local-dev spoke on the ryzen workstation
   (3 nodes, Talos v1.13.2 / k8s v1.36.0). Imperatively bootstrapped. **Autonomous** agent.
 - **dev**: disposable Hetzner Talos spoke (3 cpx41 CP + 6 cpx51 workers labeled
-  `stacks.io/swebench-pool=dev-benchmark`). **Script-provisioned + agent-enrolled** —
-  the same imperative path as hub & ryzen (Crossplane was REMOVED in Phase D; see §3b).
-  **Managed** agent.
+  `stacks.io/swebench-pool=dev-benchmark` **AND `node-role.kubernetes.io/worker=`** — both by
+  `provision-spoke.sh` §8.6, which selects non-control-plane nodes via `kubectl get nodes
+  -l '!node-role.kubernetes.io/control-plane'` and labels them with admin kubectl. WHY in the
+  script not `machine.nodeLabels`: the `node-role.kubernetes.io/*` label is blocked from
+  kubelet self-set by NodeRestriction; the SWE-bench Kueue `dev-benchmark` ResourceFlavor
+  AND-matches BOTH labels, so a missing one = sandbox unschedulable). **Script-provisioned +
+  agent-enrolled** — the same imperative path as hub & ryzen (Crossplane was REMOVED in Phase D;
+  see §3b). **Managed** agent.
 
 ---
 
@@ -325,7 +330,26 @@ non-ryzen cluster must re-point its workload ExternalSecrets onto its OWN mirror
     key->`dev-shared-secrets`, add `property=<orig-key>` (for ESes retired off azure
     like `github-clone-credentials`, `gitea-registry-credentials`).
   - `emit_oauth_op` — `workflow-builder-secrets` OAuth -> `*-DEV` via property.
-  Regenerate after any release-pin/ES change; CI uses `--check`.
+  Regenerate after any release-pin/ES change; CI uses `--check`. **Parameterized for new envs**
+  (2026-06): the env loop is `${WFB_RENDER_ENVS:-dev staging}` and `cluster_upper` is derived with
+  `tr` — adding an env = add its name + the principal `allowed-namespaces` + the spoke-cluster
+  annotation; dev/staging output stays byte-identical.
+  - **Managed-agent namespace delivery** (the fix that made wfb actually reach the dev managed
+    agent, `reference_dev_managed_agent_wfb_delivery`): the principal only pushes Applications in
+    `allowed-namespaces=<spoke>` (hub ns `dev`), but the base workflow-builder Application manifests
+    hardcode `metadata.namespace: argocd`. The render-script now adds `op: add /metadata/namespace
+    value: ${cluster}` to the global Application patch, AND the bridge `spoke-workloads-appset`
+    `destination.namespace` is `{{index .metadata.annotations "spoke-cluster"}}` (was `argocd`). Both
+    are required (the child manifest's explicit namespace overrides the parent destNs). The workload
+    Service destination stays `{name:<cluster>, namespace: workflow-builder}` — only the Application
+    OBJECT's namespace moves to the spoke pane.
+  - **`workflow-builder-secrets` is its OWN ArgoCD Application** (`reference_argocd_es_array_add_drop`):
+    split out of the workload app into `Application-workflow-builder-secrets.yaml` WITHOUT
+    `RespectIgnoreDifferences`. WHY: appending a `.spec.data` key to that ExternalSecret left ArgoCD
+    stuck OutOfSync forever (upstream argo-cd #11876/#25284 — `RespectIgnoreDifferences` + the global
+    array-`[]` `jqPathExpressions` strips the appended element before apply). The ES has no
+    runtime-managed fields so it never needed the syncOption; `deletionPolicy: Retain` keeps the
+    materialized Secret during the move. The per-spoke OAuth repoints moved with it.
 - **ryzen**: re-pointed inline in `packages/overlays/ryzen/kustomization.yaml`:
   - `workflow-builder-secrets` data[9,10,21,22] -> `*-RYZEN` OAuth keys via op:test+op:replace.
   - `github-clone-credentials` + `gitea-registry-credentials` -> `hub-secrets-store`,

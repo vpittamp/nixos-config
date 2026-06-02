@@ -84,9 +84,27 @@ script stages the hub `headlamp-cluster-<spoke>` Secret; both Headlamp generator
 headlamp-embedded) select the label. **Post-recreate freshness (Fix 3, PR #2395):** Headlamp
 builds its kubeconfig only in its `generate-kubeconfig` init-container (at pod start), so a pod
 predating a spoke recreate keeps serving the OLD endpoint/CA/token. Both `enroll-{dev,ryzen}-agent.sh`
-(step 5b) now `kubectl -n headlamp rollout restart deploy/hub-headlamp deploy/hub-headlamp-embedded`
-on the hub after staging the Secret (guarded on deploy existence, non-fatal). See
-`cluster-desired-state/runbooks/recovery-and-gotchas.md`.
+(step 5b) `kubectl -n headlamp rollout restart deploy/hub-headlamp deploy/hub-headlamp-embedded`
+on the hub after staging the Secret (guarded on deploy existence, non-fatal).
+
+**Token-race hardening (2026-06, `reference_headlamp_recreate_token_race`).** Staging used to
+race the spoke token controller: step 5b waited only **60s** for the spoke `headlamp-reader-token`
+(a `kubernetes.io/service-account-token` Secret the kube-controller-manager populates). On the
+slower Talos/Hetzner **dev** cluster that elapsed before the token was ready, so 5b warn-skipped and
+left the PREVIOUS cluster's token+CA in `headlamp-cluster-dev` -> hub Headlamp proxy got
+**`x509: certificate signed by unknown authority`** (stale CA) + **`HTTP 401`** (stale token);
+reachability was fine (it reached `dev-cp-1.tail286401.ts.net:6443`, got a 401 not a timeout).
+ryzen's fast local Docker cluster won the race, masking the bug. Fix (3 parts):
+- step 5b extracted to a reusable `stage_headlamp()` fn in both enroll scripts;
+- a **`HEADLAMP_ONLY=true`** mode runs ONLY the staging (skip the agent enroll) — used by the
+  orchestrators AND as the live recovery: `HEADLAMP_ONLY=true SPOKE_KUBECONFIG=/tmp/talos-spoke-dev/kubeconfig HUB_CONTEXT=hub-cluster bash deployment/scripts/argocd-agent/enroll-dev-agent.sh dev`;
+- the wait is now **180s** and requires BOTH `token` AND `ca.crt`; AND the orchestrators **re-stage
+  AFTER convergence** (`recreate-dev.sh` **step 8b**, `bootstrap-spoke-cluster.sh` **step 10b**),
+  when the token is guaranteed ready — the durable guarantee.
+
+Verify a connection: from a `hub-headlamp` pod, `wget -H "Authorization: Bearer <staged token>"
+https://<spoke-fqdn>:6443/version` returns 200; `kubectl -n headlamp logs deploy/hub-headlamp` shows
+no `x509`/`401`. See `cluster-desired-state/runbooks/recovery-and-gotchas.md`.
 
 ---
 
