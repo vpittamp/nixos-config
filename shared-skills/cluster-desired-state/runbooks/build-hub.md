@@ -84,7 +84,11 @@ auto-merges `env/hub-next -> env/hub` — no manual PR merge; `promote_env_hub` 
 > tailscale-operator); without the option ArgoCD rejects the FIRST sync wholesale
 > ("synchronization tasks are not valid") and NONE of the 62 child apps render. `recreate-hub.sh`
 > also runs `unstick_hydrator` (clear a stuck Source-Hydrator `currentOperation` + hard-refresh —
-> the hub analog of the ryzen repo-server kick).
+> the hub analog of the ryzen repo-server kick) and **`ensure_default_project_namespaces`**: the
+> principal mirrors MANAGED-agent (dev) apps into ns `dev` using `project: default`, so the hub
+> `default` AppProject's `sourceNamespaces` must include those namespaces (kept in sync with
+> `principal.allowed-namespaces`) — else the hub UI lists them but can't OPEN them ("app can't be
+> found" / argocd-server `app is not allowed in project default`). See `recovery-and-gotchas.md` §Q.
 > Gotcha: unlike the spoke hydrators, the hub hydrator does **NOT** auto-recreate
 > `env/hub-next` after the Promoter PR merges. A stuck `PromotionStrategy`
 > (`ChangeTransferPolicyNotReady` / missing `env/hub-next` ref) may need a manual

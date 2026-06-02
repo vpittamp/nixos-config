@@ -218,6 +218,18 @@ device-backed Ingress DNS recovery.
   `invalid.tailnet.internal` placeholder. The ClusterSecretStore itself is Synced.
 - ProxyGroup `ProxyGroupInvalid`/`ProxyGroupCreating` on a leaked spoke-owned PG in the
   hub view (transient/stale). **Never delete a working VIP** to "fix" it.
+- **"Unknown" operation status on a HANDFUL of spoke apps** (validated 2026-06: `cert-manager`,
+  `ingress-nginx-cert`, `mlflow` × dev+ryzen = 6 apps). They are Synced/Healthy with auto-sync, but
+  `status.operationState` is EMPTY because a sync OPERATION never had to RUN — they were already in
+  their desired state at creation, and auto-sync only operates on DRIFT. The UI renders "no operation
+  run" as **"Unknown."** WHY already-in-sync: `cert-manager` is installed by the spoke BOOTSTRAP
+  (a prereq dep, before ArgoCD) and the ArgoCD app merely ADOPTS it; `mlflow` is a decommission app
+  (`syncPolicy.allowEmpty: true` — intentionally empty); `ingress-nginx-cert` likewise already-satisfied.
+  Benign + somewhat inherent (recurs every recreate since cert-manager is always bootstrap-installed).
+  A one-time `argocd app sync` records a `Succeeded` op and flips the indicator green; not worth chasing.
+  (NOT the same as the hub's architectural per-spoke "Unknown" — that's a separate, also-benign thing
+  where ALL agent apps lack the operation lifecycle because it runs on the spoke. These 6 are distinct:
+  they lack an op because none was needed.)
 
 ---
 
@@ -487,3 +499,23 @@ Reproducible baseline = the git-committed Talos machineconfig + the PINNED
 **Stateful data is EPHEMERAL (by decision).** Observability TSDB (Mimir/Tempo/Loki/Grafana), MLflow
 runs, Langfuse restart EMPTY on a hub recreate — no backup/restore. Workloads reconstitute from GitOps
 + 1Password, not their history.
+
+## Q. Hub UI "app can't be found" on managed-agent apps — AppProject `sourceNamespaces` (PR #2400)
+
+**Symptom.** A MANAGED-agent (dev) app lists Synced/Healthy in the hub ArgoCD UI, but CLICKING it
+shows **"app can't be found."** (ryzen/autonomous apps are unaffected.) A browser hard-refresh does
+NOT help — the failure is server-side.
+
+**Diagnosis (argocd-server log is definitive).** The per-namespace detail `Get` is rejected:
+`grpc.code=InvalidArgument desc = app is not allowed in project "default"`. The principal mirrors dev
+apps into ns `dev` on the hub and they use `project: default`, but the hub `default` AppProject shipped
+with **EMPTY `sourceNamespaces`** — so apps-in-any-namespace forbids argocd-server from serving them.
+ryzen works because its apps use `ryzen-default` (`sourceNamespaces=["ryzen"]`). Check:
+`kubectl -n argocd get appproject default -o jsonpath='{.spec.sourceNamespaces}'`.
+
+**Fix (PR #2400).** Keep `default`.sourceNamespaces in sync with `principal.allowed-namespaces` — the
+namespaces the principal manages (currently `dev`). `recreate-hub.sh ensure_default_project_namespaces`
+(wired into `--in-place` + `--reconcile`) does this idempotently; live one-liner:
+`kubectl -n argocd patch appproject default --type=merge -p '{"spec":{"sourceNamespaces":["dev"]}}'`.
+ADDITIVE + safe — the argocd control-plane ns is always implicitly permitted, so the ~62 ns-`argocd`
+hub apps are unaffected. Confirmed in-browser: dev-cert-manager then opens with its full resource tree.
