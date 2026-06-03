@@ -38,7 +38,7 @@ Before fixing drift, answer these questions:
 Known decisions:
 
 - Keep `agent-sandbox-crds` and `<spoke>-agent-sandbox-crds`. OpenShell and agent-runtime controllers require `AgentRuntime`, `Sandbox`, `SandboxClaim`, `SandboxTemplate`, and `SandboxWarmPool` CRDs. CRDs are split into a separate early-wave app intentionally.
-- Keep hub Tekton/Gitea build apps (`hub-workflow-builder-builds`, `hub-gitea-builds`, `hub-gitea-builds-egress`) when workflow-builder or OpenShell images still build through them.
+- Keep `hub-workflow-builder-builds` (now shared build infra only — cache PVCs + cleanup CronJobs after the gitea event-driven build lane was retired) and `hub-outer-loop-builds` (the live `github-outer-loop` EventListener → GHCR). The gitea build apps (`hub-gitea-builds`, `hub-gitea-builds-egress`, and the gitea EventListener) were retired and should NOT be recreated.
 - Remove stale spoke-local build apps and egress resources such as `workflow-builder-builds-local` or `gitea-builds-egress` on ryzen/spokes. The current build plane is centralized on hub; ryzen owns the resulting image tags, not the Buildah workload.
 - Remove AutoKube resources. AutoKube is legacy in this repo; do not repair AutoKube apps, Ingresses, ACL approvals, or manifests unless the product is explicitly reintroduced.
 - The old hcloud-spoke Crossplane `AzureWorkloadIdentity` claim/provider path is legacy. The current hcloud spoke lifecycle uses hcloud/talos/kubernetes/terraform providers plus existing Azure Workload Identity configuration, not generated Azure Crossplane RoleAssignments/FICs.

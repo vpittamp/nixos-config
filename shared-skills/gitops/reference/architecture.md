@@ -68,7 +68,7 @@ GitHub push to PittampalliOrg/workflow-builder
 │  - Uses images tags + digests/provenance maps │
 │  - Templates per spoke (dev, staging, ryzen)  │
 │  - Patches spec.source.kustomize.images       │
-│    rewriting all gitea/local refs → ghcr.io   │
+│    pinning ghcr.io/pittampalliorg/<svc> tags  │
 └──────────────────────────────────────────────┘
     │
     │  source-hydrator renders to env/spokes-{spoke}-next

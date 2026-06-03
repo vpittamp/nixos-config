@@ -32,7 +32,7 @@ kubectl --context dev-api-v2.tail286401.ts.net get nodes
 kubectl --context staging-api-v2.tail286401.ts.net get nodes
 kubectl --context dev-cluster get nodes      # if Tailscale registers it
 kubectl --context staging-cluster get nodes
-kubectl --context kind-ryzen get nodes        # ryzen kind, no Tailscale needed
+kubectl --context admin@ryzen get nodes        # ryzen Talos-in-Docker, local kubeconfig
 ```
 
 If the context exists in `~/.kube/config` but `kubectl` errors with `lookup …: no such host`, the Tailscale device for that ProxyGroup isn't registering its hostname publicly (often the orphan-tag issue — see `runbooks/debug-funnel-orphan-tag.md`).

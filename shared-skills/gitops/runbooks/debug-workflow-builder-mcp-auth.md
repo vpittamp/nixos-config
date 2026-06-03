@@ -50,7 +50,7 @@ kubectl --kubeconfig ~/.kube/hub-config -n argocd get app \
   -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,REV:.status.sync.revision
 
 # ryzen is local kind, but still managed by hub ArgoCD.
-kubectl --context kind-ryzen -n argocd get app \
+kubectl --context admin@ryzen -n argocd get app \
   workflow-builder activepieces-mcps knative-serving \
   -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,REV:.status.sync.revision
 ```
@@ -60,7 +60,7 @@ If `activepieces-mcps` is missing or unhealthy, fix that app before debugging th
 ### 2. Check the piece catalog and KServices
 
 ```bash
-ctx=dev   # or kind-ryzen
+ctx=dev   # or admin@ryzen
 
 kubectl --context "$ctx" -n workflow-builder get cm activepieces-mcp-catalog \
   -o jsonpath='{.data.servers\.json}' | jq .

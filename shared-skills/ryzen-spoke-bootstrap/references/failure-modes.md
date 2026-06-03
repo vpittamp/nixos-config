@@ -320,9 +320,9 @@ kubectl --context hub get svc ryzen-api-egress -n tailscale -o jsonpath='{.spec.
 
 **Symptom**: `kubectl get pods -n workflow-builder` shows ImagePullBackOff with `gitea.cnoe.localtest.me:8443/giteaadmin/python:3.12-slim` etc.
 
-**Cause**: The ryzen overlay or individual workload manifests have legacy kustomize `images:` rewrites pointing at the RETIRED local Gitea registry. Ryzen uses GHCR (`ghcr.io/pittampalliorg/*`) — there is no local registry.
+**Cause**: A workload manifest still has a legacy kustomize `images:` rewrite (`name:`/`newName:`) or a raw `image:` ref pointing at a RETIRED gitea registry (`gitea.cnoe.localtest.me` or `gitea-ryzen.tail286401.ts.net`). Ryzen uses GHCR (`ghcr.io/pittampalliorg/*`) — there is no local registry. (As of 2026-06 the base workload `images:` match-keys were all flipped to `ghcr.io/pittampalliorg/<svc>`, so this is now unlikely from the kustomize side.)
 
-**Fix**: grep for `newName: gitea.cnoe.localtest.me` in `packages/components/workloads/*/manifests/kustomization.yaml` and replace with `newName: ghcr.io/pittampalliorg/<svc>`. Commit + merge to `main` → `root-ryzen` reconciles (or `deployment/scripts/ryzen-sync.sh`). (CAVEAT: the HUB Tekton lanes still legitimately reference `gitea.cnoe.localtest.me` in some tasks — scope this fix to ryzen workload image refs only.)
+**Fix**: grep for `gitea` (`name:`/`newName:`/`image:`) under `packages/components/workloads/*/manifests/` and replace with `ghcr.io/pittampalliorg/<svc>`. Commit + merge to `main` → `root-ryzen` reconciles (or `deployment/scripts/ryzen-sync.sh`). NOTE: a few **raw** image refs (the swebench-inference ConfigMap, the swebench-evaluator Job/Pod templates, `SandboxTemplate-dapr-agent`) still carry gitea refs as a separate registry-migration concern — verify the image actually exists on GHCR before flipping those (some may be dead gitea-only artifacts).
 
 ## ExternalSecrets failing on a retired `gitea` ClusterSecretStore
 

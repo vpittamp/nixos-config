@@ -55,11 +55,13 @@ pnpm skaffold:doctor                           # read-only Skaffold preflight
 The wrapper:
 1. Pauses ryzen's LOCAL ArgoCD reconciliation for each named app (`argocd.argoproj.io/skip-reconcile=true` on the local `ryzen-<svc>` Application — ryzen reconciles its own apps; the annotation is NOT on a hub app)
 2. Runs `skaffold dev -m <modules> --cleanup=false` — pushes dev images to ghcr.io (requires `docker login ghcr.io` with PAT having `write:packages`)
-3. On Ctrl-C / EXIT / TERM: trap fires `skaffold/hooks/argo-resume.sh` to clear the skip-reconcile annotation and request a hard refresh on hub
+3. On Ctrl-C / EXIT / TERM: trap fires `skaffold/hooks/argo-resume.sh` to clear the skip-reconcile annotation and request a hard refresh on the local `ryzen-<svc>` app
+
+The module set, the Skaffold-owned-services list, the per-module ports, and the **`module → ryzen-<svc>` Argo-app map** are centralized in `scripts/_modules.sh`, which all four wrapper scripts source.
 
 Edits to a sync'd path (e.g. `src/**/*.svelte`) tar into the pod in ~1s; Vite HMRs the browser. Edits to `package.json` / `pnpm-lock.yaml` force a full image rebuild + pod restart (~30s).
 
-`pnpm skaffold:doctor` is the preferred first command for LLM coding agents. It checks the kubectl context, required commands, active/inactive module state, Argo pause annotations, live Deployment images, image pins, and `clhot --ci-one-shot --check`. Use `pnpm --silent skaffold:doctor -- --json` or `bash scripts/skaffold-doctor.sh --json` for machine-readable output.
+`pnpm skaffold:doctor` is the preferred first command for LLM coding agents. It checks the kubectl context (`admin@ryzen`), required commands, the `ghcr.io/pittampalliorg` default-repo, the GitHub-`main` pin cache, active/inactive module state, the `ryzen-<svc>` Argo apps (skip-reconcile + sync + pin drift), and live Deployment image pins. (The old idpbuilder/`clhot` readiness checks were removed when those tools were retired.) Use `pnpm --silent skaffold:doctor -- --json` or `bash scripts/skaffold-doctor.sh --json` for machine-readable output.
 
 ### Outer loop (image build + pin)
 
@@ -71,13 +73,15 @@ bash scripts/skaffold-deploy.sh workflow-builder workflow-orchestrator  # batch
 ```
 
 `scripts/skaffold-deploy.sh`:
-1. Runs `skaffold build -m <svc> --push --file-output build.json` (cache-aware)
-2. Parses `<repo>:<tag>@sha256:<digest>` from `build.json`
-3. Invokes `skaffold/hooks/commit-pin.sh <svc>` unconditionally with that ref
+1. **No-pin-target guard**: rejects any service lacking `workloads/<svc>/manifests/kustomization.yaml` (e.g. `fn-system`, `fn-activepieces`) before building — they're pinned outside the Skaffold outer loop.
+2. Runs `skaffold build -m <svc> --push --file-output build.json` (cache-aware) → `ghcr.io/pittampalliorg/<svc>:git-<sha>`
+3. Parses `<repo>:<tag>@sha256:<digest>` from `build.json`
+4. Invokes `skaffold/hooks/commit-pin.sh <svc>` unconditionally with that ref
 
 `commit-pin.sh`:
-- Maintains a dedicated cache clone at `~/.cache/skaffold/stacks-ryzen` tracking the configured `STACKS_REMOTE_URL` (GitHub `main` branch — ryzen reconciles `main` directly; the `inner-loop` branch is RETIRED).
-- Each run: fetch + hard-reset to remote tip, Python textual edit of the kustomization's `newName:`/`newTag:` lines (avoids the `kustomize edit` CLI), commit, push.
+- Maintains a dedicated cache clone at `~/.cache/skaffold/stacks-ryzen` tracking the configured `STACKS_REMOTE_URL` (GitHub `main` by default — ryzen reconciles `main` directly; the `inner-loop` branch + the old gitea-ryzen remote are RETIRED). A **stale-cache origin-reconcile** repoints a warm cache cloned from the old gitea remote to GitHub on first run.
+- A **writer-precedence guard** (exit 66) refuses to push a pin for any service NOT in `SKAFFOLD_OWNED_DEFAULT` (the 5 Skaffold modules), so commit-pin stays the single GitHub-`main` writer for those services; the other ryzen workloads are pinned by the hub outer-loop. Override the owned set via `SKAFFOLD_OWNED_SERVICES="…"`.
+- Each run: fetch + hard-reset to remote tip, Python textual edit of the kustomization's `newName:`/`newTag:` lines (avoids the `kustomize edit` CLI), commit, push. GitHub auth resolves via the git credential helper / `gh` / `GITHUB_TOKEN` (no embedded credential).
 - Annotates ryzen's LOCAL `ryzen-<svc>` Application with `refresh=hard` so it polls immediately instead of waiting for the reconcile interval.
 - After push, ryzen's local ArgoCD (`root-ryzen` @ `main`) re-renders `overlays/ryzen` and applies the new image tag — no hub Source Hydrator, no `env/spokes-ryzen` (both retired for ryzen).
 - Image-tag bumps committed straight to `main` are the same bumps dev/staging consume via their own outer-loop path; non-image manifest edits destined for dev/staging/hub still flow through the Promoter PRs (env/hub-next → env/hub, env/spokes-dev-next → env/spokes-dev).
@@ -124,8 +128,8 @@ skaffold/dev/<service>/
 
 Critical invariants:
 
-- **The overlay extends only the Deployment file**, not the whole prod kustomization folder. The Application's inline `spec.source.kustomize.images` (e.g. `docker.io/library/postgres → ghcr.io/pittampalliorg/postgres`) and `patches` (ExternalSecret remoteRef rewrites per cluster) are NOT applied by Skaffold; deploying the full folder would clobber Argo's render with `docker.io/...` refs that ryzen can't pull.
-- **The postgres init-container image is rewritten in the overlay's `images:` block** to mirror the Application-level rewrite (`ghcr.io/pittampalliorg/postgres:15.3-alpine3.18`).
+- **The overlay extends only the Deployment file**, not the whole prod kustomization folder. The Application's per-cluster `patches` (ExternalSecret remoteRef rewrites) are NOT applied by Skaffold; deploying the full folder would clobber Argo's render.
+- **No postgres image rewrite is needed.** The init container uses bare `docker.io/library/postgres:15.3-alpine3.18`, which ryzen pulls directly via the authenticated containerd `docker.io/hosts.toml` mirror + Spegel P2P. (The former `gitea.cnoe.localtest.me` mirror rewrite in the dev overlay was deleted with Gitea.)
 - **The image swap lives in the strategic-merge patch**, not in the overlay's `images:` block — because the parent prod kustomization already rewrote `workflow-builder` → `ghcr.io/.../workflow-builder:git-<sha>` before our child overlay runs, so a child `images:` block keyed on `name: workflow-builder` would no-op.
 - **`runAsUser: 0` + `runAsNonRoot: false`** so `pnpm install` / pip install can write under `/app` in the dev image. Triggers a benign PodSecurity `restricted:latest` warning at apply time.
 - **`replicas: 1`** during dev — saves resources, and Skaffold's port-forward + sync target a single pod. The Application's `ignoreDifferences` on `/spec/replicas` already allows this.
@@ -156,7 +160,9 @@ Before calling the outer loop done:
 - **fn-system is Knative-only.** It doesn't appear in the cluster as `deploy/fn-system` (only `deploy/fn-system-00001-deployment` scaled 0/0). Skaffold-style sync doesn't work for transient Knative pods. Treat fn-system as a stable cluster dependency.
 - **Skaffold artifact hooks skip on cache hits.** A re-run of `skaffold build` against unchanged source skips `hooks.after`. That's why the outer-loop wrapper runs commit-pin out-of-band.
 - **A local `workflow-orchestrator/.venv` bloats the build context.** The dev `.dockerignore` now excludes `**/.venv`, `**/__pycache__`, `**/.pytest_cache`. If you see a multi-hundred-MB build context, suspect a missed exclude.
-- **The dev image is push-required even on a local cluster.** Talos Docker worker nodes have their own containerd image store; `kind load`-style preload isn't wired into our Skaffold flow. The dev image push target is a developer-controlled GHCR namespace (`SKAFFOLD_DEFAULT_REPO`, e.g. `ghcr.io/pittampalliorg`). The `run` profile (outer loop) explicitly pushes to `ghcr.io/pittampalliorg/<svc>` so ryzen pulls from the same registry as dev/staging. (There is no local Gitea registry on ryzen — that path is retired.)
+- **The dev image is push-required even on a local cluster.** Talos Docker worker nodes have their own containerd image store; `kind load`-style preload isn't wired into our Skaffold flow. The dev image push target is a developer-controlled GHCR namespace (`SKAFFOLD_DEFAULT_REPO`, default `ghcr.io/pittampalliorg`). The `run` profile (outer loop) explicitly pushes to `ghcr.io/pittampalliorg/<svc>` so ryzen pulls from the same registry as dev/staging. (There is no local Gitea registry on ryzen — that path is retired.)
+- **ryzen ArgoCD apps are named `ryzen-<module>`, NOT `<module>`.** ryzen's autonomous `root-ryzen` app-of-apps prefixes child Applications with `ryzen-` (in the `argocd` ns), while the workload Deployment keeps the bare `<module>` name (in the `workflow-builder` ns). Any tooling that addresses the Argo app by the bare name silently no-ops — `argo-pause.sh`/`argo-resume.sh` skip apps not found, so a bare-name session would run WITHOUT pausing Argo and Argo would fight the dev pod. The wrappers map `module → ryzen-<module>` via `_modules.sh` (`MODULE_TO_APP`); list them with `kubectl --context admin@ryzen -n argocd get applications | grep ryzen-`.
+- **Workloads image pins use `ghcr.io/pittampalliorg/<svc>` match-keys.** The base `workloads/<svc>/manifests/kustomization.yaml` matches `name: ghcr.io/pittampalliorg/<svc>` → `newTag: git-<sha>` (the old `gitea-ryzen.tail286401.ts.net/giteaadmin/<svc>` match-keys were retired). `commit-pin.sh` matches `name == <svc>` OR `name endswith /<svc>`, so it handles the long-form GHCR name. `skaffold-status` flags the long-form `name:` as informational `NAME-MISMATCH` — no fix needed.
 
 ## Related skills
 

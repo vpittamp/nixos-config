@@ -105,7 +105,7 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
    `apiServer.certSANs` still come up, but serve ONLY Headlamp's kube-API reach, NOT
    ArgoCD sync — §4.) Produces bare Talos-Docker with ONLY: Tailscale operator (helm), the
    ProxyGroup/ProxyClass for kube-api exposure, hub-spoke SA+CRB. It does NOT install
-   cert-manager/ESO/ArgoCD/gitea/tekton/observability/workflow-builder — ryzen's own
+   cert-manager/ESO/ArgoCD/tekton/observability/workflow-builder — ryzen's own
    local controller deploys all of those. Requires env
    `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_CLIENT_SECRET`.
 2. **AGENT ENROLLMENT** (Contract 1, argocd-agent). The `--recreate` path runs

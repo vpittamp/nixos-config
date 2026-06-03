@@ -7,7 +7,7 @@ Use this policy when deciding where a new app belongs in the stacks hub-and-spok
 Run an app once on the hub when its primary job is cross-cluster coordination, release management, lifecycle management, or operator visibility:
 
 - ArgoCD, GitOps Promoter, source-hydrator configuration, and Promoter UI.
-- Hub Tekton outer-loop builds, Gitea dev-image builds for ryzen, webhook handling, GHCR release automation, Gitea registry publication, and release metadata validation.
+- Hub Tekton outer-loop builds (GitHub → GHCR via the `github-outer-loop` EventListener), webhook handling, GHCR release automation, and release metadata validation. (The gitea dev-image build lane + gitea registry were retired.)
 - Crossplane, Hetzner/Talos providers, and spoke cluster lifecycle compositions.
 - Deployment inventory and release dashboards.
 - NocoDB, Redash, and similar cross-cluster management/reporting UIs.
@@ -30,8 +30,8 @@ Run an app per spoke when it is part of workload runtime, owns environment data,
 
 Ryzen is intentionally not a promoted release stage. Keep these local unless there is a separate release use case:
 
-- Local Gitea registry and ryzen image tags.
-- Skaffold hot-reload flow and KIND-only iteration tooling.
+- Ryzen image tags committed straight to `main` (delivered via GHCR; the local Gitea registry is retired).
+- Skaffold hot-reload flow and ryzen-only iteration tooling.
 - Local-only build helpers that exist to shorten the edit-build-test loop.
 - Apps that require workstation-local services or KIND-specific infrastructure.
 

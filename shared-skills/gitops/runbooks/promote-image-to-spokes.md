@@ -72,7 +72,7 @@ Available promoted keys:
 
 ```bash
 scripts/gitops/validate-workflow-builder-release-pins.sh
-for ovl in hub dev staging kind-ryzen; do
+for ovl in hub dev staging ryzen; do
   kubectl kustomize packages/overlays/$ovl > /dev/null && echo "$ovl OK" || echo "$ovl FAIL"
 done
 ```
