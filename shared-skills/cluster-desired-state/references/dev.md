@@ -145,8 +145,8 @@ in-cluster only** (`MCP_GATEWAY_BASE_URL=http://mcp-gateway.workflow-builder.svc
    GitOps delivery is source-hydrator + GitOps Promoter: `overlays/dev` -> `env/spokes-dev-next`
    -> (AUTO-promote, spoke lanes auto-merge) -> `env/spokes-dev` -> root-application. dev's
    workflow-builder apps come via the `spoke-dev-workflow-builder` bridge appset (drySource
-   `workflow-builder-system-overlays/dev`). dev tracks `main` (NOT inner-loop; inner-loop is
-   ryzen-only). Confirm: `kubectl --context hub-cluster -n dev get applications` all
+   `workflow-builder-system-overlays/dev`). dev tracks `main` (via the source-hydrator +
+   Promoter ladder). Confirm: `kubectl --context hub-cluster -n dev get applications` all
    Synced/Healthy ("Unknown operation status" is benign).
 6. **PER-CLUSTER ES PARAMETERIZATION** — run
    `scripts/gitops/render-workflow-builder-release-overlays.sh` (dev-gated repoints onto

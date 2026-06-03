@@ -22,12 +22,14 @@ git log --oneline origin/main -5
 git ls-remote origin env/hub-next env/hub  # see what's pending Promoter merge
 ```
 
-Post-A6 (May 2026), ryzen has no local Gitea and no idpbuilder. All manifest
-changes flow through GitHub: commit to `main` for dev/staging-affecting changes
-(then merge the env/hub-next → env/hub Promoter PR), or push to `inner-loop` for
-ryzen-only image-tag bumps (via commit-pin.sh; hub Source Hydrator picks them up
-directly). Use Skaffold inner loop for live source hot reload and outer loop
-(`pnpm deploy:skaffold`) for image bake + commit-pin to inner-loop.
+Ryzen has no local Gitea and no idpbuilder — it uses GitHub + GHCR, and runs a
+LOCAL ArgoCD that reconciles `overlays/ryzen` @ `main` DIRECTLY (the `inner-loop`
+branch is RETIRED; no hub Source Hydrator, no Promoter on the ryzen lane). All
+manifest changes flow through GitHub `main`: commit to `main` and ryzen's local
+ArgoCD re-renders on its next reconcile (dev/staging consume the same `main`
+content via their Promoter PRs — env/hub-next → env/hub, env/spokes-dev-next →
+env/spokes-dev). Use the Skaffold inner loop for live source hot reload and the
+outer loop (`pnpm deploy:skaffold`) for image bake + commit-pin to `main`.
 
 ## Inner loop — start
 
@@ -95,7 +97,7 @@ bash scripts/skaffold-deploy.sh workflow-builder workflow-orchestrator  # batch
 
 End-to-end timeline (workflow-builder, fresh build, no cache):
 - Build (SvelteKit prod multi-stage): ~70s
-- Push to gitea-ryzen: ~30s
+- Push to GHCR: ~30s
 - `commit-pin.sh`: ~2s (fetch + reset + edit + commit + push)
 - ArgoCD reconcile + PreSync `db-migrate` Job: ~30–90s
 - Deployment rolling update: ~30s
@@ -128,7 +130,7 @@ kubectl get application workflow-builder -n argocd \
 
 ## Legacy ryzen-only loop — rollback / revert
 
-Edit the gitea-ryzen pin back to the prior tag and re-push from the cache clone:
+Edit the image pin back to the prior tag and re-push from the cache clone:
 
 ```bash
 cd ~/.cache/skaffold/stacks-ryzen
@@ -168,11 +170,11 @@ docker info >/dev/null && echo "docker OK"
 skaffold version                      # v2.17.x or later
 ```
 
-If `docker login` is not present for `gitea-ryzen.tail286401.ts.net`, the Skaffold push step fails with "no basic auth credentials". Re-login:
+If `docker login` is not present for `ghcr.io`, the Skaffold push step fails with "no basic auth credentials". Re-login (PAT needs `write:packages`):
 
 ```bash
-docker login -u giteaadmin gitea-ryzen.tail286401.ts.net
-# password: see existing ~/.docker/config.json or org credential store
+docker login -u PittampalliOrg ghcr.io
+# password: a GHCR PAT (write:packages); see the org credential store
 ```
 
 ## Module-specific quirks

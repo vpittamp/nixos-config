@@ -306,29 +306,29 @@ kubectl --context hub get svc ryzen-api-egress -n tailscale -o jsonpath='{.spec.
 # expected: ts-ryzen-api-egress-XXXX.tailscale.svc.cluster.local
 ```
 
-## spoke-ryzen sync blocked on "namespaces X not found"
+## root-ryzen child Apps stuck on "namespaces X not found"
 
-**Symptom**: spoke-ryzen's `operationState.message` says `one or more objects failed to apply, reason: namespaces "gitea" not found, namespaces "workflow-builder" not found`.
+**Symptom**: a `ryzen-*` Application's `operationState.message` says `one or more objects failed to apply, reason: namespaces "gitea" not found`.
 
-**Cause**: spoke-ryzen renders the ryzen overlay AND applies it to **hub** (its destination is `https://kubernetes.default.svc`, app-of-apps pattern). Some resources in the rendered manifest (e.g., Ingresses with namespace=gitea) get applied directly to hub, not to ryzen. Hub doesn't have those namespaces.
+**Cause**: Ryzen reconciles its OWN apps via the LOCAL ArgoCD (`root-ryzen` @ `main`, destination in-cluster). A rendered resource targets a namespace that doesn't exist on ryzen (e.g. a `gitea`-ns resource the profile should have deleted). NOTE: this is NOT the retired pre-agent model where the hub rendered the overlay and applied stray resources to ITSELF — ryzen now applies to its own cluster.
 
 **Fixes** (pick one):
-- Quick: `kubectl --context hub create ns gitea workflow-builder` to unblock.
-- Proper: in the ryzen overlay, either wrap those bare resources in an Application (so they get the destination=ryzen patch) or `$patch: delete` them entirely if they're for ryzen-local services that no longer exist post-A6.
+- Quick: `kubectl --context admin@ryzen create ns <missing-ns>` to unblock.
+- Proper: in the ryzen overlay / `local-core-ryzen` profile, `$patch: delete` the offending resource (it targets a service that no longer exists on ryzen). Commit + merge to `main` → `root-ryzen` reconciles (or `deployment/scripts/ryzen-sync.sh`).
 
 ## Pods stuck pulling `gitea.cnoe.localtest.me:8443/giteaadmin/<image>`
 
 **Symptom**: `kubectl get pods -n workflow-builder` shows ImagePullBackOff with `gitea.cnoe.localtest.me:8443/giteaadmin/python:3.12-slim` etc.
 
-**Cause**: The ryzen overlay or individual workload manifests have legacy kustomize `images:` rewrites pointing at the local Gitea pull-through registry (which doesn't exist post-A6).
+**Cause**: The ryzen overlay or individual workload manifests have legacy kustomize `images:` rewrites pointing at the RETIRED local Gitea registry. Ryzen uses GHCR (`ghcr.io/pittampalliorg/*`) — there is no local registry.
 
-**Fix**: grep for `newName: gitea.cnoe.localtest.me` in `packages/components/workloads/*/manifests/kustomization.yaml` and replace with `newName: ghcr.io/pittampalliorg/<svc>`. Commit + push + merge Promoter PR.
+**Fix**: grep for `newName: gitea.cnoe.localtest.me` in `packages/components/workloads/*/manifests/kustomization.yaml` and replace with `newName: ghcr.io/pittampalliorg/<svc>`. Commit + merge to `main` → `root-ryzen` reconciles (or `deployment/scripts/ryzen-sync.sh`). (CAVEAT: the HUB Tekton lanes still legitimately reference `gitea.cnoe.localtest.me` in some tasks — scope this fix to ryzen workload image refs only.)
 
-## ExternalSecrets failing on the gitea ClusterSecretStore
+## ExternalSecrets failing on a retired `gitea` ClusterSecretStore
 
 **Symptom**: ExternalSecrets like `workflow-builder-gitea-admin` show `STATUS: SecretSyncedError, error: the desired SecretStore gitea is not ready`.
 
-**Cause**: The `gitea` ClusterSecretStore on ryzen expects a local Gitea instance. Post-A6 there's no local Gitea.
+**Cause**: A leftover ExternalSecret references a `gitea` ClusterSecretStore that expected a local Gitea instance. Ryzen has no local Gitea (retired).
 
 **Fix**: Drop these ExternalSecrets from their source kustomizations. If a stub Secret is needed for compatibility, `kubectl create secret generic <name> --from-literal=username=disabled --from-literal=password=disabled`.
 
@@ -346,7 +346,7 @@ kubectl --context hub get svc ryzen-api-egress -n tailscale -o jsonpath='{.spec.
 
 **Symptom**: `kubectl get ingress -n workflow-builder` shows nginx-class Ingresses (`workflow-builder`, `workflow-builder-mcp-gateway`) with empty ADDRESS. Parent Applications stuck Synced/Progressing.
 
-**Cause**: **Ryzen runs Contour + Kourier (+ Knative serving net-kourier), NOT ingress-nginx** — only the `tailscale` IngressClass and Contour/Kourier are available. External access on ryzen goes via Tailscale, not nginx. Relatedly, gitea on ryzen is `idpbuilder-local` and there is NO hub-managed `gitea` namespace, so `local-core-ryzen` excludes the `gitea-secretstore` + `nginx-tls-secret` Applications and the `gitea-tailscale-backend` Service (target ns `gitea`, absent on ryzen).
+**Cause**: **Ryzen runs Contour + Kourier (+ Knative serving net-kourier), NOT ingress-nginx** — only the `tailscale` IngressClass and Contour/Kourier are available. External access on ryzen goes via Tailscale, not nginx. Relatedly, ryzen has NO local gitea (retired — GitHub + GHCR only) and NO `gitea` namespace, so `local-core-ryzen` excludes the `gitea-secretstore` + `nginx-tls-secret` Applications and the `gitea-tailscale-backend` Service (target ns `gitea`, absent on ryzen).
 
 **Fix**: Add ryzen-overlay kustomize patches that `$patch: delete` the nginx Ingresses for affected Apps. dev/staging still get them (they run nginx-ingress). The `gitea-secretstore` / `nginx-tls-secret` / `gitea-tailscale-backend` deletions live in `packages/components/profiles/local-core-ryzen/kustomization.yaml` (~lines 465-505).
 
@@ -370,7 +370,7 @@ kubectl --kubeconfig ~/.kube/config label node \
 
 **Symptom**: SWE-bench UI shows `SWE-bench launch is paused while workflow-builder control plane stabilizes: argocd_application_not_stable` and no workflow starts.
 
-**Cause**: The ryzen overlay's workflow-builder Deployment patch was setting `BENCHMARK_ARGOCD_APPLICATION_NAME=workflow-builder` + `BENCHMARK_ARGOCD_KUBECONFIG_MODE=in-cluster` (pre-A6 these pointed at ryzen's local ArgoCD). Post-A6 there is no local ArgoCD on ryzen, so the in-cluster lookup hits the empty `argocd` namespace and fails.
+**Cause**: The ryzen overlay's workflow-builder Deployment patch was setting `BENCHMARK_ARGOCD_APPLICATION_NAME=workflow-builder` + `BENCHMARK_ARGOCD_KUBECONFIG_MODE=in-cluster`, enabling the launch-stability gate. dev/staging leave them unset so the gate short-circuits to `stable: true`; ryzen should match (the gate isn't wanted on ryzen).
 
 **Fix**: Removed in commit `bda45c3a5`. If it reappears, ensure neither env var is set on the workflow-builder Deployment on ryzen — dev/staging leave them unset so the launch-stability check short-circuits to `stable: true`.
 
@@ -384,7 +384,7 @@ kubectl --kubeconfig ~/.kube/config label node \
 
 > **History:** earlier this was a Tailscale-class **Ingress** with a per-hostname **Let's Encrypt** cert (ProxyClass `development-prod-cert`) — recreate churn exhausted LE's 5-certs/168h limit → 429 → unreachable (commit `502bccd3c`). ryzen then briefly used a plain-HTTP Tailscale LoadBalancer (PRs #2314/#2316). Both are SUPERSEDED by the L4-LB + in-cluster self-signed-CA HTTPS model (PR #2319). Do NOT re-add `ingressClassName: tailscale` or `development-prod-cert`.
 
-> **CA trust:** the wildcard is signed by the self-signed "PittampalliOrg Tailnet Dev CA" (KV `TAILNET-DEV-CA-CRT`/`-KEY`, mirrored hub → ns `spoke-secrets` Secret `tailnet-ca`, restored on the spoke into `cert-manager/tailnet-dev-ca` by the `tailnet-ca` app, signed by the `tailnet-dev-ca` `ClusterIssuer`). The SAME CA is reused on every cluster, so it survives recreation (improves on idpbuilder's per-install regeneration). Workstation trust is seeded by nixos-config (`modules/services/cluster-certs.nix` for system/curl/git + `home-modules/tools/chromium.nix` certutil seed of `~/.pki/nssdb` — REQUIRED because `security.pki` does NOT cover Chrome's own NSS db; nixos-config commit `44ba6324`).
+> **CA trust:** the wildcard is signed by the self-signed "PittampalliOrg Tailnet Dev CA" (KV `TAILNET-DEV-CA-CRT`/`-KEY`, mirrored hub → ns `spoke-secrets` Secret `tailnet-ca`, restored on the spoke into `cert-manager/tailnet-dev-ca` by the `tailnet-ca` app, signed by the `tailnet-dev-ca` `ClusterIssuer`). The SAME CA is reused on every cluster, so it survives recreation. Workstation trust is seeded by nixos-config (`modules/services/cluster-certs.nix` for system/curl/git + `home-modules/tools/chromium.nix` certutil seed of `~/.pki/nssdb` — REQUIRED because `security.pki` does NOT cover Chrome's own NSS db; nixos-config commit `44ba6324`).
 
 ## workflow-builder 502 for browsers only — tls-terminator proxy buffers too small
 
@@ -517,7 +517,7 @@ If still stuck (Argo's cached comparison), add `argocd.argoproj.io/refresh=hard`
   kspoke -n argocd rollout status deploy/argocd-repo-server --timeout=120s
   kubectl -n argocd annotate application root-ryzen argocd.argoproj.io/refresh=hard --overwrite
   ```
-- `bootstrap-spoke-cluster.sh` step 10: after the inner-loop advance, hard-refresh `root-ryzen` again (so it re-compares against the advanced HEAD).
+- `bootstrap-spoke-cluster.sh` step 10: hard-refresh `root-ryzen` again (so it re-compares against the latest `main` HEAD).
 
 Both steps are NON-FATAL (the resync timer would eventually heal it on its own; this just makes the recreate hands-off and fast). Full detail: `shared-skills/cluster-desired-state/runbooks/recovery-and-gotchas.md`.
 

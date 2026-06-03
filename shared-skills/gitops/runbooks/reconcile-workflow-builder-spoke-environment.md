@@ -23,7 +23,7 @@ Ryzen proves the hub-managed-spoke shape on local Talos Docker. Dev and staging 
 | Hub/root ApplicationSet changes | `origin/main` → `env/hub-next` → `env/hub` through `stacks-environments` |
 | Dev/staging rendered workload changes | `origin/main` → `env/spokes-<env>-next` → `env/spokes-<env>` through `workflow-builder-release` |
 
-For app-spec or root-managed changes, push to GitHub `main` (or `inner-loop` for ryzen-only validation). Hub Source Hydrator + spoke-* AppSets reconcile within ~3 min.
+For app-spec or root-managed changes, push to GitHub `main`. Dev/staging reconcile via Hub Source Hydrator + spoke-* AppSets within ~3 min; ryzen's own local ArgoCD reconciles `main` directly (no `inner-loop`, no Promoter on the ryzen lane).
 
 ## Diagnostic
 
@@ -127,9 +127,9 @@ git add \
   policy.hujson
 git commit -m "fix(workflow-builder): declare dev spoke hostnames"
 git push origin HEAD:main
-# For local ryzen validation of the same manifest change:
-# Verify hub sees the change: git ls-remote origin env/spokes-ryzen
-# Force a hub refresh: ssh vpittamp@ryzen 'kubectl --kubeconfig ~/.kube/hub-kubeconfig annotate app -n argocd ryzen-<name> argocd.argoproj.io/refresh=hard --overwrite'
+# For local ryzen validation of the same manifest change (ryzen reconciles main directly):
+# Force ryzen's local ArgoCD to re-compare: deployment/scripts/ryzen-sync.sh
+# or: kubectl --context admin@ryzen annotate app -n argocd ryzen-<name> argocd.argoproj.io/refresh=hard --overwrite
 ```
 
 6. Wait for GitHub checks. `Tailscale ACL GitOps` must succeed before expecting new or re-tagged Tailscale services to work.

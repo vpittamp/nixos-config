@@ -15,7 +15,7 @@ This is the authoritative description of "what a freshly-bootstrapped ryzen clus
 ## Cluster shape
 
 - **Talos Docker**, 3 nodes (`ryzen-controlplane-1` + `ryzen-worker-1/2`), OS-IMAGE Talos `v1.13.2`, k8s `v1.36.0`, containerd 2.2.3, subnet `10.6.0.0/24`.
-- **No local ArgoCD**, no local Tekton. gitea is `idpbuilder-local` — there is NO hub-managed `gitea` namespace (verified live: ns `gitea` = NotFound).
+- **HAS a LOCAL ArgoCD** (autonomous argocd-agent — ryzen reconciles its own apps via `root-ryzen` @ `main`), no local Tekton. **No local gitea** — ryzen uses GitHub + GHCR (the idpbuilder/gitea path is RETIRED); there is NO `gitea` namespace (verified live: ns `gitea` = NotFound).
 - **Ingress is Contour + Kourier (+ Knative serving net-kourier), NOT ingress-nginx** (verified live: projectcontour + kourier-system + knative-serving pods running; zero nginx-controller pods).
 - **No Azure on the spoke** — `azure-workload-identity-system` ns is empty; the only ClusterSecretStores are `argocd`, `default-namespace`, and `hub-secrets-store`.
 - The local kubectl context is `admin@ryzen`; hub kubeconfig (for admin work against hub from the ryzen host) is at `~/.kube/hub-config` and `~/.kube/hub-kubeconfig` (the latter via the spoke-egress).
@@ -34,7 +34,7 @@ This is the authoritative description of "what a freshly-bootstrapped ryzen clus
 | local-path-provisioner | `apps/local-path-provisioner.yaml` (ArgoCD-managed) | host-path StorageClass for PVCs |
 | tailnet-ca | spoke base app `packages/base/apps/tailnet-ca.yaml` → component `packages/components/tailnet-ca` (spoke-only — hub does not consume `packages/base`) | restores the shared self-signed CA into `cert-manager/tailnet-dev-ca` (ExternalSecret on `hub-secrets-store`), defines the `tailnet-dev-ca` CA `ClusterIssuer` that signs the `*.tail286401.ts.net` wildcard Certificate for the tls-terminator sidecar (PR #2319) |
 | ArgoCD (HUB only) | controller `v3.4.x`, chart `9.5.x` | exec.enabled=true for web terminal |
-| GitOps Promoter (HUB only) | controller `v0.30.0`, chart `0.9.2` | manages `env/hub-next → env/hub` and `env/spokes-{dev,staging}-next → env/spokes-{dev,staging}` PRs. NOTE: ryzen's `env/spokes-ryzen` has NO Promoter. |
+| GitOps Promoter (HUB only) | controller `v0.30.0`, chart `0.9.2` | manages `env/hub-next → env/hub` and `env/spokes-{dev,staging}-next → env/spokes-{dev,staging}` PRs. NOTE: ryzen is NOT on the Promoter path at all — it reconciles `overlays/ryzen` @ `main` DIRECTLY (no `env/spokes-ryzen`, no source-hydrator). |
 
 ## Networking + access paths
 
@@ -54,16 +54,16 @@ This is the authoritative description of "what a freshly-bootstrapped ryzen clus
 
 ```
 GitHub PittampalliOrg/stacks
-├── main                                              ← canonical for hub + dev + staging
-├── inner-loop                                        ← canonical for ryzen-only image bumps
+├── main                                              ← canonical for hub + dev + staging + RYZEN
 ├── env/hub-next  ──Promoter PR──▶  env/hub          ← what hub root-application syncs from
 ├── env/spokes-dev-next ──Promoter──▶ env/spokes-dev ← dev cluster source
-├── env/spokes-staging-next ──Promoter──▶ env/spokes-staging
-└── env/spokes-ryzen                                  ← hydrated from inner-loop, NO Promoter
+└── env/spokes-staging-next ──Promoter──▶ env/spokes-staging
+
+# ryzen reconciles packages/overlays/ryzen @ main DIRECTLY (live kustomize on its LOCAL
+# ArgoCD) — NO inner-loop branch, NO source-hydrator, NO Promoter, NO env/spokes-ryzen.
 ```
 
-- Hub's `spoke-ryzen` Application uses `sourceHydrator.drySource.targetRevision: inner-loop` and writes to `env/spokes-ryzen`.
-- **AGENT-ERA (2026-06):** ryzen is an AUTONOMOUS agent, so the `ryzen-*` Application CRDs live on **ryzen's own local ArgoCD** (the `root-ryzen` app-of-apps from `overlays/ryzen` @ inner-loop, applied by `enroll-ryzen-agent.sh`); ryzen reconciles them locally and the agent push-mirrors status to the hub principal (hub ns `ryzen` — a status mirror, do NOT prune). PRE-AGENT, these CRDs lived on the hub in the `argocd` namespace with `destination.name: ryzen` — that model is retired for ryzen.
+- **AGENT-ERA (2026-06):** ryzen is an AUTONOMOUS agent running its OWN local ArgoCD. The `root-ryzen` app-of-apps reconciles `packages/overlays/ryzen` @ **`main`** DIRECTLY (live kustomize, applied by `enroll-ryzen-agent.sh`); the child `ryzen-*` Application CRDs live on ryzen's own `argocd` namespace, and the agent push-mirrors their status UP to the hub principal (hub ns `ryzen` — a status mirror, do NOT prune). The `inner-loop` branch and `env/spokes-ryzen` are RETIRED (deleted). PRE-AGENT, the hub rendered these CRDs in its `argocd` namespace with `destination.name: ryzen` and ryzen had no local ArgoCD — that model is retired for ryzen.
 
 ## Image registries
 
@@ -125,10 +125,10 @@ ssh vpittamp@ryzen "kubectl get nodes --selector=stacks.io/swebench-pool=dev-ben
 1. **Pre-flight**: ensure prereqs from `SKILL.md` Step 1 — only `TS_OAUTH_*` is required. No `AZURE_*` / `az login` for a ryzen recreate.
 2. **Cleanup any prior state** (if recreating): `recreate-runbook.md` covers Tailscale device cleanup (including the stale duplicate `ryzen-operator` device), kubeconfig cleanup, and the LEGACY hub-side egress repointing (now only relevant for the Headlamp kube endpoint).
 3. **Bootstrap**: `bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate` (in stacks repo; `--ts-acl-mode`/`--ts-host-passthrough` are vestigial). Script labels worker nodes for SWE-bench Kueue, installs cert-manager + ESO + Tailscale operator (NO AWI webhook on the spoke), pre-installs Kueue, applies the spoke-registration overlay, applies the imperative spoke-transport half (ClusterSecretStore `hub-secrets-store`, egress Service, `hub-secrets-token`, SPOKE CoreDNS rewrite), then ENROLLS the autonomous agent via `deployment/scripts/argocd-agent/enroll-ryzen-agent.sh`.
-4. **Agent enrollment** (SKILL.md Step 3): `enroll-ryzen-agent.sh` mints the agent mTLS cert, applies the `ryzen-agent-bootstrap` component (agent-autonomous bundle + `mode=autonomous` + `cluster-ryzen-local` alias + `stacks-repo-read` + cert ExternalSecrets + `root-ryzen` app-of-apps), runs `argocd-agentctl agent create ryzen` (writes the `cluster-ryzen` agent mapping), stages the Headlamp Secret, and advances inner-loop. `register-spoke-with-hub.sh` is RETIRED.
+4. **Agent enrollment** (SKILL.md Step 3): `enroll-ryzen-agent.sh` mints the agent mTLS cert, applies the `ryzen-agent-bootstrap` component (agent-autonomous bundle + `mode=autonomous` + `cluster-ryzen-local` alias + `stacks-repo-read` + cert ExternalSecrets + `root-ryzen` app-of-apps @ `main`), runs `argocd-agentctl agent create ryzen` (writes the `cluster-ryzen` agent mapping), stages the Headlamp Secret, and hard-refreshes `root-ryzen`. `register-spoke-with-hub.sh` is RETIRED.
 5. **NO JWKS sync** for the ryzen path (spoke has no Azure). The hub's own secret root is 1Password now (AWI/Azure KV dormant), so JWKS-to-Azure is not in any current recreate path.
 6. **Verify connectivity** (SKILL.md Step 4 checks) — `hub-secrets-store` Ready; ESes SecretSynced. (The `curl --connect-to` operator-SNI HTTP 200 check is now LEGACY — diagnostics for the Headlamp/ESO endpoint only, not the sync path.)
-7. **Advance inner-loop + (if hub-state changed) merge Promoter PR** (SKILL.md Step 5). `git push origin origin/main:refs/heads/inner-loop`.
+7. **Get content onto ryzen + (if hub-state changed) merge Promoter PR** (SKILL.md Step 5). Ryzen tracks `main` directly — commit/merge to `main`, then optionally force an immediate re-compare via `deployment/scripts/ryzen-sync.sh` (hard-refreshes `root-ryzen`). No `inner-loop` advance.
 8. **Run data migrations** (SKILL.md Step 6).
 9. **Restart Headlamp Deployments** so they pick up the new ryzen connection (failure-modes.md "Failed to get authentication information").
 

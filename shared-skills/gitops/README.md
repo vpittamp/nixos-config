@@ -4,7 +4,7 @@ Comprehensive operational knowledge for the **PittampalliOrg/stacks** hub-and-sp
 
 ## What it covers
 
-- **Image promotion and ryzen sync lifecycle** — the two image-pin systems (release-pins vs workloads), how the hub GHCR/release lane feeds promoted spokes, direct-main vs PR-mode release handoffs, ryzen-only image pins on the `inner-loop` branch (no Promoter step), and post-push ryzen/dev verification.
+- **Image promotion and ryzen sync lifecycle** — the two image-pin systems (release-pins vs workloads), how the hub GHCR/release lane feeds promoted spokes, direct-main vs PR-mode release handoffs, ryzen image pins committed straight to `main` (ryzen's local ArgoCD reconciles `main` directly — no Promoter, no `inner-loop`), and post-push ryzen/dev verification.
 - **Deployment visibility** — workflow-builder admin Deployments inventory, including desired images, live images, drift, promotion SHAs, and build metadata.
 - **Workflow-builder MCP/auth runtime** — ActivePieces piece MCP KService reconciliation, searchable MCP catalog, OAuth connection binding, AgentRuntime bootstrap, Dapr statestore durability checks, and stale sidecar readiness recovery.
 - **GitOps Promoter operations** — controller upgrades, hub `stacks-environments` promotion, and the ArgoCD UI extension used to visualize Promoter resources.

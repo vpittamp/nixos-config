@@ -1,6 +1,6 @@
 ---
 name: cluster-desired-state
-description: "Authoritative end-to-end guide to how PittampalliOrg reaches the DESIRED STATE for every cluster in the hub-and-spoke fleet — hub, ryzen, and dev. Use whenever you need the ordered path from nothing to a healthy cluster (provisioning -> GitOps registration -> Tailscale secret transport -> hub->spoke connectivity -> workloads -> verification), the cross-cutting architecture (cluster-Secret contract, spoke-transport contract, source-hydrator + GitOps Promoter, env/hub / env/spokes-* / inner-loop branch flow, AWI->Tailscale secret migration, the ryzen host-device raw-TCP-passthrough connectivity pattern, per-cluster ExternalSecret parameterization), or the recovery runbooks and gotchas (Talos ISO vs k8s in-place upgrade, kueue ClientSideApplyMigration wedge, RFC6902 op:add clobber, env-table SWE-bench restore, stale tailnet device cleanup). Use this to plan or audit a fresh build or a full recreate of hub/ryzen/dev; for narrow tasks defer to the talos-clusters, ryzen-spoke-bootstrap, or gitops skills it cross-references."
+description: "Authoritative end-to-end guide to how PittampalliOrg reaches the DESIRED STATE for every cluster in the hub-and-spoke fleet — hub, ryzen, and dev. Use whenever you need the ordered path from nothing to a healthy cluster (provisioning -> GitOps registration -> Tailscale secret transport -> hub->spoke connectivity -> workloads -> verification), the cross-cutting architecture (cluster-Secret contract, spoke-transport contract, source-hydrator + GitOps Promoter, env/hub / env/spokes-* branch flow (ryzen reconciles main directly via a local autonomous-agent ArgoCD), AWI->Tailscale secret migration, the ryzen host-device raw-TCP-passthrough connectivity pattern, per-cluster ExternalSecret parameterization), or the recovery runbooks and gotchas (Talos ISO vs k8s in-place upgrade, kueue ClientSideApplyMigration wedge, RFC6902 op:add clobber, env-table SWE-bench restore, stale tailnet device cleanup). Use this to plan or audit a fresh build or a full recreate of hub/ryzen/dev; for narrow tasks defer to the talos-clusters, ryzen-spoke-bootstrap, or gitops skills it cross-references."
 ---
 
 # Cluster Desired State (hub / ryzen / dev)
@@ -13,7 +13,7 @@ matter today:
 | Cluster | Role | Provisioning | Branch it syncs | API reach | Secrets |
 |---|---|---|---|---|---|
 | **hub** | management plane + central Tekton build pool | manual Talos/Hetzner + `deployment/scripts/recreate-hub.sh` | `env/hub` (path `hub-apps/`) | `k8s-api-hub.tail286401.ts.net` ProxyGroup VIP | **canonical** 1Password `hub-eso` vault via `onepassword-store` |
-| **ryzen** | bare-metal local-dev spoke | `bootstrap-spoke-cluster.sh --recreate` -> `enroll-ryzen-agent.sh` (Talos-in-Docker) | `inner-loop` -> `env/spokes-ryzen` | `ryzen.tail286401.ts.net:6443` (host-device raw TCP passthrough, full TLS verify) | hub mirror over Tailscale |
+| **ryzen** | bare-metal local-dev spoke (AUTONOMOUS agent) | `bootstrap-spoke-cluster.sh --recreate` -> `enroll-ryzen-agent.sh` (Talos-in-Docker) | `main` directly (local ArgoCD `root-ryzen` reconciles `overlays/ryzen`; no env branch, no Promoter) | `ryzen.tail286401.ts.net:6443` (host-device raw TCP passthrough, full TLS verify) | hub mirror over Tailscale |
 | **dev** | disposable Hetzner SWE-bench spoke | `recreate-dev.sh` = `provision-spoke.sh` + `bootstrap-spoke-deps.sh` + `enroll-dev-agent.sh` | `main` -> `env/spokes-dev` | no ArgoCD kube-API reach (managed agent, gRPC out) | hub mirror over Tailscale |
 
 > **The HUB's own secret root migrated Azure Workload Identity -> 1Password (2026-06).**
@@ -117,19 +117,22 @@ Full detail in `references/architecture.md`. The load-bearing pieces:
   > + caData + SA bearerToken) is now **vestigial** — superseded by the agent mapping. That
   > host-passthrough kube-API endpoint + SA token is what **Headlamp** uses to reach ryzen
   > (via the dedicated `headlamp-cluster-ryzen` Secret), NOT the ArgoCD cluster Secret. ryzen
-  > still hydrates from `inner-loop` (its `source-branch`). See `references/tailscale-and-certs.md`.
-- **spoke-clusters-appset** (cluster generator) turns each cluster Secret into a
-  `spoke-<name>` Application: `drySource` path `packages/overlays/<name>`,
-  `targetRevision` from the `stacks.io/source-branch` annotation (default `main`,
-  ryzen=`inner-loop`), hydrateTo/syncSource `env/spokes-<name>`. The
+  > reconciles `overlays/ryzen` @ `main` via its own local ArgoCD (no env branch). See `references/tailscale-and-certs.md`.
+- **spoke-clusters-appset** (cluster generator) turns each MANAGED-spoke (dev/staging)
+  cluster Secret into a `spoke-<name>` Application: `drySource` path `packages/overlays/<name>`,
+  `targetRevision` from the `stacks.io/source-branch` annotation (default `main`),
+  hydrateTo/syncSource `env/spokes-<name>`. The
   **spoke-workloads-appset** (selector `workload.stacks.io/workflow-builder=true`)
   adds the `spoke-<name>-workflow-builder` app (dev/staging only; ryzen composes
-  workflow-builder in its overlay instead).
-- **GitOps source-hydrator + Promoter.** `drySource` on `main`/`inner-loop` is
+  workflow-builder in its overlay instead). **Ryzen is NOT driven by these appsets** —
+  its local `root-ryzen` app-of-apps reconciles `overlays/ryzen` @ `main` itself.
+- **GitOps source-hydrator + Promoter (hub + dev/staging only).** `drySource` on `main` is
   rendered to `env/<env>-next`; GitOps Promoter PRs `env/<env>-next -> env/<env>`;
   ArgoCD syncs from `env/<env>`. **Hub syncs from `env/hub` (path `hub-apps/`), NOT
-  `main`.** dev/staging from `env/spokes-<env>`. **ryzen hydrates from `inner-loop`**
-  (advance with `git push origin origin/main:refs/heads/inner-loop`) — no Promoter.
+  `main`.** dev/staging from `env/spokes-<env>`. **ryzen reconciles `overlays/ryzen` @
+  `main` DIRECTLY** via its local ArgoCD — NO source-hydrator, NO Promoter, NO
+  `inner-loop` branch (retired), NO `env/spokes-ryzen`. Commit/merge to `main`; force
+  an immediate re-compare with `deployment/scripts/ryzen-sync.sh`.
 - **AWI -> Tailscale secret transport** (Contract 2). Hub mirrors every
   spoke-consumed KV secret into ns `spoke-secrets` as `<cluster>-shared-secrets`.
   The spoke ESO `ClusterSecretStore hub-secrets-store` (kubernetes provider) reads
@@ -168,7 +171,7 @@ Full detail in `references/architecture.md`. The load-bearing pieces:
   restores it into a `tailnet-dev-ca` CA `ClusterIssuer` that signs the
   `*.tail286401.ts.net` wildcard Certificate consumed by the workflow-builder
   `tls-terminator` sidecar. Same CA on every cluster -> clients trust it ONCE and it
-  SURVIVES recreation (improves on idpbuilder's per-install CA). PR #2319.
+  SURVIVES recreation. PR #2319.
 - **Host-device raw TCP passthrough** (ryzen-only, hub->spoke direction). hub->ryzen
   reaches the ryzen Talos kube-apiserver DIRECTLY over Tailscale via the ryzen HOST
   device (`ryzen.tail286401.ts.net`, `100.96.102.1`, `tag:k8s`) running
@@ -211,8 +214,10 @@ route never propagates into a spoke egress netmap).
 
 - **Commit the desired shape first.** For spokes the claim/overlay is the source of
   truth; HCloud servers and Docker containers are implementation detail.
-- **Know the branch.** Pushing to `main` alone never reaches the hub (needs `env/hub`
-  merge) and never reaches ryzen (needs `inner-loop`). See `references/architecture.md`.
+- **Know the branch.** Pushing to `main` alone never reaches the hub (needs the `env/hub`
+  Promoter PR merge). It DOES reach ryzen — ryzen's local ArgoCD reconciles `overlays/ryzen`
+  @ `main` directly (no `inner-loop`, no Promoter; nudge with `ryzen-sync.sh`). dev/staging
+  need their `env/spokes-<env>` Promoter step. See `references/architecture.md`.
 - **Never delete a working Tailscale VIP** even if it shows `ProxyGroupInvalid`.
 - **Pause before destructive recreate.** Drain active SWE-bench runs/leases/Dapr
   workflows and back up the env tables first (`runbooks/recovery-and-gotchas.md`).

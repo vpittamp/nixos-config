@@ -18,8 +18,9 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
   `server=https://argocd-agent-resource-proxy:9090?agentName=ryzen` with embedded mTLS
   certData/keyData/caData and **no bearerToken**, created by
   `argocd-agentctl agent create ryzen`. ryzen's local controller reconciles its own
-  apps (autonomous); the hub principal aggregates status. `source-branch=inner-loop`
-  still drives what ryzen hydrates.
+  apps (autonomous) by running a `root-ryzen` app-of-apps against `packages/overlays/ryzen`
+  @ `main` DIRECTLY; the hub principal aggregates status. There is NO `source-branch`
+  hydration for ryzen (no source-hydrator, no `inner-loop`, no `env/spokes-ryzen`).
   > The legacy `ExternalSecret-cluster-ryzen.yaml` (KV-materialized
   > `server=https://ryzen.tail286401.ts.net:6443`, `insecure:false`+caData, SA bearerToken)
   > is now **vestigial** for ArgoCD — the agent mapping supersedes it (the
@@ -30,21 +31,21 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
   > See `tailscale-and-certs.md` for the host-passthrough + Headlamp-Secret detail.
 
 **Rendering / sync**
-- The source-hydrator renders drySource path `packages/overlays/ryzen`
-  (`targetRevision=inner-loop`) -> hydrateTo/syncSource `env/spokes-ryzen` path
-  `ryzen-apps`. (Path-based, no `kustomize` field.) Under the agent model ryzen's LOCAL
-  controller reconciles these via the `root-ryzen` app-of-apps applied by
-  `enroll-ryzen-agent.sh`; the old hub spoke-clusters-appset `spoke-ryzen` Application is
-  vestigial (the agent mapping + local controller supersede a hub-driven kube sync).
-- `packages/overlays/ryzen` applies namePrefix `ryzen-` and rewrites every child
-  Application's destination from `kubernetes.default.svc` to `destination.name=ryzen`.
+- Ryzen's LOCAL ArgoCD runs a `root-ryzen` app-of-apps (applied by `enroll-ryzen-agent.sh`)
+  that reconciles drySource path `packages/overlays/ryzen` @ **`main`** DIRECTLY (live
+  kustomize). There is NO source-hydrator, NO Promoter, NO `inner-loop` branch (retired),
+  and NO `env/spokes-ryzen`. The hub does NOT render ryzen's apps — the agent push-mirrors
+  their status up to hub ns `ryzen` (a status mirror; the old hub `spoke-ryzen` /
+  spoke-clusters-appset hub-renders model is retired for ryzen).
+- `packages/overlays/ryzen` applies namePrefix `ryzen-` and per-app patches.
   It composes 3 components: `profiles/local-core-ryzen`, `workloads/workflow-builder-system`,
   `addons/observability-clickhouse-client`.
-- DESIRED: all `ryzen-*` child apps Synced/Healthy (~59 apps).
+- DESIRED: all `ryzen-*` child apps Synced/Healthy (~59 apps) on ryzen's LOCAL ArgoCD.
 
-**Profile fit** (Contour+Kourier, idpbuilder-local gitea, no Azure)
+**Profile fit** (Contour+Kourier, no local gitea, no Azure)
 - Ingress is **Contour + Kourier** (+ Knative net-kourier), **NOT ingress-nginx**.
-- gitea is idpbuilder-local; there is **NO hub-managed `gitea` namespace**.
+- **No local gitea** — ryzen uses GitHub + GHCR (idpbuilder/local-gitea retired); there is
+  **NO `gitea` namespace**.
 - **No Azure Workload Identity / azure-keyvault-store on the spoke.** Only
   ClusterSecretStores are `argocd`, `default-namespace`, and `hub-secrets-store`.
 
@@ -91,7 +92,7 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
   exposures but never provisions an LE cert because nothing connects to its
   hostname). See `architecture.md` §5.
 
-**Branch**: ryzen tracks `inner-loop`, NOT `main`.
+**Branch**: ryzen tracks `main` DIRECTLY (local ArgoCD `root-ryzen` reconciles `overlays/ryzen` @ `main`; the `inner-loop` branch is retired).
 
 ## Path to state (ordered)
 
@@ -115,11 +116,11 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
    `stacks-repo-read` + cert ExternalSecrets + the `root-ryzen` app-of-apps), runs
    `argocd-agentctl agent create ryzen` to write the `cluster-ryzen` AGENT MAPPING Secret on
    the hub (`?agentName=ryzen` + embedded mTLS, `managed-by: argocd-agent`, no bearerToken),
-   stages the Headlamp Secret, and advances inner-loop. ryzen runs as an **AUTONOMOUS**
-   agent: its local controller reconciles its own apps (hydrated from `inner-loop`) and
+   stages the Headlamp Secret, and hard-refreshes `root-ryzen`. ryzen runs as an **AUTONOMOUS**
+   agent: its local controller reconciles its own apps (`root-ryzen` @ `main`, live kustomize) and
    reports status to the principal — the hub does NOT reconcile ryzen's apps through a
    kube-API connection. (The legacy `ExternalSecret-cluster-ryzen.yaml` + spoke-clusters-appset
-   `spoke-ryzen` templating are vestigial now; the agent mapping supersedes them.)
+   `spoke-ryzen` templating are vestigial now; the agent mapping + local `root-ryzen` supersede them.)
 3. **SECRET TRANSPORT** (Contract 2, spoke side is IMPERATIVE for ryzen). The
    `hub-secrets-store` CSS + egress Service are applied by
    `deployment/scripts/lib/spoke-transport-bootstrap.sh` (invoked from
@@ -140,10 +141,10 @@ deep bootstrap mechanics in the `ryzen-spoke-bootstrap` skill. Paths relative to
    `workflow-builder-secrets` data[9,10,21,22] -> `*-RYZEN` OAuth keys;
    `github-clone-credentials` + `gitea-registry-credentials` -> `hub-secrets-store`,
    key `ryzen-shared-secrets`, `/property` added. See `architecture.md` §6.
-6. **DEPLOY content to ryzen.** ryzen NEVER reads main. Fast-forward inner-loop:
-   `git push origin origin/main:refs/heads/inner-loop`. The hydrator re-dispatches
-   drySHA -> renders `packages/overlays/ryzen` -> pushes `env/spokes-ryzen`; ryzen-*
-   apps reconcile.
+6. **DEPLOY content to ryzen.** ryzen reads `main` DIRECTLY. Commit/merge to `main`;
+   ryzen's local ArgoCD re-compares `packages/overlays/ryzen` @ `main` on its next poll.
+   Force an immediate re-compare with `deployment/scripts/ryzen-sync.sh` (hard-refreshes
+   `root-ryzen`, ~20-35s converge). No `inner-loop` advance, no Promoter.
 
 ## Verification
 
@@ -156,13 +157,14 @@ $C get clustersecretstore hub-secrets-store             # Ready=True
 $C -n external-secrets get secret hub-secrets-token
 $C -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' | grep 'rewrite name'
 $C get externalsecrets -A                               # all SecretSynced/Valid
+$C -n argocd get applications | grep '^ryzen-'          # all Synced/Healthy on ryzen's LOCAL ArgoCD
+$C -n argocd get application root-ryzen -o jsonpath='{.status.sync.revision}'   # vs origin/main
 
 K=~/.kube/hub-config
-kubectl --kubeconfig $K -n argocd get applications | grep '^ryzen-'     # all Synced/Healthy (via principal)
 kubectl --kubeconfig $K -n argocd get secret cluster-ryzen -o jsonpath='{.data.server}' | base64 -d   # https://argocd-agent-resource-proxy:9090?agentName=ryzen
 kubectl --kubeconfig $K -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' | grep ryzen.tail286401   # Headlamp rewrite -> ryzen-api-egress
 kubectl --kubeconfig $K -n tailscale get svc ryzen-api-egress                                          # ExternalName tailnet-fqdn=ryzen.tail286401.ts.net, port 6443 (Headlamp)
-git -C /home/vpittamp/repos/PittampalliOrg/stacks/main rev-list --count origin/inner-loop..origin/main   # 0 = current
+git -C /home/vpittamp/repos/PittampalliOrg/stacks/main rev-parse origin/main   # latest main HEAD (compare to root-ryzen synced rev)
 ```
 
 ## Ryzen-specific gotchas (see `../runbooks/recovery-and-gotchas.md` for fixes)
@@ -179,9 +181,9 @@ git -C /home/vpittamp/repos/PittampalliOrg/stacks/main rev-list --count origin/i
 - **Three base-tail AWI exclusions** (deleted in local-core-ryzen): argocd-server-tls,
   tailscale-operator-secrets, tailscale-secrets; plus azure-workload-identity +
   azure-keyvault-store Apps, and profile-mismatch gitea-secretstore + nginx-tls-secret.
-- **ryzen reads inner-loop NOT main.** Do not mis-diagnose a frozen ryzen as the
-  empty-`drySource.kustomize` hydrator-stall bug — spoke-ryzen is path-based; check
-  `targetRevision`/inner-loop freshness first.
+- **ryzen reads `main` DIRECTLY** (no `inner-loop`, no source-hydrator on the ryzen lane), so
+  the empty-`drySource.kustomize` hydrator-stall bug never applies to ryzen. A frozen ryzen is
+  fixed by a `root-ryzen` hard-refresh (`deployment/scripts/ryzen-sync.sh`), NOT an `inner-loop` advance.
 - **Stale duplicate `ryzen-operator` device** after a recreate is now **moot for
   hub->ryzen connectivity** (host-passthrough doesn't use the operator proxy). The
   operator still runs for other tailnet exposures, so optionally delete the duplicate

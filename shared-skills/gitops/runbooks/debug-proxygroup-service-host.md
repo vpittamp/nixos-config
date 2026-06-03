@@ -64,7 +64,7 @@ If you need to inspect the tailnet Service object, use Tailscale OAuth credentia
    - In the stacks repo, set the Ingress `tailscale.com/tags` to `tag:k8s-services`.
    - In `policy.hujson`, ensure `autoApprovers.services["svc:<hostname>"]` includes `tag:k8s-services`.
    - Push to `origin/main` so `.github/workflows/tailscale-acl.yml` applies the ACL policy.
-   - For ryzen-only validation, commit the manifest change to the `inner-loop` branch and let hub Source Hydrator pick it up (~3 min).
+   - For ryzen-only validation, commit the manifest change to `main` and let ryzen's local ArgoCD reconcile it (ryzen tracks `main` directly; `deployment/scripts/ryzen-sync.sh` forces an immediate re-compare).
 
 2. Let Argo apply the manifest change. Do not manually patch the Ingress unless this is an emergency:
 

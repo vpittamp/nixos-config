@@ -32,13 +32,13 @@
 - dev: `dev-cp-1/2/3` (178.156.225.243, .239.75, .226.121), `dev-worker-1/2` on `dev-network` (10.0.1.0/24)
 - staging: `staging-cp-1/2/3`, `staging-worker-1/2` on `staging-network`
 
-ryzen is the user's local workstation (`hostname` returns `ryzen`). The Talos-in-Docker cluster (formerly kind; bootstrapped imperatively by `deployment/scripts/bootstrap-spoke-cluster.sh`, **not** Crossplane-provisioned like dev/staging) is registered with the hub ArgoCD as cluster `ryzen`. **Post-A6 (May 2026): ryzen has NO local ArgoCD, NO local Gitea, and NO idpbuilder.** All ryzen-* Applications run on hub ArgoCD with `destination.name: ryzen`. dev is now SCRIPT-provisioned + enrolled (Crossplane `TalosSpokeClusterClaim` removed in Phase D); ryzen is imperative.
+ryzen is the user's local workstation (`hostname` returns `ryzen`). The Talos-in-Docker cluster (formerly kind; bootstrapped imperatively by `deployment/scripts/bootstrap-spoke-cluster.sh`, **not** Crossplane-provisioned like dev/staging) is enrolled with the hub ArgoCD principal as an AUTONOMOUS agent. **Ryzen HAS its OWN local ArgoCD** (reconciles its own apps), and has NO local Gitea and NO idpbuilder (GitHub + GHCR only). The `ryzen-*` Applications are rendered by ryzen's LOCAL `root-ryzen` app-of-apps from `packages/overlays/ryzen` @ `main` and live on ryzen's cluster (NOT on the hub — the hub only sees a push-mirrored status in ns `ryzen`). dev is now SCRIPT-provisioned + enrolled (Crossplane `TalosSpokeClusterClaim` removed in Phase D); ryzen is imperative.
 
 **Recreate-automation entry points (named scripts):**
 - **dev:** `deployment/scripts/talos-hetzner/recreate-dev.sh` — ORCHESTRATOR wrapping data backup/restore (`environment_image_builds`/agents/workflows) + `provision-spoke.sh` + `bootstrap-spoke-deps.sh` + `argocd-agent/enroll-dev-agent.sh` + the verify gate.
 - **ryzen:** `deployment/scripts/bootstrap-spoke-cluster.sh --recreate` — enrolls the autonomous agent via `deployment/scripts/argocd-agent/enroll-ryzen-agent.sh` + the `packages/components/hub-management/manifests/ryzen-agent-bootstrap` kustomize component (`argocd-agentctl agent create ryzen` writes the `cluster-ryzen` agent mapping). `register-spoke-with-hub.sh` is RETIRED/uncalled; `--ts-acl-mode` / `--ts-host-passthrough` are vestigial flags.
 
-> **Recreate-hardening notes (PR #2395).** `bootstrap-spoke-cluster.sh` is STANDALONE — it does NOT source `deployment/scripts/lib/common.sh`, so any var it shares with common.sh must be self-defaulted; e.g. `TS_OPERATOR_CHART_VERSION="${TS_OPERATOR_CHART_VERSION:-1.96.5}"` (~line 125, kept in lockstep with common.sh + the GitOps tailscale-operator manifests) — an unbound abort under `set -u` previously left ryzen DOWN post-destroy. On a fresh recreate the local controller compares `root-ryzen` before the local repo-server is up, so `enroll-ryzen-agent.sh` step 6b waits on `argocd-repo-server` then hard-refreshes `root-ryzen`, and `bootstrap-spoke-cluster.sh` step 10 hard-refreshes again after the inner-loop advance (avoids a ~5min cold-start convergence stall; both non-fatal). Full detail in `cluster-desired-state/runbooks/recovery-and-gotchas.md`.
+> **Recreate-hardening notes (PR #2395).** `bootstrap-spoke-cluster.sh` is STANDALONE — it does NOT source `deployment/scripts/lib/common.sh`, so any var it shares with common.sh must be self-defaulted; e.g. `TS_OPERATOR_CHART_VERSION="${TS_OPERATOR_CHART_VERSION:-1.96.5}"` (~line 125, kept in lockstep with common.sh + the GitOps tailscale-operator manifests) — an unbound abort under `set -u` previously left ryzen DOWN post-destroy. On a fresh recreate the local controller compares `root-ryzen` before the local repo-server is up, so `enroll-ryzen-agent.sh` step 6b waits on `argocd-repo-server` then hard-refreshes `root-ryzen`, and `bootstrap-spoke-cluster.sh` step 10 hard-refreshes again (re-compare vs the latest `main` HEAD; avoids a ~5min cold-start convergence stall; both non-fatal). Full detail in `cluster-desired-state/runbooks/recovery-and-gotchas.md`.
 - **hub:** `deployment/scripts/recreate-hub.sh` (modes `--verify-only` / `--seed-secret` / `--fixups` / `--dry-run-clone` / `--in-place --confirm-wipe hub-cluster`; never hcloud-deletes the 5 ash servers; `--in-place` is a rolling `talosctl reset` reusing `talos-cluster/main/secrets/hub-secrets.yaml`; bootstraps `onepassword-sa-token` via `op read`, NOT JWKS) + `deployment/scripts/hub-verify-gate.sh` (9-check read-only convergence gate) + the self-healing `kube-system-fixups` CronJob (`packages/components/hub-management/manifests/kube-system-fixups/`) re-applying the Flannel `--iface` + CoreDNS anti-affinity patches Talos drops.
 
 For the full ordered recreate path see the `cluster-desired-state` skill.
@@ -87,24 +87,25 @@ Hub ArgoCD syncs spoke apps from env/spokes-{spoke}
 
 ============================================================
 
-Hub→ryzen spoke sync (post-A6, May 2026)
+ryzen autonomous-agent sync (local ArgoCD reconciles main directly)
     │
-    │  edit stacks worktree → commit to inner-loop branch on GitHub
+    │  edit stacks worktree → commit/merge to main on GitHub
     ▼
 ┌──────────────────────────────────────────────┐
-│  Hub Source Hydrator                           │
-│  - Polls GitHub inner-loop branch (~3 min)     │
-│  - Hydrates to env/spokes-ryzen (no Promoter)  │
-│  - Hub argocd-application-controller applies   │
-│    to ryzen via cluster Secret + Tailscale     │
+│  ryzen LOCAL ArgoCD (root-ryzen @ main)        │
+│  - Reconciles packages/overlays/ryzen @ main   │
+│    DIRECTLY (live kustomize, no hydrator)      │
+│  - No Promoter, no env/spokes-ryzen branch     │
+│  - Renders ryzen-* Apps onto ryzen's cluster   │
+│  - Agent push-mirrors status UP to hub ns ryzen│
 └──────────────────────────────────────────────┘
     │
     ▼
-ryzen Talos-docker cluster (no local ArgoCD)
+ryzen Talos-docker cluster (HAS its own local ArgoCD)
 ```
 
 **Key implications:**
-- A bump validated on ryzen does **not** propagate to dev/staging. Ryzen bumps live on `inner-loop`; dev/staging require a PR merge of `inner-loop → main` (or a direct main commit via the hub Tekton `update-stacks` task writing `release-pins/workflow-builder-images.yaml`).
+- A bump validated on ryzen does **not** automatically propagate to dev/staging. Ryzen reconciles `main` directly; dev/staging consume the same image via release-pins (hub Tekton `update-stacks` writing `release-pins/workflow-builder-images.yaml` on `main`) + their Promoter step.
 - A tag/digest bumped to dev/staging via release-pins **must already exist on `ghcr.io`**. Outer-loop normally builds it and records the digest/provenance in the release metadata.
 - `release-pins/workflow-builder-images.yaml` is schema v2: `images` remains the compatibility tag map; `digests`, `imageRefs`, `sourceShas`, `pipelineRuns`, and `updatedAts` hold immutable/provenance metadata. Dev/staging templates render tag+digest refs when a digest is present.
 - `agent-runtime-controller` is the exception: bumped directly in `packages/base/manifests/openshell/Deployment-agent-runtime-controller.yaml` (no per-cluster override). Single bump applies to all spokes once on `origin/main`.
@@ -164,7 +165,7 @@ Dev and staging are not just ryzen with a different image registry. Workflow-bui
 
 This rides on a **new cross-cutting contract: a persistent self-signed CA** (alongside the cluster-Secret and spoke-transport contracts):
 
-- A self-signed CA **"PittampalliOrg Tailnet Dev CA"** was generated once (offline) as `TAILNET-DEV-CA-CRT` / `TAILNET-DEV-CA-KEY` (10-year, stable across cluster recreation — an improvement over idpbuilder, which regenerates per-install). It now lives in the `hub-eso` 1Password vault (the Azure KV copy is dormant after the 2026-06 AWI → 1Password migration).
+- A self-signed CA **"PittampalliOrg Tailnet Dev CA"** was generated once (offline) as `TAILNET-DEV-CA-CRT` / `TAILNET-DEV-CA-KEY` (10-year, stable across cluster recreation). It now lives in the `hub-eso` 1Password vault (the Azure KV copy is dormant after the 2026-06 AWI → 1Password migration).
 - The hub mirrors it **cluster-neutrally** into ns `spoke-secrets` Secret `tailnet-ca` (`packages/components/hub-management/manifests/spoke-secrets/ExternalSecret-tailnet-ca.yaml`); that hub spoke-secrets ExternalSecret now reads from the `onepassword-store` ClusterSecretStore (not `azure-keyvault-store`). The namespace-wide `spoke-secrets-reader` Role means every spoke reads the SAME key — no per-cluster key.
 - New spoke base app `packages/components/tailnet-ca` (delivered via `packages/base/apps/tailnet-ca.yaml`, **spoke-only** — the hub does not consume `packages/base`): an ExternalSecret (`hub-secrets-store`) restores the CA into `cert-manager/tailnet-dev-ca`; the `tailnet-dev-ca` CA `ClusterIssuer` signs the `*.tail286401.ts.net` wildcard Certificate consumed by the tls-terminator sidecar.
 - Because the CA is identical on every cluster, clients trust it once and the trust survives recreation. Workstation trust is in nixos-config commit `44ba6324` (system/curl/git + a Chrome NSS seed, which is REQUIRED on NixOS because `security.pki` does not cover Chrome). PR #2322 adds `ignoreDifferences` so the cert/CA material doesn't show as drift.
@@ -227,7 +228,7 @@ Per-session Kueue agent hosts use unique Dapr app IDs, so Component scope mutati
 Every environment follows the same three-stage GitOps shape. Argo CD's **source-hydrator** renders an overlay/component on a **dry source** branch into a **hydrated** branch; **GitOps Promoter** opens a PR from the `-next` hydrated branch to the live env branch; Argo CD syncs the live env branch.
 
 ```
-drySource (overlay on main / inner-loop)
+drySource (overlay on main)
     │  Argo CD source-hydrator renders kustomize → plain manifests
     ▼
 hydrateTo  env/<env>-next            (the "-next" staging branch)
@@ -241,32 +242,32 @@ live cluster resources
 ```
 
 Two important exceptions to the `-next` → Promoter-PR → live shape:
-- **ryzen** hydrates **directly** to `env/spokes-ryzen` (no `-next`, no Promoter). See the ryzen branch note below.
+- **ryzen is NOT on this shape at all.** It runs its OWN local ArgoCD and reconciles `packages/overlays/ryzen` @ `main` DIRECTLY — no source-hydrator, no `env/spokes-ryzen`, no Promoter. See the ryzen branch note below.
 - **dev/staging workload-layer** apps that source `packages/components/workloads/*/manifests/` at `origin/main` `HEAD` are not promoter-gated for that path; only the `workflow-builder-system-overlays/<spoke>` render goes through `env/spokes-<spoke>-next` → `env/spokes-<spoke>`.
 
 ## Branch model
 
 | Branch | Origin | drySource → hydrateTo → syncSource role |
 |---|---|---|
-| `main` | `origin` (GitHub) | Dry source for hub + dev/staging overlays. Source of truth for promoted overlays, release metadata, and hub/dev/staging delivery |
+| `main` | `origin` (GitHub) | Dry source for hub + dev/staging overlays, AND the branch ryzen's local ArgoCD reconciles `packages/overlays/ryzen` from directly. Source of truth for promoted overlays, release metadata, and all-cluster delivery |
 | `env/hub-next` | `origin` only | Source-hydrator output (`hydrateTo`) for `packages/overlays/hub`. `stacks-environments` PromotionStrategy PRs it to `env/hub` (**`autoMerge: false` — manual merge required**) |
 | `env/hub` | `origin` only | `syncSource` (path `hub-apps`) that hub `root-application` syncs from |
 | `env/spokes-dev-next` / `env/spokes-staging-next` | `origin` only | Source-hydrator output (`hydrateTo`) for `packages/overlays/{dev,staging}` |
 | `env/spokes-dev` / `env/spokes-staging` | `origin` only | `syncSource` (path `<spoke>-apps`) the spoke root Application syncs from. `workflow-builder-release` PromotionStrategy promotes the workflow-builder-system render to these |
-| `inner-loop` | `origin` (GitHub) | **Ryzen's dry source.** Ryzen-only image-tag bumps via `commit-pin.sh`; the spoke-clusters ApplicationSet sets `targetRevision: inner-loop` for ryzen from its `stacks.io/source-branch` annotation |
-| `env/spokes-ryzen` | `origin` (GitHub) | `syncSource` (path `ryzen-apps`) for ryzen. Hydrated **directly** from `inner-loop` (no `-next`, no Promoter step) |
+(There is **no** `inner-loop` branch — RETIRED/deleted — and **no** `env/spokes-ryzen`. Ryzen reconciles `packages/overlays/ryzen` @ `main` via its own local ArgoCD; nothing hydrates a ryzen env branch.)
 
-### Ryzen reads `inner-loop`, NOT `main`
+### Ryzen reconciles `main` DIRECTLY (no inner-loop, no Promoter)
 
-**Pushing to `main` alone NEVER reaches ryzen.** The `cluster-ryzen` Secret carries `annotation stacks.io/source-branch: inner-loop`, so spoke-clusters templates `spoke-ryzen` with `drySource.targetRevision: inner-loop`. To deploy `main`'s content to ryzen, fast-forward `inner-loop`:
+**Pushing to `main` IS how content reaches ryzen.** Ryzen is an AUTONOMOUS argocd-agent: its LOCAL ArgoCD runs a `root-ryzen` app-of-apps that reconciles `packages/overlays/ryzen` @ `main` with live kustomize. To deploy `main`'s content to ryzen, just commit/merge to `main`; ryzen re-compares on its next poll, or force it immediately:
 
 ```bash
-git push origin origin/main:refs/heads/inner-loop   # clean FF when inner-loop is strictly behind main
+deployment/scripts/ryzen-sync.sh   # hard-refreshes root-ryzen (~20-35s converge)
+# or: kubectl --context admin@ryzen -n argocd annotate application root-ryzen argocd.argoproj.io/refresh=hard --overwrite
 ```
 
-After the push, source-hydrator re-dispatches the new dry SHA → renders `packages/overlays/ryzen` → pushes `env/spokes-ryzen`; the `ryzen-*` apps (sync from `env/spokes-ryzen` path `ryzen-apps`) reconcile. `commit-pin.sh` does the same push for ryzen-only image bumps. Do **not** mis-diagnose a frozen ryzen as the empty-`drySource.kustomize` hydrator-stall bug — `spoke-ryzen` is path-based (no `kustomize` field), so check `targetRevision`/`inner-loop` first.
+`commit-pin.sh` likewise just commits image-tag bumps to `main`. There is NO source-hydrator, NO `env/spokes-ryzen`, NO Promoter on the ryzen lane, so the empty-`drySource.kustomize` hydrator-stall bug does NOT apply — if a frozen ryzen, hard-refresh `root-ryzen`; don't look for an `inner-loop` advance.
 
-Under argocd-agent v0.8.1 ryzen reconciles all 60+ ryzen-* Applications with its OWN local controller (autonomous agent); the hub principal aggregates status, and the agent dials the principal OUTBOUND (8443). The hub does NOT push kube-API syncs to ryzen. The `cluster-ryzen` Secret is an AGENT MAPPING, not a kube-API endpoint; the legacy Tailscale-apiserver-proxy SNI path in "Hub → spoke ArgoCD connectivity" below is RETIRED for sync and survives ONLY for Headlamp.
+Under argocd-agent v0.8.1 ryzen reconciles all 60+ ryzen-* Applications with its OWN local controller (autonomous agent); the hub principal aggregates status, and the agent dials the principal OUTBOUND (8443). The hub does NOT push kube-API syncs to ryzen and does NOT render ryzen's apps. The `cluster-ryzen` Secret is an AGENT MAPPING, not a kube-API endpoint; the legacy Tailscale-apiserver-proxy SNI path in "Hub → spoke ArgoCD connectivity" below is RETIRED for sync and survives ONLY for Headlamp.
 
 ## Control plane: argocd-agent v0.8.1
 
@@ -290,16 +291,16 @@ Spokes are registered on the hub by an Argo CD **cluster Secret** (label `argocd
 | label `stacks.io/platform` | `talos` | Inventory/placement metadata |
 | label `workload.stacks.io/workflow-builder` | `"true"` | **Opt-in** to `spoke-workloads-appset` (dev/staging set it; **ryzen OMITS it** — its overlay composes `workflow-builder-system` directly) |
 | annotation `spoke-cluster` | `<name>` | Drives the templated Application name (`spoke-<name>`) and overlay path (`packages/overlays/<name>`) |
-| annotation `stacks.io/source-branch` | `inner-loop` (ryzen) / unset = `main` (dev/staging) | Selects `drySource.targetRevision` |
+| annotation `stacks.io/source-branch` | unset = `main` (dev/staging) | Selects `drySource.targetRevision`. (Ryzen does NOT use this — it is not driven by the spoke-clusters appset; its local `root-ryzen` tracks `main`.) |
 | `stringData.server` | migrated (agent): `https://argocd-agent-resource-proxy:9090?agentName=<spoke>` + embedded mTLS `certData`/`keyData`/`caData`, NO bearerToken. Legacy: a direct kube-API URL — see SNI note below | Where Argo CD connects / which agent the mapping targets |
 | dev (legacy shape, now superseded by agent mapping) | server = **direct public IP** `https://<ip>:6443`, bearer token from a minted SA | Direct API reachable; no SNI workaround |
 | ryzen (legacy shape) | server = `https://ryzen-operator.tail286401.ts.net`, `bearerToken: "unused"`, `auth-mode: tailscale-acl-impersonation` | Tailscale-apiserver-proxy + ACL impersonation; no token, no JWKS |
 
-The direct-server + bearerToken Secret shapes above are LEGACY; migrated spokes use the agent-mapping shape (see "Control plane: argocd-agent v0.8.1" above). **dev is now SCRIPT-provisioned + enrolled** (`provision-spoke.sh` + `bootstrap-spoke-deps.sh` + `enroll-dev-agent.sh`) — Crossplane was removed in Phase D (no `TalosSpokeClusterClaim`, no group-N spoke-register). The enroll script mints the dev agent mTLS cert on the hub, delivers it via ESO, and creates `cluster-dev` as a `?agentName=dev` mapping. **ryzen's `cluster-ryzen`** is a STATIC GitOps-delivered Secret (`Secret-cluster-ryzen.yaml`, referenced from `hub-management/kustomization.yaml`).
+The direct-server + bearerToken Secret shapes above are LEGACY; migrated spokes use the agent-mapping shape (see "Control plane: argocd-agent v0.8.1" above). **dev is now SCRIPT-provisioned + enrolled** (`provision-spoke.sh` + `bootstrap-spoke-deps.sh` + `enroll-dev-agent.sh`) — Crossplane was removed in Phase D (no `TalosSpokeClusterClaim`, no group-N spoke-register). The enroll script mints the dev agent mTLS cert on the hub, delivers it via ESO, and creates `cluster-dev` as a `?agentName=dev` mapping. **ryzen's `cluster-ryzen`** is likewise an AGENT MAPPING written by `argocd-agentctl agent create ryzen` during `enroll-ryzen-agent.sh` (`server: https://argocd-agent-resource-proxy:9090?agentName=ryzen` + embedded mTLS, NO bearerToken). The old static `Secret-cluster-ryzen.yaml` (server `https://ryzen-operator...`) is LEGACY — retired for sync, kept for diagnostics only.
 
 **The two ApplicationSets** (`packages/components/hub-spoke-appsets/apps/`):
 
-- `spoke-clusters-appset.yaml` — `clusters` generator selecting the cluster-Secret labels above. Templates one **root** Application `spoke-<name>` per spoke with `sourceHydrator.drySource.path: packages/overlays/<name>`, `targetRevision` from the source-branch annotation, `hydrateTo: env/spokes-<name>-next` (dev/staging) or `env/spokes-<name>` (ryzen — direct), `syncSource: env/spokes-<name>` path `<name>-apps`. This is the appset the hub actually uses.
+- `spoke-clusters-appset.yaml` — `clusters` generator selecting the cluster-Secret labels above. Templates one **root** Application `spoke-<name>` per MANAGED spoke (dev/staging) with `sourceHydrator.drySource.path: packages/overlays/<name>`, `targetRevision` from the source-branch annotation, `hydrateTo: env/spokes-<name>-next`, `syncSource: env/spokes-<name>` path `<name>-apps`. This is the appset the hub actually uses for dev/staging. **Ryzen is NOT driven by this appset** — it reconciles `overlays/ryzen` @ `main` via its own local `root-ryzen`.
   - GOTCHA: there is a SECOND, unused `spoke-clusters-appset.yaml` under `packages/components/hub-base/apps/` that hardcodes `targetRevision: main` and has the buggy empty `kustomize: {}` (the hydrator-stall trap). The hub references only the `hub-spoke-appsets` copy via `packages/overlays/hub/kustomization.yaml`. **Edit the `hub-spoke-appsets` copy, not `hub-base`.**
 - `spoke-workloads-appset.yaml` — adds the `workload.stacks.io/workflow-builder=true` selector; generates `spoke-<name>-workflow-builder` from `packages/components/workloads/workflow-builder-system-overlays/<name>`. dev/staging opt in; ryzen does not.
 
@@ -368,16 +369,17 @@ Default placement policy:
 
 - **Hub**: multi-cluster control plane, release automation, lifecycle automation, cross-cluster inventory/reporting, and shared operator UIs. Examples: ArgoCD, GitOps Promoter, hub Tekton outer-loop, Crossplane, deployment inventory, NocoDB, Redash, and any future shared Backstage/Keycloak deployment.
 - **Spokes**: workload runtime and failure-domain-local infrastructure. Examples: workflow-builder runtime services, Dapr runtime, cert-manager, External Secrets Operator (resolving the **`hub-secrets-store`** ClusterSecretStore over Tailscale, NOT Azure Workload Identity), CNI/ingress/storage, Tailscale resources needed for that cluster, and per-environment databases/caches/queues. **The hub secret root migrated AWI → 1Password (2026-06):** the hub's 21 ExternalSecrets resolve from the `onepassword-store` ClusterSecretStore (ESO `onepasswordSDK` provider → the dedicated `hub-eso` 1Password vault); the old Azure KV + AD App + OIDC/JWKS federation are DORMANT (not deleted). Spokes are UNAFFECTED — they read hub-mirrored secrets via the ESO kubernetes-provider `hub-secrets-store` ClusterSecretStore over Tailscale regardless of how the hub populates its k8s Secrets. See `reference/secret-flow.md`.
-- **Ryzen-local**: developer-workstation paths only — Skaffold inner-loop hot reload (HMR sync into a running pod via local kubeconfig). Local Gitea/Tekton/ArgoCD are retired (post-A6).
+- **Ryzen-local**: developer-workstation paths — Skaffold inner-loop hot reload (HMR sync into a running pod via local kubeconfig) and ryzen's OWN local ArgoCD reconciling `overlays/ryzen` @ `main`. Local Gitea/Tekton are retired (GitHub + GHCR only); ryzen DOES run a local ArgoCD (autonomous agent).
 
 If production traffic depends on a service during hub outage, keep it per-spoke. If operators use it to manage multiple clusters, centralize it on hub and add spoke agents/access only where needed. See `reference/app-placement.md`.
 
 ## Why ryzen is special
 
-Ryzen exists for **fast iteration** (Skaffold hot reload + ryzen-only image pins on the `inner-loop` branch). It's intentionally outside the Promoter chain:
+Ryzen exists for **fast iteration** — it's the bleeding-edge "instant `main` mirror" dev sandbox. It's intentionally outside the Promoter chain:
 - ryzen uses local Skaffold (`bash scripts/skaffold-dev.sh`) for live source iteration
-- ryzen-only manifest changes (image tag bumps) land on the `inner-loop` branch via `commit-pin.sh`; hub Source Hydrator picks them up and applies them to ryzen
-- Dev/staging are unaffected until `inner-loop` is PR-merged into `main`
+- ryzen reconciles `overlays/ryzen` @ `main` DIRECTLY via its own local ArgoCD; manifest changes (incl. image-tag bumps via `commit-pin.sh`) land on `main` and ryzen picks them up immediately (no `inner-loop`, no source-hydrator, no Promoter)
+- Dev/staging consume the same `main` content via their own release-pins + Promoter outer-loop path
+- ryzen stays AUTONOMOUS (not managed) deliberately: managed mode would clobber the Skaffold `skip-reconcile` pause (the principal reverts foreign Application mutations) and lose hub-down resilience
 
 ryzen **proves the stack works in the local platform shape**. The outer-loop **proves the release artifact and rendered manifests are promotable**. Those are different validations.
 
@@ -408,7 +410,7 @@ ryzen **proves the stack works in the local platform shape**. The outer-loop **p
 | `packages/components/hub-tekton/manifests/outer-loop-builds/` | Hub Tekton pipeline + EventListener |
 | `packages/components/hub-tekton/manifests/workflow-builder-builds/` | Workflow-builder build pipeline definitions |
 | `scripts/gitops/validate-workflow-builder-release-pins.sh` | Validates release-pin schema and GHCR tag/digest existence |
-| `git ls-remote origin env/spokes-ryzen` + hub `argocd app get spoke-ryzen` | Inspect current hub-driven ryzen state instead of running a local sync (no local ArgoCD on ryzen post-A6) |
+| `kubectl --context admin@ryzen -n argocd get applications` (or `app get root-ryzen`) | Inspect ryzen state on its OWN local ArgoCD — ryzen reconciles its own apps; the hub only sees a status mirror in ns `ryzen` |
 | `docs/hub-spoke-app-placement.md` | Hub-vs-spoke app placement policy |
 | `policy.hujson` | Tailscale ACL — synced via `.github/workflows/tailscale-acl.yml`; `svc:*` approvals are only for real service-host/ProxyGroup/Tailscale Services |
 

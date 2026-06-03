@@ -244,12 +244,13 @@ device-backed Ingress DNS recovery.
   (NOT the same as the hub's architectural per-spoke "Unknown" — that's a separate, also-benign thing
   where ALL agent apps lack the operation lifecycle because it runs on the spoke. These are distinct:
   they lack an op because none was needed.)
-  > **`ingress-nginx-cert` is now KIND-only** (2026-06): moved `packages/base/apps` ->
-  > `packages/components/kind-only/apps`. Its copy-tls-cert Job sources `gitops-cert` (produced ONLY
-  > by the kind-only idpbuilder ExternalSecret) and its output `persistent-tls-cert` is unreferenced;
+  > **`ingress-nginx-cert` was relocated out of `packages/base/apps`** (2026-06; the legacy
+  > kind/idpbuilder lane is RETIRED). Its copy-tls-cert Job sourced `gitops-cert` (produced only by
+  > the now-retired idpbuilder ExternalSecret) and its output `persistent-tls-cert` is unreferenced;
   > on Talos the real TLS is the tailnet wildcard cert, so the Job only ever failed there (perpetual
-  > "Sync failed"). KIND + **ryzen** (includes the kind-only component) keep it; **dev/staging/hub drop
-  > it**. So a dev recreate no longer shows a `dev-ingress-nginx-cert` app at all.
+  > "Sync failed"). **dev/staging/hub drop it**, and **ryzen** (Talos-in-Docker, GitHub+GHCR, no
+  > idpbuilder) does not use the idpbuilder gitops-cert path either. So a dev recreate no longer shows
+  > a `dev-ingress-nginx-cert` app at all.
 - **`dev-swebench-runtime-builds` is `Progressing` forever — BENIGN, not a failure**
   (`reference_recreate_gate_cache_pvc`). It owns the persistent buildah-cache PVC
   `buildah-cache-swebench-inference` (`local-path` = WaitForFirstConsumer), which has no consumer at
@@ -450,8 +451,8 @@ just makes the recreate hands-off + fast):
   kspoke -n argocd rollout status deploy/argocd-repo-server --timeout=120s
   kubectl -n argocd annotate application root-ryzen argocd.argoproj.io/refresh=hard --overwrite
   ```
-- `bootstrap-spoke-cluster.sh` step 10 — after the inner-loop advance, hard-refresh
-  `root-ryzen` again so it re-compares against the advanced HEAD.
+- `bootstrap-spoke-cluster.sh` step 10 — hard-refresh `root-ryzen` again so it re-compares
+  against the latest `main` HEAD.
 
 For older scripts that lack step 6b (or if you hit the stall live), unblock manually:
 ```bash

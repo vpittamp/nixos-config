@@ -152,7 +152,7 @@ Return to the main SKILL.md workflow from step 1. Canonical recreate command:
 ```bash
 cd /home/vpittamp/repos/PittampalliOrg/stacks/main
 # Provisions the Talos cluster + seeds deps + transport, then enrolls the autonomous agent
-# (enroll-ryzen-agent.sh) + advances inner-loop. --ts-acl-mode no longer needed.
+# (enroll-ryzen-agent.sh) + hard-refreshes root-ryzen. --ts-acl-mode no longer needed.
 bash deployment/scripts/bootstrap-spoke-cluster.sh --recreate
 ```
 
@@ -177,11 +177,12 @@ kubectl --context admin@ryzen -n external-secrets get secret hub-secrets-token
 ```
 If the rewrite is missing or `hub-secrets-store` is NotReady, re-run `spoke-transport-bootstrap.sh` (idempotent). See `references/failure-modes.md` "ESO hub-secrets-store".
 
-## Post-bootstrap: advance inner-loop (+ LEGACY SNI check)
+## Post-bootstrap: get content onto ryzen (+ LEGACY SNI check)
 
 ```bash
-# Ryzen reads inner-loop, NOT main — advance it so the overlay reaches ryzen:
-git -C /home/vpittamp/repos/PittampalliOrg/stacks/main push origin origin/main:refs/heads/inner-loop
+# Ryzen reconciles overlays/ryzen @ main DIRECTLY (local ArgoCD) — there is NO inner-loop branch.
+# Content reaches ryzen by committing/merging to main; force an immediate re-compare with:
+deployment/scripts/ryzen-sync.sh   # hard-refreshes root-ryzen (~20-35s converge)
 
 # LEGACY/diagnostics only — the operator apiserver-proxy SNI is no longer the sync path
 # (ryzen reconciles locally); useful only to confirm the Headlamp/ESO Tailscale endpoint:
@@ -199,8 +200,8 @@ curl -sk --connect-to ryzen-operator.tail286401.ts.net:443:<egress-or-tailnet-ip
 > full resync window (~5min observed), so convergence stalls with ZERO child apps rendered until a
 > manual refresh. The fix forces a clean first comparison once the local repo-server is Available:
 > - `enroll-ryzen-agent.sh` step 6b: wait for the local repo-server, then hard-refresh root-ryzen.
-> - `bootstrap-spoke-cluster.sh` step 10: after the inner-loop advance above, hard-refresh root-ryzen
->   AGAIN (re-compare vs the advanced HEAD).
+> - `bootstrap-spoke-cluster.sh` step 10: hard-refresh root-ryzen AGAIN (re-compare vs the latest
+>   `main` HEAD).
 >
 > Both steps are non-fatal (the resync timer would eventually heal it; this just makes the recreate
 > hands-off + fast). Manual fallback for older scripts that lack the steps:
@@ -213,4 +214,4 @@ curl -sk --connect-to ryzen-operator.tail286401.ts.net:443:<egress-or-tailnet-ip
 
 ## Post-bootstrap: re-merge env/hub Promoter PRs (only if hub-state changed)
 
-If the recreate changed hub-side state (e.g., the static `cluster-ryzen` Secret or appset definitions) and in-flight Promoter PRs for env/hub are open, merge them so hub's reconciled state matches the source. Manual `gh pr create --base env/hub --head env/hub-next` + merge unblocks a stuck Promoter. NOTE: ryzen workloads (`packages/overlays/ryzen` → `env/spokes-ryzen`) have NO Promoter — they advance via the `inner-loop` branch push above.
+If the recreate changed hub-side state (e.g., the `cluster-ryzen` agent-mapping Secret or appset definitions) and in-flight Promoter PRs for env/hub are open, merge them so hub's reconciled state matches the source. Manual `gh pr create --base env/hub --head env/hub-next` + merge unblocks a stuck Promoter. NOTE: ryzen workloads are NOT on the Promoter path — ryzen reconciles `packages/overlays/ryzen` @ `main` DIRECTLY via its local ArgoCD (no `env/spokes-ryzen`, no `inner-loop` branch); content reaches it by merging to `main` (+ optional `ryzen-sync.sh`).

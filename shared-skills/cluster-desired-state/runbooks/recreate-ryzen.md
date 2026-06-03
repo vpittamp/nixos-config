@@ -12,8 +12,8 @@ needed" is the default posture for ryzen prototypes. Paths relative to
   `kubectl --kubeconfig ~/.kube/hub-config`).
 - Env: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_CLIENT_SECRET` (the `--recreate` path can auto-load
   these from KV if unset).
-- Confirm inner-loop currency you intend to deploy:
-  `git -C . rev-list --count origin/inner-loop..origin/main`.
+- Confirm `main` is at the revision you intend to deploy (ryzen reconciles `overlays/ryzen`
+  @ `main` directly): `git -C . rev-parse origin/main`.
 
 ## 1. Provision (imperative bootstrap)
 
@@ -55,7 +55,7 @@ mTLS cert, applies the
 `packages/components/hub-management/manifests/ryzen-agent-bootstrap` kustomize component
 (agent-autonomous bundle + params `mode=autonomous` + `cluster-ryzen-local` alias +
 `stacks-repo-read` + the cert ExternalSecrets + the `root-ryzen` app-of-apps), runs
-`argocd-agentctl agent create ryzen`, stages the Headlamp Secret, and advances inner-loop.
+`argocd-agentctl agent create ryzen`, stages the Headlamp Secret, and hard-refreshes `root-ryzen`.
 
 After enroll, **step 6b** waits for the local repo-server then hard-refreshes `root-ryzen`
 (PR #2395, Fix 2): `kspoke -n argocd rollout status deploy/argocd-repo-server --timeout=120s`
@@ -68,7 +68,7 @@ app for a full resync window (~5min observed) → convergence stalls with ZERO c
 rendered until a manual refresh. The step forces a clean first comparison once the repo-server
 is Available; non-fatal (the resync timer would eventually heal it — this makes the recreate
 hands-off + fast). `bootstrap-spoke-cluster.sh` step 10 hard-refreshes `root-ryzen` **again**
-after the inner-loop advance (re-compare vs the advanced HEAD). See `recovery-and-gotchas.md`
+(re-compare vs the latest `main` HEAD). See `recovery-and-gotchas.md`
 for the cold-start gotcha.
 
 **Step 5b** re-stages the `headlamp-cluster-ryzen` Secret (fresh kube-API endpoint +
@@ -119,16 +119,17 @@ Synced via the principal. Headlamp reach (optional) is a real-TLS
 `kubectl --server=https://ryzen.tail286401.ts.net:6443 --certificate-authority=<Talos CA>
 --token=<SA> get nodes` (no `--insecure`). The old SNI `curl --connect-to` check is obsolete.
 
-## 5. Deploy content (advance inner-loop)
+## 5. Deploy content (reconciles main directly)
 
-ryzen NEVER reads `main`. To push main's content to ryzen:
+ryzen reads `main` DIRECTLY via its local ArgoCD (`root-ryzen` @ `main`). To push main's
+content to ryzen, just commit/merge to `main`; force an immediate re-compare with:
 ```bash
-git -C /home/vpittamp/repos/PittampalliOrg/stacks/main push origin origin/main:refs/heads/inner-loop
+deployment/scripts/ryzen-sync.sh   # hard-refreshes root-ryzen (~20-35s converge)
 ```
-The hydrator re-dispatches drySHA -> renders `packages/overlays/ryzen` -> pushes
-`env/spokes-ryzen`; `ryzen-*` apps reconcile from path `ryzen-apps`. A frozen ryzen is
-almost never the empty-`drySource.kustomize` hydrator-stall bug (spoke-ryzen is
-path-based) — check `targetRevision=inner-loop` and inner-loop freshness first.
+`root-ryzen` re-renders `packages/overlays/ryzen` @ `main` and the `ryzen-*` apps reconcile.
+There is NO `inner-loop` branch (retired), NO source-hydrator, NO `env/spokes-ryzen`, NO
+Promoter on the ryzen lane — so the empty-`drySource.kustomize` hydrator-stall bug never
+applies to ryzen. If frozen, hard-refresh `root-ryzen`; don't look for an `inner-loop` advance.
 
 ## 6. Watch for the ryzen gotchas
 
@@ -143,9 +144,9 @@ path-based) — check `targetRevision=inner-loop` and inner-loop freshness first
 
 Run the full block in `../references/ryzen.md` "Verification". Pass = Talos v1.13.2 /
 k8s v1.36.0, contour+kourier (zero nginx), ns gitea NotFound, `hub-secrets-store`
-Ready=True, all `ryzen-*` apps Synced/Healthy via the principal, cluster-ryzen is the agent
+Ready=True, all `ryzen-*` apps Synced/Healthy on ryzen's LOCAL ArgoCD, cluster-ryzen is the agent
 mapping (`server=https://argocd-agent-resource-proxy:9090?agentName=ryzen`, no bearerToken),
-inner-loop count 0.
+and `root-ryzen`'s synced revision matches `origin/main`.
 
 Hands-off validation result (PR #2395): `bootstrap-spoke-cluster.sh --recreate` =
 **13m9s hands-off, 64/65 Synced/Healthy, ZERO manual intervention**.

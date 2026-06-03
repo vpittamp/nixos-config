@@ -35,13 +35,16 @@ actual reconcile. (See §3a for the control-plane semantics — managed vs auton
 ## 2. GitOps branch flow (the #1 operational gotcha)
 
 ```
-        drySource (main / inner-loop)
-                |  ArgoCD source-hydrator renders packages/overlays/<env>
+        drySource (main)
+                |  ArgoCD source-hydrator renders packages/overlays/<env>   (hub + dev/staging ONLY)
                 v
         env/<env>-next         (hydrateTo)
                 |  GitOps Promoter PR  (autoMerge:false on hub -> human merges)
                 v
         env/<env>              (syncSource)  <-- ArgoCD actually syncs from here
+
+   ryzen: NO hydrator/Promoter — its LOCAL ArgoCD root-ryzen reconciles
+          packages/overlays/ryzen @ main DIRECTLY (live kustomize)
 ```
 
 | Cluster | drySource branch | hydrateTo | syncSource (ArgoCD reads) | Promoter? |
@@ -49,17 +52,18 @@ actual reconcile. (See §3a for the control-plane semantics — managed vs auton
 | hub | `main` | `env/hub-next` | `env/hub` path `hub-apps/` | yes (`stacks-environments`, manual merge) |
 | dev | `main` | `env/spokes-dev-next` | `env/spokes-dev` path `dev-apps` | yes |
 | staging | `main` | `env/spokes-staging-next` | `env/spokes-staging` | yes |
-| ryzen | **`inner-loop`** | `env/spokes-ryzen` | `env/spokes-ryzen` path `ryzen-apps` | **no** |
+| ryzen | **`main`** (reconciled directly by local ArgoCD) | — (no hydrator) | `packages/overlays/ryzen` @ `main` (live kustomize) | **no** |
 
 **Consequences:**
 - A push to `main` reaches **hub** only after the `env/hub-next -> env/hub` Promoter
   PR is merged (autoMerge:false). It reaches **dev/staging** after their
-  `env/spokes-<env>-next -> env/spokes-<env>` PR. It reaches **ryzen** only after you
-  advance inner-loop: `git push origin origin/main:refs/heads/inner-loop` (clean
-  fast-forward when inner-loop is strictly behind main).
-- **ryzen is path-based** (`drySource.path` only, no `kustomize` field) — a frozen
-  ryzen is almost never the empty-`drySource.kustomize` hydrator-stall bug; check
-  `targetRevision=inner-loop` and inner-loop freshness first.
+  `env/spokes-<env>-next -> env/spokes-<env>` PR. It reaches **ryzen** as soon as
+  ryzen's local ArgoCD re-compares (commit/merge to `main`; force an immediate
+  re-compare with `deployment/scripts/ryzen-sync.sh`). There is no `inner-loop`
+  branch (retired) and no `env/spokes-ryzen`.
+- **ryzen reconciles `main` directly** — there is no hydrator on the ryzen lane, so the
+  empty-`drySource.kustomize` hydrator-stall bug never applies to ryzen; a frozen ryzen
+  is fixed by a `root-ryzen` hard-refresh, not an `inner-loop` advance.
 - The hub source-hydrator does NOT auto hard-refresh
   (`timeout.hard.reconciliation:0s`). If the drySHA is stale, remove
   `/status/sourceHydrator/currentOperation` + `lastSuccessfulOperation` and annotate
@@ -67,8 +71,9 @@ actual reconcile. (See §3a for the control-plane semantics — managed vs auton
 
 Verify branch freshness:
 ```bash
-git -C /home/vpittamp/repos/PittampalliOrg/stacks/main rev-list --count origin/inner-loop..origin/main   # 0 = ryzen current
-git ls-remote origin env/hub env/spokes-dev                                                             # branches advancing
+kubectl --context admin@ryzen -n argocd get application root-ryzen -o jsonpath='{.status.sync.revision}'  # vs origin/main
+git -C /home/vpittamp/repos/PittampalliOrg/stacks/main rev-parse origin/main                              # latest main HEAD
+git ls-remote origin env/hub env/spokes-dev                                                               # branches advancing
 ```
 
 ---
@@ -159,7 +164,8 @@ It still carries the appset-driver labels/annotations:
   `spoke-<name>-workflow-builder` app (dev/staging do; **ryzen intentionally omits
   it** — its overlay composes workflow-builder-system directly).
 - Annotations: `spoke-cluster=<name>`, `stacks.io/source-branch=<branch>`
-  (ryzen=`inner-loop`, others default `main`), `stacks.io/auth-mode=<mode>`.
+  (dev/staging default `main`; ryzen is NOT driven by this appset so the annotation
+  is moot for it), `stacks.io/auth-mode=<mode>`.
 
 How each cluster supplies it:
 - **dev**: `deployment/scripts/argocd-agent/enroll-dev-agent.sh` mints the agent mTLS
@@ -191,6 +197,12 @@ hydrateTo:   { targetBranch: '<...>-next for dev/staging, else env/spokes-<name>
 > hardcodes `targetRevision: main` and has the buggy empty `kustomize: {}`
 > (hydrator-stall trap). The hub uses the **hub-spoke-appsets** copy (referenced by
 > `packages/overlays/hub/kustomization.yaml`). Edit that one, not hub-base's.
+>
+> NOTE: this appset drives **dev/staging only**. **ryzen is AUTONOMOUS** — its own
+> local ArgoCD runs a `root-ryzen` app-of-apps (from the `ryzen-agent-bootstrap`
+> component, applied by `enroll-ryzen-agent.sh`) that reconciles `packages/overlays/ryzen`
+> @ `main` directly. The hub neither hydrates nor renders ryzen's apps; it only sees a
+> push-mirrored status in ns `ryzen`.
 
 ---
 
@@ -392,7 +404,7 @@ Tailscale L4 LoadBalancer Service -> sidecar :443 (HTTPS) -> workflow-builder
 **Pieces:**
 - **CA in KV.** `TAILNET-DEV-CA-CRT` / `TAILNET-DEV-CA-KEY` — generated once offline,
   10-year, stable across cluster recreation. Same CA on every cluster, so clients trust
-  it ONCE and the trust survives recreation (improves on idpbuilder's per-install CA).
+  it ONCE and the trust survives recreation.
 - **Hub mirror** (`packages/components/hub-management/manifests/spoke-secrets/ExternalSecret-tailnet-ca.yaml`):
   mirrors the CA CLUSTER-NEUTRALLY into ns `spoke-secrets` Secret `tailnet-ca`. The
   `spoke-secrets-reader` Role is namespace-wide, so there is **no per-cluster CA key**.
@@ -418,7 +430,8 @@ Tailscale L4 LoadBalancer Service -> sidecar :443 (HTTPS) -> workflow-builder
   (`security.pki.certificates` for system/curl/git) AND `home-modules/tools/chromium.nix`
   (`home.activation` certutil seed of `~/.pki/nssdb` — REQUIRED because `security.pki` does
   NOT cover Chrome's own NSS db on NixOS). The old `CNOE Local Development CA`
-  (`*.cnoe.localtest.me`) idpbuilder trust is still present.
+  (`*.cnoe.localtest.me`) idpbuilder trust may still be present as a dormant leftover
+  (idpbuilder/local-gitea is retired); it is no longer used by any current path.
 
 ---
 
@@ -473,7 +486,7 @@ deployment/scripts/talos-hetzner/recreate-dev.sh        # dev: ORCHESTRATOR rebu
 deployment/scripts/talos-hetzner/provision-spoke.sh      # dev: Hetzner + Talos provision (public 1.12.4 ISO, k8s 1.35, Cilium); --destroy mode
 deployment/scripts/talos-hetzner/bootstrap-spoke-deps.sh # dev: cert-manager + ESO 2.4.1 + Tailscale operator + spoke->hub ESO transport
 deployment/scripts/argocd-agent/enroll-dev-agent.sh      # dev: managed-agent enroll (agent mTLS cert, cluster-dev mapping, AppProject, principal egress, CoreDNS, hub Headlamp SA)
-deployment/scripts/argocd-agent/enroll-ryzen-agent.sh    # ryzen: autonomous-agent enroll (mint agent mTLS cert, apply ryzen-agent-bootstrap component, argocd-agentctl agent create ryzen -> cluster-ryzen mapping, stage Headlamp Secret, advance inner-loop)
+deployment/scripts/argocd-agent/enroll-ryzen-agent.sh    # ryzen: autonomous-agent enroll (mint agent mTLS cert, apply ryzen-agent-bootstrap component incl. root-ryzen @ main, argocd-agentctl agent create ryzen -> cluster-ryzen mapping, stage Headlamp Secret, hard-refresh root-ryzen)
 deployment/scripts/bootstrap-spoke-cluster.sh            # ryzen imperative bootstrap; --recreate calls enroll-ryzen-agent.sh (register-spoke-with-hub.sh RETIRED; --ts-acl-mode/--ts-host-passthrough vestigial)
 deployment/scripts/recreate-hub.sh                       # hub: rebuild/recover (--verify-only/--seed-secret/--fixups/--dry-run-clone/--in-place --confirm-wipe; never hcloud-deletes the 5 ash servers; seeds onepassword-sa-token via op read)
 deployment/scripts/hub-verify-gate.sh                    # hub: 9-check read-only convergence gate

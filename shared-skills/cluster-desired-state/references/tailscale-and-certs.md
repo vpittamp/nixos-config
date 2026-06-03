@@ -171,7 +171,7 @@ Azure Key Vault as `TAILNET-DEV-CA-CRT` / `TAILNET-DEV-CA-KEY`.
   `ExternalSecret-tailnet-ca` -> ns `spoke-secrets` Secret `tailnet-ca`, read namespace-wide by
   `spoke-secrets-reader`; spoke restores it into `cert-manager/tailnet-dev-ca` and a CA
   `ClusterIssuer` signs the wildcard). Clients trust it ONCE and the trust **survives cluster
-  recreation** (improves on idpbuilder's per-install CA). 10-year validity means no renewal
+  recreation**. 10-year validity means no renewal
   churn.
 - **Workstation trust** (nixos-config): `modules/services/cluster-certs.nix` for system/curl/git
   + `home-modules/tools/chromium.nix` certutil seed of `~/.pki/nssdb` (REQUIRED — `security.pki`

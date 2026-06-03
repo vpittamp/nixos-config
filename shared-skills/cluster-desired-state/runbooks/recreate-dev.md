@@ -136,8 +136,8 @@ Once enrolled, the hub principal PUSHES the dev Application objects (authored in
 source-hydrator + GitOps Promoter: `overlays/dev` -> `env/spokes-dev-next` -> (AUTO-promote,
 spoke lanes auto-merge) -> `env/spokes-dev` -> root-application. dev's workflow-builder apps
 come via the `spoke-dev-workflow-builder` bridge appset (drySource
-`workflow-builder-system-overlays/dev`). dev tracks `main` (NOT inner-loop). If the spoke
-lane doesn't auto-advance, merge the `env/spokes-dev-next -> env/spokes-dev` Promoter PR
+`workflow-builder-system-overlays/dev`). dev tracks `main` (via source-hydrator + Promoter).
+If the spoke lane doesn't auto-advance, merge the `env/spokes-dev-next -> env/spokes-dev` Promoter PR
 (`gitops` skill).
 
 ## 6. Per-cluster ExternalSecret parameterization
