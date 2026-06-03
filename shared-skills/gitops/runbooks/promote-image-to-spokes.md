@@ -20,7 +20,7 @@ skopeo inspect --no-tags docker://ghcr.io/pittampalliorg/<image>:git-<sha> | jq 
 scripts/gitops/validate-workflow-builder-release-pins.sh
 ```
 
-If missing → run `runbooks/mirror-image-gitea-to-ghcr.md` first.
+If missing → the outer-loop build never published that tag to GHCR; rebuild it from the source commit before promoting (see `runbooks/debug-funnel-orphan-tag.md` for the webhook/EventListener failure that suppresses the build).
 
 ## Fix steps
 
@@ -127,5 +127,5 @@ Pass criteria: both apps Synced + Healthy at the new revision, pod images update
 
 - App in `Running` / `waiting for completion of hook batch/Job/db-migrate` for >5 min → `runbooks/recover-stuck-job-finalizer.md`
 - Controller log `Skipping auto-sync: failed previous sync attempt` → `runbooks/recover-stuck-promotion.md`
-- `Init:ImagePullBackOff` for the new tag → `runbooks/mirror-image-gitea-to-ghcr.md` (your tag isn't on ghcr.io)
+- `Init:ImagePullBackOff` for the new tag → your tag isn't on ghcr.io; the outer-loop build didn't produce it — rebuild from source, see `runbooks/debug-funnel-orphan-tag.md`
 - PromotionStrategy `READY=False` → check `kubectl get changetransferpolicy -A -o yaml`; common cause is the stacks-repo write token expired

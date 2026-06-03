@@ -103,8 +103,7 @@ Healthy state is `Ready=True` with a recent `refreshTime`. If `Ready=False`, ESO
 
 Separate from app secrets. Two flavours:
 - `ghcr-pull-credentials` — workload-namespace ExternalSecret, written by ESO from KeyVault. Allows pods to pull from `ghcr.io/pittampalliorg/<image>` (private/public).
-- `gitea-registry-credentials` (in `tekton-pipelines` ns on hub) — legacy/local registry write auth for the ryzen Gitea registry; not a source-delivery path.
-- `ghcr-push-credentials` (in `tekton-pipelines` ns on hub) — Tekton task auth for pushing to ghcr.io. Org-scoped PAT. Use this same secret for manual `skopeo copy` to ghcr.io (see `runbooks/mirror-image-gitea-to-ghcr.md`).
+- `ghcr-push-credentials` (in `tekton-pipelines` ns on hub) — Tekton task auth for pushing to ghcr.io. Org-scoped PAT. Use this same secret for a manual build-and-push to ghcr.io when the outer-loop build didn't publish a release-pinned `git-<sha>` tag (see `runbooks/debug-funnel-orphan-tag.md`).
 
 ## Hub-side secrets cheat sheet
 

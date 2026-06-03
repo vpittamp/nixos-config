@@ -67,7 +67,7 @@ If the operation is itself stuck (the controller has marked the revision as fail
 
 Common second-order failures after recreating db-migrate:
 
-- **`Init:ImagePullBackOff` on the new Job pod** with `failed to resolve reference … ghcr.io/pittampalliorg/workflow-builder:<tag>: not found` → the tag in release-pins isn't on ghcr.io. Run `mirror-image-gitea-to-ghcr.md`.
+- **`Init:ImagePullBackOff` on the new Job pod** with `failed to resolve reference … ghcr.io/pittampalliorg/workflow-builder:<tag>: not found` → the tag in release-pins isn't on ghcr.io — the outer-loop build never produced it; rebuild from the source commit (see `debug-funnel-orphan-tag.md`).
 - **`CrashLoopBackOff` with database connection errors** → the postgres StatefulSet on the spoke might be unavailable. `KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl -n workflow-builder get pods,sts`.
 - **`CrashLoopBackOff` with migration errors** → the database schema is in a state the migration can't reconcile (rare, but a previous half-completed migration can cause this). `KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl -n workflow-builder logs job/db-migrate -c repair-schema-drift` then `-c migrate`.
 
