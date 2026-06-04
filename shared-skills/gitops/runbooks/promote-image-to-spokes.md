@@ -2,7 +2,9 @@
 
 ## Symptoms / when to use
 
-User wants a new image tag of `workflow-builder` (or any other promoted workflow-builder-system component) running on dev and/or staging.
+User wants a new image tag of `workflow-builder` (or any other promoted workflow-builder-system component) running on **dev**.
+
+> **Staging is dormant (no staging cluster, 2026-06).** Promotion is ryzen (direct `main`) + dev; `workflow-builder-release` was reduced to dev-only (stacks PR #2436) and the outer-loop renders dev-only (PR #2437). The `staging` steps below apply only if a staging cluster is reintroduced and the env is re-added.
 
 Normal path: hub Tekton outer-loop has built the image, pushed it to GHCR, and its `update-stacks` task has either pushed release metadata directly to stacks `origin/main` or opened a `release/workflow-builder-*` release-intent PR. The release metadata update touches `packages/components/hub-spoke-appsets/release-pins/workflow-builder-images.yaml` and regenerates `packages/components/workloads/workflow-builder-system-overlays/{dev,staging}/kustomization.yaml`.
 

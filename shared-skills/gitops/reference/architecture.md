@@ -76,10 +76,17 @@ GitHub push to PittampalliOrg/workflow-builder
 ┌──────────────────────────────────────────────┐
 │  GitOps Promoter (workflow-builder-release)   │
 │  - Gates on argocd-health + timer statuses    │
-│  - autoMerge true: dev immediate, staging soak│
+│  - autoMerge true: dev immediate               │
 │  - Promotes env/spokes-{spoke}-next →         │
 │    env/spokes-{spoke}                         │
 └──────────────────────────────────────────────┘
+
+> **Staging is dormant (no staging cluster, 2026-06).** `workflow-builder-release`
+> promotes to **dev only** — the `env/spokes-staging` env + its `10m` soak were
+> removed (stacks PR #2436) and the outer-loop renders dev-only (PR #2437). The box
+> above describes the mechanism that remains for dev; ryzen is off the Promoter path
+> entirely (direct `main`). Net promotion model: **ryzen + dev**. Re-add the staging
+> env to the PromotionStrategy + soak to restore.
     │
     ▼
 Hub ArgoCD syncs spoke apps from env/spokes-{spoke}

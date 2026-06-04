@@ -51,8 +51,10 @@ actual reconcile. (See §3a for the control-plane semantics — managed vs auton
 |---|---|---|---|---|
 | hub | `main` | `env/hub-next` | `env/hub` path `hub-apps/` | yes (`stacks-environments`, manual merge) |
 | dev | `main` | `env/spokes-dev-next` | `env/spokes-dev` path `dev-apps` | yes |
-| staging | `main` | `env/spokes-staging-next` | `env/spokes-staging` | yes |
+| staging _(dormant — no cluster, 2026-06)_ | `main` | `env/spokes-staging-next` | `env/spokes-staging` | paused (PR #2436) |
 | ryzen | **`main`** (reconciled directly by local ArgoCD) | — (no hydrator) | `packages/overlays/ryzen` @ `main` (live kustomize) | **no** |
+
+> Staging has no cluster currently; `workflow-builder-release` was reduced to dev-only (PR #2436) and the outer-loop renders dev-only (PR #2437). Promotion model = ryzen (direct `main`) + dev. The staging row is kept (dormant scaffolding) for fast re-enable.
 
 **Consequences:**
 - A push to `main` reaches **hub** only after the `env/hub-next -> env/hub` Promoter

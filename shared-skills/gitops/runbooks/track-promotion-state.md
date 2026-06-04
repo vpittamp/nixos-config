@@ -31,6 +31,11 @@ env/spokes-<env>-next   ──merged──▶  env/spokes-<env>   ──synced�
 env/spokes-staging-next ── blocked until dev's argocd-health=success ──▶ env/spokes-staging
 ```
 
+> **Staging is dormant (no staging cluster, 2026-06):** the `env/spokes-staging*` leg
+> above is paused — `workflow-builder-release` promotes to dev only (stacks PR #2436).
+> Promotion model = ryzen (direct `main`) + dev. The diagram describes the full
+> mechanism for when staging is re-enabled.
+
 Four layers of state to read in order:
 
 | Layer | What to look at | What it tells you |
