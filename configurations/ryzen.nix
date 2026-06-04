@@ -32,6 +32,11 @@ let
     system = pkgs.stdenv.hostPlatform.system;
     config.allowUnfree = true;
   };
+  # Latest lazygit/lazydocker without bumping the main channel (see flake.nix)
+  pkgs-lazygit = import inputs.nixpkgs-lazygit {
+    system = pkgs.stdenv.hostPlatform.system;
+    config.allowUnfree = true;
+  };
   sunshinePrimaryMonitorEnsure = pkgs.writeShellScriptBin "sunshine-primary-monitor-ensure" ''
     #!${pkgs.bash}/bin/bash
     set -euo pipefail
@@ -198,6 +203,10 @@ in
     (final: prev: {
       firefox = pkgs-unstable.firefox;
       firefox-unwrapped = pkgs-unstable.firefox-unwrapped;
+
+      # Latest lazygit / lazydocker without bumping the main channel
+      lazygit = pkgs-lazygit.lazygit;
+      lazydocker = pkgs-lazygit.lazydocker;
 
       # Update Google Chrome Stable to latest available without updating entire nixpkgs
       google-chrome = prev.google-chrome.overrideAttrs (old: rec {

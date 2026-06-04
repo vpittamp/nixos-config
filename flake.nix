@@ -10,6 +10,15 @@
     # https://github.com/NixOS/nixpkgs/issues/475181
     nixpkgs-sunshine.url = "github:NixOS/nixpkgs/b5ad8986fecea232ef2e1ee9eecce5b972dc4114";
 
+    # Fresh nixpkgs purely to pin the jesseduffield "lazy" TUI family
+    # (lazygit, lazydocker) at latest without bumping the main channel.
+    # Our main nixpkgs lock (26.05-era) ships lazygit 0.58.1 / lazydocker 0.24.4;
+    # nixos-unstable now has lazygit 0.62.1 / lazydocker 0.25.2. Consumed by the
+    # per-host nixpkgs.overlays in configurations/{thinkpad,ryzen}.nix.
+    # TODO(lazygit-pin): drop this input + overlay once the main nixpkgs bump
+    # catches these versions up.
+    nixpkgs-lazygit.url = "github:NixOS/nixpkgs/nixos-unstable";
+
     # Antigravity CLI — Google's Gemini-CLI successor (announced 2026-05-19, I/O 2026).
     # Gemini CLI sunsets requests for Google AI Pro/Ultra/Free on 2026-06-18.
     #
