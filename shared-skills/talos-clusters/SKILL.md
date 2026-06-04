@@ -1,6 +1,6 @@
 ---
 name: talos-clusters
-description: "Create, recreate, resize, upgrade, and troubleshoot PittampalliOrg Talos Kubernetes clusters on Hetzner, especially the script-provisioned dev spoke (deployment/scripts/talos-hetzner). Use this whenever the user mentions Talos, HCloud/Hetzner cluster nodes, dev cluster rebuilds, the provision/bootstrap/enroll spoke scripts, argocd-agent managed-agent enrollment, stale Tailscale device names after cluster recreation, or SWE-bench capacity validation on Talos workers. Also covers the historical Crossplane TalosSpokeClusterClaim path (removed Phase D)."
+description: "Create, recreate, resize, upgrade, and troubleshoot PittampalliOrg Talos Kubernetes clusters on Hetzner, especially the script-provisioned dev spoke (deployment/scripts/talos-hetzner). Use whenever the user mentions Talos, HCloud/Hetzner cluster nodes, dev cluster rebuilds, provision/bootstrap/enroll spoke scripts, argocd-agent managed-agent enrollment, stale Tailscale device names after cluster recreation, or SWE-bench capacity validation on Talos workers."
 ---
 
 # Talos Clusters

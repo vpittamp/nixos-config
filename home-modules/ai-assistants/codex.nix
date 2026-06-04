@@ -4,59 +4,20 @@ let
   repoRoot = ../../.;
   sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
 
-  # MCP Apps skill: create-mcp-app (from modelcontextprotocol/ext-apps)
-  # Installed into ~/.codex/skills/create-mcp-app
-  extApps = pkgs.fetchFromGitHub {
-    owner = "modelcontextprotocol";
-    repo = "ext-apps";
-    rev = "30a78b60b4829282656daf10c298e2f5f6510f58";
-    hash = "sha256-/9Cq/RYAOFuWu3nXORCe9jDm50D4BUI5ju4UPwBzw0A=";
-  };
-  createMcpAppSkillDir = extApps + "/plugins/mcp-apps/skills/create-mcp-app";
-
-  # MLflow skills bundle (mlflow/skills repo ships 8 individual skills as top-level dirs).
-  mlflowSkillsRepo = pkgs.fetchFromGitHub {
-    owner = "mlflow";
-    repo = "skills";
-    rev = "b5426fa64c10709e76985c24a5ba4ba35e5f4ac0";
-    hash = "sha256-cpnDescmkkpLas0dX9jXIkMugiEd4mgvR3TyaQ09JZ8=";
-  };
-  mlflowSkillNames = [
-    "agent-evaluation"
-    "analyze-mlflow-chat-session"
-    "analyze-mlflow-trace"
-    "instrumenting-with-mlflow-tracing"
-    "mlflow-onboarding"
-    "querying-mlflow-metrics"
-    "retrieving-mlflow-traces"
-    "searching-mlflow-docs"
-  ];
-
   # MLflow tracking server (Tailscale ingress fronting mlflow.mlflow:5000 in K8s hub).
   mlflowTrackingUri = "https://mlflow-hub.tail286401.ts.net";
 
-  codexSkillsDir = repoRoot + "/.codex/skills";
-  hasCodexSkillsDir = builtins.pathExists codexSkillsDir;
-  hasRepoCreateMcpAppSkill = hasCodexSkillsDir && builtins.pathExists (codexSkillsDir + "/create-mcp-app");
-
-  repoSkillEntries = if hasCodexSkillsDir then builtins.readDir codexSkillsDir else {};
-  repoSkillDirs = lib.filterAttrs (_: t: t == "directory" || t == "symlink") repoSkillEntries;
-  repoSkillHomeFiles = lib.mapAttrs'
+  sharedSkillsDir = repoRoot + "/shared-skills";
+  sharedSkillEntries = if builtins.pathExists sharedSkillsDir then builtins.readDir sharedSkillsDir else {};
+  sharedSkillDirs = lib.filterAttrs (_: t: t == "directory" || t == "symlink") sharedSkillEntries;
+  sharedSkillHomeFiles = lib.mapAttrs'
     (name: _:
       lib.nameValuePair ".codex/skills/${name}" {
-        source = codexSkillsDir + "/${name}";
+        source = sharedSkillsDir + "/${name}";
         recursive = true;
       }
     )
-    repoSkillDirs;
-
-  mlflowSkillHomeFiles = lib.listToAttrs (lib.concatMap (n:
-    let inRepo = hasCodexSkillsDir && builtins.pathExists (codexSkillsDir + "/${n}");
-    in lib.optional (!inRepo) (lib.nameValuePair ".codex/skills/${n}" {
-      source = mlflowSkillsRepo + "/${n}";
-      recursive = true;
-    })
-  ) mlflowSkillNames);
+    sharedSkillDirs;
 
   # Auto-import custom instructions from .codex/INSTRUCTIONS.md
   # This follows the same centralization pattern as Claude Code and Gemini CLI
@@ -193,16 +154,8 @@ in
 
 {
   # Install Codex skills into ~/.codex/skills/
-  # Repo-managed skills are linked individually so they remain editable in-tree.
-  home.file =
-    repoSkillHomeFiles
-    // (lib.optionalAttrs (!hasRepoCreateMcpAppSkill) {
-      ".codex/skills/create-mcp-app" = {
-        source = createMcpAppSkillDir;
-        recursive = true;
-      };
-    })
-    // mlflowSkillHomeFiles;
+  # Only shared-skills entries are declared here.
+  home.file = sharedSkillHomeFiles;
 
   # Before home-manager re-links files, drop any SKILL.md that we previously
   # materialized as a regular file. Otherwise home-manager refuses to overwrite
@@ -229,8 +182,6 @@ in
   # Codex currently ignores skills whose `SKILL.md` is a symlink (home-manager typically
   # materializes files as symlinks into the Nix store). After home.file links are in place,
   # replace symlinked `SKILL.md` files with regular files so `codex /skills` can discover them.
-  #
-  # Also add minimal UI metadata for create-mcp-app (optional, but helps it look nicer in UIs).
   home.activation.materializeCodexSkills = lib.hm.dag.entryAfter ["writeBoundary"] ''
     set -euo pipefail
 
@@ -253,21 +204,6 @@ in
         fi
       fi
     done
-
-    if [ -d "$SKILLS_ROOT/create-mcp-app" ]; then
-      ${pkgs.coreutils}/bin/mkdir -p "$SKILLS_ROOT/create-mcp-app/agents"
-
-      TMP="$(${pkgs.coreutils}/bin/mktemp)"
-      ${pkgs.coreutils}/bin/cat > "$TMP" <<'EOF'
-interface:
-  display_name: "Create MCP App"
-  short_description: "Scaffold MCP Apps (tool + UI resource) using @modelcontextprotocol/ext-apps patterns"
-EOF
-      if [ ! -f "$SKILLS_ROOT/create-mcp-app/agents/openai.yaml" ] || ! ${pkgs.diffutils}/bin/cmp -s "$TMP" "$SKILLS_ROOT/create-mcp-app/agents/openai.yaml"; then
-        ${pkgs.coreutils}/bin/install -m 0644 "$TMP" "$SKILLS_ROOT/create-mcp-app/agents/openai.yaml"
-      fi
-      ${pkgs.coreutils}/bin/rm -f "$TMP"
-    fi
   '';
 
   home.activation.setupCodexMcpRuntimeDirs = lib.mkIf enableBrowserMcpServers (lib.hm.dag.entryAfter ["writeBoundary"] ''

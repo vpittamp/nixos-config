@@ -1,11 +1,11 @@
 ---
 name: gitops
-description: "Use this skill for PittampalliOrg/stacks GitOps operations: ArgoCD app health/drift review across hub/dev/staging/ryzen; ryzen hub-managed spoke registration and Tailscale-routed sync; image promotion; release-pins, GHCR image drift, and image pins outside release-pins; SWE-bench evaluator image/env rollout and canary validation; workflow-builder spoke runtime drift; workflow-builder prompt-preset DB migrations and API smoke tests; workflow-builder MCP/auth and ActivePieces piece MCP services; Dapr AgentRuntime statestore, sidecar readiness, and 1/2 pod recovery; GitOps Promoter stuck apps, env branches, source-hydrator, and hub promotion; Tailscale ACLs, device-backed Ingress DNS/status, ProxyGroup service-host VIPs, spoke API access, stale tailnet devices/services, and Funnel webhooks; OAuth/secret rotation, deployment inventory, workflow JSON DB upserts, and app placement."
+description: "Use this skill for PittampalliOrg/stacks GitOps operations: ArgoCD app health/drift review across hub/dev/staging/ryzen; argocd-agent spoke registration/status aggregation; image promotion; release-pins, GHCR image drift, and image pins outside release-pins; SWE-bench evaluator image/env rollout and canary validation; workflow-builder spoke runtime drift; workflow-builder prompt-preset DB migrations and API smoke tests; workflow-builder MCP/auth and ActivePieces piece MCP services; Dapr AgentRuntime statestore, sidecar readiness, and 1/2 pod recovery; GitOps Promoter stuck apps, env branches, source-hydrator, and hub promotion; Tailscale ACLs, device-backed Ingress DNS/status, ProxyGroup service-host VIPs, spoke API access, stale tailnet devices/services, and Funnel webhooks; OAuth/secret rotation, deployment inventory, workflow JSON DB upserts, and app placement."
 ---
 
 # GitOps for PittampalliOrg/stacks
 
-Operational knowledge for the hub-and-spoke gitops system across **dev**, **staging**, **ryzen** (local Talos Docker, hub-managed spoke via Tailscale), and **hub** (Talos control plane). Read this whole file, then drill into `reference/` or `runbooks/` based on the decision tree.
+Operational knowledge for the hub-and-spoke gitops system across **dev**, **staging**, **ryzen** (local Talos Docker, autonomous argocd-agent spoke), and **hub** (Talos control plane). Read this whole file, then drill into `reference/` or `runbooks/` based on the decision tree.
 
 ## Orientation
 

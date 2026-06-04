@@ -1,3 +1,3 @@
 interface:
   display_name: "GitOps (PittampalliOrg/stacks)"
-  short_description: "Operational knowledge for hub-and-spoke GitOps: Argo health, ryzen affected syncs, release handoffs, hub Tekton image builds, SWE-bench images, Dapr readiness, Tailscale, and access."
+  short_description: "Operate ArgoCD, image promotion, Tailscale, and Dapr drift."

@@ -1,6 +1,6 @@
 ---
 name: ryzen-spoke-bootstrap
-description: Use this skill when creating, recreating, or repairing the ryzen local development cluster as an AUTONOMOUS argocd-agent Talos-Docker spoke. Covers the talosctl + helm + kubectl bootstrap flow (replacing the retired idpbuilder path), the autonomous agent enrollment (the agent dials the hub principal OUTBOUND; the hub no longer reconciles ryzen's apps over a spoke kube endpoint), the ryzen->hub Tailscale secret transport (ESO hub-secrets-store ClusterSecretStore reading ryzen-shared-secrets), ryzen profile fit (Contour+Kourier ingress, no local Gitea, no Azure on the spoke), the kueue ClientSideApplyMigration=false wedge, and the LOCAL root-ryzen app-of-apps that reconciles packages/overlays/ryzen@main DIRECTLY (no inner-loop branch, no source-hydrator, no Promoter).
+description: Use this skill when creating, recreating, or repairing the ryzen local development cluster as an AUTONOMOUS argocd-agent Talos-Docker spoke. Covers the talosctl, helm, and kubectl bootstrap flow, autonomous agent enrollment, ryzen-to-hub Tailscale secret transport, Contour/Kourier profile fit, no local Gitea or Azure on the spoke, the kueue ClientSideApplyMigration=false wedge, and the LOCAL root-ryzen app-of-apps that reconciles packages/overlays/ryzen@main directly with no inner-loop branch, source-hydrator, or Promoter.
 ---
 
 # Ryzen Spoke Bootstrap

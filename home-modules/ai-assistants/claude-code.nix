@@ -3,34 +3,6 @@
 let
   repoRoot = ../../.;
 
-  # MCP Apps skill: create-mcp-app (from modelcontextprotocol/ext-apps)
-  # Installed into ~/.claude/skills/create-mcp-app
-  extApps = pkgs.fetchFromGitHub {
-    owner = "modelcontextprotocol";
-    repo = "ext-apps";
-    rev = "30a78b60b4829282656daf10c298e2f5f6510f58";
-    hash = "sha256-/9Cq/RYAOFuWu3nXORCe9jDm50D4BUI5ju4UPwBzw0A=";
-  };
-  createMcpAppSkillDir = extApps + "/plugins/mcp-apps/skills/create-mcp-app";
-
-  # MLflow skills bundle (mlflow/skills repo ships 8 individual skills as top-level dirs).
-  mlflowSkillsRepo = pkgs.fetchFromGitHub {
-    owner = "mlflow";
-    repo = "skills";
-    rev = "b5426fa64c10709e76985c24a5ba4ba35e5f4ac0";
-    hash = "sha256-cpnDescmkkpLas0dX9jXIkMugiEd4mgvR3TyaQ09JZ8=";
-  };
-  mlflowSkillNames = [
-    "agent-evaluation"
-    "analyze-mlflow-chat-session"
-    "analyze-mlflow-trace"
-    "instrumenting-with-mlflow-tracing"
-    "mlflow-onboarding"
-    "querying-mlflow-metrics"
-    "retrieving-mlflow-traces"
-    "searching-mlflow-docs"
-  ];
-
   # MLflow tracking server (Tailscale ingress fronting mlflow.mlflow:5000 in K8s hub).
   mlflowTrackingUri = "https://mlflow-hub.tail286401.ts.net";
 
@@ -79,43 +51,23 @@ let
         (builtins.readFile (repoRoot + "/.claude/commands/${name}"))
     )
     (lib.filterAttrs (n: v: v == "regular" && lib.hasSuffix ".md" n) commandFiles);
-  # Auto-import skills from .claude/skills/ directory (repo-managed).
-  skillsDir = repoRoot + "/.claude/skills";
-  hasSkillsDir = builtins.pathExists skillsDir;
-  hasRepoCreateMcpAppSkill = hasSkillsDir && builtins.pathExists (skillsDir + "/create-mcp-app");
-
-  repoSkillEntries = if hasSkillsDir then builtins.readDir skillsDir else {};
-  repoSkillDirs = lib.filterAttrs (_: t: t == "directory" || t == "symlink") repoSkillEntries;
-  repoSkillHomeFiles = lib.mapAttrs'
+  sharedSkillsDir = repoRoot + "/shared-skills";
+  sharedSkillEntries = if builtins.pathExists sharedSkillsDir then builtins.readDir sharedSkillsDir else {};
+  sharedSkillDirs = lib.filterAttrs (_: t: t == "directory" || t == "symlink") sharedSkillEntries;
+  sharedSkillHomeFiles = lib.mapAttrs'
     (name: _:
       lib.nameValuePair ".claude/skills/${name}" {
-        source = skillsDir + "/${name}";
+        source = sharedSkillsDir + "/${name}";
         recursive = true;
       }
     )
-    repoSkillDirs;
-
-  mlflowSkillHomeFiles = lib.listToAttrs (lib.concatMap (n:
-    let inRepo = hasSkillsDir && builtins.pathExists (skillsDir + "/${n}");
-    in lib.optional (!inRepo) (lib.nameValuePair ".claude/skills/${n}" {
-      source = mlflowSkillsRepo + "/${n}";
-      recursive = true;
-    })
-  ) mlflowSkillNames);
+    sharedSkillDirs;
 in
 lib.mkIf enableClaudeCode {
   # Install skills into ~/.claude/skills/
-  # Repo-managed skills are linked individually so they remain editable in-tree.
+  # Only shared-skills entries are declared here.
   home.file =
-    repoSkillHomeFiles
-    // (lib.optionalAttrs (!hasRepoCreateMcpAppSkill) {
-      ".claude/skills/create-mcp-app" = {
-        source = createMcpAppSkillDir;
-        recursive = true;
-      };
-    })
-    // mlflowSkillHomeFiles
-    // {
+    sharedSkillHomeFiles // {
       # Force PATH-preferred ~/.local/bin/claude to the home-manager finalPackage
       # so telemetry/session hooks AND --mcp-config (which the HM module adds via
       # a second wrapper layer when mcpServers is non-empty) are both present.

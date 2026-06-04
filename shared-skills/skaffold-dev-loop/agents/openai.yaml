@@ -1,4 +1,4 @@
 interface:
   display_name: "Skaffold Dev Loop"
-  short_description: "Run Skaffold inner-loop HMR and legacy ryzen-only image-pin checks for workflow-builder services."
+  short_description: "Run Skaffold HMR and image-pin loops on ryzen."
   default_prompt: "Use $skaffold-dev-loop to start, exit, or troubleshoot the Skaffold dev loop for workflow-builder system services."
