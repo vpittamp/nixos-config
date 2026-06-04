@@ -86,7 +86,7 @@ kubectl get application workflow-builder -n argocd \
 
 ## Legacy ryzen-only image loop
 
-Prefer the GitHub/GHCR build lane plus an `origin/main` workloads pin for durable workflow-builder images. Use the Skaffold deploy path only for narrow ryzen-only recovery/testing.
+Prefer the GitHub/GHCR build lane plus an `origin/main` pin for durable workflow-builder images. For workflow-builder + workflow-mcp-server the ryzen pin is now FULLY AUTOMATED: `commit-pin.sh` upserts the flat pins file `packages/components/hub-spoke-appsets/release-pins/workflow-builder-images-ryzen.yaml` and pushes; stacks CI (`render-ryzen-image.yml`) renders the kustomize Component `packages/components/workloads/workflow-builder-ryzen-image/kustomization.yaml` from it; ryzen's autonomous local ArgoCD reconciles `overlays/ryzen@main` (~30s). No manual render, no manifests `newTag` edit. (Phase 2d is DONE — ryzen no longer reads a bare `manifests/kustomization.yaml` `images:` block for these two services.) Use the Skaffold deploy path only for narrow ryzen-only recovery/testing.
 
 ```bash
 pnpm deploy:skaffold                                  # workflow-builder
@@ -130,31 +130,30 @@ kubectl get application workflow-builder -n argocd \
 
 ## Legacy ryzen-only loop — rollback / revert
 
-Edit the image pin back to the prior tag and re-push from the cache clone:
+For **workflow-builder** and **workflow-mcp-server**, the ryzen pin lives in a FLAT pins file (the bare `images:` block was deleted from `packages/components/workloads/workflow-builder/manifests/kustomization.yaml`). Edit the flat pins file back to the prior tag and re-push; stacks CI re-renders the kustomize Component automatically:
 
 ```bash
 cd ~/.cache/skaffold/stacks-ryzen
 git fetch --depth 50 origin main
 git reset --hard origin/main
 
-python3 - <<'PY'
-import pathlib, re
-p = pathlib.Path("packages/components/workloads/workflow-builder/manifests/kustomization.yaml")
-t = p.read_text()
-pattern = re.compile(r'(\n  - name: workflow-builder\n)(    newName: )[^\n]+(\n)(    newTag: )[^\n]+(\n)')
-new, _ = pattern.subn(r'\g<1>\g<2>ghcr.io/pittampalliorg/workflow-builder\g<3>\g<4>git-<prior-sha>\g<5>', t)
-p.write_text(new)
-PY
+# Edit packages/components/hub-spoke-appsets/release-pins/workflow-builder-images-ryzen.yaml:
+# set the workflow-builder images/imageRefs/digests/sourceShas entries back to the prior tag/digest.
+# (commit-pin.sh upserts this file; for a manual revert, edit it directly.)
+$EDITOR packages/components/hub-spoke-appsets/release-pins/workflow-builder-images-ryzen.yaml
 
-git add packages/components/workloads/workflow-builder/manifests/kustomization.yaml
-git commit -m "chore(workflow-builder): revert pin to prod tag"
+git add packages/components/hub-spoke-appsets/release-pins/workflow-builder-images-ryzen.yaml
+git commit -m "chore(workflow-builder): revert ryzen pin to prior tag"
 git push origin main
+# stacks CI (.github/workflows/render-ryzen-image.yml) regenerates and commits
+# packages/components/workloads/workflow-builder-ryzen-image/kustomization.yaml (the rendered Component)
+# — do NOT render locally; the CI render is drift-proof.
 
-kubectl -n argocd annotate application workflow-builder \
+kubectl -n argocd annotate application ryzen-workflow-builder \
   argocd.argoproj.io/refresh=hard --overwrite
 ```
 
-If the reverted or restored image should be the durable ryzen image, apply the same pin in `/home/vpittamp/repos/PittampalliOrg/stacks/main/packages/components/workloads/workflow-builder/manifests/kustomization.yaml`, commit it to `origin/main`, and run `cluster-update --container-engine podman --seed-image-push-engine skopeo`.
+ryzen's workflow-builder Application sources `manifests/` directly; that kustomization `components:`-includes the rendered `workflow-builder-ryzen-image` Component, so the regenerated Component IS ryzen's effective pin once CI commits it. (For all OTHER Skaffold-owned services — `workflow-orchestrator`, `function-router`, `mcp-gateway` — the pin is still the bare `manifests/kustomization.yaml` `newTag`, edited directly; the flat-pins→CI-render path is workflow-builder/workflow-mcp-server-only.)
 
 ## Cluster-level preflight (before first session of a day)
 
