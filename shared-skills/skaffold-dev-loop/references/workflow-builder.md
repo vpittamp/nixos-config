@@ -31,6 +31,21 @@ content via their Promoter PRs — env/hub-next → env/hub, env/spokes-dev-next
 env/spokes-dev). Use the Skaffold inner loop for live source hot reload and the
 outer loop (`pnpm deploy:skaffold`) for image bake + commit-pin to `main`.
 
+**The hub github-outer-loop auto-builds + promotes ALL Skaffold-owned services
+to dev on merge to `main` — not just workflow-builder.** The `github-outer-loop`
+EventListener has PER-SERVICE triggers (CEL: a commit touching `services/<svc>/**`,
+or commit message `[build all]`); a merge fires THAT service's trigger → the
+PARAMETERIZED service-agnostic `outer-loop-build` Pipeline → GHCR → `update-stacks`
+pins the SHARED `release-pins/workflow-builder-images.yaml` (ONE file holds EVERY
+service's pin) + renders the dev overlay → source-hydrator → Promoter →
+`env/spokes-dev` → `dev-<svc>` rolls. Verified end-to-end 2026-06-05 for
+workflow-builder, workflow-orchestrator, function-router, mcp-gateway,
+swebench-coordinator. ryzen is OFF this path (the github-outer-loop never touches
+ryzen's pin — ryzen is the Skaffold `commit-pin.sh` lane). `update-stacks`'s
+`git push origin main` now retries with backoff (6 attempts, 4/8/12/16/20s, rebase
+between, stacks #2455) so a transient GitHub 500 / push contention no longer
+silently drops a build's promotion.
+
 There is NO inbound webhook path to a spoke. All 3 GitHub webhooks are HUB-FACING
 (Tailscale Funnel): `tekton-hub` (build EventListener), `argocd-webhook-hub`
 (`/api/webhook`), `gitops-promoter-webhook-hub`. ryzen, being an autonomous
@@ -113,6 +128,19 @@ pnpm deploy:skaffold:orchestrator                     # workflow-orchestrator
 bash scripts/skaffold-deploy.sh fn-activepieces       # any single service
 bash scripts/skaffold-deploy.sh workflow-builder workflow-orchestrator  # batch
 ```
+
+**Bring a STALE service current on DEV without a source change.** The hub
+per-service trigger only fires on a `services/<svc>/` change, so a service with no
+recent edits stays frozen at its last successful dev image. To rebuild from current
+`main` HEAD into dev (not ryzen), create a PipelineRun from the `outer-loop-build`
+Pipeline with params `git_url=https://github.com/PittampalliOrg/workflow-builder.git`,
+`git_sha=<current main HEAD>`, `image_name=<svc>`, `dockerfile=services/<svc>/Dockerfile`,
+`context=.` (Node: function-router/mcp-gateway) or `services/<svc>` (Python:
+workflow-orchestrator/swebench-coordinator), + workspaces `shared-workspace`
+(emptyDir), `dockerconfig` (Secret `ghcr-push-credentials`), `buildah-cache`
+(PVC `buildah-cache-<svc>`). The per-service `image_name`/`dockerfile`/`context`
+come from each `outer-loop-<svc>` TriggerBinding; `update-stacks` then re-pins dev.
+(Used 2026-06-05 to bring mcp-gateway/swebench-coordinator/function-router current.)
 
 End-to-end timeline (workflow-builder, fresh build, no cache):
 - Build (SvelteKit prod multi-stage): ~70s
@@ -206,6 +234,7 @@ docker login -u PittampalliOrg ghcr.io
 - **workflow-orchestrator**: uvicorn `--reload` watches `/app`; py edits trigger restart. Dapr's scheduler-disconnected logs at startup are normal — placement reconnects within seconds.
 - **fn-activepieces**: currently inactive by default on ryzen. The prod Deployment file is a multi-doc YAML (Deployment + Service). The dev overlay's `resources:` references the file; both kinds render but only the Deployment is patched.
 - **swebench-coordinator**: build context is the repo root (Dockerfile uses `services/swebench-coordinator/...` paths). Same .dockerignore exclusions as workflow-orchestrator.
+- **Node services + pnpm v10 build gotcha**: a Node service whose Dockerfile uses UNPINNED `npm install -g pnpm` gets pnpm v10, which FAILS the prod build at `RUN pnpm build` with `ERR_PNPM_IGNORED_BUILDS` (esbuild/protobufjs build scripts blocked behind an approval gate). FIX: pin `pnpm@9` (like mcp-gateway); do NOT rely on `--ignore-scripts` (leaves esbuild's binary missing for the build stage). This kind of prod-build break can hide indefinitely because the hub per-service trigger only fires on a `services/<svc>/` change — the image just stays frozen at the last good build (function-router was stuck at a May-21 image for this reason; fixed wfb PR #42).
 
 ## When Skaffold is NOT the right path
 

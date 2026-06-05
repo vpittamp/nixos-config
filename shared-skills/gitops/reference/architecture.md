@@ -48,15 +48,20 @@ For the full ordered recreate path see the `cluster-desired-state` skill.
 This is **the** mental model for this system. The same workflow-builder base manifests at `packages/components/workloads/workflow-builder/manifests/` are used by all three spokes, but the image tags come from **different files**:
 
 ```
-GitHub push to PittampalliOrg/workflow-builder
+GitHub push to PittampalliOrg/workflow-builder (any Skaffold-owned service)
     │
     │  webhook (Tailscale Funnel: tekton-hub.tail286401.ts.net)
     ▼
 ┌──────────────────────────────────────────────┐
-│  HUB TEKTON outer-loop pipeline               │
+│  HUB TEKTON github-outer-loop EventListener   │
+│  - PER-SERVICE triggers (CEL: commit touched  │
+│    services/<svc>/**, or msg "[build all]")    │
+│  - Fires the PARAMETERIZED outer-loop-build    │
+│    Pipeline (service-agnostic) for THAT svc    │
 │  - Build with Buildah                         │
 │  - Push to ghcr.io/pittampalliorg/<img>:git-… │
-│  - Push release metadata or open release PR   │
+│  - update-stacks pins the SHARED release file  │
+│    + renders the dev overlay                   │
 └──────────────────────────────────────────────┘
     │
     │  release/workflow-builder-* PR → origin/main
@@ -112,10 +117,15 @@ ryzen Talos-docker cluster (HAS its own local ArgoCD)
 ```
 
 **Key implications:**
+- **ALL Skaffold-owned services auto-build + promote to dev on merge to `main`** — NOT just workflow-builder. The `github-outer-loop` EventListener has PER-SERVICE triggers (CEL filter on a commit touching `services/<svc>/**`, or commit message `[build all]`); a merge fires THAT service's trigger → the parameterized `outer-loop-build` Pipeline → GHCR → `update-stacks` pins the SHARED `release-pins/workflow-builder-images.yaml` (ONE file holds EVERY service's pin) + renders the dev overlay → source-hydrator → Promoter → `env/spokes-dev` → `dev-<svc>` rolls. Verified end-to-end 2026-06-05 for `workflow-builder`, `workflow-orchestrator`, `function-router`, `mcp-gateway`, `swebench-coordinator`. (The earlier "only workflow-builder auto-builds" belief was wrong — the per-service triggers were live but had simply never been exercised because no non-wfb service had been pushed since the current EL pod.) The github-outer-loop deliberately does NOT touch ryzen's pin — ryzen is the Skaffold `commit-pin.sh` lane.
+  - workflow-builder's OWN trigger additionally fires on `src/`, `lib/`, `scripts/`, `static/`, `drizzle/`, `Dockerfile`, `package.json` changes.
+  - **Push-retry backoff (stacks #2455):** the `update-stacks` task's `git push origin main` retries with backoff (6 attempts, 4/8/12/16/20s, rebase between). The OLD loop (3 tries in ~1s, no backoff) silently DROPPED a build's promotion on a transient GitHub 500 / push contention (e.g. a build racing a concurrent merge); transient push failures now self-heal.
 - A bump validated on ryzen does **not** automatically propagate to dev/staging. Ryzen reconciles `main` directly; dev/staging consume the same image via release-pins (hub Tekton `update-stacks` writing `release-pins/workflow-builder-images.yaml` on `main`) + their Promoter step.
 - A tag/digest bumped to dev/staging via release-pins **must already exist on `ghcr.io`**. Outer-loop normally builds it and records the digest/provenance in the release metadata.
 - `release-pins/workflow-builder-images.yaml` is schema v2: `images` remains the compatibility tag map; `digests`, `imageRefs`, `sourceShas`, `pipelineRuns`, and `updatedAts` hold immutable/provenance metadata. Dev/staging templates render tag+digest refs when a digest is present.
 - `agent-runtime-controller` is the exception: bumped directly in `packages/base/manifests/openshell/Deployment-agent-runtime-controller.yaml` (no per-cluster override). Single bump applies to all spokes once on `origin/main`.
+- **Bring a STALE service current without a source change.** A per-service trigger only fires on a `services/<svc>/` change, so a service with no recent edits stays frozen at its last successful image (e.g. `function-router` was stuck at a May-21 image — see the pnpm gotcha below). To rebuild from current `main` HEAD, create a PipelineRun from `outer-loop-build` with params `git_url=https://github.com/PittampalliOrg/workflow-builder.git`, `git_sha=<current main HEAD>`, `image_name=<svc>`, `dockerfile=services/<svc>/Dockerfile`, `context=.` (Node: function-router/mcp-gateway) or `services/<svc>` (Python: workflow-orchestrator/swebench-coordinator), + workspaces `shared-workspace` (emptyDir), `dockerconfig` (Secret `ghcr-push-credentials`), `buildah-cache` (PVC `buildah-cache-<svc>`). The per-service `image_name`/`dockerfile`/`context` values come from each `outer-loop-<svc>` TriggerBinding. `update-stacks` then re-pins dev. (Used 2026-06-05 to bring mcp-gateway/swebench-coordinator/function-router current.)
+  - **pnpm v10 build gotcha:** a Node service whose Dockerfile uses UNPINNED `npm install -g pnpm` gets pnpm v10, which FAILS `RUN pnpm build` with `ERR_PNPM_IGNORED_BUILDS` (esbuild/protobufjs build scripts blocked behind an approval gate). FIX: pin `pnpm@9` (like mcp-gateway); do NOT rely on `--ignore-scripts` (leaves esbuild's binary missing for the build stage). Such a prod-build break can hide indefinitely because the per-service trigger only fires on a `services/<svc>/` change — the image just stays frozen at the last good build (wfb PR #42).
 - Spokes should not run Buildah for this path. If a `workflow-builder-builds-local` or spoke `gitea-builds-egress` resource appears, treat it as stale until proven otherwise.
 
 ## Live deployment inventory
@@ -422,7 +432,7 @@ ryzen **proves the stack works in the local platform shape**. The outer-loop **p
 | `packages/components/workloads/<image>/manifests/kustomization.yaml` | ryzen image-pin per workload (bare `newTag`, edited directly by `commit-pin.sh`) — for `workflow-orchestrator`/`function-router`/`mcp-gateway`. **NOT for `workflow-builder`/`workflow-mcp-server`** — their bare `images:` block was deleted (stacks #2443); see the two entries below |
 | `packages/components/workloads/workflow-builder-ryzen-image/kustomization.yaml` | Render-generated kustomize **Component** carrying the ryzen `workflow-builder` + `workflow-mcp-server` image pin. The `workflow-builder/manifests/kustomization.yaml` `components:`-includes it, so it IS ryzen's effective pin. **`commit-pin.sh` renders + commits it LOCALLY** (deterministic, verified byte-identical to CI) in the same push as the flat pins file (wfb PR #37); `render-ryzen-image.yml` CI is now just a DRIFT-CORRECTION net that re-renders on push and commits only on a diff (no-ops when the local render already matched). Don't hand-edit |
 | `packages/components/hub-spoke-appsets/release-pins/workflow-builder-images-ryzen.yaml` | Flat ryzen pins file (images/imageRefs/digests/sourceShas) that `commit-pin.sh` UPSERTs for `workflow-builder`/`workflow-mcp-server`; in the SAME push `commit-pin.sh` ALSO renders the Component above locally (`WFB_RENDER_ENVS=ryzen scripts/gitops/render-workflow-builder-release-overlays.sh`) and `refresh=hard`es the ryzen spoke-local app, so ryzen reconciles in seconds — no CI/poll wait. `render-ryzen-image.yml` is the drift-correction safety net |
-| `packages/components/hub-tekton/manifests/outer-loop-builds/` | Hub Tekton pipeline + EventListener |
+| `packages/components/hub-tekton/manifests/outer-loop-builds/` | Hub Tekton `github-outer-loop` EventListener (per-service triggers) + the parameterized service-agnostic `outer-loop-build` Pipeline. Per-service `image_name`/`dockerfile`/`context` come from each `outer-loop-<svc>` TriggerBinding |
 | `packages/components/hub-tekton/manifests/workflow-builder-builds/` | Workflow-builder build pipeline definitions |
 | `scripts/gitops/validate-workflow-builder-release-pins.sh` | Validates release-pin schema and GHCR tag/digest existence |
 | `kubectl --context admin@ryzen -n argocd get applications` (or `app get root-ryzen`) | Inspect ryzen state on its OWN local ArgoCD — ryzen reconciles its own apps; the hub only sees a status mirror in ns `ryzen` |
