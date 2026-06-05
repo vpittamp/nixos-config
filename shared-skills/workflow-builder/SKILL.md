@@ -35,6 +35,7 @@ Trigger on any of: "build a workflow", "author a workflow", "add an agent step",
 | Confirm a freshly-inserted workflow shows up + runs | Read `references/verify-in-ui.md`. |
 | Understand "where does my workflow actually run?" | Read `references/cluster-topology.md`. |
 | Watch a build/promotion/sync land on ryzen + dev live, or debug the GitOps pipeline view | Open `/admin/gitops/system` (the event-driven "Kargo lens" pipeline, fed by hub **Argo Events** → `gitops_activity_events` → SSE). The header `build <sha>` badge is the running image on THAT cluster. See the `gitops` skill § *Event-driven activity stream*. |
+| See an image's build status + the Commit→Build→Pin→Promote→Deploy chain | Same view: stage cards carry a **build chip** (Built/Building/Failed + duration + Tekton deep-link) and the node drawer has a **Delivery timeline** (inter-step gaps + durations + a `commit→live` lead-time, lane-aware Promote). This is **inventory-sourced** (the hub inventory's per-app `build`/`promotion`/`live` + `imageHistory`), NOT the Argo-Events stream — see the `gitops` skill § *Event-driven activity stream → Build feedback + delivery timeline*. |
 
 ## Critical gotchas (memorize these — they cost the most time)
 
