@@ -479,6 +479,25 @@ let
       routing_domains = [ "argo-workflows-ryzen.tail286401.ts.net" ];
     }
 
+    # Argo Events (Hub K8s via Tailscale)
+    {
+      name = "Argo Events";
+      url = "https://argo-events-ui-hub.tail286401.ts.net";
+      domain = "argo-events-ui-hub.tail286401.ts.net";
+      icon = iconPath "argo-events.png";
+      description = "Argo Events - Kubernetes-native event-driven automation";
+      categories = "Development;Network;System;";
+      keywords = "argo;events;kubernetes;eventbus;sensors;automation;hub;";
+      scope = "https://argo-events-ui-hub.tail286401.ts.net/";
+      ulid = "7VAGCR86A93ER7BQ1H1CCEHAJ9";  # Generated 2026-06-05
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 174;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "argo-events-ui-hub.tail286401.ts.net" ];
+    }
+
     # Gitea Ryzen (via Tailscale)
     {
       name = "Gitea Ryzen";
