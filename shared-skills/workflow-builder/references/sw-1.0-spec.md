@@ -94,10 +94,10 @@ Downstream tasks then read `${ .fetch_user.user }` and `${ .fetch_user.etag }` i
 
 ## jq expressions — the full-string rule
 
-From `core/sw_expressions.py::is_expression_string` (lines 43-95):
+From `core/sw_expressions.py::is_expression_string`:
 
 ```python
-def is_expression_string(value):
+def is_expression_string(value: Any) -> bool:
     return isinstance(value, str) and value.strip().startswith("${") and value.strip().endswith("}")
 ```
 
@@ -118,7 +118,7 @@ Inside `${ ... }` you can read:
 
 | Path | Contents |
 | --- | --- |
-| `.trigger.<field>` | Trigger inputs (declared in `spec.input.schema.document.properties`). Resolved from `tc.task_outputs["trigger"].data` per `sw_workflow.py:421-434`. |
+| `.trigger.<field>` | Trigger inputs (declared in `spec.input.schema.document.properties`). Resolved from `tc.task_outputs["trigger"]["data"]` in `sw_workflow.py`. |
 | `.<task_name>.<field>` | Output of an earlier task (after `output.as` shaping). E.g. `${ .fetch_user.user.name }`. |
 | `.<state_var>` | State var set by a `set` task or an `export`. |
 | `.workflow.document.name` | Current workflow document fields. |
@@ -171,7 +171,7 @@ Before submitting a spec, run through this list. Most failures hit one of these.
 
 1. ☐ `document.dsl == "1.0.0"`, `document.namespace`, `document.name`, `document.version` all present.
 2. ☐ Every entry in `do[]` is a single-key object with one of the 12 task types set.
-3. ☐ `call` slugs are not in the rejected list (`claude/run`, `openshell/run`, `openshell-langgraph/run`, `dapr-agent-py/run`, `dapr-swe/run`, `mastra/*`, `agent/*`).
+3. ☐ `call` slugs are not in the eight-slug rejected set (`claude/run`, `openshell/run`, `openshell/session-start`, `openshell-langgraph/run`, `openshell-langgraph-observable/run`, `dapr-agent-py/run`, `dapr-swe/run`, `durable/plan`). Avoid `mastra/*` / `agent/*` too — they don't hard-raise but route nowhere useful. See `references/action-catalog.md`.
 4. ☐ Every string value containing `${` is **wrapped entirely** in one `${...}` expression.
 5. ☐ Any `${ .trigger.<x> }` reference matches a declared `input.schema.document.properties.<x>`.
 6. ☐ Any `${ .<task>.<x> }` reference points to a task that appears earlier in `do[]`.

@@ -2,7 +2,7 @@
 
 A comprehensive, modular NixOS configuration supporting multiple platforms: WSL2, Hetzner Cloud, Apple Silicon Macs, and containers.
 
-**📢 Recent Refactor (2025-11):** Migrated to flake-parts with modular outputs (flake.nix reduced from 550 to 110 lines). See `FLAKE_REFACTOR_GUIDE.md` for details.
+**📢 Recent Refactor (2025-11):** Migrated to flake-parts with modular outputs (flake.nix reduced from 550 to 110 lines).
 
 ## 🎯 Overview
 

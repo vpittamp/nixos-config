@@ -81,7 +81,7 @@ Treat prompt cacheability as part of prompt design:
 - Avoid changing preset text just to insert sample values; use preview context instead.
 - When a provider reports cached tokens, audit `template_hash`, instruction hash, selected preset/version ids, and source fields before assuming the cache is broken.
 
-Dapr Conversation supports provider prompt cache retention and response caching settings, including `promptCacheRetention` and response cache TTL paths. The workflow-builder authoring surface should not make cache misses more likely by parameterizing otherwise stable system content.
+Prompt caching is the LLM provider's own feature, reached **directly** by the adapters (Anthropic `cache_control` + `cacheTtl`, OpenAI `prompt_cache_key`); the agents monkeypatch `DaprChatClient.generate` and bypass the alpha Dapr Conversation API, so there is no Conversation-component cache-retention knob in play. The workflow-builder authoring surface should not make cache misses more likely by parameterizing otherwise stable system content.
 
 ## Migration and rollout checks
 

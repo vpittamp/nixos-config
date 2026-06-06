@@ -100,8 +100,16 @@ def upsert_via_bff(payload: dict, args: argparse.Namespace) -> None:
         }
         http_json("PUT", f"{base}/api/workflows/{wf_id}", put_body, headers)
 
-    canvas_url = f"{base}/workflows/{wf_id}"
-    print(json.dumps({"id": wf_id, "canvasUrl": canvas_url, "specWritten": spec is not None}, indent=2))
+    # The canvas page lives only under the workspace route
+    # (/workspaces/<slug>/workflows/<id>) — there is no top-level
+    # /workflows/<id> page route, so we can't build a click-through URL from
+    # the POST response (it carries no workspace slug). Emit the id + a hint
+    # instead of a dead link; the workspace slug is the one you launched from.
+    print(json.dumps({
+        "id": wf_id,
+        "specWritten": spec is not None,
+        "canvasUrlHint": f"{base}/workspaces/<workspace-slug>/workflows/{wf_id}",
+    }, indent=2))
 
 
 def upsert_via_psql(payload: dict, args: argparse.Namespace) -> None:

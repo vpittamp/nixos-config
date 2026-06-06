@@ -24,7 +24,7 @@ That's a complete, runnable agent step. The fields are explained below.
 
 ## Two equivalent `with` shapes
 
-Both are accepted at runtime — the canvas marks the node `type: "agent"` based purely on `call === "durable/run"` (`isAgentTaskConfig` in `agent-graph.ts:401-407` is just that check).
+Both are accepted at runtime — the canvas marks the node `type: "agent"` based purely on `call === "durable/run"` (`isAgentTaskConfig` in `agent-graph.ts` (~L438) is just that check).
 
 **Flat** (preferred — what the simple browser-use template uses):
 
@@ -47,7 +47,7 @@ Both are accepted at runtime — the canvas marks the node `type: "agent"` based
 }
 ```
 
-When in doubt, use the flat shape. The `normalizeAgentTaskConfig` helper (`agent-graph.ts:409-453`) actually mirrors flat fields into a `body` field anyway, so both are interchangeable from the orchestrator's view.
+When in doubt, use the flat shape. The `normalizeAgentTaskConfig` helper (`agent-graph.ts`, ~L446) actually mirrors flat fields into a `body` field anyway, so both are interchangeable from the orchestrator's view.
 
 ## Body fields
 
@@ -217,7 +217,7 @@ Two `durable/run` steps can share a sandbox by chaining through a `workspace/pro
 ]
 ```
 
-Critical: `workspace/profile.with.keepAfterRun: true` is required. Without it `_should_cleanup_workspaces` (in `sw_workflow.py:130-180`) tears the sandbox down before the `durable/run` step starts.
+Critical: `workspace/profile.with.keepAfterRun: true` is required. Without it `_should_cleanup_workspaces` (in `sw_workflow.py`, def at ~L261) tears the sandbox down before the `durable/run` step starts.
 
 ## See also
 

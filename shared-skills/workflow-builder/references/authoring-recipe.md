@@ -37,7 +37,7 @@ From `references/sw-1.0-spec.md`:
 
 1. ☐ `document.dsl == "1.0.0"`, namespace + name + version present.
 2. ☐ Every `do[]` entry is a single-key object with one of the 12 task types set.
-3. ☐ No rejected slugs (`claude/run`, `openshell/run`, `dapr-agent-py/run`, `mastra/*`, `agent/*`, …).
+3. ☐ No rejected slugs — the eight in `_REMOVED_AGENT_ACTION_TYPES` (`claude/run`, `openshell/run`, `openshell/session-start`, `openshell-langgraph/run`, `openshell-langgraph-observable/run`, `dapr-agent-py/run`, `dapr-swe/run`, `durable/plan`); also avoid `mastra/*` / `agent/*` (they route nowhere). See `references/action-catalog.md`.
 4. ☐ Every `${...}` value is fully wrapped (full-string rule).
 5. ☐ `${ .trigger.<x> }` matches a declared input property.
 6. ☐ `${ .<task>.<x> }` references an earlier task only.
@@ -56,7 +56,7 @@ The script:
 1. Resolves `project_id` from the user's session (or `WORKFLOW_BUILDER_API_KEY` env).
 2. POSTs `{name, nodes, edges, engineType}` to `/api/workflows` (which stamps `userId` + `projectId`).
 3. PUTs `{spec}` to `/api/workflows/<id>` to set the `spec` JSONB column.
-4. Prints the canvas URL: `http://workflow-builder:3000/workspaces/<slug>/workflows/<id>`.
+4. Prints the workflow `id` + a `canvasUrlHint`. The canvas page lives only at `/workspaces/<slug>/workflows/<id>` — there is no top-level `/workflows/<id>` route — and the POST response carries no workspace slug, so fill in the workspace you launched from.
 5. Falls back to direct `psql INSERT` if the BFF is unreachable (you must set `DATABASE_URL` and `--project-id` in that case).
 
 Why both POST + PUT: `POST /api/workflows` does not accept a `spec` field — only `name`, `nodes`, `edges`, `engineType`. The `spec` column is set via `PUT /api/workflows/[id]` (see `src/routes/api/workflows/[workflowId]/+server.ts:50-77`). The script handles both calls.

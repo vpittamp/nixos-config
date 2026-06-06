@@ -14,13 +14,13 @@ The orchestrator dispatches based on the slug *prefix*. Source: `services/workfl
 | `browser/*` | openshell-agent-runtime | Dapr invoke → function-router | `browser/profile`, `browser/clone`, `browser/command`, `browser/capture-flow`, `browser/validate` |
 | `openshell/*` | openshell-agent-runtime | Dapr invoke → function-router | OpenShell runtime helper routes |
 | `code/*` | code-runtime | Dapr invoke → function-router | `code/typescript-function`, `code/python-function` |
-| `*` (default fall-through) | fn-activepieces | Dapr invoke → function-router (credential decrypt + AP piece executor) | `@activepieces/piece-slack/send_message`, etc. |
+| `*` (default fall-through) | fn-activepieces | Dapr invoke → function-router (credential broker + AP piece executor) | `@activepieces/piece-slack/send_message`, etc. |
 
-`function-router` is the credential broker + Knative proxy for everything **except** `durable/run`. Slug routing inside function-router is governed by the `function-registry` ConfigMap in stacks (`packages/components/workloads/function-router/manifests/ConfigMap-function-registry.yaml`) — that's authoritative.
+`function-router` is the credential broker + Knative proxy for everything **except** `durable/run`. It does NOT decrypt credentials itself — it HTTP-GETs the BFF/ActivePieces `…/decrypt` endpoint for plaintext and audits each fetch in `credential_access_logs`. AES-256-CBC decryption lives in the BFF (`src/lib/server/security/encryption.ts`). Slug routing inside function-router is governed by the `function-registry` ConfigMap in stacks (`packages/components/workloads/function-router/manifests/ConfigMap-function-registry.yaml`) — that's authoritative.
 
 ## Rejected legacy slugs
 
-The orchestrator parses the spec at startup and rejects these on sight with `Removed SW 1.0 agent action`:
+The orchestrator's `_REMOVED_AGENT_ACTION_TYPES` set raises `Removed SW 1.0 agent action` at call dispatch. It is **exactly these eight slugs**:
 
 - `claude/run`
 - `openshell/run`, `openshell/session-start`
@@ -28,8 +28,8 @@ The orchestrator parses the spec at startup and rejects these on sight with `Rem
 - `dapr-agent-py/run`
 - `dapr-swe/run`
 - `durable/plan`
-- Any `mastra/*` slug
-- Any `agent/*` slug
+
+Legacy `mastra/*` and `agent/*` slugs are **not** in that set — they do NOT raise the "Removed" error. They fall through to the default `fn-activepieces` route and fail there as an unknown action (a different, less obvious error). Don't use them. (The repo's CLAUDE.md still lists `mastra/*`/`agent/*` as "rejected"; the `_REMOVED_AGENT_ACTION_TYPES` code in `sw_workflow.py` is authoritative.)
 
 Every agent execution today goes through `durable/run` with `with.agentRef`. There is no other agent dispatch path.
 
@@ -63,7 +63,7 @@ If the user's piece isn't in the list, that's why their slug doesn't work.
 
 ## Activepieces credentials
 
-AP actions need an `app_connection`. The user creates connections via `/connections` in the UI; they're AES-256-CBC encrypted at rest in the `app_connections` table. function-router decrypts them at execution time and passes plaintext to fn-activepieces — orchestrator never sees plaintext. Auth types: `OAUTH2`, `SECRET_TEXT`, `BASIC_AUTH`, `CUSTOM_AUTH`.
+AP actions need an `app_connection`. The user creates connections via `/connections` in the UI; they're AES-256-CBC encrypted at rest in the `app_connections` table. At execution time function-router **brokers** the plaintext — it GETs the BFF internal `…/connections/<id>/decrypt` API (or ActivePieces' own decrypt endpoint), where the BFF performs the actual AES-256-CBC decryption — then passes plaintext to fn-activepieces. The orchestrator never sees plaintext, and function-router never decrypts locally. Auth types: `OAUTH2`, `SECRET_TEXT`, `BASIC_AUTH`, `CUSTOM_AUTH`.
 
 For the spec, reference connections by `connectionId` in `with.auth`:
 
@@ -88,7 +88,7 @@ Do not confuse AP action slugs with piece MCP servers:
 
 | Path | Use when | Auth path |
 | --- | --- | --- |
-| `@activepieces/piece-<name>/<action>` task slug | The workflow spec should call one specific AP action as a task | function-router decrypts `app_connection` and calls fn-activepieces |
+| `@activepieces/piece-<name>/<action>` task slug | The workflow spec should call one specific AP action as a task | function-router brokers `app_connection` (GETs the BFF/AP `…/decrypt` API for plaintext; the BFF decrypts) and calls fn-activepieces |
 | `mcp_connection` + piece MCP server | The agent should see a piece's actions as tools during `durable/run` | agent sends `X-Connection-External-Id` to `piece-mcp-server`, which decrypts via workflow-builder |
 
 For agent tool use, prefer the MCP path and read `references/mcp-connections.md`. For deterministic workflow steps, prefer an explicit AP action slug.
