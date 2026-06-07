@@ -1,0 +1,15 @@
+# Conversation-history state store for a DurableAgent.
+# Referenced by: memory=AgentMemoryConfig(store=ConversationDaprStateMemory(store_name="agent-memory"))
+# NOTE: this store does NOT set actorStateStore — it is plain application state.
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: agent-memory
+spec:
+  type: state.redis
+  version: v1
+  metadata:
+    - name: redisHost
+      value: localhost:6379
+    - name: redisPassword
+      value: ""

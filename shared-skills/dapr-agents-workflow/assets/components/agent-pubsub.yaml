@@ -1,0 +1,15 @@
+# Pub/sub broker for AUTONOMOUS multi-agent orchestration (Pattern B only).
+# Referenced by: pubsub=AgentPubSubConfig(pubsub_name="agent-pubsub", ...)
+# Not needed for a single DurableAgent or for the workflow-orchestrated call_agent pattern.
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: agent-pubsub
+spec:
+  type: pubsub.redis
+  version: v1
+  metadata:
+    - name: redisHost
+      value: localhost:6379
+    - name: redisPassword
+      value: ""

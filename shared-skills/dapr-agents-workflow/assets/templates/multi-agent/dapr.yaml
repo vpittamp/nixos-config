@@ -1,0 +1,33 @@
+# Multi-app run file for Pattern B (autonomous multi-agent / "The Fellowship" shape).
+# Launch the team + orchestrator together:  dapr run -f dapr.yaml
+# Per-app `env` selects each team member's identity from the shared agent_app.py.
+version: 1
+common:
+  # Copy the component YAMLs you need from the skill's assets/components/ into a
+  # ./components dir next to this file. Pattern B needs ALL FIVE: agent-memory,
+  # agent-workflow, agent-pubsub, agentregistrystore (+ llm-provider if using DaprChatClient).
+  resourcesPath: ./components
+  logLevel: info
+apps:
+  - appID: frodo
+    appDirPath: ./
+    command: ["python3", "agent_app.py"]
+    env:
+      AGENT_NAME: frodo
+      AGENT_ROLE: "Ring-bearer"
+  - appID: gandalf
+    appDirPath: ./
+    command: ["python3", "agent_app.py"]
+    env:
+      AGENT_NAME: gandalf
+      AGENT_ROLE: "Wizard, strategist"
+  - appID: legolas
+    appDirPath: ./
+    command: ["python3", "agent_app.py"]
+    env:
+      AGENT_NAME: legolas
+      AGENT_ROLE: "Scout, archer"
+  - appID: orchestrator
+    appDirPath: ./
+    command: ["python3", "orchestrator_app.py"]
+    appPort: 8004

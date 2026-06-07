@@ -74,16 +74,18 @@ kubectl -n workflow-builder exec deploy/workflow-builder -- \
 # Orchestrator logs the dispatch
 kubectl -n workflow-builder logs deploy/workflow-orchestrator -f | grep -E "exec|run|error" | head -50
 
-# For a durable/run step: per-agent pod wakes
-kubectl -n workflow-builder get agentruntime/<slug> -w
-# Should go phase=Sleeping → phase=Active within ~20s
+# For a durable/run step: a per-session agent-sandbox pod is Kueue-admitted, then starts
+kubectl -n workflow-builder get workloads -w        # Kueue admission of the session workload
+kubectl -n workflow-builder get sandbox             # ephemeral agent-sandbox CR(s), self-reaped on session end
+# then tail the session-sandbox pod once it reaches Running:
+kubectl -n workflow-builder logs <session-sandbox-pod> -c <runtime-container> -f
 ```
 
 ## Common discrepancies
 
 | You see in UI | But cluster says | Diagnosis |
 | --- | --- | --- |
-| Run status: "running" forever | `dapr workflow get` shows no recent activity | Replay chatter — check AgentRuntime phase first; only intervene if pod is genuinely Sleeping after wake annotation. See `references/troubleshooting.md` § Replay chatter. |
+| Run status: "running" forever | `dapr workflow get` shows no recent activity | Replay chatter — usually NOT stuck. Before intervening, confirm the per-session agent-sandbox pod reached `Running` (`kubectl get sandbox -n workflow-builder` + the pod) and the session's `updated_at` is advancing. See `references/troubleshooting.md` § Replay chatter. |
 | Run failed at task N | Orchestrator log shows `KeyError` on a task output | `${ .<task>.<x> }` references something not in the actual output. Add an `output: { as: { ... } }` to task N to shape the output predictably. |
 | Run failed with no error | Step output panel is empty | Look at orchestrator logs at the timestamp of the failure — parse errors get swallowed. |
 | Canvas renders but Execute is greyed out | `engineType !== 'dapr'` | Only `engineType: "dapr"` is currently runnable. Re-upsert with `engineType: "dapr"`. |

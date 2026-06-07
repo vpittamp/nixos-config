@@ -558,6 +558,24 @@ let
       description = "Open-source AI agent with desktop interface";
     })
 
+    # WS33: Herdr Agent Multiplexer
+    (mkApp {
+      name = "herdr";
+      display_name = "Herdr";
+      command = "ghostty";
+      parameters = "-e herdr";
+      scope = "global";
+      expected_class = "com.mitchellh.ghostty";
+      preferred_workspace = 33;
+      preferred_monitor_role = "primary";
+      icon = iconPath "tmux.svg";
+      nix_package = "inputs.herdr.packages.<system>.default";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      aliases = [ "agent-mux" "agent-multiplexer" "ai-multiplexer" ];
+      description = "Terminal workspace manager for AI coding agents";
+    })
+
     # WS12: Remote Access (Primary: remmina)
     (mkApp {
       name = "remmina";

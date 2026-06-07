@@ -26,6 +26,9 @@ let
   # See packages/dapr-cli.nix for the rationale and Go-toolchain constraints.
   dapr-cli = pkgs.callPackage ../packages/dapr-cli.nix { };
 
+  # Herdr terminal multiplexer for AI coding agents, sourced from its flake.
+  herdr = inputs.herdr.packages.${pkgs.stdenv.hostPlatform.system}.default;
+
   # Text editors and IDEs (from nixpkgs)
   editors = with pkgs; [
     # vim is managed by programs.vim in home-manager
@@ -63,14 +66,16 @@ let
   ];
 
   # AI and LLM tools
-  aiTools = with pkgs; [
+  aiTools = [
+    herdr
+  ] ++ (with pkgs; [
     goose-cli # Goose AI Agent CLI (from nixpkgs)
     openai # OpenAI Python CLI
     playwright-test # Playwright CLI (codegen, test, inspector)
     # Note: gitingest is run on-demand via: uvx gitingest <repo-url>
     # This ensures we always use the latest version without pre-installation
     # See /etc/nixos/.claude/commands/gitingest.md for usage
-  ] ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
+  ]) ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
     goose-desktop # Goose AI Agent Desktop (custom package, x86_64 only)
   ];
 

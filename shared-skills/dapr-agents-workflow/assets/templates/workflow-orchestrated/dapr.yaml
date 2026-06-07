@@ -1,0 +1,21 @@
+# Multi-app run file for Pattern A (workflow-orchestrated agents).
+# Launch all three apps together:  dapr run -f dapr.yaml
+# Every app shares the same resourcesPath so they see the same Dapr components.
+version: 1
+common:
+  # Copy the component YAMLs you need from the skill's assets/components/ into a
+  # ./components dir next to this file. Needs: agent-memory, agent-workflow.
+  resourcesPath: ./components
+  logLevel: info
+apps:
+  - appID: triage-agent
+    appDirPath: ./
+    command: ["python3", "triage_agent.py"]
+    appPort: 8001
+  - appID: expert-agent
+    appDirPath: ./
+    command: ["python3", "expert_agent.py"]
+    appPort: 8002
+  - appID: support-workflow      # the orchestrator; no appPort (it is a client, not a server)
+    appDirPath: ./
+    command: ["python3", "workflow_app.py"]

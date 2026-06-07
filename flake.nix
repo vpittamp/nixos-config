@@ -104,6 +104,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Herdr terminal multiplexer for AI coding agents
+    herdr = {
+      url = "github:ogulcancelik/herdr";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # Cachix Deploy for automated deployments
     cachix-deploy-flake = {
       url = "github:cachix/cachix-deploy-flake";

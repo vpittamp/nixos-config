@@ -1,0 +1,13 @@
+# Multi-app run file for the MCP-tool agent.  Run:  dapr run -f dapr.yaml
+# mcp_tools.py is NOT a Dapr app — the agent spawns it as a stdio subprocess.
+version: 1
+common:
+  # Copy the component YAMLs you need from the skill's assets/components/ into a
+  # ./components dir next to this file. Needs: agent-memory, agent-workflow.
+  resourcesPath: ./components
+  logLevel: info
+apps:
+  - appID: weather-agent
+    appDirPath: ./
+    command: ["python3", "mcp_agent.py"]
+    appPort: 8001

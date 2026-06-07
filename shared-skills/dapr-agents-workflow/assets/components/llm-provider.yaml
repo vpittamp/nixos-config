@@ -1,0 +1,18 @@
+# Dapr Conversation API component (ALPHA building block).
+# Used ONLY when an agent's llm is DaprChatClient(component_name="llm-provider").
+# The Conversation API is still ALPHA — for production, prefer a provider-direct
+# client (e.g. OpenAIChatClient()) in code and you can delete this file.
+#
+# `envRef` reads the value from the daprd process environment at startup.
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: llm-provider
+spec:
+  type: conversation.openai
+  version: v1
+  metadata:
+    - name: key
+      envRef: OPENAI_API_KEY        # or use secretKeyRef with a Dapr secret store
+    - name: model
+      value: gpt-4o

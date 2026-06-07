@@ -135,10 +135,16 @@ kubectl --context "$ctx" -n workflow-builder get ksvc \
   -l app.kubernetes.io/managed-by=activepieces-mcp-reconciler \
   -o custom-columns=NAME:.metadata.name,READY:.status.conditions[?(@.type==\"Ready\")].status,URL:.status.address.url
 
-kubectl --context "$ctx" -n workflow-builder get deploy "agent-runtime-${slug}" -o json | \
-  jq -r '.spec.template.spec.containers[] | select(.name=="dapr-agent-py") | .env[] | select(.name=="DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON").value' | jq .
+# MCP bootstrap is stamped into the per-session agent-sandbox POD's env
+# (DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON) — there is NO per-agent Deployment to query.
+# Find the running session-sandbox pod (one per active session), then inspect it:
+kubectl --context "$ctx" -n workflow-builder get sandbox          # ephemeral agent-sandbox CRs
+pod=<session-sandbox-pod>                                          # from `kubectl get pods -n workflow-builder`
 
-kubectl --context "$ctx" -n workflow-builder logs deploy/"agent-runtime-${slug}" \
+kubectl --context "$ctx" -n workflow-builder get pod "$pod" -o json | \
+  jq -r '.spec.containers[] | select(.name=="dapr-agent-py") | .env[] | select(.name=="DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON").value' | jq .
+
+kubectl --context "$ctx" -n workflow-builder logs "$pod" \
   -c dapr-agent-py --tail=250 | rg 'mcp-bootstrap|Loaded|Registered|Missing credentials'
 ```
 

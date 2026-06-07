@@ -1,0 +1,6 @@
+# Pin deliberately — the Dapr Agents API has churned across versions (e.g. the
+# orchestrator classes were removed in 1.0.x). Re-verify before bumping.
+dapr-agents==1.0.3
+dapr-ext-workflow>=1.17,<1.18
+# Only needed for the MCP templates (the FastMCP server + MCP client):
+mcp>=1.0

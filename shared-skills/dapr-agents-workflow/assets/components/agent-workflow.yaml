@@ -1,0 +1,21 @@
+# Durable workflow / actor state store for a DurableAgent.
+# Referenced by: state=AgentStateConfig(store=StateStoreService(store_name="agent-workflow"))
+#
+# CRITICAL: actorStateStore MUST be "true" — Dapr Workflows run on actors, and the
+# DurableAgent checkpoints every workflow step here. Each daprd sidecar may see
+# EXACTLY ONE component with actorStateStore: "true"; a second one makes the sidecar
+# refuse to start ("detected duplicate actor state store"). Keep this the only one.
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: agent-workflow
+spec:
+  type: state.redis
+  version: v1
+  metadata:
+    - name: redisHost
+      value: localhost:6379
+    - name: redisPassword
+      value: ""
+    - name: actorStateStore
+      value: "true"

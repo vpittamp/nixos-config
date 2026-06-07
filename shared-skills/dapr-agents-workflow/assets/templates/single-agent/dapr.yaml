@@ -1,0 +1,13 @@
+# Multi-app run file for a single agent.  Run:  dapr run -f dapr.yaml
+version: 1
+common:
+  # Copy the component YAMLs you need from the skill's assets/components/ into a
+  # ./components dir next to this file. Needs: agent-memory, agent-workflow
+  # (+ llm-provider only if an agent uses DaprChatClient).
+  resourcesPath: ./components
+  logLevel: info
+apps:
+  - appID: weather-agent
+    appDirPath: ./
+    command: ["python3", "agent.py"]
+    appPort: 8001

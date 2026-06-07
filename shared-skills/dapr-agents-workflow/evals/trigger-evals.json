@@ -1,0 +1,23 @@
+[
+  {"query": "i'm building a customer-support thing in python with the dapr agents framework — i want a deterministic workflow that runs a triage agent then an expert agent, each as a durable step that retries. how do i wire call_agent and the app-ids?", "should_trigger": true},
+  {"query": "how do i make 3 DurableAgents take turns round-robin to argue a topic and coordinate over pubsub? do i instantiate RoundRobinOrchestrator or is it something else now", "should_trigger": true},
+  {"query": "need to give my dapr DurableAgent tools from an MCP server over stdio. how do i pull the tools out of MCPClient and pass them into the agent?", "should_trigger": true},
+  {"query": "my dapr workflow keeps re-running my http call every time it replays. whats the right way to keep the @workflow function deterministic and put the side effects in activities?", "should_trigger": true},
+  {"query": "scaffold a `dapr run -f` multi-app yaml for an orchestrator workflow plus a weather-agent and a writer-agent, each with its own appID and port", "should_trigger": true},
+  {"query": "daprd refuses to start saying 'detected duplicate actor state store' — i've got a couple redis state stores for my dapr-agents app, which one needs actorStateStore true?", "should_trigger": true},
+  {"query": "i want an LLM to decide which agent on my team should respond next instead of round-robin. is that OrchestrationMode.AGENT and does the orchestrator itself need an llm client?", "should_trigger": true},
+  {"query": "add a human approval gate between two agent steps in my dapr workflow — wait for an external event but time out after an hour", "should_trigger": true},
+  {"query": "write me a minimal DurableAgent in python that has a @tool to look up order status and is served over http on port 8080", "should_trigger": true},
+  {"query": "how do agents in dapr-agents discover each other as a team — is it the team_name in the registry config, and what pub/sub component do they need?", "should_trigger": true},
+
+  {"query": "my durable/run agent step in the workflow-builder canvas never starts and the per-session sandbox pod is stuck at 1/2 on daprd. where do i look?", "should_trigger": false},
+  {"query": "add an agent node to my SW 1.0 workflow spec and wire agentConfig.mcpServers to the playwright sidecar, then upsert it to the workflows table", "should_trigger": false},
+  {"query": "${ .trigger.url } isn't resolving in my workflow and the workflow-orchestrator returns a 500 — is my jq wrong?", "should_trigger": false},
+  {"query": "build a multi-agent system in langgraph with a supervisor that routes between a researcher and a coder node", "should_trigger": false},
+  {"query": "set up a crewai crew with a researcher agent and a writer agent and a sequential process", "should_trigger": false},
+  {"query": "write a Temporal workflow in python with an activity that retries on failure with exponential backoff", "should_trigger": false},
+  {"query": "i need a dapr pub/sub subscriber in python that consumes order events off a redis topic and writes them to postgres", "should_trigger": false},
+  {"query": "build a tool-calling agent loop using the anthropic python sdk with the messages api and a weather function", "should_trigger": false},
+  {"query": "review this python asyncio queue consumer for a race condition, i think two coroutines are double-processing items", "should_trigger": false},
+  {"query": "the workflow-orchestrator pod is CrashLoopBackOff after i rolled the image — how do i tell if it predates the crawl4ai activity?", "should_trigger": false}
+]
