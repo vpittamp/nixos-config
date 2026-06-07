@@ -63,6 +63,8 @@ Benchmarks API (`src/routes/api/benchmarks/`):
 
 Internal coordinator routes are BFF-only and require `INTERNAL_API_TOKEN`. They live under `/api/internal/evaluations/...` and start/sync/status-mark run items.
 
+For dev/ryzen operator launches, fetch `INTERNAL_API_TOKEN` from hub `spoke-secrets/<spoke>-shared-secrets` key `INTERNAL-API-TOKEN` and run as `vinod@pittampalli.com`. Current project ids: dev `N1nbCo9zESa-S0UrzVrOw`, ryzen `AgbRSkJ_pVxerT_WOoZwF`.
+
 ## Sidebar / Navigation
 
 Evaluations is registered under an **Optimize** group in `src/lib/navigation/nav-config.ts` (matches OpenAI's IA). Icon: `FlaskConical`. Match regex covers both `/evaluations` and `/benchmarks` so the official Benchmarks page stays in the same operator area.
@@ -129,6 +131,8 @@ do not merge multiple agents into one `benchmark_runs` row.
 Preflight data lands in `benchmark_runs.summary.preflight`. Valid static mappings have `buildId=null`, `pipelineRunName=null`, `validationStatus="validated"`, an `envSpecHash` from the static pin's `swebenchSpec.envSpecHash`, and a digest-pinned `sandboxImage`. If a run stays `queued`, compare that summary, coordinator logs, and hub Tekton `swe-env-*` PipelineRuns before looking at agent/model behavior.
 
 Direct DB smoke runs are acceptable for operator/UI validation when agent inference is not under test. Provide explicit IDs for `benchmark_run_instances`; Drizzle generates IDs app-side and Postgres has no default. Follow the coordinator transition guard exactly: `queued -> inferencing -> evaluating -> completed/failed/cancelled`.
+
+For Claude Agent SDK smokes, do not decide from the `sandboxTemplate` or a legacy-looking container label. The authoritative fields are `benchmark_runs.agent_runtime='claude-agent-py'`, `agent_runtime_app_id`, `model_name_or_path='anthropic/claude-opus-4-8'`, per-instance `trace_id`, workflow output `agentRuntime` / `agentWorkflowMode='claude-agent-sdk'`, and `outputSync`. A workspace `sandboxTemplate: "dapr-agent"` can still be correct because it names the OpenShell workspace/testbed template, not the agent runtime.
 
 ## Run Item Payload Modes
 

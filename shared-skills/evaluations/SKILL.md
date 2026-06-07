@@ -1,11 +1,11 @@
 ---
 name: evaluations
-description: "Use for workflow-builder evals, official SWE-bench benchmark runs, SWE-bench exact-ready inference image builds/caching, Benchmarks UI, DeepSeek/Kimi/Together SWE-bench provider canaries, swebench-coordinator/evaluator jobs, provenance, datasets, graders, predictions JSONL, run summaries/items, benchmark cancellation/cleanup, the Inspect drawer, eval wizard, OpenAI-parity eval UI, HumanEval+/MBPP+/BigCodeBench code-eval templates, the legacy SWE-bench eval template, evaluation-coordinator, code-eval-item workflow rows, strict-tool LLM judges, score_model live grading through per-agent runtime pods, taskConfig.workflowId workflow lookup, dapr-agent-py grader rollout, the Braintrust-adoption analyst surfaces on the Benchmarks page (regression detection / scorer tiles / promote-to-dataset / composite trace view / cohort pivots / human annotations), benchmark_run_instance_scores + benchmark_run_instance_annotations tables, and the Phase G inline scorer-runner."
+description: "Use for workflow-builder evals, official SWE-bench benchmark runs, exact-ready inference image builds/caching, Benchmarks UI, Claude Agent SDK / claude-agent-py SWE-bench smokes, DeepSeek/Kimi/Together provider canaries, swebench-coordinator/evaluator jobs, provenance, datasets, graders, predictions JSONL, run summaries/items, benchmark cancellation/cleanup, the Inspect drawer, eval wizard, OpenAI-parity eval UI, HumanEval+/MBPP+/BigCodeBench code-eval templates, legacy SWE-bench eval template, evaluation-coordinator, code-eval-item workflow rows, strict-tool LLM judges, score_model grading through runtime pods, taskConfig.workflowId workflow lookup, dapr-agent-py and claude-agent-py rollout, Braintrust-style Benchmarks surfaces, benchmark_run_instance_scores + annotations tables, and Phase G inline scorer-runner."
 ---
 
 # Workflow-Builder Evaluations
 
-Build, run, and debug the OpenAI-parity evaluation system in `/home/vpittamp/repos/PittampalliOrg/workflow-builder/main`. This skill covers the SvelteKit UI, the SvelteKit BFF service layer, the Python `evaluation-coordinator` Dapr workflow, the asynchronous grader runners (including the live `score_model` path against per-agent runtime pods), the official SWE-bench Benchmarks page/coordinator/evaluator path, and the operational steps to roll dapr-agent-py changes into ryzen and dev/staging.
+Build, run, and debug the OpenAI-parity evaluation system in `/home/vpittamp/repos/PittampalliOrg/workflow-builder/main`. This skill covers the SvelteKit UI, the SvelteKit BFF service layer, the Python `evaluation-coordinator` Dapr workflow, the asynchronous grader runners (including the live `score_model` path against the runtime pods — per-session agent-sandbox Sandbox pods or the shared `dapr-agent-py` pool), the official SWE-bench Benchmarks page/coordinator/evaluator path, and the operational steps to roll dapr-agent-py / claude-agent-py runtime changes into ryzen and dev/staging.
 
 The system intentionally mirrors **platform.openai.com/evaluation** surface-by-surface:
 
@@ -37,6 +37,7 @@ The official SWE-bench harness is deliberately separate from that eval-run model
    - Grader logic: `src/lib/server/evaluations/graders.ts` (sync) + `grader-runners.ts` (async)
    - Coordinator: `services/evaluation-coordinator/src/app.py`
    - Sync evaluator endpoint: `services/dapr-agent-py/src/main.py` (search `/api/grader-evaluate`)
+   - Claude Agent SDK runtime: `services/claude-agent-py/src/claude_sdk_runner.py`
 
 2. Decide the layer first: UI (Svelte), service (TypeScript), grader runtime (TS + Python), or operational (kubectl + Tekton). Keep changes scoped to that layer unless the symptom crosses boundaries.
 
@@ -52,13 +53,15 @@ The official SWE-bench harness is deliberately separate from that eval-run model
 | **Change run-detail KPIs, items table, or drawer** | Edit `src/lib/components/evaluations/run-items-table.svelte` (table + per-grader columns) or `run-inspect-drawer.svelte` (left rail + Input/Expected/Output/Graders sections). Run pages now fetch `GET /api/evaluations/runs/<runId>?items=summary` and lazy-load a full item with `GET /api/evaluations/runs/<runId>/items/<itemId>` when the drawer opens. Preserve this compact-summary path for active polling. |
 | **Debug eval UI freezes** | Check payload size and client rendering first. Code-eval rows can contain large prompts, generated test files, pytest output, raw workflow outputs, and solution text. The run table/drawer should use compact summaries and shallow previews, not `JSON.stringify` of every row on every 4s poll. |
 | **Change grader scoring or wire a new grader** | Sync types live in `src/lib/server/evaluations/graders.ts` (`runGrader`, `validateGraderConfig`, `aggregateGraderResults`). Async runners (`runScoreModelGrader`, `runPythonGrader`, `runEndpointGrader`) live in `grader-runners.ts`. Service-side dispatch is in `service.ts:gradeLoadedEvaluationRunItem` — it awaits `runGraderAsync`. |
-| **Add a runner that needs an external service** | Use `daprFetch` from `$lib/server/dapr-client` (retry-enabled). For service-invoke against per-agent runtimes, also call `wakeAgentRuntime(slug, 30_000)` from `$lib/server/kube/client` first. |
-| **Debug a stuck `agent` or `workflow` run** | Check coordinator logs, orchestrator logs, the `AgentRuntime` CR phase + pod readiness, and `workflow_executions.dapr_instance_id`. See the diagnosis ladder in `references/system-model.md`. |
-| **Roll dapr-agent-py grader changes** | The agent endpoint lives in `services/dapr-agent-py/src/main.py`. Per-agent runtime pods use `dapr-agent-py-sandbox:<tag>`. Rebuild needs **two PipelineRuns**; re-rolling already-published agents needs a CR patch. See "Operational Rollout" below. |
+| **Add a runner that needs an external service** | Use `daprFetch` from `$lib/server/dapr-client` (retry-enabled). Grader/runtime traffic targets the runtime app id (e.g. `agent-runtime-pool-coding` for the shared coding pool) over Dapr service-invoke; the per-session runtime is an ephemeral agent-sandbox Sandbox pod (Kueue-admitted, self-reaped), so there's no per-agent CR to wake. |
+| **Debug a stuck `agent` or `workflow` run** | Check coordinator logs, orchestrator logs, the runtime Sandbox pod readiness (or the shared `dapr-agent-py` pool pod for `agent-runtime-pool-coding` runs), and `workflow_executions.dapr_instance_id`. See the diagnosis ladder in `references/system-model.md`. |
+| **Roll dapr-agent-py grader changes** | The agent endpoint lives in `services/dapr-agent-py/src/main.py`. Per-session runtime pods use `dapr-agent-py-sandbox:<tag>` (selected by the `AGENT_RUNTIME_DEFAULT_IMAGE` env var); the static `dapr-agent-py` pool uses `dapr-agent-py:<tag>`. Rebuild normally needs the runtime, sandbox, and testing-sandbox PipelineRuns; rolling the runtime forward is an env-var bump (next session picks it up) — no AgentRuntime CR patch. See "Operational Rollout" below. |
+| **Roll claude-agent-py runtime changes** | Build `claude-agent-py-sandbox:<tag>`, update `AGENT_RUNTIME_CLAUDE_DEFAULT_IMAGE`, verify the live BFF pod env, then launch a Claude SWE-bench or 3B1B smoke and check `agentRuntime=claude-agent-py`. |
 | **Add a new code-eval template** (HumanEval+/MBPP+/BigCodeBench) | Caller fetches rows from `datasets-server.huggingface.co/rows?dataset=<hf_id>&split=test`, POSTs to `/api/evaluations/templates/{humaneval,mbpp,bigcodebench}`. `createCodeEvalTemplate` (`service.ts`) creates dataset+eval with `taskConfig.workflowId="code-eval-item"` and a default grader stack (`string_check` on pytest exit + `score_model` labeler with strict `responseSchema`). |
 | **Make a score_model judge return guaranteed JSON** | Set `responseSchema` (JSON Schema) + `responseToolName` (default `emit_evaluation`) on the grader config. The runtime forces a single Anthropic tool call constrained to that schema and returns `tool_use.input` as the parsed object — no prose, no JSON.parse fallback. See "Forced-tool LLM judge" below. |
 | **Use a reusable workflow for an eval** | Set `taskConfig.workflowId` on the eval definition. `startEvaluationRunItemWorkflow` (`service.ts:~1107`) loads the workflow from the `workflows` table, stamps `agentRef` into `trigger.input`, and runs that spec instead of generating one in TS. Edit the workflow JSON via the canonical seed file + `scripts/upsert-<workflow>-workflow.mjs` to roll prompts/maxTurns without a BFF redeploy. |
 | **Run/verify official SWE-bench in the UI** | Use `/workspaces/<slug>/benchmarks` and `/api/benchmarks/*`, not the eval wizard template. Normal run creation starts agent inference; deterministic operator smoke can seed `benchmark_runs`/`benchmark_run_instances` with known patches and then call coordinator helpers to write artifacts and launch the evaluator Job. Results must land back in the Benchmarks page with provenance, artifact SHA-256s, official result, and raw harness notes. |
+| **Run a Claude Agent SDK SWE-bench smoke** | Seed fixtures under `vinod@pittampalli.com`, choose `agnt_claude_code_swebench_smoke`, set model `anthropic/claude-opus-4-8`, runtime `claude-agent-py`, and launch through `scripts/start-swebench-benchmark-run.ts` with `--agent-id agnt_claude_code_swebench_smoke --apply`. Use traces and `benchmark_runs.agent_runtime` to prove routing. |
 | **Compare multiple SWE-bench agents on the same instances** | Use the Benchmarks launch sheet's `Compare agents` mode (or `start-swebench-benchmark-run.bundle.js` per agent with a shared `--tag`). One `benchmark_runs` row per agent, identical instance ids (deterministic for fixed `--limit`), shared campaign tag → `/workspaces/<slug>/benchmarks/compare?tag=<tag>`. MLflow: parent `swebench_run` + `swebench_instance` + `swebench_mlflow_eval` children with `workflow_builder.benchmark_tag.<tag>=true`. **⚠️ On ryzen, launch the per-agent runs STRICTLY SEQUENTIALLY (one terminal before the next, conc ≤ 3, ryzen-health-gated between runs).** Parallel multi-agent launch (9-way) froze a worker node and cascaded postgres/orchestrator down — inference is not admission-controlled. See "System State Update (2026-05-19)". |
 | **Handle the legacy SWE-bench eval template** | It's still wired (`/api/evaluations/templates/swebench` + `buildSwebenchEvaluationWorkflowSpec`) but **not the official harness path**. Use it only when explicitly working on the old OpenAI-parity eval adapter. For real SWE-bench validation, use the Benchmarks page/coordinator/evaluator Job path. Prefer HumanEval+/MBPP+/BigCodeBench (sandbox-native pytest) for eval-wizard code-eval coverage. |
 
@@ -72,9 +75,21 @@ Use this path when the user asks for SWE-bench evals that should show up in work
 4. Evaluator callback: `/api/internal/benchmarks/evaluation-results` records official resolved/unresolved/empty-patch status, harness report/stdout/stderr/test-output paths, parsed counters, raw harness notes, and run provenance.
 5. Provenance should include evaluator image/job name, resource class, max workers, timeout/deadline, dataset/prediction paths + SHA-256s, harness report path, environment image/digest summaries, and timestamps.
 
-Provider canaries use the same Benchmarks path, not the eval wizard. Direct DeepSeek models are `deepseek/deepseek-v4-pro` and `deepseek/deepseek-v4-flash`; they route through `dapr-agent-py` components `llm-deepseek-v4-pro` and `llm-deepseek-v4-flash`, not Together. SWE-bench coding agents should expose the normal coding tool set, including `grep_search`, and run only on validated inference environments. Current dev concurrency is governed by the layered capacity model in `references/swebench-concurrency.md`; do not assume the launch-sheet value is the effective throughput. For the current dev scale-up, use DeepSeek V4 Pro, distinct exact-ready SWE-bench_Verified instances, and `maxTurns=25` for infra-capacity checkpoints unless the user explicitly asks for a model-quality run.
+Provider canaries use the same Benchmarks path, not the eval wizard. Direct DeepSeek models are `deepseek/deepseek-v4-pro` and `deepseek/deepseek-v4-flash`; they route through `dapr-agent-py` components `llm-deepseek-v4-pro` and `llm-deepseek-v4-flash`, not Together. Current Claude canaries should use `anthropic/claude-opus-4-8` on `claude-agent-py`; current GPT canaries should use `openai/gpt-5.5` when that model key is configured. SWE-bench coding agents should expose the normal coding tool set, including `grep_search`, and run only on validated inference environments. Current dev concurrency is governed by the layered capacity model in `references/swebench-concurrency.md`; do not assume the launch-sheet value is the effective throughput. For the current dev scale-up, use DeepSeek V4 Pro, distinct exact-ready SWE-bench_Verified instances, and `maxTurns=25` for infra-capacity checkpoints unless the user explicitly asks for a model-quality run.
 
 The current clean dev checkpoint is run `W4ZmHxaEMEYQDCZ_Ypo41`: 25 distinct exact-ready SWE-bench_Verified instances, DeepSeek V4 Pro, `maxTurns=25`, requested/effective inference concurrency 25/25, requested/effective evaluator concurrency 24/9 because Kueue clamped evaluation, completed with 13 resolved / 7 unresolved / 5 empty-patch, zero evaluator errors, zero hard errors, zero active leases, and no Dapr activity-registration failures. Use this as the baseline before attempting the next larger infra-capacity cohort.
+
+**Claude Agent SDK smoke path (2026-06-06).** Current fixtures synthesize two Claude agents if missing: `agnt_claude_code_sdk_smoke` and `agnt_claude_code_swebench_smoke`. Both use model `anthropic/claude-opus-4-8`, runtime `claude-agent-py`, and runtime app id `agent-runtime-pool-coding`. Seed under the real user:
+
+```bash
+DATABASE_URL='postgres://postgres:password@workflow-builder-postgres-dev.tail286401.ts.net:5432/workflow_builder' \
+SEED_WORKFLOW_USER_EMAIL='vinod@pittampalli.com' \
+SEED_WORKFLOW_PROJECT_ID='N1nbCo9zESa-S0UrzVrOw' \
+SEED_SWEBENCH_FIXTURES_SKIP_WHEN_ACTIVE=true \
+pnpm tsx scripts/seed-swebench-fixtures.ts
+```
+
+For ryzen, use host `workflow-builder-postgres-ryzen.tail286401.ts.net` and project `AgbRSkJ_pVxerT_WOoZwF`. Add `SEED_SWEBENCH_FIXTURES_ROLLBACK=true` for the first dry run. Launch a one-instance smoke with `scripts/start-swebench-benchmark-run.ts --suite SWE-bench_Verified --instance-id astropy__astropy-7166 --limit 1 --concurrency 1 --evaluation-concurrency 1 --user-email vinod@pittampalli.com --project-id <spoke-project-id> --agent-id agnt_claude_code_swebench_smoke --tag claude-agent-py-<spoke>-smoke --apply`. The proof is not the sandbox label; it is `benchmark_runs.agent_runtime='claude-agent-py'`, `agent_runtime_app_id='agent-runtime-pool-coding'`, `model_name_or_path='anthropic/claude-opus-4-8'`, the trace id, and a resolved harness result.
 
 **SWE-bench comparison campaigns and MLflow.** For agent/model/config
 comparisons, keep Dapr/workflow-builder as the execution owner and use MLflow
@@ -124,7 +139,7 @@ This session shipped + verified several SWE-bench changes (live on **ryzen and d
 - **Eval is Kueue OOM-admission-controlled.** The `swebench-eval-{prepare,run-instance,finalize}` Tekton TaskRun pods are now Kueue-admitted on the `benchmark-fast` ClusterQueue. Wiring chain: `swebench-coordinator` Deployment env `SWEBENCH_TEKTON_KUEUE_QUEUE_NAME=benchmark-fast`/`SWEBENCH_TEKTON_KUEUE_PRIORITY_CLASS=swebench-cohort` → forwarded onto the evaluator Job → `services/swebench-evaluator/entrypoint.py` `_common_metadata()` stamps the labels on **`TaskRun.metadata.labels`** (NOT `podTemplate.metadata` — Tekton prunes that; the `f50cb71a`→`b268ed45` bug). `run-instance` step `requests.memory` is 2Gi. kueue-controller hardened (Guaranteed QoS + PDB). Verified: every eval TaskRun/pod carries `kueue.x-k8s.io/queue-name=benchmark-fast`, Workloads `admitted=True`, 0 OOMKilling.
 - **Env-spec-exact image gate (`0e895f7e`, full cutover).** `resolveSwebenchInferenceEnvironment` / `isExactValidatedSwebenchInferenceEnvironment` now **require** `expectedEnvSpecHash`; a static ConfigMap pin is only valid when its `envSpecHash` equals the current `buildSwebenchEnvironmentSpec()` hash (static & dynamic readiness symmetric). This stops silent stale-image grading.
 - **Crash-callback (`5ee0473f`).** `entrypoint.py` always posts a terminal callback. An empty/non-applying patch yields a structured `harness_result` (`empty_patch` / `patch_failed`, `resolved:false`) and the run reaches `completed` — **never** the generic "Job has reached the specified backoff limit". `evaluation_error` stays NULL for these (the model-quality outcome lives in `harness_result`, not an evaluator error).
-- **New SWE-bench Solver agents** on ryzen + dev: `opus-4-7-swebench` (`config.modelSpec=anthropic/claude-opus-4-7`) and `gpt-5-4-swebench` (`openai/gpt-5.4`). They are clones of `deepseek-v4-pro-swebench` — `agents` row + `agent_versions` row, only `config.modelSpec` swapped. Valid modelSpec strings are the keys of the dict in `services/dapr-agent-py/src/effective_agent_config.py` (`anthropic/claude-opus-4-7`→`llm-anthropic-opus`, `openai/gpt-5.4`→`llm-openai-gpt5`). These are **pool agents** (`runtime_app_id=agent-runtime-pool-coding`, served by a static shared pool) → they need **NO AgentRuntime CR** (`kubectl get agentruntime` is empty; `create-agent-runtime-crs.ts` is the wrong tool). To add another: idempotent `SELECT *` temp-table clone of the deepseek `agents`+`agent_versions` rows, swap id/slug/name/tags/`config.modelSpec`, `registry_status='registered'`, insert agents (current_version_id NULL) → agent_versions → set current_version_id (circular FK); `config_hash=encode(sha256(convert_to(config::text,'UTF8')),'hex')`. Validate via `node scripts/start-swebench-benchmark-run.bundle.js … --agent-id <id>` (no `--apply`).
+- **SWE-bench Solver agents** on ryzen + dev are pool agents (`runtime_app_id=agent-runtime-pool-coding`, served by the static shared `dapr-agent-py` pool Deployment) and need **NO AgentRuntime CR** — the custom AgentRuntime CRD + Kopf `agent-runtime-controller` are RETIRED; runtime identity/capabilities come from the runtime registry SSOT (`services/shared/runtime-registry.json`), and non-pool runs are dispatched as per-session agent-sandbox Sandbox pods that differ only by image. `kubectl get agentruntime` returning empty is EXPECTED, not a fault. When rolling SWE-bench runtimes, note `claude-agent-py` now supports MCP (`agentConfig.mcpServers` wired into the Claude Agent SDK) and that the swap-safety gate (`src/lib/server/agents/swap-safety.ts`) compares an agent's required capabilities against the target runtime's declared capabilities — MCP-loss + provider-mismatch are reject-class (warn-first unless `AGENT_RUNTIME_REJECT_LOSSY_SWAP=true`). Current default Claude/GPT modelSpec strings should be `anthropic/claude-opus-4-8` and `openai/gpt-5.5`; older `anthropic/claude-opus-4-7` / `openai/gpt-5.4` rows are legacy comparison rows unless intentionally pinned. To add another: idempotent `SELECT *` temp-table clone of a known-good solver's `agents`+`agent_versions` rows, swap id/slug/name/tags/`config.modelSpec`/runtime fields, `registry_status='registered'`, insert agents (current_version_id NULL) → agent_versions → set current_version_id (circular FK); `config_hash=encode(sha256(convert_to(config::text,'UTF8')),'hex')`. Validate via `node scripts/start-swebench-benchmark-run.bundle.js … --agent-id <id>` (no `--apply`) or `pnpm tsx scripts/start-swebench-benchmark-run.ts ... --apply` for an actual smoke.
 - **Ryzen capacity rule — single run at a time, but let live Kueue capacity cap effective concurrency.** Ryzen now runs the same Kueue-backed SWE-bench path as dev with `BENCHMARK_KUEUE_INSTANCE_REQUEST_MODE=host-worker-composite`, so inference launch is admission-aware for the full sandbox + agent-host bundle. Do not run parallel benchmark campaigns on ryzen; the workstation still has finite RAM and parallel runs can cascade postgres/orchestrator. Within one run, a request for 3 may correctly become effective concurrency 2 when live node request headroom only fits two full bundles. Verified 2026-05-27: run `MPIlRkKWC7UdvHgwFQEiR` selected 3 exact-ready instances, requested/effective 3/2 due `kueue_capacity`, all three reached 10 LLM/tool calls, evaluator completed, and active leases returned to zero. For `Compare agents`, keep sequential per-agent runs with a fresh health check between runs.
 - **Dev inference path is wired; model quality is good enough for infra scale-up.** A 64-way DeepSeek V4 Pro, SWE-bench_Verified, distinct exact-ready cohort at `maxTurns=25` produced 33/64 resolved. Treat that as model-quality validation for capacity work. It was not a clean capacity checkpoint because workflow-builder/orchestrator rollout, stale startup cleanup, and Dapr replay-schedule issues interfered. Next dev capacity runs must start from a clean baseline and should not roll workflow-builder, workflow-orchestrator, swebench-coordinator, or agent runtime images mid-run.
 - **Current Dapr state-store layout.** `workflowstatestore` is the namespace-wide Dapr workflow/actor store for parent workflows and per-session agent workflows. `dapr-agent-py-statestore` is namespace-wide but `actorStateStore=false`; it is the agent application state API store. Do not recreate the old per-agent actor-store architecture or add scopes for per-session agent-host app IDs.
@@ -321,9 +336,11 @@ For full detail: `references/system-model.md`.
 
 dapr-agent-py code changes (the `/api/grader-evaluate` endpoint, provider adapters such as `deepseek_adapter.py`, `_call_anthropic_sdk`, MCP, hooks, etc.) now fire THREE image PipelineRuns:
 
-1. `dapr-agent-py-image-build` — for legacy `dapr-agent-py:git-<sha>` (used by the legacy `dapr-agent-py` + `dapr-agent-py-testing` Deployments).
-2. `dapr-agent-py-sandbox-image-build` — for `dapr-agent-py-sandbox:git-<sha>` (used by every per-agent runtime pod via the AgentRuntime CR).
+1. `dapr-agent-py-image-build` — for legacy `dapr-agent-py:git-<sha>` (used by the static `dapr-agent-py` pool Deployment that backs the `openshell-durable-agent` enum + the `agent-runtime-pool-coding` benchmark pool, plus `dapr-agent-py-testing`).
+2. `dapr-agent-py-sandbox-image-build` — for `dapr-agent-py-sandbox:git-<sha>` (the image used by per-session agent-sandbox Sandbox pods; the runtime is selected per-session via `AGENT_RUNTIME_DEFAULT_IMAGE`, not via any AgentRuntime CR — the CRD + Kopf controller are retired).
 3. `dapr-agent-py-testing-sandbox-image-build` — for the testing sandbox image used by runtime/conformance paths.
+
+`claude-agent-py` changes are a peer runtime rollout: build/publish `claude-agent-py-sandbox:git-<sha>`, update the workflow-builder Deployment env `AGENT_RUNTIME_CLAUDE_DEFAULT_IMAGE`, and verify the BFF pod sees it before launching/republishing Claude runtime agents. The runtime default model is `claude-opus-4-8`; the UI/modelSpec key is `anthropic/claude-opus-4-8`.
 
 Forced-tool grader-evaluate gotchas seen during the strict-tool rollout:
 
@@ -349,17 +366,14 @@ cd /home/vpittamp/repos/PittampalliOrg/stacks/main
 # Inspect ryzen-side: kubectl --context admin@ryzen get app -n argocd | grep ^ryzen-
 # Force a local refresh: kubectl --context admin@ryzen annotate app -n argocd root-ryzen argocd.argoproj.io/refresh=hard --overwrite
 
-# Existing AgentRuntime CRs don't auto-roll when their publish-time image changes.
-# Patch a target CR only after the referenced image exists.
-SHA=$(git rev-parse HEAD)
-kubectl patch agentruntime agent-runtime-<slug> -n workflow-builder --type=merge \
-  -p "{\"spec\":{\"environment\":{\"imageTag\":\"ghcr.io/pittampalliorg/dapr-agent-py-sandbox:git-${SHA}\"}}}"
-
-# Sleep + wake to pull new image
-kubectl annotate agentruntime agent-runtime-<slug> -n workflow-builder \
-  agents.x-k8s.io/sleep=$(date -Iseconds) --overwrite
-kubectl annotate agentruntime agent-runtime-<slug> -n workflow-builder \
-  agents.x-k8s.io/wake=$(date -Iseconds) --overwrite
+# Per-session runtimes are agent-sandbox Sandbox pods selected by image, NOT
+# AgentRuntime CRs (the CRD + Kopf agent-runtime-controller are retired). To roll
+# the runtime image, bump AGENT_RUNTIME_DEFAULT_IMAGE / AGENT_RUNTIME_CLAUDE_DEFAULT_IMAGE
+# on Deployment-workflow-builder.yaml — the BFF reads it per launch, so the NEXT
+# session pulls the new image. No per-agent CR patch, no sleep/wake annotations.
+# For the static dapr-agent-py pool (agent-runtime-pool-coding / openshell-durable-agent),
+# bump its workloads image pin and let the pool Deployment roll:
+kubectl rollout restart deploy/dapr-agent-py -n workflow-builder
 ```
 
 The deterministic ryzen path is GHCR image availability plus a commit-pin on GitHub `main`; ryzen's LOCAL ArgoCD handles the rest directly.
@@ -379,7 +393,7 @@ kubectl --kubeconfig ~/.kube/hub-config -n tekton-pipelines \
 # then promotes dev (after argocd-health) and staging (after the soak timer).
 ```
 
-The `AGENT_RUNTIME_*_DEFAULT_IMAGE` env vars on the workflow-builder Deployment are the source-of-truth for newly-published agents. To roll already-published agents on dev/staging: bump the env var (in the stacks repo's Deployment YAML), wait for spoke sync, and patch each `AgentRuntime` CR's `spec.environment.imageTag` (the BFF reads the env var only at agent-publish time). See the gitops skill's "bump-image-pin-not-in-release-pins" runbook for the exact path.
+The `AGENT_RUNTIME_*_DEFAULT_IMAGE` env vars on the workflow-builder Deployment are the per-session source-of-truth for the runtime image (read at launch time — no per-agent AgentRuntime CR or controller exists anymore). To roll the runtime on dev/staging: bump the env var (in the stacks repo's Deployment YAML), wait for spoke sync, and verify the live BFF pod sees the new value; the NEXT session spawns an agent-sandbox Sandbox pod on the new image. For the static `dapr-agent-py` pool (`agent-runtime-pool-coding`), bump its image pin and let the pool Deployment roll. See the gitops skill's "bump-image-pin-not-in-release-pins" runbook for the exact path.
 
 ## Operational Commands
 
@@ -389,13 +403,14 @@ kubectl logs -n workflow-builder deploy/evaluation-coordinator --tail=200
 kubectl logs -n workflow-builder deploy/workflow-orchestrator -c workflow-orchestrator --tail=200
 kubectl logs -n workflow-builder deploy/workflow-orchestrator -c daprd --tail=200
 
-# Per-agent runtime status + image
-kubectl get agentruntimes -n workflow-builder
-kubectl get agentruntime agent-runtime-<slug> -n workflow-builder \
-  -o jsonpath='{.status.phase}{"\t"}{.spec.environment.imageTag}{"\n"}'
+# Runtime pods (per-session agent-sandbox Sandbox pods + the static dapr-agent-py pool).
+# There is NO AgentRuntime CR — `kubectl get agentruntime` is empty by design.
+kubectl get pods -n workflow-builder -l app.kubernetes.io/part-of=agent-sandbox
+kubectl get deploy dapr-agent-py -n workflow-builder \
+  -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
 
-# Probe the sync grader endpoint directly (after pod is Active)
-POD=$(kubectl get pods -n workflow-builder -o name | grep agent-runtime-<slug> | head -1)
+# Probe the sync grader endpoint directly on the shared pool pod
+POD=$(kubectl get pods -n workflow-builder -o name | grep '/dapr-agent-py-' | head -1)
 kubectl exec -n workflow-builder $POD -c dapr-agent-py -- \
   curl -sS -X POST -H "Content-Type: application/json" \
   -d '{"systemPrompt":"...","userPrompt":"..."}' \
@@ -465,6 +480,7 @@ services/evaluation-coordinator/src/app.py           # Dapr workflows
 services/dapr-agent-py/src/main.py                   # /api/grader-evaluate (search this string) — accepts responseSchema + responseToolName
 services/dapr-agent-py/src/anthropic_adapter.py      # _call_anthropic_sdk forwards system + tool_choice; suppresses thinking on forced-tool path
 services/dapr-agent-py/pyproject.toml                # anthropic>=0.51 (required for strict tool-use)
+services/claude-agent-py/src/claude_sdk_runner.py    # Claude Agent SDK runtime; default model and output sync behavior
 services/workflow-orchestrator/workflows/sw_workflow.py
 ```
 

@@ -10,9 +10,11 @@ There are two separate image lanes:
 
 - Runtime images from the workflow-builder repo: `workflow-builder`,
   `swebench-coordinator`, `swebench-evaluator`, `dapr-agent-py`,
-  `dapr-agent-py-sandbox`, and `dapr-agent-py-testing-sandbox`. These are built
-  by the hub GitHub webhook lane, pushed to GHCR, and delivered through stacks
-  release metadata or explicit workloads pins.
+  `dapr-agent-py-sandbox`, `dapr-agent-py-testing-sandbox`, and
+  `claude-agent-py-sandbox`. These are built by the hub GitHub webhook lane,
+  pushed to GHCR, and delivered through stacks release metadata or explicit
+  workloads pins. Claude runtime launches also require the workflow-builder BFF
+  env `AGENT_RUNTIME_CLAUDE_DEFAULT_IMAGE` to point at the built tag.
 - SWE-bench inference environment images: per repo/base/version/env-spec images
   built by hub Tekton PipelineRuns named `swe-env-<envSpecHash-prefix>`. These
   are selected by benchmark preflight and recorded as exact-ready static

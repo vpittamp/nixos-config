@@ -219,7 +219,8 @@ agent-runtime-<slug> Deployment
   DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON
     |
     v
-dapr-agent-py loads tools and calls piece MCP with X-Connection-External-Id
+runtime loads tools and calls piece MCP with X-Connection-External-Id
+(`dapr-agent-py` classic path, `claude-agent-py` Claude SDK path)
 ```
 
 Important boundaries:

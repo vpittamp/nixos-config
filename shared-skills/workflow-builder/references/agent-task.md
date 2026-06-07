@@ -55,7 +55,7 @@ From `AgentTaskBody` (`src/lib/types/agent-graph.ts:65-80`):
 
 | Field | Required | Type | Notes |
 | --- | --- | --- | --- |
-| `agentRef.id` | Recommended | `string` | The DB `agents.id`. Resolves to `agent-runtime-<agent.slug>` Dapr app-id. **Without this, the orchestrator falls back to legacy `dapr-agent-py` — almost certainly not what you want.** |
+| `agentRef.id` | Recommended | `string` | The DB `agents.id`. Resolves to `agents.runtime_app_id` (the per-session runtime Dapr app-id). **Without this, the runtime registry falls back to its `defaultRuntimeId` (`dapr-agent-py`) — almost certainly not what you want.** |
 | `agentRef.version` | No | `number` | Pin a specific agent version. Defaults to current. |
 | `prompt` | Yes | `string` | The appended user prompt to the agent. Use SW jq full-string interpolation for runtime values: `"${ \"Look at \" + .trigger.url }"`. Prompt Workbench Mustache placeholders are preview-only in V1 and are not substituted here at runtime. |
 | `mode` | Yes | `"execute_direct"` | Literal enum value. Only mode supported today. |
@@ -66,7 +66,7 @@ From `AgentTaskBody` (`src/lib/types/agent-graph.ts:65-80`):
 | `workspaceRef` | No | `string` | `"local"` (per-call ephemeral), or a workspace ID, or `${ .workspace_profile.workspaceRef }` for sandbox bridging. |
 | `sandboxName` | No | `string` | Override sandbox name. Used with `${ .workspace_profile.sandboxName }` for bridging. |
 | `cwd` | No | `string` | Working directory inside the sandbox. Default `/sandbox`. |
-| `agentRuntime` | Sometimes | `string` | Auto-derived from agentRef. Set explicitly for legacy slugs. |
+| `agentRuntime` | Sometimes | `string` | Auto-derived from `agentRef` / DB agent config. Set explicitly only when dispatch glue needs to force a runtime such as `claude-agent-py` for a benchmark or smoke path. |
 | `agentGraph` | Auto-filled | `AgentGraphDefinition` | Custom decision graph (rarely set by hand). `normalizeAgentTaskConfig` injects a default. |
 | `environmentRef` | No | `EnvironmentRef` | Override the environment (sandbox config). Default uses the agent's published environment. |
 | `overrides` | No | `AgentOverrides` | Per-call overrides: `sandboxPolicy`, `tools`, `maxTurns`, `timeoutMinutes`, `cwd`. |
@@ -74,16 +74,27 @@ From `AgentTaskBody` (`src/lib/types/agent-graph.ts:65-80`):
 | `hooks` | No | `HooksSettings` | Per-call hook config (PreToolUse, PostToolUse, etc.). Per `docs/hooks-and-plugins.md`. |
 | `plugins` | No | `string[]` | Plugin IDs to enable for this call. |
 
-## How `agentRef.id` resolves to a pod
+## How `agentRef.id` resolves to a runtime
 
 1. `with.agentRef.id` is the DB `agents.id`.
-2. The session-spawn handler resolves to `agents.runtime_app_id` (set at agent-publish time by `src/lib/server/agents/registry-sync.ts`, which derives `agent-runtime-<slug>` from `agents.slug`).
-3. The orchestrator yields `ctx.call_child_workflow("session_workflow", app_id="agent-runtime-<slug>", ...)`.
-4. The Dapr placement service routes the child workflow to the per-agent pod.
-5. The Kopf controller wakes the pod (scales 0→1) via the `agents.x-k8s.io/wake` annotation if needed.
-6. Pod runs the turn, returns, scales back to 0 after `idleTtlSeconds` (default 1800).
+2. The session-spawn handler resolves to `agents.runtime_app_id` and the orchestrator resolves the runtime via `core/runtime_registry.resolve()` (the SSOT in `services/shared/runtime-registry.json`) — `dapr-agent-py`, `claude-agent-py`, `adk-agent-py`, or `browser-use-agent`.
+3. The orchestrator yields `ctx.call_child_workflow("session_workflow", app_id="<runtime-app-id>", ...)`.
+4. The BFF launches a **per-session ephemeral Sandbox pod** (upstream `kubernetes-sigs/agent-sandbox`, Kueue-admitted) running that runtime's image; SWE-bench pool agents instead route to the static `agent-runtime-pool-coding`. There is no `AgentRuntime` CR and no wake annotation — that CRD + the Kopf `agent-runtime-controller` are retired.
+5. The Dapr placement service routes the child workflow to the launched Sandbox pod.
+6. The pod runs the turn, returns, and the Sandbox self-reaps on session end.
 
-If `agentRef.id` is missing OR resolves to an agent that hasn't been published, the orchestrator falls back to legacy `dapr-agent-py`. Don't rely on this — it's a backwards-compat shim.
+If `agentRef.id` is missing OR resolves to an agent that hasn't been published, the registry falls back to its `defaultRuntimeId` (`dapr-agent-py`). Don't rely on this — it's a backwards-compat shim.
+
+## Runtime selection and model defaults
+
+Agent runtime is selected by the agent row/config and the launch path, not by the workspace sandbox template. For SWE-bench and coding smokes, the reliable fields are DB/run metadata and workflow output:
+
+- Claude Agent SDK path: `agentRuntime=claude-agent-py`, `agentWorkflowMode=claude-agent-sdk`, model `anthropic/claude-opus-4-8`.
+- GPT current default: modelSpec `openai/gpt-5.5` when the OpenAI component/env is available.
+- Static pool path: `agents.runtime_app_id=agent-runtime-pool-coding`; this routes to the surviving static pool Deployment rather than a per-session Sandbox.
+- Workspace/testbed template path: `sandboxTemplate: "dapr-agent"` can still be correct for `workspace/profile` even when the agent runtime is Claude.
+
+When upgrading defaults, update both workflow-builder model options and stacks runtime components/env pins; then seed/launch under `vinod@pittampalli.com` so the rows land in the real dev/ryzen projects.
 
 ### Two stamping paths (UI launch vs evaluations)
 
@@ -159,7 +170,7 @@ Per `src/lib/server/agents/mcp-sidecar.ts`: any entry matching Playwright (by na
 { "name": "playwright", "serverName": "playwright", "transport": "streamable_http", "url": "http://localhost:3100/mcp" }
 ```
 
-…and the agent's `AgentRuntime` CR gets `browserSidecar.enabled=true`, which makes the controller mount `chromium` + `playwright-mcp` containers in the pod. The rewrite happens in BOTH session-spawn paths (direct UI sessions + workflow-driven sessions via `/api/internal/sessions/ensure-for-workflow`). You don't need to do anything — just specify the stdio preset and the platform handles the rest.
+…and the launched Sandbox pod gets `chromium` + `playwright-mcp` sidecar containers mounted. The rewrite happens in BOTH session-spawn paths (direct UI sessions + workflow-driven sessions via `/api/internal/sessions/ensure-for-workflow`). You don't need to do anything — just specify the stdio preset and the platform handles the rest.
 
 ## Hooks + plugins (per-call)
 
@@ -221,7 +232,7 @@ Critical: `workspace/profile.with.keepAfterRun: true` is required. Without it `_
 
 ## See also
 
-- `references/cluster-topology.md` — what an `agent-runtime-<slug>` pod looks like, why it must be in the same namespace.
+- `references/cluster-topology.md` — what a per-session Sandbox pod looks like, the runtime registry SSOT, why it must be in the same namespace.
 - `references/mcp-connections.md` — project MCP modes, ActivePieces auth binding, and bootstrap checks.
 - `references/troubleshooting.md` — debug an agent that times out or never starts.
 - `references/action-catalog.md` — how to discover which agents are published and runnable.

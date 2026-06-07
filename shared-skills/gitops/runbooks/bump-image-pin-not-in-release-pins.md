@@ -9,11 +9,12 @@ You've built or mirrored a new tag of one of the following on `ghcr.io/pittampal
 - `browser-use-agent-sandbox`
 - `dapr-agent-py-sandbox`
 - `dapr-agent-py-testing-sandbox`
+- `claude-agent-py-sandbox`
 
 These images are pinned through one of two paths that the matrix-generator's release-pins file does not own:
 
 1. **Inline kustomize.images strings in `spoke-workloads-appset.yaml`** (browserstation, chrome-sandbox)
-2. **`AGENT_RUNTIME_*_DEFAULT_IMAGE` env vars on `Deployment-workflow-builder.yaml`** (browser-use-agent-sandbox, dapr-agent-py-sandbox; consumed by `registry-sync.ts:725`)
+2. **`AGENT_RUNTIME_*_DEFAULT_IMAGE` env vars on `Deployment-workflow-builder.yaml`** (browser-use-agent-sandbox, dapr-agent-py-sandbox, claude-agent-py-sandbox; consumed by registry-sync / runtime launch paths)
 
 Both bypass `release-pins/workflow-builder-images.yaml`. `kustomize.images` substitutes container `image:` fields; it does not substitute env var string values.
 
@@ -48,7 +49,7 @@ patch: |
 
 Commit + push to `origin/main`. Then because this is an ApplicationSet template change (NOT a release-pins change), the matrix-generator will not re-template until the env/hub PR is merged. See "ApplicationSet template-only re-render" in SKILL.md gotchas — push an empty commit on `origin/main` to bump the dry SHA if hydration appears stalled.
 
-### Path B: browser-use-agent-sandbox / dapr-agent-py-sandbox (AgentRuntime CR images)
+### Path B: browser-use-agent-sandbox / dapr-agent-py-sandbox / claude-agent-py-sandbox (runtime images)
 
 Two things must be updated together:
 
@@ -59,6 +60,8 @@ Two things must be updated together:
      value: "ghcr.io/pittampalliorg/browser-use-agent-sandbox:git-<NEW-SHA>"
    - name: AGENT_RUNTIME_DEFAULT_IMAGE
      value: "ghcr.io/pittampalliorg/dapr-agent-py-sandbox:git-<NEW-SHA>"
+   - name: AGENT_RUNTIME_CLAUDE_DEFAULT_IMAGE
+     value: "ghcr.io/pittampalliorg/claude-agent-py-sandbox:git-<NEW-SHA>"
    ```
 
    Commit + push to `origin/main`. `dev-workflow-builder` Application reads from `HEAD` directly so this lands without env/hub indirection.
@@ -101,7 +104,7 @@ KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl get raycluster -n ray-system browsers
 KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl delete pod -n ray-system browserstation-head-<id>
 ```
 
-For AgentRuntime CR images: the matching `agent-runtime-<slug>` Deployment in `workflow-builder` namespace shows the new image, and on next workflow execution the spawned pod uses it.
+For AgentRuntime/runtime images: the matching `agent-runtime-<slug>` or agent-host Deployment/Pod in `workflow-builder` namespace shows the new image, and on next workflow execution the spawned pod uses it. For Claude Agent SDK runs, also verify the run metadata reports `agentRuntime=claude-agent-py` and the model is `anthropic/claude-opus-4-8`.
 
 ## Why the split exists
 

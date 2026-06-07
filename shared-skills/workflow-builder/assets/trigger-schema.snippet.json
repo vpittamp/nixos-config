@@ -23,8 +23,8 @@
             "type": "string",
             "title": "Model",
             "description": "Renders as a dropdown when enum is set.",
-            "enum": ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5"],
-            "default": "claude-sonnet-4-6"
+            "enum": ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"],
+            "default": "claude-opus-4-8"
           },
           "max_tokens": {
             "type": "integer",

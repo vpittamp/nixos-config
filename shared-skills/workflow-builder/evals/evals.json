@@ -16,7 +16,7 @@
     {
       "id": 3,
       "prompt": "My durable/run step times out — the agent never seems to start. Walk me through what to check.",
-      "expected_output": "Triage from references/troubleshooting.md: AgentRuntime CR phase (`kubectl get agentruntime/<slug>`), per-agent pod logs, daprd sidecar logs, controller-managed dapr-agent-py-statestore scope for the app id, and openshell-sandbox-dapr-webhook namespaceSelector. Distinguishes 'Ignoring unexpected taskCompleted event' (normal replay chatter) from actually stuck. Suggests rolling restart of agent-runtime-controller as the Kopf annotation watcher fix, but does not tell the user to manually add every new slug to scopes as the normal path.",
+      "expected_output": "Triage from references/troubleshooting.md (current agent-sandbox + Kueue model): check the per-session Sandbox + Kueue admission (`kubectl -n workflow-builder get sandbox` and `get workloads` — a Pending/unadmitted Workload means the queue is out of quota or the pod is unschedulable), the per-session pod + daprd sidecar logs, the registry-resolved runtime app id (`runtime_registry.resolve()`), the dapr-agent-py-statestore scope for that app id, and the openshell-sandbox-dapr-webhook namespaceSelector. Distinguishes 'Ignoring unexpected taskCompleted event' (normal replay chatter) from actually stuck. Does NOT mention an AgentRuntime CR phase or an agent-runtime-controller rolling restart — that CRD + Kopf controller are retired.",
       "files": []
     },
     {

@@ -1,4 +1,4 @@
 interface:
   display_name: "Evaluations"
-  short_description: "Run evals, SWE-bench canaries, graders, and code evals."
+  short_description: "Run evals, SWE-bench canaries, graders, and Claude runtime smokes."
   default_prompt: "Use $evaluations to create or debug a Workflow Builder evaluation run."

@@ -280,8 +280,9 @@ caps.
 ## Dapr Workflow And State-Store Constraints
 
 Dapr durable workflow history is replay-sensitive. Do not roll
-`workflow-orchestrator`, `swebench-coordinator`, `workflow-builder`, or
-`dapr-agent-py` mid-run unless the run is cancelled and cleanup is complete.
+`workflow-orchestrator`, `swebench-coordinator`, `workflow-builder`,
+`dapr-agent-py`, or `claude-agent-py` mid-run unless the run is cancelled and
+cleanup is complete.
 Never gate a scheduled `ctx.call_activity` / `ctx.call_child_workflow` behind a
 new env flag after histories exist; keep the schedule stable and make the
 activity body no-op if an effect such as tracing must be disabled. A recent

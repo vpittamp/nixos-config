@@ -5,10 +5,11 @@ Scope: failure-symptom triage map for workflow runs. Each entry: **Symptom → W
 ## How to triage
 
 1. **Read the run status in the UI first** — `/workspaces/<slug>/workflows/<id>/runs/<execId>`. The failed task + last few log lines usually point straight at the cause.
-2. **Then check orchestrator logs** — `kubectl -n workflow-builder logs deploy/workflow-orchestrator -c workflow-orchestrator --tail=200`. Parse errors land here.
-3. **For agent failures, check the per-agent pod** — `kubectl -n workflow-builder logs deploy/agent-runtime-<slug> -c dapr-agent-py --tail=200`. Agent runtime errors land here.
-4. **For Dapr issues, check the daprd sidecar** — `kubectl -n workflow-builder logs <pod> -c daprd --tail=100`. Boot crashes + placement issues land here.
-5. **For MCP/tool failures, check resolved bootstrap config** — inspect `DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON`, `activepieces-mcp-catalog`, and `[mcp-bootstrap]` logs before changing the workflow spec.
+2. **Use traces to line up the layers** — copy the run/execution `trace_id` from the UI or DB, then correlate workflow output, `sessions`, benchmark run instance rows, and OTel/MLflow spans before changing runtime images.
+3. **Then check orchestrator logs** — `kubectl -n workflow-builder logs deploy/workflow-orchestrator -c workflow-orchestrator --tail=200`. Parse errors land here.
+4. **For agent failures, check the per-session Sandbox pod** — find it via `kubectl -n workflow-builder get sandbox` / `kubectl -n workflow-builder get pods -l <session-label>`, then `kubectl logs <pod> -c dapr-agent-py --tail=200` (or the `claude-agent-py`/`adk-agent-py`/agent-host container). Agent runtime errors land here. (The retired per-agent `agent-runtime-<slug>` Deployment no longer exists.)
+5. **For Dapr issues, check the daprd sidecar** — `kubectl -n workflow-builder logs <pod> -c daprd --tail=100`. Boot crashes + placement issues land here.
+6. **For MCP/tool failures, check resolved bootstrap config** — inspect bootstrap MCP env, `activepieces-mcp-catalog`, and `[mcp-bootstrap]` logs before changing the workflow spec.
 
 ## Symptom map
 
@@ -27,15 +28,16 @@ Scope: failure-symptom triage map for workflow runs. Each entry: **Symptom → W
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| `durable/run` step times out, agent never starts | AgentRuntime CR `phase=Sleeping` or pod not woken | `kubectl -n workflow-builder get agentruntime/<slug>` → if Sleeping for >30s after the wake annotation, restart the controller: `kubectl -n workflow-builder rollout restart deploy/agent-runtime-controller`. Kopf annotation watcher dropouts after dapr-placement-server flaps are a known issue. |
-| `ctx.call_child_workflow` times out `the app may not be available` | Target pod isn't Dapr-placement-registered (scaled to 0 OR cross-namespace) | Confirm pod replicas: `kubectl -n workflow-builder get deploy/agent-runtime-<slug>`. Per-agent pods MUST be in the `workflow-builder` namespace — Dapr workflow sub-orchestration doesn't cross namespaces. |
+| `durable/run` step times out, agent never starts | Per-session Sandbox pod never got Kueue-admitted / never reached Running (cluster at capacity, no `ResourceFlavor`/quota, or image pull stall) | `kubectl -n workflow-builder get sandbox` and the matching pod; check Kueue admission: `kubectl -n workflow-builder get workloads`. If the Workload is `Pending`/not admitted, the local-queue/cluster-queue is out of quota or the pod is unschedulable — free capacity or fix the queue. There is no AgentRuntime CR / Kopf controller to wake anymore. |
+| `ctx.call_child_workflow` times out `the app may not be available` | Target Sandbox pod isn't Dapr-placement-registered (not yet admitted/Running OR cross-namespace) | Confirm the per-session Sandbox pod is Running in `workflow-builder` (or, for the pool path, `kubectl -n workflow-builder get deploy/dapr-agent-py`). Session Sandbox pods MUST be in the `workflow-builder` namespace — Dapr workflow sub-orchestration doesn't cross namespaces. |
 | Agent loops with empty assistant responses, never terminates | Anthropic SDK [issue #1204](https://github.com/anthropics/anthropic-sdk-python/issues/1204) — Opus 4.7 + adaptive thinking emits empty `end_turn` | Empty-response circuit breaker should trip after `DAPR_AGENT_PY_EMPTY_RESPONSE_THRESHOLD` (default 3). Check pod logs for `[call-llm] circuit-breaker tripped`. Tunable via env. |
-| Agent responds but lacks expected MCP tools | `mcpConnectionMode` is `explicit`, project `mcp_connection` row is disabled/missing, or AgentRuntime bootstrap wasn't refreshed after MCP changes | Read `references/mcp-connections.md`; inspect `DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON`; run agent registry sync or re-publish. |
+| Agent responds but lacks expected MCP tools | `mcpConnectionMode` is `explicit`, project `mcp_connection` row is disabled/missing, or the bootstrap env wasn't refreshed after MCP changes (NOTE: `claude-agent-py` now supports MCP too — `agentConfig.mcpServers` is wired into the SDK) | Read `references/mcp-connections.md`; inspect the launched Sandbox pod's `DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON` env; run agent registry sync or re-publish. |
 | Agent with Outlook/Excel/etc. MCP gets no response or tool call hangs | Generated AP piece KService missing/cold-starting, stale `:3100` URL, or missing `X-Connection-External-Id` | Check `activepieces-mcp-catalog`, `ksvc ap-<piece>-service`, and runtime logs for `[mcp-bootstrap]` / `Missing credentials`. KService URL should omit `:3100`. |
 | Child session hangs forever, no LLM traffic | No in-workflow turn timer exists anymore — the durable 600s `when_any([child, timer])` session-turn timer was **deleted** (commit `72154581`). The only remaining guard is an out-of-band **host-monitor thread** (`session_host_monitor.py`) whose default action is **`"warn"`**, not terminate. | Check the per-agent pod logs for the host-monitor warning and the underlying stall (placement flap, LLM provider hang, MCP cold-start). The monitor only escalates to terminate if its non-terminal-timeout action is explicitly set to `terminate`/`exit`/`fail`; by default it just warns. Restoring a durable `when_any` turn-timer is open work — do not assume one is firing. |
+| SWE-bench or 3B1B output says `agentRuntime=claude-agent-py`, but the sandbox/runtime label mentions `dapr-agent` or `dapr-agent-py` | Workspace template and agent runtime are being conflated, or the agent-host container label is legacy/static | Treat this as expected until DB/runtime evidence says otherwise. Check `benchmark_runs.agent_runtime`, `agent_runtime_app_id`, `model_name_or_path`, workflow output `agentWorkflowMode`, trace id, and live image/env pins. `sandboxTemplate: "dapr-agent"` often names the OpenShell workspace image, not the Claude runtime. |
 | Anthropic API returns `HTTP 400 prompt is too long: N tokens > 1000000` | Image tool_results accumulated past compaction limit | `_compact_image_tool_results` keeps the last `DAPR_AGENT_PY_MAX_IMAGE_TOOL_RESULTS` (default 3) images intact. Lower the env var or tighten the validator prompt to take fewer screenshots. |
 | Anthropic API returns `HTTP 400 Streaming is required for operations that may take longer than 10 minutes` | Non-streaming `messages.create()` exceeded the server's 10-min estimate | Should already be fixed by `_stream_final_message` in `anthropic_adapter.py` — verify the deployed image is recent. As a workaround, lower `DAPR_AGENT_PY_MAX_TOKENS` (default 16384). |
-| AgentRuntime pod stays `0/2` for 2+ minutes after wake; logs cycle through `[mcp-bootstrap] connect piece_microsoft-* failed: unhandled errors in a TaskGroup` every 30s | Agent has `mcpConnectionMode: "auto"` and empty `mcpServers`; `resolveAgentConfigMcpForProject` expanded all project `mcp_connection` rows; each piece KService is at `replicas=0` and serially cold-starts | Set `mcpConnectionMode: "explicit"` on the agent, force registry-sync, recycle the pod. CR's `mcpServers` will go to `[]` and the pod boots in <30s. Project-using agents are unaffected. |
+| Per-session Sandbox pod stays `0/2` for 2+ minutes after launch; logs cycle through `[mcp-bootstrap] connect piece_microsoft-* failed: unhandled errors in a TaskGroup` every 30s | Agent has `mcpConnectionMode: "auto"` and empty `mcpServers`; `resolveAgentConfigMcpForProject` expanded all project `mcp_connection` rows; each piece KService is at `replicas=0` and serially cold-starts | Set `mcpConnectionMode: "explicit"` on the agent, force registry-sync. The bootstrap `mcpServers` env will go to `[]` and the next launched Sandbox boots in <30s. Project-using agents are unaffected. |
 
 ### Prompt cache (Anthropic + OpenAI)
 
@@ -62,16 +64,16 @@ Scope: failure-symptom triage map for workflow runs. Each entry: **Symptom → W
 | Symptom | Why it's normal |
 | --- | --- |
 | Orchestrator logs `Ignoring unexpected taskCompleted event with ID = N` | durabletask-worker emits this during every `call_child_workflow` replay cycle while the child runs. Not a stuck signal. |
-| Orchestrator logs `Orchestrator yielded with 1 task(s) and 0 event(s) outstanding` repeatedly | Normal during a long child workflow. Becomes a real signal only if it persists >5 min AND the AgentRuntime phase is wrong AND placement is flapping in target daprd logs. |
+| Orchestrator logs `Orchestrator yielded with 1 task(s) and 0 event(s) outstanding` repeatedly | Normal during a long child workflow. Becomes a real signal only if it persists >5 min AND the session Sandbox pod isn't Running/admitted AND placement is flapping in target daprd logs. |
 
-Don't intervene on replay chatter alone — check AgentRuntime phase + `sessions.updated_at` first.
+Don't intervene on replay chatter alone — check the session Sandbox pod status + `sessions.updated_at` first.
 
 ### Workspace / sandbox
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | Live-preview proxy returns 404 "Retained sandbox not found for this execution" | `workflow_workspace_sessions` row missing or `status='cleaned'` | Check `with.keepAfterRun: true` is set on the `workspace/*` step. The `_should_cleanup_workspaces` gate (`sw_workflow.py`, def at ~L261) reads the spec — the flag MUST be in the spec, not just task outputs. Manually revive: `UPDATE workflow_workspace_sessions SET status='active' WHERE workflow_execution_id=<id>`. |
-| Tool fails with `[Errno 2] No such file or directory: '/root/.config/openshell/active_gateway'` | `seed-openshell-config` init container didn't run | Re-publish the agent to rebuild its Deployment with the current pod shape. The `openshell-sandbox-dapr-webhook` namespaceSelector must include `workflow-builder`. |
+| Tool fails with `[Errno 2] No such file or directory: '/root/.config/openshell/active_gateway'` | `seed-openshell-config` init container didn't run in the launched Sandbox pod | Confirm the Sandbox pod template includes the `seed-openshell-config` init container and that the `openshell-client-tls` / `openshell-server-client-ca` Secrets exist; the `openshell-sandbox-dapr-webhook` namespaceSelector must include `workflow-builder`. Re-launch the session after fixing. |
 | SWE-bench (or any benchmark) child workflow fails with `Request to openshell-agent-runtime (workspace/profile) timed out after 300000ms` — esp. under burst load | function-router image pre-dates workflow-builder commit `2a68cca7` (2026-05-09); `MAX_WORKSPACE_PROFILE_TIMEOUT_MS` was hard-coded to `300_000` | Roll dev `function-router` to `ghcr.io/pittampalliorg/function-router:git-2a68cca7c63b…` or newer. The cap is now an env var (default 1h). See `shared-skills/evaluations/references/swebench-concurrency.md` § Function-Router Workspace/Profile Timeout. |
 | `browser/validate` fails with `Dev server did not become ready` even though the server log shows it bound successfully (e.g. `Serving HTTP on 0.0.0.0 port 8080 ...`) | The runtime allocates its own port via `_allocate_local_port()` and probes that port; user's `devServerCommand` is binding a different port (hardcoded 3009/8080/etc.) | Omit `devServerCommand` (the runtime's default `_local_devserver_runner` auto-detects index.html / package.json) OR use the `{port}` / `${PORT}` / `$PORT` placeholder. Bind to `0.0.0.0`, not `127.0.0.1`. See `references/action-catalog.md` § `browser/validate`. |
 
@@ -81,7 +83,7 @@ Don't intervene on replay chatter alone — check AgentRuntime phase + `sessions
 | --- | --- | --- |
 | `detected duplicate actor state store` | Pod sees more than one Component with `actorStateStore=true`, or a legacy Component was made visible again | Current dev expects namespace-wide `workflowstatestore` as the only actor/workflow store and `dapr-agent-py-statestore` as `actorStateStore=false`. Do not create per-agent state stores. See `references/cluster-topology.md` § Dapr Component scoping. |
 | `no X509 SVID available / failed to get configuration` | The `dapr.io/config`-referenced Configuration is missing in pod's namespace | Ensure `Configuration/openshell-sandbox-dapr` exists in `workflow-builder` (file: `packages/components/workloads/workflow-builder/manifests/Configuration-openshell-sandbox-dapr.yaml`). |
-| Pod has no daprd sidecar at all | Webhook didn't fire | Confirm `MutatingWebhookConfiguration/openshell-sandbox-dapr-webhook` exists and `namespaceSelector` includes `workflow-builder`. Re-publish the agent to retry the inject. |
+| Pod has no daprd sidecar at all | Webhook didn't fire | Confirm `MutatingWebhookConfiguration/openshell-sandbox-dapr-webhook` exists and `namespaceSelector` includes `workflow-builder`. Re-launch the session to retry the inject. |
 
 ### BFF / orchestrator connectivity
 
@@ -117,24 +119,32 @@ Don't intervene on replay chatter alone — check AgentRuntime phase + `sessions
 # Orchestrator parse + dispatch
 kubectl -n workflow-builder logs deploy/workflow-orchestrator -c workflow-orchestrator --tail=200 -f
 
-# Per-agent runtime pod
-kubectl -n workflow-builder get agentruntime
-kubectl -n workflow-builder logs deploy/agent-runtime-<slug> -c dapr-agent-py --tail=200 -f
+# Per-session runtime Sandbox pod (no AgentRuntime CR — use Sandbox/pods)
+kubectl -n workflow-builder get sandbox
+kubectl -n workflow-builder get workloads   # Kueue admission status
+kubectl -n workflow-builder logs <session-sandbox-pod> -c dapr-agent-py --tail=200 -f
+# Surviving static pool / openshell-durable-agent enum:
+kubectl -n workflow-builder logs deploy/dapr-agent-py -c dapr-agent-py --tail=200 -f
 
-# MCP bootstrap on a per-agent runtime
-kubectl -n workflow-builder get deploy agent-runtime-<slug> -o json | \
-  jq -r '.spec.template.spec.containers[] | select(.name=="dapr-agent-py") | .env[] | select(.name=="DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON").value' | jq .
-kubectl -n workflow-builder logs deploy/agent-runtime-<slug> -c dapr-agent-py --tail=250 | \
+# SWE-bench runtime proof (run inside workflow-builder pod or with DATABASE_URL)
+psql "$DATABASE_URL" -c "
+select id, agent_runtime, agent_runtime_app_id, model_name_or_path, status, summary
+from benchmark_runs
+order by created_at desc
+limit 5;"
+
+# MCP bootstrap on a launched per-session Sandbox pod
+kubectl -n workflow-builder get pod <session-sandbox-pod> -o json | \
+  jq -r '.spec.containers[] | select(.name=="dapr-agent-py") | .env[] | select(.name=="DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON").value' | jq .
+kubectl -n workflow-builder logs <session-sandbox-pod> -c dapr-agent-py --tail=250 | \
   rg 'mcp-bootstrap|Loaded|Registered|Missing credentials'
 
 # Daprd boot
 kubectl -n workflow-builder logs <pod> -c daprd --tail=100
 
-# Wake an agent runtime manually
-kubectl -n workflow-builder annotate agentruntime <slug> agents.x-k8s.io/wake="$(date -Iseconds)" --overwrite
-
-# Restart Kopf controller (recovers dropped annotation watchers)
-kubectl -n workflow-builder rollout restart deploy/agent-runtime-controller
+# Kueue admission for a stuck session (no wake annotation exists anymore)
+kubectl -n workflow-builder get workloads
+kubectl -n workflow-builder describe sandbox <session-sandbox>
 
 # Inspect a stuck workflow instance via Dapr
 kubectl -n workflow-builder exec deploy/workflow-orchestrator -c daprd -- \
