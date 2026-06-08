@@ -1,0 +1,36 @@
+--- a/src/detect/mod.rs
++++ b/src/detect/mod.rs
+@@ -86,7 +86,7 @@ pub fn parse_agent_label(agent: &str) -> Option<Agent> {
+     match name.as_str() {
+         "pi" => Some(Agent::Pi),
+         "claude" | "claude-code" => Some(Agent::Claude),
+-        "codex" => Some(Agent::Codex),
++        "codex" | "codex-raw" => Some(Agent::Codex),
+         "gemini" => Some(Agent::Gemini),
+         "cursor" | "cursor-agent" => Some(Agent::Cursor),
+         "agy" | "antigravity" | "antigravity-cli" => Some(Agent::Antigravity),
+@@ -111,7 +111,7 @@ pub fn identify_agent(process_name: &str) -> Option<Agent> {
+     match name.as_str() {
+         "pi" => Some(Agent::Pi),
+         "claude" | "claude-code" => Some(Agent::Claude),
+-        "codex" => Some(Agent::Codex),
++        "codex" | "codex-raw" => Some(Agent::Codex),
+         "gemini" => Some(Agent::Gemini),
+         "cursor" | "cursor-agent" => Some(Agent::Cursor),
+         "agy" | "antigravity" | "antigravity-cli" => Some(Agent::Antigravity),
+@@ -709,7 +709,8 @@ mod tests {
+         assert_eq!(identify_agent("pi"), Some(Agent::Pi));
+         assert_eq!(identify_agent("claude"), Some(Agent::Claude));
+         assert_eq!(identify_agent("claude-code"), Some(Agent::Claude));
+         assert_eq!(identify_agent("codex"), Some(Agent::Codex));
++        assert_eq!(identify_agent("codex-raw"), Some(Agent::Codex));
+         assert_eq!(identify_agent("gemini"), Some(Agent::Gemini));
+         assert_eq!(identify_agent("cursor"), Some(Agent::Cursor));
+         assert_eq!(identify_agent("cursor-agent"), Some(Agent::Cursor));
+@@ -737,5 +738,6 @@ mod tests {
+         assert_eq!(parse_agent_label("pi"), Some(Agent::Pi));
+         assert_eq!(parse_agent_label("claude"), Some(Agent::Claude));
++        assert_eq!(parse_agent_label("codex-raw"), Some(Agent::Codex));
+         assert_eq!(parse_agent_label("cursor-agent"), Some(Agent::Cursor));
+         assert_eq!(parse_agent_label("agy"), Some(Agent::Antigravity));
+         assert_eq!(parse_agent_label("antigravity"), Some(Agent::Antigravity));

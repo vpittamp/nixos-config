@@ -27,7 +27,14 @@ let
   dapr-cli = pkgs.callPackage ../packages/dapr-cli.nix { };
 
   # Herdr terminal multiplexer for AI coding agents, sourced from its flake.
-  herdr = inputs.herdr.packages.${pkgs.stdenv.hostPlatform.system}.default;
+  # Current Codex Nix builds expose the long-running interactive process as
+  # codex-raw, so carry a small compatibility patch until upstream recognizes
+  # that binary name as Codex.
+  herdr = inputs.herdr.packages.${pkgs.stdenv.hostPlatform.system}.default.overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [
+      ../patches/herdr-codex-raw-agent-detection.patch
+    ];
+  });
 
   # Text editors and IDEs (from nixpkgs)
   editors = with pkgs; [
