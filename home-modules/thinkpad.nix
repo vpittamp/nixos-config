@@ -147,6 +147,13 @@ EOF
   programs.i3-project-daemon = {
     enable = true;
     logLevel = "INFO";
+    herdrRemoteTargets = [
+      {
+        host = "ryzen";
+        ssh_target = "ryzen";
+        connection_key = "vpittamp@ryzen:22";
+      }
+    ];
   };
 
   # Use the shared hybrid display path so the ThinkPad can expose a virtual second monitor.

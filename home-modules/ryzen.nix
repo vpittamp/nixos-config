@@ -74,6 +74,7 @@ in
   programs.i3-project-daemon = {
     enable = true;
     logLevel = "INFO";
+    herdrRemoteTargets = [];
   };
 
   programs.disk-guardrails.enable = true;

@@ -6,92 +6,90 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SHELL_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "shell.qml"
 SESSION_ROW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "SessionRow.qml"
+LAUNCHER_WINDOW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "LauncherWindow.qml"
 
 
-def test_session_phase_prioritizes_review_and_unread_output():
-    """Unread output and review-pending sessions should surface as attention."""
+def test_session_phase_prefers_raw_herdr_agent_status():
+    """Herdr agent status should drive AI row state before legacy telemetry fields."""
     text = SHELL_QML.read_text()
     assert "function sessionPhase(session)" in text
-    assert "session.output_unseen" in text
-    assert "session.review_pending" in text
-    assert "return \"needs_attention\";" in text
+    herdr_index = text.index("const herdrStatus = stringOrEmpty(session && session.agent_status).toLowerCase();")
+    legacy_index = text.index("const phase = stringOrEmpty(session && session.session_phase).toLowerCase();")
+    assert herdr_index < legacy_index
+    assert "[\"working\", \"blocked\", \"done\", \"idle\", \"unknown\"].indexOf(herdrStatus) >= 0" in text
+    assert "return herdrStatus;" in text
 
 
-def test_session_activity_uses_explicit_work_signals_and_ignores_stale_state():
-    """Animation/motion should be driven by explicit work signals, not old broad stage heuristics."""
+def test_session_display_eligibility_accepts_herdr_panes_without_tmux_identity():
+    """Herdr panes should be visible without terminal anchors or tmux fields."""
     text = SHELL_QML.read_text()
-    assert "function sessionIsActivelyProcessing(session)" in text
-    assert "session.pulse_working" in text
-    assert "session.is_streaming" in text
-    assert "pendingTools > 0" in text
-    assert "session.output_ready" in text
-    assert "session.output_unseen" in text
-    assert "session.remote_source_stale" in text
-    assert "freshness === \"stale\"" in text
+    assert "function sessionIsDisplayEligible(session)" in text
+    assert "function sessionIsPanelDisplayEligible(session)" in text
+    assert "stringOrEmpty(session.source) === \"herdr\" || stringOrEmpty(session.pane_id)" in text
+    assert "return stringOrEmpty(session.pane_id).length > 0;" in text
 
 
-def test_session_badge_uses_turn_owner_and_activity_substate_labels():
-    """Launcher/session chips should expose telemetry-derived owner + substate labels."""
+def test_session_status_chip_renders_raw_herdr_status():
+    """Session chips should title-case Herdr's status rather than custom lifecycle labels."""
     text = SHELL_QML.read_text()
-    assert "function sessionTurnOwnerLabel(session)" in text
-    assert "function sessionActivitySubstateLabel(session)" in text
-    assert "function sessionBadgeLabel(session)" in text
-    assert "ownerLabel + \" · \" + substateLabel" in text
-    assert "session.turn_owner" in text
-    assert "session.activity_substate" in text
+    assert "function sessionActivityChipLabel(session)" in text
+    assert "[\"working\", \"blocked\", \"done\", \"idle\", \"unknown\"].indexOf(state) >= 0" in text
+    assert "return titleCaseWord(state);" in text
+    assert "if (badgeState === \"blocked\")" in text
+    assert "return \"Blocked\";" in text
 
 
-def test_session_badge_symbol_and_attention_hooks_cover_unread_output():
-    """Badge symbol/state should react to blocked or unread-output conditions."""
+def test_session_badge_symbol_and_attention_hooks_cover_blocked_herdr_status():
+    """Badge symbol/state should react to Herdr blocked status directly."""
     text = SHELL_QML.read_text()
     assert "function sessionBadgeSymbol(session)" in text
-    assert "owner === \"blocked\" || state === \"needs_attention\"" in text
-    assert "session.output_ready" in text
-    assert "session.output_unseen" in text
+    assert "if (state === \"blocked\")" in text
+    assert "return \"!\";" in text
+    assert "return phase === \"needs_attention\" || phase === \"blocked\";" in text
 
 
-def test_session_phase_supports_explicit_stopped_state():
-    """Explicit native completion should render as a distinct stopped state."""
+def test_current_session_highlight_uses_local_herdr_focus():
+    """Current row highlighting should trust local Herdr focus before old session-key heuristics."""
     text = SHELL_QML.read_text()
-    assert "session.llm_stopped" in text
-    assert "terminalState === \"explicit_complete\"" in text
-    assert "return \"stopped\";" in text
-    assert "badgeState === \"stopped\"" in text
-    assert "return \"Stopped\";" in text
+    assert "function sessionIsCurrent(session)" in text
+    focused_index = text.index("if (boolOrFalse(session && session.focused) && boolOrFalse(session && session.is_current_host))")
+    key_index = text.index("return currentSessionKey() === stringOrEmpty(session.session_key);")
+    assert focused_index < key_index
 
 
-def test_launcher_session_search_indexes_telemetry_fields():
-    """Launcher session search should include telemetry-derived state terms."""
+def test_launcher_session_search_indexes_herdr_fields():
+    """Launcher session search should include Herdr-native status and identity terms."""
     text = SHELL_QML.read_text()
-    assert "function sessionAlias(session)" in text
-    assert "function sessionAvailabilityLabel(session)" in text
-    assert "session.turn_owner" in text
-    assert "session.activity_substate" in text
-    assert "session.last_event_name" in text
-    assert "session.status_reason" in text
+    assert "sessionPrimaryLabel(session)" in text
+    assert "sessionSecondaryLabel(session)" in text
+    assert "session && session.agent_status" in text
+    assert "session && session.foreground_cwd" in text
+    assert "session && session.cwd" in text
     assert "sessionBadgeLabel(session)" in text
 
 
-def test_grouped_session_pills_focus_by_session_key():
-    """Session pills should focus via canonical session keys."""
+def test_session_rows_focus_by_explicit_herdr_target():
+    """Session rows should use daemon Herdr focus targets instead of tmux/window heuristics."""
     text = SHELL_QML.read_text()
     assert "function focusSession(sessionKey)" in text
-    assert "const resolvedSessionKey = stringOrEmpty(sessionData && sessionData.session_key) || stringOrEmpty(sessionKey);" in text
-    assert "root.focusSession(session);" in text
-    assert "readonly property string activityLabel: sessionEntry ? root.sessionBadgeLabel(entry) : \"\"" in text
+    assert "function sessionFocusTarget(sessionOrKey)" in text
+    assert "const explicitTarget = normalizedFocusTarget(sessionOrKey.focus_target);" in text
+    assert "stringOrEmpty(sessionOrKey.source) === \"herdr\" || stringOrEmpty(sessionOrKey.pane_id)" in text
+    assert "return explicitTarget;" in text
+    assert "const target = sessionFocusTarget(sessionData || resolvedSessionKey);" in text
+    assert "runFocusTarget(target);" in text
 
 
-def test_side_panel_sessions_close_local_surface_only():
-    """Session rows should close the local bound window/bridge, not kill tmux sessions directly."""
+def test_side_panel_sessions_close_by_explicit_herdr_target():
+    """Session rows should call Herdr close targets when provided."""
     text = SHELL_QML.read_text()
-    assert "function sessionClosableWindowId(session)" in text
-    assert "const bridgeWindowId = Number(session && session.bridge_window_id || 0);" in text
+    assert "function sessionCloseTarget(session)" in text
+    assert "return normalizedFocusTarget(session.close_target);" in text
     assert "function sessionHasClosableSurface(session)" in text
+    assert "if (sessionCloseTarget(session))" in text
     assert "function closeSession(session)" in text
-    assert "closeWindow({" in text
-    assert "project: stringOrEmpty(session.project_name || session.project)" in text
-    assert "execution_mode: stringOrEmpty(session.execution_mode || session.focus_execution_mode)" in text
-    assert "onCloseRequested: root.closeSession(modelData)" in text
+    assert "const explicitCloseTarget = sessionCloseTarget(session);" in text
+    assert "runDaemonCall(explicitCloseTarget.method, explicitCloseTarget.params);" in text
 
     row_text = SESSION_ROW_QML.read_text()
     assert "property bool showCloseAction: interactive" in row_text
@@ -104,30 +102,40 @@ def test_side_panel_sessions_close_local_surface_only():
     assert "z: 0" in row_text
 
 
-def test_session_titles_prefer_host_prefixed_tmux_alias_with_preview_support():
-    """Launcher rows and preview titles should use host-prefixed raw pane aliases."""
+def test_session_titles_prefer_herdr_agent_and_project():
+    """Launcher rows should title Herdr sessions by agent and worktree/project."""
     text = SHELL_QML.read_text()
-    assert "function hostMonogram(mode, hostName, connectionKey)" in text
-    assert "function buildSessionAlias(monogram, paneId)" in text
-    assert "function sessionAlias(session)" in text
-    assert "return prefix.charAt(0) + pane;" in text
-    assert "const alias = sessionAlias(session);" in text
-    assert "return alias;" in text
-    assert "function sessionPreviewTitle()" in text
-    assert "buildSessionAlias(" in text
-    assert "stringOrEmpty(sessionPreview.tmux_pane)" in text
-
-
-def test_session_secondary_label_prioritizes_project_and_phase():
-    """Session subtitles should show project/worktree and high-level state."""
-    text = SHELL_QML.read_text()
+    assert "function sessionPrimaryLabel(session)" in text
+    assert "const agent = toolLabel(session);" in text
     assert "const project = shortProject(stringOrEmpty(session && (session.project_name || session.project || \"\")));" in text
-    assert "const availability = sessionAvailabilityLabel(session);" in text
-    assert "const phase = compactSessionStateLabel(session);" in text
-    assert "project !== \"Global\"" in text
-    assert "bits.push(project);" in text
-    assert "sessionAvailabilityState(session) !== \"available_here\"" in text
-    assert "bits.push(phase);" in text
+    assert "stringOrEmpty(session && session.source) === \"herdr\" || stringOrEmpty(session && session.pane_id)" in text
+    assert "const host = displayHostName(stringOrEmpty(session && (session.herdr_host || session.host_name)));" in text
+    assert "const isRemote = boolOrFalse(session && session.is_remote_herdr);" in text
+    assert "bits.push(host);" in text
+    assert "return bits.join(\" · \") || \"AI Session\";" in text
+
+
+def test_session_secondary_label_uses_herdr_status_and_cwd():
+    """Session subtitles should use Herdr status and cwd/foreground cwd."""
+    text = SHELL_QML.read_text()
+    assert "function sessionSecondaryLabel(session)" in text
+    assert "const herdrStatus = stringOrEmpty(session && session.agent_status).toLowerCase();" in text
+    assert "bits.push(titleCaseWord(herdrStatus));" in text
+    assert "const foregroundCwd = stringOrEmpty(session && session.foreground_cwd);" in text
+    assert "const cwd = stringOrEmpty(session && session.cwd);" in text
+    assert "bits.push(parts[parts.length - 1]);" in text
+    assert "return bits.join(\" • \");" in text
+
+
+def test_launcher_preview_for_herdr_sessions_is_focus_only():
+    """Herdr sessions should not start the old live tmux/session preview process."""
+    text = SHELL_QML.read_text()
+    launcher_text = LAUNCHER_WINDOW_QML.read_text()
+    assert "if (stringOrEmpty(entry.source) === \"herdr\" || stringOrEmpty(entry.pane_id))" in text
+    assert "message: \"Focus this Herdr pane to inspect live output.\"" in text
+    assert "return;" in text
+    assert "function sessionPreviewStatusText()" in text
+    assert "root.sessionPreviewStatusText()" in launcher_text
 
 
 def test_session_sort_orders_by_host_bucket_before_numeric_pane_slot():

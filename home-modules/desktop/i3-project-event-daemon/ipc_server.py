@@ -572,6 +572,11 @@ class IPCServer:
         self._launch_reconcile_tasks: Dict[str, asyncio.Task] = {}
         self._session_items_cache_key: Optional[Tuple[Any, ...]] = None
         self._session_items_cache_rows: List[Dict[str, Any]] = []
+        self._herdr_snapshot_cache: Dict[str, Any] = {}
+        self._herdr_snapshot_cache_time: float = 0.0
+        self._herdr_snapshot_cache_ttl: float = 0.5
+        self._herdr_remote_targets_cache: List[Dict[str, str]] = []
+        self._herdr_remote_targets_cache_signature: Tuple[Any, ...] = ("", False, 0, 0)
         self._malformed_json_count: int = 0
         self._deferred_filter_task: Optional[asyncio.Task] = None
         self._malformed_json_last_at: Optional[str] = None
@@ -854,6 +859,10 @@ class IPCServer:
 
         explicit_intent_methods = {
             "context.ensure",
+            "herdr.pane.focus",
+            "herdr.pane.close",
+            "herdr.workspace.focus",
+            "herdr.tab.focus",
             "launch.open",
             "session.focus",
             "session.spawn_remote_attach",
@@ -883,6 +892,16 @@ class IPCServer:
                 result = await self._runtime_snapshot(params)
             elif method == "dashboard.snapshot":
                 result = await self._dashboard_snapshot(params)
+            elif method == "herdr.snapshot":
+                result = await self._herdr_snapshot(params)
+            elif method == "herdr.pane.focus":
+                result = await self._herdr_pane_focus(params)
+            elif method == "herdr.pane.close":
+                result = await self._herdr_pane_close(params)
+            elif method == "herdr.workspace.focus":
+                result = await self._herdr_workspace_focus(params)
+            elif method == "herdr.tab.focus":
+                result = await self._herdr_tab_focus(params)
             elif method == "display.snapshot":
                 result = await self._display_snapshot(params)
             elif method == "display.apply":
@@ -9015,7 +9034,7 @@ FORMAT JSONEachRow
         self,
         runtime_snapshot: Dict[str, Any],
     ) -> Tuple[Any, ...]:
-        """Return the normalization cache key for daemon-owned session rows."""
+        """Return the normalization cache key for Herdr-native session rows."""
         active_context = runtime_snapshot.get("active_context", {})
         if not isinstance(active_context, dict):
             active_context = {}
@@ -9023,14 +9042,7 @@ FORMAT JSONEachRow
         local_connection_key = self._normalize_connection_key(
             str(active_context.get("connection_key") or f"local@{self._local_host_alias()}")
         )
-        # Aggregator cache signature: bucket by 4-second window to match the
-        # aggregator's TTL. This forces session-items cache invalidation when
-        # the aggregator response would change, without an HTTP fetch each
-        # signature call (signature is computed every snapshot poll).
-        aggregator_bucket = int(time.time() / 4)
         return (
-            self._file_signature(self._runtime_dir() / "otel-ai-sessions.json"),
-            ("aggregator", aggregator_bucket),
             self._tracked_window_session_signature(tracked_windows),
             local_connection_key,
             str(active_context.get("context_key") or "").strip(),
@@ -9388,6 +9400,586 @@ FORMAT JSONEachRow
             },
         }
 
+    async def _run_herdr_json(self, args: List[str], timeout: float = 2.0) -> Dict[str, Any]:
+        """Run a Herdr CLI command that returns a single JSON object."""
+        if not shutil.which("herdr"):
+            return {
+                "success": False,
+                "error": "herdr_not_found",
+                "command": ["herdr", *args],
+            }
+
+        def run() -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                ["herdr", *args],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+
+        try:
+            result = await asyncio.to_thread(run)
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "error": "timeout",
+                "command": ["herdr", *args],
+            }
+
+        stdout = str(result.stdout or "").strip()
+        stderr = str(result.stderr or "").strip()
+        payload: Dict[str, Any] = {}
+        if stdout:
+            try:
+                parsed = json.loads(stdout)
+                if isinstance(parsed, dict):
+                    payload = parsed
+            except json.JSONDecodeError:
+                payload = {}
+
+        payload.setdefault("success", result.returncode == 0)
+        payload.setdefault("returncode", result.returncode)
+        payload.setdefault("stdout", stdout)
+        payload.setdefault("stderr", stderr)
+        payload.setdefault("command", ["herdr", *args])
+        return payload
+
+    def _herdr_remote_targets_file(self) -> Path:
+        configured = str(os.environ.get("I3PM_HERDR_REMOTE_TARGETS_FILE") or "").strip()
+        if configured:
+            return Path(configured).expanduser()
+        return Path.home() / ".config/i3/herdr-remote-targets.json"
+
+    def _herdr_connection_key_for_target(self, ssh_target: str, explicit: str = "") -> str:
+        explicit_key = str(explicit or "").strip()
+        if explicit_key:
+            return self._normalize_connection_key(explicit_key)
+        user, host, port = self._parse_remote_target(ssh_target)
+        if not host:
+            return "unknown"
+        user = user or os.environ.get("USER") or "vpittamp"
+        return self._normalize_connection_key(f"{user}@{host}:{port or 22}")
+
+    def _load_herdr_remote_targets(self) -> List[Dict[str, str]]:
+        path = self._herdr_remote_targets_file()
+        env_payload = str(os.environ.get("I3PM_HERDR_REMOTE_TARGETS") or "").strip()
+        signature = (env_payload, *self._file_signature(path))
+        if signature == self._herdr_remote_targets_cache_signature:
+            return [dict(item) for item in self._herdr_remote_targets_cache]
+
+        raw_targets: Any = []
+        if env_payload:
+            try:
+                parsed = json.loads(env_payload)
+                if isinstance(parsed, list):
+                    raw_targets = parsed
+            except json.JSONDecodeError:
+                logger.warning("Ignoring invalid I3PM_HERDR_REMOTE_TARGETS JSON")
+        elif path.exists():
+            try:
+                with path.open("r", encoding="utf-8") as handle:
+                    parsed = json.load(handle)
+                if isinstance(parsed, list):
+                    raw_targets = parsed
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("Ignoring invalid Herdr remote target config %s: %s", path, exc)
+
+        targets: List[Dict[str, str]] = []
+        seen: set[str] = set()
+        for item in raw_targets if isinstance(raw_targets, list) else []:
+            if not isinstance(item, dict):
+                continue
+            host = str(item.get("host") or "").strip().lower()
+            ssh_target = str(item.get("ssh_target") or item.get("sshTarget") or host).strip()
+            if not ssh_target:
+                continue
+            if not host:
+                _user, parsed_host, _port = self._parse_remote_target(ssh_target)
+                host = parsed_host.lower()
+            connection_key = self._herdr_connection_key_for_target(
+                ssh_target,
+                str(item.get("connection_key") or item.get("connectionKey") or ""),
+            )
+            dedupe_key = connection_key if connection_key != "unknown" else ssh_target.lower()
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            targets.append({
+                "host": host or ssh_target.lower(),
+                "ssh_target": ssh_target,
+                "connection_key": connection_key,
+            })
+
+        self._herdr_remote_targets_cache_signature = signature
+        self._herdr_remote_targets_cache = [dict(item) for item in targets]
+        return targets
+
+    async def _run_herdr_ssh_json(
+        self,
+        target: Dict[str, str],
+        args: List[str],
+        timeout: float = 2.5,
+    ) -> Dict[str, Any]:
+        """Run a read-only Herdr command on a remote host over SSH."""
+        ssh_target = str(target.get("ssh_target") or "").strip()
+        if not ssh_target:
+            return {
+                "success": False,
+                "error": "missing_ssh_target",
+                "command": ["ssh", "", "herdr", *args],
+            }
+        if not shutil.which("ssh"):
+            return {
+                "success": False,
+                "error": "ssh_not_found",
+                "command": ["ssh", ssh_target, "herdr", *args],
+            }
+
+        command = [
+            "ssh",
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=1",
+            "-o", "ConnectionAttempts=1",
+            "-o", "ServerAliveInterval=1",
+            "-o", "ServerAliveCountMax=1",
+            ssh_target,
+            "herdr",
+            *args,
+        ]
+
+        def run() -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+
+        try:
+            result = await asyncio.to_thread(run)
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "error": "timeout",
+                "command": ["ssh", ssh_target, "herdr", *args],
+            }
+
+        stdout = str(result.stdout or "").strip()
+        stderr = str(result.stderr or "").strip()
+        payload: Dict[str, Any] = {}
+        if stdout:
+            try:
+                parsed = json.loads(stdout)
+                if isinstance(parsed, dict):
+                    payload = parsed
+            except json.JSONDecodeError:
+                payload = {}
+
+        payload.setdefault("success", result.returncode == 0)
+        payload.setdefault("returncode", result.returncode)
+        payload.setdefault("stdout", stdout)
+        payload.setdefault("stderr", stderr)
+        payload.setdefault("command", ["ssh", ssh_target, "herdr", *args])
+        payload.setdefault("herdr_host", str(target.get("host") or "").strip())
+        payload.setdefault("ssh_target", ssh_target)
+        payload.setdefault("connection_key", str(target.get("connection_key") or "").strip())
+        return payload
+
+    @staticmethod
+    def _herdr_result_array(payload: Dict[str, Any], key: str) -> List[Dict[str, Any]]:
+        result = payload.get("result") if isinstance(payload, dict) else {}
+        if not isinstance(result, dict):
+            result = {}
+        rows = result.get(key, [])
+        if not isinstance(rows, list):
+            return []
+        return [dict(item) for item in rows if isinstance(item, dict)]
+
+    @staticmethod
+    def _normalize_herdr_agent_status(value: Any, *, preserve_raw: bool = False) -> str:
+        raw = str(value or "").strip()
+        if preserve_raw:
+            return raw or "unknown"
+        status = raw.lower()
+        if status in {"working", "blocked", "done", "idle", "unknown"}:
+            return status
+        return "unknown"
+
+    @staticmethod
+    def _herdr_session_key(row: Dict[str, Any], host: str = "") -> str:
+        prefix = "herdr"
+        normalized_host = re.sub(r"[^a-z0-9._:-]+", "-", str(host or "").strip().lower()).strip("-")
+        if normalized_host:
+            prefix = f"{prefix}:{normalized_host}"
+        pane_id = str(row.get("pane_id") or "").strip()
+        if pane_id:
+            return f"{prefix}:pane:{pane_id}"
+        terminal_id = str(row.get("terminal_id") or "").strip()
+        if terminal_id:
+            return f"{prefix}:terminal:{terminal_id}"
+        tab_id = str(row.get("tab_id") or "").strip()
+        if tab_id:
+            return f"{prefix}:tab:{tab_id}"
+        workspace_id = str(row.get("workspace_id") or "").strip()
+        if workspace_id:
+            return f"{prefix}:workspace:{workspace_id}"
+        return f"{prefix}:unknown"
+
+    def _herdr_project_for_cwd(self, cwd: str) -> Dict[str, str]:
+        discovered = resolve_discovered_worktree(cwd)
+        if discovered:
+            return {
+                "project_name": str(discovered.get("qualified_name") or "").strip(),
+                "project_path": str(discovered.get("path") or "").strip(),
+            }
+        normalized = normalize_project_path(cwd) or str(cwd or "").strip()
+        return {
+            "project_name": "global",
+            "project_path": normalized,
+        }
+
+    def _normalize_herdr_session_row(
+        self,
+        row: Dict[str, Any],
+        *,
+        remote_target: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        pane_id = str(row.get("pane_id") or "").strip()
+        tab_id = str(row.get("tab_id") or "").strip()
+        workspace_id = str(row.get("workspace_id") or "").strip()
+        terminal_id = str(row.get("terminal_id") or "").strip()
+        cwd = str(row.get("cwd") or "").strip()
+        foreground_cwd = str(row.get("foreground_cwd") or "").strip()
+        project = self._herdr_project_for_cwd(foreground_cwd or cwd)
+        project_name = str(project.get("project_name") or "global").strip() or "global"
+        agent = str(row.get("agent") or "").strip()
+        is_remote = isinstance(remote_target, dict)
+        herdr_host = (
+            str(remote_target.get("host") or "").strip().lower()
+            if is_remote and remote_target
+            else self._local_host_alias()
+        )
+        ssh_target = str(remote_target.get("ssh_target") or "").strip() if is_remote and remote_target else ""
+        connection_key = (
+            str(remote_target.get("connection_key") or "").strip()
+            if is_remote and remote_target
+            else self._normalize_connection_key(f"local@{self._local_host_alias()}")
+        )
+        agent_status = self._normalize_herdr_agent_status(
+            row.get("agent_status"),
+            preserve_raw=is_remote,
+        )
+        session_key = self._herdr_session_key(row, herdr_host if is_remote else "")
+
+        normalized = dict(row)
+        normalized.update({
+            "schema": "herdr.ai_session.v1",
+            "source": "herdr",
+            "herdr_session": session_key,
+            "session_key": session_key,
+            "render_session_key": session_key,
+            "agent": agent,
+            "tool": agent,
+            "display_tool": agent or "herdr",
+            "agent_status": agent_status,
+            "focused": bool(row.get("focused", False)),
+            "is_current_window": bool(row.get("focused", False)),
+            "window_active": bool(row.get("focused", False)),
+            "pane_active": bool(row.get("focused", False)),
+            "workspace_id": workspace_id,
+            "tab_id": tab_id,
+            "pane_id": pane_id,
+            "terminal_id": terminal_id,
+            "cwd": cwd,
+            "foreground_cwd": foreground_cwd,
+            "working_dir": foreground_cwd or cwd,
+            "project_name": project_name,
+            "project": project_name,
+            "project_path": str(project.get("project_path") or "").strip(),
+            "project_label": project_name.rsplit("/", 1)[-1] if project_name != "global" else "global",
+            "execution_mode": "ssh" if is_remote else "local",
+            "connection_key": self._normalize_connection_key(connection_key),
+            "host_name": herdr_host,
+            "herdr_host": herdr_host,
+            "ssh_target": ssh_target,
+            "remote_target": ssh_target,
+            "target_host": herdr_host,
+            "is_remote_herdr": bool(is_remote),
+            "is_current_host": not bool(is_remote),
+            "focus_mode": "remote_herdr_attach" if is_remote else "herdr_pane",
+            "availability_state": "remote_herdr_attachable" if is_remote else "local_window",
+            "pane_label": pane_id,
+            "pane_title": agent or pane_id,
+            "focus_target": {
+                "method": "launch.open",
+                "params": {"app_name": "herdr"},
+            } if is_remote else ({
+                "method": "herdr.pane.focus",
+                "params": {"pane_id": pane_id},
+            } if pane_id else {}),
+            "close_target": {} if is_remote else ({
+                "method": "herdr.pane.close",
+                "params": {"pane_id": pane_id},
+            } if pane_id else {}),
+            "workspace_focus_target": {
+                "method": "herdr.workspace.focus",
+                "params": {"workspace_id": workspace_id},
+            } if workspace_id and not is_remote else {},
+            "tab_focus_target": {
+                "method": "herdr.tab.focus",
+                "params": {"tab_id": tab_id},
+            } if tab_id and not is_remote else {},
+        })
+        return normalized
+
+    def _normalize_herdr_sessions(
+        self,
+        snapshot: Dict[str, Any],
+        *,
+        remote_target: Optional[Dict[str, str]] = None,
+    ) -> List[Dict[str, Any]]:
+        panes_by_id = {
+            str(item.get("pane_id") or "").strip(): dict(item)
+            for item in snapshot.get("panes", [])
+            if isinstance(item, dict) and str(item.get("pane_id") or "").strip()
+        }
+        agents = [
+            item for item in snapshot.get("agents", [])
+            if isinstance(item, dict)
+        ]
+        rows: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+        for agent in agents:
+            pane_id = str(agent.get("pane_id") or "").strip()
+            merged = dict(panes_by_id.get(pane_id, {}))
+            merged.update(agent)
+            session = self._normalize_herdr_session_row(merged, remote_target=remote_target)
+            key = str(session.get("session_key") or "").strip()
+            if key and key not in seen:
+                seen.add(key)
+                rows.append(session)
+
+        for pane_id, pane in panes_by_id.items():
+            if pane_id in seen:
+                continue
+            if not str(pane.get("agent") or "").strip():
+                # The AI session panel is Herdr-agent native; plain terminals stay out.
+                continue
+            session = self._normalize_herdr_session_row(pane, remote_target=remote_target)
+            key = str(session.get("session_key") or "").strip()
+            if key and key not in seen:
+                seen.add(key)
+                rows.append(session)
+
+        focused_hosts: set[str] = set()
+        for session in rows:
+            host_key = str(session.get("herdr_host") or session.get("host_name") or "").strip().lower()
+            if not bool(session.get("focused", False)):
+                continue
+            if host_key in focused_hosts:
+                session["focused"] = False
+                session["is_current_window"] = False
+                session["window_active"] = False
+                session["pane_active"] = False
+                continue
+            focused_hosts.add(host_key)
+
+        rows.sort(key=lambda item: (
+            not bool(item.get("focused", False)),
+            str(item.get("herdr_host") or ""),
+            str(item.get("project_name") or ""),
+            str(item.get("agent") or ""),
+            str(item.get("pane_id") or ""),
+        ))
+        return rows
+
+    async def _herdr_remote_snapshot(self, target: Dict[str, str]) -> Dict[str, Any]:
+        """Return one remote Herdr host snapshot fetched through read-only SSH commands."""
+        status_payload, agent_payload, pane_payload, workspace_payload, tab_payload = await asyncio.gather(
+            self._run_herdr_ssh_json(target, ["status", "--json"]),
+            self._run_herdr_ssh_json(target, ["agent", "list"]),
+            self._run_herdr_ssh_json(target, ["pane", "list"]),
+            self._run_herdr_ssh_json(target, ["workspace", "list"]),
+            self._run_herdr_ssh_json(target, ["tab", "list"]),
+        )
+        payloads = [status_payload, agent_payload, pane_payload, workspace_payload, tab_payload]
+        host = str(target.get("host") or "").strip()
+        ssh_target = str(target.get("ssh_target") or "").strip()
+        connection_key = str(target.get("connection_key") or "").strip()
+        errors = [
+            {
+                "remote": True,
+                "host": host,
+                "ssh_target": ssh_target,
+                "connection_key": connection_key,
+                "command": payload.get("command"),
+                "error": payload.get("error") or payload.get("stderr") or payload.get("stdout"),
+                "returncode": payload.get("returncode"),
+            }
+            for payload in payloads
+            if not bool(payload.get("success", False))
+        ]
+        if not bool(status_payload.get("success", False)):
+            return {
+                "success": False,
+                "remote": True,
+                "host": host,
+                "ssh_target": ssh_target,
+                "connection_key": connection_key,
+                "status": status_payload,
+                "agents": [],
+                "panes": [],
+                "workspaces": [],
+                "tabs": [],
+                "sessions": [],
+                "errors": errors,
+            }
+
+        snapshot = {
+            "success": True,
+            "remote": True,
+            "host": host,
+            "ssh_target": ssh_target,
+            "connection_key": connection_key,
+            "status": status_payload,
+            "agents": self._herdr_result_array(agent_payload, "agents"),
+            "panes": self._herdr_result_array(pane_payload, "panes"),
+            "workspaces": self._herdr_result_array(workspace_payload, "workspaces"),
+            "tabs": self._herdr_result_array(tab_payload, "tabs"),
+            "errors": errors,
+        }
+        snapshot["sessions"] = self._normalize_herdr_sessions(snapshot, remote_target=target)
+        return snapshot
+
+    async def _herdr_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Return Herdr-native local and configured remote state."""
+        params = params or {}
+        use_cache = not bool(params.get("refresh", False))
+        now = time.time()
+        if (
+            use_cache
+            and self._herdr_snapshot_cache
+            and now - self._herdr_snapshot_cache_time <= self._herdr_snapshot_cache_ttl
+        ):
+            return copy.deepcopy(self._herdr_snapshot_cache)
+
+        status_payload, agent_payload, pane_payload, workspace_payload, tab_payload = await asyncio.gather(
+            self._run_herdr_json(["status", "--json"]),
+            self._run_herdr_json(["agent", "list"]),
+            self._run_herdr_json(["pane", "list"]),
+            self._run_herdr_json(["workspace", "list"]),
+            self._run_herdr_json(["tab", "list"]),
+        )
+        snapshot = {
+            "success": bool(status_payload.get("success", False)),
+            "status": status_payload,
+            "agents": self._herdr_result_array(agent_payload, "agents"),
+            "panes": self._herdr_result_array(pane_payload, "panes"),
+            "workspaces": self._herdr_result_array(workspace_payload, "workspaces"),
+            "tabs": self._herdr_result_array(tab_payload, "tabs"),
+            "errors": [
+                {
+                    "command": payload.get("command"),
+                    "error": payload.get("error") or payload.get("stderr") or payload.get("stdout"),
+                    "returncode": payload.get("returncode"),
+                }
+                for payload in [status_payload, agent_payload, pane_payload, workspace_payload, tab_payload]
+                if not bool(payload.get("success", False))
+            ],
+        }
+        snapshot["sessions"] = self._normalize_herdr_sessions(snapshot)
+
+        remote_targets = self._load_herdr_remote_targets()
+        remote_snapshots = await asyncio.gather(
+            *(self._herdr_remote_snapshot(target) for target in remote_targets),
+            return_exceptions=True,
+        )
+        normalized_remote_snapshots: List[Dict[str, Any]] = []
+        for index, remote_snapshot in enumerate(remote_snapshots):
+            target = remote_targets[index]
+            if isinstance(remote_snapshot, Exception):
+                error_entry = {
+                    "remote": True,
+                    "host": str(target.get("host") or "").strip(),
+                    "ssh_target": str(target.get("ssh_target") or "").strip(),
+                    "connection_key": str(target.get("connection_key") or "").strip(),
+                    "command": ["ssh", str(target.get("ssh_target") or "").strip(), "herdr"],
+                    "error": str(remote_snapshot),
+                    "returncode": None,
+                }
+                snapshot["errors"].append(error_entry)
+                normalized_remote_snapshots.append({
+                    "success": False,
+                    "remote": True,
+                    "host": error_entry["host"],
+                    "ssh_target": error_entry["ssh_target"],
+                    "connection_key": error_entry["connection_key"],
+                    "errors": [error_entry],
+                    "sessions": [],
+                })
+                continue
+            if not isinstance(remote_snapshot, dict):
+                continue
+            normalized_remote_snapshots.append(remote_snapshot)
+            snapshot["agents"].extend(remote_snapshot.get("agents", []) or [])
+            snapshot["panes"].extend(remote_snapshot.get("panes", []) or [])
+            snapshot["workspaces"].extend(remote_snapshot.get("workspaces", []) or [])
+            snapshot["tabs"].extend(remote_snapshot.get("tabs", []) or [])
+            snapshot["sessions"].extend([
+                session for session in remote_snapshot.get("sessions", []) or []
+                if isinstance(session, dict)
+            ])
+            snapshot["errors"].extend(remote_snapshot.get("errors", []) or [])
+
+        snapshot["remote_targets"] = remote_targets
+        snapshot["remote_snapshots"] = normalized_remote_snapshots
+        snapshot["remote_errors"] = [
+            error for error in snapshot.get("errors", [])
+            if isinstance(error, dict) and bool(error.get("remote", False))
+        ]
+        snapshot["sessions"].sort(key=lambda item: (
+            not bool(item.get("focused", False)),
+            0 if bool(item.get("is_current_host", False)) else 1,
+            str(item.get("herdr_host") or ""),
+            str(item.get("project_name") or ""),
+            str(item.get("agent") or ""),
+            str(item.get("pane_id") or ""),
+        ))
+        self._herdr_snapshot_cache = copy.deepcopy(snapshot)
+        self._herdr_snapshot_cache_time = now
+        return snapshot
+
+    async def _herdr_pane_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        pane_id = str(params.get("pane_id") or "").strip()
+        if not pane_id:
+            raise ValueError("pane_id is required")
+        result = await self._run_herdr_json(["agent", "focus", pane_id])
+        return {"success": bool(result.get("success", False)), "pane_id": pane_id, "herdr": result}
+
+    async def _herdr_pane_close(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        pane_id = str(params.get("pane_id") or "").strip()
+        if not pane_id:
+            raise ValueError("pane_id is required")
+        result = await self._run_herdr_json(["pane", "close", pane_id])
+        self._herdr_snapshot_cache = {}
+        return {"success": bool(result.get("success", False)), "pane_id": pane_id, "herdr": result}
+
+    async def _herdr_workspace_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        workspace_id = str(params.get("workspace_id") or "").strip()
+        if not workspace_id:
+            raise ValueError("workspace_id is required")
+        result = await self._run_herdr_json(["workspace", "focus", workspace_id])
+        return {"success": bool(result.get("success", False)), "workspace_id": workspace_id, "herdr": result}
+
+    async def _herdr_tab_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        tab_id = str(params.get("tab_id") or "").strip()
+        if not tab_id:
+            raise ValueError("tab_id is required")
+        result = await self._run_herdr_json(["tab", "focus", tab_id])
+        return {"success": bool(result.get("success", False)), "tab_id": tab_id, "herdr": result}
+
     def _build_window_focus_target(
         self,
         *,
@@ -9739,7 +10331,7 @@ FORMAT JSONEachRow
         source_received_at: float = 0.0,
         tracked_windows: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        """Normalize local or remote OTEL sessions into the daemon dashboard model."""
+        """Legacy session normalizer retained for compatibility helpers."""
         now = time.time()
         normalized: List[Dict[str, Any]] = []
         source_age_seconds = int(max(0, now - source_received_at)) if source_received_at > 0 else 0
@@ -10300,6 +10892,35 @@ FORMAT JSONEachRow
         focused_window_id: int,
     ) -> str:
         """Return the single session key that owns current focus in the dashboard."""
+        local_herdr_focused = next(
+            (
+                str(session.get("session_key") or "").strip()
+                for session in sessions
+                if isinstance(session, dict)
+                and str(session.get("source") or "").strip() == "herdr"
+                and bool(session.get("focused", False))
+                and bool(session.get("is_current_host", False))
+                and str(session.get("session_key") or "").strip()
+            ),
+            "",
+        )
+        if local_herdr_focused:
+            return local_herdr_focused
+
+        remote_herdr_focused = next(
+            (
+                str(session.get("session_key") or "").strip()
+                for session in sessions
+                if isinstance(session, dict)
+                and str(session.get("source") or "").strip() == "herdr"
+                and bool(session.get("focused", False))
+                and str(session.get("session_key") or "").strip()
+            ),
+            "",
+        )
+        if remote_herdr_focused:
+            return remote_herdr_focused
+
         override_key = self._current_session_override_key(
             sessions,
             focused_window_id=focused_window_id,
@@ -10620,72 +11241,18 @@ FORMAT JSONEachRow
         self,
         runtime_snapshot: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
-        """Return normalized AI session items for an existing runtime snapshot."""
-        tracked_windows = list(runtime_snapshot.get("tracked_windows", []) or [])
-        local_connection_key = str(
-            runtime_snapshot.get("active_context", {}).get("connection_key")
-            or f"local@{self._local_host_alias()}"
-        )
-        focused_window_id = next(
-            (
-                int(window.get("id") or 0)
-                for window in self._flatten_runtime_windows(runtime_snapshot)
-                if isinstance(window, dict) and bool(window.get("focused", False))
-            ),
-            0,
-        )
-        cache_key = self._session_items_cache_signature(runtime_snapshot)
-        if cache_key == self._session_items_cache_key:
-            sessions = copy.deepcopy(self._session_items_cache_rows)
-        else:
-            local_payload = self._load_json_file(self._runtime_dir() / "otel-ai-sessions.json")
-            if str(local_payload.get("schema_version") or "").strip() != "11":
-                local_payload = {}
-            local_sessions_raw = [
-                item for item in local_payload.get("sessions", [])
-                if isinstance(item, dict)
-            ]
-            sessions = self._normalize_session_items(
-                local_sessions_raw,
-                source_connection_key=local_connection_key,
-                source_host_name=self._local_host_alias(),
-                source_received_at=0.0,
-                tracked_windows=tracked_windows,
-            )
-
-            # Phase 4: read remote sessions from the K8s session-aggregator
-            # (was previously the on-disk remote-otel-sink.json, retired with
-            # the host-to-host push transport). Same payload shape.
-            remote_payload = self._aggregator_remote_sources()
-            sources = remote_payload.get("sources", {})
-            if isinstance(sources, dict):
-                for source_connection_key, source_data in sources.items():
-                    if not isinstance(source_data, dict):
-                        continue
-                    if str(source_data.get("session_schema_version") or "").strip() != "11":
-                        continue
-                    source_sessions = [
-                        item for item in source_data.get("sessions", [])
-                        if isinstance(item, dict)
-                    ]
-                    sessions.extend(self._normalize_session_items(
-                        source_sessions,
-                        source_connection_key=str(source_connection_key or ""),
-                        source_host_name=str(source_data.get("host_name") or "").strip(),
-                        source_received_at=float(source_data.get("received_at", 0.0) or 0.0),
-                        tracked_windows=tracked_windows,
-                    ))
-
-            sessions = self._dedupe_session_items(sessions)
-            self._annotate_shared_session_surfaces(sessions)
-            sessions.sort(key=self._session_item_sort_key)
-            self._session_items_cache_key = cache_key
-            self._session_items_cache_rows = copy.deepcopy(sessions)
-
-        self._refresh_live_session_focus_state(
-            sessions,
-            focused_window_id=focused_window_id,
-        )
+        """Return Herdr-native AI session items for an existing runtime snapshot."""
+        sessions_raw = runtime_snapshot.get("sessions", [])
+        if not isinstance(sessions_raw, list):
+            return []
+        sessions = [copy.deepcopy(session) for session in sessions_raw if isinstance(session, dict)]
+        sessions.sort(key=lambda session: (
+            0 if bool(session.get("focused", False)) else 1,
+            str(session.get("workspace_name") or session.get("workspace_id") or ""),
+            str(session.get("tab_title") or session.get("tab_id") or ""),
+            str(session.get("agent") or session.get("tool") or ""),
+            str(session.get("pane_id") or session.get("session_key") or ""),
+        ))
         return sessions
 
     async def _load_reconciled_session_runtime(
@@ -10739,6 +11306,14 @@ FORMAT JSONEachRow
             "active_context": active_context if isinstance(active_context, dict) else {},
             "active_session": {
                 "session_key": str(active_session.get("session_key") or "").strip(),
+                "herdr_session": str(active_session.get("herdr_session") or "").strip(),
+                "workspace_id": str(active_session.get("workspace_id") or "").strip(),
+                "tab_id": str(active_session.get("tab_id") or "").strip(),
+                "pane_id": str(active_session.get("pane_id") or "").strip(),
+                "terminal_id": str(active_session.get("terminal_id") or "").strip(),
+                "agent": str(active_session.get("agent") or "").strip(),
+                "agent_status": str(active_session.get("agent_status") or "").strip(),
+                "focused": bool(active_session.get("focused", False)),
                 "window_id": int(active_session.get("window_id") or 0),
                 "project_name": str(active_session.get("project_name") or active_session.get("project") or "").strip(),
                 "execution_mode": str(active_session.get("execution_mode") or "").strip(),
@@ -10752,7 +11327,7 @@ FORMAT JSONEachRow
         }
 
     async def _session_list(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Return daemon-owned AI session data merged from local and remote OTEL sources."""
+        """Return daemon-owned Herdr AI session data."""
         runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
             params or {},
             close_windows=True,
@@ -11539,31 +12114,23 @@ FORMAT JSONEachRow
                     continue
                 session_items.append({
                     "session_key": str(session.get("session_key") or ""),
-                    "focus_target": dict(session.get("focus_target") or self._build_session_focus_target(str(session.get("session_key") or ""))),
+                    "focus_target": dict(session.get("focus_target") or {}),
+                    "close_target": dict(session.get("close_target") or {}),
+                    "source": str(session.get("source") or "").strip(),
+                    "agent": str(session.get("agent") or "").strip(),
                     "tool": str(session.get("tool") or ""),
                     "display_tool": str(session.get("display_tool") or session.get("tool") or ""),
-                    "pane_label": str(session.get("pane_label") or session.get("pane_title") or session.get("tmux_pane") or "").strip(),
-                    "stage": str(session.get("stage") or "").strip(),
-                    "stage_label": str(session.get("stage_label") or ""),
-                    "stage_visual_state": str(session.get("stage_visual_state") or "").strip(),
-                    "session_phase": str(session.get("session_phase") or "").strip(),
-                    "session_phase_label": str(session.get("session_phase_label") or "").strip(),
-                    "turn_owner": str(session.get("turn_owner") or "unknown").strip() or "unknown",
-                    "turn_owner_label": str(session.get("turn_owner_label") or "Unknown").strip() or "Unknown",
-                    "activity_substate": str(session.get("activity_substate") or session.get("stage") or "idle").strip() or "idle",
-                    "activity_substate_label": str(
-                        session.get("activity_substate_label")
-                        or session.get("stage_label")
-                        or session.get("stage")
-                        or "Idle"
-                    ).strip() or "Idle",
-                    "needs_user_action": bool(session.get("needs_user_action", False)),
-                    "conflict_state": str(session.get("conflict_state") or "").strip(),
+                    "agent_status": str(session.get("agent_status") or "unknown").strip() or "unknown",
+                    "pane_id": str(session.get("pane_id") or "").strip(),
+                    "tab_id": str(session.get("tab_id") or "").strip(),
+                    "workspace_id": str(session.get("workspace_id") or "").strip(),
+                    "terminal_id": str(session.get("terminal_id") or "").strip(),
+                    "cwd": str(session.get("cwd") or "").strip(),
+                    "foreground_cwd": str(session.get("foreground_cwd") or "").strip(),
+                    "pane_label": str(session.get("pane_label") or session.get("pane_title") or session.get("pane_id") or "").strip(),
                     "is_current_window": bool(session.get("is_current_window", False)),
                     "pane_active": bool(session.get("pane_active", False)),
                     "window_active": bool(session.get("window_active", False)),
-                    "pid": session.get("pid"),
-                    "pulse_working": bool(session.get("pulse_working", False)),
                     "target_host": self._normalize_target_host(
                         session.get("target_host")
                         or session.get("host_name")
@@ -11583,7 +12150,7 @@ FORMAT JSONEachRow
                 key=lambda item: (
                     bool(item.get("is_current_window", False)),
                     bool(item.get("pane_active", False)),
-                    self._session_phase_priority(str(item.get("session_phase") or "")),
+                    str(item.get("agent_status") or ""),
                     str(item.get("pane_label") or ""),
                     str(item.get("session_key") or ""),
                 ),
@@ -11979,27 +12546,16 @@ FORMAT JSONEachRow
         return snapshot
 
     async def _dashboard_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Return the daemon-owned dashboard payload consumed by EWW/Walker."""
+        """Return the daemon-owned dashboard payload consumed by QuickShell."""
         runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
             params or {},
             close_windows=True,
         )
         display_snapshot = await self._display_snapshot({})
         current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
-        remote_push_state: Dict[str, Any] = {}
-        remote_push_state_path = (
-            Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
-            / "eww-monitoring-panel"
-            / "remote-otel-push-state.json"
-        )
-        if remote_push_state_path.exists():
-            try:
-                with open(remote_push_state_path, "r", encoding="utf-8") as f:
-                    payload = json.load(f)
-                if isinstance(payload, dict):
-                    remote_push_state = payload
-            except (OSError, json.JSONDecodeError):
-                remote_push_state = {}
+        herdr_snapshot = runtime_snapshot.get("herdr", {})
+        if not isinstance(herdr_snapshot, dict):
+            herdr_snapshot = {}
 
         projects = self._build_dashboard_projects(runtime_snapshot, sessions)
         worktrees = list(runtime_snapshot.get("dashboard_worktrees", []) or [])
@@ -12031,36 +12587,36 @@ FORMAT JSONEachRow
             "active_ai_sessions": sessions,
             "active_ai_sessions_mru": sessions,
             "current_ai_session_key": current_session_key,
+            "herdr": {
+                "status": herdr_snapshot.get("status", {}),
+                "workspace_count": len(herdr_snapshot.get("workspaces", []) or []),
+                "tab_count": len(herdr_snapshot.get("tabs", []) or []),
+                "pane_count": len(herdr_snapshot.get("panes", []) or []),
+                "agent_count": len(herdr_snapshot.get("agents", []) or []),
+                "errors": herdr_snapshot.get("errors", []),
+            },
             "ai_monitor_metrics": {
                 "active_sessions": len(sessions),
                 "working_sessions": sum(
                     1 for session in sessions
-                    if str(session.get("session_phase") or "").strip().lower() in {"working", "quiet_alive"}
+                    if str(session.get("agent_status") or "").strip().lower() == "working"
                 ),
                 "attention_sessions": sum(
                     1 for session in sessions
-                    if str(session.get("session_phase") or "").strip().lower() == "needs_attention"
+                    if str(session.get("agent_status") or "").strip().lower() == "blocked"
                 ),
                 "done_sessions": sum(
                     1 for session in sessions
-                    if str(session.get("session_phase") or "").strip().lower() == "done"
+                    if str(session.get("agent_status") or "").strip().lower() == "done"
                 ),
-                "review_pending_sessions": sum(
+                "idle_sessions": sum(
                     1 for session in sessions
-                    if bool(session.get("review_pending", False) or session.get("output_unseen", False))
+                    if str(session.get("agent_status") or "").strip().lower() == "idle"
                 ),
-                "stale_source_sessions": sum(
+                "unknown_sessions": sum(
                     1 for session in sessions
-                    if bool(session.get("remote_source_stale", False))
+                    if str(session.get("agent_status") or "").strip().lower() == "unknown"
                 ),
-                "remote_push_health": str(remote_push_state.get("health") or "").strip() or "unknown",
-                "remote_push_consecutive_failures": int(remote_push_state.get("consecutive_failures", 0) or 0),
-                "remote_push_last_attempt_at": str(remote_push_state.get("last_attempt_at") or "").strip(),
-                "remote_push_last_success_at": str(remote_push_state.get("last_success_at") or "").strip(),
-                "remote_push_last_error_at": str(remote_push_state.get("last_error_at") or "").strip(),
-                "remote_push_last_error_summary": str(remote_push_state.get("last_error_summary") or "").strip(),
-                "remote_push_endpoint": str(remote_push_state.get("endpoint_url") or "").strip(),
-                "remote_push_source_connection_key": str(remote_push_state.get("source_connection_key") or "").strip(),
             },
         }
 
@@ -15414,7 +15970,11 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             "active_terminal": active_terminal_summary,
             "launch_stats": await self._get_launch_stats(),
         }
-        sessions = self._load_session_items(runtime_snapshot)
+        herdr_snapshot = await self._herdr_snapshot({})
+        sessions = [
+            session for session in herdr_snapshot.get("sessions", [])
+            if isinstance(session, dict)
+        ]
         focused_window_id = next(
             (
                 int(window.get("id") or 0)
@@ -15431,14 +15991,10 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             sessions,
             current_session_key=current_session_key,
         )
-        self._apply_session_attention_state(
-            sessions,
-            focused_window_id=focused_window_id,
-            current_session_key=current_session_key,
-        )
         await self._hydrate_runtime_git_state(runtime_snapshot, sessions)
         runtime_snapshot["sessions"] = sessions
         runtime_snapshot["current_ai_session_key"] = current_session_key
+        runtime_snapshot["herdr"] = herdr_snapshot
         runtime_snapshot["focused_window_id"] = focused_window_id
         return runtime_snapshot
 

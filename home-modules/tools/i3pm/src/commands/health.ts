@@ -25,15 +25,32 @@ interface PathCheck {
   matches: boolean;
 }
 
-interface RemotePushHealth {
-  health: string;
-  endpoint_url: string;
-  source_connection_key: string;
-  last_attempt_at: string;
-  last_success_at: string;
-  last_error_at: string;
-  last_error_summary: string;
-  consecutive_failures: number;
+interface HerdrHealth {
+  healthy: boolean;
+  issues: string[];
+  client_version: string;
+  server_version: string;
+  protocol: number;
+  compatible: boolean;
+  server_running: boolean;
+  agent_count: number;
+  pane_count: number;
+  integrations: {
+    claude: boolean;
+    codex: boolean;
+  };
+}
+
+interface HerdrRemoteTarget {
+  host: string;
+  ssh_target: string;
+  connection_key: string;
+}
+
+interface HerdrRemoteHealth extends HerdrHealth {
+  host: string;
+  ssh_target: string;
+  connection_key: string;
 }
 
 interface McpBrowserCandidate {
@@ -84,7 +101,8 @@ interface HealthReport {
     shell_qml: PathCheck;
     service_unit: PathCheck;
   };
-  remote_push: RemotePushHealth | null;
+  herdr: HerdrHealth | null;
+  herdr_remotes: HerdrRemoteHealth[];
   mcp_browser_runtime: McpBrowserHealth | null;
 }
 
@@ -109,12 +127,19 @@ function expandHome(path: string): string {
 
 async function runCommand(
   args: string[],
+  timeoutMs = 0,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const command = new Deno.Command(args[0], {
+  const commandOptions: Deno.CommandOptions = {
     args: args.slice(1),
     stdin: "null",
     stdout: "piped",
     stderr: "piped",
+  };
+  if (timeoutMs > 0) {
+    commandOptions.signal = AbortSignal.timeout(timeoutMs);
+  }
+  const command = new Deno.Command(args[0], {
+    ...commandOptions,
   });
   const output = await command.output();
   return {
@@ -200,25 +225,273 @@ async function loadFailedUserUnits(): Promise<string[]> {
     .map((line) => line.split(/\s+/, 1)[0]);
 }
 
-async function loadRemotePushState(): Promise<RemotePushHealth | null> {
-  const runtimeDir = Deno.env.get("XDG_RUNTIME_DIR") || `/run/user/${Deno.uid()}`;
-  const statePath = `${runtimeDir}/eww-monitoring-panel/remote-otel-push-state.json`;
-  try {
-    const raw = await Deno.readTextFile(statePath);
-    const payload = JSON.parse(raw);
-    return {
-      health: String(payload.health || "").trim() || "unknown",
-      endpoint_url: String(payload.endpoint_url || "").trim(),
-      source_connection_key: String(payload.source_connection_key || "").trim(),
-      last_attempt_at: String(payload.last_attempt_at || "").trim(),
-      last_success_at: String(payload.last_success_at || "").trim(),
-      last_error_at: String(payload.last_error_at || "").trim(),
-      last_error_summary: String(payload.last_error_summary || "").trim(),
-      consecutive_failures: Number(payload.consecutive_failures || 0),
-    };
-  } catch {
-    return null;
+function normalizeConnectionKey(value: string): string {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) {
+    return "unknown";
   }
+  return raw.replace(/[^a-z0-9@._:-]+/g, "-");
+}
+
+function parseSshTarget(value: string): { user: string; host: string; port: number } {
+  let raw = String(value || "").trim();
+  if (raw.startsWith("ssh://")) {
+    raw = raw.slice("ssh://".length);
+  }
+  let user = "";
+  let hostPort = raw;
+  if (raw.includes("@")) {
+    const parts = raw.split("@");
+    user = parts.shift() || "";
+    hostPort = parts.join("@");
+  }
+  let host = hostPort;
+  let port = 22;
+  const colonIndex = hostPort.lastIndexOf(":");
+  if (colonIndex > 0) {
+    const maybePort = hostPort.slice(colonIndex + 1);
+    if (/^[0-9]+$/.test(maybePort)) {
+      host = hostPort.slice(0, colonIndex);
+      port = Number(maybePort) || 22;
+    }
+  }
+  return { user: user.trim(), host: host.trim(), port };
+}
+
+function connectionKeyForTarget(sshTarget: string, explicit: string): string {
+  if (String(explicit || "").trim()) {
+    return normalizeConnectionKey(explicit);
+  }
+  const parsed = parseSshTarget(sshTarget);
+  if (!parsed.host) {
+    return "unknown";
+  }
+  const user = parsed.user || Deno.env.get("USER") || "vpittamp";
+  return normalizeConnectionKey(`${user}@${parsed.host}:${parsed.port || 22}`);
+}
+
+function herdrRemoteTargetsFile(): string {
+  const configured = String(Deno.env.get("I3PM_HERDR_REMOTE_TARGETS_FILE") || "").trim();
+  if (configured) {
+    return configured.replace(/^~\//, `${Deno.env.get("HOME") || ""}/`);
+  }
+  return `${Deno.env.get("HOME") || ""}/.config/i3/herdr-remote-targets.json`;
+}
+
+async function loadHerdrRemoteTargets(): Promise<HerdrRemoteTarget[]> {
+  let rawTargets: unknown = [];
+  const envPayload = String(Deno.env.get("I3PM_HERDR_REMOTE_TARGETS") || "").trim();
+  if (envPayload) {
+    try {
+      const parsed = JSON.parse(envPayload);
+      if (Array.isArray(parsed)) {
+        rawTargets = parsed;
+      }
+    } catch {
+      rawTargets = [];
+    }
+  } else {
+    try {
+      const parsed = JSON.parse(await Deno.readTextFile(herdrRemoteTargetsFile()));
+      if (Array.isArray(parsed)) {
+        rawTargets = parsed;
+      }
+    } catch {
+      rawTargets = [];
+    }
+  }
+
+  const seen = new Set<string>();
+  const targets: HerdrRemoteTarget[] = [];
+  for (const item of Array.isArray(rawTargets) ? rawTargets : []) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    const hostRaw = String(record.host || "").trim().toLowerCase();
+    const sshTarget = String(record.ssh_target || record.sshTarget || hostRaw).trim();
+    if (!sshTarget) {
+      continue;
+    }
+    const parsedTarget = parseSshTarget(sshTarget);
+    const host = hostRaw || parsedTarget.host.toLowerCase();
+    const connectionKey = connectionKeyForTarget(
+      sshTarget,
+      String(record.connection_key || record.connectionKey || ""),
+    );
+    const dedupeKey = connectionKey !== "unknown" ? connectionKey : sshTarget.toLowerCase();
+    if (seen.has(dedupeKey)) {
+      continue;
+    }
+    seen.add(dedupeKey);
+    targets.push({
+      host: host || sshTarget.toLowerCase(),
+      ssh_target: sshTarget,
+      connection_key: connectionKey,
+    });
+  }
+  return targets;
+}
+
+async function collectHerdrHealth(
+  runHerdr: (args: string[]) => Promise<{ code: number; stdout: string; stderr: string }>,
+): Promise<HerdrHealth> {
+  const status = await runHerdr(["status", "--json"]);
+  if (status.code !== 0 || !status.stdout) {
+    return {
+      healthy: false,
+      issues: [status.stderr || status.stdout || "herdr status failed"],
+      client_version: "",
+      server_version: "",
+      protocol: 0,
+      compatible: false,
+      server_running: false,
+      agent_count: 0,
+      pane_count: 0,
+      integrations: { claude: false, codex: false },
+    };
+  }
+
+  let statusPayload: Record<string, unknown>;
+  try {
+    statusPayload = JSON.parse(status.stdout) as Record<string, unknown>;
+  } catch {
+    return {
+      healthy: false,
+      issues: ["herdr status returned invalid JSON"],
+      client_version: "",
+      server_version: "",
+      protocol: 0,
+      compatible: false,
+      server_running: false,
+      agent_count: 0,
+      pane_count: 0,
+      integrations: { claude: false, codex: false },
+    };
+  }
+
+  const client = (statusPayload.client || {}) as Record<string, unknown>;
+  const server = (statusPayload.server || {}) as Record<string, unknown>;
+  const agentList = await runHerdr(["agent", "list"]);
+  const paneList = await runHerdr(["pane", "list"]);
+  const integrationStatus = await runHerdr(["integration", "status"]);
+  const issues: string[] = [];
+
+  const serverRunning = server.running === true;
+  const compatible = server.compatible === true;
+  if (!serverRunning) {
+    issues.push("Herdr server is not running");
+  }
+  if (!compatible) {
+    issues.push("Herdr client/server protocol is not compatible");
+  }
+
+  let agentCount = 0;
+  if (agentList.code !== 0 || !agentList.stdout) {
+    issues.push("herdr agent list failed");
+  } else {
+    try {
+      const payload = JSON.parse(agentList.stdout);
+      agentCount = Array.isArray(payload?.result?.agents) ? payload.result.agents.length : 0;
+    } catch {
+      issues.push("herdr agent list returned invalid JSON");
+    }
+  }
+
+  let paneCount = 0;
+  if (paneList.code !== 0 || !paneList.stdout) {
+    issues.push("herdr pane list failed");
+  } else {
+    try {
+      const payload = JSON.parse(paneList.stdout);
+      paneCount = Array.isArray(payload?.result?.panes) ? payload.result.panes.length : 0;
+    } catch {
+      issues.push("herdr pane list returned invalid JSON");
+    }
+  }
+
+  if (integrationStatus.code !== 0) {
+    issues.push("herdr integration status failed");
+  }
+  const integrationOutput = integrationStatus.stdout || integrationStatus.stderr || "";
+  const integrations = {
+    claude: /^claude:\s+(installed|current)\b/m.test(integrationOutput),
+    codex: /^codex:\s+(installed|current)\b/m.test(integrationOutput),
+  };
+  if (!integrations.claude) {
+    issues.push("Herdr Claude integration is not installed");
+  }
+  if (!integrations.codex) {
+    issues.push("Herdr Codex integration is not installed");
+  }
+
+  return {
+    healthy: issues.length === 0,
+    issues,
+    client_version: String(client.version || ""),
+    server_version: String(server.version || ""),
+    protocol: Number(client.protocol || server.protocol || 0),
+    compatible,
+    server_running: serverRunning,
+    agent_count: agentCount,
+    pane_count: paneCount,
+    integrations,
+  };
+}
+
+async function loadHerdrHealth(): Promise<HerdrHealth | null> {
+  const runHerdr = async (args: string[]): Promise<{ code: number; stdout: string; stderr: string }> => {
+    try {
+      return await runCommand(["herdr", ...args], 2500);
+    } catch (error) {
+      return {
+        code: 1,
+        stdout: "",
+        stderr: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+  return await collectHerdrHealth(runHerdr);
+}
+
+async function loadHerdrRemoteHealth(): Promise<HerdrRemoteHealth[]> {
+  const targets = await loadHerdrRemoteTargets();
+  const results = await Promise.all(targets.map(async (target): Promise<HerdrRemoteHealth> => {
+    const runHerdr = async (args: string[]): Promise<{ code: number; stdout: string; stderr: string }> => {
+      try {
+        return await runCommand([
+          "ssh",
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "ConnectTimeout=1",
+          "-o",
+          "ConnectionAttempts=1",
+          "-o",
+          "ServerAliveInterval=1",
+          "-o",
+          "ServerAliveCountMax=1",
+          target.ssh_target,
+          "herdr",
+          ...args,
+        ], 3000);
+      } catch (error) {
+        return {
+          code: 1,
+          stdout: "",
+          stderr: error instanceof Error ? error.message : String(error),
+        };
+      }
+    };
+    const health = await collectHerdrHealth(runHerdr);
+    return {
+      ...health,
+      host: target.host,
+      ssh_target: target.ssh_target,
+      connection_key: target.connection_key,
+    };
+  }));
+  return results;
 }
 
 async function loadMcpBrowserHealth(): Promise<McpBrowserHealth | null> {
@@ -277,7 +550,6 @@ function formatUnitStatus(unit: UnitStatus): string {
 async function collectHealthReport(): Promise<HealthReport> {
   const coreUnits = await Promise.all([
     loadUnitStatus("i3-project-daemon.service", "user"),
-    loadUnitStatus("otel-ai-monitor.service", "user"),
     loadUnitStatus("quickshell-runtime-shell.service", "user"),
     loadUnitStatus("mcp-chrome-devtools-browser.service", "user"),
     loadUnitStatus("mcp-browser-orphan-reaper.timer", "user"),
@@ -311,7 +583,8 @@ async function collectHealthReport(): Promise<HealthReport> {
   const shellServiceCheck = makePathCheck(currentShellService, expectedShellService);
   const daemonSocketPath = getSocketPath();
   const daemonSocketExists = await Deno.stat(daemonSocketPath).then(() => true).catch(() => false);
-  const remotePush = await loadRemotePushState();
+  const herdr = await loadHerdrHealth();
+  const herdrRemotes = await loadHerdrRemoteHealth();
   const mcpBrowserRuntime = await loadMcpBrowserHealth();
 
   const coreIssues: string[] = [];
@@ -334,14 +607,18 @@ async function collectHealthReport(): Promise<HealthReport> {
   if (currentShellService && expectedShellService && !shellServiceCheck.matches) {
     coreIssues.push("quickshell systemd unit does not match current Home Manager generation");
   }
-  if (remotePush && (remotePush.health === "degraded" || remotePush.health === "down")) {
-    const label = remotePush.health === "down"
-      ? "remote OTEL push is down"
-      : "remote OTEL push is degraded";
-    const detail = remotePush.last_error_summary
-      ? `${label}: ${remotePush.last_error_summary}`
-      : label;
-    optionalIssues.push(detail);
+  if (!herdr) {
+    coreIssues.push("Herdr health unavailable");
+  } else if (!herdr.healthy) {
+    coreIssues.push(...herdr.issues.map((issue) => `Herdr: ${issue}`));
+  }
+  for (const remote of herdrRemotes) {
+    if (!remote.healthy) {
+      const label = remote.host || remote.ssh_target || remote.connection_key || "remote";
+      optionalIssues.push(
+        ...remote.issues.map((issue) => `Herdr ${label}: ${issue}`),
+      );
+    }
   }
   if (!mcpBrowserRuntime) {
     coreIssues.push("mcp browser health helper unavailable");
@@ -373,7 +650,8 @@ async function collectHealthReport(): Promise<HealthReport> {
       shell_qml: shellQmlCheck,
       service_unit: shellServiceCheck,
     },
-    remote_push: remotePush,
+    herdr,
+    herdr_remotes: herdrRemotes,
     mcp_browser_runtime: mcpBrowserRuntime,
   };
 }
@@ -411,23 +689,39 @@ function printReport(report: HealthReport): void {
   );
   console.log("");
 
-  if (report.remote_push) {
-    const remoteColor = report.remote_push.health === "healthy"
-      ? green
-      : report.remote_push.health === "degraded"
-      ? yellow
-      : red;
-    console.log(bold("Remote OTEL"));
+  if (report.herdr) {
+    console.log(bold("Herdr"));
     console.log(
-      `  ${remoteColor(report.remote_push.health || "unknown")} ${
-        dim(report.remote_push.endpoint_url || "(no endpoint)")
+      `  server ${report.herdr.server_running ? green("running") : red("down")} ${
+        dim(`${report.herdr.server_version || "unknown"} protocol ${report.herdr.protocol || "unknown"}`)
       }`,
     );
-    if (report.remote_push.last_success_at) {
-      console.log(`  last success ${report.remote_push.last_success_at}`);
-    }
-    if (report.remote_push.last_error_summary) {
-      console.log(`  last error ${yellow(report.remote_push.last_error_summary)}`);
+    console.log(
+      `  protocol ${report.herdr.compatible ? green("compatible") : red("mismatch")} ${
+        dim(`client ${report.herdr.client_version || "unknown"}`)
+      }`,
+    );
+    console.log(`  agents ${cyan(String(report.herdr.agent_count))} panes ${cyan(String(report.herdr.pane_count))}`);
+    console.log(
+      `  integrations claude=${report.herdr.integrations.claude ? green("installed") : red("missing")} codex=${
+        report.herdr.integrations.codex ? green("installed") : red("missing")
+      }`,
+    );
+    console.log("");
+  }
+
+  if (report.herdr_remotes.length > 0) {
+    console.log(bold("Herdr Remotes"));
+    for (const remote of report.herdr_remotes) {
+      const label = remote.host || remote.ssh_target || remote.connection_key || "remote";
+      console.log(
+        `  ${label} ${remote.healthy ? green("healthy") : yellow("warning")} ${
+          dim(`${remote.connection_key || remote.ssh_target} agents ${remote.agent_count} panes ${remote.pane_count}`)
+        }`,
+      );
+      for (const issue of remote.issues) {
+        console.log(`    ${yellow(issue)}`);
+      }
     }
     console.log("");
   }

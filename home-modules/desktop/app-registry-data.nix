@@ -563,7 +563,7 @@ let
       name = "herdr";
       display_name = "Herdr";
       command = "ghostty";
-      parameters = "-e herdr";
+      parameters = if hostName == "thinkpad" then "-e herdr --remote ryzen" else "-e herdr";
       scope = "global";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 33;

@@ -271,6 +271,13 @@ ShellRoot {
             tmux_window: "",
             tmux_pane: "",
             surface_key: "",
+            agent_status: "",
+            cwd: "",
+            foreground_cwd: "",
+            workspace_id: "",
+            tab_id: "",
+            pane_id: "",
+            terminal_id: "",
             session_phase: "",
             session_phase_label: "",
             turn_owner: "",
@@ -756,6 +763,16 @@ ShellRoot {
     }
 
     function sessionIdentityKey(session) {
+        const herdrSession = stringOrEmpty(session && session.herdr_session);
+        if (herdrSession) {
+            return herdrSession;
+        }
+
+        const paneId = stringOrEmpty(session && session.pane_id);
+        if (paneId) {
+            return "herdr:pane:" + paneId;
+        }
+
         const renderSessionKey = stringOrEmpty(session && session.render_session_key);
         if (renderSessionKey) {
             return renderSessionKey;
@@ -842,6 +859,10 @@ ShellRoot {
             return false;
         }
 
+        if (stringOrEmpty(session.source) === "herdr" || stringOrEmpty(session.pane_id)) {
+            return stringOrEmpty(session.pane_id).length > 0;
+        }
+
         const terminalAnchor = stringOrEmpty(session.terminal_anchor_id);
         const hasTmuxIdentity = stringOrEmpty(session.tmux_session) && stringOrEmpty(session.tmux_window) && stringOrEmpty(session.tmux_pane);
         if (!terminalAnchor && !hasTmuxIdentity) {
@@ -864,6 +885,10 @@ ShellRoot {
     function sessionIsPanelDisplayEligible(session) {
         if (!session || typeof session !== "object") {
             return false;
+        }
+
+        if (stringOrEmpty(session.source) === "herdr" || stringOrEmpty(session.pane_id)) {
+            return stringOrEmpty(session.pane_id).length > 0;
         }
 
         const terminalAnchor = stringOrEmpty(session.terminal_anchor_id);
@@ -3805,6 +3830,34 @@ ShellRoot {
             return;
         }
 
+        if (stringOrEmpty(entry.source) === "herdr" || stringOrEmpty(entry.pane_id)) {
+            sessionPreviewTargetKey = sessionKey;
+            sessionPreviewAutoFollow = true;
+            sessionPreviewHasUnseenOutput = false;
+            if (sessionPreviewProcess.running) {
+                sessionPreviewStopExpected = true;
+                sessionPreviewProcess.running = false;
+            }
+            sessionPreview = Object.assign(emptySessionPreview(), {
+                status: "idle",
+                kind: "status",
+                session_key: sessionKey,
+                tool: toolLabel(entry),
+                project_name: stringOrEmpty(entry.project_name || entry.project),
+                host_name: stringOrEmpty(entry.host_name),
+                pane_label: sessionPaneLabel(entry),
+                agent_status: stringOrEmpty(entry.agent_status),
+                cwd: stringOrEmpty(entry.cwd),
+                foreground_cwd: stringOrEmpty(entry.foreground_cwd),
+                workspace_id: stringOrEmpty(entry.workspace_id),
+                tab_id: stringOrEmpty(entry.tab_id),
+                pane_id: stringOrEmpty(entry.pane_id),
+                terminal_id: stringOrEmpty(entry.terminal_id),
+                message: "Focus this Herdr pane to inspect live output."
+            });
+            return;
+        }
+
         sessionPreviewTargetKey = sessionKey;
         sessionPreviewAutoFollow = true;
         sessionPreviewHasUnseenOutput = false;
@@ -3868,6 +3921,10 @@ ShellRoot {
     }
 
     function sessionPreviewSubtitle() {
+        const entry = activeLauncherSessionEntry();
+        if (entry && (stringOrEmpty(entry.source) === "herdr" || stringOrEmpty(entry.pane_id))) {
+            return sessionSecondaryLabel(entry);
+        }
         const bits = [];
         const host = stringOrEmpty(sessionPreview.host_name);
         const project = shortProject(stringOrEmpty(sessionPreview.project_name));
@@ -3889,6 +3946,11 @@ ShellRoot {
 
     function sessionPreviewSemanticBits() {
         const bits = [];
+        const herdrStatus = stringOrEmpty(sessionPreview.agent_status).toLowerCase();
+        if (["working", "blocked", "done", "idle", "unknown"].indexOf(herdrStatus) >= 0) {
+            bits.push(titleCaseWord(herdrStatus));
+            return bits;
+        }
         const phase = stringOrEmpty(sessionPreview.session_phase_label || sessionPreview.session_phase);
         const owner = stringOrEmpty(sessionPreview.turn_owner_label || sessionPreview.turn_owner);
         const substate = stringOrEmpty(sessionPreview.activity_substate_label || sessionPreview.activity_substate);
@@ -3972,6 +4034,14 @@ ShellRoot {
             return "Error";
         }
         return "Info";
+    }
+
+    function sessionPreviewStatusText() {
+        const herdrStatus = stringOrEmpty(sessionPreview.agent_status).toLowerCase();
+        if (["working", "blocked", "done", "idle", "unknown"].indexOf(herdrStatus) >= 0) {
+            return titleCaseWord(herdrStatus);
+        }
+        return stringOrEmpty(sessionPreview.session_phase_label || sessionPreview.session_phase);
     }
 
     function sessionPreviewFollowChipVisible() {
@@ -5389,6 +5459,10 @@ ShellRoot {
     }
 
     function sessionPhase(session) {
+        const herdrStatus = stringOrEmpty(session && session.agent_status).toLowerCase();
+        if (["working", "blocked", "done", "idle", "unknown"].indexOf(herdrStatus) >= 0) {
+            return herdrStatus;
+        }
         const phase = stringOrEmpty(session && session.session_phase).toLowerCase();
         if (phase.length > 0) {
             return phase;
@@ -5480,7 +5554,8 @@ ShellRoot {
     }
 
     function sessionNeedsAttention(session) {
-        return sessionPhase(session) === "needs_attention";
+        const phase = sessionPhase(session);
+        return phase === "needs_attention" || phase === "blocked";
     }
 
     function sessionIsIdle(session) {
@@ -5734,6 +5809,16 @@ ShellRoot {
     }
 
     function sessionTurnOwner(session) {
+        const herdrStatus = stringOrEmpty(session && session.agent_status).toLowerCase();
+        if (herdrStatus === "working") {
+            return "llm";
+        }
+        if (herdrStatus === "blocked") {
+            return "blocked";
+        }
+        if (herdrStatus === "done" || herdrStatus === "idle") {
+            return "user";
+        }
         const explicitOwner = stringOrEmpty(session && session.turn_owner).toLowerCase();
         if (
             explicitOwner === "blocked"
@@ -5803,6 +5888,9 @@ ShellRoot {
 
     function sessionActivityChipLabel(session) {
         const state = sessionBadgeState(session);
+        if (["working", "blocked", "done", "idle", "unknown"].indexOf(state) >= 0) {
+            return titleCaseWord(state);
+        }
         const stage = stringOrEmpty(session && session.activity_substate).toLowerCase();
         const substateLabel = sessionActivitySubstateLabel(session);
 
@@ -5834,6 +5922,9 @@ ShellRoot {
         const stage = stringOrEmpty(session && session.activity_substate).toLowerCase();
         const owner = sessionTurnOwner(session);
         const state = sessionBadgeState(session);
+        if (state === "blocked") {
+            return "!";
+        }
         if (owner === "blocked" || state === "needs_attention") {
             return "!";
         }
@@ -5950,6 +6041,9 @@ ShellRoot {
 
     function compactSessionStateLabel(session) {
         const badgeState = sessionBadgeState(session);
+        if (badgeState === "blocked") {
+            return "Blocked";
+        }
         if (badgeState === "needs_attention") {
             return "Needs attention";
         }
@@ -6010,6 +6104,9 @@ ShellRoot {
     }
 
     function sessionIsCurrent(session) {
+        if (boolOrFalse(session && session.focused) && boolOrFalse(session && session.is_current_host)) {
+            return true;
+        }
         return currentSessionKey() === stringOrEmpty(session.session_key);
     }
 
@@ -6030,6 +6127,20 @@ ShellRoot {
     }
 
     function sessionPrimaryLabel(session) {
+        const agent = toolLabel(session);
+        const project = shortProject(stringOrEmpty(session && (session.project_name || session.project || "")));
+        if (stringOrEmpty(session && session.source) === "herdr" || stringOrEmpty(session && session.pane_id)) {
+            const host = displayHostName(stringOrEmpty(session && (session.herdr_host || session.host_name)));
+            const isRemote = boolOrFalse(session && session.is_remote_herdr);
+            const bits = [agent || "AI"];
+            if (project && project !== "Global") {
+                bits.push(project);
+            }
+            if (isRemote && host) {
+                bits.push(host);
+            }
+            return bits.join(" · ") || "AI Session";
+        }
         const alias = sessionAlias(session);
         if (alias.length > 0) {
             return alias;
@@ -6045,6 +6156,22 @@ ShellRoot {
     function sessionSecondaryLabel(session) {
         const bits = [];
         const project = shortProject(stringOrEmpty(session && (session.project_name || session.project || "")));
+        const herdrStatus = stringOrEmpty(session && session.agent_status).toLowerCase();
+        if (herdrStatus) {
+            bits.push(titleCaseWord(herdrStatus));
+        }
+        const foregroundCwd = stringOrEmpty(session && session.foreground_cwd);
+        const cwd = stringOrEmpty(session && session.cwd);
+        if (foregroundCwd || cwd) {
+            const path = foregroundCwd || cwd;
+            const parts = path.split("/").filter(part => part.length > 0);
+            if (parts.length > 0) {
+                bits.push(parts[parts.length - 1]);
+            }
+        }
+        if (bits.length > 0 && (stringOrEmpty(session && session.source) === "herdr" || stringOrEmpty(session && session.pane_id))) {
+            return bits.join(" • ");
+        }
         const availability = sessionAvailabilityLabel(session);
         const phase = compactSessionStateLabel(session);
         if (project.length > 0 && project !== "Global") {
@@ -7217,6 +7344,9 @@ ShellRoot {
     function sessionFocusTarget(sessionOrKey) {
         if (sessionOrKey && typeof sessionOrKey === "object") {
             const explicitTarget = normalizedFocusTarget(sessionOrKey.focus_target);
+            if (stringOrEmpty(sessionOrKey.source) === "herdr" || stringOrEmpty(sessionOrKey.pane_id)) {
+                return explicitTarget;
+            }
             const isSpawnable = sessionAvailabilityState(sessionOrKey) === "remote_spawnable";
             const explicitMethod = explicitTarget ? stringOrEmpty(explicitTarget.method) : "";
             if (isSpawnable && (!explicitTarget || explicitMethod === "session.focus")) {
@@ -7318,7 +7448,14 @@ ShellRoot {
     }
 
     function sessionCloseKey(session) {
-        return stringOrEmpty(session && session.session_key);
+        return stringOrEmpty(session && (session.session_key || session.herdr_session || session.pane_id));
+    }
+
+    function sessionCloseTarget(session) {
+        if (!session || typeof session !== "object") {
+            return null;
+        }
+        return normalizedFocusTarget(session.close_target);
     }
 
     function sessionHasTmuxCloseTarget(session) {
@@ -7377,6 +7514,9 @@ ShellRoot {
     }
 
     function sessionHasClosableSurface(session) {
+        if (sessionCloseTarget(session)) {
+            return true;
+        }
         return sessionHasTmuxCloseTarget(session) || sessionClosableWindowId(session) > 0;
     }
 
@@ -7387,6 +7527,13 @@ ShellRoot {
 
         const sessionKey = sessionCloseKey(session);
         if (sessionClosePending(session)) {
+            return;
+        }
+
+        const explicitCloseTarget = sessionCloseTarget(session);
+        if (explicitCloseTarget) {
+            markSessionClosePending(sessionKey);
+            runDaemonCall(explicitCloseTarget.method, explicitCloseTarget.params);
             return;
         }
 

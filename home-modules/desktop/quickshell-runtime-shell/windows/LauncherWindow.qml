@@ -1100,7 +1100,7 @@ PanelWindow {
                                     spacing: 6
 
                                     Rectangle {
-                                        visible: root.stringOrEmpty(root.sessionPreview.session_phase_label || root.sessionPreview.session_phase).length > 0
+                                        visible: root.sessionPreviewStatusText().length > 0
                                         height: 20
                                         radius: 6
                                         color: colors.panelAlt
@@ -1111,7 +1111,7 @@ PanelWindow {
                                         Text {
                                             id: previewPhaseText
                                             anchors.centerIn: parent
-                                            text: root.stringOrEmpty(root.sessionPreview.session_phase_label || root.sessionPreview.session_phase)
+                                            text: root.sessionPreviewStatusText()
                                             color: colors.textDim
                                             font.pixelSize: 8
                                             font.weight: Font.DemiBold

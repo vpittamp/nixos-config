@@ -139,6 +139,28 @@ in
       default = "DEBUG";
       description = "Logging level for the daemon";
     };
+
+    herdrRemoteTargets = mkOption {
+      type = types.listOf (types.submodule {
+        options = {
+          host = mkOption {
+            type = types.str;
+            description = "Display/source host name for the remote Herdr instance.";
+          };
+          ssh_target = mkOption {
+            type = types.str;
+            description = "SSH target used to run read-only Herdr list commands.";
+          };
+          connection_key = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            description = "Optional normalized connection key for the remote Herdr host.";
+          };
+        };
+      });
+      default = [];
+      description = "Remote Herdr instances to aggregate into daemon dashboard snapshots.";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -218,6 +240,7 @@ in
         Environment = [
           "LOG_LEVEL=${cfg.logLevel}"
           "I3PM_TERMINAL_HELPER_DIR=${daemonPackage}/scripts"
+          "I3PM_HERDR_REMOTE_TARGETS_FILE=${config.home.homeDirectory}/.config/i3/herdr-remote-targets.json"
           "PYTHONUNBUFFERED=1"
           "PYTHONPATH=${daemonPackage}/lib/python${pkgs.python3.pythonVersion}/site-packages"
           "PYTHONWARNINGS=ignore::DeprecationWarning"
@@ -236,6 +259,9 @@ in
         WantedBy = [ "sway-session.target" ];
       };
     };
+
+    home.file.".config/i3/herdr-remote-targets.json".text =
+      builtins.toJSON cfg.herdrRemoteTargets;
 
     # Ensure data directories exist (via home.activation instead of tmpfiles)
     home.activation.createI3pmDataDirs = lib.hm.dag.entryAfter ["writeBoundary"] ''
