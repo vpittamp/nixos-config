@@ -46,7 +46,7 @@ kubectl --kubeconfig ~/.kube/hub-config exec -n tailscale ts-tekton-github-trigg
 
 # 4. Cross-check policy.hujson — is the device's Tag in the funnel grant?
 grep -A 4 'Allow Funnel' /path/to/stacks/main/policy.hujson
-# "target": ["tag:k8s-services", "tag:k8s", "tag:aperture", ...],
+# "target": ["tag:k8s-services", "tag:k8s", ...],
 # If the device's Tag isn't in the target list, that's the orphan
 ```
 
@@ -68,7 +68,7 @@ Edit `policy.hujson` in the stacks repo:
 ```hujson
 "nodeAttrs": [
   {
-    "target": ["tag:k8s-services", "tag:k8s", "tag:aperture", "tag:ts-hub-webhook"],
+    "target": ["tag:k8s-services", "tag:k8s", "tag:ts-hub-webhook"],
     "attr": ["funnel"]
   }
 ]
