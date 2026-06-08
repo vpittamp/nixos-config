@@ -936,6 +936,46 @@ async def test_launch_open_reuses_existing_single_instance_gui_window(server_loc
 
 
 @pytest.mark.asyncio
+async def test_launch_open_reuses_existing_single_instance_global_terminal_app(server_local):
+    existing_window = SimpleNamespace(window_id=789, app_identifier="herdr")
+    herdr_app = make_registry_app(
+        name="herdr",
+        parameters=["-e", "herdr", "--remote", "ryzen"],
+        scope="global",
+    )
+    herdr_app.multi_instance = False
+    server_local.registry_loader.applications["herdr"] = herdr_app
+    spec = {
+        "app_name": "herdr",
+        "project_name": "",
+        "context_key": "",
+        "execution_mode": "local",
+        "connection_key": "local@thinkpad",
+        "terminal_anchor_id": "herdr-anchor",
+        "preferred_workspace": 33,
+        "tmux_session_name": "",
+        "terminal_role": "",
+        "terminal_launch": {},
+    }
+    server_local._prepare_launch = AsyncMock(return_value=spec)
+    server_local._get_reusable_context_app_window = AsyncMock(return_value=existing_window)
+    server_local._window_focus = AsyncMock(return_value={"success": True, "window_id": 789})
+    server_local._register_launch_for_spec = AsyncMock()
+    server_local._execute_launch_spec = MagicMock()
+
+    result = await server_local._launch_open({"app_name": "herdr"})
+
+    server_local._get_reusable_context_app_window.assert_awaited_once()
+    server_local._window_focus.assert_awaited_once()
+    server_local._register_launch_for_spec.assert_not_awaited()
+    server_local._execute_launch_spec.assert_not_called()
+    assert result["success"] is True
+    assert result["launch"]["reused_existing"] is True
+    assert result["launch"]["window_id"] == 789
+    assert result["spec"]["launch_strategy"] == "focus_existing_window"
+
+
+@pytest.mark.asyncio
 async def test_launch_open_does_not_reuse_remote_bridge_when_context_mark_drifted(server_ssh):
     spec = {
         "app_name": "terminal",

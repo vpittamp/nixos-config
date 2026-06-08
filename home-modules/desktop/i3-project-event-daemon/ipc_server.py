@@ -861,6 +861,7 @@ class IPCServer:
             "context.ensure",
             "herdr.pane.focus",
             "herdr.pane.close",
+            "herdr.remote.pane.focus",
             "herdr.workspace.focus",
             "herdr.tab.focus",
             "launch.open",
@@ -898,6 +899,8 @@ class IPCServer:
                 result = await self._herdr_pane_focus(params)
             elif method == "herdr.pane.close":
                 result = await self._herdr_pane_close(params)
+            elif method == "herdr.remote.pane.focus":
+                result = await self._herdr_remote_pane_focus(params)
             elif method == "herdr.workspace.focus":
                 result = await self._herdr_workspace_focus(params)
             elif method == "herdr.tab.focus":
@@ -7633,7 +7636,7 @@ class IPCServer:
         project_name: str,
         execution_mode: str,
     ) -> Optional[Any]:
-        """Return an existing live non-terminal app window for single-instance launches."""
+        """Return an existing live app window for single-instance launches."""
         from .services.window_identifier import match_pwa_instance, match_window_class
 
         target_project = str(project_name or "").strip()
@@ -7658,6 +7661,11 @@ class IPCServer:
             candidate_project = str(getattr(candidate, "project", "") or "").strip()
             if app.scope != "global" and candidate_project != target_project:
                 continue
+
+            if bool(app.terminal):
+                app_identifier = str(getattr(candidate, "app_identifier", "") or "").strip()
+                if app_identifier != app.name:
+                    continue
 
             actual_class = str(getattr(candidate, "window_class", "") or "")
             actual_instance = str(getattr(candidate, "window_instance", "") or "")
@@ -9713,8 +9721,14 @@ FORMAT JSONEachRow
             "pane_label": pane_id,
             "pane_title": agent or pane_id,
             "focus_target": {
-                "method": "launch.open",
-                "params": {"app_name": "herdr"},
+                "method": "herdr.remote.pane.focus",
+                "params": {
+                    "pane_id": pane_id,
+                    "host": herdr_host,
+                    "ssh_target": ssh_target,
+                    "connection_key": self._normalize_connection_key(connection_key),
+                    "app_name": "herdr",
+                },
             } if is_remote else ({
                 "method": "herdr.pane.focus",
                 "params": {"pane_id": pane_id},
@@ -9965,6 +9979,55 @@ FORMAT JSONEachRow
         result = await self._run_herdr_json(["pane", "close", pane_id])
         self._herdr_snapshot_cache = {}
         return {"success": bool(result.get("success", False)), "pane_id": pane_id, "herdr": result}
+
+    def _resolve_herdr_remote_action_target(self, params: Dict[str, Any]) -> Dict[str, str]:
+        host = str(params.get("host") or params.get("herdr_host") or "").strip().lower()
+        ssh_target = str(params.get("ssh_target") or params.get("remote_target") or "").strip()
+        connection_key = self._normalize_connection_key(str(params.get("connection_key") or "").strip())
+
+        targets = self._load_herdr_remote_targets()
+        for target in targets:
+            target_host = str(target.get("host") or "").strip().lower()
+            target_ssh = str(target.get("ssh_target") or "").strip()
+            target_connection = self._normalize_connection_key(str(target.get("connection_key") or "").strip())
+            if ssh_target and target_ssh == ssh_target:
+                return dict(target)
+            if connection_key and target_connection == connection_key:
+                return dict(target)
+            if host and target_host == host:
+                return dict(target)
+
+        if ssh_target:
+            return {
+                "host": host or ssh_target.lower(),
+                "ssh_target": ssh_target,
+                "connection_key": connection_key or self._herdr_connection_key_for_target(ssh_target),
+            }
+
+        raise ValueError("ssh_target is required for remote Herdr pane focus")
+
+    async def _herdr_remote_pane_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        pane_id = str(params.get("pane_id") or "").strip()
+        if not pane_id:
+            raise ValueError("pane_id is required")
+
+        target = self._resolve_herdr_remote_action_target(params)
+        focus_result = await self._run_herdr_ssh_json(target, ["agent", "focus", pane_id])
+        self._herdr_snapshot_cache = {}
+        launch_result = await self._launch_open({
+            "app_name": str(params.get("app_name") or "herdr").strip() or "herdr",
+            "__intent_epoch": int(params.get("__intent_epoch") or 0),
+        })
+
+        return {
+            "success": bool(focus_result.get("success", False)) and bool(launch_result.get("success", False)),
+            "pane_id": pane_id,
+            "host": str(target.get("host") or "").strip(),
+            "ssh_target": str(target.get("ssh_target") or "").strip(),
+            "connection_key": str(target.get("connection_key") or "").strip(),
+            "herdr": focus_result,
+            "launch": launch_result,
+        }
 
     async def _herdr_workspace_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
         workspace_id = str(params.get("workspace_id") or "").strip()
@@ -13303,13 +13366,13 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                             "reused_existing": True,
                         },
                     }
-        elif not app.terminal and not app.multi_instance:
+        elif not app.multi_instance and (not app.terminal or not terminal_mode):
             existing_window = await self._get_reusable_context_app_window(
                 app=app,
                 project_name=str(spec.get("project_name") or "").strip(),
                 execution_mode=str(spec.get("execution_mode") or "local").strip() or "local",
             )
-            if existing_window is None:
+            if existing_window is None and not app.terminal:
                 # No live window for this single-instance app — clear any orphan
                 # systemd user scopes/services left over from a prior launch
                 # whose backend processes outlived the GUI window. Otherwise the

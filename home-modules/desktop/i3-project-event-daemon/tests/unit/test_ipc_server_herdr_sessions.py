@@ -8,6 +8,7 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -256,8 +257,14 @@ async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
     assert remote_row["execution_mode"] == "ssh"
     assert remote_row["connection_key"] == "vpittamp@ryzen:22"
     assert remote_row["focus_target"] == {
-        "method": "launch.open",
-        "params": {"app_name": "herdr"},
+        "method": "herdr.remote.pane.focus",
+        "params": {
+            "pane_id": "remote-pane",
+            "host": "ryzen",
+            "ssh_target": "ryzen",
+            "connection_key": "vpittamp@ryzen:22",
+            "app_name": "herdr",
+        },
     }
     assert remote_row["close_target"] == {}
     assert server._select_current_session_key(rows, focused_window_id=0) == "herdr:pane:local-pane"
@@ -313,3 +320,44 @@ async def test_herdr_pane_actions_call_herdr_with_pane_id(server, monkeypatch):
     assert focus_result["pane_id"] == "w123-1"
     assert close_result["success"] is True
     assert close_result["pane_id"] == "w123-1"
+
+
+@pytest.mark.asyncio
+async def test_herdr_remote_pane_focus_switches_pane_then_reuses_herdr_app(server, monkeypatch):
+    target = {
+        "host": "ryzen",
+        "ssh_target": "ryzen",
+        "connection_key": "vpittamp@ryzen:22",
+    }
+    calls = []
+
+    async def fake_run_herdr_ssh_json(remote_target, args):
+        calls.append((remote_target, args))
+        return {"success": True, "result": {"focused": True}}
+
+    monkeypatch.setattr(server, "_load_herdr_remote_targets", lambda: [target])
+    monkeypatch.setattr(server, "_run_herdr_ssh_json", fake_run_herdr_ssh_json)
+    server._launch_open = AsyncMock(return_value={
+        "success": True,
+        "launch": {
+            "success": True,
+            "reused_existing": True,
+            "window_id": 777,
+        },
+    })
+
+    result = await server._herdr_remote_pane_focus({
+        "pane_id": "remote-pane",
+        "host": "ryzen",
+        "ssh_target": "ryzen",
+        "connection_key": "vpittamp@ryzen:22",
+        "__intent_epoch": 12,
+    })
+
+    assert calls == [(target, ["agent", "focus", "remote-pane"])]
+    server._launch_open.assert_awaited_once_with({
+        "app_name": "herdr",
+        "__intent_epoch": 12,
+    })
+    assert result["success"] is True
+    assert result["launch"]["launch"]["reused_existing"] is True
