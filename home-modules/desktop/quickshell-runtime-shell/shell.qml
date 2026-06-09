@@ -5245,28 +5245,8 @@ ShellRoot {
     }
 
     function herdrSpaceMetaLabel(space) {
-        const bits = [];
         const branch = herdrSpaceBranchLabel(space);
-        const host = displayHostName(stringOrEmpty(space && (space.host_label || space.host_key)));
-        if (branch.length > 0) {
-            bits.push(branch);
-        }
-        if (host) {
-            bits.push(host);
-        }
-        const agents = Number(space && space.agent_count || 0);
-        const panes = Number(space && space.pane_count || 0);
-        const tabs = Number(space && space.tab_count || 0);
-        if (agents > 0) {
-            bits.push(String(agents) + (agents === 1 ? " agent" : " agents"));
-        }
-        if (panes > 0) {
-            bits.push(String(panes) + (panes === 1 ? " pane" : " panes"));
-        }
-        if (tabs > 0) {
-            bits.push(String(tabs) + (tabs === 1 ? " tab" : " tabs"));
-        }
-        return bits.join("  •  ");
+        return branch;
     }
 
     function herdrSpaceIndent(space) {
@@ -5402,6 +5382,17 @@ ShellRoot {
             return optimistic;
         }
         return stringOrEmpty(dashboard.current_ai_session_key);
+    }
+
+    function sessionMatchesKey(session, key) {
+        const target = stringOrEmpty(key);
+        if (!session || !target) {
+            return false;
+        }
+        return target === sessionIdentityKey(session)
+            || target === stringOrEmpty(session && session.session_key)
+            || target === stringOrEmpty(session && session.render_session_key)
+            || target === stringOrEmpty(session && session.herdr_session);
     }
 
     function windowSectionSubtitle(item) {
@@ -6496,13 +6487,13 @@ ShellRoot {
     function sessionIsCurrent(session) {
         const optimistic = stringOrEmpty(optimisticCurrentSessionKey);
         if (optimistic) {
-            return sessionIdentityKey(session) === optimistic || stringOrEmpty(session && session.session_key) === optimistic;
+            return sessionMatchesKey(session, optimistic);
         }
         if (boolOrFalse(session && session.focused) && boolOrFalse(session && session.is_current_host)) {
             return true;
         }
         const current = currentSessionKey();
-        return current === sessionIdentityKey(session) || current === stringOrEmpty(session && session.session_key);
+        return sessionMatchesKey(session, current);
     }
 
     function sessionHasConflict(session) {
@@ -8181,7 +8172,7 @@ ShellRoot {
                     }
                 }
             }
-            if (current) {
+            if (current && !optimistic) {
                 selectedSessionKey = current;
             }
             if (launcherVisible && (launcherMode === "projects" || launcherMode === "sessions" || launcherMode === "windows")) {

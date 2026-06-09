@@ -642,6 +642,7 @@ PanelWindow {
                                         Text {
                                             Layout.fillWidth: true
                                             text: root.herdrSpaceMetaLabel(space)
+                                            visible: text.length > 0
                                             color: colors.subtle
                                             font.pixelSize: 8
                                             elide: Text.ElideRight
@@ -725,6 +726,8 @@ PanelWindow {
                                 rootObject: root
                                 colorsObject: colors
                                 session: modelData
+                                selected: root.sessionMatchesKey(modelData, root.selectedSessionKey)
+                                currentOverride: root.sessionMatchesKey(modelData, root.optimisticCurrentSessionKey)
                                 interactive: true
                                 compact: true
                                 showHostToken: false

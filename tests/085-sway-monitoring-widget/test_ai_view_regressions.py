@@ -56,8 +56,25 @@ def test_current_session_highlight_uses_local_herdr_focus():
     text = SHELL_QML.read_text()
     assert "function sessionIsCurrent(session)" in text
     focused_index = text.index("if (boolOrFalse(session && session.focused) && boolOrFalse(session && session.is_current_host))")
-    key_index = text.index("return current === sessionIdentityKey(session) || current === stringOrEmpty(session && session.session_key);")
+    key_index = text.index("return sessionMatchesKey(session, current);")
     assert focused_index < key_index
+
+
+def test_session_rows_use_optimistic_focus_for_immediate_highlight():
+    """Clicking a Herdr row should update row visuals before the next dashboard snapshot."""
+    text = SHELL_QML.read_text()
+    panel_text = RUNTIME_PANEL_WINDOW_QML.read_text()
+    launcher_text = LAUNCHER_WINDOW_QML.read_text()
+    row_text = SESSION_ROW_QML.read_text()
+
+    assert "property bool currentOverride: false" in row_text
+    assert "readonly property bool isCurrent: currentOverride || rootObject.sessionIsCurrent(session)" in row_text
+    assert "function sessionMatchesKey(session, key)" in text
+    assert "return sessionMatchesKey(session, optimistic);" in text
+    assert "selected: root.sessionMatchesKey(modelData, root.selectedSessionKey)" in panel_text
+    assert "currentOverride: root.sessionMatchesKey(modelData, root.optimisticCurrentSessionKey)" in panel_text
+    assert "currentOverride: root.sessionMatchesKey(entry, root.optimisticCurrentSessionKey)" in launcher_text
+    assert "if (current && !optimistic)" in text
 
 
 def test_launcher_session_search_indexes_herdr_fields():
@@ -238,11 +255,17 @@ def test_herdr_child_space_titles_use_custom_label_before_branch_label():
 
 def test_herdr_space_meta_label_uses_branch_git_notation():
     text = SHELL_QML.read_text()
+    panel_text = RUNTIME_PANEL_WINDOW_QML.read_text()
     assert "function herdrSpaceBranchLabel(space)" in text
     assert "branchLabel.indexOf(\"worktree/\") === 0" in text
     assert "function herdrSpaceMetaLabel(space)" in text
     assert "const branch = herdrSpaceBranchLabel(space);" in text
-    assert "bits.push(branch);" in text
+    assert "return branch;" in text
+    assert "displayHostName(stringOrEmpty(space && (space.host_label || space.host_key)))" not in text
+    assert "space.agent_count" not in text
+    assert "space.pane_count" not in text
+    assert "space.tab_count" not in text
+    assert "visible: text.length > 0" in panel_text
 
 
 def test_herdr_session_space_lookup_uses_workspace_and_host_key():

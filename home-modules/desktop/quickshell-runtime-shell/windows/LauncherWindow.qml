@@ -479,6 +479,7 @@ PanelWindow {
                                         colorsObject: colors
                                         session: entry
                                         selected: parent.selected
+                                        currentOverride: root.sessionMatchesKey(entry, root.optimisticCurrentSessionKey)
                                         hovered: entryMouse.containsMouse
                                         interactive: false
                                         showHostToken: false

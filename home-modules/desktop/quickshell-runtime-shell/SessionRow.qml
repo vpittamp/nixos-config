@@ -9,6 +9,7 @@ Rectangle {
     required property var colorsObject
     required property var session
     property bool selected: false
+    property bool currentOverride: false
     property bool hovered: false
     property bool interactive: false
     property bool compact: false
@@ -22,7 +23,7 @@ Rectangle {
     signal closeRequested
 
     readonly property bool effectiveHovered: interactive ? sessionRowMouse.containsMouse : hovered
-    readonly property bool isCurrent: rootObject.sessionIsCurrent(session)
+    readonly property bool isCurrent: currentOverride || rootObject.sessionIsCurrent(session)
     readonly property string primaryLabel: rootObject.sessionPrimaryLabel(session)
     readonly property string secondaryLabel: rootObject.sessionSecondaryLabel(session)
     readonly property string activityLabel: rootObject.sessionActivityChipLabel(session)
