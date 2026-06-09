@@ -21,7 +21,7 @@ import subprocess
 import tempfile
 import time
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePath
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -575,6 +575,7 @@ class IPCServer:
         self._herdr_snapshot_cache: Dict[str, Any] = {}
         self._herdr_snapshot_cache_time: float = 0.0
         self._herdr_snapshot_cache_ttl: float = 0.5
+        self._herdr_git_metadata_cache: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
         self._herdr_remote_targets_cache: List[Dict[str, str]] = []
         self._herdr_remote_targets_cache_signature: Tuple[Any, ...] = ("", False, 0, 0)
         self._malformed_json_count: int = 0
@@ -9606,6 +9607,173 @@ FORMAT JSONEachRow
         return [dict(item) for item in rows if isinstance(item, dict)]
 
     @staticmethod
+    def _herdr_worktree_result_array(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+        result = payload.get("result") if isinstance(payload, dict) else {}
+        if not isinstance(result, dict):
+            result = {}
+        source = result.get("source")
+        if not isinstance(source, dict):
+            source = {}
+        rows = result.get("worktrees", [])
+        if not isinstance(rows, list):
+            return []
+
+        normalized: List[Dict[str, Any]] = []
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            row = dict(item)
+            if not str(row.get("workspace_id") or "").strip() and str(row.get("open_workspace_id") or "").strip():
+                row["workspace_id"] = str(row.get("open_workspace_id") or "").strip()
+            row.setdefault("repo_key", source.get("repo_key"))
+            row.setdefault("repo_name", source.get("repo_name"))
+            row.setdefault("repo_root", source.get("repo_root"))
+            row.setdefault("checkout_path", row.get("path"))
+            if str(row.get("branch") or "").strip() and not str(row.get("branch_label") or "").strip():
+                row["branch_label"] = str(row.get("branch") or "").strip()
+            normalized.append(row)
+        return normalized
+
+    @staticmethod
+    def _herdr_path_basename(value: Any) -> str:
+        text = str(value or "").strip().replace("\\", "/").rstrip("/")
+        if not text:
+            return ""
+        if text.startswith("worktree/"):
+            text = text[len("worktree/"):]
+        parts = [part for part in text.split("/") if part]
+        if "worktree" in parts:
+            index = parts.index("worktree")
+            if index + 1 < len(parts):
+                return parts[index + 1]
+        return parts[-1] if parts else text
+
+    @classmethod
+    def _herdr_branch_label_fallback(cls, checkout_path: Any, workspace_id: str = "") -> str:
+        return cls._herdr_path_basename(checkout_path) or str(workspace_id or "").strip()
+
+    @staticmethod
+    def _herdr_normalize_repo_url(value: Any) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        if text.endswith(".git"):
+            text = text[:-4]
+        github_ssh = re.match(r"^git@github\.com:(?P<path>[^/]+/.+)$", text)
+        if github_ssh:
+            return github_ssh.group("path").strip("/")
+        github_https = re.match(r"^https://github\.com/(?P<path>[^/]+/.+)$", text)
+        if github_https:
+            return github_https.group("path").strip("/")
+        return text.rstrip("/")
+
+    @staticmethod
+    def _herdr_git_run(path: str, args: List[str], *, ssh_target: str = "", timeout: float = 0.75) -> str:
+        if not str(path or "").strip():
+            return ""
+        command: List[str]
+        if ssh_target:
+            remote_args = " ".join(shlex.quote(part) for part in ["git", "-C", path, *args])
+            command = [
+                "ssh",
+                "-o", "BatchMode=yes",
+                "-o", "ConnectTimeout=1",
+                "-o", "ConnectionAttempts=1",
+                ssh_target,
+                remote_args,
+            ]
+        else:
+            normalized = normalize_project_path(path)
+            if not normalized or not Path(normalized).exists():
+                return ""
+            command = ["git", "-C", normalized, *args]
+
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+        if result.returncode != 0:
+            return ""
+        return str(result.stdout or "").strip()
+
+    def _herdr_path_is_git_worktree(self, path: Any, *, ssh_target: str = "") -> bool:
+        value = str(path or "").strip()
+        if not value:
+            return False
+        return self._herdr_git_run(
+            value,
+            ["rev-parse", "--is-inside-work-tree"],
+            ssh_target=ssh_target,
+        ).lower() == "true"
+
+    def _herdr_effective_cwd(self, row: Dict[str, Any], *, ssh_target: str = "") -> str:
+        cwd = str(row.get("cwd") or "").strip()
+        foreground_cwd = str(row.get("foreground_cwd") or "").strip()
+        if foreground_cwd and self._herdr_path_is_git_worktree(foreground_cwd, ssh_target=ssh_target):
+            return foreground_cwd
+        if cwd and self._herdr_path_is_git_worktree(cwd, ssh_target=ssh_target):
+            return cwd
+        return foreground_cwd or cwd
+
+    def _herdr_git_branch(self, path: Any, *, ssh_target: str = "") -> str:
+        value = str(path or "").strip()
+        if not value:
+            return ""
+        branch = self._herdr_git_run(value, ["branch", "--show-current"], ssh_target=ssh_target)
+        if branch:
+            return branch
+        branch = self._herdr_git_run(value, ["symbolic-ref", "--short", "HEAD"], ssh_target=ssh_target)
+        if branch:
+            return branch
+        branch = self._herdr_git_run(value, ["rev-parse", "--abbrev-ref", "HEAD"], ssh_target=ssh_target)
+        if branch and branch != "HEAD":
+            return branch
+        return self._herdr_git_run(value, ["rev-parse", "--short", "HEAD"], ssh_target=ssh_target)
+
+    def _herdr_git_space_metadata(self, path: Any, *, ssh_target: str = "") -> Dict[str, Any]:
+        value = str(path or "").strip()
+        if not value:
+            return {}
+        cache_key = (self._normalize_connection_key(ssh_target) if ssh_target else "local", ssh_target, value)
+        if cache_key in self._herdr_git_metadata_cache:
+            return dict(self._herdr_git_metadata_cache[cache_key])
+
+        if not self._herdr_path_is_git_worktree(value, ssh_target=ssh_target):
+            self._herdr_git_metadata_cache[cache_key] = {}
+            return {}
+
+        checkout_path = self._herdr_git_run(value, ["rev-parse", "--show-toplevel"], ssh_target=ssh_target)
+        if not checkout_path:
+            self._herdr_git_metadata_cache[cache_key] = {}
+            return {}
+
+        common_dir = self._herdr_git_run(value, ["rev-parse", "--git-common-dir"], ssh_target=ssh_target)
+        if common_dir and not common_dir.startswith("/"):
+            common_dir = str(PurePath(checkout_path) / common_dir)
+        repo_root = common_dir or checkout_path
+        if repo_root.endswith("/.git"):
+            repo_root = repo_root[:-5]
+        origin = self._herdr_git_run(value, ["config", "--get", "remote.origin.url"], ssh_target=ssh_target)
+        repo_key = self._herdr_normalize_repo_url(origin) or repo_root
+        repo_name = Path(checkout_path.rstrip("/")).name if not ssh_target else checkout_path.rstrip("/").rsplit("/", 1)[-1]
+        metadata = {
+            "repo_key": repo_key,
+            "repo_name": repo_name,
+            "repo_root": repo_root,
+            "checkout_path": checkout_path,
+            "is_linked_worktree": False,
+            "branch_label": self._herdr_git_branch(value, ssh_target=ssh_target),
+        }
+        self._herdr_git_metadata_cache[cache_key] = metadata
+        return dict(metadata)
+
+    @staticmethod
     def _normalize_herdr_agent_status(value: Any, *, preserve_raw: bool = False) -> str:
         raw = str(value or "").strip()
         if preserve_raw:
@@ -9729,8 +9897,6 @@ FORMAT JSONEachRow
         terminal_id = str(row.get("terminal_id") or "").strip()
         cwd = str(row.get("cwd") or "").strip()
         foreground_cwd = str(row.get("foreground_cwd") or "").strip()
-        project = self._herdr_project_for_cwd(foreground_cwd or cwd)
-        project_name = str(project.get("project_name") or "global").strip() or "global"
         agent = str(row.get("agent") or "").strip()
         is_remote = isinstance(remote_target, dict)
         herdr_host = (
@@ -9739,6 +9905,10 @@ FORMAT JSONEachRow
             else self._local_host_alias()
         )
         ssh_target = str(remote_target.get("ssh_target") or "").strip() if is_remote and remote_target else ""
+        effective_cwd = self._herdr_effective_cwd(row, ssh_target=ssh_target)
+        project = self._herdr_project_for_cwd(effective_cwd)
+        git_metadata = self._herdr_git_space_metadata(effective_cwd, ssh_target=ssh_target)
+        project_name = str(project.get("project_name") or "global").strip() or "global"
         connection_key = (
             str(remote_target.get("connection_key") or "").strip()
             if is_remote and remote_target
@@ -9777,11 +9947,17 @@ FORMAT JSONEachRow
             "terminal_id": terminal_id,
             "cwd": cwd,
             "foreground_cwd": foreground_cwd,
-            "working_dir": foreground_cwd or cwd,
+            "working_dir": effective_cwd,
             "project_name": project_name,
             "project": project_name,
             "project_path": str(project.get("project_path") or "").strip(),
             "project_label": project_name.rsplit("/", 1)[-1] if project_name != "global" else "global",
+            "repo_key": str(git_metadata.get("repo_key") or "").strip(),
+            "repo_name": str(git_metadata.get("repo_name") or "").strip(),
+            "repo_root": str(git_metadata.get("repo_root") or "").strip(),
+            "checkout_path": str(git_metadata.get("checkout_path") or "").strip(),
+            "is_linked_worktree": bool(git_metadata.get("is_linked_worktree", False)),
+            "branch_label": str(git_metadata.get("branch_label") or "").strip(),
             "execution_mode": "ssh" if is_remote else "local",
             "connection_key": self._normalize_connection_key(connection_key),
             "host_name": herdr_host,
@@ -9886,14 +10062,16 @@ FORMAT JSONEachRow
 
     async def _herdr_remote_snapshot(self, target: Dict[str, str]) -> Dict[str, Any]:
         """Return one remote Herdr host snapshot fetched through read-only SSH commands."""
-        status_payload, agent_payload, pane_payload, workspace_payload, tab_payload = await asyncio.gather(
+        self._herdr_git_metadata_cache.clear()
+        status_payload, agent_payload, pane_payload, workspace_payload, tab_payload, worktree_payload = await asyncio.gather(
             self._run_herdr_ssh_json(target, ["status", "--json"]),
             self._run_herdr_ssh_json(target, ["agent", "list"]),
             self._run_herdr_ssh_json(target, ["pane", "list"]),
             self._run_herdr_ssh_json(target, ["workspace", "list"]),
             self._run_herdr_ssh_json(target, ["tab", "list"]),
+            self._run_herdr_ssh_json(target, ["worktree", "list"]),
         )
-        payloads = [status_payload, agent_payload, pane_payload, workspace_payload, tab_payload]
+        payloads = [status_payload, agent_payload, pane_payload, workspace_payload, tab_payload, worktree_payload]
         host = str(target.get("host") or "").strip()
         ssh_target = str(target.get("ssh_target") or "").strip()
         connection_key = str(target.get("connection_key") or "").strip()
@@ -9922,6 +10100,7 @@ FORMAT JSONEachRow
                 "panes": [],
                 "workspaces": [],
                 "tabs": [],
+                "worktrees": [],
                 "sessions": [],
                 "errors": errors,
             }
@@ -9965,6 +10144,14 @@ FORMAT JSONEachRow
                 ssh_target=ssh_target,
                 is_remote=True,
             ),
+            "worktrees": self._annotate_herdr_rows(
+                self._herdr_worktree_result_array(worktree_payload),
+                host=host,
+                execution_mode="ssh",
+                connection_key=connection_key,
+                ssh_target=ssh_target,
+                is_remote=True,
+            ),
             "errors": errors,
         }
         snapshot["sessions"] = self._normalize_herdr_sessions(snapshot, remote_target=target)
@@ -9982,12 +10169,14 @@ FORMAT JSONEachRow
         ):
             return copy.deepcopy(self._herdr_snapshot_cache)
 
-        status_payload, agent_payload, pane_payload, workspace_payload, tab_payload = await asyncio.gather(
+        self._herdr_git_metadata_cache.clear()
+        status_payload, agent_payload, pane_payload, workspace_payload, tab_payload, worktree_payload = await asyncio.gather(
             self._run_herdr_json(["status", "--json"]),
             self._run_herdr_json(["agent", "list"]),
             self._run_herdr_json(["pane", "list"]),
             self._run_herdr_json(["workspace", "list"]),
             self._run_herdr_json(["tab", "list"]),
+            self._run_herdr_json(["worktree", "list"]),
         )
         local_host = self._local_host_alias()
         local_connection_key = self._normalize_connection_key(f"local@{local_host}")
@@ -10018,13 +10207,19 @@ FORMAT JSONEachRow
                 execution_mode="local",
                 connection_key=local_connection_key,
             ),
+            "worktrees": self._annotate_herdr_rows(
+                self._herdr_worktree_result_array(worktree_payload),
+                host=local_host,
+                execution_mode="local",
+                connection_key=local_connection_key,
+            ),
             "errors": [
                 {
                     "command": payload.get("command"),
                     "error": payload.get("error") or payload.get("stderr") or payload.get("stdout"),
                     "returncode": payload.get("returncode"),
                 }
-                for payload in [status_payload, agent_payload, pane_payload, workspace_payload, tab_payload]
+                for payload in [status_payload, agent_payload, pane_payload, workspace_payload, tab_payload, worktree_payload]
                 if not bool(payload.get("success", False))
             ],
         }
@@ -10066,6 +10261,7 @@ FORMAT JSONEachRow
             snapshot["panes"].extend(remote_snapshot.get("panes", []) or [])
             snapshot["workspaces"].extend(remote_snapshot.get("workspaces", []) or [])
             snapshot["tabs"].extend(remote_snapshot.get("tabs", []) or [])
+            snapshot["worktrees"].extend(remote_snapshot.get("worktrees", []) or [])
             snapshot["sessions"].extend([
                 session for session in remote_snapshot.get("sessions", []) or []
                 if isinstance(session, dict)
@@ -12758,6 +12954,77 @@ FORMAT JSONEachRow
                 or ""
             ).strip()
 
+        def text_field(item: Dict[str, Any], *keys: str) -> str:
+            for key in keys:
+                value = str(item.get(key) or "").strip()
+                if value:
+                    return value
+            return ""
+
+        def bool_field(item: Dict[str, Any], *keys: str) -> bool:
+            for key in keys:
+                if key in item:
+                    return bool(item.get(key, False))
+            return False
+
+        def int_field(item: Dict[str, Any], *keys: str) -> int:
+            for key in keys:
+                value = item.get(key)
+                if value is None:
+                    continue
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    continue
+            return 0
+
+        def worktree_metadata_for(item: Dict[str, Any]) -> Dict[str, Any]:
+            is_remote = bool(item.get("is_remote_herdr", False)) or str(item.get("execution_mode") or "") == "ssh"
+            ssh_target = text_field(item, "ssh_target", "remote_target") if is_remote else ""
+            effective_cwd = self._herdr_effective_cwd(item, ssh_target=ssh_target) if (not is_remote or ssh_target) else ""
+            computed = self._herdr_git_space_metadata(effective_cwd, ssh_target=ssh_target) if effective_cwd else {}
+            nested = item.get("worktree")
+            if not isinstance(nested, dict):
+                nested = {}
+            merged = dict(computed)
+            merged.update(nested)
+            for key in [
+                "repo_key",
+                "repoKey",
+                "repo_name",
+                "repoName",
+                "repo_root",
+                "repoRoot",
+                "checkout_path",
+                "checkoutPath",
+                "is_linked_worktree",
+                "isLinkedWorktree",
+                "branch",
+                "branch_label",
+                "branchLabel",
+                "path",
+                "workspace_id",
+            ]:
+                if key in item:
+                    merged[key] = item.get(key)
+
+            checkout_path = text_field(
+                merged,
+                "checkout_path",
+                "checkoutPath",
+                "path",
+                "worktree_path",
+                "worktreePath",
+            )
+            return {
+                "repo_key": text_field(merged, "repo_key", "repoKey", "repository_key", "repositoryKey"),
+                "repo_name": text_field(merged, "repo_name", "repoName", "repository", "repository_name"),
+                "repo_root": text_field(merged, "repo_root", "repoRoot", "root", "repository_root"),
+                "checkout_path": checkout_path,
+                "is_linked_worktree": bool_field(merged, "is_linked_worktree", "isLinkedWorktree", "linked", "is_linked"),
+                "branch_label": text_field(merged, "branch_label", "branchLabel", "branch"),
+            }
+
         def workspace_label_for(item: Dict[str, Any], workspace_id: str) -> str:
             label = str(
                 item.get("label")
@@ -12767,6 +13034,48 @@ FORMAT JSONEachRow
                 or ""
             ).strip()
             return label or workspace_id or "Workspace"
+
+        def worktree_enrichment_index() -> Dict[Tuple[str, str], Dict[str, Any]]:
+            index: Dict[Tuple[str, str], Dict[str, Any]] = {}
+            for raw in herdr_snapshot.get("worktrees", []) or []:
+                if not isinstance(raw, dict):
+                    continue
+                host_key = host_key_for(raw)
+                workspace_id = workspace_id_for(raw)
+                metadata = worktree_metadata_for(raw)
+                branch_label = (
+                    text_field(raw, "branch_label", "branchLabel", "branch", "name", "label")
+                    or metadata["branch_label"]
+                )
+                enriched = {**metadata, "branch_label": branch_label}
+                for key in [
+                    workspace_id,
+                    metadata["checkout_path"],
+                    f"{metadata['repo_key']}::{metadata['checkout_path']}",
+                    f"{metadata['repo_key']}::{branch_label}",
+                ]:
+                    normalized_key = str(key or "").strip()
+                    if normalized_key:
+                        index[(host_key, normalized_key)] = enriched
+            return index
+
+        worktree_index = worktree_enrichment_index()
+
+        def enrich_worktree(host_key: str, workspace_id: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
+            enriched = dict(metadata)
+            for key in [
+                workspace_id,
+                metadata.get("checkout_path", ""),
+                f"{metadata.get('repo_key', '')}::{metadata.get('checkout_path', '')}",
+                f"{metadata.get('repo_key', '')}::{metadata.get('branch_label', '')}",
+            ]:
+                candidate = worktree_index.get((host_key, str(key or "").strip()))
+                if not candidate:
+                    continue
+                for field, value in candidate.items():
+                    if value and not enriched.get(field):
+                        enriched[field] = value
+            return enriched
 
         def ensure_space(
             *,
@@ -12778,9 +13087,13 @@ FORMAT JSONEachRow
             focused: bool = False,
             focus_target: Optional[Dict[str, Any]] = None,
             label_source: str = "fallback",
+            workspace_number: int = 0,
+            active_tab_id: str = "",
+            worktree_metadata: Optional[Dict[str, Any]] = None,
         ) -> Dict[str, Any]:
             normalized_workspace = workspace_id or "unknown"
             space_key = f"herdr:{host_key}:workspace:{normalized_workspace}"
+            metadata = worktree_metadata or {}
             existing = spaces.get(space_key)
             if existing is None:
                 existing = {
@@ -12788,6 +13101,8 @@ FORMAT JSONEachRow
                     "host_key": host_key,
                     "host_label": host_key,
                     "workspace_id": workspace_id,
+                    "workspace_number": int(workspace_number or 0),
+                    "active_tab_id": str(active_tab_id or "").strip(),
                     "label": label,
                     "focused": bool(focused),
                     "agent_status": "unknown",
@@ -12797,6 +13112,15 @@ FORMAT JSONEachRow
                     "project_name": "global",
                     "execution_mode": execution_mode,
                     "is_current_host": bool(is_current_host),
+                    "group_key": "",
+                    "repo_key": str(metadata.get("repo_key") or "").strip(),
+                    "repo_name": str(metadata.get("repo_name") or "").strip(),
+                    "repo_root": str(metadata.get("repo_root") or "").strip(),
+                    "checkout_path": str(metadata.get("checkout_path") or "").strip(),
+                    "is_linked_worktree": bool(metadata.get("is_linked_worktree", False)),
+                    "is_group_parent": False,
+                    "group_member_count": 1,
+                    "branch_label": str(metadata.get("branch_label") or "").strip(),
                     "_label_source": label_source,
                 }
                 if focus_target:
@@ -12815,6 +13139,16 @@ FORMAT JSONEachRow
                     existing["_label_source"] = label_source
                 if focus_target and not existing.get("focus_target"):
                     existing["focus_target"] = focus_target
+                if workspace_number and not int(existing.get("workspace_number") or 0):
+                    existing["workspace_number"] = int(workspace_number)
+                if active_tab_id and not str(existing.get("active_tab_id") or "").strip():
+                    existing["active_tab_id"] = active_tab_id
+                for key in ["repo_key", "repo_name", "repo_root", "checkout_path", "branch_label"]:
+                    value = str(metadata.get(key) or "").strip()
+                    if value and not str(existing.get(key) or "").strip():
+                        existing[key] = value
+                if metadata.get("is_linked_worktree"):
+                    existing["is_linked_worktree"] = True
             return existing
 
         workspaces = [
@@ -12832,6 +13166,7 @@ FORMAT JSONEachRow
                     "method": "herdr.workspace.focus",
                     "params": {"workspace_id": workspace_id},
                 }
+            metadata = enrich_worktree(host_key, workspace_id, worktree_metadata_for(workspace))
             ensure_space(
                 host_key=host_key,
                 workspace_id=workspace_id,
@@ -12841,6 +13176,9 @@ FORMAT JSONEachRow
                 focused=bool(workspace.get("focused", False)),
                 focus_target=focus_target,
                 label_source="workspace",
+                workspace_number=int_field(workspace, "workspace_number", "number", "index"),
+                active_tab_id=text_field(workspace, "active_tab_id", "activeTabId", "current_tab_id", "focused_tab_id"),
+                worktree_metadata=metadata,
             )
 
         herdr_sessions = [
@@ -12857,6 +13195,7 @@ FORMAT JSONEachRow
             project_name = str(session.get("project_name") or session.get("project") or "global").strip() or "global"
             label = project_name.rsplit("/", 1)[-1] if project_name != "global" else workspace_id or "Workspace"
             is_remote = bool(session.get("is_remote_herdr", False))
+            metadata = enrich_worktree(host_key, workspace_id, worktree_metadata_for(session))
             space = ensure_space(
                 host_key=host_key,
                 workspace_id=workspace_id,
@@ -12865,6 +13204,7 @@ FORMAT JSONEachRow
                 is_current_host=bool(session.get("is_current_host", not is_remote)),
                 focused=bool(session.get("focused", False)),
                 label_source="session",
+                worktree_metadata=metadata,
             )
             current_status = str(space.get("agent_status") or "unknown").strip()
             candidate_status = self._herdr_agent_status_state(session.get("agent_status"))
@@ -12906,6 +13246,58 @@ FORMAT JSONEachRow
             if not str(space.get("project_name") or "").strip():
                 space["project_name"] = "global"
 
+        has_agent_spaces = any(int(space.get("agent_count", 0) or 0) > 0 for space in spaces.values())
+        if has_agent_spaces:
+            agent_group_keys = {
+                f"{space.get('host_key')}:{str(space.get('repo_key') or '').strip()}"
+                for space in spaces.values()
+                if int(space.get("agent_count", 0) or 0) > 0
+                and str(space.get("repo_key") or "").strip()
+                and str(space.get("checkout_path") or "").strip()
+            }
+            spaces = {
+                key: space
+                for key, space in spaces.items()
+                if int(space.get("agent_count", 0) or 0) > 0
+                or (
+                    not bool(space.get("is_linked_worktree", False))
+                    and f"{space.get('host_key')}:{str(space.get('repo_key') or '').strip()}" in agent_group_keys
+                )
+            }
+
+        group_counts: Dict[str, int] = {}
+        group_has_parent: Dict[str, bool] = {}
+        group_has_child: Dict[str, bool] = {}
+        for space in spaces.values():
+            repo_key = str(space.get("repo_key") or "").strip()
+            checkout_path = str(space.get("checkout_path") or "").strip()
+            if not repo_key or not checkout_path:
+                continue
+            candidate_group = f"{space.get('host_key')}:{repo_key}"
+            group_counts[candidate_group] = group_counts.get(candidate_group, 0) + 1
+            if bool(space.get("is_linked_worktree", False)):
+                group_has_child[candidate_group] = True
+            else:
+                group_has_parent[candidate_group] = True
+
+        for space in spaces.values():
+            repo_key = str(space.get("repo_key") or "").strip()
+            checkout_path = str(space.get("checkout_path") or "").strip()
+            candidate_group = f"{space.get('host_key')}:{repo_key}" if repo_key and checkout_path else ""
+            if (
+                candidate_group
+                and group_counts.get(candidate_group, 0) > 1
+                and group_has_parent.get(candidate_group, False)
+                and group_has_child.get(candidate_group, False)
+            ):
+                space["group_key"] = candidate_group
+                space["group_member_count"] = group_counts[candidate_group]
+                space["is_group_parent"] = not bool(space.get("is_linked_worktree", False))
+            else:
+                space["group_key"] = ""
+                space["group_member_count"] = 1
+                space["is_group_parent"] = False
+
         focused_session_space_keys = []
         for session in herdr_sessions:
             if not bool(session.get("focused", False)):
@@ -12938,12 +13330,19 @@ FORMAT JSONEachRow
                 bool(selected_focused_space)
                 and str(space.get("space_key") or "") == selected_focused_space
             )
+            if not str(space.get("branch_label") or "").strip():
+                space["branch_label"] = self._herdr_branch_label_fallback(
+                    space.get("checkout_path"),
+                    str(space.get("workspace_id") or ""),
+                )
             space.pop("_label_source", None)
 
         return sorted(spaces.values(), key=lambda item: (
             not bool(item.get("focused", False)),
             0 if bool(item.get("is_current_host", False)) else 1,
             str(item.get("host_key") or ""),
+            str(item.get("group_key") or str(item.get("space_key") or "")),
+            1 if bool(item.get("is_linked_worktree", False)) else 0,
             str(item.get("label") or ""),
             str(item.get("workspace_id") or ""),
         ))

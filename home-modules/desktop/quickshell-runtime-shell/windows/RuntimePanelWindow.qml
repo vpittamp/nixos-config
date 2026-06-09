@@ -483,7 +483,7 @@ PanelWindow {
                     Text {
                         Layout.fillWidth: true
                         visible: root.runtimePanelSectionCollapsed("sessions")
-                        text: "Herdr spaces and agents stay visible here while Windows takes the main panel."
+                        text: "spaces and agents"
                         color: colors.subtle
                         font.pixelSize: 9
                         font.weight: Font.Medium
@@ -509,7 +509,7 @@ PanelWindow {
                             spacing: 8
 
                             Text {
-                                text: "Spaces"
+                                text: "spaces"
                                 color: colors.text
                                 font.pixelSize: 11
                                 font.weight: Font.DemiBold
@@ -526,7 +526,7 @@ PanelWindow {
                                 Text {
                                     id: spacesCountText
                                     anchors.centerIn: parent
-                                    text: String(root.herdrSpaces().length)
+                                    text: String(root.visibleHerdrSpaces().length)
                                     color: colors.muted
                                     font.pixelSize: 8
                                     font.weight: Font.DemiBold
@@ -543,7 +543,7 @@ PanelWindow {
 
                         ScriptModel {
                             id: herdrSpacesModel
-                            values: root.herdrSpaces()
+                            values: root.visibleHerdrSpaces()
                             objectProp: "modelData"
                         }
 
@@ -569,6 +569,9 @@ PanelWindow {
                                 required property var modelData
                                 readonly property var space: modelData
                                 readonly property var token: root.herdrSpaceHostToken(space)
+                                readonly property bool isGroupParent: root.boolOrFalse(space && space.is_group_parent)
+                                readonly property string groupKey: root.herdrSpaceGroupKey(space)
+                                readonly property bool groupCollapsed: root.herdrSpaceGroupCollapsed(groupKey)
                                 readonly property bool canFocus: root.herdrSpaceFocusTarget(space) !== null
                                 readonly property bool hovered: spaceMouse.containsMouse
                                 width: herdrSpacesList.width
@@ -592,9 +595,29 @@ PanelWindow {
 
                                 RowLayout {
                                     anchors.fill: parent
-                                    anchors.leftMargin: 16
+                                    anchors.leftMargin: 16 + root.herdrSpaceIndent(space)
                                     anchors.rightMargin: 10
-                                    spacing: 10
+                                    spacing: 8
+
+                                    Text {
+                                        Layout.preferredWidth: 12
+                                        horizontalAlignment: Text.AlignHCenter
+                                        text: root.herdrSpaceChevron(space)
+                                        color: isGroupParent ? colors.textDim : "transparent"
+                                        font.pixelSize: 11
+                                        font.weight: Font.DemiBold
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            enabled: herdrSpaceRow.isGroupParent
+                                            hoverEnabled: true
+                                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            onClicked: function(mouse) {
+                                                mouse.accepted = true;
+                                                root.toggleHerdrSpaceGroup(herdrSpaceRow.groupKey);
+                                            }
+                                        }
+                                    }
 
                                     Rectangle {
                                         width: 28
@@ -652,7 +675,7 @@ PanelWindow {
                                         radius: 6
                                         color: root.herdrSpaceStatusBackground(space)
                                         border.color: colors.lineSoft
-                                        border.width: root.herdrSpaceStatus(space) === "unknown" ? 0 : 1
+                                        border.width: root.herdrSpaceEffectiveStatus(space) === "unknown" ? 0 : 1
                                         Layout.preferredWidth: spaceStatusText.implicitWidth + 36
 
                                         RowLayout {
@@ -698,7 +721,7 @@ PanelWindow {
                             spacing: 8
 
                             Text {
-                                text: "Agents"
+                                text: "agents"
                                 color: colors.text
                                 font.pixelSize: 11
                                 font.weight: Font.DemiBold

@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -133,6 +134,116 @@ def test_herdr_rows_preserve_status_and_targets(server, tmp_path, monkeypatch):
     assert row["herdr_host"]
     assert row["is_remote_herdr"] is False
     assert row["is_current_host"] is True
+
+
+def test_herdr_row_uses_git_cwd_when_foreground_cwd_is_not_repo(server, tmp_path, monkeypatch):
+    repo_path = tmp_path / "workflow-builder"
+    repo_path.mkdir()
+    subprocess.run(["git", "init", "-b", "fix/repo-editor-commit-guard"], cwd=repo_path, check=True)
+    subprocess.run(["git", "remote", "add", "origin", "git@github.com:PittampalliOrg/workflow-builder.git"], cwd=repo_path, check=True)
+
+    repos_file = tmp_path / "repos.json"
+    repos_file.write_text(json.dumps({
+        "repositories": [{
+            "account": "PittampalliOrg",
+            "name": "workflow-builder",
+            "worktrees": [{
+                "branch": "fix/repo-editor-commit-guard",
+                "path": str(repo_path),
+            }],
+        }],
+    }))
+    monkeypatch.setattr(constants_module.ConfigPaths, "REPOS_FILE", repos_file)
+    ipc_server_module._load_discovered_worktree_cache(force_refresh=True)
+
+    rows = server._normalize_herdr_sessions({
+        "agents": [{
+            "agent": "codex",
+            "agent_status": "working",
+            "cwd": str(repo_path),
+            "focused": True,
+            "foreground_cwd": "/",
+            "pane_id": "builder-pane",
+            "workspace_id": "builder-ws",
+        }],
+        "panes": [{
+            "agent": "codex",
+            "agent_status": "working",
+            "cwd": str(repo_path),
+            "focused": True,
+            "foreground_cwd": "/",
+            "pane_id": "builder-pane",
+            "workspace_id": "builder-ws",
+        }],
+    })
+
+    assert rows[0]["working_dir"] == str(repo_path)
+    assert rows[0]["project_name"] == "PittampalliOrg/workflow-builder:fix/repo-editor-commit-guard"
+    assert rows[0]["repo_key"] == "PittampalliOrg/workflow-builder"
+    assert rows[0]["repo_name"] == "workflow-builder"
+    assert rows[0]["checkout_path"] == str(repo_path)
+    assert rows[0]["branch_label"] == "fix/repo-editor-commit-guard"
+
+
+def test_herdr_space_computes_git_metadata_when_worktree_list_misses_repo(server, tmp_path):
+    repo_path = tmp_path / "workflow-builder"
+    repo_path.mkdir()
+    subprocess.run(["git", "init", "-b", "fix/repo-editor-commit-guard"], cwd=repo_path, check=True)
+    subprocess.run(["git", "remote", "add", "origin", "git@github.com:PittampalliOrg/workflow-builder.git"], cwd=repo_path, check=True)
+    local_host = server._local_host_alias()
+    sessions = [{
+        "source": "herdr",
+        "agent": "codex",
+        "agent_status": "working",
+        "focused": True,
+        "herdr_host": local_host,
+        "host_name": local_host,
+        "is_current_host": True,
+        "is_remote_herdr": False,
+        "execution_mode": "local",
+        "pane_id": "builder-pane",
+        "project_name": "global",
+        "workspace_id": "builder-ws",
+        "cwd": str(repo_path),
+        "foreground_cwd": "/",
+    }]
+    snapshot = {
+        "workspaces": [{
+            "workspace_id": "builder-ws",
+            "label": "workflow-builder",
+            "focused": True,
+            "herdr_host": local_host,
+            "execution_mode": "local",
+            "is_remote_herdr": False,
+        }],
+        "worktrees": [{
+            "workspace_id": "other-ws",
+            "repo_key": "vpittamp/nixos-config",
+            "repo_name": "nixos-config",
+            "checkout_path": "/home/vpittamp/repos/vpittamp/nixos-config/main",
+            "branch_label": "main",
+            "herdr_host": local_host,
+        }],
+        "agents": sessions,
+        "panes": [{
+            "pane_id": "builder-pane",
+            "workspace_id": "builder-ws",
+            "herdr_host": local_host,
+            "cwd": str(repo_path),
+            "foreground_cwd": "/",
+        }],
+        "tabs": [],
+    }
+
+    spaces = server._build_herdr_spaces(snapshot, sessions)
+
+    assert len(spaces) == 1
+    assert spaces[0]["label"] == "workflow-builder"
+    assert spaces[0]["repo_key"] == "PittampalliOrg/workflow-builder"
+    assert spaces[0]["repo_name"] == "workflow-builder"
+    assert spaces[0]["checkout_path"] == str(repo_path)
+    assert spaces[0]["is_linked_worktree"] is False
+    assert spaces[0]["branch_label"] == "fix/repo-editor-commit-guard"
 
 
 def test_herdr_rows_skip_plain_panes_and_keep_unknown_status(server):
@@ -300,10 +411,72 @@ def test_herdr_spaces_use_sidebar_names_and_single_effective_focus(server):
 
     spaces = server._build_herdr_spaces(snapshot, sessions)
 
-    assert [space["label"] for space in spaces] == ["nixos-config", "main"]
-    assert [space["focused"] for space in spaces] == [True, False]
+    assert [space["label"] for space in spaces] == ["nixos-config"]
+    assert [space["focused"] for space in spaces] == [True]
     assert spaces[0]["space_key"] == "herdr:ryzen:workspace:remote-ws"
     assert spaces[0]["project_name"] == "vpittamp/nixos-config:main"
+
+
+def test_herdr_spaces_skip_agentless_local_workspaces_when_remote_agents_exist(server):
+    local_host = server._local_host_alias()
+    sessions = [{
+        "source": "herdr",
+        "agent": "codex",
+        "agent_status": "working",
+        "focused": True,
+        "herdr_host": "ryzen",
+        "host_name": "ryzen",
+        "is_current_host": False,
+        "is_remote_herdr": True,
+        "execution_mode": "ssh",
+        "pane_id": "remote-pane",
+        "project_name": "vpittamp/nixos-config:main",
+        "workspace_id": "remote-ws",
+    }]
+    snapshot = {
+        "workspaces": [{
+            "workspace_id": "local-shell",
+            "label": "~",
+            "focused": False,
+            "herdr_host": local_host,
+            "execution_mode": "local",
+            "is_remote_herdr": False,
+        }, {
+            "workspace_id": "local-main",
+            "label": "main",
+            "focused": True,
+            "herdr_host": local_host,
+            "execution_mode": "local",
+            "is_remote_herdr": False,
+        }, {
+            "workspace_id": "remote-ws",
+            "label": "nixos-config",
+            "focused": True,
+            "herdr_host": "ryzen",
+            "execution_mode": "ssh",
+            "is_remote_herdr": True,
+        }],
+        "agents": sessions,
+        "panes": [{
+            "pane_id": "local-shell-pane",
+            "workspace_id": "local-shell",
+            "herdr_host": local_host,
+        }, {
+            "pane_id": "local-main-pane",
+            "workspace_id": "local-main",
+            "herdr_host": local_host,
+        }, {
+            "pane_id": "remote-pane",
+            "workspace_id": "remote-ws",
+            "herdr_host": "ryzen",
+        }],
+        "tabs": [],
+    }
+
+    spaces = server._build_herdr_spaces(snapshot, sessions)
+
+    assert [space["space_key"] for space in spaces] == ["herdr:ryzen:workspace:remote-ws"]
+    assert spaces[0]["agent_count"] == 1
 
 
 @pytest.mark.asyncio
@@ -371,6 +544,8 @@ async def test_dashboard_snapshot_includes_herdr_spaces(server, monkeypatch):
         "host_key": local_host,
         "host_label": local_host,
         "workspace_id": "local-ws",
+        "workspace_number": 0,
+        "active_tab_id": "",
         "label": "nixos",
         "focused": True,
         "agent_status": "working",
@@ -380,11 +555,303 @@ async def test_dashboard_snapshot_includes_herdr_spaces(server, monkeypatch):
         "project_name": "vpittamp/nixos-config:main",
         "execution_mode": "local",
         "is_current_host": True,
+        "group_key": "",
+        "repo_key": "",
+        "repo_name": "",
+        "repo_root": "",
+        "checkout_path": "",
+        "is_linked_worktree": False,
+        "is_group_parent": False,
+        "group_member_count": 1,
+        "branch_label": "local-ws",
         "focus_target": {
             "method": "herdr.workspace.focus",
             "params": {"workspace_id": "local-ws"},
         },
     }]
+
+
+def test_herdr_spaces_build_worktree_group_metadata(server):
+    local_host = server._local_host_alias()
+    snapshot = {
+        "workspaces": [{
+            "workspace_id": "main-ws",
+            "label": "nixos-config",
+            "number": 1,
+            "focused": False,
+            "herdr_host": local_host,
+            "execution_mode": "local",
+            "is_remote_herdr": False,
+            "worktree": {
+                "repo_key": "vpittamp/nixos-config",
+                "repo_name": "nixos-config",
+                "repo_root": "/home/vpittamp/repos/vpittamp/nixos-config/main",
+                "checkout_path": "/home/vpittamp/repos/vpittamp/nixos-config/main",
+                "is_linked_worktree": False,
+            },
+        }, {
+            "workspace_id": "feature-ws",
+            "label": "nixos-config",
+            "number": 2,
+            "active_tab_id": "tab-feature",
+            "focused": True,
+            "herdr_host": local_host,
+            "execution_mode": "local",
+            "is_remote_herdr": False,
+            "worktree": {
+                "repo_key": "vpittamp/nixos-config",
+                "repo_name": "nixos-config",
+                "repo_root": "/home/vpittamp/repos/vpittamp/nixos-config/main",
+                "checkout_path": "/home/vpittamp/repos/vpittamp/nixos-config/worktree/feature-spaces",
+                "is_linked_worktree": True,
+            },
+        }],
+        "worktrees": [{
+            "workspace_id": "feature-ws",
+            "branch": "feature/spaces",
+            "checkout_path": "/home/vpittamp/repos/vpittamp/nixos-config/worktree/feature-spaces",
+            "repo_key": "vpittamp/nixos-config",
+            "herdr_host": local_host,
+        }],
+        "panes": [],
+        "tabs": [],
+        "agents": [],
+    }
+
+    spaces = server._build_herdr_spaces(snapshot, [])
+    by_workspace = {space["workspace_id"]: space for space in spaces}
+    parent = by_workspace["main-ws"]
+    child = by_workspace["feature-ws"]
+
+    assert parent["group_key"] == f"{local_host}:vpittamp/nixos-config"
+    assert child["group_key"] == parent["group_key"]
+    assert parent["is_group_parent"] is True
+    assert child["is_group_parent"] is False
+    assert child["is_linked_worktree"] is True
+    assert parent["group_member_count"] == 2
+    assert child["branch_label"] == "feature/spaces"
+    assert child["workspace_number"] == 2
+    assert child["active_tab_id"] == "tab-feature"
+
+
+def test_herdr_explicit_worktree_metadata_wins_over_computed_fallback(server, tmp_path):
+    repo_path = tmp_path / "workflow-builder"
+    repo_path.mkdir()
+    subprocess.run(["git", "init", "-b", "computed/branch"], cwd=repo_path, check=True)
+    subprocess.run(["git", "remote", "add", "origin", "git@github.com:PittampalliOrg/workflow-builder.git"], cwd=repo_path, check=True)
+    local_host = server._local_host_alias()
+    snapshot = {
+        "workspaces": [{
+            "workspace_id": "feature-ws",
+            "label": "workflow-builder",
+            "focused": True,
+            "herdr_host": local_host,
+            "cwd": str(repo_path),
+            "foreground_cwd": str(repo_path),
+            "worktree": {
+                "repo_key": "herdr/source-repo",
+                "repo_name": "workflow-builder",
+                "repo_root": "/herdr/source",
+                "checkout_path": "/herdr/checkout",
+                "is_linked_worktree": True,
+                "branch_label": "explicit/herdr-branch",
+            },
+        }],
+        "worktrees": [{
+            "workspace_id": "feature-ws",
+            "repo_key": "herdr/source-repo",
+            "repo_name": "workflow-builder",
+            "repo_root": "/herdr/source",
+            "checkout_path": "/herdr/checkout",
+            "is_linked_worktree": True,
+            "branch_label": "explicit/herdr-branch",
+            "herdr_host": local_host,
+        }],
+        "panes": [],
+        "tabs": [],
+        "agents": [],
+    }
+
+    spaces = server._build_herdr_spaces(snapshot, [])
+
+    assert spaces[0]["repo_key"] == "herdr/source-repo"
+    assert spaces[0]["repo_root"] == "/herdr/source"
+    assert spaces[0]["checkout_path"] == "/herdr/checkout"
+    assert spaces[0]["is_linked_worktree"] is True
+    assert spaces[0]["branch_label"] == "explicit/herdr-branch"
+
+
+def test_herdr_spaces_linked_only_workspaces_remain_flat(server):
+    local_host = server._local_host_alias()
+    snapshot = {
+        "workspaces": [{
+            "workspace_id": "feature-a",
+            "label": "feature-a",
+            "herdr_host": local_host,
+            "worktree": {
+                "repo_key": "vpittamp/nixos-config",
+                "checkout_path": "/repo/worktree/feature-a",
+                "is_linked_worktree": True,
+            },
+        }, {
+            "workspace_id": "feature-b",
+            "label": "feature-b",
+            "herdr_host": local_host,
+            "worktree": {
+                "repo_key": "vpittamp/nixos-config",
+                "checkout_path": "/repo/worktree/feature-b",
+                "is_linked_worktree": True,
+            },
+        }],
+        "panes": [],
+        "tabs": [],
+        "agents": [],
+    }
+
+    spaces = server._build_herdr_spaces(snapshot, [])
+
+    assert [space["group_key"] for space in spaces] == ["", ""]
+    assert [space["is_group_parent"] for space in spaces] == [False, False]
+
+
+def test_herdr_spaces_non_worktree_repo_matches_remain_flat(server):
+    local_host = server._local_host_alias()
+    snapshot = {
+        "workspaces": [{
+            "workspace_id": "one",
+            "label": "one",
+            "herdr_host": local_host,
+            "repo_key": "vpittamp/nixos-config",
+        }, {
+            "workspace_id": "two",
+            "label": "two",
+            "herdr_host": local_host,
+            "repo_key": "vpittamp/nixos-config",
+        }],
+        "panes": [],
+        "tabs": [],
+        "agents": [],
+    }
+
+    spaces = server._build_herdr_spaces(snapshot, [])
+
+    assert [space["group_key"] for space in spaces] == ["", ""]
+
+
+def test_herdr_computed_git_workspaces_sharing_repo_remain_flat(server, tmp_path):
+    repo_path = tmp_path / "workflow-builder"
+    repo_path.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo_path, check=True)
+    subprocess.run(["git", "remote", "add", "origin", "git@github.com:PittampalliOrg/workflow-builder.git"], cwd=repo_path, check=True)
+    local_host = server._local_host_alias()
+    snapshot = {
+        "workspaces": [{
+            "workspace_id": "one",
+            "label": "workflow-builder",
+            "herdr_host": local_host,
+            "cwd": str(repo_path),
+            "foreground_cwd": str(repo_path),
+        }, {
+            "workspace_id": "two",
+            "label": "workflow-builder",
+            "herdr_host": local_host,
+            "cwd": str(repo_path),
+            "foreground_cwd": str(repo_path),
+        }],
+        "panes": [],
+        "tabs": [],
+        "agents": [],
+    }
+
+    spaces = server._build_herdr_spaces(snapshot, [])
+
+    assert [space["repo_key"] for space in spaces] == ["PittampalliOrg/workflow-builder", "PittampalliOrg/workflow-builder"]
+    assert [space["is_linked_worktree"] for space in spaces] == [False, False]
+    assert [space["group_key"] for space in spaces] == ["", ""]
+
+
+def test_herdr_spaces_branch_label_fallback_uses_checkout_basename(server):
+    local_host = server._local_host_alias()
+    snapshot = {
+        "workspaces": [{
+            "workspace_id": "feature-ws",
+            "label": "nixos-config",
+            "herdr_host": local_host,
+            "worktree": {
+                "repo_key": "vpittamp/nixos-config",
+                "checkout_path": "/home/vpittamp/repos/vpittamp/nixos-config/worktree/feature-fallback",
+                "is_linked_worktree": True,
+            },
+        }],
+        "panes": [],
+        "tabs": [],
+        "agents": [],
+    }
+
+    spaces = server._build_herdr_spaces(snapshot, [])
+
+    assert spaces[0]["branch_label"] == "feature-fallback"
+
+
+def test_herdr_worktree_result_array_normalizes_source_and_open_workspace(server):
+    rows = server._herdr_worktree_result_array({
+        "success": True,
+        "result": {
+            "source": {
+                "repo_key": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/.bare",
+                "repo_name": "workflow-builder",
+                "repo_root": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/.bare",
+            },
+            "worktrees": [{
+                "branch": "fix/repo-editor-commit-guard",
+                "is_linked_worktree": True,
+                "open_workspace_id": "w653b0849e328b1",
+                "path": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+            }],
+        },
+    })
+
+    assert rows == [{
+        "branch": "fix/repo-editor-commit-guard",
+        "branch_label": "fix/repo-editor-commit-guard",
+        "is_linked_worktree": True,
+        "open_workspace_id": "w653b0849e328b1",
+        "path": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+        "workspace_id": "w653b0849e328b1",
+        "repo_key": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/.bare",
+        "repo_name": "workflow-builder",
+        "repo_root": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/.bare",
+        "checkout_path": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+    }]
+
+
+def test_herdr_remote_worktree_space_remains_focus_only(server):
+    snapshot = {
+        "workspaces": [{
+            "workspace_id": "remote-ws",
+            "label": "builder",
+            "focused": True,
+            "herdr_host": "ryzen",
+            "execution_mode": "ssh",
+            "is_remote_herdr": True,
+            "worktree": {
+                "repo_key": "PittampalliOrg/workflow-builder",
+                "repo_name": "workflow-builder",
+                "checkout_path": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+                "is_linked_worktree": False,
+            },
+        }],
+        "panes": [],
+        "tabs": [],
+        "agents": [],
+    }
+
+    spaces = server._build_herdr_spaces(snapshot, [])
+
+    assert spaces[0]["execution_mode"] == "ssh"
+    assert spaces[0]["is_current_host"] is False
+    assert "focus_target" not in spaces[0]
+    assert "close_target" not in spaces[0]
 
 
 @pytest.mark.asyncio

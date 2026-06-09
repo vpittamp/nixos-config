@@ -209,6 +209,7 @@ ShellRoot {
     property string snippetEditorDescription: ""
     property var onePasswordEntriesCache: []
     property var expandedSessionGroups: ({})
+    property var collapsedHerdrSpaceGroups: ({})
     property string lastFocusedSessionKey: ""
     property string selectedSessionKey: ""
     property string optimisticCurrentSessionKey: ""
@@ -4964,6 +4965,98 @@ ShellRoot {
         return arrayOrEmpty(herdrDashboard().spaces);
     }
 
+    function herdrSpaceKey(space) {
+        return stringOrEmpty(space && space.space_key) || [
+            stringOrEmpty(space && (space.host_key || space.host_label)).toLowerCase(),
+            stringOrEmpty(space && space.workspace_id)
+        ].join("::");
+    }
+
+    function herdrSpaceGroupKey(space) {
+        return stringOrEmpty(space && space.group_key) || herdrSpaceKey(space);
+    }
+
+    function herdrSpaceGroupCollapsed(groupKey) {
+        const key = stringOrEmpty(groupKey);
+        return key.length > 0 && collapsedHerdrSpaceGroups[key] === true;
+    }
+
+    function toggleHerdrSpaceGroup(groupKey) {
+        const key = stringOrEmpty(groupKey);
+        if (!key) {
+            return;
+        }
+        const next = Object.assign({}, collapsedHerdrSpaceGroups);
+        if (next[key] === true) {
+            delete next[key];
+        } else {
+            next[key] = true;
+        }
+        collapsedHerdrSpaceGroups = next;
+    }
+
+    function herdrSpacesInGroup(groupKey) {
+        const key = stringOrEmpty(groupKey);
+        if (!key) {
+            return [];
+        }
+        return herdrSpaces().filter(function(space) {
+            return herdrSpaceGroupKey(space) === key;
+        });
+    }
+
+    function herdrSpaceStatusPriority(status) {
+        const state = herdrStatusState(status);
+        if (state === "blocked") {
+            return 5;
+        }
+        if (state === "done") {
+            return 4;
+        }
+        if (state === "working") {
+            return 3;
+        }
+        if (state === "idle") {
+            return 2;
+        }
+        return 1;
+    }
+
+    function herdrAggregateStatusForGroup(groupKey) {
+        const members = herdrSpacesInGroup(groupKey);
+        let best = "unknown";
+        let bestPriority = 0;
+        for (let i = 0; i < members.length; i += 1) {
+            const status = herdrSpaceStatus(members[i]);
+            const priority = herdrSpaceStatusPriority(status);
+            if (priority > bestPriority) {
+                best = status;
+                bestPriority = priority;
+            }
+        }
+        return best;
+    }
+
+    function herdrSpaceEffectiveStatus(space) {
+        if (root.boolOrFalse(space && space.is_group_parent) && herdrSpaceGroupCollapsed(herdrSpaceGroupKey(space))) {
+            return herdrAggregateStatusForGroup(herdrSpaceGroupKey(space));
+        }
+        return herdrSpaceStatus(space);
+    }
+
+    function visibleHerdrSpaces() {
+        const spaces = herdrSpaces();
+        const visible = [];
+        for (let i = 0; i < spaces.length; i += 1) {
+            const space = spaces[i];
+            const groupKey = herdrSpaceGroupKey(space);
+            if (!root.boolOrFalse(space && space.is_linked_worktree) || !herdrSpaceGroupCollapsed(groupKey) || root.boolOrFalse(space && space.focused)) {
+                visible.push(space);
+            }
+        }
+        return visible;
+    }
+
     function runtimePanelDefaultExpandedSection() {
         if (panelSessions().length > 0 || herdrSpaces().length > 0) {
             return "sessions";
@@ -5035,7 +5128,7 @@ ShellRoot {
     function runtimePanelSectionSummary(section) {
         if (section === "sessions") {
             const hostCount = groupedSessionBands().length;
-            const spaceCount = herdrSpaces().length;
+            const spaceCount = visibleHerdrSpaces().length;
             const sessionCount = panelSessions().length;
             const aiMetrics = (dashboard && typeof dashboard.ai_monitor_metrics === "object")
                 ? dashboard.ai_monitor_metrics
@@ -5078,12 +5171,12 @@ ShellRoot {
     }
 
     function herdrSpaceStatusLabel(space) {
-        const state = herdrSpaceStatus(space);
+        const state = herdrSpaceEffectiveStatus(space);
         return titleCaseWord(state);
     }
 
     function herdrSpaceStatusColor(space) {
-        const state = herdrSpaceStatus(space);
+        const state = herdrSpaceEffectiveStatus(space);
         if (state === "blocked") {
             return colors.red;
         }
@@ -5100,7 +5193,7 @@ ShellRoot {
     }
 
     function herdrSpaceStatusBackground(space) {
-        const state = herdrSpaceStatus(space);
+        const state = herdrSpaceEffectiveStatus(space);
         if (state === "blocked") {
             return colors.redBg;
         }
@@ -5117,7 +5210,7 @@ ShellRoot {
     }
 
     function herdrSpaceStatusSymbol(space) {
-        const state = herdrSpaceStatus(space);
+        const state = herdrSpaceEffectiveStatus(space);
         if (state === "idle") {
             return "○";
         }
@@ -5128,7 +5221,7 @@ ShellRoot {
     }
 
     function herdrSpaceFill(space, hovered) {
-        const state = herdrSpaceStatus(space);
+        const state = herdrSpaceEffectiveStatus(space);
         if (boolOrFalse(space && space.focused)) {
             return hovered
                 ? Qt.tint(colors.cardAlt, Qt.rgba(0.40, 0.86, 0.92, 0.11))
@@ -5144,7 +5237,7 @@ ShellRoot {
     }
 
     function herdrSpaceBorder(space, hovered) {
-        const state = herdrSpaceStatus(space);
+        const state = herdrSpaceEffectiveStatus(space);
         if (boolOrFalse(space && space.focused)) {
             return hovered ? colors.lineSoft : "transparent";
         }
@@ -5158,6 +5251,16 @@ ShellRoot {
     }
 
     function herdrSpaceTitle(space) {
+        if (boolOrFalse(space && space.is_linked_worktree)) {
+            const label = stringOrEmpty(space && space.label);
+            const branchLabel = stringOrEmpty(space && space.branch_label);
+            if (label.length > 0 && label !== stringOrEmpty(space && space.repo_name)) {
+                return label;
+            }
+            if (branchLabel.length > 0) {
+                return branchLabel;
+            }
+        }
         const label = stringOrEmpty(space && space.label);
         if (label.length > 0) {
             return label;
@@ -5194,6 +5297,17 @@ ShellRoot {
         return bits.join("  •  ");
     }
 
+    function herdrSpaceIndent(space) {
+        return boolOrFalse(space && space.is_linked_worktree) && stringOrEmpty(space && space.group_key).length > 0 ? 18 : 0;
+    }
+
+    function herdrSpaceChevron(space) {
+        if (!boolOrFalse(space && space.is_group_parent)) {
+            return "";
+        }
+        return herdrSpaceGroupCollapsed(herdrSpaceGroupKey(space)) ? "▸" : "▾";
+    }
+
     function herdrSpaceHostToken(space) {
         return hostToken(
             stringOrEmpty(space && space.execution_mode),
@@ -5210,15 +5324,20 @@ ShellRoot {
 
         const host = stringOrEmpty(session && (session.herdr_host || session.host_name)).toLowerCase();
         const spaces = herdrSpaces();
+        const expectedKey = host + "::" + workspaceId;
         for (let i = 0; i < spaces.length; i += 1) {
             const space = spaces[i];
-            if (stringOrEmpty(space && space.workspace_id) !== workspaceId) {
+            const spaceWorkspaceId = stringOrEmpty(space && space.workspace_id);
+            const spaceHost = stringOrEmpty(space && (space.host_key || space.host_label)).toLowerCase();
+            if ((spaceHost + "::" + spaceWorkspaceId) !== expectedKey) {
                 continue;
             }
-            const spaceHost = stringOrEmpty(space && (space.host_key || space.host_label)).toLowerCase();
-            if (host.length === 0 || spaceHost.length === 0 || host === spaceHost) {
-                return space;
-            }
+            return space;
+        }
+        if (host.length === 0) {
+            return spaces.find(function(space) {
+                return stringOrEmpty(space && space.workspace_id) === workspaceId;
+            }) || null;
         }
         return null;
     }
@@ -5592,9 +5711,9 @@ ShellRoot {
             label: label,
             icon: icon,
             is_remote: isRemote,
-            foreground: isRemote ? colors.orange : colors.blue,
-            background: isRemote ? colors.orangeBg : colors.blueWash,
-            border: isRemote ? colors.orange : colors.blueMuted,
+            foreground: colors.blue,
+            background: isRemote ? colors.blueBg : colors.blueWash,
+            border: colors.blueMuted,
             monogram: label.length ? label.charAt(0).toUpperCase() : (isRemote ? "R" : "L")
         };
     }

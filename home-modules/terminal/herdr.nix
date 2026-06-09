@@ -111,7 +111,7 @@ in
     accent = "cyan"
 
     [ui.toast]
-    delivery = "off"
+    delivery = "system"
     delay_seconds = 1
 
     [ui.sound]

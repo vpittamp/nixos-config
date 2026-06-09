@@ -7,8 +7,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SHELL_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "shell.qml"
 SESSION_ROW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "SessionRow.qml"
 LAUNCHER_WINDOW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "LauncherWindow.qml"
+RUNTIME_PANEL_WINDOW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "RuntimePanelWindow.qml"
 QUICKSHELL_DEFAULT_NIX = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "default.nix"
 NOTIFICATION_TOAST_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "NotificationToast.qml"
+HERDR_NIX = REPO_ROOT / "home-modules" / "terminal" / "herdr.nix"
 
 
 def test_session_phase_prefers_raw_herdr_agent_status():
@@ -154,6 +156,92 @@ def test_launcher_preview_for_herdr_sessions_is_focus_only():
     assert "return;" in text
     assert "function sessionPreviewStatusText()" in text
     assert "root.sessionPreviewStatusText()" in launcher_text
+
+
+def test_herdr_space_groups_collapse_state_defaults_expanded():
+    text = SHELL_QML.read_text()
+    assert "property var collapsedHerdrSpaceGroups: ({})" in text
+    assert "function herdrSpaceGroupCollapsed(groupKey)" in text
+    assert "collapsedHerdrSpaceGroups[key] === true" in text
+    assert "function toggleHerdrSpaceGroup(groupKey)" in text
+    assert "delete next[key];" in text
+
+
+def test_herdr_space_rows_use_visible_group_model_and_lowercase_copy():
+    panel_text = RUNTIME_PANEL_WINDOW_QML.read_text()
+    assert 'text: "spaces"' in panel_text
+    assert 'text: "agents"' in panel_text
+    assert "text: String(root.visibleHerdrSpaces().length)" in panel_text
+    assert "values: root.visibleHerdrSpaces()" in panel_text
+
+
+def test_herdr_parent_rows_render_chevrons_and_children_indent():
+    text = SHELL_QML.read_text()
+    panel_text = RUNTIME_PANEL_WINDOW_QML.read_text()
+    assert "function herdrSpaceChevron(space)" in text
+    assert "return herdrSpaceGroupCollapsed(herdrSpaceGroupKey(space)) ? \"▸\" : \"▾\";" in text
+    assert "function herdrSpaceIndent(space)" in text
+    assert "return boolOrFalse(space && space.is_linked_worktree) && stringOrEmpty(space && space.group_key).length > 0 ? 18 : 0;" in text
+    assert "text: root.herdrSpaceChevron(space)" in panel_text
+    assert "root.toggleHerdrSpaceGroup(herdrSpaceRow.groupKey);" in panel_text
+    assert "anchors.leftMargin: 16 + root.herdrSpaceIndent(space)" in panel_text
+
+
+def test_remote_host_token_uses_tailscale_blue_not_orange():
+    text = SHELL_QML.read_text()
+    assert "function hostToken(mode, hostName, connectionKey)" in text
+    assert "icon: icon," in text
+    assert "foreground: colors.blue," in text
+    assert "background: isRemote ? colors.blueBg : colors.blueWash," in text
+    assert "border: colors.blueMuted," in text
+    assert "foreground: isRemote ? colors.orange : colors.blue" not in text
+    assert "background: isRemote ? colors.orangeBg : colors.blueWash" not in text
+
+
+def test_herdr_collapsed_groups_hide_inactive_children_but_keep_focused_child():
+    text = SHELL_QML.read_text()
+    assert "function visibleHerdrSpaces()" in text
+    assert "!root.boolOrFalse(space && space.is_linked_worktree) || !herdrSpaceGroupCollapsed(groupKey) || root.boolOrFalse(space && space.focused)" in text
+
+
+def test_herdr_group_aggregate_status_drives_collapsed_parent_dot():
+    text = SHELL_QML.read_text()
+    assert "function herdrSpaceStatusPriority(status)" in text
+    assert "if (state === \"blocked\")" in text
+    assert "return 5;" in text
+    assert "function herdrAggregateStatusForGroup(groupKey)" in text
+    assert "function herdrSpaceEffectiveStatus(space)" in text
+    assert "herdrSpaceGroupCollapsed(herdrSpaceGroupKey(space))" in text
+    assert "const state = herdrSpaceEffectiveStatus(space);" in text
+
+
+def test_herdr_child_space_titles_use_custom_label_before_branch_label():
+    text = SHELL_QML.read_text()
+    assert "function herdrSpaceTitle(space)" in text
+    assert "if (boolOrFalse(space && space.is_linked_worktree))" in text
+    assert "const branchLabel = stringOrEmpty(space && space.branch_label);" in text
+    assert "label !== stringOrEmpty(space && space.repo_name)" in text
+    assert "return branchLabel;" in text
+
+
+def test_herdr_session_space_lookup_uses_workspace_and_host_key():
+    text = SHELL_QML.read_text()
+    assert "function herdrSessionSpace(session)" in text
+    assert "const expectedKey = host + \"::\" + workspaceId;" in text
+    assert "const spaceWorkspaceId = stringOrEmpty(space && space.workspace_id);" in text
+    assert "const spaceHost = stringOrEmpty(space && (space.host_key || space.host_label)).toLowerCase();" in text
+    assert "if ((spaceHost + \"::\" + spaceWorkspaceId) !== expectedKey)" in text
+
+
+def test_herdr_config_enables_system_notifications_without_sound():
+    text = HERDR_NIX.read_text()
+    assert '[ui.toast]' in text
+    assert 'delivery = "system"' in text
+    assert 'delay_seconds = 1' in text
+    assert 'delivery = "off"' not in text
+    assert '[ui.sound]' in text
+    assert 'enabled = false' in text
+    assert 'enabled = true' not in text
 
 
 def test_antigravity_short_tool_id_uses_gemini_visual_family():
