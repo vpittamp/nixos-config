@@ -298,6 +298,7 @@ let
     chmod 700 "${shared.chromeDevtoolsProfileDir}"
 
     exec ${pkgs.google-chrome}/bin/google-chrome-stable \
+      --headless=new \
       --remote-debugging-address=${shared.chromeDevtoolsBrowserHost} \
       --remote-debugging-port=${toString shared.chromeDevtoolsBrowserPort} \
       --user-data-dir="${shared.chromeDevtoolsProfileDir}" \
