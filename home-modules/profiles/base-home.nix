@@ -31,6 +31,7 @@ in
     # Terminal configurations
     ../terminal/tmux.nix
     ../terminal/sesh.nix
+    ../terminal/herdr.nix
     ../terminal/ghostty.nix    # Ghostty terminal (default)
     # ../terminal/alacritty.nix  # Alacritty terminal - DISABLED: Using Ghostty as default, uncomment to re-enable if needed
     ../terminal/xresources.nix # XTerm styling (for fzf-launcher)
