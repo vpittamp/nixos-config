@@ -40,12 +40,17 @@ in
         ForwardAgent yes
 
       # Tailscale hosts - generic pattern
+      # Multiplex connections: i3pm/herdr poll these hosts with many concurrent
+      # one-shot ssh calls; without a shared master they overrun sshd MaxStartups
+      # (10:30:100) and get "kex_exchange_identification: Connection reset".
       Host ryzen thinkpad
         HostName %h.tail286401.ts.net
         User vpittamp
         ForwardAgent yes
         StrictHostKeyChecking accept-new
-        ControlMaster no
+        ControlMaster auto
+        ControlPersist 10m
+        ControlPath ~/.ssh/controlmasters/%C
 
       Host nixos-* *.tail*.ts.net
         User vpittamp
