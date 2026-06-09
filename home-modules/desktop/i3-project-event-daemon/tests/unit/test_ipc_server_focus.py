@@ -676,11 +676,56 @@ async def test_window_focus_fast_local_target_skips_full_focus_state(server):
 
     assert result["success"] is True
     assert result["fast"] is True
+    assert result["direct"] is True
     assert result["window_id"] == 30
     assert len(commands) == 1
-    assert "[con_id=30] focus" in commands[0]
+    assert commands[0] == "[con_id=30] focus"
+    server._window_is_locally_tracked.assert_not_awaited()
+    server._get_window_transition_state.assert_not_awaited()
     server._send_tick_barrier.assert_not_awaited()
     server._focus_state.assert_not_awaited()
+    server.notify_state_change.assert_awaited_once_with("focus_changed")
+
+
+@pytest.mark.asyncio
+async def test_window_focus_fast_falls_back_to_transition_when_direct_focus_fails(server):
+    commands = []
+    server.i3_connection = SimpleNamespace(conn=SimpleNamespace())
+    server._connection_target_is_current_host = lambda _connection_key: True
+    server._window_is_locally_tracked = AsyncMock(return_value=True)
+    server._send_tick_barrier = AsyncMock(return_value=None)
+    server._focus_state = AsyncMock(return_value={})
+    server.notify_state_change = AsyncMock(return_value=None)
+    server._get_window_transition_state = AsyncMock(return_value={
+        "exists": True,
+        "current_workspace": "1",
+        "workspace_name": "2",
+        "workspace_number": 2,
+        "in_scratchpad": False,
+        "floating": False,
+        "floating_state": "auto_off",
+        "fullscreen_mode": 0,
+        "saved_state": None,
+    })
+
+    async def ipc_command(cmd):
+        commands.append(cmd)
+        return [SimpleNamespace(success=len(commands) > 1, error="")]
+
+    server.i3_connection.ipc_command = ipc_command
+
+    result = await server._window_focus_fast({
+        "window_id": 31,
+        "target_variant": "local",
+        "connection_key": "local@ryzen",
+    })
+
+    assert result["success"] is True
+    assert result["fast"] is True
+    assert result.get("direct") is not True
+    assert commands[0] == "[con_id=31] focus"
+    assert commands[1] == "workspace 2; [con_id=31] floating disable; [con_id=31] focus"
+    server._get_window_transition_state.assert_awaited_once_with(31)
     server.notify_state_change.assert_awaited_once_with("focus_changed")
 
 

@@ -11,6 +11,7 @@ RUNTIME_PANEL_WINDOW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-
 QUICKSHELL_DEFAULT_NIX = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "default.nix"
 NOTIFICATION_TOAST_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "NotificationToast.qml"
 HERDR_NIX = REPO_ROOT / "home-modules" / "terminal" / "herdr.nix"
+I3PM_WINDOW_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "window.ts"
 
 
 def test_session_phase_prefers_raw_herdr_agent_status():
@@ -110,6 +111,7 @@ def test_local_window_and_workspace_clicks_use_fast_focus_with_optimistic_state(
     text = SHELL_QML.read_text()
     runtime_panel_text = RUNTIME_PANEL_WINDOW_QML.read_text()
     bottom_bar_text = (REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "BottomBarWindow.qml").read_text()
+    window_command_text = I3PM_WINDOW_TS.read_text()
 
     assert "property int optimisticFocusedWindowId: 0" in text
     assert "property string optimisticFocusedWorkspaceName: \"\"" in text
@@ -119,6 +121,8 @@ def test_local_window_and_workspace_clicks_use_fast_focus_with_optimistic_state(
     assert "optimisticFocusedWorkspaceName = workspaceName;" in text
     assert "root.windowIsFocused(windowData)" in runtime_panel_text
     assert "root.workspaceIsFocused(workspace)" in bottom_bar_text
+    assert "client.request(\"window.focus_fast\", params)" in window_command_text
+    assert "fallback_method === \"window.focus\"" in window_command_text
 
 
 def test_side_panel_sessions_close_by_explicit_herdr_target():

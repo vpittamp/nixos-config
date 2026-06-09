@@ -16504,14 +16504,34 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
         target_variant = str(params.get("target_variant") or "").strip().lower()
         connection_key = str(params.get("connection_key") or "").strip()
-        local_window_target = await self._window_is_locally_tracked(window_id)
-        connection_targets_current_host = self._connection_target_is_current_host(connection_key)
-        if target_variant == "ssh" and not local_window_target and not connection_targets_current_host:
+        if target_variant == "ssh":
+            local_window_target = await self._window_is_locally_tracked(window_id)
+            connection_targets_current_host = self._connection_target_is_current_host(connection_key)
+            if not local_window_target and not connection_targets_current_host:
+                return {
+                    "success": False,
+                    "window_id": int(window_id),
+                    "reason": "remote_target_not_fast_focusable",
+                    "fallback_method": "window.focus",
+                }
+
+        session_key = str(params.get("session_key") or "").strip()
+        direct_command = f"[con_id={window_id}] focus"
+        direct_result = await self._sway_ipc_command(direct_command)
+        if self._sway_command_succeeded(direct_result):
+            self._set_focus_overrides(
+                session_key=session_key,
+                window_id=int(window_id),
+                connection_key=connection_key,
+            )
+            await self.notify_state_change("focus_changed")
             return {
-                "success": False,
+                "success": True,
                 "window_id": int(window_id),
-                "reason": "remote_target_not_fast_focusable",
-                "fallback_method": "window.focus",
+                "fast": True,
+                "direct": True,
+                "command": direct_command,
+                "transition": "direct_focus",
             }
 
         transition_state = await self._get_window_transition_state(window_id)
@@ -16545,7 +16565,6 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 "fallback_method": "window.focus",
             }
 
-        session_key = str(params.get("session_key") or "").strip()
         self._set_focus_overrides(
             session_key=session_key,
             window_id=int(window_id),

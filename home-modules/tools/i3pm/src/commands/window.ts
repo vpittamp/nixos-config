@@ -10,6 +10,18 @@ function showHelp(): void {
   console.log(`i3pm window <focus|action> <window_id> [action] [--project <name>] [--host <name>] [--connection-key <key>] [--json]`);
 }
 
+function focusParams(parsed: ReturnType<typeof parseArgs>, windowId: number): Record<string, unknown> {
+  const connectionKey = String(parsed["connection-key"] || "");
+  const targetHost = String(parsed.host || "");
+  return {
+    window_id: windowId,
+    project_name: parsed.project || "",
+    target_host: targetHost,
+    target_variant: connectionKey || targetHost ? "ssh" : "local",
+    connection_key: connectionKey,
+  };
+}
+
 export async function windowCommand(args: string[], _flags: CommandOptions): Promise<number> {
   const parsed = parseArgs(args, {
     boolean: ["help", "json"],
@@ -31,12 +43,16 @@ export async function windowCommand(args: string[], _flags: CommandOptions): Pro
   try {
     let result: unknown;
     if (subcommand === "focus") {
-      result = await client.request("window.focus", {
-        window_id: windowId,
-        project_name: parsed.project || "",
-        target_host: parsed.host || "",
-        connection_key: parsed["connection-key"] || "",
-      });
+      const params = focusParams(parsed, windowId);
+      result = await client.request("window.focus_fast", params);
+      if (
+        result &&
+        typeof result === "object" &&
+        (result as { success?: unknown }).success === false &&
+        (result as { fallback_method?: unknown }).fallback_method === "window.focus"
+      ) {
+        result = await client.request("window.focus", params);
+      }
     } else if (subcommand === "action") {
       const requestedAction = String(parsed._[2] || "");
       if (!requestedAction) {
