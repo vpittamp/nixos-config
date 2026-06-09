@@ -246,6 +246,20 @@ def test_herdr_space_computes_git_metadata_when_worktree_list_misses_repo(server
     assert spaces[0]["branch_label"] == "fix/repo-editor-commit-guard"
 
 
+def test_herdr_git_metadata_repo_name_uses_repo_key_for_main_checkout(server, tmp_path):
+    repo_path = tmp_path / "workflow-builder" / "main"
+    repo_path.mkdir(parents=True)
+    subprocess.run(["git", "init", "-b", "fix/repo-editor-commit-guard"], cwd=repo_path, check=True)
+    subprocess.run(["git", "remote", "add", "origin", "git@github.com:PittampalliOrg/workflow-builder.git"], cwd=repo_path, check=True)
+
+    metadata = server._herdr_git_space_metadata(str(repo_path))
+
+    assert metadata["repo_key"] == "PittampalliOrg/workflow-builder"
+    assert metadata["repo_name"] == "workflow-builder"
+    assert metadata["checkout_path"] == str(repo_path)
+    assert metadata["branch_label"] == "fix/repo-editor-commit-guard"
+
+
 def test_herdr_rows_skip_plain_panes_and_keep_unknown_status(server):
     rows = server._normalize_herdr_sessions({
         "agents": [],

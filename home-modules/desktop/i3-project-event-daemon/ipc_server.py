@@ -9761,7 +9761,14 @@ FORMAT JSONEachRow
             repo_root = repo_root[:-5]
         origin = self._herdr_git_run(value, ["config", "--get", "remote.origin.url"], ssh_target=ssh_target)
         repo_key = self._herdr_normalize_repo_url(origin) or repo_root
-        repo_name = Path(checkout_path.rstrip("/")).name if not ssh_target else checkout_path.rstrip("/").rsplit("/", 1)[-1]
+        if repo_key and not repo_key.startswith("/") and "/" in repo_key:
+            repo_name = repo_key.rstrip("/").rsplit("/", 1)[-1]
+        else:
+            repo_root_parts = [part for part in repo_root.rstrip("/").split("/") if part]
+            if repo_root_parts and repo_root_parts[-1] in {".bare", ".git"} and len(repo_root_parts) >= 2:
+                repo_name = repo_root_parts[-2]
+            else:
+                repo_name = checkout_path.rstrip("/").rsplit("/", 1)[-1]
         metadata = {
             "repo_key": repo_key,
             "repo_name": repo_name,
