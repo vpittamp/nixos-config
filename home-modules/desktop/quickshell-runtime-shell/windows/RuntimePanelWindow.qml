@@ -1008,10 +1008,10 @@ PanelWindow {
                                         color: root.sidebarRowFill(windowData, windowMouse.containsMouse)
                                         border.color: "transparent"
                                         border.width: 0
-                                        opacity: windowData.focused ? 1 : (windowData.hidden ? 0.72 : 0.94)
+                                        opacity: root.windowIsFocused(windowData) ? 1 : (windowData.hidden ? 0.72 : 0.94)
 
                                         Rectangle {
-                                            visible: !!windowData.focused
+                                            visible: root.windowIsFocused(windowData)
                                             width: 3
                                             radius: 1
                                             color: colors.blue
@@ -1025,7 +1025,7 @@ PanelWindow {
 
                                         RowLayout {
                                             anchors.fill: parent
-                                            anchors.leftMargin: windowData.focused ? 16 : 12
+                                            anchors.leftMargin: root.windowIsFocused(windowData) ? 16 : 12
                                             anchors.rightMargin: 8
                                             spacing: 8
 
@@ -1043,14 +1043,14 @@ PanelWindow {
                                                     source: root.iconSourceFor(windowData)
                                                     visible: source !== ""
                                                     mipmap: true
-                                                    opacity: windowData.focused ? 1 : 0.9
+                                                    opacity: root.windowIsFocused(windowData) ? 1 : 0.9
                                                 }
 
                                                 Text {
                                                     anchors.centerIn: parent
                                                     visible: root.iconSourceFor(windowData) === ""
                                                     text: root.appLabel(windowData).slice(0, 1).toUpperCase()
-                                                    color: windowData.focused ? colors.text : colors.textDim
+                                                    color: root.windowIsFocused(windowData) ? colors.text : colors.textDim
                                                     font.pixelSize: 12
                                                     font.weight: Font.DemiBold
                                                 }
@@ -1148,7 +1148,7 @@ PanelWindow {
                                                 Text {
                                                     anchors.centerIn: parent
                                                     text: "×"
-                                                    color: closeMouse.containsMouse ? colors.red : (windowData.focused ? colors.muted : colors.subtle)
+                                                    color: closeMouse.containsMouse ? colors.red : (root.windowIsFocused(windowData) ? colors.muted : colors.subtle)
                                                     font.pixelSize: 10
                                                     font.weight: Font.DemiBold
                                                 }

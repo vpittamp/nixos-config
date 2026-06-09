@@ -42,6 +42,8 @@ ShellRoot {
     readonly property var launcherSessionSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherSessionSwitcherOpenTimerRef : null
     readonly property var launcherWindowSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherWindowSwitcherOpenTimerRef : null
     readonly property var optimisticSessionFocusTimer: runtimeServices ? runtimeServices.optimisticSessionFocusTimerRef : null
+    readonly property var optimisticWindowFocusTimer: runtimeServices ? runtimeServices.optimisticWindowFocusTimerRef : null
+    readonly property var optimisticWorkspaceFocusTimer: runtimeServices ? runtimeServices.optimisticWorkspaceFocusTimerRef : null
     readonly property var sessionPreviewDebounce: runtimeServices ? runtimeServices.sessionPreviewDebounceRef : null
     readonly property var sessionPreviewFollowTimer: runtimeServices ? runtimeServices.sessionPreviewFollowTimerRef : null
     readonly property var settingsFocusTimer: runtimeServices ? runtimeServices.settingsFocusTimerRef : null
@@ -213,6 +215,8 @@ ShellRoot {
     property string lastFocusedSessionKey: ""
     property string selectedSessionKey: ""
     property string optimisticCurrentSessionKey: ""
+    property int optimisticFocusedWindowId: 0
+    property string optimisticFocusedWorkspaceName: ""
     property var sessionClosePendingMap: ({})
     property string sessionCloseProcessTargetKey: ""
     property string sessionCloseProcessStdout: ""
@@ -853,8 +857,17 @@ ShellRoot {
         return boolOrFalse(session && session.is_current_host);
     }
 
+    function windowIdValue(windowData) {
+        return Number(windowData && (windowData.id || windowData.window_id) || 0);
+    }
+
+    function windowIsFocused(windowData) {
+        const windowId = windowIdValue(windowData);
+        return (optimisticFocusedWindowId > 0 && windowId === optimisticFocusedWindowId) || boolOrFalse(windowData && windowData.focused);
+    }
+
     function windowIsCurrentTarget(windowData) {
-        return boolOrFalse(windowData && windowData.focused);
+        return windowIsFocused(windowData);
     }
 
     function sessionIsDisplayEligible(session) {
@@ -983,7 +996,7 @@ ShellRoot {
             return false;
         }
 
-        const focusedWindow = windows.find(windowData => boolOrFalse(windowData.focused));
+        const focusedWindow = windows.find(windowData => windowIsFocused(windowData));
         focusWindow(focusedWindow || windows[0]);
         return true;
     }
@@ -2024,7 +2037,7 @@ ShellRoot {
     }
 
     function sidebarRowFill(windowData, hovered) {
-        if (boolOrFalse(windowData && windowData.focused)) {
+        if (windowIsFocused(windowData)) {
             return colors.blueWash;
         }
         if (hovered) {
@@ -2034,14 +2047,14 @@ ShellRoot {
     }
 
     function sidebarRowBorder(windowData, hovered) {
-        if (boolOrFalse(windowData && windowData.focused)) {
+        if (windowIsFocused(windowData)) {
             return colors.blueMuted;
         }
         return hovered ? colors.borderStrong : "transparent";
     }
 
     function sidebarRowText(windowData, hovered) {
-        return boolOrFalse(windowData && windowData.focused) || hovered ? colors.text : colors.textDim;
+        return windowIsFocused(windowData) || hovered ? colors.text : colors.textDim;
     }
 
     function chooserRowFill(hovered) {
@@ -2052,8 +2065,18 @@ ShellRoot {
         return hovered ? colors.borderStrong : colors.lineSoft;
     }
 
+    function workspaceNameValue(workspace) {
+        return stringOrEmpty(workspace && (workspace.name || workspace.number || workspace.num));
+    }
+
+    function workspaceIsFocused(workspace) {
+        const workspaceName = workspaceNameValue(workspace);
+        const optimistic = stringOrEmpty(optimisticFocusedWorkspaceName);
+        return (optimistic && workspaceName === optimistic) || boolOrFalse(workspace && workspace.focused);
+    }
+
     function workspaceChipFill(workspace, hovered) {
-        if (boolOrFalse(workspace && workspace.focused)) {
+        if (workspaceIsFocused(workspace)) {
             return colors.blue;
         }
         if (hovered) {
@@ -2063,7 +2086,7 @@ ShellRoot {
     }
 
     function workspaceChipBorder(workspace, hovered) {
-        if (boolOrFalse(workspace && workspace.focused)) {
+        if (workspaceIsFocused(workspace)) {
             return colors.blue;
         }
         if (boolOrFalse(workspace && workspace.urgent)) {
@@ -2073,7 +2096,7 @@ ShellRoot {
     }
 
     function workspaceChipText(workspace, hovered) {
-        if (boolOrFalse(workspace && workspace.focused)) {
+        if (workspaceIsFocused(workspace)) {
             return colors.bg;
         }
         return hovered ? colors.text : colors.textDim;
@@ -7745,13 +7768,28 @@ ShellRoot {
         runDetached(command);
     }
 
+    function runDaemonSocketCall(method, params) {
+        const normalizedMethod = stringOrEmpty(method);
+        if (!normalizedMethod || !runtimeServices || typeof runtimeServices.sendDaemonAction !== "function") {
+            return false;
+        }
+        return runtimeServices.sendDaemonAction(normalizedMethod, plainJsonValue(params || {}) || {});
+    }
+
+    function runDaemonAction(method, params) {
+        if (runDaemonSocketCall(method, params)) {
+            return;
+        }
+        runDaemonCall(method, params);
+    }
+
     function runFocusTarget(target) {
         const normalizedTarget = normalizedFocusTarget(target);
         if (!normalizedTarget) {
             return;
         }
 
-        runDaemonCall(normalizedTarget.method, normalizedTarget.params);
+        runDaemonAction(normalizedTarget.method, normalizedTarget.params);
     }
 
     function sessionFocusTarget(sessionOrKey) {
@@ -7817,13 +7855,30 @@ ShellRoot {
         }
 
         const explicitTarget = normalizedFocusTarget(windowData.focus_target);
-        if (explicitTarget) {
+        if (explicitTarget && !windowFastFocusEligible(windowData)) {
             return explicitTarget;
         }
 
-        const windowId = Number(windowData.id || windowData.window_id || 0);
+        const windowId = windowIdValue(windowData);
         if (!windowId) {
             return null;
+        }
+
+        if (windowFastFocusEligible(windowData)) {
+            return {
+                method: "window.focus_fast",
+                params: {
+                    window_id: windowId,
+                    project_name: stringOrEmpty(windowData.project),
+                    target_variant: stringOrEmpty(windowData.execution_mode),
+                    connection_key: stringOrEmpty(windowData.connection_key),
+                    session_key: stringOrEmpty(windowData.session_key || windowData.current_ai_session_key),
+                },
+            };
+        }
+
+        if (explicitTarget) {
+            return explicitTarget;
         }
 
         return {
@@ -7837,12 +7892,29 @@ ShellRoot {
         };
     }
 
+    function windowFastFocusEligible(windowData) {
+        const mode = stringOrEmpty(windowData && windowData.execution_mode).toLowerCase();
+        const connectionKey = stringOrEmpty(windowData && windowData.connection_key);
+        if (mode === "ssh") {
+            const hostName = hostNameFromConnectionKey(connectionKey);
+            return normalizeHostAlias(hostName) === currentHostAlias();
+        }
+        return true;
+    }
+
     function focusWindow(windowData) {
         const target = windowFocusTarget(windowData);
         if (!target) {
             return;
         }
 
+        const windowId = windowIdValue(windowData);
+        if (windowId > 0 && stringOrEmpty(target.method) === "window.focus_fast") {
+            optimisticFocusedWindowId = windowId;
+            if (optimisticWindowFocusTimer) {
+                optimisticWindowFocusTimer.restart();
+            }
+        }
         runFocusTarget(target);
     }
 
@@ -7985,17 +8057,24 @@ ShellRoot {
             return;
         }
 
+        const workspaceName = workspaceNameValue(workspace);
+        if (!workspaceName) {
+            return;
+        }
+
+        optimisticFocusedWorkspaceName = workspaceName;
+        if (optimisticWorkspaceFocusTimer) {
+            optimisticWorkspaceFocusTimer.restart();
+        }
+
         if (typeof workspace.activate === "function") {
             workspace.activate();
             return;
         }
 
-        const workspaceName = stringOrEmpty(workspace.name || workspace.number || workspace.num);
-        if (!workspaceName) {
-            return;
+        if (!runDaemonSocketCall("workspace.focus_fast", {workspace: workspaceName})) {
+            runDetached([shellConfig.i3pmBin, "workspace", "focus", workspaceName]);
         }
-
-        runDetached([shellConfig.i3pmBin, "workspace", "focus", workspaceName]);
     }
 
     function closeWindow(windowData) {
@@ -8145,6 +8224,21 @@ ShellRoot {
         }
     }
 
+    function handleDaemonActionResponse(payload) {
+        const raw = stringOrEmpty(payload).trim();
+        if (!raw || raw === "undefined" || raw === "null") {
+            return;
+        }
+        try {
+            const response = JSON.parse(raw);
+            if (response && response.error) {
+                console.warn("daemon.action:", stringOrEmpty(response.error.message || response.error));
+            }
+        } catch (error) {
+            console.warn("daemon.action: invalid response", error);
+        }
+    }
+
     function parseDashboard(payload) {
         const raw = stringOrEmpty(payload).trim();
         if (!raw || raw === "undefined" || raw === "null") {
@@ -8169,6 +8263,44 @@ ShellRoot {
                     optimisticCurrentSessionKey = "";
                     if (optimisticSessionFocusTimer) {
                         optimisticSessionFocusTimer.stop();
+                    }
+                }
+            }
+            if (optimisticFocusedWindowId > 0) {
+                const focusedWindow = dashboardWindows().find(function(windowData) {
+                    return boolOrFalse(windowData && windowData.focused);
+                });
+                const focusedWindowId = windowIdValue(focusedWindow);
+                if (focusedWindowId === optimisticFocusedWindowId) {
+                    optimisticFocusedWindowId = 0;
+                    if (optimisticWindowFocusTimer) {
+                        optimisticWindowFocusTimer.stop();
+                    }
+                }
+            }
+            if (optimisticFocusedWorkspaceName) {
+                const outputs = arrayOrEmpty(dashboard.outputs);
+                let focusedWorkspaceName = "";
+                for (let i = 0; i < outputs.length; i += 1) {
+                    const output = outputs[i] || {};
+                    const currentWorkspace = stringOrEmpty(output.current_workspace);
+                    const workspaces = arrayOrEmpty(output.workspaces);
+                    for (let j = 0; j < workspaces.length; j += 1) {
+                        const workspace = workspaces[j] || {};
+                        const name = stringOrEmpty(workspace.name);
+                        if (boolOrFalse(workspace.focused) || (currentWorkspace && name === currentWorkspace)) {
+                            focusedWorkspaceName = name;
+                            break;
+                        }
+                    }
+                    if (focusedWorkspaceName) {
+                        break;
+                    }
+                }
+                if (focusedWorkspaceName === optimisticFocusedWorkspaceName) {
+                    optimisticFocusedWorkspaceName = "";
+                    if (optimisticWorkspaceFocusTimer) {
+                        optimisticWorkspaceFocusTimer.stop();
                     }
                 }
             }

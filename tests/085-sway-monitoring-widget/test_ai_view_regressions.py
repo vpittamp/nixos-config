@@ -91,6 +91,7 @@ def test_launcher_session_search_indexes_herdr_fields():
 def test_session_rows_focus_by_explicit_herdr_target():
     """Session rows should use daemon Herdr focus targets instead of tmux/window heuristics."""
     text = SHELL_QML.read_text()
+    services_text = (REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "controllers" / "RuntimeServices.qml").read_text()
     assert "function focusSession(sessionKey)" in text
     assert "function sessionFocusTarget(sessionOrKey)" in text
     assert "const explicitTarget = normalizedFocusTarget(sessionOrKey.focus_target);" in text
@@ -98,6 +99,26 @@ def test_session_rows_focus_by_explicit_herdr_target():
     assert "return explicitTarget;" in text
     assert "const target = sessionFocusTarget(sessionData || resolvedSessionKey);" in text
     assert "runFocusTarget(target);" in text
+    assert "function sendDaemonAction(method, params)" in services_text
+    assert "Socket {" in services_text
+    assert "daemonActionSocket.write(JSON.stringify(request) + \"\\n\");" in services_text
+    assert "runDaemonAction(normalizedTarget.method, normalizedTarget.params);" in text
+
+
+def test_local_window_and_workspace_clicks_use_fast_focus_with_optimistic_state():
+    """Click-driven local window/workspace focus should avoid fork-per-click daemon calls."""
+    text = SHELL_QML.read_text()
+    runtime_panel_text = RUNTIME_PANEL_WINDOW_QML.read_text()
+    bottom_bar_text = (REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "BottomBarWindow.qml").read_text()
+
+    assert "property int optimisticFocusedWindowId: 0" in text
+    assert "property string optimisticFocusedWorkspaceName: \"\"" in text
+    assert "method: \"window.focus_fast\"" in text
+    assert "runDaemonSocketCall(\"workspace.focus_fast\", {workspace: workspaceName})" in text
+    assert "optimisticFocusedWindowId = windowId;" in text
+    assert "optimisticFocusedWorkspaceName = workspaceName;" in text
+    assert "root.windowIsFocused(windowData)" in runtime_panel_text
+    assert "root.workspaceIsFocused(workspace)" in bottom_bar_text
 
 
 def test_side_panel_sessions_close_by_explicit_herdr_target():

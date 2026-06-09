@@ -108,6 +108,23 @@ async def test_workspace_focus_returns_failure_when_focus_never_changes(server):
 
 
 @pytest.mark.asyncio
+async def test_workspace_focus_fast_skips_verification_and_notifies(server):
+    ipc_command = AsyncMock(return_value=[SimpleNamespace(success=True, error="")])
+    server.i3_connection = SimpleNamespace(conn=SimpleNamespace(), ipc_command=ipc_command)
+    server._send_tick_barrier = AsyncMock(return_value=None)
+    server._wait_for_workspace_focus = AsyncMock(return_value=True)
+    server.notify_state_change = AsyncMock(return_value=None)
+
+    result = await server._workspace_focus_fast({"workspace": "1"})
+
+    assert result == {"success": True, "workspace": "1", "fast": True}
+    ipc_command.assert_awaited_once_with("workspace number 1")
+    server._send_tick_barrier.assert_not_awaited()
+    server._wait_for_workspace_focus.assert_not_awaited()
+    server.notify_state_change.assert_awaited_once_with("focus_changed")
+
+
+@pytest.mark.asyncio
 async def test_session_focus_remote_session_uses_exact_remote_bridge_path(server, monkeypatch):
     remote_session = {
         "session_key": "session-remote",
@@ -621,6 +638,70 @@ async def test_focus_window_ssh_target_with_local_window_binding_uses_local_focu
         "",
     )
     assert result["focused_window_id_after"] == 175
+
+
+@pytest.mark.asyncio
+async def test_window_focus_fast_local_target_skips_full_focus_state(server):
+    commands = []
+    server.i3_connection = SimpleNamespace(conn=SimpleNamespace())
+    server._connection_target_is_current_host = lambda _connection_key: True
+    server._window_is_locally_tracked = AsyncMock(return_value=True)
+    server._send_tick_barrier = AsyncMock(return_value=None)
+    server._focus_state = AsyncMock(return_value={})
+    server.notify_state_change = AsyncMock(return_value=None)
+    server._get_window_transition_state = AsyncMock(return_value={
+        "exists": True,
+        "current_workspace": "1",
+        "workspace_name": "1",
+        "workspace_number": 1,
+        "in_scratchpad": False,
+        "floating": False,
+        "floating_state": "auto_off",
+        "fullscreen_mode": 0,
+        "saved_state": None,
+    })
+
+    async def ipc_command(cmd):
+        commands.append(cmd)
+        return [SimpleNamespace(success=True, error="")]
+
+    server.i3_connection.ipc_command = ipc_command
+
+    result = await server._window_focus_fast({
+        "window_id": 30,
+        "target_variant": "local",
+        "connection_key": "local@ryzen",
+        "session_key": "session-current",
+    })
+
+    assert result["success"] is True
+    assert result["fast"] is True
+    assert result["window_id"] == 30
+    assert len(commands) == 1
+    assert "[con_id=30] focus" in commands[0]
+    server._send_tick_barrier.assert_not_awaited()
+    server._focus_state.assert_not_awaited()
+    server.notify_state_change.assert_awaited_once_with("focus_changed")
+
+
+@pytest.mark.asyncio
+async def test_window_focus_fast_rejects_remote_targets(server):
+    server.i3_connection = SimpleNamespace(conn=SimpleNamespace(), ipc_command=AsyncMock())
+    server._connection_target_is_current_host = lambda _connection_key: False
+    server._window_is_locally_tracked = AsyncMock(return_value=False)
+    server._get_window_transition_state = AsyncMock(return_value={"exists": True})
+
+    result = await server._window_focus_fast({
+        "window_id": 175,
+        "target_variant": "ssh",
+        "connection_key": "vpittamp@ryzen:22",
+    })
+
+    assert result["success"] is False
+    assert result["reason"] == "remote_target_not_fast_focusable"
+    assert result["fallback_method"] == "window.focus"
+    server.i3_connection.ipc_command.assert_not_awaited()
+    server._get_window_transition_state.assert_not_awaited()
 
 
 @pytest.mark.asyncio

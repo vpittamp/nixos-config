@@ -1176,6 +1176,8 @@ class IPCServer:
                 result = await self._get_terminal_anchor(params)
             elif method == "window.focus":
                 result = await self._window_focus(params)
+            elif method == "window.focus_fast":
+                result = await self._window_focus_fast(params)
             elif method == "window.action":
                 result = await self._window_action(params)
             elif method == "session.list":
@@ -1338,6 +1340,8 @@ class IPCServer:
                 result = await self._workspace_move_to_output(params)
             elif method == "workspace.focus":
                 result = await self._workspace_focus(params)
+            elif method == "workspace.focus_fast":
+                result = await self._workspace_focus_fast(params)
 
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
@@ -4547,7 +4551,7 @@ class IPCServer:
                 # Query i3 IPC for current state using serialized methods
                 # to prevent concurrent command socket corruption
                 tree = await self.i3_connection.get_tree()
-                workspaces = await self.i3_connection.get_workspaces()
+                workspaces = await self._sway_get_workspaces()
                 outputs_list = await self.i3_connection.get_outputs()
                 break  # Success, exit retry loop
             except Exception as e:
@@ -6031,14 +6035,14 @@ class IPCServer:
 
             assignments_made = 0
             if not dry_run and disabled_outputs and self.monitor_profile_service:
-                before = await self.i3_connection.get_workspaces()
+                before = await self._sway_get_workspaces()
                 before_by_name = {workspace.name: workspace.output for workspace in before}
                 await self.monitor_profile_service.migrate_workspaces_from_disabled_outputs(
                     self.i3_connection.conn,
                     disabled_outputs,
                     fallback_output=enabled_outputs[0],
                 )
-                after = await self.i3_connection.get_workspaces()
+                after = await self._sway_get_workspaces()
                 assignments_made = sum(
                     1
                     for workspace in after
@@ -7529,7 +7533,7 @@ class IPCServer:
         if self.i3_connection and self.i3_connection.is_connected():
             try:
                 tree = await self.i3_connection.get_tree()
-                workspaces = await self.i3_connection.get_workspaces()
+                workspaces = await self._sway_get_workspaces()
                 outputs = await self.i3_connection.get_outputs()
                 
                 report["i3_ipc_state"] = {
@@ -15935,6 +15939,32 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     return True
         return False
 
+    async def _sway_ipc_command(self, command: str) -> Any:
+        """Run a Sway IPC command through the available connection wrapper."""
+        if not self.i3_connection:
+            raise RuntimeError("Sway connection is unavailable")
+        ipc_command = getattr(self.i3_connection, "ipc_command", None)
+        if callable(ipc_command):
+            return await ipc_command(command)
+        conn = getattr(self.i3_connection, "conn", None)
+        conn_command = getattr(conn, "command", None)
+        if callable(conn_command):
+            return await conn_command(command)
+        raise RuntimeError("Sway command interface is unavailable")
+
+    async def _sway_get_workspaces(self) -> Any:
+        """Read Sway workspaces through the available connection wrapper."""
+        if not self.i3_connection:
+            raise RuntimeError("Sway connection is unavailable")
+        get_workspaces = getattr(self.i3_connection, "get_workspaces", None)
+        if callable(get_workspaces):
+            return await get_workspaces()
+        conn = getattr(self.i3_connection, "conn", None)
+        conn_get_workspaces = getattr(conn, "get_workspaces", None)
+        if callable(conn_get_workspaces):
+            return await conn_get_workspaces()
+        raise RuntimeError("Sway workspace interface is unavailable")
+
     def _find_tree_node_by_id(self, node: Any, target_id: int) -> Optional[Any]:
         """Recursively walk a Sway tree node to find a container by id."""
         if getattr(node, "id", None) == target_id:
@@ -16385,6 +16415,73 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         )
         return {"switched": True, "context": await self._context_get_active({})}
 
+    async def _window_focus_fast(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Low-latency local window focus path for click-driven UI actions."""
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            raise RuntimeError("Sway connection is unavailable")
+
+        window_id = int(params.get("window_id") or 0)
+        if window_id <= 0:
+            raise ValueError("window_id must be a positive integer")
+
+        target_variant = str(params.get("target_variant") or "").strip().lower()
+        connection_key = str(params.get("connection_key") or "").strip()
+        local_window_target = await self._window_is_locally_tracked(window_id)
+        connection_targets_current_host = self._connection_target_is_current_host(connection_key)
+        if target_variant == "ssh" and not local_window_target and not connection_targets_current_host:
+            return {
+                "success": False,
+                "window_id": int(window_id),
+                "reason": "remote_target_not_fast_focusable",
+                "fallback_method": "window.focus",
+            }
+
+        transition_state = await self._get_window_transition_state(window_id)
+        if not bool(transition_state.get("exists", False)):
+            return {
+                "success": False,
+                "window_id": int(window_id),
+                "reason": "window_not_found",
+                "fallback_method": "window.focus",
+            }
+
+        transition = self._build_window_focus_transition(
+            window_id=window_id,
+            state=transition_state,
+        )
+        command = "; ".join(transition.get("commands") or [])
+        if not command:
+            return {
+                "success": False,
+                "window_id": int(window_id),
+                "reason": "empty_focus_command",
+                "fallback_method": "window.focus",
+            }
+
+        result = await self._sway_ipc_command(command)
+        if not self._sway_command_succeeded(result):
+            return {
+                "success": False,
+                "window_id": int(window_id),
+                "reason": f"command_failed:{command}",
+                "fallback_method": "window.focus",
+            }
+
+        session_key = str(params.get("session_key") or "").strip()
+        self._set_focus_overrides(
+            session_key=session_key,
+            window_id=int(window_id),
+            connection_key=connection_key,
+        )
+        await self.notify_state_change("focus_changed")
+        return {
+            "success": True,
+            "window_id": int(window_id),
+            "fast": True,
+            "command": command,
+            "transition": str(transition.get("kind") or ""),
+        }
+
     async def _focus_window_impl(
         self,
         *,
@@ -16522,7 +16619,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     bool((transition.get("expected") or {}).get("floating", False)),
                     int((transition.get("expected") or {}).get("fullscreen_mode", 0) or 0),
                 )
-                focus_result = await self.i3_connection.ipc_command("; ".join(transition.get("commands") or []))
+                focus_result = await self._sway_ipc_command("; ".join(transition.get("commands") or []))
                 if not self._sway_command_succeeded(focus_result):
                     last_error = "focus_failed"
                     await asyncio.sleep(delay_s)
@@ -16627,7 +16724,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             raise ValueError(f"Unsupported window action: {action}")
 
         for command in action_map[action]:
-            result = await self.i3_connection.ipc_command(command)
+            result = await self._sway_ipc_command(command)
             if not self._sway_command_succeeded(result):
                 return {
                     "success": False,
@@ -16928,7 +17025,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
             raise RuntimeError("Sway connection is unavailable")
 
-        result = await self.i3_connection.ipc_command("exit")
+        result = await self._sway_ipc_command("exit")
         if not self._sway_command_succeeded(result):
             raise RuntimeError("Sway exit command was rejected")
 
@@ -17281,7 +17378,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             active_outputs.sort(key=lambda o: o.name)
 
             # Get workspaces from Sway IPC
-            workspaces = await self.i3_connection.get_workspaces()
+            workspaces = await self._sway_get_workspaces()
 
             # Build monitor status with workspace distribution
             active_monitors = []
@@ -17365,7 +17462,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
             move_result = {"moved": [], "errors": 0}
             if enabled_outputs:
-                before = await self.i3_connection.get_workspaces()
+                before = await self._sway_get_workspaces()
                 before_by_name = {workspace.name: workspace.output for workspace in before}
 
                 # Phase 1: collapse workspaces away from any disabled outputs.
@@ -17395,7 +17492,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     )
                     move_result["errors"] += 1
 
-                after = await self.i3_connection.get_workspaces()
+                after = await self._sway_get_workspaces()
                 after_by_name = {workspace.name: workspace.output for workspace in after}
                 for workspace_name, previous_output in before_by_name.items():
                     current_output = after_by_name.get(workspace_name, previous_output)
@@ -18946,7 +19043,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             return False
         if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
             return False
-        result = await self.i3_connection.ipc_command(f"[con_id={target}] kill")
+        result = await self._sway_ipc_command(f"[con_id={target}] kill")
         return any(bool(item.get("success", False)) for item in (result or []))
 
     def _stale_remote_bridge_windows(
@@ -21127,7 +21224,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             raise ValueError("No output configuration fields were provided")
 
         command = " ".join(command_parts)
-        result = await self.i3_connection.ipc_command(command)
+        result = await self._sway_ipc_command(command)
         if not self._sway_command_succeeded(result):
             return {"success": False, "output_name": output_name, "error": f"command_failed:{command}"}
         await self._send_tick_barrier(f"i3pm:output-configure:{output_name}")
@@ -21137,7 +21234,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         """Create a virtual output through the daemon-owned Sway connection."""
         if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
             raise RuntimeError("Sway connection is unavailable")
-        result = await self.i3_connection.ipc_command("create_output")
+        result = await self._sway_ipc_command("create_output")
         if not self._sway_command_succeeded(result):
             return {"success": False, "error": "command_failed:create_output"}
         await self._send_tick_barrier("i3pm:output-create")
@@ -21160,7 +21257,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             raise ValueError("workspace must not be empty")
 
         focus_command = f"workspace {workspace_ref}"
-        result = await self.i3_connection.ipc_command(focus_command)
+        result = await self._sway_ipc_command(focus_command)
         if not self._sway_command_succeeded(result):
             return {
                 "success": False,
@@ -21170,7 +21267,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             }
 
         move_command = f"move workspace to output {output_name}"
-        result = await self.i3_connection.ipc_command(move_command)
+        result = await self._sway_ipc_command(move_command)
         if not self._sway_command_succeeded(result):
             return {
                 "success": False,
@@ -21180,6 +21277,32 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             }
         await self._send_tick_barrier(f"i3pm:workspace-output:{workspace_ref}:{output_name}")
         return {"success": True, "workspace": workspace_ref, "output_name": output_name}
+
+    async def _workspace_focus_fast(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Low-latency workspace focus path for click-driven UI actions."""
+        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
+            raise RuntimeError("Sway connection is unavailable")
+
+        workspace = params.get("workspace")
+        if workspace is None:
+            raise ValueError("workspace is required")
+
+        workspace_ref = str(workspace).strip()
+        if not workspace_ref:
+            raise ValueError("workspace must not be empty")
+
+        command = f"workspace number {workspace_ref}"
+        result = await self._sway_ipc_command(command)
+        if not self._sway_command_succeeded(result):
+            return {
+                "success": False,
+                "workspace": workspace_ref,
+                "error": f"command_failed:{command}",
+                "fallback_method": "workspace.focus",
+            }
+
+        await self.notify_state_change("focus_changed")
+        return {"success": True, "workspace": workspace_ref, "fast": True}
 
     async def _workspace_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Focus a workspace through the daemon-owned Sway connection."""
@@ -21195,7 +21318,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             raise ValueError("workspace must not be empty")
 
         command = f"workspace number {workspace_ref}"
-        result = await self.i3_connection.ipc_command(command)
+        result = await self._sway_ipc_command(command)
         if not self._sway_command_succeeded(result):
             return {"success": False, "workspace": workspace_ref, "error": f"command_failed:{command}"}
         await self._send_tick_barrier(f"i3pm:workspace-focus:{workspace_ref}")
@@ -21218,7 +21341,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
             return ""
         try:
-            workspaces = await self.i3_connection.get_workspaces()
+            workspaces = await self._sway_get_workspaces()
         except Exception:
             return ""
 

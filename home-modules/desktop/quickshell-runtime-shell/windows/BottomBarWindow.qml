@@ -132,7 +132,7 @@ PanelWindow {
                                                 height: 18
                                                 radius: 6
                                                 color: colors.bg
-                                                border.color: workspace.focused ? colors.blue : (workspaceMouse.containsMouse ? colors.borderStrong : colors.borderStrong)
+                                                border.color: root.workspaceIsFocused(workspace) ? colors.blue : (workspaceMouse.containsMouse ? colors.borderStrong : colors.borderStrong)
                                                 border.width: 1
 
                                                 IconImage {
@@ -151,7 +151,7 @@ PanelWindow {
                                         text: root.workspaceLabel(workspace)
                                         color: root.workspaceChipText(workspace, workspaceMouse.containsMouse)
                                         font.pixelSize: 11
-                                        font.weight: workspace.focused ? Font.DemiBold : Font.Medium
+                                        font.weight: root.workspaceIsFocused(workspace) ? Font.DemiBold : Font.Medium
                                     }
 
                                     Rectangle {
@@ -159,14 +159,14 @@ PanelWindow {
                                         width: 12
                                         height: 12
                                         radius: 4
-                                        color: workspace.focused ? colors.bg : colors.card
-                                        border.color: workspace.focused ? colors.bg : colors.border
+                                        color: root.workspaceIsFocused(workspace) ? colors.bg : colors.card
+                                        border.color: root.workspaceIsFocused(workspace) ? colors.bg : colors.border
                                         border.width: 1
 
                                         Text {
                                             anchors.centerIn: parent
                                             text: String(workspaceCount)
-                                            color: workspace.focused ? colors.blue : colors.muted
+                                            color: root.workspaceIsFocused(workspace) ? colors.blue : colors.muted
                                             font.pixelSize: 8
                                             font.weight: Font.DemiBold
                                         }
