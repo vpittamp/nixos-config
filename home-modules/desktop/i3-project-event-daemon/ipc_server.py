@@ -591,6 +591,7 @@ class IPCServer:
         self._herdr_snapshot_cache: Dict[str, Any] = {}
         self._herdr_snapshot_cache_time: float = 0.0
         self._herdr_snapshot_cache_ttl: float = 0.5
+        self._herdr_remote_snapshot_cache_ttl: float = 10.0
         self._herdr_git_metadata_cache: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
         self._herdr_remote_targets_cache: List[Dict[str, str]] = []
         self._herdr_remote_targets_cache_signature: Tuple[Any, ...] = ("", False, 0, 0)
@@ -10296,10 +10297,16 @@ FORMAT JSONEachRow
         params = params or {}
         use_cache = not bool(params.get("refresh", False))
         now = time.time()
+        remote_targets = self._load_herdr_remote_targets()
+        cache_ttl = (
+            self._herdr_remote_snapshot_cache_ttl
+            if remote_targets
+            else self._herdr_snapshot_cache_ttl
+        )
         if (
             use_cache
             and self._herdr_snapshot_cache
-            and now - self._herdr_snapshot_cache_time <= self._herdr_snapshot_cache_ttl
+            and now - self._herdr_snapshot_cache_time <= cache_ttl
         ):
             return copy.deepcopy(self._herdr_snapshot_cache)
 
@@ -10359,7 +10366,6 @@ FORMAT JSONEachRow
         }
         snapshot["sessions"] = self._normalize_herdr_sessions(snapshot)
 
-        remote_targets = self._load_herdr_remote_targets()
         remote_snapshots = await asyncio.gather(
             *(self._herdr_remote_snapshot(target) for target in remote_targets),
             return_exceptions=True,
@@ -10461,6 +10467,77 @@ FORMAT JSONEachRow
 
         raise ValueError("ssh_target is required for remote Herdr pane focus")
 
+    def _apply_remote_herdr_focus_cache(
+        self,
+        *,
+        target: Dict[str, str],
+        pane_id: str,
+    ) -> None:
+        """Optimistically reflect remote pane focus in the cached Herdr snapshot."""
+        pane_key = str(pane_id or "").strip()
+        if not pane_key or not self._herdr_snapshot_cache:
+            return
+
+        host = str(target.get("host") or "").strip().lower()
+        ssh_target = str(target.get("ssh_target") or "").strip()
+        connection_key = self._normalize_connection_key(str(target.get("connection_key") or "").strip())
+
+        def matches_remote(item: Dict[str, Any]) -> bool:
+            item_host = str(item.get("herdr_host") or item.get("host_name") or item.get("host") or "").strip().lower()
+            item_ssh = str(item.get("ssh_target") or item.get("remote_target") or "").strip()
+            item_connection = self._normalize_connection_key(str(item.get("connection_key") or "").strip())
+            if host and item_host == host:
+                return True
+            if ssh_target and item_ssh == ssh_target:
+                return True
+            return bool(connection_key and item_connection == connection_key)
+
+        focused_session_key = ""
+        for collection_name in ("sessions", "panes", "agents"):
+            rows = self._herdr_snapshot_cache.get(collection_name)
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if not isinstance(row, dict) or not matches_remote(row):
+                    continue
+                focused = str(row.get("pane_id") or "").strip() == pane_key
+                row["focused"] = focused
+                row["is_current_window"] = focused
+                row["window_active"] = focused
+                row["pane_active"] = focused
+                if focused and collection_name == "sessions":
+                    focused_session_key = str(row.get("session_key") or row.get("herdr_session") or "").strip()
+
+        remote_snapshots = self._herdr_snapshot_cache.get("remote_snapshots")
+        if isinstance(remote_snapshots, list):
+            for remote_snapshot in remote_snapshots:
+                if not isinstance(remote_snapshot, dict):
+                    continue
+                snapshot_target = {
+                    "host": str(remote_snapshot.get("host") or "").strip(),
+                    "ssh_target": str(remote_snapshot.get("ssh_target") or "").strip(),
+                    "connection_key": self._normalize_connection_key(str(remote_snapshot.get("connection_key") or "").strip()),
+                }
+                if not matches_remote(snapshot_target):
+                    continue
+                for collection_name in ("sessions", "panes", "agents"):
+                    rows = remote_snapshot.get(collection_name)
+                    if not isinstance(rows, list):
+                        continue
+                    for row in rows:
+                        if not isinstance(row, dict):
+                            continue
+                        focused = str(row.get("pane_id") or "").strip() == pane_key
+                        row["focused"] = focused
+
+        if focused_session_key:
+            self._set_focus_overrides(
+                session_key=focused_session_key,
+                window_id=0,
+                connection_key=connection_key,
+            )
+        self._herdr_snapshot_cache_time = time.time()
+
     async def _herdr_remote_pane_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
         pane_id = str(params.get("pane_id") or "").strip()
         if not pane_id:
@@ -10468,11 +10545,14 @@ FORMAT JSONEachRow
 
         target = self._resolve_herdr_remote_action_target(params)
         focus_result = await self._run_herdr_ssh_json(target, ["agent", "focus", pane_id])
-        self._herdr_snapshot_cache = {}
+        if bool(focus_result.get("success", False)):
+            self._apply_remote_herdr_focus_cache(target=target, pane_id=pane_id)
         launch_result = await self._launch_open({
             "app_name": str(params.get("app_name") or "herdr").strip() or "herdr",
             "__intent_epoch": int(params.get("__intent_epoch") or 0),
+            "focus_fast": True,
         })
+        await self.notify_state_change("ai_session_herdr_changed")
 
         return {
             "success": bool(focus_result.get("success", False)) and bool(launch_result.get("success", False)),
@@ -14132,6 +14212,19 @@ rm -f -- "$0" >/dev/null 2>&1 || true
 
         reused_existing = False
         reused_window_id = 0
+        focus_fast = bool(payload.get("focus_fast", False))
+
+        async def focus_existing_window(existing_window: Any) -> Dict[str, Any]:
+            focus_params = {
+                "window_id": int(getattr(existing_window, "window_id", 0) or 0),
+                "project_name": str(spec.get("project_name") or "").strip(),
+                "target_variant": str(spec.get("execution_mode") or "").strip().lower(),
+                "connection_key": str(spec.get("connection_key") or "").strip(),
+            }
+            if focus_fast:
+                return await self._window_focus_fast(focus_params)
+            return await self._window_focus(focus_params)
+
         terminal_launch = spec.get("terminal_launch") or {}
         terminal_mode = str(terminal_launch.get("mode") or "").strip()
         launch_transport = str(
@@ -14162,12 +14255,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     existing_window = None
             if existing_window is not None:
                 self._dispatch_managed_terminal_command(spec)
-                focus_result = await self._window_focus({
-                    "window_id": int(getattr(existing_window, "window_id", 0) or 0),
-                    "project_name": str(spec.get("project_name") or "").strip(),
-                    "target_variant": str(spec.get("execution_mode") or "").strip().lower(),
-                    "connection_key": str(spec.get("connection_key") or "").strip(),
-                })
+                focus_result = await focus_existing_window(existing_window)
                 if bool(focus_result.get("success", False)):
                     reused_existing = True
                     reused_window_id = int(focus_result.get("window_id") or 0)
@@ -14202,12 +14290,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 terminal_role=str(spec.get("terminal_role") or "").strip(),
             )
             if existing_window is not None:
-                focus_result = await self._window_focus({
-                    "window_id": int(getattr(existing_window, "window_id", 0) or 0),
-                    "project_name": str(spec.get("project_name") or "").strip(),
-                    "target_variant": str(spec.get("execution_mode") or "").strip().lower(),
-                    "connection_key": str(spec.get("connection_key") or "").strip(),
-                })
+                focus_result = await focus_existing_window(existing_window)
                 if bool(focus_result.get("success", False)):
                     reused_existing = True
                     reused_window_id = int(focus_result.get("window_id") or 0)
@@ -14246,12 +14329,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 # or bound ports (e.g. Headlamp on 4466).
                 self._reap_orphan_app_units(app.name, str(app.command or ""))
             if existing_window is not None:
-                focus_result = await self._window_focus({
-                    "window_id": int(getattr(existing_window, "window_id", 0) or 0),
-                    "project_name": str(spec.get("project_name") or "").strip(),
-                    "target_variant": str(spec.get("execution_mode") or "").strip().lower(),
-                    "connection_key": str(spec.get("connection_key") or "").strip(),
-                })
+                focus_result = await focus_existing_window(existing_window)
                 if bool(focus_result.get("success", False)):
                     reused_existing = True
                     reused_window_id = int(focus_result.get("window_id") or 0)

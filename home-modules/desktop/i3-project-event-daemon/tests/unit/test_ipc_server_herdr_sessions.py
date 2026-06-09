@@ -1050,6 +1050,7 @@ async def test_herdr_remote_pane_focus_switches_pane_then_reuses_herdr_app(serve
 
     monkeypatch.setattr(server, "_load_herdr_remote_targets", lambda: [target])
     monkeypatch.setattr(server, "_run_herdr_ssh_json", fake_run_herdr_ssh_json)
+    server.notify_state_change = AsyncMock(return_value=None)
     server._launch_open = AsyncMock(return_value={
         "success": True,
         "launch": {
@@ -1071,9 +1072,77 @@ async def test_herdr_remote_pane_focus_switches_pane_then_reuses_herdr_app(serve
     server._launch_open.assert_awaited_once_with({
         "app_name": "herdr",
         "__intent_epoch": 12,
+        "focus_fast": True,
     })
+    server.notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
     assert result["success"] is True
     assert result["launch"]["launch"]["reused_existing"] is True
+
+
+def test_herdr_remote_pane_focus_updates_cached_remote_rows(server):
+    target = {
+        "host": "ryzen",
+        "ssh_target": "ryzen",
+        "connection_key": "vpittamp@ryzen:22",
+    }
+    server._herdr_snapshot_cache = {
+        "sessions": [
+            {
+                "session_key": "herdr:ryzen:pane:remote-a",
+                "pane_id": "remote-a",
+                "herdr_host": "ryzen",
+                "connection_key": "vpittamp@ryzen:22",
+                "focused": True,
+            },
+            {
+                "session_key": "herdr:ryzen:pane:remote-b",
+                "pane_id": "remote-b",
+                "herdr_host": "ryzen",
+                "connection_key": "vpittamp@ryzen:22",
+                "focused": False,
+            },
+        ],
+        "panes": [
+            {
+                "pane_id": "remote-a",
+                "herdr_host": "ryzen",
+                "connection_key": "vpittamp@ryzen:22",
+                "focused": True,
+            },
+            {
+                "pane_id": "remote-b",
+                "herdr_host": "ryzen",
+                "connection_key": "vpittamp@ryzen:22",
+                "focused": False,
+            },
+        ],
+        "remote_snapshots": [
+            {
+                "host": "ryzen",
+                "ssh_target": "ryzen",
+                "connection_key": "vpittamp@ryzen:22",
+                "sessions": [
+                    {"pane_id": "remote-a", "focused": True},
+                    {"pane_id": "remote-b", "focused": False},
+                ],
+            },
+        ],
+    }
+
+    server._apply_remote_herdr_focus_cache(target=target, pane_id="remote-b")
+
+    sessions = server._herdr_snapshot_cache["sessions"]
+    panes = server._herdr_snapshot_cache["panes"]
+    remote_sessions = server._herdr_snapshot_cache["remote_snapshots"][0]["sessions"]
+    assert sessions[0]["focused"] is False
+    assert sessions[1]["focused"] is True
+    assert sessions[1]["is_current_window"] is True
+    assert sessions[1]["pane_active"] is True
+    assert panes[0]["focused"] is False
+    assert panes[1]["focused"] is True
+    assert remote_sessions[0]["focused"] is False
+    assert remote_sessions[1]["focused"] is True
+    assert server._focus_session_override_key == "herdr:ryzen:pane:remote-b"
 
 
 @pytest.mark.asyncio
