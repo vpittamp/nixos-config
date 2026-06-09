@@ -19,7 +19,9 @@ let
   '';
 in
 {
-  xdg.configFile."herdr/config.toml".text = ''
+  xdg.configFile."herdr/config.toml" = {
+    force = true;
+    text = ''
     # Managed by Home Manager. Edit home-modules/terminal/herdr.nix.
     onboarding = false
 
@@ -120,5 +122,6 @@ in
 
     [experimental]
     pane_history = true
-  '';
+    '';
+  };
 }
