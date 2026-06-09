@@ -568,7 +568,7 @@ let
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 33;
       preferred_monitor_role = "primary";
-      icon = iconPath "tmux.svg";
+      icon = iconPath "herdr.svg";
       nix_package = "inputs.herdr.packages.<system>.default";
       multi_instance = false;
       fallback_behavior = "skip";

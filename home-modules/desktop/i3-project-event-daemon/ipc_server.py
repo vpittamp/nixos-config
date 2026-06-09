@@ -9640,6 +9640,23 @@ FORMAT JSONEachRow
         }
         return priority.get(cls._herdr_agent_status_state(value), 0)
 
+    @staticmethod
+    def _normalize_herdr_text_field(value: Any) -> str:
+        return str(value or "").strip()
+
+    @classmethod
+    def _normalize_herdr_state_labels(cls, value: Any) -> Dict[str, str]:
+        if not isinstance(value, dict):
+            return {}
+        labels: Dict[str, str] = {}
+        for key, label in value.items():
+            state = cls._herdr_agent_status_state(key)
+            text = cls._normalize_herdr_text_field(label)
+            if state == "unknown" or not text:
+                continue
+            labels[state] = text
+        return labels
+
     def _annotate_herdr_rows(
         self,
         rows: List[Dict[str, Any]],
@@ -9731,6 +9748,9 @@ FORMAT JSONEachRow
             row.get("agent_status"),
             preserve_raw=is_remote,
         )
+        display_agent = self._normalize_herdr_text_field(row.get("display_agent"))
+        custom_status = self._normalize_herdr_text_field(row.get("custom_status"))
+        state_labels = self._normalize_herdr_state_labels(row.get("state_labels"))
         session_key = self._herdr_session_key(row, herdr_host if is_remote else "")
 
         normalized = dict(row)
@@ -9743,6 +9763,9 @@ FORMAT JSONEachRow
             "agent": agent,
             "tool": agent,
             "display_tool": agent or "herdr",
+            "display_agent": display_agent,
+            "custom_status": custom_status,
+            "state_labels": state_labels,
             "agent_status": agent_status,
             "focused": bool(row.get("focused", False)),
             "is_current_window": bool(row.get("focused", False)),

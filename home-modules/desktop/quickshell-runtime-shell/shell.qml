@@ -5423,7 +5423,7 @@ ShellRoot {
         if (tool === "claude-code" || tool === "claude") {
             return colors.blue;
         }
-        if (tool === "gemini" || tool === "gemini-cli" || tool === "antigravity" || tool === "antigravity-cli") {
+        if (tool === "gemini" || tool === "gemini-cli" || tool === "antigravity" || tool === "antigravity-cli" || tool === "agy") {
             return colors.amber;
         }
         return colors.violet;
@@ -5437,7 +5437,7 @@ ShellRoot {
         if (tool === "claude-code" || tool === "claude") {
             return colors.blueBg;
         }
-        if (tool === "gemini" || tool === "gemini-cli" || tool === "antigravity" || tool === "antigravity-cli") {
+        if (tool === "gemini" || tool === "gemini-cli" || tool === "antigravity" || tool === "antigravity-cli" || tool === "agy") {
             return colors.amberBg;
         }
         return colors.violetBg;
@@ -5451,7 +5451,7 @@ ShellRoot {
         if (tool === "claude-code" || tool === "claude") {
             return "file://" + shellConfig.claudeIcon;
         }
-        if (tool === "gemini" || tool === "gemini-cli" || tool === "antigravity" || tool === "antigravity-cli") {
+        if (tool === "gemini" || tool === "gemini-cli" || tool === "antigravity" || tool === "antigravity-cli" || tool === "agy") {
             return "file://" + shellConfig.geminiIcon;
         }
         return "file://" + shellConfig.aiFallbackIcon;
@@ -5683,6 +5683,19 @@ ShellRoot {
             return "idle";
         }
         return "unknown";
+    }
+
+    function herdrStatusLabel(session) {
+        const state = herdrStatusState(session && session.agent_status);
+        const labels = session && session.state_labels && typeof session.state_labels === "object" ? session.state_labels : {};
+        const override = stringOrEmpty(labels[state]);
+        if (override.length > 0) {
+            return override;
+        }
+        if (state === "unknown") {
+            return "Idle";
+        }
+        return titleCaseWord(state);
     }
 
     function sessionPhase(session) {
@@ -6112,6 +6125,9 @@ ShellRoot {
         if (explicit.length > 0) {
             return explicit;
         }
+        if (stringOrEmpty(session && session.source) === "herdr" || stringOrEmpty(session && session.pane_id)) {
+            return herdrStatusLabel(session);
+        }
         const stageLabel = stringOrEmpty(session && session.stage_label);
         if (stageLabel.length > 0) {
             return stageLabel;
@@ -6133,6 +6149,9 @@ ShellRoot {
 
     function sessionActivityChipLabel(session) {
         const state = sessionBadgeState(session);
+        if ((stringOrEmpty(session && session.source) === "herdr" || stringOrEmpty(session && session.pane_id)) && ["working", "blocked", "done", "idle", "unknown"].indexOf(state) >= 0) {
+            return herdrStatusLabel(session);
+        }
         if (["working", "blocked", "done", "idle", "unknown"].indexOf(state) >= 0) {
             return titleCaseWord(state);
         }
@@ -6320,6 +6339,10 @@ ShellRoot {
     }
 
     function toolLabel(session) {
+        const displayAgent = stringOrEmpty(session && session.display_agent);
+        if (displayAgent.length > 0) {
+            return displayAgent;
+        }
         const tool = stringOrEmpty(session.tool).toLowerCase();
         if (tool === "codex") {
             return "Codex";
@@ -6327,8 +6350,47 @@ ShellRoot {
         if (tool === "claude-code" || tool === "claude") {
             return "Claude";
         }
-        if (tool === "gemini" || tool === "gemini-cli" || tool === "antigravity" || tool === "antigravity-cli") {
+        if (tool === "gemini" || tool === "gemini-cli" || tool === "antigravity" || tool === "antigravity-cli" || tool === "agy") {
             return "Gemini";
+        }
+        if (tool === "opencode") {
+            return "OpenCode";
+        }
+        if (tool === "github-copilot" || tool === "copilot") {
+            return "GitHub Copilot";
+        }
+        if (tool === "cursor" || tool === "cursor-agent") {
+            return "Cursor";
+        }
+        if (tool === "amp") {
+            return "Amp";
+        }
+        if (tool === "kimi") {
+            return "Kimi";
+        }
+        if (tool === "kiro") {
+            return "Kiro";
+        }
+        if (tool === "droid") {
+            return "Droid";
+        }
+        if (tool === "hermes") {
+            return "Hermes";
+        }
+        if (tool === "qoder" || tool === "qodercli") {
+            return "Qoder";
+        }
+        if (tool === "pi") {
+            return "Pi";
+        }
+        if (tool === "grok") {
+            return "Grok";
+        }
+        if (tool === "cline") {
+            return "Cline";
+        }
+        if (tool === "kilo") {
+            return "Kilo";
         }
         return "AI";
     }
@@ -6411,6 +6473,7 @@ ShellRoot {
         const bits = [];
         const project = shortProject(stringOrEmpty(session && (session.project_name || session.project || "")));
         const herdrStatus = stringOrEmpty(session && session.agent_status).toLowerCase();
+        const customStatus = stringOrEmpty(session && session.custom_status);
         if (stringOrEmpty(session && session.source) === "herdr" || stringOrEmpty(session && session.pane_id)) {
             const agent = toolLabel(session);
             const host = displayHostName(stringOrEmpty(session && (session.herdr_host || session.host_name)));
@@ -6423,7 +6486,10 @@ ShellRoot {
             }
         }
         if (herdrStatus) {
-            bits.push(titleCaseWord(herdrStatus));
+            bits.push(herdrStatusLabel(session));
+        }
+        if (customStatus) {
+            bits.push(customStatus);
         }
         const foregroundCwd = stringOrEmpty(session && session.foreground_cwd);
         const cwd = stringOrEmpty(session && session.cwd);

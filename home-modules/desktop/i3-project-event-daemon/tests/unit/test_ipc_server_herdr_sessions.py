@@ -78,11 +78,18 @@ def test_herdr_rows_preserve_status_and_targets(server, tmp_path, monkeypatch):
         "agents": [{
             "agent": "codex",
             "agent_status": "blocked",
+            "custom_status": "reviewing diff",
             "cwd": "/home/vpittamp/repos/vpittamp/nixos-config/main",
+            "display_agent": "Codex auth",
             "focused": True,
             "foreground_cwd": "/home/vpittamp/repos/vpittamp/nixos-config/main",
             "pane_id": "w123-1",
             "revision": 7,
+            "state_labels": {
+                "blocked": "waiting for approval",
+                "idle": "",
+                "invalid-state": "ignored",
+            },
             "tab_id": "w123:1",
             "terminal_id": "term_123",
             "workspace_id": "w123",
@@ -105,6 +112,9 @@ def test_herdr_rows_preserve_status_and_targets(server, tmp_path, monkeypatch):
     row = rows[0]
     assert row["source"] == "herdr"
     assert row["agent_status"] == "blocked"
+    assert row["display_agent"] == "Codex auth"
+    assert row["custom_status"] == "reviewing diff"
+    assert row["state_labels"] == {"blocked": "waiting for approval"}
     assert row["session_key"] == "herdr:pane:w123-1"
     assert row["workspace_id"] == "w123"
     assert row["tab_id"] == "w123:1"

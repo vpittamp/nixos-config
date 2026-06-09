@@ -121,11 +121,28 @@ def test_session_secondary_label_uses_herdr_status_and_cwd():
     text = SHELL_QML.read_text()
     assert "function sessionSecondaryLabel(session)" in text
     assert "const herdrStatus = stringOrEmpty(session && session.agent_status).toLowerCase();" in text
-    assert "bits.push(titleCaseWord(herdrStatus));" in text
+    assert "const customStatus = stringOrEmpty(session && session.custom_status);" in text
+    assert "bits.push(herdrStatusLabel(session));" in text
+    assert "bits.push(customStatus);" in text
     assert "const foregroundCwd = stringOrEmpty(session && session.foreground_cwd);" in text
     assert "const cwd = stringOrEmpty(session && session.cwd);" in text
     assert "bits.push(parts[parts.length - 1]);" in text
     assert "return bits.join(\" • \");" in text
+
+
+def test_herdr_visual_metadata_controls_labels_without_changing_icon_family():
+    """Herdr display labels and custom state labels should drive text, not icon identity."""
+    text = SHELL_QML.read_text()
+    assert "function herdrStatusLabel(session)" in text
+    assert 'const override = stringOrEmpty(labels[state]);' in text
+    assert 'return titleCaseWord(state);' in text
+    assert 'const displayAgent = stringOrEmpty(session && session.display_agent);' in text
+    assert 'return displayAgent;' in text
+    assert 'if (tool === "opencode") {' in text
+    assert 'return "OpenCode";' in text
+    assert 'if (tool === "github-copilot" || tool === "copilot") {' in text
+    assert 'return "GitHub Copilot";' in text
+    assert 'return "file://" + shellConfig.aiFallbackIcon;' in text
 
 
 def test_launcher_preview_for_herdr_sessions_is_focus_only():
@@ -137,6 +154,16 @@ def test_launcher_preview_for_herdr_sessions_is_focus_only():
     assert "return;" in text
     assert "function sessionPreviewStatusText()" in text
     assert "root.sessionPreviewStatusText()" in launcher_text
+
+
+def test_antigravity_short_tool_id_uses_gemini_visual_family():
+    """The agy short id should render with the same icon and tint as Gemini/Antigravity."""
+    text = SHELL_QML.read_text()
+    config_text = QUICKSHELL_DEFAULT_NIX.read_text()
+    agy_family = 'tool === "gemini" || tool === "gemini-cli" || tool === "antigravity" || tool === "antigravity-cli" || tool === "agy"'
+    assert text.count(agy_family) >= 4
+    assert agy_family + ") {\n            return \"file://\" + shellConfig.geminiIcon;" in text
+    assert 'readonly property string geminiIcon: "${../../../assets/icons/gemini.png}"' in config_text
 
 
 def test_agent_action_toasts_bypass_general_toast_suppression_only_for_i3pm_agent():
