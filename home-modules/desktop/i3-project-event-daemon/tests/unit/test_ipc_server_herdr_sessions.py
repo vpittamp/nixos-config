@@ -156,6 +156,178 @@ def test_herdr_rows_skip_plain_panes_and_keep_unknown_status(server):
     assert rows[0]["focus_target"]["params"] == {"pane_id": "agent-1"}
 
 
+def test_herdr_spaces_group_by_host_workspace_and_prioritize_status(server):
+    sessions = [{
+        "source": "herdr",
+        "agent": "codex",
+        "agent_status": "working",
+        "focused": False,
+        "herdr_host": server._local_host_alias(),
+        "host_name": server._local_host_alias(),
+        "is_current_host": True,
+        "is_remote_herdr": False,
+        "execution_mode": "local",
+        "pane_id": "local-pane-1",
+        "project_name": "vpittamp/nixos-config:main",
+        "workspace_id": "local-ws",
+    }, {
+        "source": "herdr",
+        "agent": "claude",
+        "agent_status": "done",
+        "focused": False,
+        "herdr_host": "ryzen",
+        "host_name": "ryzen",
+        "is_current_host": False,
+        "is_remote_herdr": True,
+        "execution_mode": "ssh",
+        "pane_id": "remote-pane-1",
+        "project_name": "PittampalliOrg/workflow-builder:main",
+        "workspace_id": "remote-ws",
+    }, {
+        "source": "herdr",
+        "agent": "codex",
+        "agent_status": "NeedsInput",
+        "focused": True,
+        "herdr_host": "ryzen",
+        "host_name": "ryzen",
+        "is_current_host": False,
+        "is_remote_herdr": True,
+        "execution_mode": "ssh",
+        "pane_id": "remote-pane-2",
+        "project_name": "PittampalliOrg/workflow-builder:main",
+        "workspace_id": "remote-ws",
+    }]
+    snapshot = {
+        "workspaces": [{
+            "workspace_id": "local-ws",
+            "name": "nixos",
+            "focused": False,
+            "herdr_host": server._local_host_alias(),
+            "execution_mode": "local",
+            "is_remote_herdr": False,
+        }, {
+            "workspace_id": "remote-ws",
+            "name": "builder",
+            "focused": True,
+            "herdr_host": "ryzen",
+            "execution_mode": "ssh",
+            "is_remote_herdr": True,
+        }],
+        "agents": sessions,
+        "panes": [
+            {"pane_id": "local-pane-1", "workspace_id": "local-ws", "herdr_host": server._local_host_alias()},
+            {"pane_id": "remote-pane-1", "workspace_id": "remote-ws", "herdr_host": "ryzen"},
+            {"pane_id": "remote-pane-2", "workspace_id": "remote-ws", "herdr_host": "ryzen"},
+        ],
+        "tabs": [
+            {"tab_id": "local-tab", "workspace_id": "local-ws", "herdr_host": server._local_host_alias()},
+            {"tab_id": "remote-tab", "workspace_id": "remote-ws", "herdr_host": "ryzen"},
+        ],
+    }
+
+    spaces = server._build_herdr_spaces(snapshot, sessions)
+
+    assert [space["space_key"] for space in spaces] == [
+        "herdr:ryzen:workspace:remote-ws",
+        f"herdr:{server._local_host_alias()}:workspace:local-ws",
+    ]
+    remote_space = spaces[0]
+    local_space = spaces[1]
+    assert remote_space["focused"] is True
+    assert remote_space["agent_status"] == "blocked"
+    assert remote_space["agent_count"] == 2
+    assert remote_space["pane_count"] == 2
+    assert remote_space["tab_count"] == 1
+    assert remote_space["project_name"] == "PittampalliOrg/workflow-builder:main"
+    assert "focus_target" not in remote_space
+    assert local_space["agent_status"] == "working"
+    assert local_space["focus_target"] == {
+        "method": "herdr.workspace.focus",
+        "params": {"workspace_id": "local-ws"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_dashboard_snapshot_includes_herdr_spaces(server, monkeypatch):
+    local_host = server._local_host_alias()
+    sessions = [{
+        "source": "herdr",
+        "agent": "codex",
+        "agent_status": "working",
+        "focused": True,
+        "herdr_host": local_host,
+        "host_name": local_host,
+        "is_current_host": True,
+        "is_remote_herdr": False,
+        "execution_mode": "local",
+        "pane_id": "local-pane",
+        "project_name": "vpittamp/nixos-config:main",
+        "workspace_id": "local-ws",
+    }]
+    runtime_snapshot = {
+        "current_ai_session_key": "herdr:pane:local-pane",
+        "herdr": {
+            "status": {"success": True},
+            "workspaces": [{
+                "workspace_id": "local-ws",
+                "label": "nixos",
+                "focused": True,
+                "herdr_host": local_host,
+                "execution_mode": "local",
+                "is_remote_herdr": False,
+            }],
+            "agents": sessions,
+            "panes": [{
+                "pane_id": "local-pane",
+                "workspace_id": "local-ws",
+                "herdr_host": local_host,
+            }],
+            "tabs": [{
+                "tab_id": "local-tab",
+                "workspace_id": "local-ws",
+                "herdr_host": local_host,
+            }],
+            "errors": [],
+        },
+        "outputs": [],
+        "active_outputs": [],
+        "total_windows": 0,
+        "tracked_windows": [],
+        "dashboard_worktrees": [{"kind": "global"}],
+    }
+
+    async def fake_runtime(_params, close_windows=True):
+        assert close_windows is True
+        return runtime_snapshot, sessions, {}
+
+    monkeypatch.setattr(server, "_load_reconciled_session_runtime", fake_runtime)
+    monkeypatch.setattr(server, "_display_snapshot", AsyncMock(return_value={}))
+
+    dashboard = await server._dashboard_snapshot({})
+
+    assert dashboard["active_ai_sessions"] == sessions
+    assert dashboard["current_ai_session_key"] == "herdr:pane:local-pane"
+    assert dashboard["herdr"]["spaces"] == [{
+        "space_key": f"herdr:{local_host}:workspace:local-ws",
+        "host_key": local_host,
+        "host_label": local_host,
+        "workspace_id": "local-ws",
+        "label": "nixos",
+        "focused": True,
+        "agent_status": "working",
+        "agent_count": 1,
+        "pane_count": 1,
+        "tab_count": 1,
+        "project_name": "vpittamp/nixos-config:main",
+        "execution_mode": "local",
+        "is_current_host": True,
+        "focus_target": {
+            "method": "herdr.workspace.focus",
+            "params": {"workspace_id": "local-ws"},
+        },
+    }]
+
+
 @pytest.mark.asyncio
 async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
     target = {

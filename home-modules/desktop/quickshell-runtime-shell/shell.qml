@@ -41,6 +41,7 @@ ShellRoot {
     readonly property var launcherQueryDebounce: runtimeServices ? runtimeServices.launcherQueryDebounceRef : null
     readonly property var launcherSessionSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherSessionSwitcherOpenTimerRef : null
     readonly property var launcherWindowSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherWindowSwitcherOpenTimerRef : null
+    readonly property var optimisticSessionFocusTimer: runtimeServices ? runtimeServices.optimisticSessionFocusTimerRef : null
     readonly property var sessionPreviewDebounce: runtimeServices ? runtimeServices.sessionPreviewDebounceRef : null
     readonly property var sessionPreviewFollowTimer: runtimeServices ? runtimeServices.sessionPreviewFollowTimerRef : null
     readonly property var settingsFocusTimer: runtimeServices ? runtimeServices.settingsFocusTimerRef : null
@@ -210,6 +211,7 @@ ShellRoot {
     property var expandedSessionGroups: ({})
     property string lastFocusedSessionKey: ""
     property string selectedSessionKey: ""
+    property string optimisticCurrentSessionKey: ""
     property var sessionClosePendingMap: ({})
     property string sessionCloseProcessTargetKey: ""
     property string sessionCloseProcessStdout: ""
@@ -428,8 +430,8 @@ ShellRoot {
         },
         {
             id: "sessions",
-            label: "AI Sessions",
-            title: "AI Sessions",
+            label: "Herdr",
+            title: "Herdr Monitor",
             placeholder: "Filter AI sessions",
             help: "Mod+Tab cycle  •  Release Mod to focus  •  Enter focus  •  Ctrl+6 Windows",
             iconFile: shellConfig.aiFallbackIcon,
@@ -759,7 +761,7 @@ ShellRoot {
     }
 
     function panelSessions() {
-        return activeSessions().filter(session => sessionIsPanelDisplayEligible(session));
+        return stableSortedSessions(activeSessions().filter(session => sessionIsPanelDisplayEligible(session)));
     }
 
     function sessionIdentityKey(session) {
@@ -4940,8 +4942,17 @@ ShellRoot {
         return count;
     }
 
+    function herdrDashboard() {
+        const herdr = dashboard && typeof dashboard.herdr === "object" ? dashboard.herdr : {};
+        return herdr || {};
+    }
+
+    function herdrSpaces() {
+        return arrayOrEmpty(herdrDashboard().spaces);
+    }
+
     function runtimePanelDefaultExpandedSection() {
-        if (panelSessions().length > 0) {
+        if (panelSessions().length > 0 || herdrSpaces().length > 0) {
             return "sessions";
         }
         if (panelProjects().length > 0) {
@@ -4952,7 +4963,7 @@ ShellRoot {
 
     function runtimePanelExpandedSectionValue() {
         const requested = stringOrEmpty(runtimePanelExpandedSection);
-        const hasSessions = panelSessions().length > 0;
+        const hasSessions = panelSessions().length > 0 || herdrSpaces().length > 0;
         const hasWindows = panelProjects().length > 0;
 
         if (requested === "balanced" && hasSessions && hasWindows) {
@@ -4969,7 +4980,7 @@ ShellRoot {
 
     function runtimePanelSectionHasContent(section) {
         if (section === "sessions") {
-            return panelSessions().length > 0;
+            return panelSessions().length > 0 || herdrSpaces().length > 0;
         }
         if (section === "windows") {
             return panelProjects().length > 0;
@@ -5011,6 +5022,7 @@ ShellRoot {
     function runtimePanelSectionSummary(section) {
         if (section === "sessions") {
             const hostCount = groupedSessionBands().length;
+            const spaceCount = herdrSpaces().length;
             const sessionCount = panelSessions().length;
             const aiMetrics = (dashboard && typeof dashboard.ai_monitor_metrics === "object")
                 ? dashboard.ai_monitor_metrics
@@ -5020,8 +5032,11 @@ ShellRoot {
             if (hostCount > 0) {
                 bits.push(String(hostCount) + (hostCount === 1 ? " host" : " hosts"));
             }
+            if (spaceCount > 0) {
+                bits.push(String(spaceCount) + (spaceCount === 1 ? " space" : " spaces"));
+            }
             if (sessionCount > 0) {
-                bits.push(String(sessionCount) + (sessionCount === 1 ? " session" : " sessions"));
+                bits.push(String(sessionCount) + (sessionCount === 1 ? " agent" : " agents"));
             }
             if (remotePushHealth === "degraded" || remotePushHealth === "down") {
                 bits.push(remotePushHealth === "down" ? "remote push down" : "remote push degraded");
@@ -5043,6 +5058,131 @@ ShellRoot {
         }
 
         return "";
+    }
+
+    function herdrSpaceStatus(space) {
+        return herdrStatusState(space && space.agent_status);
+    }
+
+    function herdrSpaceStatusLabel(space) {
+        const state = herdrSpaceStatus(space);
+        return titleCaseWord(state);
+    }
+
+    function herdrSpaceStatusColor(space) {
+        const state = herdrSpaceStatus(space);
+        if (state === "blocked") {
+            return colors.red;
+        }
+        if (state === "done") {
+            return colors.accent;
+        }
+        if (state === "working") {
+            return colors.teal;
+        }
+        if (state === "idle") {
+            return colors.subtle;
+        }
+        return colors.muted;
+    }
+
+    function herdrSpaceStatusBackground(space) {
+        const state = herdrSpaceStatus(space);
+        if (state === "blocked") {
+            return colors.redBg;
+        }
+        if (state === "done") {
+            return colors.accentBg;
+        }
+        if (state === "working") {
+            return colors.tealBg;
+        }
+        return colors.cardAlt;
+    }
+
+    function herdrSpaceFill(space, hovered) {
+        const state = herdrSpaceStatus(space);
+        if (boolOrFalse(space && space.focused)) {
+            return hovered ? Qt.tint(colors.panelAlt, Qt.rgba(0.4, 0.91, 0.98, 0.05)) : Qt.tint(colors.panelAlt, Qt.rgba(0.4, 0.91, 0.98, 0.026));
+        }
+        if (state === "blocked") {
+            return hovered ? Qt.tint(colors.redBg, Qt.rgba(1, 1, 1, 0.06)) : colors.redBg;
+        }
+        if (state === "working") {
+            return hovered ? Qt.tint(colors.panelAlt, Qt.rgba(0.4, 0.91, 0.98, 0.08)) : Qt.tint(colors.panelAlt, Qt.rgba(0.4, 0.91, 0.98, 0.035));
+        }
+        return hovered ? colors.cardAlt : colors.panelAlt;
+    }
+
+    function herdrSpaceBorder(space, hovered) {
+        const state = herdrSpaceStatus(space);
+        if (boolOrFalse(space && space.focused)) {
+            return hovered ? colors.teal : colors.borderStrong;
+        }
+        if (state === "blocked") {
+            return colors.red;
+        }
+        if (state === "working") {
+            return hovered ? colors.teal : colors.borderStrong;
+        }
+        return hovered ? colors.borderStrong : colors.lineSoft;
+    }
+
+    function herdrSpaceTitle(space) {
+        const label = stringOrEmpty(space && space.label);
+        if (label.length > 0) {
+            return label;
+        }
+        const project = shortProject(stringOrEmpty(space && space.project_name));
+        if (project && project !== "Global") {
+            return project;
+        }
+        return "Workspace";
+    }
+
+    function herdrSpaceMetaLabel(space) {
+        const bits = [];
+        const project = shortProject(stringOrEmpty(space && space.project_name));
+        const host = displayHostName(stringOrEmpty(space && (space.host_label || space.host_key)));
+        if (host) {
+            bits.push(host);
+        }
+        if (project && project !== "Global" && project !== herdrSpaceTitle(space)) {
+            bits.push(project);
+        }
+        const agents = Number(space && space.agent_count || 0);
+        const panes = Number(space && space.pane_count || 0);
+        const tabs = Number(space && space.tab_count || 0);
+        if (agents > 0) {
+            bits.push(String(agents) + (agents === 1 ? " agent" : " agents"));
+        }
+        if (panes > 0) {
+            bits.push(String(panes) + (panes === 1 ? " pane" : " panes"));
+        }
+        if (tabs > 0) {
+            bits.push(String(tabs) + (tabs === 1 ? " tab" : " tabs"));
+        }
+        return bits.join("  •  ");
+    }
+
+    function herdrSpaceHostToken(space) {
+        return hostToken(
+            stringOrEmpty(space && space.execution_mode),
+            stringOrEmpty(space && (space.host_key || space.host_label)),
+            ""
+        );
+    }
+
+    function herdrSpaceFocusTarget(space) {
+        return normalizedFocusTarget(space && space.focus_target);
+    }
+
+    function focusHerdrSpace(space) {
+        const target = herdrSpaceFocusTarget(space);
+        if (!target) {
+            return;
+        }
+        runFocusTarget(target);
     }
 
     function runtimePanelSectionPreferredHeight(section) {
@@ -5108,6 +5248,10 @@ ShellRoot {
     }
 
     function currentSessionKey() {
+        const optimistic = stringOrEmpty(optimisticCurrentSessionKey);
+        if (optimistic) {
+            return optimistic;
+        }
         return stringOrEmpty(dashboard.current_ai_session_key);
     }
 
@@ -5458,10 +5602,27 @@ ShellRoot {
         return active ? colors.blueWash : colors.panel;
     }
 
+    function herdrStatusState(value) {
+        const raw = stringOrEmpty(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+        if (["blocked", "needs_input", "needsinput", "waiting_input", "waiting_for_input"].indexOf(raw) >= 0) {
+            return "blocked";
+        }
+        if (["done", "complete", "completed", "success", "succeeded", "finished"].indexOf(raw) >= 0) {
+            return "done";
+        }
+        if (["working", "running", "thinking", "streaming", "tool_running", "busy"].indexOf(raw) >= 0) {
+            return "working";
+        }
+        if (["idle", "ready"].indexOf(raw) >= 0) {
+            return "idle";
+        }
+        return "unknown";
+    }
+
     function sessionPhase(session) {
-        const herdrStatus = stringOrEmpty(session && session.agent_status).toLowerCase();
-        if (["working", "blocked", "done", "idle", "unknown"].indexOf(herdrStatus) >= 0) {
-            return herdrStatus;
+        const rawHerdrStatus = stringOrEmpty(session && session.agent_status);
+        if (rawHerdrStatus.length > 0) {
+            return herdrStatusState(rawHerdrStatus);
         }
         const phase = stringOrEmpty(session && session.session_phase).toLowerCase();
         if (phase.length > 0) {
@@ -5517,6 +5678,9 @@ ShellRoot {
 
     function sessionTint(session) {
         const phase = sessionPhase(session);
+        if (phase === "blocked") {
+            return colors.redBg;
+        }
         if (phase === "needs_attention") {
             return colors.amberBg;
         }
@@ -5658,6 +5822,9 @@ ShellRoot {
 
     function sessionBadgeColor(session) {
         const state = sessionBadgeState(session);
+        if (state === "blocked") {
+            return colors.red;
+        }
         if (state === "needs_attention") {
             return colors.amber;
         }
@@ -5684,6 +5851,9 @@ ShellRoot {
 
     function sessionBadgeBackground(session) {
         const state = sessionBadgeState(session);
+        if (state === "blocked") {
+            return colors.redBg;
+        }
         if (state === "needs_attention") {
             return colors.amberBg;
         }
@@ -5710,6 +5880,9 @@ ShellRoot {
 
     function sessionBadgeBorderColor(session) {
         const state = sessionBadgeState(session);
+        if (state === "blocked") {
+            return colors.red;
+        }
         if (state === "stopped") {
             return Qt.tint(colors.violet, Qt.rgba(1, 1, 1, 0.16));
         }
@@ -5809,7 +5982,7 @@ ShellRoot {
     }
 
     function sessionTurnOwner(session) {
-        const herdrStatus = stringOrEmpty(session && session.agent_status).toLowerCase();
+        const herdrStatus = herdrStatusState(session && session.agent_status);
         if (herdrStatus === "working") {
             return "llm";
         }
@@ -6104,10 +6277,15 @@ ShellRoot {
     }
 
     function sessionIsCurrent(session) {
+        const optimistic = stringOrEmpty(optimisticCurrentSessionKey);
+        if (optimistic) {
+            return sessionIdentityKey(session) === optimistic || stringOrEmpty(session && session.session_key) === optimistic;
+        }
         if (boolOrFalse(session && session.focused) && boolOrFalse(session && session.is_current_host)) {
             return true;
         }
-        return currentSessionKey() === stringOrEmpty(session.session_key);
+        const current = currentSessionKey();
+        return current === sessionIdentityKey(session) || current === stringOrEmpty(session && session.session_key);
     }
 
     function sessionHasConflict(session) {
@@ -7134,6 +7312,14 @@ ShellRoot {
         }
 
         const target = sessionFocusTarget(sessionData || resolvedSessionKey);
+        const optimistic = sessionData ? sessionIdentityKey(sessionData) : resolvedSessionKey;
+        if (optimistic) {
+            optimisticCurrentSessionKey = optimistic;
+            selectedSessionKey = optimistic;
+            if (optimisticSessionFocusTimer) {
+                optimisticSessionFocusTimer.restart();
+            }
+        }
         runFocusTarget(target);
     }
 
@@ -7678,6 +7864,9 @@ ShellRoot {
             outputs: [],
             projects: [],
             worktrees: [],
+            herdr: {
+                spaces: [],
+            },
             scratchpad: {},
             ai_monitor_metrics: {},
             state_health: {},
@@ -7743,6 +7932,19 @@ ShellRoot {
             syncDisplayApplyStateFromDashboard();
             pruneSessionClosePending();
             const current = stringOrEmpty(dashboard.current_ai_session_key);
+            const optimistic = stringOrEmpty(optimisticCurrentSessionKey);
+            if (optimistic) {
+                const focusedSession = activeSessions().find(function(session) {
+                    return boolOrFalse(session && session.focused) && boolOrFalse(session && session.is_current_host);
+                });
+                const focusedKey = focusedSession ? sessionIdentityKey(focusedSession) : "";
+                if (current === optimistic || focusedKey === optimistic) {
+                    optimisticCurrentSessionKey = "";
+                    if (optimisticSessionFocusTimer) {
+                        optimisticSessionFocusTimer.stop();
+                    }
+                }
+            }
             if (current) {
                 selectedSessionKey = current;
             }

@@ -418,10 +418,10 @@ PanelWindow {
 
                     Rectangle {
                         Layout.fillWidth: true
-                        implicitHeight: 34
+                        implicitHeight: 38
                         radius: 10
-                        color: root.runtimePanelSectionExpanded("sessions") ? colors.blueWash : colors.card
-                        border.color: root.runtimePanelSectionExpanded("sessions") ? colors.blueMuted : colors.lineSoft
+                        color: root.runtimePanelSectionExpanded("sessions") ? colors.tealBg : colors.card
+                        border.color: root.runtimePanelSectionExpanded("sessions") ? colors.teal : colors.lineSoft
                         border.width: 1
 
                         RowLayout {
@@ -432,16 +432,16 @@ PanelWindow {
 
                             Text {
                                 text: root.runtimePanelSectionExpanded("sessions") ? "▾" : "▸"
-                                color: root.runtimePanelSectionExpanded("sessions") ? colors.blue : colors.textDim
+                                color: root.runtimePanelSectionExpanded("sessions") ? colors.teal : colors.textDim
                                 font.pixelSize: 12
                                 font.weight: Font.DemiBold
                             }
 
                             Text {
-                                text: "AI Sessions"
+                                text: "Herdr Monitor"
                                 color: colors.text
-                                font.pixelSize: 12
-                                font.weight: Font.DemiBold
+                                font.pixelSize: 13
+                                font.weight: Font.Bold
                             }
 
                             Text {
@@ -457,7 +457,7 @@ PanelWindow {
                                 width: sessionSectionCount.implicitWidth + 12
                                 height: 20
                                 radius: 6
-                                color: colors.bg
+                                color: root.runtimePanelSectionExpanded("sessions") ? colors.bg : colors.tealBg
                                 border.color: "transparent"
                                 border.width: 0
 
@@ -465,7 +465,7 @@ PanelWindow {
                                     id: sessionSectionCount
                                     anchors.centerIn: parent
                                     text: String(root.runtimePanelSectionCount("sessions"))
-                                    color: colors.muted
+                                    color: root.runtimePanelSectionExpanded("sessions") ? colors.teal : colors.muted
                                     font.pixelSize: 9
                                     font.weight: Font.DemiBold
                                 }
@@ -483,215 +483,253 @@ PanelWindow {
                     Text {
                         Layout.fillWidth: true
                         visible: root.runtimePanelSectionCollapsed("sessions")
-                        text: "Current focus and remote hosts stay visible here while Windows takes the main panel."
+                        text: "Herdr spaces and agents stay visible here while Windows takes the main panel."
                         color: colors.subtle
                         font.pixelSize: 9
                         font.weight: Font.Medium
                         wrapMode: Text.WordWrap
                     }
 
-                    ScriptModel {
-                        id: sessionGroupsModel
-                        values: root.groupedSessionBands()
-                        objectProp: "modelData"
-                    }
-
-                    ListView {
-                        id: sessionGroupList
+                    ColumnLayout {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         visible: root.runtimePanelSectionExpanded("sessions")
-                        clip: true
-                        spacing: 8
-                        model: sessionGroupsModel
-                        boundsBehavior: Flickable.StopAtBounds
-                        cacheBuffer: 1200
+                        spacing: 12
 
-                        delegate: Rectangle {
-                            id: sessionGroupCard
-                            required property var modelData
-                            readonly property var group: modelData
-                            readonly property bool expanded: root.sessionGroupExpanded(group)
-                            width: sessionGroupList.width
-                            implicitHeight: groupCardContent.implicitHeight + 16
-                            height: implicitHeight
-                            radius: 12
-                            color: root.sessionGroupFill(group)
-                            border.color: "transparent"
-                            border.width: 0
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
 
-                            ColumnLayout {
-                                id: groupCardContent
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.top: parent.top
-                                anchors.leftMargin: 8
-                                anchors.rightMargin: 8
-                                anchors.topMargin: 8
-                                spacing: 8
+                            Text {
+                                text: "Spaces"
+                                color: colors.teal
+                                font.pixelSize: 12
+                                font.weight: Font.Bold
+                            }
+
+                            Rectangle {
+                                width: spacesCountText.implicitWidth + 10
+                                height: 18
+                                radius: 6
+                                color: colors.bg
+                                border.color: "transparent"
+                                border.width: 0
+
+                                Text {
+                                    id: spacesCountText
+                                    anchors.centerIn: parent
+                                    text: String(root.herdrSpaces().length)
+                                    color: colors.muted
+                                    font.pixelSize: 8
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 1
+                                radius: 1
+                                color: colors.lineSoft
+                            }
+                        }
+
+                        ScriptModel {
+                            id: herdrSpacesModel
+                            values: root.herdrSpaces()
+                            objectProp: "modelData"
+                        }
+
+                        ListView {
+                            id: herdrSpacesList
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: Math.min(contentHeight, 150)
+                            visible: count > 0
+                            clip: true
+                            spacing: 6
+                            model: herdrSpacesModel
+                            boundsBehavior: Flickable.StopAtBounds
+
+                            delegate: Rectangle {
+                                id: herdrSpaceRow
+                                required property var modelData
+                                readonly property var space: modelData
+                                readonly property var token: root.herdrSpaceHostToken(space)
+                                readonly property bool canFocus: root.herdrSpaceFocusTarget(space) !== null
+                                readonly property bool hovered: spaceMouse.containsMouse
+                            width: herdrSpacesList.width
+                                implicitHeight: 58
+                                radius: 8
+                                color: root.herdrSpaceFill(space, hovered)
+                                border.color: root.herdrSpaceBorder(space, hovered)
+                                border.width: 1
+                                opacity: root.herdrSpaceStatus(space) === "idle" ? 0.78 : 1
 
                                 Rectangle {
-                                    id: groupHeaderSurface
-                                    Layout.fillWidth: true
-                                    implicitHeight: 30
-                                    radius: 9
-                                    color: root.sessionGroupHeaderFill(group, groupHeaderMouse.containsMouse, sessionGroupCard.expanded)
-                                    border.color: "transparent"
-                                    border.width: 0
+                                    anchors.left: parent.left
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.leftMargin: 7
+                                    width: root.boolOrFalse(space.focused) ? 5 : 3
+                                    height: root.boolOrFalse(space.focused) ? 42 : 30
+                                    radius: 1
+                                    color: root.herdrSpaceStatusColor(space)
+                                    opacity: root.boolOrFalse(space.focused) ? 0.95 : 0.7
+                                }
 
-                                    RowLayout {
-                                        id: groupHeaderRow
-                                        anchors.fill: parent
-                                        anchors.leftMargin: 10
-                                        anchors.rightMargin: 10
-                                        spacing: 8
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 16
+                                    anchors.rightMargin: 8
+                                    spacing: 8
 
-                                        Text {
-                                            text: sessionGroupCard.expanded ? "▾" : "▸"
-                                            color: root.sessionGroupChevronColor(group)
-                                            font.pixelSize: 12
-                                            font.weight: Font.DemiBold
+                                    Rectangle {
+                                        width: 34
+                                        height: 34
+                                        radius: 7
+                                        color: token ? token.background : colors.cardAlt
+                                        border.color: token ? token.border : colors.lineSoft
+                                        border.width: 1
+
+                                        Image {
+                                            visible: token && root.stringOrEmpty(token.icon).length > 0
+                                            anchors.centerIn: parent
+                                            source: token ? token.icon : ""
+                                            sourceSize.width: 17
+                                            sourceSize.height: 17
+                                            width: 17
+                                            height: 17
+                                            mipmap: true
                                         }
 
                                         Text {
+                                            visible: !token || root.stringOrEmpty(token.icon).length === 0
+                                            anchors.centerIn: parent
+                                            text: token ? root.stringOrEmpty(token.monogram) : "H"
+                                            color: token ? token.foreground : colors.textDim
+                                            font.pixelSize: 10
+                                            font.weight: Font.Bold
+                                        }
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 1
+
+                                        Text {
                                             Layout.fillWidth: true
-                                            text: root.sessionGroupTitle(group)
-                                            color: root.sessionGroupHeaderTextColor(group)
-                                            font.pixelSize: 11
-                                            font.weight: Font.DemiBold
+                                            text: root.herdrSpaceTitle(space)
+                                            color: root.boolOrFalse(space.focused) ? colors.text : colors.textDim
+                                            font.pixelSize: 14
+                                            font.weight: root.boolOrFalse(space.focused) ? Font.Bold : Font.DemiBold
                                             elide: Text.ElideRight
                                         }
 
-                                        Image {
-                                            visible: root.stringOrEmpty(group.execution_mode).toLowerCase() === "ssh"
-                                            source: "file://" + shellConfig.tailscaleIcon
-                                            sourceSize.width: 14
-                                            sourceSize.height: 14
-                                            Layout.preferredWidth: 14
-                                            Layout.preferredHeight: 14
-                                            mipmap: true
-                                            opacity: 0.9
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: root.herdrSpaceMetaLabel(space)
+                                            color: colors.subtle
+                                            font.pixelSize: 9
+                                            elide: Text.ElideRight
                                         }
+                                    }
+
+                                    Rectangle {
+                                        height: 26
+                                        radius: 6
+                                        color: root.herdrSpaceStatusBackground(space)
+                                        border.color: root.herdrSpaceStatusColor(space)
+                                        border.width: root.herdrSpaceStatus(space) === "unknown" ? 0 : 1
+                                        Layout.preferredWidth: spaceStatusText.implicitWidth + 18
 
                                         Text {
-                                            visible: !sessionGroupCard.expanded && root.sessionGroupMetaLabel(group).length > 0
-                                            text: root.sessionGroupMetaLabel(group)
-                                            color: colors.subtle
-                                            font.pixelSize: 8
-                                            font.weight: Font.Medium
-                                        }
-
-                                        Rectangle {
-                                            width: sessionGroupCountText.implicitWidth + 10
-                                            height: 18
-                                            radius: 6
-                                            color: colors.bg
-                                            border.color: "transparent"
-                                            border.width: 0
-
-                                            Text {
-                                                id: sessionGroupCountText
-                                                anchors.centerIn: parent
-                                                text: String(root.arrayOrEmpty(group.sessions).length)
-                                                color: colors.muted
-                                                font.pixelSize: 8
-                                                font.weight: Font.DemiBold
-                                            }
-                                        }
-                                    }
-
-                                    MouseArea {
-                                        id: groupHeaderMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: root.toggleSessionGroup(group)
-                                    }
-                                }
-
-                                ColumnLayout {
-                                    visible: sessionGroupCard.expanded
-                                    Layout.fillWidth: true
-                                    spacing: 8
-
-                                    Repeater {
-                                        model: root.arrayOrEmpty(group.project_groups)
-
-                                        delegate: ColumnLayout {
-                                            required property var modelData
-                                            readonly property var projectGroup: modelData
-                                            Layout.fillWidth: true
-                                            spacing: 4
-
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 6
-
-                                                Rectangle {
-                                                    height: 18
-                                                    radius: 6
-                                                    color: root.sessionProjectBadgeFill(projectGroup)
-                                                    border.width: 0
-                                                    Layout.maximumWidth: Math.max(108, groupCardContent.width * 0.34)
-                                                    Layout.preferredWidth: Math.min(Layout.maximumWidth, projectGroupLabel.implicitWidth + 12)
-
-                                                    Text {
-                                                        id: projectGroupLabel
-                                                        anchors.centerIn: parent
-                                                        text: root.stringOrEmpty(projectGroup.display_name) || "Global"
-                                                        color: root.sessionProjectBadgeText(projectGroup)
-                                                        font.pixelSize: 9
-                                                        font.weight: Font.DemiBold
-                                                        elide: Text.ElideRight
-                                                        width: Math.max(0, parent.width - 12)
-                                                    }
-                                                }
-
-                                                Rectangle {
-                                                    height: 18
-                                                    radius: 6
-                                                    color: colors.bg
-                                                    border.color: "transparent"
-                                                    border.width: 0
-                                                    Layout.preferredWidth: Math.max(20, sessionProjectCountText.implicitWidth + 10)
-
-                                                    Text {
-                                                        id: sessionProjectCountText
-                                                        anchors.centerIn: parent
-                                                        text: String(root.arrayOrEmpty(projectGroup.sessions).length)
-                                                        color: colors.muted
-                                                        font.pixelSize: 8
-                                                        font.weight: Font.DemiBold
-                                                    }
-                                                }
-                                            }
-
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 6
-
-                                                Repeater {
-                                                    model: root.arrayOrEmpty(projectGroup.sessions)
-
-                                                    delegate: RootComponents.SessionRow {
-                                                        required property var modelData
-                                                        Layout.fillWidth: true
-                                                    rootObject: root
-                                                    colorsObject: colors
-                                                    session: modelData
-                                                    interactive: true
-                                                    compact: true
-                                                    showHostToken: false
-                                                    showProjectChip: false
-                                                    closePending: root.sessionClosePending(modelData)
-                                                    onClicked: root.focusSession(modelData)
-                                                    onCloseRequested: root.closeSession(modelData)
-                                                    }
-                                                }
-                                            }
+                                            id: spaceStatusText
+                                            anchors.centerIn: parent
+                                            text: root.herdrSpaceStatusLabel(space)
+                                            color: root.herdrSpaceStatusColor(space)
+                                            font.pixelSize: 10
+                                            font.weight: Font.Bold
                                         }
                                     }
                                 }
+
+                                MouseArea {
+                                    id: spaceMouse
+                                    anchors.fill: parent
+                                    enabled: herdrSpaceRow.canFocus
+                                    hoverEnabled: true
+                                    cursorShape: herdrSpaceRow.canFocus ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: root.focusHerdrSpace(space)
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Text {
+                                text: "Agents"
+                                color: colors.teal
+                                font.pixelSize: 12
+                                font.weight: Font.Bold
+                            }
+
+                            Rectangle {
+                                width: agentsCountText.implicitWidth + 10
+                                height: 18
+                                radius: 6
+                                color: colors.bg
+                                border.color: "transparent"
+                                border.width: 0
+
+                                Text {
+                                    id: agentsCountText
+                                    anchors.centerIn: parent
+                                    text: String(root.panelSessions().length)
+                                    color: colors.muted
+                                    font.pixelSize: 8
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 1
+                                radius: 1
+                                color: colors.lineSoft
+                            }
+                        }
+
+                        ScriptModel {
+                            id: herdrAgentsModel
+                            values: root.panelSessions()
+                            objectProp: "modelData"
+                        }
+
+                        ListView {
+                            id: herdrAgentsList
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            visible: count > 0
+                            clip: true
+                            spacing: 7
+                            model: herdrAgentsModel
+                            boundsBehavior: Flickable.StopAtBounds
+                            cacheBuffer: 1200
+
+                            delegate: RootComponents.SessionRow {
+                                required property var modelData
+                                width: herdrAgentsList.width
+                                rootObject: root
+                                colorsObject: colors
+                                session: modelData
+                                interactive: true
+                                compact: false
+                                showHostToken: false
+                                showProjectChip: false
+                                showCurrentChip: false
+                                closePending: root.sessionClosePending(modelData)
+                                onClicked: root.focusSession(modelData)
+                                onCloseRequested: root.closeSession(modelData)
                             }
                         }
                     }
@@ -795,7 +833,7 @@ PanelWindow {
                     Text {
                         Layout.fillWidth: true
                         visible: root.panelProjects().length > 0 && root.runtimePanelSectionCollapsed("windows")
-                        text: "Window groups stay available here while AI Sessions takes the full panel."
+                        text: "Window groups stay available here while Herdr Monitor takes the full panel."
                         color: colors.subtle
                         font.pixelSize: 9
                         font.weight: Font.Medium

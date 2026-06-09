@@ -31,28 +31,28 @@ Rectangle {
     readonly property string gitChipText: rootObject.sessionGitChipText(session)
     readonly property var hostTokenData: rootObject.sessionHostToken(session)
     readonly property color accentColor: rootObject.launcherEntryAccentColor(session)
-    readonly property color currentAccentColor: colorsObject.textDim
+    readonly property color currentAccentColor: colorsObject.teal
     readonly property string projectLabel: rootObject.stringOrEmpty(session && (session.project_label || rootObject.shortProject(rootObject.stringOrEmpty(session.project_name || session.project || "global"))))
     readonly property bool closableSurface: showCloseAction && rootObject.sessionHasClosableSurface(session)
     property bool hasMotion: rootObject.sessionHasMotion(session)
-    readonly property int rowHeight: compact ? 48 : 62
-    readonly property int railHeight: compact ? (selected ? 30 : (effectiveHovered ? 26 : 22)) : (selected ? 38 : (effectiveHovered ? 32 : 28))
-    readonly property int iconWrapSize: compact ? 28 : 34
-    readonly property int iconGlyphSize: compact ? 14 : 16
-    readonly property int chipHeight: compact ? 18 : 20
+    readonly property int rowHeight: compact ? 48 : 72
+    readonly property int railHeight: compact ? (selected ? 30 : (effectiveHovered ? 26 : 22)) : (selected ? 42 : (effectiveHovered ? 36 : 30))
+    readonly property int iconWrapSize: compact ? 28 : 38
+    readonly property int iconGlyphSize: compact ? 14 : 18
+    readonly property int chipHeight: compact ? 18 : 22
     readonly property bool stoppedNotification: activityState === "stopped"
 
     implicitHeight: rowHeight
     radius: compact ? 7 : 8
     color: isCurrent
         ? (selected
-            ? Qt.tint(colorsObject.blueBg, Qt.rgba(0.40, 0.86, 0.92, 0.08))
-            : Qt.tint(colorsObject.cardAlt, Qt.rgba(0.40, 0.86, 0.92, effectiveHovered ? 0.11 : 0.07)))
+            ? Qt.tint(colorsObject.panelAlt, Qt.rgba(0.4, 0.91, 0.98, 0.045))
+            : Qt.tint(colorsObject.panelAlt, Qt.rgba(0.4, 0.91, 0.98, effectiveHovered ? 0.04 : 0.02)))
         : (selected ? colorsObject.blueBg : (effectiveHovered ? colorsObject.cardAlt : "transparent"))
     border.color: isCurrent
-        ? (effectiveHovered ? Qt.rgba(1, 1, 1, 0.04) : "transparent")
+        ? "transparent"
         : (selected ? colorsObject.blue : (effectiveHovered ? colorsObject.borderStrong : "transparent"))
-    border.width: 1
+    border.width: isCurrent ? 0 : 1
     opacity: (closePending ? 0.9 : 1) * rootObject.sessionIdleRowOpacity(session)
 
     Rectangle {
@@ -79,13 +79,13 @@ Rectangle {
         anchors.leftMargin: isCurrent ? 10 : 8
         anchors.verticalCenter: parent.verticalCenter
         width: isCurrent ? 3 : 2
-        height: isCurrent ? (compact ? 22 : 28) : railHeight
+        height: isCurrent ? (compact ? 26 : 38) : railHeight
         radius: 1
         color: isCurrent ? currentAccentColor : accentColor
-        opacity: (isCurrent ? 0.28 : (selected ? 0.92 : (effectiveHovered ? 0.72 : 0.46))) * rootObject.sessionIdleTextOpacity(session)
+        opacity: (isCurrent ? 0.58 : (selected ? 0.86 : (effectiveHovered ? 0.66 : 0.42))) * rootObject.sessionIdleTextOpacity(session)
 
         Rectangle {
-            visible: isCurrent
+            visible: false
             anchors.centerIn: parent
             width: 1
             height: Math.max(10, parent.height - (compact ? 8 : 10))
@@ -106,9 +106,9 @@ Rectangle {
             width: iconWrapSize
             height: iconWrapSize
             radius: compact ? 7 : 8
-            color: "transparent"
-            border.color: "transparent"
-            border.width: 0
+            color: hasMotion || isCurrent ? colorsObject.bg : "transparent"
+            border.color: hasMotion || isCurrent ? colorsObject.lineSoft : "transparent"
+            border.width: hasMotion || isCurrent ? 1 : 0
 
             Item {
                 id: sessionToolIconWrap
@@ -183,8 +183,8 @@ Rectangle {
                 Layout.fillWidth: true
                 text: primaryLabel
                 color: isCurrent ? colorsObject.text : (selected ? colorsObject.blue : colorsObject.text)
-                font.pixelSize: compact ? 12 : 13
-                font.weight: Font.DemiBold
+                font.pixelSize: compact ? 12 : 14
+                font.weight: isCurrent ? Font.Bold : Font.DemiBold
                 elide: Text.ElideRight
                 opacity: rootObject.sessionIdleTextOpacity(session)
             }
@@ -193,7 +193,7 @@ Rectangle {
                 Layout.fillWidth: true
                 text: secondaryLabel
                 color: isCurrent ? colorsObject.textDim : (selected ? colorsObject.textDim : colorsObject.subtle)
-                font.pixelSize: compact ? 9 : 10
+                font.pixelSize: compact ? 9 : 11
                 elide: Text.ElideRight
                 opacity: rootObject.sessionIdleTextOpacity(session)
             }
@@ -255,11 +255,31 @@ Rectangle {
         }
 
         Rectangle {
+            visible: showCurrentChip && isCurrent
+            height: chipHeight
+            radius: 6
+            color: colorsObject.tealBg
+            border.color: colorsObject.teal
+            border.width: 1
+            opacity: rootObject.sessionIdleChipOpacity(session)
+            Layout.preferredWidth: currentChipText.implicitWidth + 14
+
+            Text {
+                id: currentChipText
+                anchors.centerIn: parent
+                text: "Current"
+                color: colorsObject.teal
+                font.pixelSize: compact ? 7 : 9
+                font.weight: Font.Bold
+            }
+        }
+
+        Rectangle {
             visible: showProjectChip && projectLabel.length > 0
             height: chipHeight
             radius: 6
-            color: isCurrent ? colorsObject.panelAlt : (selected ? colorsObject.bg : colorsObject.panelAlt)
-            border.color: isCurrent ? colorsObject.lineSoft : (selected ? colorsObject.blue : colorsObject.lineSoft)
+            color: isCurrent ? colorsObject.bg : (selected ? colorsObject.bg : colorsObject.panelAlt)
+            border.color: isCurrent ? colorsObject.blueMuted : (selected ? colorsObject.blue : colorsObject.lineSoft)
             border.width: 1
             Layout.preferredWidth: projectText.implicitWidth + 12
             opacity: rootObject.sessionIdleChipOpacity(session)
@@ -268,7 +288,7 @@ Rectangle {
                 id: projectText
                 anchors.centerIn: parent
                 text: projectLabel
-                color: isCurrent ? currentAccentColor : (selected ? colorsObject.blue : colorsObject.textDim)
+                color: isCurrent ? colorsObject.blue : (selected ? colorsObject.blue : colorsObject.textDim)
                 font.pixelSize: compact ? 7 : 8
                 font.weight: Font.DemiBold
             }
@@ -307,8 +327,8 @@ Rectangle {
             Layout.preferredWidth: stoppedNotification
                 ? (compact ? 20 : 22)
                 : (activityLabel.length > 0
-                    ? activityText.implicitWidth + 16
-                    : ((compact ? 18 : 20) + 12))
+                    ? activityText.implicitWidth + (activitySymbol.length > 0 ? activitySymbolText.implicitWidth + 24 : 16)
+                    : ((compact ? 22 : 28) + 12))
 
             RowLayout {
                 anchors.fill: parent
@@ -326,19 +346,28 @@ Rectangle {
                 }
 
                 Text {
+                    id: activitySymbolText
                     visible: !stoppedNotification && activitySymbol.length > 0
                     text: activitySymbol
                     color: rootObject.sessionBadgeColor(session)
-                    font.pixelSize: compact ? 8 : 9
-                    font.weight: Font.DemiBold
+                    font.pixelSize: compact ? 12 : 16
+                    font.weight: Font.Bold
+
+                    RotationAnimator on rotation {
+                        running: hasMotion
+                        loops: Animation.Infinite
+                        from: 0
+                        to: 360
+                        duration: 950
+                    }
                 }
 
                 Text {
                     id: activityText
                     text: activityLabel
                     color: rootObject.sessionBadgeColor(session)
-                    font.pixelSize: compact ? 7 : 8
-                    font.weight: Font.DemiBold
+                    font.pixelSize: compact ? 8 : 11
+                    font.weight: Font.Bold
                 }
             }
         }

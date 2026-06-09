@@ -9616,6 +9616,58 @@ FORMAT JSONEachRow
         return "unknown"
 
     @staticmethod
+    def _herdr_agent_status_state(value: Any) -> str:
+        raw = str(value or "").strip().lower()
+        normalized = re.sub(r"[^a-z0-9]+", "_", raw).strip("_")
+        if normalized in {"blocked", "needs_input", "needsinput", "waiting_input", "waiting_for_input"}:
+            return "blocked"
+        if normalized in {"done", "complete", "completed", "success", "succeeded", "finished"}:
+            return "done"
+        if normalized in {"working", "running", "thinking", "streaming", "tool_running", "busy"}:
+            return "working"
+        if normalized in {"idle", "ready"}:
+            return "idle"
+        return "unknown"
+
+    @classmethod
+    def _herdr_agent_status_rank(cls, value: Any) -> int:
+        priority = {
+            "unknown": 0,
+            "idle": 1,
+            "working": 2,
+            "done": 3,
+            "blocked": 4,
+        }
+        return priority.get(cls._herdr_agent_status_state(value), 0)
+
+    def _annotate_herdr_rows(
+        self,
+        rows: List[Dict[str, Any]],
+        *,
+        host: str,
+        execution_mode: str,
+        connection_key: str,
+        ssh_target: str = "",
+        is_remote: bool = False,
+    ) -> List[Dict[str, Any]]:
+        annotated: List[Dict[str, Any]] = []
+        host_key = str(host or "").strip().lower()
+        normalized_connection = self._normalize_connection_key(connection_key)
+        for row in rows:
+            item = dict(row)
+            item.setdefault("host_name", host_key)
+            item.setdefault("herdr_host", host_key)
+            item.setdefault("target_host", host_key)
+            item.setdefault("execution_mode", execution_mode)
+            item.setdefault("connection_key", normalized_connection)
+            item.setdefault("ssh_target", ssh_target)
+            item.setdefault("remote_target", ssh_target)
+            item.setdefault("is_remote_herdr", bool(is_remote))
+            item.setdefault("is_current_host", not bool(is_remote))
+            annotated.append(item)
+        return annotated
+
+    @staticmethod
     def _herdr_session_key(row: Dict[str, Any], host: str = "") -> str:
         prefix = "herdr"
         normalized_host = re.sub(r"[^a-z0-9._:-]+", "-", str(host or "").strip().lower()).strip("-")
@@ -9858,10 +9910,38 @@ FORMAT JSONEachRow
             "ssh_target": ssh_target,
             "connection_key": connection_key,
             "status": status_payload,
-            "agents": self._herdr_result_array(agent_payload, "agents"),
-            "panes": self._herdr_result_array(pane_payload, "panes"),
-            "workspaces": self._herdr_result_array(workspace_payload, "workspaces"),
-            "tabs": self._herdr_result_array(tab_payload, "tabs"),
+            "agents": self._annotate_herdr_rows(
+                self._herdr_result_array(agent_payload, "agents"),
+                host=host,
+                execution_mode="ssh",
+                connection_key=connection_key,
+                ssh_target=ssh_target,
+                is_remote=True,
+            ),
+            "panes": self._annotate_herdr_rows(
+                self._herdr_result_array(pane_payload, "panes"),
+                host=host,
+                execution_mode="ssh",
+                connection_key=connection_key,
+                ssh_target=ssh_target,
+                is_remote=True,
+            ),
+            "workspaces": self._annotate_herdr_rows(
+                self._herdr_result_array(workspace_payload, "workspaces"),
+                host=host,
+                execution_mode="ssh",
+                connection_key=connection_key,
+                ssh_target=ssh_target,
+                is_remote=True,
+            ),
+            "tabs": self._annotate_herdr_rows(
+                self._herdr_result_array(tab_payload, "tabs"),
+                host=host,
+                execution_mode="ssh",
+                connection_key=connection_key,
+                ssh_target=ssh_target,
+                is_remote=True,
+            ),
             "errors": errors,
         }
         snapshot["sessions"] = self._normalize_herdr_sessions(snapshot, remote_target=target)
@@ -9886,13 +9966,35 @@ FORMAT JSONEachRow
             self._run_herdr_json(["workspace", "list"]),
             self._run_herdr_json(["tab", "list"]),
         )
+        local_host = self._local_host_alias()
+        local_connection_key = self._normalize_connection_key(f"local@{local_host}")
         snapshot = {
             "success": bool(status_payload.get("success", False)),
             "status": status_payload,
-            "agents": self._herdr_result_array(agent_payload, "agents"),
-            "panes": self._herdr_result_array(pane_payload, "panes"),
-            "workspaces": self._herdr_result_array(workspace_payload, "workspaces"),
-            "tabs": self._herdr_result_array(tab_payload, "tabs"),
+            "agents": self._annotate_herdr_rows(
+                self._herdr_result_array(agent_payload, "agents"),
+                host=local_host,
+                execution_mode="local",
+                connection_key=local_connection_key,
+            ),
+            "panes": self._annotate_herdr_rows(
+                self._herdr_result_array(pane_payload, "panes"),
+                host=local_host,
+                execution_mode="local",
+                connection_key=local_connection_key,
+            ),
+            "workspaces": self._annotate_herdr_rows(
+                self._herdr_result_array(workspace_payload, "workspaces"),
+                host=local_host,
+                execution_mode="local",
+                connection_key=local_connection_key,
+            ),
+            "tabs": self._annotate_herdr_rows(
+                self._herdr_result_array(tab_payload, "tabs"),
+                host=local_host,
+                execution_mode="local",
+                connection_key=local_connection_key,
+            ),
             "errors": [
                 {
                     "command": payload.get("command"),
@@ -12608,6 +12710,176 @@ FORMAT JSONEachRow
         snapshot["scaled_value"] = scale
         return snapshot
 
+    def _build_herdr_spaces(
+        self,
+        herdr_snapshot: Dict[str, Any],
+        sessions: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Build Herdr workspace/project rows for the persistent sidebar."""
+        local_host = self._local_host_alias()
+        spaces: Dict[str, Dict[str, Any]] = {}
+
+        def host_key_for(item: Dict[str, Any]) -> str:
+            return str(
+                item.get("herdr_host")
+                or item.get("host_name")
+                or item.get("host")
+                or local_host
+            ).strip().lower() or local_host
+
+        def workspace_id_for(item: Dict[str, Any]) -> str:
+            return str(
+                item.get("workspace_id")
+                or item.get("workspace")
+                or item.get("id")
+                or ""
+            ).strip()
+
+        def workspace_label_for(item: Dict[str, Any], workspace_id: str) -> str:
+            label = str(
+                item.get("label")
+                or item.get("name")
+                or item.get("title")
+                or item.get("workspace_name")
+                or ""
+            ).strip()
+            return label or workspace_id or "Workspace"
+
+        def ensure_space(
+            *,
+            host_key: str,
+            workspace_id: str,
+            label: str,
+            execution_mode: str,
+            is_current_host: bool,
+            focused: bool = False,
+            focus_target: Optional[Dict[str, Any]] = None,
+        ) -> Dict[str, Any]:
+            normalized_workspace = workspace_id or "unknown"
+            space_key = f"herdr:{host_key}:workspace:{normalized_workspace}"
+            existing = spaces.get(space_key)
+            if existing is None:
+                existing = {
+                    "space_key": space_key,
+                    "host_key": host_key,
+                    "host_label": host_key,
+                    "workspace_id": workspace_id,
+                    "label": label,
+                    "focused": bool(focused),
+                    "agent_status": "unknown",
+                    "agent_count": 0,
+                    "pane_count": 0,
+                    "tab_count": 0,
+                    "project_name": "global",
+                    "execution_mode": execution_mode,
+                    "is_current_host": bool(is_current_host),
+                }
+                if focus_target:
+                    existing["focus_target"] = focus_target
+                spaces[space_key] = existing
+            else:
+                existing["focused"] = bool(existing.get("focused", False)) or bool(focused)
+                if not str(existing.get("label") or "").strip() and label:
+                    existing["label"] = label
+                if focus_target and not existing.get("focus_target"):
+                    existing["focus_target"] = focus_target
+            return existing
+
+        workspaces = [
+            item for item in herdr_snapshot.get("workspaces", []) or []
+            if isinstance(item, dict)
+        ]
+        for workspace in workspaces:
+            host_key = host_key_for(workspace)
+            workspace_id = workspace_id_for(workspace)
+            is_remote = bool(workspace.get("is_remote_herdr", False))
+            execution_mode = str(workspace.get("execution_mode") or ("ssh" if is_remote else "local")).strip() or "local"
+            focus_target = None
+            if workspace_id and not is_remote:
+                focus_target = {
+                    "method": "herdr.workspace.focus",
+                    "params": {"workspace_id": workspace_id},
+                }
+            ensure_space(
+                host_key=host_key,
+                workspace_id=workspace_id,
+                label=workspace_label_for(workspace, workspace_id),
+                execution_mode=execution_mode,
+                is_current_host=not is_remote,
+                focused=bool(workspace.get("focused", False)),
+                focus_target=focus_target,
+            )
+
+        herdr_sessions = [
+            session for session in sessions
+            if isinstance(session, dict)
+            and (
+                str(session.get("source") or "").strip() == "herdr"
+                or str(session.get("pane_id") or "").strip()
+            )
+        ]
+        for session in herdr_sessions:
+            host_key = host_key_for(session)
+            workspace_id = workspace_id_for(session)
+            project_name = str(session.get("project_name") or session.get("project") or "global").strip() or "global"
+            label = project_name.rsplit("/", 1)[-1] if project_name != "global" else workspace_id or "Workspace"
+            is_remote = bool(session.get("is_remote_herdr", False))
+            space = ensure_space(
+                host_key=host_key,
+                workspace_id=workspace_id,
+                label=label,
+                execution_mode=str(session.get("execution_mode") or ("ssh" if is_remote else "local")).strip() or "local",
+                is_current_host=bool(session.get("is_current_host", not is_remote)),
+                focused=bool(session.get("focused", False)),
+            )
+            current_status = str(space.get("agent_status") or "unknown").strip()
+            candidate_status = self._herdr_agent_status_state(session.get("agent_status"))
+            if self._herdr_agent_status_rank(candidate_status) > self._herdr_agent_status_rank(current_status):
+                space["agent_status"] = candidate_status
+            if bool(session.get("focused", False)) or str(space.get("project_name") or "global") == "global":
+                space["project_name"] = project_name
+
+        for space in spaces.values():
+            host_key = str(space.get("host_key") or "").strip().lower()
+            workspace_id = str(space.get("workspace_id") or "").strip()
+
+            matching_sessions = [
+                session for session in herdr_sessions
+                if host_key_for(session) == host_key and workspace_id_for(session) == workspace_id
+            ]
+            matching_panes = [
+                pane for pane in herdr_snapshot.get("panes", []) or []
+                if isinstance(pane, dict)
+                and host_key_for(pane) == host_key
+                and workspace_id_for(pane) == workspace_id
+            ]
+            matching_tabs = [
+                tab for tab in herdr_snapshot.get("tabs", []) or []
+                if isinstance(tab, dict)
+                and host_key_for(tab) == host_key
+                and workspace_id_for(tab) == workspace_id
+            ]
+            matching_agents = [
+                agent for agent in herdr_snapshot.get("agents", []) or []
+                if isinstance(agent, dict)
+                and host_key_for(agent) == host_key
+                and workspace_id_for(agent) == workspace_id
+            ]
+
+            space["agent_count"] = max(len(matching_sessions), len(matching_agents))
+            space["pane_count"] = len(matching_panes)
+            space["tab_count"] = len(matching_tabs)
+            if not str(space.get("project_name") or "").strip():
+                space["project_name"] = "global"
+
+        return sorted(spaces.values(), key=lambda item: (
+            not bool(item.get("focused", False)),
+            0 if bool(item.get("is_current_host", False)) else 1,
+            str(item.get("host_key") or ""),
+            str(item.get("label") or ""),
+            str(item.get("workspace_id") or ""),
+        ))
+
     async def _dashboard_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return the daemon-owned dashboard payload consumed by QuickShell."""
         runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
@@ -12657,6 +12929,7 @@ FORMAT JSONEachRow
                 "pane_count": len(herdr_snapshot.get("panes", []) or []),
                 "agent_count": len(herdr_snapshot.get("agents", []) or []),
                 "errors": herdr_snapshot.get("errors", []),
+                "spaces": self._build_herdr_spaces(herdr_snapshot, sessions),
             },
             "ai_monitor_metrics": {
                 "active_sessions": len(sessions),

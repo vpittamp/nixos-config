@@ -22,6 +22,7 @@ Item {
     property alias launcherQueryDebounceRef: launcherQueryDebounce
     property alias launcherSessionSwitcherOpenTimerRef: launcherSessionSwitcherOpenTimer
     property alias launcherWindowSwitcherOpenTimerRef: launcherWindowSwitcherOpenTimer
+    property alias optimisticSessionFocusTimerRef: optimisticSessionFocusTimer
     property alias sessionPreviewDebounceRef: sessionPreviewDebounce
     property alias sessionPreviewFollowTimerRef: sessionPreviewFollowTimer
     property alias settingsFocusTimerRef: settingsFocusTimer
@@ -307,6 +308,13 @@ Item {
         interval: 0
         repeat: false
         onTriggered: shellRoot.finalizeLauncherWindowSwitcherOpen()
+    }
+
+    Timer {
+        id: optimisticSessionFocusTimer
+        interval: 2200
+        repeat: false
+        onTriggered: shellRoot.optimisticCurrentSessionKey = ""
     }
 
     Timer {
