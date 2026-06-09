@@ -10,24 +10,13 @@ let
   # Fall back to nixpkgs-unstable if flake not available
   baseClaudeCode = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
 
-  # Wrapped Claude Code with payload interceptor and Chrome integration
+  # Wrapped Claude Code with Chrome integration only.
   claudeCodePackage = pkgs.symlinkJoin {
     name = "claude-code-wrapped";
     paths = [ baseClaudeCode ];
     buildInputs = [ pkgs.makeWrapper ];
     postBuild = ''
       wrapProgram $out/bin/claude \
-        --run 'export I3PM_AI_TRACE_TOKEN="''$(date +%s%N)-''$RANDOM"' \
-        --run 'append_otel_resource_attr() { local key="''${1:-}"; local value="''${2:-}"; [ -n "$key" ] && [ -n "$value" ] || return 0; local pair="''${key}=''${value}"; if [ -n "''${OTEL_RESOURCE_ATTRIBUTES:-}" ]; then export OTEL_RESOURCE_ATTRIBUTES="''${OTEL_RESOURCE_ATTRIBUTES},''${pair}"; else export OTEL_RESOURCE_ATTRIBUTES="''${pair}"; fi; }; I3PM_OTEL_REMOTE_TARGET=""; I3PM_AI_HOST_ALIAS="''${I3PM_LOCAL_HOST_ALIAS:-''${HOSTNAME:-}}"; if [ -n "''${TMUX:-}" ]; then if [ -z "''${TMUX_SESSION:-}" ]; then export TMUX_SESSION="$(${pkgs.tmux}/bin/tmux display-message -p '"'"'#S'"'"' 2>/dev/null || true)"; fi; if [ -z "''${TMUX_WINDOW:-}" ]; then export TMUX_WINDOW="$(${pkgs.tmux}/bin/tmux display-message -p '"'"'#I:#W'"'"' 2>/dev/null || true)"; fi; if [ -z "''${TMUX_PANE:-}" ]; then export TMUX_PANE="$(${pkgs.tmux}/bin/tmux display-message -p '"'"'#D'"'"' 2>/dev/null || true)"; fi; fi; I3PM_AI_PANE_KEY=""; if [ -n "''${I3PM_REMOTE_HOST:-}" ]; then I3PM_OTEL_REMOTE_TARGET="''${I3PM_REMOTE_HOST}:''${I3PM_REMOTE_PORT:-22}"; if [ -n "''${I3PM_REMOTE_USER:-}" ]; then I3PM_OTEL_REMOTE_TARGET="''${I3PM_REMOTE_USER}@''${I3PM_OTEL_REMOTE_TARGET}"; fi; fi; if [ -n "''${I3PM_CONNECTION_KEY:-}" ] && [ -n "''${TMUX_SESSION:-}" ] && [ -n "''${TMUX_WINDOW:-}" ] && [ -n "''${TMUX_PANE:-}" ]; then I3PM_AI_PANE_KEY="''${I3PM_CONNECTION_KEY}::''${TMUX_SESSION}::''${TMUX_WINDOW}::''${TMUX_PANE}"; fi; append_otel_resource_attr "process.pid" "$$"; append_otel_resource_attr "working_directory" "''${PWD:-}"; append_otel_resource_attr "i3pm.project_name" "''${I3PM_PROJECT_NAME:-}"; append_otel_resource_attr "project_path" "''${I3PM_PROJECT_PATH:-''${PWD:-}}"; append_otel_resource_attr "i3pm.project_path" "''${I3PM_PROJECT_PATH:-''${PWD:-}}"; append_otel_resource_attr "i3pm.ai_trace_token" "''${I3PM_AI_TRACE_TOKEN:-}"; append_otel_resource_attr "i3pm.ai.tool" "claude-code"; append_otel_resource_attr "i3pm.ai.host_alias" "''${I3PM_AI_HOST_ALIAS:-}"; append_otel_resource_attr "i3pm.ai.connection_key" "''${I3PM_CONNECTION_KEY:-}"; append_otel_resource_attr "i3pm.ai.context_key" "''${I3PM_CONTEXT_KEY:-}"; append_otel_resource_attr "terminal.anchor_id" "''${I3PM_TERMINAL_ANCHOR_ID:-}"; append_otel_resource_attr "i3pm.terminal_anchor_id" "''${I3PM_TERMINAL_ANCHOR_ID:-}"; append_otel_resource_attr "i3pm.ai.terminal_anchor_id" "''${I3PM_TERMINAL_ANCHOR_ID:-}"; append_otel_resource_attr "terminal.execution_mode" "''${I3PM_CONTEXT_VARIANT:-''${I3PM_EXECUTION_MODE:-}}"; append_otel_resource_attr "i3pm.execution_mode" "''${I3PM_CONTEXT_VARIANT:-''${I3PM_EXECUTION_MODE:-}}"; append_otel_resource_attr "terminal.connection_key" "''${I3PM_CONNECTION_KEY:-}"; append_otel_resource_attr "i3pm.connection_key" "''${I3PM_CONNECTION_KEY:-}"; append_otel_resource_attr "terminal.context_key" "''${I3PM_CONTEXT_KEY:-}"; append_otel_resource_attr "i3pm.context_key" "''${I3PM_CONTEXT_KEY:-}"; append_otel_resource_attr "terminal.remote_target" "''${I3PM_OTEL_REMOTE_TARGET:-}"; append_otel_resource_attr "i3pm.remote_target" "''${I3PM_OTEL_REMOTE_TARGET:-}"; append_otel_resource_attr "terminal.tmux.session" "''${TMUX_SESSION:-}"; append_otel_resource_attr "terminal.tmux.window" "''${TMUX_WINDOW:-}"; append_otel_resource_attr "terminal.tmux.pane" "''${TMUX_PANE:-}"; append_otel_resource_attr "i3pm.ai.tmux_session" "''${TMUX_SESSION:-}"; append_otel_resource_attr "i3pm.ai.tmux_window" "''${TMUX_WINDOW:-}"; append_otel_resource_attr "i3pm.ai.tmux_pane" "''${TMUX_PANE:-}"; append_otel_resource_attr "i3pm.ai.pane_key" "''${I3PM_AI_PANE_KEY:-}"; append_otel_resource_attr "terminal.pty" "''${TTY:-}"; append_otel_resource_attr "host.name" "''${HOSTNAME:-}"' \
-        --set CLAUDE_CODE_ENABLE_TELEMETRY "1" \
-        --set OTEL_LOGS_EXPORTER "otlp" \
-        --set OTEL_METRICS_EXPORTER "otlp" \
-        --set OTEL_TRACES_EXPORTER "otlp" \
-        --set OTEL_EXPORTER_OTLP_PROTOCOL "http/protobuf" \
-        --set OTEL_EXPORTER_OTLP_ENDPOINT "http://localhost:4318" \
-        --set OTEL_SERVICE_NAME "claude-code" \
-        --set OTEL_INTERCEPTOR_SESSION_ID_POLICY "eager" \
-        --set NODE_OPTIONS "--require ${repoRoot}/scripts/minimal-otel-interceptor.js" \
         --add-flags "--chrome"
     '';
   };
@@ -69,8 +58,8 @@ lib.mkIf enableClaudeCode {
   home.file =
     sharedSkillHomeFiles // {
       # Force PATH-preferred ~/.local/bin/claude to the home-manager finalPackage
-      # so telemetry/session hooks AND --mcp-config (which the HM module adds via
-      # a second wrapper layer when mcpServers is non-empty) are both present.
+      # so --mcp-config (which the HM module adds via a second wrapper layer
+      # when mcpServers is non-empty) is present.
       ".local/bin/claude" = {
         source = "${config.programs.claude-code.finalPackage}/bin/claude";
         executable = true;
@@ -163,26 +152,12 @@ lib.mkIf enableClaudeCode {
     fi
   '';
 
+  home.activation.ensureHerdrClaudeIntegration = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    run ${inputs.herdr.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/herdr integration install claude || true
+  '';
 
-  # Feature 123: OTEL environment variables for Claude Code telemetry
-  # These MUST be session variables (not just settings.env) because the OTEL SDK
-  # initializes when Claude Code starts, before it reads settings.json.
-  # settings.env only affects subprocesses, not Claude Code itself.
+
   home.sessionVariables = {
-    CLAUDE_CODE_ENABLE_TELEMETRY = "1";
-    OTEL_LOGS_EXPORTER = "otlp";
-    OTEL_METRICS_EXPORTER = "otlp";
-    OTEL_TRACES_EXPORTER = "otlp";
-    OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
-    OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";
-    OTEL_METRIC_EXPORT_INTERVAL = "60000";
-    OTEL_METRIC_EXPORT_TIMEOUT = "30000";
-    OTEL_LOGS_EXPORT_INTERVAL = "5000";
-    OTEL_METRICS_INCLUDE_SESSION_ID = "true";
-    OTEL_LOG_USER_PROMPTS = "1";
-    # Delta temporality for better memory efficiency with session metrics
-    OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE = "delta";
-
     # Experimental: Agent Teams - multi-agent coordination
     # Session variable ensures it's set before Claude Code initializes
     CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
@@ -271,21 +246,6 @@ lib.mkIf enableClaudeCode {
       autoConnectIde = true;
       includeCoAuthoredBy = true;
       env = {
-        # Feature 123: Full OpenTelemetry configuration for OTLP export
-        # Enables native telemetry to otel-ai-monitor service
-        CLAUDE_CODE_ENABLE_TELEMETRY = "1";
-        OTEL_LOGS_EXPORTER = "otlp";
-        OTEL_METRICS_EXPORTER = "otlp";
-        OTEL_TRACES_EXPORTER = "otlp";
-        OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
-        OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";
-        # Export intervals - safer for Node.js SDK
-        OTEL_METRIC_EXPORT_INTERVAL = "60000";  # 60 seconds
-        OTEL_METRIC_EXPORT_TIMEOUT = "30000";   # 30 seconds
-        OTEL_LOGS_EXPORT_INTERVAL = "5000";     # 5 seconds (default)
-        # Include session ID in metrics for correlation
-        OTEL_METRICS_INCLUDE_SESSION_ID = "true";
-        OTEL_LOG_USER_PROMPTS = "1";
         # Fix for M1 Apple Silicon: Built-in ripgrep has jemalloc page size incompatibility
         # Apple Silicon uses 16KB pages, jemalloc expects 4KB pages
         # Use system ripgrep instead (available via home-manager)
@@ -307,42 +267,7 @@ lib.mkIf enableClaudeCode {
       # 4. Set explicit timeouts for commands
       # 5. Use external scripts for complex logic (maintainability)
       #
-      # Feature 131: Session metadata hook (bridges Claude Code session.id → interceptor traces)
-      # SessionStart: Persist Claude Code session_id (UUID) for the Node interceptor
-      # SessionEnd: Clean up the persisted session metadata file
       hooks = {
-        # UserPromptSubmit: Establish deterministic Claude turn boundaries before
-        # the Stop hook fires so the side panel can retain the explicit stopped
-        # notification stage instead of falling back to idle.
-        UserPromptSubmit = [{
-          hooks = [{
-            type = "command";
-            command = "${repoRoot}/scripts/claude-hooks/otel-user-prompt-submit.sh";
-            timeout = 5;
-          }];
-        }];
-
-        # SessionStart: Persist Claude Code session_id (UUID) for trace correlation
-        # This enables the OTEL interceptor to discover the session ID and export
-        # spans with process.pid for deterministic window correlation.
-        # Note: New hooks format (Claude Code 2.x) requires hooks array wrapper
-        SessionStart = [{
-          hooks = [{
-            type = "command";
-            command = "${repoRoot}/scripts/claude-hooks/otel-session-start.sh";
-            timeout = 5;
-          }];
-        }];
-
-        # SessionEnd: Clean up the persisted session metadata file
-        SessionEnd = [{
-          hooks = [{
-            type = "command";
-            command = "${repoRoot}/scripts/claude-hooks/otel-session-end.sh";
-            timeout = 5;
-          }];
-        }];
-
         # Stop: Unified "finished" notification when Claude Code completes a turn
         # Sends desktop notification with "Return to Terminal" action
         Stop = [{

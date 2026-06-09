@@ -159,41 +159,33 @@ set-monitor-profile local-only/local+1vnc/local+2vnc  # M1
 
 **VNC**: `vnc://<tailscale-ip>:{5900|5901|5902}`
 
-## AI CLI Tracing (Features 090, 123, 125)
-
-All AI CLIs (Claude Code, Codex CLI, Gemini CLI) emit OTEL telemetry tracked locally and in Grafana.
+## AI CLI Sessions
 
 **Notifications**: `Enter` returns to terminal, `Escape` dismisses.
 
-**Session Tracking**: Quickshell panel shows working/completed status with cost metrics for all CLIs.
+**Session Tracking**: QuickShell reads Herdr-native agent state through the i3pm daemon. The panel shows Herdr workspaces/tabs/panes and raw `agent_status` values (`working`, `blocked`, `done`, `idle`, `unknown`).
 
-**Providers**: Claude Code (Anthropic), Codex CLI (OpenAI), Gemini CLI (Google)
+**Providers shown in the panel**: Herdr-managed Claude Code and Codex CLI sessions. Non-Herdr sessions are intentionally invisible in this panel.
 
 ```bash
-systemctl --user status otel-ai-monitor            # Session tracker
+herdr status --json                                # Server/protocol health
+herdr agent list                                   # Agent sessions
+herdr pane list                                    # Herdr panes
+herdr integration status                           # Claude/Codex hooks
 systemctl --user restart quickshell-runtime-shell  # Panel
-journalctl --user -u otel-ai-monitor -f            # Watch telemetry
+i3pm health                                        # Runtime health, including Herdr
 ```
-
-**Grafana Queries** (unified across all CLIs):
-- By session: `{session.id="abc123"}`
-- By provider: `{service.name=~"claude-code|codex|gemini"}`
-- By model: `{gen_ai.request.model="gpt-4o"}`
 
 ## Observability Stack (Feature 129)
 
-Unified telemetry collection via Grafana Alloy, exporting to the hub K8s cluster's OTEL collector over Tailscale. The hub is the canonical observability sink (otel-collector + otel-clickhouse + grafana + tempo, 27d+ uptime); spokes forward in-cluster traces to it via `clickhouse-hub-egress`, and host AI CLI telemetry goes straight to it via the `otel-collector-hub.tail286401.ts.net` Tailscale Ingress.
+Unified telemetry collection via Grafana Alloy, exporting to the hub K8s cluster's OTEL collector over Tailscale. The hub is the canonical observability sink (otel-collector + otel-clickhouse + grafana + tempo); spokes forward in-cluster traces to it via `clickhouse-hub-egress`.
 
 **Architecture**:
 ```
-AI CLIs → Alloy :4318 → [batch] → otel-ai-monitor :4320 (local Quickshell panel)
-                               → otel-collector-hub-1.tail286401.ts.net:4318 (Tailscale LoadBalancer on hub, plain HTTP)
-                                 → K8s otel-collector (hub observability ns)
-                                   → otel-clickhouse-tailnet (hub)         (durable storage)
-                                   → otlphttp/mlflow                       (per-CLI MLflow experiments)
-
-Cross-host panel view:
-  each host's monitoring_data.py → clickhouse-hub.tail286401.ts.net:8123 (direct SQL)
+Clients → Alloy :4318 → [batch] → otel-collector-hub-1.tail286401.ts.net:4318
+                              → K8s otel-collector (hub observability ns)
+                                → otel-clickhouse-tailnet (hub)         (durable storage)
+                                → otlphttp/mlflow                       (per-CLI MLflow experiments)
 
 System  → node exporter → Alloy → Mimir (K8s)
 Journald → Alloy → Loki (K8s)
@@ -203,7 +195,6 @@ Journald → Alloy → Loki (K8s)
 | Service | Port | Purpose |
 |---------|------|---------|
 | grafana-alloy | 4318 (OTLP), 12345 (UI) | Unified telemetry collector |
-| otel-ai-monitor | 4320 | Local AI session tracking for Quickshell panel (all CLIs) |
 | grafana-beyla | - | eBPF auto-instrumentation (optional) |
 | pyroscope-agent | - | Continuous profiling (optional) |
 
@@ -228,29 +219,13 @@ services.grafana-alloy = {
   # flow through the K8s otel-collector on hub instead.
   enableNodeExporter = true;
   enableJournald = true;
-  journaldUnits = [ "grafana-alloy.service" "otel-ai-monitor.service" ];
-};
-
-services.otel-ai-monitor = {
-  enable = true;
-  port = 4320;
-  # Cross-host sessions come from a direct SQL query against the same
-  # ClickHouse instance the OTEL collector already writes every span to.
-  # The bespoke session-aggregator service was retired 2026-05-27.
-  clickhouseUrl = "http://clickhouse-hub.tail286401.ts.net:8123/";
-  clickhousePassword = "otel_dev_password";  # TODO: move to passwordFile
+  journaldUnits = [ "grafana-alloy.service" "i3pm-daemon.service" ];
 };
 ```
-
-**Graceful Degradation**: Local AI monitoring (Quickshell widgets) works when ClickHouse is offline. Cross-host view goes empty (no fallback) — the SQL client returns empty on failure rather than caching stale state.
 
 **Known Issues / Troubleshooting**:
 - OTLP gRPC `4317` may be taken by `docker-proxy`; prefer OTLP HTTP on `4318` (Alloy default).
 - `*.cnoe.localtest.me:8443` URLs no longer work — they were idpbuilder/kind legacy that resolved to `::1`. Post-A6 hub-managed mode moved observability to hub-side Tailscale Ingresses (`otel-collector-hub.tail286401.ts.net`, `clickhouse-hub.tail286401.ts.net`, `grafana-hub.tail286401.ts.net`, etc.). The dev/ryzen spoke Ingresses for observability were retired (see stacks `389291160`, `ab457a041`).
-- Quick checks for the AI CLI telemetry pipeline:
-  - `curl -sk http://clickhouse-hub.tail286401.ts.net:8123/ping`                                          (returns "Ok.")
-  - `curl -s -X POST http://otel-collector-hub-1.tail286401.ts.net:4318/v1/traces -w "%{http_code}\n"` (HTTP 200 = healthy)
-  - Run the same SQL the panel runs: see `_CLICKHOUSE_SESSIONS_QUERY` in `home-modules/tools/i3_project_manager/cli/monitoring_data.py`.
 
 ## Testing
 

@@ -1452,6 +1452,12 @@ ShellRoot {
         return arrayOrEmpty(item && item.actions).length > 0;
     }
 
+    function notificationIsAgentAction(item) {
+        const appName = stringOrEmpty(item && item.app_name).toLowerCase();
+        const desktopEntry = stringOrEmpty(item && item.desktop_entry).toLowerCase();
+        return appName === "i3pm-agent" || desktopEntry === "i3pm-agent";
+    }
+
     function notificationPrimaryAction(item) {
         const actions = arrayOrEmpty(item && item.actions);
         return actions.length > 0 ? actions[0] : null;
@@ -1508,6 +1514,9 @@ ShellRoot {
     }
 
     function notificationAccentColor(item) {
+        if (notificationIsAgentAction(item)) {
+            return colors.amber;
+        }
         if (notificationIsCritical(item)) {
             return colors.red;
         }
@@ -1521,6 +1530,9 @@ ShellRoot {
     }
 
     function notificationAvatarFill(item) {
+        if (notificationIsAgentAction(item)) {
+            return colors.cardAlt;
+        }
         if (notificationIsCritical(item)) {
             return colors.redBg;
         }
@@ -1606,10 +1618,11 @@ ShellRoot {
 
     function toastItemsForOutput(outputName) {
         const toastLimit = Math.max(0, Number(shellConfig.notificationToastMaxPerOutput || 0));
-        if (toastLimit <= 0) {
-            return [];
-        }
-        return notificationFeed.filter(item => !notificationClosed(item) && boolOrFalse(item.toast_visible) && stringOrEmpty(item.output_name) === stringOrEmpty(outputName)).slice(0, toastLimit);
+        const agentActionToastLimit = Math.max(0, Number(shellConfig.notificationAgentActionToastMaxPerOutput || 0));
+        const candidates = notificationFeed.filter(item => !notificationClosed(item) && boolOrFalse(item.toast_visible) && stringOrEmpty(item.output_name) === stringOrEmpty(outputName));
+        const regularItems = toastLimit > 0 ? candidates.filter(item => !notificationIsAgentAction(item)).slice(0, toastLimit) : [];
+        const agentActionItems = agentActionToastLimit > 0 ? candidates.filter(item => notificationIsAgentAction(item)).slice(0, agentActionToastLimit) : [];
+        return agentActionItems.concat(regularItems).slice(0, agentActionToastLimit + toastLimit);
     }
 
     function refreshNotificationState() {
@@ -5075,13 +5088,13 @@ ShellRoot {
             return colors.red;
         }
         if (state === "done") {
-            return colors.accent;
+            return colors.green;
         }
         if (state === "working") {
             return colors.teal;
         }
         if (state === "idle") {
-            return colors.subtle;
+            return colors.amber;
         }
         return colors.muted;
     }
@@ -5092,40 +5105,56 @@ ShellRoot {
             return colors.redBg;
         }
         if (state === "done") {
-            return colors.accentBg;
+            return colors.greenBg;
         }
         if (state === "working") {
             return colors.tealBg;
         }
+        if (state === "idle") {
+            return colors.cardAlt;
+        }
         return colors.cardAlt;
+    }
+
+    function herdrSpaceStatusSymbol(space) {
+        const state = herdrSpaceStatus(space);
+        if (state === "idle") {
+            return "○";
+        }
+        if (state === "unknown") {
+            return "·";
+        }
+        return "●";
     }
 
     function herdrSpaceFill(space, hovered) {
         const state = herdrSpaceStatus(space);
         if (boolOrFalse(space && space.focused)) {
-            return hovered ? Qt.tint(colors.panelAlt, Qt.rgba(0.4, 0.91, 0.98, 0.05)) : Qt.tint(colors.panelAlt, Qt.rgba(0.4, 0.91, 0.98, 0.026));
+            return hovered
+                ? Qt.tint(colors.cardAlt, Qt.rgba(0.40, 0.86, 0.92, 0.11))
+                : Qt.tint(colors.cardAlt, Qt.rgba(0.40, 0.86, 0.92, 0.07));
         }
         if (state === "blocked") {
-            return hovered ? Qt.tint(colors.redBg, Qt.rgba(1, 1, 1, 0.06)) : colors.redBg;
+            return hovered ? Qt.tint(colors.redBg, Qt.rgba(1, 1, 1, 0.04)) : Qt.tint(colors.redBg, Qt.rgba(0, 0, 0, 0.16));
         }
         if (state === "working") {
-            return hovered ? Qt.tint(colors.panelAlt, Qt.rgba(0.4, 0.91, 0.98, 0.08)) : Qt.tint(colors.panelAlt, Qt.rgba(0.4, 0.91, 0.98, 0.035));
+            return hovered ? colors.cardAlt : "transparent";
         }
-        return hovered ? colors.cardAlt : colors.panelAlt;
+        return hovered ? colors.cardAlt : "transparent";
     }
 
     function herdrSpaceBorder(space, hovered) {
         const state = herdrSpaceStatus(space);
         if (boolOrFalse(space && space.focused)) {
-            return hovered ? colors.teal : colors.borderStrong;
+            return hovered ? colors.lineSoft : "transparent";
         }
         if (state === "blocked") {
-            return colors.red;
+            return hovered ? colors.lineSoft : "transparent";
         }
         if (state === "working") {
-            return hovered ? colors.teal : colors.borderStrong;
+            return hovered ? colors.lineSoft : "transparent";
         }
-        return hovered ? colors.borderStrong : colors.lineSoft;
+        return hovered ? colors.lineSoft : "transparent";
     }
 
     function herdrSpaceTitle(space) {
@@ -5171,6 +5200,43 @@ ShellRoot {
             stringOrEmpty(space && (space.host_key || space.host_label)),
             ""
         );
+    }
+
+    function herdrSessionSpace(session) {
+        const workspaceId = stringOrEmpty(session && session.workspace_id);
+        if (workspaceId.length === 0) {
+            return null;
+        }
+
+        const host = stringOrEmpty(session && (session.herdr_host || session.host_name)).toLowerCase();
+        const spaces = herdrSpaces();
+        for (let i = 0; i < spaces.length; i += 1) {
+            const space = spaces[i];
+            if (stringOrEmpty(space && space.workspace_id) !== workspaceId) {
+                continue;
+            }
+            const spaceHost = stringOrEmpty(space && (space.host_key || space.host_label)).toLowerCase();
+            if (host.length === 0 || spaceHost.length === 0 || host === spaceHost) {
+                return space;
+            }
+        }
+        return null;
+    }
+
+    function herdrSessionSidebarTitle(session) {
+        const space = herdrSessionSpace(session);
+        if (space) {
+            return herdrSpaceTitle(space);
+        }
+        const workspaceName = stringOrEmpty(session && session.workspace_name);
+        if (workspaceName.length > 0) {
+            return workspaceName;
+        }
+        const project = shortProject(stringOrEmpty(session && (session.project_name || session.project || "")));
+        if (project && project !== "Global") {
+            return project;
+        }
+        return "";
     }
 
     function herdrSpaceFocusTarget(space) {
@@ -5357,7 +5423,7 @@ ShellRoot {
         if (tool === "claude-code" || tool === "claude") {
             return colors.blue;
         }
-        if (tool === "gemini") {
+        if (tool === "gemini" || tool === "gemini-cli" || tool === "antigravity" || tool === "antigravity-cli") {
             return colors.amber;
         }
         return colors.violet;
@@ -5371,7 +5437,7 @@ ShellRoot {
         if (tool === "claude-code" || tool === "claude") {
             return colors.blueBg;
         }
-        if (tool === "gemini") {
+        if (tool === "gemini" || tool === "gemini-cli" || tool === "antigravity" || tool === "antigravity-cli") {
             return colors.amberBg;
         }
         return colors.violetBg;
@@ -5385,7 +5451,7 @@ ShellRoot {
         if (tool === "claude-code" || tool === "claude") {
             return "file://" + shellConfig.claudeIcon;
         }
-        if (tool === "gemini") {
+        if (tool === "gemini" || tool === "gemini-cli" || tool === "antigravity" || tool === "antigravity-cli") {
             return "file://" + shellConfig.geminiIcon;
         }
         return "file://" + shellConfig.aiFallbackIcon;
@@ -5822,6 +5888,7 @@ ShellRoot {
 
     function sessionBadgeColor(session) {
         const state = sessionBadgeState(session);
+        const hasHerdrStatus = stringOrEmpty(session && session.agent_status).length > 0;
         if (state === "blocked") {
             return colors.red;
         }
@@ -5832,13 +5899,13 @@ ShellRoot {
             return colors.violet;
         }
         if (state === "done") {
-            return colors.accent;
+            return hasHerdrStatus ? colors.green : colors.accent;
         }
         if (state === "working") {
-            return root.sessionAccentColor(session);
+            return hasHerdrStatus ? colors.teal : root.sessionAccentColor(session);
         }
         if (state === "idle") {
-            return colors.subtle;
+            return hasHerdrStatus ? colors.amber : colors.subtle;
         }
         if (state === "tmux_missing") {
             return colors.orange;
@@ -5851,6 +5918,7 @@ ShellRoot {
 
     function sessionBadgeBackground(session) {
         const state = sessionBadgeState(session);
+        const hasHerdrStatus = stringOrEmpty(session && session.agent_status).length > 0;
         if (state === "blocked") {
             return colors.redBg;
         }
@@ -5861,10 +5929,10 @@ ShellRoot {
             return Qt.tint(colors.violetBg, Qt.rgba(1, 1, 1, 0.04));
         }
         if (state === "done") {
-            return colors.accentBg;
+            return hasHerdrStatus ? colors.greenBg : colors.accentBg;
         }
         if (state === "working") {
-            return root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt;
+            return hasHerdrStatus ? colors.tealBg : (root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt);
         }
         if (state === "idle") {
             return root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt;
@@ -5880,11 +5948,15 @@ ShellRoot {
 
     function sessionBadgeBorderColor(session) {
         const state = sessionBadgeState(session);
+        const hasHerdrStatus = stringOrEmpty(session && session.agent_status).length > 0;
+        if (hasHerdrStatus) {
+            return "transparent";
+        }
         if (state === "blocked") {
-            return colors.red;
+            return colors.lineSoft;
         }
         if (state === "stopped") {
-            return Qt.tint(colors.violet, Qt.rgba(1, 1, 1, 0.16));
+            return colors.lineSoft;
         }
         if (state === "idle") {
             return colors.lineSoft;
@@ -6114,18 +6186,18 @@ ShellRoot {
             return "●";
         }
         if (state === "done") {
-            return "✓";
+            return "●";
         }
         if (owner === "llm" || state === "working") {
             return "◔";
         }
         if (owner === "user") {
-            return "⌨";
+            return "○";
         }
         if (state === "stale") {
             return "◌";
         }
-        return "•";
+        return "○";
     }
 
     function sessionIdentityLabel(session) {
@@ -6255,7 +6327,7 @@ ShellRoot {
         if (tool === "claude-code" || tool === "claude") {
             return "Claude";
         }
-        if (tool === "gemini") {
+        if (tool === "gemini" || tool === "gemini-cli" || tool === "antigravity" || tool === "antigravity-cli") {
             return "Gemini";
         }
         return "AI";
@@ -6308,6 +6380,10 @@ ShellRoot {
         const agent = toolLabel(session);
         const project = shortProject(stringOrEmpty(session && (session.project_name || session.project || "")));
         if (stringOrEmpty(session && session.source) === "herdr" || stringOrEmpty(session && session.pane_id)) {
+            const sidebarTitle = herdrSessionSidebarTitle(session);
+            if (sidebarTitle.length > 0) {
+                return sidebarTitle;
+            }
             const host = displayHostName(stringOrEmpty(session && (session.herdr_host || session.host_name)));
             const isRemote = boolOrFalse(session && session.is_remote_herdr);
             const bits = [agent || "AI"];
@@ -6335,6 +6411,17 @@ ShellRoot {
         const bits = [];
         const project = shortProject(stringOrEmpty(session && (session.project_name || session.project || "")));
         const herdrStatus = stringOrEmpty(session && session.agent_status).toLowerCase();
+        if (stringOrEmpty(session && session.source) === "herdr" || stringOrEmpty(session && session.pane_id)) {
+            const agent = toolLabel(session);
+            const host = displayHostName(stringOrEmpty(session && (session.herdr_host || session.host_name)));
+            const isRemote = boolOrFalse(session && session.is_remote_herdr);
+            if (agent) {
+                bits.push(agent);
+            }
+            if (isRemote && host) {
+                bits.push(host);
+            }
+        }
         if (herdrStatus) {
             bits.push(titleCaseWord(herdrStatus));
         }

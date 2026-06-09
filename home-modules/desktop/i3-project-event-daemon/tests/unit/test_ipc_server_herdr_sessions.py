@@ -247,6 +247,55 @@ def test_herdr_spaces_group_by_host_workspace_and_prioritize_status(server):
     }
 
 
+def test_herdr_spaces_use_sidebar_names_and_single_effective_focus(server):
+    local_host = server._local_host_alias()
+    sessions = [{
+        "source": "herdr",
+        "agent": "codex",
+        "agent_status": "working",
+        "focused": True,
+        "herdr_host": "ryzen",
+        "host_name": "ryzen",
+        "is_current_host": False,
+        "is_remote_herdr": True,
+        "execution_mode": "ssh",
+        "pane_id": "remote-pane-1",
+        "project_name": "vpittamp/nixos-config:main",
+        "workspace_id": "remote-ws",
+    }]
+    snapshot = {
+        "workspaces": [{
+            "workspace_id": "local-ws",
+            "label": "main",
+            "focused": True,
+            "herdr_host": local_host,
+            "execution_mode": "local",
+            "is_remote_herdr": False,
+        }, {
+            "workspace_id": "remote-ws",
+            "label": "nixos-config",
+            "focused": True,
+            "herdr_host": "ryzen",
+            "execution_mode": "ssh",
+            "is_remote_herdr": True,
+        }],
+        "agents": sessions,
+        "panes": [{
+            "pane_id": "remote-pane-1",
+            "workspace_id": "remote-ws",
+            "herdr_host": "ryzen",
+        }],
+        "tabs": [],
+    }
+
+    spaces = server._build_herdr_spaces(snapshot, sessions)
+
+    assert [space["label"] for space in spaces] == ["nixos-config", "main"]
+    assert [space["focused"] for space in spaces] == [True, False]
+    assert spaces[0]["space_key"] == "herdr:ryzen:workspace:remote-ws"
+    assert spaces[0]["project_name"] == "vpittamp/nixos-config:main"
+
+
 @pytest.mark.asyncio
 async def test_dashboard_snapshot_includes_herdr_spaces(server, monkeypatch):
     local_host = server._local_host_alias()

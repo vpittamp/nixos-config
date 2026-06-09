@@ -7,17 +7,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SHELL_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "shell.qml"
 SESSION_ROW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "SessionRow.qml"
 LAUNCHER_WINDOW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "LauncherWindow.qml"
+QUICKSHELL_DEFAULT_NIX = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "default.nix"
+NOTIFICATION_TOAST_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "NotificationToast.qml"
 
 
 def test_session_phase_prefers_raw_herdr_agent_status():
     """Herdr agent status should drive AI row state before legacy telemetry fields."""
     text = SHELL_QML.read_text()
     assert "function sessionPhase(session)" in text
-    herdr_index = text.index("const herdrStatus = stringOrEmpty(session && session.agent_status).toLowerCase();")
+    herdr_index = text.index("const rawHerdrStatus = stringOrEmpty(session && session.agent_status);")
     legacy_index = text.index("const phase = stringOrEmpty(session && session.session_phase).toLowerCase();")
     assert herdr_index < legacy_index
-    assert "[\"working\", \"blocked\", \"done\", \"idle\", \"unknown\"].indexOf(herdrStatus) >= 0" in text
-    assert "return herdrStatus;" in text
+    assert "return herdrStatusState(rawHerdrStatus);" in text
 
 
 def test_session_display_eligibility_accepts_herdr_panes_without_tmux_identity():
@@ -53,7 +54,7 @@ def test_current_session_highlight_uses_local_herdr_focus():
     text = SHELL_QML.read_text()
     assert "function sessionIsCurrent(session)" in text
     focused_index = text.index("if (boolOrFalse(session && session.focused) && boolOrFalse(session && session.is_current_host))")
-    key_index = text.index("return currentSessionKey() === stringOrEmpty(session.session_key);")
+    key_index = text.index("return current === sessionIdentityKey(session) || current === stringOrEmpty(session && session.session_key);")
     assert focused_index < key_index
 
 
@@ -136,6 +137,22 @@ def test_launcher_preview_for_herdr_sessions_is_focus_only():
     assert "return;" in text
     assert "function sessionPreviewStatusText()" in text
     assert "root.sessionPreviewStatusText()" in launcher_text
+
+
+def test_agent_action_toasts_bypass_general_toast_suppression_only_for_i3pm_agent():
+    """Action-required agent notifications get a narrow toast allowance when general toasts are disabled."""
+    shell_text = SHELL_QML.read_text()
+    nix_text = QUICKSHELL_DEFAULT_NIX.read_text()
+    toast_text = NOTIFICATION_TOAST_QML.read_text()
+
+    assert "notificationAgentActionToastMaxPerOutput" in nix_text
+    assert "agentActionToastMaxPerOutput = lib.mkOption" in nix_text
+    assert "function notificationIsAgentAction(item)" in shell_text
+    assert "appName === \"i3pm-agent\" || desktopEntry === \"i3pm-agent\"" in shell_text
+    assert "const regularItems = toastLimit > 0 ? candidates.filter(item => !notificationIsAgentAction(item)).slice(0, toastLimit) : [];" in shell_text
+    assert "const agentActionItems = agentActionToastLimit > 0 ? candidates.filter(item => notificationIsAgentAction(item)).slice(0, agentActionToastLimit) : [];" in shell_text
+    assert "readonly property bool agentAction: rootObject.notificationIsAgentAction(itemData)" in toast_text
+    assert "radius: agentAction ? 8 : 20" in toast_text
 
 
 def test_session_sort_orders_by_host_bucket_before_numeric_pane_slot():

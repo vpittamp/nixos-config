@@ -215,32 +215,38 @@ Important runtime consequence:
 
 ### Reliability
 
-The daemon now invalidates session state when OTEL-derived runtime files change:
-- local sessions file:
-  - `$XDG_RUNTIME_DIR/otel-ai-sessions.json`
-- remote sink file:
-  - `$XDG_RUNTIME_DIR/eww-monitoring-panel/remote-otel-sink.json`
+The daemon now sources AI session state from Herdr:
+- `herdr.snapshot`
+- `herdr agent list`
+- `herdr pane list`
+- `herdr workspace list`
+- `herdr tab list`
 
-This means the shell no longer depends only on sway/window events to notice AI session updates.
+QuickShell gets Herdr rows through `dashboard.snapshot.active_ai_sessions`; the field name is preserved for compatibility during migration.
 
-### Pane-first session model
+### Herdr Pane Model
 
-The active AI session list is now pane-oriented where tmux pane identity exists.
+The active AI session list is Herdr pane-oriented.
 
 The intended identity boundary is:
-- one tracked AI session surface per tmux pane
+- one tracked AI session surface per Herdr pane
 
-The dashboard/session payloads now carry pane-oriented fields such as:
-- `surface_kind`
-- `surface_key`
-- tmux session/window/pane identity
-- pane/process-tree metrics
+The dashboard/session payloads carry Herdr-native fields:
+- `herdr_session`
+- `workspace_id`
+- `tab_id`
+- `pane_id`
+- `terminal_id`
+- `agent_status`
+- `focused`
+- `cwd`
+- `foreground_cwd`
 
 This allows:
-- separate AI session rows for multiple panes in the same terminal window
-- deterministic session focus through daemon `session.focus`
-- deterministic remote attach for `remote_bridge_attachable` sessions without requiring a local mirror worktree
-- per-session CPU and RSS metrics in QuickShell without guessing from a whole window
+- separate AI session rows for multiple Herdr panes
+- deterministic focus through `herdr.pane.focus`
+- deterministic close through `herdr.pane.close`
+- status chips that render raw Herdr `agent_status`
 
 ### Performance
 

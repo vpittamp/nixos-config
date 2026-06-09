@@ -5,7 +5,7 @@ This repository provides a lightweight Incus VM image with:
 - headless Sway (Wayland)
 - i3pm project/worktree management
 - tmux/terminal home-manager stack
-- local OTEL AI monitoring (`otel-ai-monitor` on `4318`)
+- Herdr-backed AI session state for QuickShell
 
 ## Build Artifacts
 
@@ -56,7 +56,7 @@ incus launch nixos-incus-sway-lite vm-sway-01 --vm \
 ```bash
 incus exec vm-sway-01 -- uname -a
 incus exec vm-sway-01 -- systemctl --user status i3-project-daemon --no-pager
-incus exec vm-sway-01 -- systemctl --user status otel-ai-monitor --no-pager
+incus exec vm-sway-01 -- herdr status --json
 ```
 
 ## Remote Desktop
@@ -67,5 +67,5 @@ Use Tailscale (recommended) or Incus networking + port forwarding to access VNC 
 ## Notes
 
 - Home profile uses `programs.sway-profile.mode = "headless"` to avoid hostname coupling.
-- AI monitoring is local-only in this flavor (no Alloy/Beyla/remote push).
+- AI session state is local Herdr state in this flavor.
 - This flavor intentionally avoids full heavy desktop/dev parity from `base-home`.

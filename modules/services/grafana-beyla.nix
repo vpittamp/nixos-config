@@ -3,7 +3,7 @@
 # This module provides Grafana Beyla for automatic application instrumentation:
 # - Uses eBPF to instrument HTTP/gRPC services without code changes
 # - Requires Linux kernel 5.8+ with BTF support
-# - Generates traces for Python daemons (otel-ai-monitor, i3pm)
+# - Generates traces for Python daemons and local tools such as i3pm
 # - Sends traces to local Grafana Alloy on port 4318
 #
 # NOTE: Beyla is not in nixpkgs (as of 2025-12), requires custom derivation

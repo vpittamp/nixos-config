@@ -397,7 +397,7 @@ in
   # Daemon lifecycle managed by graphical-session.target (see home-vpittamp.nix)
 
   # Feature 129: Grafana Alloy - Unified Telemetry Collector
-  # - OTLP receiver on 4318, forwards to otel-ai-monitor on 4320
+  # - OTLP receiver on 4318
   # - System metrics via node exporter → Mimir
   # - Journald logs → Loki
   # - All telemetry exported to K8s LGTM stack via cnoe.localtest.me:8443
@@ -408,7 +408,6 @@ in
     enableJournald = true;
     journaldUnits = [
       "grafana-alloy.service"
-      "otel-ai-monitor.service"
       "i3pm-daemon.service"
     ];
 

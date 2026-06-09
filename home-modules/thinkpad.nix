@@ -28,7 +28,6 @@ in
     # Project management (works with Sway via IPC)
     # Feature 117: i3-project-daemon now runs as user service
     ./services/i3-project-daemon.nix
-    ./services/otel-ai-monitor.nix    # Feature 123: OTEL-based AI session monitoring
     ./tools/i3pm-deno.nix
     ./tools/i3pm-diagnostic.nix
     ./tools/disk-guardrails.nix
@@ -161,21 +160,6 @@ EOF
 
   programs.disk-guardrails.enable = true;
 
-  # Feature 123: OTEL AI assistant monitor service
-  # Receives forwarded telemetry from OTEL Collector on port 4320
-  # Collector receives from Claude Code on 4318, forwards here for session aggregation
-  services.otel-ai-monitor = {
-    enable = true;
-    port = 4320;  # Non-standard port (collector uses 4318)
-    verbose = false;
-    enableNotifications = false;  # Suppress "Claude Code Ready" alerts
-    # Cross-host sessions come from a direct SQL query against the same
-    # ClickHouse instance the OTEL collector already writes every span to.
-    # No separate aggregator service; ClickHouse is the source of truth.
-    clickhouseUrl = "http://clickhouse-hub.tail286401.ts.net:8123/";
-    clickhousePassword = "otel_dev_password";  # TODO: move to a passwordFile / 1Password lookup
-  };
-
   # Sway Dynamic Configuration Management
   programs.sway-config-manager = {
     enable = true;
@@ -189,6 +173,7 @@ EOF
   programs.quickshell-runtime-shell = {
     enable = true;
     notifications.toastMaxPerOutput = 0;
+    notifications.agentActionToastMaxPerOutput = 1;
   };
 
   wayland.windowManager.sway.config.window.commands = lib.mkAfter [

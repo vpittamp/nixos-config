@@ -90,7 +90,6 @@ in
     # Project management (works with Sway via IPC)
     # Feature 117: i3-project-daemon now runs as user service
     ./services/i3-project-daemon.nix  # Feature 117: User-level daemon service
-    ./services/otel-ai-monitor.nix    # Feature 123: OTEL-based AI session monitoring
     ./tools/i3pm-deno.nix             # Feature 027: i3pm Deno CLI rewrite (MVP)
     ./tools/i3pm-diagnostic.nix       # Feature 039: Diagnostic CLI for troubleshooting
     # Application launcher and registry
@@ -154,10 +153,6 @@ in
   # Feature 121: Automatic cleanup of stale Sway IPC sockets every 5 minutes
   programs.sway-socket-cleanup.enable = true;
 
-  # Feature 123: OTEL AI assistant monitor service
-  # Receives OTLP telemetry from Claude Code and Codex CLI
-  # (services.otel-ai-monitor.enable = true is set below)
-
   # Feature 047: Sway Dynamic Configuration Management
   programs.sway-config-manager = {
     enable = true;
@@ -214,12 +209,4 @@ in
     BROWSER = lib.mkForce "chromium";
   };
 
-  # Feature 123: OTEL AI assistant monitor service
-  # Receives forwarded telemetry from OTEL Collector on port 4320
-  # Collector receives from Claude Code on 4318, forwards here for session aggregation
-  services.otel-ai-monitor = {
-    enable = true;
-    port = 4320;  # Non-standard port (collector uses 4318)
-    enableNotifications = false;
-  };
 }

@@ -398,14 +398,14 @@ PanelWindow {
             }
 
             Rectangle {
-                visible: root.panelSessions().length > 0
+                visible: root.panelSessions().length > 0 || root.herdrSpaces().length > 0
                 Layout.fillWidth: true
                 Layout.fillHeight: root.runtimePanelSectionExpanded("sessions")
                 Layout.minimumHeight: root.runtimePanelSectionExpanded("sessions") ? 180 : 60
                 Layout.preferredHeight: root.runtimePanelSectionPreferredHeight("sessions")
                 radius: 12
                 color: root.runtimePanelSectionExpanded("sessions") ? colors.panel : colors.cardAlt
-                border.color: root.runtimePanelSectionExpanded("sessions") ? colors.blueMuted : colors.border
+                border.color: root.runtimePanelSectionExpanded("sessions") ? colors.lineSoft : colors.border
                 border.width: 1
 
                 ColumnLayout {
@@ -418,10 +418,10 @@ PanelWindow {
 
                     Rectangle {
                         Layout.fillWidth: true
-                        implicitHeight: 38
+                        implicitHeight: 34
                         radius: 10
-                        color: root.runtimePanelSectionExpanded("sessions") ? colors.tealBg : colors.card
-                        border.color: root.runtimePanelSectionExpanded("sessions") ? colors.teal : colors.lineSoft
+                        color: root.runtimePanelSectionExpanded("sessions") ? colors.blueWash : colors.card
+                        border.color: colors.lineSoft
                         border.width: 1
 
                         RowLayout {
@@ -432,7 +432,7 @@ PanelWindow {
 
                             Text {
                                 text: root.runtimePanelSectionExpanded("sessions") ? "▾" : "▸"
-                                color: root.runtimePanelSectionExpanded("sessions") ? colors.teal : colors.textDim
+                                color: root.runtimePanelSectionExpanded("sessions") ? colors.blue : colors.textDim
                                 font.pixelSize: 12
                                 font.weight: Font.DemiBold
                             }
@@ -440,8 +440,8 @@ PanelWindow {
                             Text {
                                 text: "Herdr Monitor"
                                 color: colors.text
-                                font.pixelSize: 13
-                                font.weight: Font.Bold
+                                font.pixelSize: 12
+                                font.weight: Font.DemiBold
                             }
 
                             Text {
@@ -457,7 +457,7 @@ PanelWindow {
                                 width: sessionSectionCount.implicitWidth + 12
                                 height: 20
                                 radius: 6
-                                color: root.runtimePanelSectionExpanded("sessions") ? colors.bg : colors.tealBg
+                                color: colors.bg
                                 border.color: "transparent"
                                 border.width: 0
 
@@ -465,7 +465,7 @@ PanelWindow {
                                     id: sessionSectionCount
                                     anchors.centerIn: parent
                                     text: String(root.runtimePanelSectionCount("sessions"))
-                                    color: root.runtimePanelSectionExpanded("sessions") ? colors.teal : colors.muted
+                                    color: colors.muted
                                     font.pixelSize: 9
                                     font.weight: Font.DemiBold
                                 }
@@ -491,10 +491,18 @@ PanelWindow {
                     }
 
                     ColumnLayout {
+                        id: herdrSessionContent
+                        readonly property int agentCount: root.panelSessions().length
+                        readonly property int rowHeight: 48
+                        readonly property int rowRadius: 7
+                        readonly property int rowSpacing: 6
+                        readonly property int chipHeight: 18
+                        readonly property real spacesMaxFraction: agentCount <= 0 ? 0.86 : (agentCount <= 2 ? 0.68 : 0.52)
+                        readonly property int spacesMaxHeight: Math.max(150, Math.floor(root.runtimePanelSectionPreferredHeight("sessions") * spacesMaxFraction))
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         visible: root.runtimePanelSectionExpanded("sessions")
-                        spacing: 12
+                        spacing: 10
 
                         RowLayout {
                             Layout.fillWidth: true
@@ -502,9 +510,9 @@ PanelWindow {
 
                             Text {
                                 text: "Spaces"
-                                color: colors.teal
-                                font.pixelSize: 12
-                                font.weight: Font.Bold
+                                color: colors.text
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
                             }
 
                             Rectangle {
@@ -542,12 +550,19 @@ PanelWindow {
                         ListView {
                             id: herdrSpacesList
                             Layout.fillWidth: true
-                            Layout.preferredHeight: Math.min(contentHeight, 150)
+                            Layout.preferredHeight: Math.min(contentHeight, herdrSessionContent.spacesMaxHeight)
+                            Layout.maximumHeight: herdrSessionContent.spacesMaxHeight
+                            Layout.minimumHeight: visible ? Math.min(contentHeight, 96) : 0
                             visible: count > 0
                             clip: true
-                            spacing: 6
+                            spacing: herdrSessionContent.rowSpacing
                             model: herdrSpacesModel
                             boundsBehavior: Flickable.StopAtBounds
+                            cacheBuffer: 900
+
+                            ScrollBar.vertical: ScrollBar {
+                                policy: herdrSpacesList.contentHeight > herdrSpacesList.height ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
+                            }
 
                             delegate: Rectangle {
                                 id: herdrSpaceRow
@@ -556,9 +571,9 @@ PanelWindow {
                                 readonly property var token: root.herdrSpaceHostToken(space)
                                 readonly property bool canFocus: root.herdrSpaceFocusTarget(space) !== null
                                 readonly property bool hovered: spaceMouse.containsMouse
-                            width: herdrSpacesList.width
-                                implicitHeight: 58
-                                radius: 8
+                                width: herdrSpacesList.width
+                                implicitHeight: herdrSessionContent.rowHeight
+                                radius: herdrSessionContent.rowRadius
                                 color: root.herdrSpaceFill(space, hovered)
                                 border.color: root.herdrSpaceBorder(space, hovered)
                                 border.width: 1
@@ -567,36 +582,36 @@ PanelWindow {
                                 Rectangle {
                                     anchors.left: parent.left
                                     anchors.verticalCenter: parent.verticalCenter
-                                    anchors.leftMargin: 7
-                                    width: root.boolOrFalse(space.focused) ? 5 : 3
-                                    height: root.boolOrFalse(space.focused) ? 42 : 30
+                                    anchors.leftMargin: root.boolOrFalse(space.focused) ? 10 : 8
+                                    width: root.boolOrFalse(space.focused) ? 3 : 2
+                                    height: root.boolOrFalse(space.focused) ? 22 : (hovered ? 26 : 22)
                                     radius: 1
                                     color: root.herdrSpaceStatusColor(space)
-                                    opacity: root.boolOrFalse(space.focused) ? 0.95 : 0.7
+                                    opacity: root.boolOrFalse(space.focused) ? 0.38 : (hovered ? 0.72 : 0.46)
                                 }
 
                                 RowLayout {
                                     anchors.fill: parent
                                     anchors.leftMargin: 16
-                                    anchors.rightMargin: 8
-                                    spacing: 8
+                                    anchors.rightMargin: 10
+                                    spacing: 10
 
                                     Rectangle {
-                                        width: 34
-                                        height: 34
+                                        width: 28
+                                        height: 28
                                         radius: 7
                                         color: token ? token.background : colors.cardAlt
-                                        border.color: token ? token.border : colors.lineSoft
+                                        border.color: colors.lineSoft
                                         border.width: 1
 
                                         Image {
                                             visible: token && root.stringOrEmpty(token.icon).length > 0
                                             anchors.centerIn: parent
                                             source: token ? token.icon : ""
-                                            sourceSize.width: 17
-                                            sourceSize.height: 17
-                                            width: 17
-                                            height: 17
+                                            sourceSize.width: 15
+                                            sourceSize.height: 15
+                                            width: 15
+                                            height: 15
                                             mipmap: true
                                         }
 
@@ -605,7 +620,7 @@ PanelWindow {
                                             anchors.centerIn: parent
                                             text: token ? root.stringOrEmpty(token.monogram) : "H"
                                             color: token ? token.foreground : colors.textDim
-                                            font.pixelSize: 10
+                                            font.pixelSize: 9
                                             font.weight: Font.Bold
                                         }
                                     }
@@ -618,8 +633,8 @@ PanelWindow {
                                             Layout.fillWidth: true
                                             text: root.herdrSpaceTitle(space)
                                             color: root.boolOrFalse(space.focused) ? colors.text : colors.textDim
-                                            font.pixelSize: 14
-                                            font.weight: root.boolOrFalse(space.focused) ? Font.Bold : Font.DemiBold
+                                            font.pixelSize: 12
+                                            font.weight: Font.DemiBold
                                             elide: Text.ElideRight
                                         }
 
@@ -627,26 +642,42 @@ PanelWindow {
                                             Layout.fillWidth: true
                                             text: root.herdrSpaceMetaLabel(space)
                                             color: colors.subtle
-                                            font.pixelSize: 9
+                                            font.pixelSize: 8
                                             elide: Text.ElideRight
                                         }
                                     }
 
                                     Rectangle {
-                                        height: 26
+                                        height: Math.max(herdrSessionContent.chipHeight, 22)
                                         radius: 6
                                         color: root.herdrSpaceStatusBackground(space)
-                                        border.color: root.herdrSpaceStatusColor(space)
+                                        border.color: colors.lineSoft
                                         border.width: root.herdrSpaceStatus(space) === "unknown" ? 0 : 1
-                                        Layout.preferredWidth: spaceStatusText.implicitWidth + 18
+                                        Layout.preferredWidth: spaceStatusText.implicitWidth + 36
 
-                                        Text {
-                                            id: spaceStatusText
-                                            anchors.centerIn: parent
-                                            text: root.herdrSpaceStatusLabel(space)
-                                            color: root.herdrSpaceStatusColor(space)
-                                            font.pixelSize: 10
-                                            font.weight: Font.Bold
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 6
+                                            anchors.rightMargin: 8
+                                            spacing: 4
+
+                                            Text {
+                                                id: spaceStatusIconText
+                                                Layout.preferredWidth: 20
+                                                horizontalAlignment: Text.AlignHCenter
+                                                text: root.herdrSpaceStatusSymbol(space)
+                                                color: root.herdrSpaceStatusColor(space)
+                                                font.pixelSize: 15
+                                                font.weight: Font.DemiBold
+                                            }
+
+                                            Text {
+                                                id: spaceStatusText
+                                                text: root.herdrSpaceStatusLabel(space)
+                                                color: root.herdrSpaceStatusColor(space)
+                                                font.pixelSize: 8
+                                                font.weight: Font.DemiBold
+                                            }
                                         }
                                     }
                                 }
@@ -668,9 +699,9 @@ PanelWindow {
 
                             Text {
                                 text: "Agents"
-                                color: colors.teal
-                                font.pixelSize: 12
-                                font.weight: Font.Bold
+                                color: colors.text
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
                             }
 
                             Rectangle {
@@ -709,12 +740,17 @@ PanelWindow {
                             id: herdrAgentsList
                             Layout.fillWidth: true
                             Layout.fillHeight: true
+                            Layout.minimumHeight: visible ? Math.min(contentHeight, 96) : 0
                             visible: count > 0
                             clip: true
-                            spacing: 7
+                            spacing: herdrSessionContent.rowSpacing
                             model: herdrAgentsModel
                             boundsBehavior: Flickable.StopAtBounds
                             cacheBuffer: 1200
+
+                            ScrollBar.vertical: ScrollBar {
+                                policy: herdrAgentsList.contentHeight > herdrAgentsList.height ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
+                            }
 
                             delegate: RootComponents.SessionRow {
                                 required property var modelData
@@ -723,7 +759,7 @@ PanelWindow {
                                 colorsObject: colors
                                 session: modelData
                                 interactive: true
-                                compact: false
+                                compact: true
                                 showHostToken: false
                                 showProjectChip: false
                                 showCurrentChip: false

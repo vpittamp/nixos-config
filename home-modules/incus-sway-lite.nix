@@ -1,5 +1,5 @@
 # Home-manager profile for Incus Sway Lite VMs
-# Includes Sway + i3pm/worktree + terminal/tmux + local OTEL AI monitoring.
+# Includes Sway + i3pm/worktree + terminal/tmux.
 { pkgs, lib, ... }:
 {
   imports = [
@@ -40,8 +40,6 @@
     ./desktop/app-registry.nix
     ./tools/pwa-launcher.nix
 
-    # Local AI monitoring stack (lightweight)
-    ./services/otel-ai-monitor.nix
     # Keep heavy AI CLIs out of the base image; install on-demand when needed.
     # ./ai-assistants/claude-code.nix
     # ./ai-assistants/codex.nix
@@ -97,13 +95,6 @@
   programs.i3-project-daemon = {
     enable = true;
     logLevel = "INFO";
-  };
-
-  # Lightweight AI monitoring: local-only service.
-  services.otel-ai-monitor = {
-    enable = true;
-    port = 4318;
-    enableNotifications = false;
   };
 
   programs.sway-config-manager = {

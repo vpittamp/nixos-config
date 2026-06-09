@@ -2,14 +2,9 @@
 
 This repo collects Claude Code telemetry via Grafana Alloy and exports to an LGTM stack (Tempo/Mimir/Loki).
 
-## Codex CLI note (traces are synthesized)
+## Codex CLI note
 
-Codex CLI currently emits **OTEL log events** (not spans) via `[otel]` in `~/.codex/config.toml`.
-
-To get Claude-like traces (Session → Turn → LLM/Tool), we:
-- Route Codex OTLP logs through `scripts/codex-otel-interceptor.js` (it forwards logs to Alloy and **synthesizes OTLP traces**).
-- Use Codex’s `notify` hook to post `agent-turn-complete` to the interceptor for accurate turn end boundaries.
-- Normalize the join key by copying `conversation.id` → `session.id` in forwarded Codex logs, and using the same `session.id` on synthesized spans.
+Codex AI-session state for QuickShell now comes from Herdr, not from local OTEL log interception. The old Codex OTEL interceptor and synthesized trace path were retired with the Herdr-native panel.
 
 ## Gemini CLI note (traces are synthesized)
 
@@ -24,7 +19,7 @@ To get Claude-like traces (Session → Turn → LLM/Tool), we:
 
 Claude Code native OpenTelemetry telemetry uses `session.id` (UUID per conversation).
 
-The Node interceptor (`scripts/minimal-otel-interceptor.js`) now hydrates the same UUID via a SessionStart hook, so:
+Historical Claude Code telemetry used `session.id` (UUID per conversation), so:
 
 - **Metrics/logs** (native Claude Code) and **traces** (interceptor) correlate by `session.id`
 - You can search Tempo traces by the same UUID you see in Loki/Mimir
@@ -195,10 +190,7 @@ Langfuse-specific attributes added to spans:
 
 ### Graceful degradation
 
-When Langfuse is unavailable:
-- Alloy buffers traces locally (100MB default)
-- Traces are retried with exponential backoff
-- Local EWW monitoring continues to work via otel-ai-monitor
+When Langfuse is unavailable, Alloy retries exported traces with exponential backoff. The local QuickShell AI session panel is unaffected because it reads Herdr state through the daemon.
 
 ### Multi-provider support
 

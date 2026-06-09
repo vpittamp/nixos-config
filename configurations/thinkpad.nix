@@ -308,7 +308,6 @@ in
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
-    ../modules/services/otel-ai-collector.nix  # Feature 123: AI telemetry collector (legacy, replaced by Alloy)
     ../modules/services/grafana-alloy.nix      # Feature 129: Unified OTEL collector
     ../modules/services/arize-phoenix.nix      # Feature 129 Enhancement: GenAI tracing
     ../modules/services/pyroscope-agent.nix    # Feature 129: Continuous profiling
@@ -414,8 +413,8 @@ in
   # Daemon lifecycle managed by graphical-session.target (see home-vpittamp.nix)
 
   # Feature 129: Grafana Alloy - Unified Telemetry Collector
-  # Replaces otel-ai-collector with comprehensive observability:
-  # - OTLP receiver on 4318, forwards to otel-ai-monitor on 4320
+  # Provides comprehensive observability:
+  # - OTLP receiver on 4318
   # - System metrics via node exporter → Mimir
   # - Journald logs → Loki
   # - All telemetry exported to K8s LGTM stack via cnoe.localtest.me:8443
@@ -426,7 +425,6 @@ in
     enableJournald = true;
     journaldUnits = [
       "grafana-alloy.service"
-      "otel-ai-monitor.service"
       "i3pm-daemon.service"
     ];
 
@@ -447,18 +445,13 @@ in
     };
   };
 
-  # Feature 123 (legacy): Disable otel-ai-collector - replaced by grafana-alloy
-  services.otel-ai-collector = {
-    enable = false;
-  };
-
   # Arize Phoenix - GenAI Observability (Local)
   services.arize-phoenix.enable = false;  # Disabled: port 4317 conflicts with Alloy
 
   # Feature 123: LiteLLM Proxy for full OTEL tracing of Claude API calls
   # DISABLED: Incompatible with Claude Code Max subscription (OAuth authentication)
   # LiteLLM requires API keys, but Max uses OAuth tokens
-  # Native Claude Code OTEL telemetry is captured by otel-ai-collector instead
+  # Native Claude Code telemetry does not support Max subscription OAuth routing.
   services.litellm-proxy.enable = false;
 
   # Display manager - greetd for Wayland/Sway login

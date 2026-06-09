@@ -21,8 +21,7 @@
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix  # Consolidated 1Password module (with feature flags)
-    ../modules/services/otel-ai-collector.nix  # Feature 123: AI telemetry collector (to be replaced by Alloy)
-    ../modules/services/grafana-alloy.nix      # Feature 129: Unified OTEL collector (replaces otel-ai-collector)
+    ../modules/services/grafana-alloy.nix      # Feature 129: Unified OTEL collector
     ../modules/services/grafana-beyla.nix      # Feature 129: eBPF auto-instrumentation
     ../modules/services/pyroscope-agent.nix    # Feature 129: Continuous profiling
     # Feature 117: System service removed - now runs as home-manager user service
@@ -174,8 +173,8 @@
   # No systemd dependency needed - user service binds to graphical-session.target
 
   # Feature 129: Grafana Alloy - Unified Telemetry Collector
-  # Replaces otel-ai-collector with comprehensive observability:
-  # - OTLP receiver on 4318, forwards to otel-ai-monitor on 4320
+  # Provides comprehensive observability:
+  # - OTLP receiver on 4318
   # - System metrics via node exporter → Mimir
   # - Journald logs → Loki
   # - All telemetry exported to K8s LGTM stack
@@ -190,7 +189,6 @@
     journaldUnits = [
       "grafana-alloy.service"
       "grafana-beyla.service"
-      "otel-ai-monitor.service"
       "i3pm-daemon.service"
     ];
 
@@ -209,13 +207,6 @@
       batchTimeout = "10s";
       batchSize = 100;
     };
-  };
-
-  # Feature 123 (legacy): Disable otel-ai-collector since Alloy replaces it
-  services.otel-ai-collector = {
-    enable = false;  # Disabled - replaced by grafana-alloy
-    enableDebugExporter = false;
-    enableFileExporter = false;
   };
 
   systemd.services.home-manager-vpittamp = {

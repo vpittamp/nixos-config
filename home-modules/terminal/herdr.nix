@@ -26,7 +26,7 @@ in
     onboarding = false
 
     [theme]
-    name = "catppuccin"
+    name = "terminal"
 
     [terminal]
     default_shell = "${pkgs.bashInteractive}/bin/bash"
@@ -111,8 +111,11 @@ in
     accent = "cyan"
 
     [ui.toast]
-    delivery = "terminal"
+    delivery = "off"
     delay_seconds = 1
+
+    [ui.sound]
+    enabled = false
 
     [session]
     resume_agents_on_restore = true

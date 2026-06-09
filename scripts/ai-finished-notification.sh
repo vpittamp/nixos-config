@@ -26,6 +26,9 @@ EXPLICIT_TMUX_PANE="${I3PM_NOTIFY_TMUX_PANE:-}"
 PLAY_SOUND="${I3PM_NOTIFY_SOUND:-0}"
 ICON="${I3PM_NOTIFY_ICON:-robot}"
 TITLE="${I3PM_NOTIFY_TITLE:-${CLI_NAME} Ready}"
+APP_NAME="${I3PM_NOTIFY_APP_NAME:-i3pm-ai}"
+CATEGORY="${I3PM_NOTIFY_CATEGORY:-agent-status}"
+ACTION_LABEL="${I3PM_NOTIFY_ACTION_LABEL:-Return to Terminal}"
 echo "--- $(date) ---" >> "$LOG_FILE"
 echo "CLI: $CLI_NAME, Message length: ${#MESSAGE}" >> "$LOG_FILE"
 
@@ -41,8 +44,19 @@ daemon_rpc() {
     jq -ec '.result' <<< "$response"
 }
 
-play_completion_sound() {
-    [ "$PLAY_SOUND" = "1" ] || return 0
+play_notification_sound() {
+    local sound_kind
+    case "$PLAY_SOUND" in
+        1|complete|completion)
+            sound_kind="complete"
+            ;;
+        request|attention|action)
+            sound_kind="request"
+            ;;
+        *)
+            return 0
+            ;;
+    esac
 
     local player
     player="$(command -v pw-play 2>/dev/null || true)"
@@ -50,10 +64,10 @@ play_completion_sound() {
 
     local runtime_dir sound_file
     runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
-    sound_file="${runtime_dir}/i3pm-ai-session-complete.wav"
+    sound_file="${runtime_dir}/i3pm-ai-session-${sound_kind}.wav"
 
     if [ ! -f "$sound_file" ]; then
-        python3 - "$sound_file" <<'PY' >/dev/null 2>&1 || return 0
+        python3 - "$sound_file" "$sound_kind" <<'PY' >/dev/null 2>&1 || return 0
 import math
 import os
 import struct
@@ -61,11 +75,11 @@ import sys
 import wave
 
 path = sys.argv[1]
+kind = sys.argv[2]
 tmp = f"{path}.tmp"
 os.makedirs(os.path.dirname(path), exist_ok=True)
 sample_rate = 44100
-duration = 0.16
-frequency = 880.0
+duration = 0.18 if kind == "request" else 0.16
 frame_count = int(sample_rate * duration)
 
 with wave.open(tmp, "wb") as wav_file:
@@ -75,7 +89,10 @@ with wave.open(tmp, "wb") as wav_file:
     for index in range(frame_count):
         attack = min(1.0, index / (sample_rate * 0.01))
         release = min(1.0, (frame_count - index) / (sample_rate * 0.05))
-        amplitude = min(attack, release) * 0.22
+        amplitude = min(attack, release) * 0.2
+        frequency = 740.0 if kind == "request" and index < frame_count * 0.46 else 1046.5
+        if kind != "request":
+            frequency = 880.0
         sample = int(32767 * amplitude * math.sin(2 * math.pi * frequency * index / sample_rate))
         wav_file.writeframesraw(struct.pack("<h", sample))
 
@@ -164,11 +181,11 @@ fi
 
 # ── Send notification and handle action ───────────────────────────────
 echo "Sending notification: $TITLE (window=$WINDOW_ID)" >> "$LOG_FILE"
-play_completion_sound
+play_notification_sound
 
 if [ -n "$WINDOW_ID" ]; then
-    RESPONSE=$(notify-send -i "$ICON" -u normal -w --transient \
-        -A "focus=Return to Terminal" \
+    RESPONSE=$(notify-send -a "$APP_NAME" -c "$CATEGORY" -i "$ICON" -u normal -w --transient \
+        -A "focus=${ACTION_LABEL}" \
         -A "dismiss=Dismiss" \
         "$TITLE" "$NOTIFICATION_BODY" 2>/dev/null || echo "error")
     echo "notify-send response: $RESPONSE" >> "$LOG_FILE"
@@ -206,7 +223,7 @@ if [ -n "$WINDOW_ID" ]; then
     fi
 else
     echo "No window ID, sending simple notification" >> "$LOG_FILE"
-    notify-send -i "$ICON" -u normal --transient "$TITLE" "$NOTIFICATION_BODY" 2>/dev/null || true
+    notify-send -a "$APP_NAME" -c "$CATEGORY" -i "$ICON" -u normal --transient "$TITLE" "$NOTIFICATION_BODY" 2>/dev/null || true
 fi
 
 exit 0

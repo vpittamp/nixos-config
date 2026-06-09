@@ -3706,10 +3706,9 @@ class TestAiNotificationState:
         assert isinstance(payload, dict)
         assert "sessions" in payload
         assert payload["sessions"]["tool=codex|project=proj|window=1|pane=%1"]["state"] == "idle"
-        assert "stopped_sessions" in payload
         assert "user_input_sessions" in payload
 
-    def test_emit_explicit_stop_notification_once_for_codex(self, tmp_path, monkeypatch):
+    def test_emit_explicit_stop_notification_is_not_external_notified_for_codex(self, tmp_path, monkeypatch):
         notify_file = tmp_path / "ai-session-notify-state.json"
         notify_file.parent.mkdir(parents=True, exist_ok=True)
         notification_script = tmp_path / "notify.sh"
@@ -3741,17 +3740,20 @@ class TestAiNotificationState:
             "state_seq": 9,
         }
 
-        with patch("i3_project_manager.cli.monitoring_data.subprocess.Popen") as mock_popen:
+        with patch("i3_project_manager.cli.monitoring_data.subprocess.Popen") as mock_popen, \
+             patch("i3_project_manager.cli.monitoring_data.subprocess.run") as mock_run:
             monitoring_data.emit_ai_state_transition_notifications([session])
-            mock_popen.assert_called_once()
+            mock_popen.assert_not_called()
+            mock_run.assert_not_called()
 
             monitoring_data.emit_ai_state_transition_notifications([session])
-            mock_popen.assert_called_once()
+            mock_popen.assert_not_called()
+            mock_run.assert_not_called()
 
         payload = json.loads(notify_file.read_text())
-        assert payload["stopped_sessions"][session["session_key"]]["marker"] == session["terminal_state_at"]
+        assert payload["sessions"][session["session_key"]]["state"] == "output_ready"
 
-    def test_emit_notifications_skips_legacy_path_for_explicit_claude_stop(self, tmp_path, monkeypatch):
+    def test_emit_notifications_skips_external_path_for_explicit_claude_stop(self, tmp_path, monkeypatch):
         notify_file = tmp_path / "ai-session-notify-state.json"
         notify_file.parent.mkdir(parents=True, exist_ok=True)
         notification_script = tmp_path / "notify.sh"
@@ -3787,10 +3789,44 @@ class TestAiNotificationState:
         with patch("i3_project_manager.cli.monitoring_data.subprocess.Popen") as mock_popen, \
              patch("i3_project_manager.cli.monitoring_data.subprocess.run") as mock_run:
             monitoring_data.emit_ai_state_transition_notifications([session])
-            mock_popen.assert_called_once()
+            mock_popen.assert_not_called()
             mock_run.assert_not_called()
 
-    def test_emit_user_input_notification_once_for_claude(self, tmp_path, monkeypatch):
+    def test_emit_plain_completion_transition_does_not_spawn_notification(self, tmp_path, monkeypatch):
+        notify_file = tmp_path / "ai-session-notify-state.json"
+        notify_file.parent.mkdir(parents=True, exist_ok=True)
+        notify_file.write_text(json.dumps({
+            "sessions": {
+                "tool=gemini|project=proj|window=3|pane=%3": {
+                    "state": "thinking",
+                    "last_seen": 99.0,
+                    "last_notified": 0.0,
+                }
+            },
+            "user_input_sessions": {},
+            "updated_at": 99.0,
+        }))
+
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_NOTIFY_FILE", notify_file)
+
+        session = {
+            "session_key": "tool=gemini|project=proj|window=3|pane=%3",
+            "tool": "gemini",
+            "display_tool": "Gemini",
+            "display_project": "proj",
+            "display_target": "pane %3",
+            "project": "proj",
+            "stage": "output_ready",
+            "otel_state": "completed",
+        }
+
+        with patch("i3_project_manager.cli.monitoring_data.subprocess.Popen") as mock_popen, \
+             patch("i3_project_manager.cli.monitoring_data.subprocess.run") as mock_run:
+            monitoring_data.emit_ai_state_transition_notifications([session])
+            mock_popen.assert_not_called()
+            mock_run.assert_not_called()
+
+    def test_emit_user_input_notification_after_delay_once_for_claude(self, tmp_path, monkeypatch):
         notify_file = tmp_path / "ai-session-notify-state.json"
         notify_file.parent.mkdir(parents=True, exist_ok=True)
         notification_script = tmp_path / "notify.sh"
@@ -3823,15 +3859,165 @@ class TestAiNotificationState:
             "state_seq": 11,
         }
 
-        with patch("i3_project_manager.cli.monitoring_data.subprocess.Popen") as mock_popen:
+        now = [100.0]
+
+        with patch("i3_project_manager.cli.monitoring_data.time.time", side_effect=lambda: now[0]), \
+             patch("i3_project_manager.cli.monitoring_data.subprocess.Popen") as mock_popen:
+            monitoring_data.emit_ai_state_transition_notifications([session])
+            mock_popen.assert_not_called()
+
+            now[0] = 101.2
             monitoring_data.emit_ai_state_transition_notifications([session])
             mock_popen.assert_called_once()
+            call = mock_popen.call_args
+            assert call.args[0] == [str(notification_script), "Claude Code", "proj"]
+            env = call.kwargs["env"]
+            assert env["I3PM_NOTIFY_SOUND"] == "request"
+            assert env["I3PM_NOTIFY_APP_NAME"] == "i3pm-agent"
+            assert env["I3PM_NOTIFY_CATEGORY"] == "agent-action"
+            assert env["I3PM_NOTIFY_ACTION_LABEL"] == "Return to Terminal"
+            assert env["I3PM_NOTIFY_TITLE"] == "Claude Code Waiting on you"
 
+            now[0] = 102.5
             monitoring_data.emit_ai_state_transition_notifications([session])
             mock_popen.assert_called_once()
 
         payload = json.loads(notify_file.read_text())
         assert payload["user_input_sessions"][session["session_key"]]["marker"] == session["notification_boundary_at"]
+        assert payload["user_input_sessions"][session["session_key"]]["delivered_marker"] == session["notification_boundary_at"]
+
+    def test_emit_user_input_notification_cancels_when_boundary_clears_before_delay(self, tmp_path, monkeypatch):
+        notify_file = tmp_path / "ai-session-notify-state.json"
+        notify_file.parent.mkdir(parents=True, exist_ok=True)
+        notification_script = tmp_path / "notify.sh"
+        notification_script.write_text("#!/usr/bin/env bash\nexit 0\n")
+        notification_script.chmod(0o755)
+
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_NOTIFY_FILE", notify_file)
+        monkeypatch.setattr(monitoring_data, "AI_FINISHED_NOTIFICATION_SCRIPT", notification_script)
+
+        session = {
+            "session_key": "tool=codex|project=proj|window=1|pane=%1",
+            "tool": "codex",
+            "display_project": "proj",
+            "project": "proj",
+            "session_phase": "needs_attention",
+            "notification_boundary_type": "user_input_required",
+            "notification_boundary_reason": "permission",
+            "notification_boundary_at": "2026-03-21T19:20:12+00:00",
+            "needs_user_action": True,
+            "user_action_reason": "permission",
+            "stage": "waiting_input",
+            "state_seq": 12,
+        }
+        cleared = dict(session)
+        cleared.update({
+            "session_phase": "active",
+            "notification_boundary_type": "",
+            "notification_boundary_reason": "",
+            "notification_boundary_at": "",
+            "needs_user_action": False,
+            "user_action_reason": "",
+            "stage": "thinking",
+        })
+        now = [200.0]
+
+        with patch("i3_project_manager.cli.monitoring_data.time.time", side_effect=lambda: now[0]), \
+             patch("i3_project_manager.cli.monitoring_data.subprocess.Popen") as mock_popen:
+            monitoring_data.emit_ai_state_transition_notifications([session])
+            now[0] = 200.5
+            monitoring_data.emit_ai_state_transition_notifications([cleared])
+            now[0] = 201.5
+            monitoring_data.emit_ai_state_transition_notifications([session])
+            mock_popen.assert_not_called()
+            now[0] = 202.6
+            monitoring_data.emit_ai_state_transition_notifications([session])
+            mock_popen.assert_called_once()
+
+    def test_emit_user_input_notification_changed_marker_replaces_pending_delay(self, tmp_path, monkeypatch):
+        notify_file = tmp_path / "ai-session-notify-state.json"
+        notify_file.parent.mkdir(parents=True, exist_ok=True)
+        notification_script = tmp_path / "notify.sh"
+        notification_script.write_text("#!/usr/bin/env bash\nexit 0\n")
+        notification_script.chmod(0o755)
+
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_NOTIFY_FILE", notify_file)
+        monkeypatch.setattr(monitoring_data, "AI_FINISHED_NOTIFICATION_SCRIPT", notification_script)
+
+        session = {
+            "session_key": "tool=codex|project=proj|window=1|pane=%1",
+            "tool": "codex",
+            "display_project": "proj",
+            "project": "proj",
+            "session_phase": "needs_attention",
+            "notification_boundary_type": "user_input_required",
+            "notification_boundary_reason": "auth",
+            "notification_boundary_at": "first-marker",
+            "needs_user_action": True,
+            "user_action_reason": "auth",
+            "stage": "attention",
+            "state_seq": 13,
+        }
+        changed = dict(session)
+        changed["notification_boundary_at"] = "second-marker"
+        now = [300.0]
+
+        with patch("i3_project_manager.cli.monitoring_data.time.time", side_effect=lambda: now[0]), \
+             patch("i3_project_manager.cli.monitoring_data.subprocess.Popen") as mock_popen:
+            monitoring_data.emit_ai_state_transition_notifications([session])
+            now[0] = 300.5
+            monitoring_data.emit_ai_state_transition_notifications([changed])
+            now[0] = 301.2
+            monitoring_data.emit_ai_state_transition_notifications([changed])
+            mock_popen.assert_not_called()
+            now[0] = 301.6
+            monitoring_data.emit_ai_state_transition_notifications([changed])
+            mock_popen.assert_called_once()
+
+        payload = json.loads(notify_file.read_text())
+        assert payload["user_input_sessions"][session["session_key"]]["marker"] == "second-marker"
+        assert payload["user_input_sessions"][session["session_key"]]["delivered_marker"] == "second-marker"
+
+    def test_emit_user_input_notification_suppressed_for_focused_session(self, tmp_path, monkeypatch):
+        notify_file = tmp_path / "ai-session-notify-state.json"
+        notify_file.parent.mkdir(parents=True, exist_ok=True)
+        notification_script = tmp_path / "notify.sh"
+        notification_script.write_text("#!/usr/bin/env bash\nexit 0\n")
+        notification_script.chmod(0o755)
+
+        monkeypatch.setattr(monitoring_data, "AI_SESSION_NOTIFY_FILE", notify_file)
+        monkeypatch.setattr(monitoring_data, "AI_FINISHED_NOTIFICATION_SCRIPT", notification_script)
+
+        session = {
+            "session_key": "tool=claude|project=proj|window=2|pane=%9",
+            "tool": "claude-code",
+            "display_project": "proj",
+            "project": "proj",
+            "session_phase": "needs_attention",
+            "notification_boundary_type": "user_input_required",
+            "notification_boundary_reason": "elicitation",
+            "notification_boundary_at": "focused-marker",
+            "needs_user_action": True,
+            "user_action_reason": "elicitation",
+            "stage": "waiting_input",
+            "is_current_window": True,
+            "pane_active": True,
+            "tmux_pane": "%9",
+            "state_seq": 14,
+        }
+        now = [400.0]
+
+        with patch("i3_project_manager.cli.monitoring_data.time.time", side_effect=lambda: now[0]), \
+             patch("i3_project_manager.cli.monitoring_data.subprocess.Popen") as mock_popen:
+            monitoring_data.emit_ai_state_transition_notifications([session])
+            now[0] = 401.2
+            monitoring_data.emit_ai_state_transition_notifications([session])
+            mock_popen.assert_not_called()
+
+        payload = json.loads(notify_file.read_text())
+        entry = payload["user_input_sessions"][session["session_key"]]
+        assert entry["delivered_marker"] == "focused-marker"
+        assert entry["suppressed_focused"] is True
 
     def test_atomic_write_json_leaves_no_temp_files(self, tmp_path):
         state_file = tmp_path / "state.json"

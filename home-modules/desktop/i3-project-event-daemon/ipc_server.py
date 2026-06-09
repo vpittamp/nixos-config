@@ -11212,7 +11212,7 @@ FORMAT JSONEachRow
     def _session_has_user_input_boundary(session: Dict[str, Any]) -> bool:
         """Return whether a session is on a retained user-input-required boundary."""
         tool = str(session.get("tool") or "").strip().lower()
-        if tool not in {"codex", "claude-code"}:
+        if tool not in {"codex", "claude-code", "antigravity", "antigravity-cli", "gemini", "gemini-cli"}:
             return False
         if str(session.get("notification_boundary_type") or "").strip().lower() != "user_input_required":
             return False
@@ -12754,6 +12754,7 @@ FORMAT JSONEachRow
             is_current_host: bool,
             focused: bool = False,
             focus_target: Optional[Dict[str, Any]] = None,
+            label_source: str = "fallback",
         ) -> Dict[str, Any]:
             normalized_workspace = workspace_id or "unknown"
             space_key = f"herdr:{host_key}:workspace:{normalized_workspace}"
@@ -12773,14 +12774,22 @@ FORMAT JSONEachRow
                     "project_name": "global",
                     "execution_mode": execution_mode,
                     "is_current_host": bool(is_current_host),
+                    "_label_source": label_source,
                 }
                 if focus_target:
                     existing["focus_target"] = focus_target
                 spaces[space_key] = existing
             else:
                 existing["focused"] = bool(existing.get("focused", False)) or bool(focused)
-                if not str(existing.get("label") or "").strip() and label:
+                existing_label_source = str(existing.get("_label_source") or "fallback")
+                label_is_workspace = label_source == "workspace"
+                existing_is_workspace = existing_label_source == "workspace"
+                if label and (
+                    not str(existing.get("label") or "").strip()
+                    or (label_is_workspace and not existing_is_workspace)
+                ):
                     existing["label"] = label
+                    existing["_label_source"] = label_source
                 if focus_target and not existing.get("focus_target"):
                     existing["focus_target"] = focus_target
             return existing
@@ -12808,6 +12817,7 @@ FORMAT JSONEachRow
                 is_current_host=not is_remote,
                 focused=bool(workspace.get("focused", False)),
                 focus_target=focus_target,
+                label_source="workspace",
             )
 
         herdr_sessions = [
@@ -12831,6 +12841,7 @@ FORMAT JSONEachRow
                 execution_mode=str(session.get("execution_mode") or ("ssh" if is_remote else "local")).strip() or "local",
                 is_current_host=bool(session.get("is_current_host", not is_remote)),
                 focused=bool(session.get("focused", False)),
+                label_source="session",
             )
             current_status = str(space.get("agent_status") or "unknown").strip()
             candidate_status = self._herdr_agent_status_state(session.get("agent_status"))
@@ -12871,6 +12882,40 @@ FORMAT JSONEachRow
             space["tab_count"] = len(matching_tabs)
             if not str(space.get("project_name") or "").strip():
                 space["project_name"] = "global"
+
+        focused_session_space_keys = []
+        for session in herdr_sessions:
+            if not bool(session.get("focused", False)):
+                continue
+            host_key = host_key_for(session)
+            workspace_id = workspace_id_for(session)
+            normalized_workspace = workspace_id or "unknown"
+            focused_session_space_keys.append(f"herdr:{host_key}:workspace:{normalized_workspace}")
+
+        selected_focused_space = next(
+            (space_key for space_key in focused_session_space_keys if space_key in spaces),
+            None,
+        )
+        if selected_focused_space is None:
+            focused_spaces = [
+                str(space.get("space_key") or "")
+                for space in spaces.values()
+                if bool(space.get("focused", False))
+            ]
+            selected_focused_space = next(
+                (
+                    space_key for space_key in focused_spaces
+                    if bool(spaces.get(space_key, {}).get("is_current_host", False))
+                ),
+                focused_spaces[0] if focused_spaces else None,
+            )
+
+        for space in spaces.values():
+            space["focused"] = (
+                bool(selected_focused_space)
+                and str(space.get("space_key") or "") == selected_focused_space
+            )
+            space.pop("_label_source", None)
 
         return sorted(spaces.values(), key=lambda item: (
             not bool(item.get("focused", False)),

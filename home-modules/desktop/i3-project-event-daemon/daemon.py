@@ -203,8 +203,6 @@ class I3ProjectDaemon:
         self.monitor_profile_service: Optional[MonitorProfileService] = None  # Feature 083: Monitor profile management
         self.monitor_profile_watcher: Optional[MonitorProfileWatcher] = None  # Feature 083: Profile file watcher
         self.monitor_profiles_directory_watcher: Optional[MonitorProfilesDirectoryWatcher] = None
-        self.otel_sessions_watcher: Optional[OutputStatesWatcher] = None
-        self.remote_otel_sink_watcher: Optional[OutputStatesWatcher] = None
         self.tree_cache: Optional[Any] = None  # Feature 091: Tree cache service
         self.performance_tracker: Optional[Any] = None  # Feature 091: Performance tracker
         self.badge_state: BadgeState = BadgeState()  # Feature 095: Visual notification badges
@@ -543,38 +541,6 @@ class I3ProjectDaemon:
         )
         self.output_states_watcher.set_event_loop(asyncio.get_event_loop())
         self.output_states_watcher.start()
-
-        runtime_dir = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
-        otel_sessions_file = runtime_dir / "otel-ai-sessions.json"
-        remote_otel_sink_file = runtime_dir / "eww-monitoring-panel" / "remote-otel-sink.json"
-
-        def on_otel_sessions_change() -> None:
-            """Notify UI subscribers when local OTEL session state changes."""
-            loop = asyncio.get_event_loop()
-            if self.ipc_server:
-                loop.create_task(self.ipc_server.notify_state_change("ai_sessions_changed"))
-
-        def on_remote_otel_sink_change() -> None:
-            """Notify UI subscribers when remote OTEL session state changes."""
-            loop = asyncio.get_event_loop()
-            if self.ipc_server:
-                loop.create_task(self.ipc_server.notify_state_change("ai_sessions_changed"))
-
-        self.otel_sessions_watcher = OutputStatesWatcher(
-            config_file=otel_sessions_file,
-            reload_callback=on_otel_sessions_change,
-            debounce_ms=100,
-        )
-        self.otel_sessions_watcher.set_event_loop(asyncio.get_event_loop())
-        self.otel_sessions_watcher.start()
-
-        self.remote_otel_sink_watcher = OutputStatesWatcher(
-            config_file=remote_otel_sink_file,
-            reload_callback=on_remote_otel_sink_change,
-            debounce_ms=100,
-        )
-        self.remote_otel_sink_watcher.set_event_loop(asyncio.get_event_loop())
-        self.remote_otel_sink_watcher.start()
 
         # Initialize output states file with current outputs
         if self.connection and self.connection.conn:
@@ -1040,20 +1006,6 @@ class I3ProjectDaemon:
                     logger.info("Output states watcher stopped")
                 except Exception as e:
                     logger.error(f"Error stopping output states watcher: {e}")
-
-            if self.otel_sessions_watcher:
-                try:
-                    self.otel_sessions_watcher.stop()
-                    logger.info("OTEL session watcher stopped")
-                except Exception as e:
-                    logger.error(f"Error stopping OTEL session watcher: {e}")
-
-            if self.remote_otel_sink_watcher:
-                try:
-                    self.remote_otel_sink_watcher.stop()
-                    logger.info("Remote OTEL sink watcher stopped")
-                except Exception as e:
-                    logger.error(f"Error stopping remote OTEL sink watcher: {e}")
 
             # Stop IPC server (5s timeout)
             if self.ipc_server:

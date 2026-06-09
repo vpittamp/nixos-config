@@ -101,6 +101,7 @@ AI_SESSION_SCHEMA_VERSION = "11"
 AI_SESSION_MRU_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-mru.json"
 AI_SESSION_PIN_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-pins.json"
 AI_SESSION_NOTIFY_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-notify-state.json"
+AI_USER_INPUT_NOTIFICATION_DELAY_SECONDS = 1.0
 AI_MONITOR_METRICS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-monitor-metrics.json"
 AI_SESSION_REVIEW_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-review.json"
 AI_SESSION_SEEN_EVENTS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-seen-events.jsonl"
@@ -913,68 +914,24 @@ def emit_ai_state_transition_notifications(active_sessions: List[Dict[str, Any]]
         sessions_cache = cache.get("sessions", {})
         if not isinstance(sessions_cache, dict):
             sessions_cache = {}
-        stopped_sessions_cache = cache.get("stopped_sessions", {})
-        if not isinstance(stopped_sessions_cache, dict):
-            stopped_sessions_cache = {}
         user_input_sessions_cache = cache.get("user_input_sessions", {})
         if not isinstance(user_input_sessions_cache, dict):
             user_input_sessions_cache = {}
-        last_global_notification = float(cache.get("last_global_notification", 0.0) or 0.0)
 
         current_keys = {str(s.get("session_key") or "") for s in active_sessions if str(s.get("session_key") or "")}
         # Drop stale cache entries to keep file bounded.
         sessions_cache = {k: v for k, v in sessions_cache.items() if k in current_keys}
-        stopped_sessions_cache = {
-            k: v for k, v in stopped_sessions_cache.items() if k in current_keys
-        }
         user_input_sessions_cache = {
             k: v for k, v in user_input_sessions_cache.items() if k in current_keys
         }
 
-        debounce_seconds = 12.0
         for session in active_sessions:
             key = str(session.get("session_key") or "")
             if not key:
                 continue
             current_state = str(session.get("stage") or session.get("otel_state") or "idle")
             previous_entry = sessions_cache.get(key, {}) if isinstance(sessions_cache.get(key), dict) else {}
-            previous_state = str(previous_entry.get("state") or "")
             last_notified = float(previous_entry.get("last_notified", 0.0) or 0.0)
-
-            if _should_emit_explicit_stop_notification(session):
-                stop_entry = (
-                    stopped_sessions_cache.get(key, {})
-                    if isinstance(stopped_sessions_cache.get(key), dict)
-                    else {}
-                )
-                stop_marker = _session_stop_marker(session)
-                previous_stop_marker = str(stop_entry.get("marker") or "")
-                if stop_marker and stop_marker != previous_stop_marker:
-                    _spawn_explicit_stop_notification(session)
-                    stop_entry = {
-                        "marker": stop_marker,
-                        "last_notified": now_ts,
-                    }
-                else:
-                    stop_entry = {
-                        "marker": previous_stop_marker or stop_marker,
-                        "last_notified": float(stop_entry.get("last_notified", 0.0) or 0.0),
-                    }
-                stop_entry["last_seen"] = now_ts
-                stopped_sessions_cache[key] = stop_entry
-            else:
-                stopped_sessions_cache[key] = {
-                    "marker": "",
-                    "last_seen": now_ts,
-                    "last_notified": float(
-                        (
-                            stopped_sessions_cache.get(key, {})
-                            if isinstance(stopped_sessions_cache.get(key), dict)
-                            else {}
-                        ).get("last_notified", 0.0)
-                        or 0.0
-                    ),
-                }
 
             if _should_emit_user_input_notification(session):
                 user_input_entry = (
@@ -984,22 +941,62 @@ def emit_ai_state_transition_notifications(active_sessions: List[Dict[str, Any]]
                 )
                 user_input_marker = _session_user_input_marker(session)
                 previous_user_input_marker = str(user_input_entry.get("marker") or "")
+                previous_delivered_marker = str(user_input_entry.get("delivered_marker") or "")
+                pending_since = float(user_input_entry.get("pending_since", 0.0) or 0.0)
                 if user_input_marker and user_input_marker != previous_user_input_marker:
-                    _spawn_user_input_notification(session)
+                    pending_since = now_ts
                     user_input_entry = {
                         "marker": user_input_marker,
-                        "last_notified": now_ts,
-                    }
-                else:
-                    user_input_entry = {
-                        "marker": previous_user_input_marker or user_input_marker,
+                        "delivered_marker": previous_delivered_marker,
+                        "pending_since": pending_since,
                         "last_notified": float(user_input_entry.get("last_notified", 0.0) or 0.0),
+                        "last_seen": now_ts,
                     }
-                user_input_entry["last_seen"] = now_ts
+                elif user_input_marker:
+                    if pending_since <= 0.0:
+                        pending_since = now_ts
+                    user_input_entry = {
+                        "marker": user_input_marker,
+                        "delivered_marker": previous_delivered_marker,
+                        "pending_since": pending_since,
+                        "last_notified": float(user_input_entry.get("last_notified", 0.0) or 0.0),
+                        "last_seen": now_ts,
+                    }
+
+                should_deliver_user_input = (
+                    bool(user_input_marker)
+                    and user_input_marker != previous_delivered_marker
+                    and (now_ts - pending_since) >= AI_USER_INPUT_NOTIFICATION_DELAY_SECONDS
+                )
+                if should_deliver_user_input and _session_is_focused_user_surface(session):
+                    user_input_entry.update(
+                        {
+                            "delivered_marker": user_input_marker,
+                            "last_notified": now_ts,
+                            "suppressed_focused": True,
+                        }
+                    )
+                elif should_deliver_user_input:
+                    _spawn_user_input_notification(session)
+                    user_input_entry.update(
+                        {
+                            "delivered_marker": user_input_marker,
+                            "last_notified": now_ts,
+                            "suppressed_focused": False,
+                        }
+                    )
                 user_input_sessions_cache[key] = user_input_entry
             else:
                 user_input_sessions_cache[key] = {
                     "marker": "",
+                    "delivered_marker": str(
+                        (
+                            user_input_sessions_cache.get(key, {})
+                            if isinstance(user_input_sessions_cache.get(key), dict)
+                            else {}
+                        ).get("delivered_marker", "")
+                    ),
+                    "pending_since": 0.0,
                     "last_seen": now_ts,
                     "last_notified": float(
                         (
@@ -1011,33 +1008,6 @@ def emit_ai_state_transition_notifications(active_sessions: List[Dict[str, Any]]
                     ),
                 }
 
-            should_notify = (
-                str(session.get("tool") or "").strip().lower() not in {"codex", "claude-code"}
-                and
-                previous_state in {"starting", "thinking", "tool_running", "streaming"}
-                and current_state in {"waiting_input", "attention", "output_ready"}
-                and (now_ts - max(last_notified, last_global_notification)) >= debounce_seconds
-            )
-            if should_notify:
-                tool = str(session.get("display_tool") or session.get("tool") or "AI")
-                project = str(session.get("display_project") or session.get("project") or "unknown")
-                target = str(session.get("display_target") or "")
-                if current_state == "waiting_input":
-                    summary = "Waiting on you"
-                elif current_state == "attention":
-                    summary = "Needs attention"
-                else:
-                    summary = str(session.get("stage_label") or "Ready")
-                details = project + (f" · {target}" if target else "")
-                subprocess.run(
-                    ["notify-send", "-u", "normal", f"{tool}: {summary}", details],
-                    check=False,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                last_notified = now_ts
-                last_global_notification = now_ts
-
             sessions_cache[key] = {
                 "state": current_state,
                 "last_seen": now_ts,
@@ -1046,9 +1016,7 @@ def emit_ai_state_transition_notifications(active_sessions: List[Dict[str, Any]]
 
         cache = {
             "sessions": sessions_cache,
-            "stopped_sessions": stopped_sessions_cache,
             "user_input_sessions": user_input_sessions_cache,
-            "last_global_notification": last_global_notification,
             "updated_at": now_ts,
         }
         _atomic_write_json(AI_SESSION_NOTIFY_FILE, cache)
@@ -2637,43 +2605,12 @@ def _normalize_stage_fields(session: Dict[str, Any], *, now_epoch: Optional[floa
     }
 
 
-def _should_emit_explicit_stop_notification(session: Dict[str, Any]) -> bool:
-    """Return True when the session entered the explicit stopped phase we surface in QuickShell."""
-    tool = str(session.get("tool") or "").strip().lower()
-    if tool not in {"codex", "claude-code"}:
-        return False
-    if str(session.get("session_phase") or "").strip().lower() != "stopped":
-        return False
-    if not bool(session.get("llm_stopped", False)):
-        return False
-    if str(session.get("terminal_state") or "").strip().lower() != "explicit_complete":
-        return False
-    source = str(session.get("terminal_state_source") or "").strip().lower()
-    return source in {"codex_notify", "claude_stop_hook"}
-
-
-def _session_stop_marker(session: Dict[str, Any]) -> str:
-    """Return a stable per-session explicit-stop marker."""
-    marker = str(session.get("terminal_state_at") or "").strip()
-    if marker:
-        return marker
-    sequence = int(session.get("state_seq", 0) or 0)
-    if sequence > 0:
-        return f"seq:{sequence}"
-    stage = str(session.get("stage") or "").strip().lower()
-    if stage:
-        return f"stage:{stage}"
-    return ""
-
-
 def _should_emit_user_input_notification(session: Dict[str, Any]) -> bool:
     """Return True when the session entered a retained user-input boundary."""
     tool = str(session.get("tool") or "").strip().lower()
     if tool not in {"codex", "claude-code"}:
         return False
     if str(session.get("notification_boundary_type") or "").strip().lower() != "user_input_required":
-        return False
-    if str(session.get("session_phase") or "").strip().lower() != "needs_attention":
         return False
     reason = str(
         session.get("notification_boundary_reason")
@@ -2692,6 +2629,17 @@ def _session_user_input_marker(session: Dict[str, Any]) -> str:
     if sequence > 0:
         return f"seq:{sequence}"
     return str(session.get("updated_at") or "").strip()
+
+
+def _session_is_focused_user_surface(session: Dict[str, Any]) -> bool:
+    """Return True when the blocked session is already in the user's active terminal surface."""
+    if bool(session.get("is_current_session", False)):
+        return True
+    if bool(session.get("is_current_window", False)) and (
+        bool(session.get("pane_active", False)) or not str(session.get("tmux_pane") or "").strip()
+    ):
+        return True
+    return bool(session.get("window_active", False)) and bool(session.get("pane_active", False))
 
 
 def _user_input_notification_summary(session: Dict[str, Any]) -> str:
@@ -2728,6 +2676,9 @@ def _spawn_user_input_notification(session: Dict[str, Any]) -> None:
     env = os.environ.copy()
     env.update(
         {
+            "I3PM_NOTIFY_APP_NAME": "i3pm-agent",
+            "I3PM_NOTIFY_CATEGORY": "agent-action",
+            "I3PM_NOTIFY_ACTION_LABEL": "Return to Terminal",
             "I3PM_NOTIFY_WINDOW_ID": str(session.get("window_id") or ""),
             "I3PM_NOTIFY_PROJECT_NAME": str(
                 session.get("focus_project")
@@ -2747,7 +2698,7 @@ def _spawn_user_input_notification(session: Dict[str, Any]) -> None:
             ),
             "I3PM_NOTIFY_TMUX_WINDOW": str(session.get("tmux_window") or ""),
             "I3PM_NOTIFY_TMUX_PANE": str(session.get("tmux_pane") or ""),
-            "I3PM_NOTIFY_SOUND": "1",
+            "I3PM_NOTIFY_SOUND": "request",
             "I3PM_NOTIFY_TITLE": f"{cli_name} {summary}",
         }
     )
@@ -2759,52 +2710,6 @@ def _spawn_user_input_notification(session: Dict[str, Any]) -> None:
         env=env,
         start_new_session=True,
     )
-
-
-def _spawn_explicit_stop_notification(session: Dict[str, Any]) -> None:
-    """Spawn the shared notification helper for an explicit stopped AI session."""
-    if not AI_FINISHED_NOTIFICATION_SCRIPT.exists():
-        return
-
-    tool = str(session.get("tool") or "").strip().lower()
-    cli_name = "Claude Code" if tool == "claude-code" else "Codex"
-    project = str(session.get("display_project") or session.get("project") or "").strip()
-    message = project or "Task complete - awaiting your input"
-
-    env = os.environ.copy()
-    env.update(
-        {
-            "I3PM_NOTIFY_WINDOW_ID": str(session.get("window_id") or ""),
-            "I3PM_NOTIFY_PROJECT_NAME": str(
-                session.get("focus_project")
-                or session.get("display_project")
-                or session.get("project")
-                or ""
-            ),
-            "I3PM_NOTIFY_TARGET_VARIANT": str(
-                session.get("focus_execution_mode")
-                or session.get("execution_mode")
-                or ""
-            ),
-            "I3PM_NOTIFY_TMUX_SESSION": str(
-                session.get("focus_tmux_session")
-                or session.get("tmux_session")
-                or ""
-            ),
-            "I3PM_NOTIFY_TMUX_WINDOW": str(session.get("tmux_window") or ""),
-            "I3PM_NOTIFY_TMUX_PANE": str(session.get("tmux_pane") or ""),
-            "I3PM_NOTIFY_SOUND": "1",
-        }
-    )
-
-    subprocess.Popen(
-        [str(AI_FINISHED_NOTIFICATION_SCRIPT), cli_name, message],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=env,
-        start_new_session=True,
-    )
-
 
 def _session_terminal_anchor(session: Dict[str, Any]) -> str:
     """Return canonical terminal anchor key for deterministic session tracking."""

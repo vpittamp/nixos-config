@@ -2,9 +2,7 @@
 # MLflow integration - per-CLI trace export to the hub MLflow tracking server.
 #
 # This module provides Grafana Alloy as the unified telemetry collector that:
-# - Replaces otel-ai-collector.nix with a more capable solution
-# - Receives OTLP telemetry from AI CLIs (Claude Code, Codex) on port 4318
-# - Forwards to otel-ai-monitor user service on port 4320 for local session tracking
+# - Receives OTLP telemetry on port 4318
 # - Exports all telemetry to Kubernetes LGTM stack via Tailscale
 # - Exports traces to MLflow with per-service experiment routing (routes spans by
 #   resource.service.name to claude-code/codex/idpbuilder experiments). Experiment
@@ -13,9 +11,8 @@
 # - Collects journald logs and forwards to Loki
 #
 # Architecture:
-#   AI CLIs → Alloy :4318 → [batch processor] → otel-ai-monitor :4320 (local)
-#                                            → K8s OTEL Collector (remote)
-#                                            → MLflow /v1/traces (per-CLI experiments)
+#   Clients → Alloy :4318 → [batch processor] → K8s OTEL Collector (remote)
+#                                      → MLflow /v1/traces (per-CLI experiments)
 #   System → node exporter → Alloy → Mimir (K8s)
 #   Journald → Alloy → Loki (K8s)
 #
@@ -213,15 +210,12 @@ let
 
       output {
         metrics = [
-          otelcol.exporter.otlphttp.local.input,
           ${optionalString (cfg.mimirEndpoint != "") "otelcol.exporter.prometheus.mimir.input,"}
         ]
         logs = [
-          otelcol.exporter.otlphttp.local.input,
           otelcol.exporter.otlphttp.k8s.input,
         ]
         traces = [
-          otelcol.exporter.otlphttp.local.input,
           otelcol.exporter.otlphttp.k8s.input,
           ${optionalString ((config.services ? arize-phoenix) && (config.services.arize-phoenix.enable or false)) "otelcol.exporter.otlphttp.phoenix.input,"}
           ${optionalString cfg.mlflow.enable "otelcol.processor.batch.mlflow.input,"}
@@ -230,7 +224,7 @@ let
     }
 
     // =============================================================================
-    // Exporters - Send to local otel-ai-monitor and remote K8s
+    // Exporters - Send to remote K8s and optional local sinks
     // =============================================================================
 
     ${optionalString (cfg.mimirEndpoint != "") ''
@@ -239,16 +233,6 @@ let
       forward_to = [prometheus.remote_write.k8s.receiver]
     }
     ''}
-
-    // Local: otel-ai-monitor for EWW widgets
-    otelcol.exporter.otlphttp "local" {
-      client {
-        endpoint = "http://localhost:${toString cfg.localForwardPort}"
-        tls {
-          insecure = true
-        }
-      }
-    }
 
     // Local: Arize Phoenix for GenAI tracing
     ${optionalString ((config.services ? arize-phoenix) && (config.services.arize-phoenix.enable or false)) ''
@@ -294,11 +278,7 @@ let
     // cluster by the stacks Job-mlflow-llm-cli-experiment-bootstrap.yaml and
     // pinned per-host in services.grafana-alloy.mlflow.experiments.
     //
-    // The routing connector keys on the resource attribute `service.name`,
-    // which each interceptor sets to one of:
-    //   - "claude-code" (minimal-otel-interceptor.js)
-    //   - "codex"       (codex-otel-interceptor.js)
-    //   - "idpbuilder"  (idpbuilder stacks telemetry)
+    // The routing connector keys on the resource attribute `service.name`.
     // =============================================================================
 
     otelcol.exporter.otlphttp "mlflow_claude_code" {
@@ -518,12 +498,6 @@ in
       description = "OTLP HTTP receiver port (standard: 4318)";
     };
 
-    localForwardPort = mkOption {
-      type = types.port;
-      default = 4320;
-      description = "Port for local otel-ai-monitor forwarding";
-    };
-
     k8sEndpoint = mkOption {
       type = types.str;
       # The hub cluster is the canonical observability sink: it runs the
@@ -599,7 +573,6 @@ in
     journaldUnits = mkOption {
       type = types.listOf types.str;
       default = [
-        "otel-ai-monitor.service"
         "i3pm-daemon.service"
         "grafana-alloy.service"
       ];
@@ -740,10 +713,6 @@ in
       };
     };
 
-    # Both ports (cfg.otlpPort=4318 for Alloy OTLP receiver and
-    # cfg.localForwardPort=4320 for otel-ai-monitor) are local-only by design:
-    # CLIs push to localhost:4318, Alloy forwards to localhost:4320. No tailnet
-    # exposure is needed. The legacy host-to-host push to peer:4320 was retired
-    # in Phase 4.
+    # cfg.otlpPort=4318 is local-only by design. No tailnet exposure is needed.
   };
 }
