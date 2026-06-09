@@ -10070,14 +10070,14 @@ FORMAT JSONEachRow
     async def _herdr_remote_snapshot(self, target: Dict[str, str]) -> Dict[str, Any]:
         """Return one remote Herdr host snapshot fetched through read-only SSH commands."""
         self._herdr_git_metadata_cache.clear()
-        status_payload, agent_payload, pane_payload, workspace_payload, tab_payload, worktree_payload = await asyncio.gather(
-            self._run_herdr_ssh_json(target, ["status", "--json"]),
-            self._run_herdr_ssh_json(target, ["agent", "list"]),
-            self._run_herdr_ssh_json(target, ["pane", "list"]),
-            self._run_herdr_ssh_json(target, ["workspace", "list"]),
-            self._run_herdr_ssh_json(target, ["tab", "list"]),
-            self._run_herdr_ssh_json(target, ["worktree", "list"]),
-        )
+        # Keep remote collection sequential. Some hosts reject bursts of parallel
+        # SSH startups, and this path is dashboard polling rather than latency-critical.
+        status_payload = await self._run_herdr_ssh_json(target, ["status", "--json"])
+        agent_payload = await self._run_herdr_ssh_json(target, ["agent", "list"])
+        pane_payload = await self._run_herdr_ssh_json(target, ["pane", "list"])
+        workspace_payload = await self._run_herdr_ssh_json(target, ["workspace", "list"])
+        tab_payload = await self._run_herdr_ssh_json(target, ["tab", "list"])
+        worktree_payload = await self._run_herdr_ssh_json(target, ["worktree", "list"])
         payloads = [status_payload, agent_payload, pane_payload, workspace_payload, tab_payload, worktree_payload]
         host = str(target.get("host") or "").strip()
         ssh_target = str(target.get("ssh_target") or "").strip()
