@@ -40,11 +40,11 @@
 
 stdenv.mkDerivation (finalAttrs: {
   pname = "antigravity";
-  version = "1.0.0-1763520963";
+  version = "1.23.2-1776332190";
 
   src = fetchurl {
-    url = "https://us-central1-apt.pkg.dev/projects/antigravity-auto-updater-dev/pool/antigravity-debian/antigravity_${finalAttrs.version}_amd64_f88cc2d0044913f2fc8df191bca18df7.deb";
-    sha256 = "0fkxlqycvmnw2wlbpz29f7rci79b6mg6dzb0xcivgd1pgylp64h1";
+    url = "https://us-central1-apt.pkg.dev/projects/antigravity-auto-updater-dev/pool/antigravity-debian/antigravity_${finalAttrs.version}_amd64_d29aa2e214aa69c5a7199fce43624422.deb";
+    sha256 = "sha256-vdXzLSZ5HDZkC9L3E/Xr1ueP5CnDzCenJmj9pq1jF6Q=";
   };
 
   nativeBuildInputs = [ dpkg autoPatchelfHook wrapGAppsHook3 ];
@@ -63,10 +63,22 @@ stdenv.mkDerivation (finalAttrs: {
   dontConfigure = true;
   dontBuild = true;
 
+  # The bundled microsoft-authentication extension ships libmsalruntime.so which
+  # links libsoup-3.0/libwebkit2gtk-4.1. That extension is irrelevant for a Google
+  # IDE and pulling webkitgtk into the closure isn't worth it, so skip patching it.
+  autoPatchelfIgnoreMissingDeps = [
+    "libsoup-3.0.so.0"
+    "libwebkit2gtk-4.1.so.0"
+  ];
+
   unpackPhase = ''
     runHook preUnpack
     mkdir source
-    dpkg-deb -x $src source
+    # Extract the data tarball directly rather than via `dpkg-deb -x`, which
+    # preserves the setuid bit on chrome-sandbox and fails in the Nix sandbox
+    # ("Operation not permitted"). We launch with --no-sandbox anyway.
+    dpkg-deb --fsys-tarfile $src \
+      | tar -x -C source --no-same-permissions --no-same-owner
     runHook postUnpack
   '';
 
