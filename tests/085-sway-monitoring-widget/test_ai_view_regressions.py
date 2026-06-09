@@ -286,6 +286,19 @@ def test_herdr_config_enables_system_notifications_without_sound():
     assert '[ui.sound]' in text
     assert 'enabled = false' in text
     assert 'enabled = true' not in text
+    assert '[experimental]' in text
+    assert 'pane_history = true' in text
+
+
+def test_optional_herdr_integrations_are_guarded_by_existing_app_config_dirs():
+    text = HERDR_NIX.read_text()
+    assert 'home.activation.ensureOptionalHerdrIntegrations' in text
+    assert 'if [ -d "$HOME/.copilot" ]; then' in text
+    assert 'herdr integration install copilot' in text
+    assert 'if [ -d "$HOME/.config/opencode" ]; then' in text
+    assert 'herdr integration install opencode' in text
+    assert 'mkdir -p "$HOME/.copilot"' not in text
+    assert 'mkdir -p "$HOME/.config/opencode"' not in text
 
 
 def test_antigravity_short_tool_id_uses_gemini_visual_family():

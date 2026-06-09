@@ -76,6 +76,22 @@ ICON_EXTENSIONS = (".svg", ".png", ".xpm")
 APP_REGISTRY_PATH = Path.home() / ".config/i3/application-registry.json"
 PWA_REGISTRY_PATH = Path.home() / ".config/i3/pwa-registry.json"
 CHROME_SCOPED_TMP_PREFIX = "/tmp/com.google.Chrome.scoped_dir."
+HERDR_EVENT_SUBSCRIPTION_TYPES = (
+    "workspace.created",
+    "workspace.updated",
+    "workspace.renamed",
+    "workspace.closed",
+    "workspace.focused",
+    "tab.created",
+    "tab.closed",
+    "tab.focused",
+    "tab.renamed",
+    "pane.created",
+    "pane.closed",
+    "pane.focused",
+    "pane.exited",
+    "pane.agent_detected",
+)
 
 _DISCOVERED_WORKTREE_CACHE: Dict[str, Any] = {
     "file_path": "",
@@ -578,6 +594,9 @@ class IPCServer:
         self._herdr_git_metadata_cache: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
         self._herdr_remote_targets_cache: List[Dict[str, str]] = []
         self._herdr_remote_targets_cache_signature: Tuple[Any, ...] = ("", False, 0, 0)
+        self._herdr_event_subscription_task: Optional[asyncio.Task] = None
+        self._herdr_event_subscription_initial_backoff: float = 0.5
+        self._herdr_event_subscription_max_backoff: float = 30.0
         self._malformed_json_count: int = 0
         self._deferred_filter_task: Optional[asyncio.Task] = None
         self._malformed_json_last_at: Optional[str] = None
@@ -683,8 +702,11 @@ class IPCServer:
 
             logger.info(f"IPC server listening on {socket_path} (permissions: 0600)")
 
+        self.start_herdr_event_subscription()
+
     async def stop(self) -> None:
         """Stop IPC server and close all connections."""
+        await self.stop_herdr_event_subscription()
         await self.agent_harness.stop()
         for task in list(self._launch_reconcile_tasks.values()):
             task.cancel()
@@ -711,6 +733,127 @@ class IPCServer:
             )
 
         logger.info("IPC server stopped")
+
+    def start_herdr_event_subscription(self) -> None:
+        """Start the local Herdr event subscription task."""
+        if self._herdr_event_subscription_task and not self._herdr_event_subscription_task.done():
+            return
+        self._herdr_event_subscription_task = asyncio.create_task(
+            self._run_herdr_event_subscription(),
+            name="i3pm-herdr-event-subscription",
+        )
+
+    async def stop_herdr_event_subscription(self) -> None:
+        """Cancel the local Herdr event subscription task."""
+        task = self._herdr_event_subscription_task
+        self._herdr_event_subscription_task = None
+        if not task or task.done():
+            return
+        task.cancel()
+        await self._await_with_timeout(
+            asyncio.gather(task, return_exceptions=True),
+            timeout=0.5,
+            timeout_message="Timed out waiting for Herdr event subscription to stop; continuing shutdown",
+        )
+
+    def _herdr_socket_path(self) -> Path:
+        """Return the local Herdr API socket path."""
+        override = str(os.environ.get("I3PM_HERDR_SOCKET") or "").strip()
+        if override:
+            return Path(os.path.expanduser(override))
+        return Path.home() / ".config" / "herdr" / "herdr.sock"
+
+    def _herdr_event_subscribe_payload(self) -> Dict[str, Any]:
+        """Return the JSON-RPC payload for Herdr's event stream API."""
+        return {
+            "id": "i3pm-herdr-events",
+            "method": "events.subscribe",
+            "params": {
+                "subscriptions": [
+                    {"type": event_type}
+                    for event_type in HERDR_EVENT_SUBSCRIPTION_TYPES
+                ],
+            },
+        }
+
+    async def _write_herdr_json_line(
+        self,
+        writer: asyncio.StreamWriter,
+        payload: Dict[str, Any],
+    ) -> None:
+        writer.write(json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\n")
+        await writer.drain()
+
+    async def _read_herdr_json_line(
+        self,
+        reader: asyncio.StreamReader,
+        *,
+        timeout: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        if timeout:
+            line = await asyncio.wait_for(reader.readline(), timeout=timeout)
+        else:
+            line = await reader.readline()
+        if not line:
+            raise ConnectionError("Herdr event stream closed")
+        payload = json.loads(line.decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("Herdr event stream returned non-object JSON")
+        return payload
+
+    async def _connect_herdr_event_subscription_once(self) -> None:
+        """Connect once to the local Herdr event stream and process events until it closes."""
+        socket_path = self._herdr_socket_path()
+        reader, writer = await asyncio.open_unix_connection(str(socket_path))
+        try:
+            request = self._herdr_event_subscribe_payload()
+            await self._write_herdr_json_line(writer, request)
+            ack = await self._read_herdr_json_line(reader, timeout=3.0)
+            result = ack.get("result") if isinstance(ack, dict) else {}
+            if (
+                ack.get("id") != request["id"]
+                or not isinstance(result, dict)
+                or result.get("type") != "subscription_started"
+            ):
+                raise RuntimeError(f"Herdr event subscription failed: {ack}")
+            logger.info("Subscribed to local Herdr events at %s", socket_path)
+
+            while True:
+                event = await self._read_herdr_json_line(reader)
+                await self._handle_herdr_subscription_event(event)
+        finally:
+            writer.close()
+            await self._await_with_timeout(
+                writer.wait_closed(),
+                timeout=self._CLIENT_CLOSE_TIMEOUT_SECONDS,
+                timeout_message="Timed out waiting for Herdr event socket to close; continuing",
+            )
+
+    async def _run_herdr_event_subscription(self) -> None:
+        """Maintain a local Herdr event subscription with bounded reconnect backoff."""
+        backoff = self._herdr_event_subscription_initial_backoff
+        while True:
+            try:
+                await self._connect_herdr_event_subscription_once()
+                backoff = self._herdr_event_subscription_initial_backoff
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.debug("Local Herdr event subscription unavailable: %s", e)
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, self._herdr_event_subscription_max_backoff)
+
+    async def _handle_herdr_subscription_event(self, event: Dict[str, Any]) -> None:
+        """Invalidate Herdr-derived dashboard state after a local Herdr event."""
+        if not isinstance(event, dict):
+            return
+        self.invalidate_herdr_snapshot_cache()
+        await self.notify_state_change("ai_session_herdr_changed")
+
+    def invalidate_herdr_snapshot_cache(self) -> None:
+        """Clear cached Herdr snapshots so the next dashboard read is fresh."""
+        self._herdr_snapshot_cache = {}
+        self._herdr_snapshot_cache_time = 0.0
 
     async def _handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter

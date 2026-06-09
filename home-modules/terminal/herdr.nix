@@ -1,9 +1,10 @@
-{ pkgs, lib, ... }:
+{ pkgs, lib, inputs, ... }:
 
 let
   scriptWrappers = import ../../shared/script-wrappers.nix { inherit pkgs lib; };
   clipboardSyncScript = "${scriptWrappers.clipboard-sync}/bin/clipboard-sync";
   clipcatFzfScript = "${scriptWrappers.clipcat-fzf}/bin/clipcat-fzf";
+  herdrPackage = inputs.herdr.packages.${pkgs.stdenv.hostPlatform.system}.default;
   herdrFilePicker = pkgs.writeShellScriptBin "herdr-file-picker" ''
     set -euo pipefail
 
@@ -19,6 +20,15 @@ let
   '';
 in
 {
+  home.activation.ensureOptionalHerdrIntegrations = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    if [ -d "$HOME/.copilot" ]; then
+      run ${herdrPackage}/bin/herdr integration install copilot || true
+    fi
+    if [ -d "$HOME/.config/opencode" ]; then
+      run ${herdrPackage}/bin/herdr integration install opencode || true
+    fi
+  '';
+
   xdg.configFile."herdr/config.toml" = {
     force = true;
     text = ''
