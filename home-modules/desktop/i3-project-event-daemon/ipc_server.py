@@ -9545,17 +9545,7 @@ FORMAT JSONEachRow
                 "command": ["ssh", ssh_target, "herdr", *args],
             }
 
-        command = [
-            "ssh",
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=1",
-            "-o", "ConnectionAttempts=1",
-            "-o", "ServerAliveInterval=1",
-            "-o", "ServerAliveCountMax=1",
-            ssh_target,
-            "herdr",
-            *args,
-        ]
+        command = self._herdr_ssh_command_prefix(ssh_target) + ["herdr", *args]
 
         def run() -> subprocess.CompletedProcess[str]:
             return subprocess.run(
@@ -9668,20 +9658,28 @@ FORMAT JSONEachRow
         return text.rstrip("/")
 
     @staticmethod
+    def _herdr_ssh_command_prefix(ssh_target: str) -> List[str]:
+        return [
+            "ssh",
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=1",
+            "-o", "ConnectionAttempts=1",
+            "-o", "ServerAliveInterval=1",
+            "-o", "ServerAliveCountMax=1",
+            "-o", "ControlMaster=auto",
+            "-o", "ControlPersist=30s",
+            "-o", "ControlPath=/tmp/i3pm-herdr-ssh-%C",
+            ssh_target,
+        ]
+
+    @staticmethod
     def _herdr_git_run(path: str, args: List[str], *, ssh_target: str = "", timeout: float = 0.75) -> str:
         if not str(path or "").strip():
             return ""
         command: List[str]
         if ssh_target:
             remote_args = " ".join(shlex.quote(part) for part in ["git", "-C", path, *args])
-            command = [
-                "ssh",
-                "-o", "BatchMode=yes",
-                "-o", "ConnectTimeout=1",
-                "-o", "ConnectionAttempts=1",
-                ssh_target,
-                remote_args,
-            ]
+            command = IPCServer._herdr_ssh_command_prefix(ssh_target) + [remote_args]
         else:
             normalized = normalize_project_path(path)
             if not normalized or not Path(normalized).exists():
