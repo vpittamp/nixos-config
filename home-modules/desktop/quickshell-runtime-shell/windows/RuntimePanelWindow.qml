@@ -568,7 +568,6 @@ PanelWindow {
                                 id: herdrSpaceRow
                                 required property var modelData
                                 readonly property var space: modelData
-                                readonly property var token: root.herdrSpaceHostToken(space)
                                 readonly property bool isGroupParent: root.boolOrFalse(space && space.is_group_parent)
                                 readonly property string groupKey: root.herdrSpaceGroupKey(space)
                                 readonly property bool groupCollapsed: root.herdrSpaceGroupCollapsed(groupKey)
@@ -580,7 +579,6 @@ PanelWindow {
                                 color: root.herdrSpaceFill(space, hovered)
                                 border.color: root.herdrSpaceBorder(space, hovered)
                                 border.width: 1
-                                opacity: root.herdrSpaceStatus(space) === "idle" ? 0.78 : 1
 
                                 Rectangle {
                                     anchors.left: parent.left
@@ -619,33 +617,13 @@ PanelWindow {
                                         }
                                     }
 
-                                    Rectangle {
-                                        width: 28
-                                        height: 28
-                                        radius: 7
-                                        color: token ? token.background : colors.cardAlt
-                                        border.color: colors.lineSoft
-                                        border.width: 1
-
-                                        Image {
-                                            visible: token && root.stringOrEmpty(token.icon).length > 0
-                                            anchors.centerIn: parent
-                                            source: token ? token.icon : ""
-                                            sourceSize.width: 15
-                                            sourceSize.height: 15
-                                            width: 15
-                                            height: 15
-                                            mipmap: true
-                                        }
-
-                                        Text {
-                                            visible: !token || root.stringOrEmpty(token.icon).length === 0
-                                            anchors.centerIn: parent
-                                            text: token ? root.stringOrEmpty(token.monogram) : "H"
-                                            color: token ? token.foreground : colors.textDim
-                                            font.pixelSize: 9
-                                            font.weight: Font.Bold
-                                        }
+                                    Text {
+                                        Layout.preferredWidth: 12
+                                        horizontalAlignment: Text.AlignHCenter
+                                        text: root.herdrSpaceStatusDot(space)
+                                        color: root.herdrSpaceStatusColor(space)
+                                        font.pixelSize: 12
+                                        font.weight: Font.DemiBold
                                     }
 
                                     ColumnLayout {
@@ -667,40 +645,6 @@ PanelWindow {
                                             color: colors.subtle
                                             font.pixelSize: 8
                                             elide: Text.ElideRight
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        height: Math.max(herdrSessionContent.chipHeight, 22)
-                                        radius: 6
-                                        color: root.herdrSpaceStatusBackground(space)
-                                        border.color: colors.lineSoft
-                                        border.width: root.herdrSpaceEffectiveStatus(space) === "unknown" ? 0 : 1
-                                        Layout.preferredWidth: spaceStatusText.implicitWidth + 36
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 6
-                                            anchors.rightMargin: 8
-                                            spacing: 4
-
-                                            Text {
-                                                id: spaceStatusIconText
-                                                Layout.preferredWidth: 20
-                                                horizontalAlignment: Text.AlignHCenter
-                                                text: root.herdrSpaceStatusSymbol(space)
-                                                color: root.herdrSpaceStatusColor(space)
-                                                font.pixelSize: 15
-                                                font.weight: Font.DemiBold
-                                            }
-
-                                            Text {
-                                                id: spaceStatusText
-                                                text: root.herdrSpaceStatusLabel(space)
-                                                color: root.herdrSpaceStatusColor(space)
-                                                font.pixelSize: 8
-                                                font.weight: Font.DemiBold
-                                            }
                                         }
                                     }
                                 }

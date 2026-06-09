@@ -215,13 +215,34 @@ def test_herdr_group_aggregate_status_drives_collapsed_parent_dot():
     assert "const state = herdrSpaceEffectiveStatus(space);" in text
 
 
+def test_herdr_space_rows_do_not_render_text_status_badges():
+    text = SHELL_QML.read_text()
+    panel_text = RUNTIME_PANEL_WINDOW_QML.read_text()
+    assert "text: root.herdrSpaceStatusLabel(space)" not in panel_text
+    assert "root.herdrSpaceStatusBackground(space)" not in panel_text
+    assert "function herdrSpaceStatusLabel(space)" not in text
+    assert "function herdrSpaceStatusBackground(space)" not in text
+    assert "text: root.herdrSpaceStatusDot(space)" in panel_text
+    assert "function herdrSpaceStatusDot(space)" in text
+    assert "readonly property var token: root.herdrSpaceHostToken(space)" not in panel_text
+
+
 def test_herdr_child_space_titles_use_custom_label_before_branch_label():
     text = SHELL_QML.read_text()
     assert "function herdrSpaceTitle(space)" in text
     assert "if (boolOrFalse(space && space.is_linked_worktree))" in text
-    assert "const branchLabel = stringOrEmpty(space && space.branch_label);" in text
+    assert "const branchLabel = herdrSpaceBranchLabel(space);" in text
     assert "label !== stringOrEmpty(space && space.repo_name)" in text
     assert "return branchLabel;" in text
+
+
+def test_herdr_space_meta_label_uses_branch_git_notation():
+    text = SHELL_QML.read_text()
+    assert "function herdrSpaceBranchLabel(space)" in text
+    assert "branchLabel.indexOf(\"worktree/\") === 0" in text
+    assert "function herdrSpaceMetaLabel(space)" in text
+    assert "const branch = herdrSpaceBranchLabel(space);" in text
+    assert "bits.push(branch);" in text
 
 
 def test_herdr_session_space_lookup_uses_workspace_and_host_key():

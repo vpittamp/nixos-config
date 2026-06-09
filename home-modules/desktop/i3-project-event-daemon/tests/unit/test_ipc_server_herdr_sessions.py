@@ -577,7 +577,7 @@ async def test_dashboard_snapshot_includes_herdr_spaces(server, monkeypatch):
         "is_linked_worktree": False,
         "is_group_parent": False,
         "group_member_count": 1,
-        "branch_label": "local-ws",
+        "branch_label": "",
         "focus_target": {
             "method": "herdr.workspace.focus",
             "params": {"workspace_id": "local-ws"},
@@ -784,7 +784,7 @@ def test_herdr_computed_git_workspaces_sharing_repo_remain_flat(server, tmp_path
     assert [space["group_key"] for space in spaces] == ["", ""]
 
 
-def test_herdr_spaces_branch_label_fallback_uses_checkout_basename(server):
+def test_herdr_spaces_do_not_fabricate_branch_label_from_checkout_basename(server):
     local_host = server._local_host_alias()
     snapshot = {
         "workspaces": [{
@@ -804,7 +804,7 @@ def test_herdr_spaces_branch_label_fallback_uses_checkout_basename(server):
 
     spaces = server._build_herdr_spaces(snapshot, [])
 
-    assert spaces[0]["branch_label"] == "feature-fallback"
+    assert spaces[0]["branch_label"] == ""
 
 
 def test_herdr_worktree_result_array_normalizes_source_and_open_workspace(server):

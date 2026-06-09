@@ -9625,24 +9625,6 @@ FORMAT JSONEachRow
         return normalized
 
     @staticmethod
-    def _herdr_path_basename(value: Any) -> str:
-        text = str(value or "").strip().replace("\\", "/").rstrip("/")
-        if not text:
-            return ""
-        if text.startswith("worktree/"):
-            text = text[len("worktree/"):]
-        parts = [part for part in text.split("/") if part]
-        if "worktree" in parts:
-            index = parts.index("worktree")
-            if index + 1 < len(parts):
-                return parts[index + 1]
-        return parts[-1] if parts else text
-
-    @classmethod
-    def _herdr_branch_label_fallback(cls, checkout_path: Any, workspace_id: str = "") -> str:
-        return cls._herdr_path_basename(checkout_path) or str(workspace_id or "").strip()
-
-    @staticmethod
     def _herdr_normalize_repo_url(value: Any) -> str:
         text = str(value or "").strip()
         if not text:
@@ -13048,10 +13030,7 @@ FORMAT JSONEachRow
                 host_key = host_key_for(raw)
                 workspace_id = workspace_id_for(raw)
                 metadata = worktree_metadata_for(raw)
-                branch_label = (
-                    text_field(raw, "branch_label", "branchLabel", "branch", "name", "label")
-                    or metadata["branch_label"]
-                )
+                branch_label = text_field(raw, "branch_label", "branchLabel", "branch") or metadata["branch_label"]
                 enriched = {**metadata, "branch_label": branch_label}
                 for key in [
                     workspace_id,
@@ -13335,11 +13314,6 @@ FORMAT JSONEachRow
                 bool(selected_focused_space)
                 and str(space.get("space_key") or "") == selected_focused_space
             )
-            if not str(space.get("branch_label") or "").strip():
-                space["branch_label"] = self._herdr_branch_label_fallback(
-                    space.get("checkout_path"),
-                    str(space.get("workspace_id") or ""),
-                )
             space.pop("_label_source", None)
 
         return sorted(spaces.values(), key=lambda item: (

@@ -5170,11 +5170,6 @@ ShellRoot {
         return herdrStatusState(space && space.agent_status);
     }
 
-    function herdrSpaceStatusLabel(space) {
-        const state = herdrSpaceEffectiveStatus(space);
-        return titleCaseWord(state);
-    }
-
     function herdrSpaceStatusColor(space) {
         const state = herdrSpaceEffectiveStatus(space);
         if (state === "blocked") {
@@ -5192,24 +5187,7 @@ ShellRoot {
         return colors.muted;
     }
 
-    function herdrSpaceStatusBackground(space) {
-        const state = herdrSpaceEffectiveStatus(space);
-        if (state === "blocked") {
-            return colors.redBg;
-        }
-        if (state === "done") {
-            return colors.greenBg;
-        }
-        if (state === "working") {
-            return colors.tealBg;
-        }
-        if (state === "idle") {
-            return colors.cardAlt;
-        }
-        return colors.cardAlt;
-    }
-
-    function herdrSpaceStatusSymbol(space) {
+    function herdrSpaceStatusDot(space) {
         const state = herdrSpaceEffectiveStatus(space);
         if (state === "idle") {
             return "○";
@@ -5221,39 +5199,33 @@ ShellRoot {
     }
 
     function herdrSpaceFill(space, hovered) {
-        const state = herdrSpaceEffectiveStatus(space);
         if (boolOrFalse(space && space.focused)) {
             return hovered
                 ? Qt.tint(colors.cardAlt, Qt.rgba(0.40, 0.86, 0.92, 0.11))
                 : Qt.tint(colors.cardAlt, Qt.rgba(0.40, 0.86, 0.92, 0.07));
         }
-        if (state === "blocked") {
-            return hovered ? Qt.tint(colors.redBg, Qt.rgba(1, 1, 1, 0.04)) : Qt.tint(colors.redBg, Qt.rgba(0, 0, 0, 0.16));
-        }
-        if (state === "working") {
-            return hovered ? colors.cardAlt : "transparent";
-        }
         return hovered ? colors.cardAlt : "transparent";
     }
 
     function herdrSpaceBorder(space, hovered) {
-        const state = herdrSpaceEffectiveStatus(space);
         if (boolOrFalse(space && space.focused)) {
-            return hovered ? colors.lineSoft : "transparent";
-        }
-        if (state === "blocked") {
-            return hovered ? colors.lineSoft : "transparent";
-        }
-        if (state === "working") {
             return hovered ? colors.lineSoft : "transparent";
         }
         return hovered ? colors.lineSoft : "transparent";
     }
 
+    function herdrSpaceBranchLabel(space) {
+        const branchLabel = stringOrEmpty(space && space.branch_label);
+        if (branchLabel.indexOf("worktree/") === 0) {
+            return branchLabel.slice(9);
+        }
+        return branchLabel;
+    }
+
     function herdrSpaceTitle(space) {
         if (boolOrFalse(space && space.is_linked_worktree)) {
             const label = stringOrEmpty(space && space.label);
-            const branchLabel = stringOrEmpty(space && space.branch_label);
+            const branchLabel = herdrSpaceBranchLabel(space);
             if (label.length > 0 && label !== stringOrEmpty(space && space.repo_name)) {
                 return label;
             }
@@ -5274,13 +5246,13 @@ ShellRoot {
 
     function herdrSpaceMetaLabel(space) {
         const bits = [];
-        const project = shortProject(stringOrEmpty(space && space.project_name));
+        const branch = herdrSpaceBranchLabel(space);
         const host = displayHostName(stringOrEmpty(space && (space.host_label || space.host_key)));
+        if (branch.length > 0) {
+            bits.push(branch);
+        }
         if (host) {
             bits.push(host);
-        }
-        if (project && project !== "Global" && project !== herdrSpaceTitle(space)) {
-            bits.push(project);
         }
         const agents = Number(space && space.agent_count || 0);
         const panes = Number(space && space.pane_count || 0);
@@ -5306,14 +5278,6 @@ ShellRoot {
             return "";
         }
         return herdrSpaceGroupCollapsed(herdrSpaceGroupKey(space)) ? "▸" : "▾";
-    }
-
-    function herdrSpaceHostToken(space) {
-        return hostToken(
-            stringOrEmpty(space && space.execution_mode),
-            stringOrEmpty(space && (space.host_key || space.host_label)),
-            ""
-        );
     }
 
     function herdrSessionSpace(session) {
