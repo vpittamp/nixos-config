@@ -4417,7 +4417,7 @@ class IPCServer:
         """Return coarse model keys affected by a typed dashboard event."""
         typed_event = self._dashboard_event_type_for_state_change(event_type)
         if typed_event == "focus.changed":
-            return ["focus_state"]
+            return ["focus_state", "outputs", "projects"]
         if typed_event == "window.changed":
             return ["focus_state", "projects", "tracked_windows"]
         if typed_event == "workspace.changed":
@@ -4446,7 +4446,7 @@ class IPCServer:
 
     async def _dashboard_event_payload(self, changed_keys: List[str]) -> Dict[str, Any]:
         """Build a partial dashboard payload for a typed state-change event."""
-        snapshot = await self._dashboard_snapshot({})
+        snapshot = await self._dashboard_snapshot({"skip_git_hydration": True})
         payload: Dict[str, Any] = {
             "status": snapshot.get("status", "ok"),
             "schema_version": snapshot.get("schema_version", DASHBOARD_SCHEMA_VERSION),
@@ -17456,7 +17456,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             sessions,
             current_session_key=current_session_key,
         )
-        await self._hydrate_runtime_git_state(runtime_snapshot, sessions)
+        if not bool(params.get("skip_git_hydration", False)):
+            await self._hydrate_runtime_git_state(runtime_snapshot, sessions)
         runtime_snapshot["sessions"] = sessions
         runtime_snapshot["current_ai_session_key"] = current_session_key
         runtime_snapshot["herdr"] = herdr_snapshot
