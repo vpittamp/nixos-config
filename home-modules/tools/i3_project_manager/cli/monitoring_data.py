@@ -1426,8 +1426,6 @@ def transform_window(
         # Feature 095: Notification badge data (if present)
         # badge_state is dict mapping window ID (string) to {"count": "1", "timestamp": ..., "source": "..."}
         "badge": badge_state.get(str(window.get("id", 0)), {}) if badge_state else {},
-        # Retired OTEL/tmux UI path. Keep an empty array for old JSON consumers.
-        "otel_badges": [],
     }
 
     # Generate Pango-markup colorized JSON for hover tooltip
@@ -1900,7 +1898,6 @@ def _build_remote_session_window(
         "geometry_width": 0,
         "geometry_height": 0,
         "badge": {},
-        "otel_badges": [],
         "project_remote_enabled": True,
         "project_remote_target": remote_target,
         "project_remote_dir": remote_dir,

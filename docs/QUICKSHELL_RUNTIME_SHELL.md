@@ -221,7 +221,7 @@ The daemon now sources AI session state from Herdr:
 - `herdr workspace list`
 - `herdr tab list`
 
-QuickShell gets Herdr rows through `dashboard.snapshot.active_ai_sessions`; the field name is preserved for compatibility during migration.
+QuickShell gets Herdr rows through `dashboard.snapshot.active_ai_sessions`; the daemon owns the row content and current focus state.
 
 ### Herdr Pane Model
 
