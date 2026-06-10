@@ -5,9 +5,10 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 
 PACKAGE_ROOT = Path(__file__).parent.parent.parent
@@ -49,7 +50,23 @@ def parse_context_target_host(value: Any) -> str:
     return ""
 
 
-def make_service(tmp_path: Path) -> LaunchService:
+def make_service(
+    tmp_path: Path,
+    *,
+    transport: str = "local_helper",
+    run_commands: Optional[List[List[str]]] = None,
+    helper_path: Path = Path("/tmp/project-remote-launch.py"),
+) -> LaunchService:
+    def fake_run(
+        cmd: List[str],
+        capture_output: bool,
+        text: bool,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        if run_commands is not None:
+            run_commands.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
     return LaunchService(
         runtime_dir=lambda: tmp_path,
         load_json_file=load_json_file,
@@ -57,6 +74,11 @@ def make_service(tmp_path: Path) -> LaunchService:
         parse_context_target_host=parse_context_target_host,
         transport_kind_for_target_host=lambda value: "local_process" if str(value or "") == "thinkpad" else "ssh",
         local_host_alias=lambda: "thinkpad",
+        resolve_terminal_launch_transport=lambda **_kwargs: transport,
+        tmux_command_prefix=lambda tmux_socket="": f"tmux -S {tmux_socket}" if tmux_socket else "tmux",
+        canonical_tmux_socket=lambda: "/run/user/1000/tmux-1000/default",
+        resolve_terminal_helper=lambda _name: helper_path,
+        run_command=fake_run,
     )
 
 
@@ -156,3 +178,87 @@ def test_write_remote_spec_persists_remote_payload(tmp_path: Path) -> None:
     assert payload["status_file"] == str(service.status_file("launch-remote"))
     assert status["connection_key"] == "vpittamp@ryzen:22"
     assert status["launch_kind"] == "open_project_terminal"
+
+
+def test_build_remote_helper_script_for_remote_attach_without_remote_dir(tmp_path: Path) -> None:
+    service = make_service(tmp_path, transport="remote_helper")
+    helper_path = service.build_remote_terminal_helper_script({
+        "execution_mode": "ssh",
+        "connection_key": "vpittamp@ryzen:22",
+        "environment": {
+            "I3PM_PROJECT_NAME": "vpittamp/nixos-config:main",
+            "I3PM_CONTEXT_KEY": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+        },
+        "terminal_launch": {
+            "mode": "managed_project_terminal",
+            "helper_name": "project-terminal-launch.sh",
+            "tmux_session_name": "i3pm-remote-shell",
+            "remote": {
+                "host": "ryzen",
+                "user": "vpittamp",
+                "port": 22,
+                "remote_dir": "",
+            },
+            "remote_attach": {
+                "tmux_socket": "/run/user/1000/tmux-1000/default",
+                "tmux_session": "i3pm-vpittamp-nixos-config-ma-6e1abb85",
+                "tmux_window": "0:main",
+                "tmux_pane": "%0",
+            },
+        },
+    })
+    try:
+        content = helper_path.read_text()
+    finally:
+        helper_path.unlink(missing_ok=True)
+
+    assert "ssh -tt -o BatchMode=yes -o ConnectTimeout=2 -p 22 vpittamp@ryzen" in content
+    assert "tmux -S /run/user/1000/tmux-1000/default has-session -t i3pm-vpittamp-nixos-config-ma-6e1abb85" in content
+    assert "attach-session -t i3pm-vpittamp-nixos-config-ma-6e1abb85" in content
+    assert "cd " not in content
+
+
+def test_managed_tmux_command_shell_uses_canonical_socket(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+    script = service.managed_tmux_command_shell(
+        session_name="i3pm-vpittamp-nixos-config-main",
+        tmux_socket="",
+        working_dir="/repo/main",
+        command_args=["yazi", "/repo/main"],
+        environment={
+            "I3PM_PROJECT_NAME": "vpittamp/nixos-config:main",
+            "PATH": "/bin",
+        },
+    )
+
+    assert "tmux -S /run/user/1000/tmux-1000/default has-session -t i3pm-vpittamp-nixos-config-main" in script
+    assert "set-environment -t i3pm-vpittamp-nixos-config-main I3PM_PROJECT_NAME vpittamp/nixos-config:main" in script
+    assert "PATH" not in script
+    assert "new-window -t i3pm-vpittamp-nixos-config-main" in script
+
+
+def test_dispatch_managed_terminal_command_local_uses_tmux_dispatch(tmp_path: Path) -> None:
+    commands: List[List[str]] = []
+    service = make_service(tmp_path, transport="local_helper", run_commands=commands)
+
+    result = service.dispatch_managed_terminal_command({
+        "execution_mode": "ssh",
+        "connection_key": "vpittamp@ryzen:22",
+        "local_project_directory": "/repo/main",
+        "project_directory": "/srv/repo/main",
+        "launch_transport": "local_helper",
+        "environment": {
+            "I3PM_TMUX_SOCKET": "/run/user/1000/tmux-1000/default",
+            "I3PM_CONTEXT_KEY": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
+        },
+        "terminal_launch": {
+            "mode": "managed_project_terminal",
+            "tmux_session_name": "i3pm-vpittamp-nixos-config-main",
+            "helper_args": ["yazi", "/repo/main"],
+        },
+    })
+
+    assert result == {"success": True, "reason": "ok"}
+    assert commands[0][:2] == ["bash", "-lc"]
+    assert "tmux -S /run/user/1000/tmux-1000/default" in commands[0][2]
+    assert "ssh -o" not in commands[0][2]
