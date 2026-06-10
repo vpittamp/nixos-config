@@ -7,9 +7,13 @@ interface CommandOptions {
 }
 
 function showHelp(): void {
-  console.log(`i3pm dashboard <snapshot|watch> [--json]
+  console.log(`i3pm dashboard <snapshot|watch|events> [--json]
 
-watch emits one initial snapshot, then refetches only after daemon invalidation events.`);
+watch emits one initial snapshot, then refetches only after daemon invalidation events.
+events streams typed dashboard event envelopes as JSON Lines.
+
+Options:
+  --count <n>  Stop after n events (events only)`);
 }
 
 async function fetchSnapshot(client: DaemonClient): Promise<unknown> {
@@ -19,7 +23,7 @@ async function fetchSnapshot(client: DaemonClient): Promise<unknown> {
 export async function dashboardCommand(args: string[], _flags: CommandOptions): Promise<number> {
   const parsed = parseArgs(args, {
     boolean: ["help", "json"],
-    string: ["interval"],
+    string: ["count", "interval"],
     alias: { h: "help" },
   });
   const subcommand = String(parsed._[0] || "");
@@ -107,6 +111,26 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
       }
 
       await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
+  if (subcommand === "events") {
+    const countRaw = String(parsed.count || "").trim();
+    const maxEvents = countRaw ? Math.max(0, Number.parseInt(countRaw, 10) || 0) : 0;
+    const client = new DaemonClient();
+    let emitted = 0;
+    try {
+      await client.connect();
+      for await (const event of client.subscribeToStateChanges()) {
+        console.log(JSON.stringify(event));
+        emitted += 1;
+        if (maxEvents > 0 && emitted >= maxEvents) {
+          break;
+        }
+      }
+      return 0;
+    } finally {
+      client.disconnect();
     }
   }
 
