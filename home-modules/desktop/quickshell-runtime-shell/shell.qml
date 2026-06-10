@@ -1156,7 +1156,6 @@ ShellRoot {
                 continue;
             }
 
-            const currentWorkspace = stringOrEmpty(output.current_workspace);
             const workspaces = arrayOrEmpty(output.workspaces);
             for (let j = 0; j < workspaces.length; j += 1) {
                 const workspace = workspaces[j];
@@ -1164,11 +1163,12 @@ ShellRoot {
                 if (name.indexOf("scratchpad") === 0) {
                     continue;
                 }
+                const focused = workspaceIsFocused(name);
                 items.push({
                     num: Number(workspace?.number || 0),
                     name: name,
-                    focused: boolOrFalse(workspace?.focused) || (name !== "" && name === currentWorkspace),
-                    active: boolOrFalse(workspace?.visible) || (name !== "" && name === currentWorkspace),
+                    focused: focused,
+                    active: boolOrFalse(workspace?.visible) || focused,
                     urgent: boolOrFalse(workspace?.urgent),
                     output: target
                 });
@@ -1966,8 +1966,8 @@ ShellRoot {
             return left;
         }
 
-        const leftFocused = boolOrFalse(left.focused);
-        const rightFocused = boolOrFalse(right.focused);
+        const leftFocused = windowIsFocused(left);
+        const rightFocused = windowIsFocused(right);
         if (leftFocused !== rightFocused) {
             return leftFocused ? left : right;
         }
@@ -1994,7 +1994,7 @@ ShellRoot {
             activeWindow = preferredMoonlightWindow(activeWindow, windows[i]);
         }
 
-        const focused = boolOrFalse(activeWindow && activeWindow.focused);
+        const focused = windowIsFocused(activeWindow);
         const fullscreen = boolOrFalse(activeWindow && activeWindow.fullscreen);
         return {
             present: windows.length > 0,
@@ -4859,7 +4859,7 @@ ShellRoot {
                     connection_key: windowData.connection_key,
                     workspace: windowData.workspace,
                     output: windowData.output,
-                    focused: !!windowData.focused,
+                    focused: windowIsFocused(windowData),
                     visible: !!windowData.visible,
                     hidden: !!windowData.hidden,
                     floating: !!windowData.floating,
@@ -6745,8 +6745,8 @@ ShellRoot {
     function workspaceIconSources(workspaceName) {
         const workspace = workspaceSnapshot(workspaceName);
         const windows = arrayOrEmpty(workspace ? workspace.windows : []).slice().sort(function (left, right) {
-            const leftFocused = boolOrFalse(left && left.focused);
-            const rightFocused = boolOrFalse(right && right.focused);
+            const leftFocused = windowIsFocused(left);
+            const rightFocused = windowIsFocused(right);
             if (leftFocused !== rightFocused) {
                 return leftFocused ? -1 : 1;
             }

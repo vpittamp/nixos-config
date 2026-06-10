@@ -129,6 +129,11 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     assert "function dashboardFocusState()" in text
     assert "dashboardFocusState().current_window_id" in text
     assert "dashboardFocusState().current_workspace_name" in text
+    assert "const focused = workspaceIsFocused(name);" in text
+    assert "focused: boolOrFalse(workspace?.focused)" not in text
+    assert "output.current_workspace" not in text
+    assert "focused: windowIsFocused(windowData)" in text
+    assert "const leftFocused = windowIsFocused(left);" in text
     assert "method: \"window.focus_fast\"" in text
     assert "runDaemonSocketCall(\"workspace.focus_fast\", {workspace: workspaceName})" in text
     assert "root.windowIsFocused(windowData)" in runtime_panel_text
