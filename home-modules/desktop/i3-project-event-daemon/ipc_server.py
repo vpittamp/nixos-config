@@ -9062,10 +9062,9 @@ class IPCServer:
     async def _session_spawn_remote_attach(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Spawn a local SSH terminal that attaches to a remote AI session.
 
-        Used when the panel surfaces a remote session from the OTEL sink that
-        has no matching local SSH bridge window. Reuses the existing remote
-        attach machinery, which already handles the "no existing window →
-        launch" path.
+        Used when the panel surfaces a daemon-known remote session that has no
+        matching local SSH bridge window. Reuses the existing remote attach
+        machinery, which already handles the "no existing window → launch" path.
         """
         session_key = str(params.get("session_key") or "").strip()
         if not session_key:

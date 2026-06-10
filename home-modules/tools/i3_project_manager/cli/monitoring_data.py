@@ -121,8 +121,6 @@ DISCOVERED_TMUX_PROJECT_HINT_CACHE: Dict[str, Any] = {
     "size": None,
     "mapping": {},
 }
-OTEL_WINDOW_RESOLUTION_CACHE_TTL_SECONDS = 5.0
-OTEL_WINDOW_RESOLUTION_CACHE: Dict[str, Dict[str, Any]] = {}
 TMUX_ACTIVE_PANES_CACHE_LOCAL_TTL_SECONDS = 0.15
 TMUX_ACTIVE_PANES_CACHE_REMOTE_TTL_SECONDS = 0.75
 TMUX_ACTIVE_PANES_CACHE_MAX_AGE_SECONDS = 10.0
@@ -229,82 +227,6 @@ def _canonical_host_context_key(qualified_name: Any, target_host: Any) -> str:
     if not qualified or not host:
         return ""
     return f"{qualified}::host::{host}"
-
-
-def _window_candidates_cache_fingerprint(window_candidates: Optional[List[Dict[str, Any]]]) -> str:
-    """Build a stable cache fingerprint for current window candidates."""
-    candidates = window_candidates or []
-    items: List[List[str]] = []
-    for candidate in candidates:
-        if not isinstance(candidate, dict):
-            continue
-        items.append([
-            str(_safe_int(candidate.get("id"), 0)),
-            str(candidate.get("project") or ""),
-            str(candidate.get("execution_mode") or ""),
-            str(candidate.get("connection_key") or ""),
-            str(candidate.get("context_key") or ""),
-        ])
-    raw = json.dumps(items, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
-
-
-def _window_resolution_cache_key(
-    session: Dict[str, Any],
-    *,
-    candidates_fingerprint: str,
-) -> str:
-    """Build cache key for OTEL session -> window resolution."""
-    terminal_context = session.get("terminal_context", {}) or {}
-    if not isinstance(terminal_context, dict):
-        terminal_context = {}
-    payload = {
-        "tool": str(session.get("tool") or ""),
-        "project": str(session.get("project") or ""),
-        "project_path": str(session.get("project_path") or ""),
-        "native_session_id": str(session.get("native_session_id") or ""),
-        "session_id": str(session.get("session_id") or ""),
-        "context_fingerprint": str(session.get("context_fingerprint") or ""),
-        "trace_id": str(session.get("trace_id") or ""),
-        "execution_mode": str(session.get("execution_mode") or terminal_context.get("execution_mode") or ""),
-        "connection_key": str(session.get("connection_key") or terminal_context.get("connection_key") or ""),
-        "context_key": str(session.get("context_key") or terminal_context.get("context_key") or ""),
-        "tmux_session": str(terminal_context.get("tmux_session") or session.get("tmux_session") or ""),
-        "tmux_window": str(terminal_context.get("tmux_window") or session.get("tmux_window") or ""),
-        "tmux_pane": str(terminal_context.get("tmux_pane") or session.get("tmux_pane") or ""),
-        "pty": str(terminal_context.get("pty") or session.get("pty") or ""),
-        "window_id": _safe_int(session.get("window_id", terminal_context.get("window_id")), 0),
-        "candidates": candidates_fingerprint,
-    }
-    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
-
-
-def _get_cached_window_resolution(cache_key: str) -> tuple[bool, Optional[int]]:
-    """Return cached window resolution result when still fresh."""
-    now = time.time()
-    expired = [
-        key
-        for key, value in OTEL_WINDOW_RESOLUTION_CACHE.items()
-        if now - float(value.get("updated_at", 0.0) or 0.0) > OTEL_WINDOW_RESOLUTION_CACHE_TTL_SECONDS
-    ]
-    for key in expired:
-        OTEL_WINDOW_RESOLUTION_CACHE.pop(key, None)
-
-    entry = OTEL_WINDOW_RESOLUTION_CACHE.get(cache_key)
-    if not isinstance(entry, dict):
-        return False, None
-
-    window_id = _safe_int(entry.get("window_id"), 0)
-    return True, window_id if window_id > 0 else None
-
-
-def _store_cached_window_resolution(cache_key: str, window_id: Optional[int]) -> None:
-    """Store window resolution result for a short TTL."""
-    OTEL_WINDOW_RESOLUTION_CACHE[cache_key] = {
-        "window_id": int(window_id) if window_id is not None else 0,
-        "updated_at": time.time(),
-    }
 
 
 def _connection_key_aliases(value: str) -> set[str]:
@@ -683,10 +605,9 @@ def consume_ai_session_seen_events() -> List[Dict[str, Any]]:
 
 
 async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
-    """Create inotify watcher subprocess for badge directory and OTEL sessions file.
+    """Create inotify watcher subprocess for badge and AI review directories.
 
     Feature 107: Uses inotifywait for immediate badge file detection (<15ms latency).
-    Feature 123: Also watches OTEL sessions file for AI state changes.
     Falls back to polling if inotifywait is not available.
 
     Returns:
@@ -1564,9 +1485,7 @@ def colorize_json_pango(data: Dict[str, Any]) -> str:
     return colorize_json_value(data, indent_level=1)
 
 
-# Feature 136: State priority for sorting multiple AI badges per window
-# Higher priority sessions appear first in the badge list
-_OTEL_STATE_PRIORITY = {
+_AI_SESSION_STATE_PRIORITY = {
     "attention": 4,  # Highest - needs user action
     "working": 3,
     "completed": 2,
@@ -1612,8 +1531,7 @@ _AI_STAGE_GLYPHS = {
     "output_ready": "✓",
     "idle": "·",
 }
-_OTEL_VISIBLE_BADGE_STATES = {"working", "attention", "completed", "idle"}
-_OTEL_ACTIVE_SESSION_STATES = {"working", "attention", "completed", "idle"}
+_AI_SESSION_REVIEW_STATES = {"working", "attention", "completed", "idle"}
 _AI_SESSION_STALE_THRESHOLD_SECONDS = 15 * 60
 _AI_SESSION_REVIEW_TTL_SECONDS = 24 * 60 * 60
 _AI_SESSION_REVIEW_MAX_ENTRIES = 512
@@ -1621,7 +1539,7 @@ _AI_SESSION_REVIEW_MAX_ENTRIES = 512
 # Keep short so users quickly see completed work even when terminal traces end abruptly.
 _AI_SESSION_REVIEW_DISAPPEAR_GRACE_SECONDS = 8
 
-_OTEL_TOOL_LABELS = {
+_AI_TOOL_LABELS = {
     "claude-code": "Claude Code",
     "codex": "Codex CLI",
     "gemini": "Gemini CLI",
@@ -1631,7 +1549,7 @@ _AI_TRACKABLE_TOOLS = {"claude-code", "codex", "gemini"}
 
 
 def _parse_timestamp_to_epoch(timestamp: str) -> Optional[float]:
-    """Best-effort parse for OTEL ISO timestamps."""
+    """Best-effort parse for ISO timestamps."""
     raw = str(timestamp or "").strip()
     if not raw:
         return None
@@ -1641,16 +1559,6 @@ def _parse_timestamp_to_epoch(timestamp: str) -> Optional[float]:
         return datetime.fromisoformat(raw).timestamp()
     except ValueError:
         return None
-
-
-def _identity_confidence_level(value: str) -> str:
-    """Map raw identity confidence values into coarse UX levels."""
-    raw = str(value or "").strip().lower()
-    if raw in {"native", "high"}:
-        return "high"
-    if raw in {"contextual", "medium", "derived"}:
-        return "medium"
-    return "low"
 
 
 def _normalize_user_action_reason(value: Any) -> str:
@@ -2204,175 +2112,6 @@ def _session_tracking_contract_ok(session: Dict[str, Any]) -> bool:
     )
 
 
-def _otel_badge_merge_key(session: Dict[str, Any]) -> str:
-    """
-    Build a stable dedupe key for badge sessions.
-
-    Exact duplicate exports of the same logical session should collapse, but
-    distinct sessions that happen to share a pane must remain separate.
-    """
-    terminal_context = session.get("terminal_context", {}) or {}
-    tool = str(session.get("tool", "unknown") or "unknown")
-
-    native_session_id = str(session.get("native_session_id") or "")
-    collision_group_id = str(session.get("collision_group_id") or "")
-    context_fingerprint = str(session.get("context_fingerprint") or "")
-    window_id = session.get("window_id", terminal_context.get("window_id"))
-    pane = str(terminal_context.get("tmux_pane") or "")
-    pty = str(terminal_context.get("pty") or "")
-    terminal_anchor_id = str(
-        terminal_context.get("binding_anchor_id")
-        or session.get("binding_anchor_id")
-        or
-        terminal_context.get("terminal_anchor_id")
-        or session.get("terminal_anchor_id")
-        or ""
-    )
-
-    # Highest-priority dedupe scope: tool + concrete terminal context + session.
-    # Pane siblings remain distinct because each rendered session keeps its own
-    # logical session id when available.
-    if pane:
-        tmux_server_key = str(terminal_context.get("tmux_server_key") or "")
-        tmux_session = str(terminal_context.get("tmux_session") or "")
-        tmux_window = str(terminal_context.get("tmux_window") or "")
-        base = f"tool={tool}|tmux={tmux_server_key}|session={tmux_session}|window={tmux_window}|pane={pane}"
-        session_id = str(session.get("session_id") or "")
-        if session_id:
-            return f"{base}|sid={session_id}"
-        return base
-    if terminal_anchor_id:
-        base = f"tool={tool}|anchor={terminal_anchor_id}"
-        session_id = str(session.get("session_id") or "")
-        if session_id:
-            return f"{base}|sid={session_id}"
-        return base
-    if pty:
-        base = f"tool={tool}|pty={pty}"
-        session_id = str(session.get("session_id") or "")
-        if session_id:
-            return f"{base}|sid={session_id}"
-        return base
-    if window_id is not None:
-        return f"tool={tool}|window={window_id}"
-
-    # If no terminal context is known, fall back to native grouping.
-    if collision_group_id or native_session_id:
-        native_key = (
-            f"tool={tool}|group={collision_group_id}"
-            if collision_group_id
-            else f"tool={tool}|native={native_session_id}"
-        )
-        if context_fingerprint:
-            return f"{native_key}|context={context_fingerprint}"
-        return native_key
-
-    session_id = str(session.get("session_id") or "")
-    if session_id:
-        return f"tool={tool}|session={session_id}"
-
-    pid = session.get("pid")
-
-    if pid is not None and window_id is not None:
-        return f"tool={tool}|pid={pid}|window={window_id}"
-    if pid is not None and pane:
-        return f"tool={tool}|pid={pid}|pane={pane}"
-    if pid is not None and pty:
-        return f"tool={tool}|pid={pid}|pty={pty}"
-
-    return f"tool={tool}|fallback={json.dumps(session, sort_keys=True, default=str)}"
-
-
-def _otel_badge_score(session: Dict[str, Any]) -> tuple[int, int, int, str]:
-    """
-    Score which duplicate candidate is the best canonical badge.
-
-    Preference order:
-      1) native-identified records
-      2) records with trace_id
-      3) higher urgency state
-      4) most recent updated_at (ISO string compare)
-    """
-    identity_confidence = str(session.get("identity_confidence") or "").strip().lower()
-    is_native = int(identity_confidence == "native" or bool(session.get("native_session_id")))
-    has_trace = int(bool(session.get("trace_id")))
-    state_rank = _OTEL_STATE_PRIORITY.get(str(session.get("state", "idle")), 0)
-    updated_at = str(session.get("updated_at") or "")
-    return (is_native, has_trace, state_rank, updated_at)
-
-
-def _coalesce_otel_badge_sessions(
-    otel_sessions: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
-    """Collapse duplicate OTEL sessions for badge rendering."""
-    if not otel_sessions:
-        return []
-
-    merged: Dict[str, Dict[str, Any]] = {}
-    for session in otel_sessions:
-        key = _otel_badge_merge_key(session)
-        existing = merged.get(key)
-        if existing is None:
-            merged[key] = dict(session)
-            continue
-
-        # Keep the stronger base record.
-        if _otel_badge_score(session) > _otel_badge_score(existing):
-            base = dict(session)
-            other = existing
-        else:
-            base = existing
-            other = session
-
-        # Merge fields that are useful even if only present in one variant.
-        if not base.get("trace_id") and other.get("trace_id"):
-            base["trace_id"] = other.get("trace_id")
-        if not base.get("session_id") and other.get("session_id"):
-            base["session_id"] = other.get("session_id")
-        if not base.get("native_session_id") and other.get("native_session_id"):
-            base["native_session_id"] = other.get("native_session_id")
-        if not base.get("context_fingerprint") and other.get("context_fingerprint"):
-            base["context_fingerprint"] = other.get("context_fingerprint")
-        if not base.get("collision_group_id") and other.get("collision_group_id"):
-            base["collision_group_id"] = other.get("collision_group_id")
-        if not base.get("window_id") and other.get("window_id"):
-            base["window_id"] = other.get("window_id")
-        if not base.get("execution_mode") and other.get("execution_mode"):
-            base["execution_mode"] = other.get("execution_mode")
-        if not base.get("connection_key") and other.get("connection_key"):
-            base["connection_key"] = other.get("connection_key")
-        if not base.get("context_key") and other.get("context_key"):
-            base["context_key"] = other.get("context_key")
-
-        base_context = base.get("terminal_context", {}) or {}
-        other_context = other.get("terminal_context", {}) or {}
-        for ctx_key in (
-            "window_id",
-            "terminal_anchor_id",
-            "tmux_session",
-            "tmux_window",
-            "tmux_pane",
-            "pty",
-            "host_name",
-            "execution_mode",
-            "connection_key",
-            "context_key",
-            "remote_target",
-        ):
-            if not base_context.get(ctx_key) and other_context.get(ctx_key):
-                base_context[ctx_key] = other_context.get(ctx_key)
-        base["terminal_context"] = base_context
-
-        base["pending_tools"] = max(
-            int(base.get("pending_tools", 0) or 0),
-            int(other.get("pending_tools", 0) or 0),
-        )
-        base["is_streaming"] = bool(base.get("is_streaming", False) or other.get("is_streaming", False))
-        merged[key] = base
-
-    return list(merged.values())
-
-
 def _safe_int(value: Any, default: int = 0) -> int:
     """Best-effort integer conversion."""
     try:
@@ -2617,7 +2356,7 @@ def _resolve_session_execution_identity(
     window_data: Optional[Dict[str, Any]] = None,
     default_mode: str = "local",
 ) -> Dict[str, str]:
-    """Resolve canonical execution identity for an OTEL session payload."""
+    """Resolve canonical execution identity for an AI session payload."""
     terminal_context = session.get("terminal_context", {}) or {}
     if not isinstance(terminal_context, dict):
         terminal_context = {}
@@ -2687,524 +2426,6 @@ def _resolve_session_execution_identity(
     )
     identity["context_key"] = context_key
     return identity
-
-
-def _collect_output_window_candidates(outputs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Collect normalized window candidates for OTEL session window-id resolution."""
-    candidates: List[Dict[str, Any]] = []
-
-    for output in outputs:
-        for workspace in output.get("workspaces", []):
-            for window in workspace.get("windows", []):
-                window_id = _safe_int(window.get("id"), 0)
-                if window_id == 0:
-                    continue
-                project_name = str(window.get("project") or "").strip()
-
-                identity = _resolve_window_execution_identity(
-                    window,
-                )
-                candidates.append(
-                    {
-                        "id": window_id,
-                        "project": project_name,
-                        "focused": bool(window.get("focused", False)),
-                        "hidden": bool(window.get("hidden", False)),
-                        "floating": bool(window.get("floating", False)),
-                        "class": str(window.get("class") or ""),
-                        "app_id": str(window.get("app_id") or ""),
-                        "app_name": str(window.get("app_name") or ""),
-                        "display_name": str(window.get("display_name") or ""),
-                        "title": str(window.get("title") or ""),
-                        "marks": list(window.get("marks") or []) if isinstance(window.get("marks"), list) else [],
-                        "execution_mode": str(identity.get("execution_mode") or ""),
-                        "connection_key": str(identity.get("connection_key") or ""),
-                        "identity_key": str(identity.get("identity_key") or ""),
-                        "context_key": str(identity.get("context_key") or ""),
-                        "remote_session_name": str(identity.get("remote_session_name") or ""),
-                    }
-                )
-
-    return candidates
-
-
-def _window_terminal_preference_rank(candidate: Dict[str, Any]) -> int:
-    """
-    Rank window candidates for deterministic AI session targeting.
-
-    Prefer normal project terminals over scratchpad terminals when both share
-    the same identity/project scope.
-    """
-    app_id = str(candidate.get("app_id") or "").strip().lower()
-    display_name = str(candidate.get("display_name") or "").strip().lower()
-    title = str(candidate.get("title") or "").strip().lower()
-    marks_raw = candidate.get("marks") or []
-    marks: List[str] = [str(mark).strip().lower() for mark in marks_raw if str(mark).strip()]
-
-    is_scratchpad = (
-        "scratchpad" in app_id
-        or "scratchpad" in display_name
-        or "scratchpad" in title
-        or any(mark.startswith("scoped:scratchpad-terminal:") for mark in marks)
-    )
-    is_primary_terminal = (
-        app_id.startswith("terminal-")
-        or any(mark.startswith("scoped:terminal:") for mark in marks)
-    )
-
-    if is_primary_terminal and not is_scratchpad:
-        return 2
-    if not is_scratchpad:
-        return 1
-    return 0
-
-
-def _session_project_candidates(raw_project: Any) -> tuple[set[str], set[str]]:
-    """Return exact/prefix project candidates from OTEL project identifiers."""
-    exact: set[str] = set()
-    prefixes: set[str] = set()
-
-    project_value = str(raw_project or "").strip()
-    if not project_value:
-        return exact, prefixes
-
-    # Already normalized worktree/project identifiers.
-    if "/" in project_value:
-        if ":" in project_value:
-            exact.add(project_value)
-            prefixes.add(project_value.split(":", 1)[0])
-        else:
-            prefixes.add(project_value)
-
-    # Absolute/tilde path format: ~/repos/<account>/<repo>/<branch>...
-    if project_value.startswith("/") or project_value.startswith("~"):
-        path_parts = Path(project_value).expanduser().parts
-        for idx, part in enumerate(path_parts):
-            if part != "repos":
-                continue
-            if idx + 3 >= len(path_parts):
-                continue
-            account = str(path_parts[idx + 1]).strip()
-            repo = str(path_parts[idx + 2]).strip()
-            branch = str(path_parts[idx + 3]).strip()
-            if not account or not repo:
-                continue
-            prefixes.add(f"{account}/{repo}")
-            if branch:
-                exact.add(f"{account}/{repo}:{branch}")
-            break
-
-    return exact, prefixes
-
-
-def _normalize_session_project_from_path(session: Dict[str, Any]) -> Dict[str, Any]:
-    """Prefer project identifier derived from project_path when mismatched/stale."""
-    normalized = dict(session)
-    project_raw = str(normalized.get("project") or "").strip()
-    project_path_raw = str(normalized.get("project_path") or "").strip()
-    if not project_path_raw:
-        return normalized
-
-    path_exact, path_prefixes = _session_project_candidates(project_path_raw)
-    if not path_exact and not path_prefixes:
-        return normalized
-
-    current_exact, current_prefixes = _session_project_candidates(project_raw)
-    # If current project is absent or doesn't align with path-derived identity,
-    # replace it with a deterministic exact candidate from project_path.
-    aligned = bool(
-        (path_exact and current_exact and len(path_exact.intersection(current_exact)) > 0)
-        or (
-            path_prefixes
-            and current_prefixes
-            and len(path_prefixes.intersection(current_prefixes)) > 0
-        )
-    )
-    if aligned:
-        return normalized
-
-    if path_exact:
-        normalized["project"] = sorted(path_exact)[0]
-    elif path_prefixes:
-        normalized["project"] = sorted(path_prefixes)[0]
-    return normalized
-
-
-def _tmux_session_project_hints() -> Dict[str, str]:
-    """Map normalized tmux session names to unique discovered worktree projects."""
-    repos_file = Path.home() / ".config" / "i3" / "repos.json"
-    if not repos_file.exists():
-        DISCOVERED_TMUX_PROJECT_HINT_CACHE.update({
-            "mtime_ns": None,
-            "size": None,
-            "mapping": {},
-        })
-        return {}
-
-    try:
-        stat_result = repos_file.stat()
-        if (
-            DISCOVERED_TMUX_PROJECT_HINT_CACHE.get("mtime_ns") == stat_result.st_mtime_ns
-            and DISCOVERED_TMUX_PROJECT_HINT_CACHE.get("size") == stat_result.st_size
-        ):
-            cached_mapping = DISCOVERED_TMUX_PROJECT_HINT_CACHE.get("mapping")
-            if isinstance(cached_mapping, dict):
-                return dict(cached_mapping)
-    except OSError:
-        return {}
-
-    discovered = load_discovered_repositories()
-    repositories = discovered.get("repositories", []) if isinstance(discovered, dict) else []
-    hints: Dict[str, set[str]] = {}
-
-    for repo in repositories:
-        if not isinstance(repo, dict):
-            continue
-        for wt in repo.get("worktrees", []):
-            if not isinstance(wt, dict):
-                continue
-            qualified_name = str(wt.get("qualified_name") or "").strip()
-            if not qualified_name:
-                continue
-            suffix_key = _normalize_session_name_key(_project_session_suffix(qualified_name))
-            if not suffix_key:
-                continue
-            hints.setdefault(suffix_key, set()).add(qualified_name)
-
-    mapping = {
-        suffix_key: sorted(qualified_names)[0]
-        for suffix_key, qualified_names in hints.items()
-        if len(qualified_names) == 1
-    }
-    DISCOVERED_TMUX_PROJECT_HINT_CACHE.update({
-        "mtime_ns": stat_result.st_mtime_ns,
-        "size": stat_result.st_size,
-        "mapping": dict(mapping),
-    })
-    return mapping
-
-
-def _resolve_session_project_labels(
-    session: Dict[str, Any],
-    *,
-    window_project: str = "",
-) -> Dict[str, str]:
-    """Resolve canonical project labels from upstream anchor-backed session data."""
-    upstream_session_project = str(session.get("session_project") or "").strip()
-    upstream_display_project = str(session.get("display_project") or "").strip()
-    upstream_focus_project = str(session.get("focus_project") or "").strip()
-    upstream_window_project = str(session.get("window_project") or "").strip()
-    upstream_project_source = str(session.get("project_source") or "").strip()
-    resolved_window_project = str(window_project or "").strip() or upstream_window_project
-    session_project = upstream_session_project or str(session.get("project") or "").strip()
-    display_project = (
-        upstream_display_project
-        or session_project
-        or resolved_window_project
-        or "unknown"
-    )
-    focus_project = resolved_window_project or upstream_focus_project or session_project or ""
-    if upstream_project_source:
-        project_source = upstream_project_source
-    elif session_project:
-        project_source = "anchor"
-    elif resolved_window_project:
-        project_source = "window"
-    else:
-        project_source = "unknown"
-
-    return {
-        "session_project": session_project,
-        "window_project": resolved_window_project,
-        "focus_project": focus_project,
-        "display_project": display_project,
-        "project_source": project_source,
-    }
-
-
-def _resolve_otel_session_window_id(
-    session: Dict[str, Any],
-    outputs: List[Dict[str, Any]],
-    window_candidates: Optional[List[Dict[str, Any]]] = None,
-) -> Optional[int]:
-    """Best-effort mapping when OTEL session lacks explicit window_id."""
-    terminal_context = session.get("terminal_context", {}) or {}
-    if not isinstance(terminal_context, dict):
-        terminal_context = {}
-    parsed_context = _parse_context_key(
-        session.get("context_key") or terminal_context.get("context_key") or ""
-    )
-
-    exact_candidates: set[str] = set()
-    prefix_candidates: set[str] = set()
-    for source in (session.get("project"), session.get("project_path")):
-        exact, prefixes = _session_project_candidates(source)
-        exact_candidates.update(exact)
-        prefix_candidates.update(prefixes)
-
-    context_qualified = str(parsed_context.get("qualified_name") or "").strip()
-    if context_qualified:
-        if ":" in context_qualified:
-            exact_candidates.add(context_qualified)
-            prefix_candidates.add(context_qualified.split(":", 1)[0])
-        else:
-            prefix_candidates.add(context_qualified)
-
-    candidates = window_candidates if window_candidates is not None else _collect_output_window_candidates(outputs)
-
-    raw_session_connection = str(
-        session.get("connection_key")
-        or terminal_context.get("connection_key")
-        or parsed_context.get("connection_key")
-        or ""
-    ).strip()
-    raw_session_context = str(
-        session.get("context_key") or terminal_context.get("context_key") or ""
-    ).strip()
-    has_explicit_identity = bool(raw_session_context or raw_session_connection)
-
-    session_mode = _normalize_execution_mode(
-        session.get("execution_mode") or terminal_context.get("execution_mode"),
-        default="",
-    )
-    if not session_mode:
-        session_mode = str(parsed_context.get("execution_mode") or "").strip()
-    session_identity = _resolve_session_execution_identity(session, default_mode="local")
-    session_connection = str(session_identity.get("connection_key") or "").strip()
-    session_context = str(session_identity.get("context_key") or "").strip()
-    session_tmux_session_key = _normalize_session_name_key(
-        terminal_context.get("tmux_session") or session.get("tmux_session") or ""
-    )
-
-    def _identity_compatible(candidate: Dict[str, Any]) -> bool:
-        window_mode = str(candidate.get("execution_mode") or "").strip()
-        window_connection = str(candidate.get("connection_key") or "").strip()
-        window_context = str(candidate.get("context_key") or "").strip()
-
-        if session_context and window_context and session_context != window_context:
-            return False
-        if session_mode and window_mode and session_mode != window_mode:
-            return False
-        if (
-            session_connection
-            and window_connection
-            and not _connection_keys_equivalent(session_connection, window_connection)
-        ):
-            return False
-        return True
-
-    def _pick_preferred_identity_window(
-        scoped_candidates: List[Dict[str, Any]],
-        *,
-        exact_scope: Optional[set[str]] = None,
-        prefix_scope: Optional[set[str]] = None,
-    ) -> Optional[int]:
-        preferred_window_id: Optional[int] = None
-        preferred_score: Optional[tuple[int, int, int, int, int]] = None
-        for candidate in scoped_candidates:
-            candidate_window_id = _safe_int(candidate.get("id"), 0)
-            candidate_project = str(candidate.get("project") or "").strip()
-            if candidate_window_id <= 0:
-                continue
-            if exact_scope or prefix_scope:
-                if not candidate_project:
-                    continue
-                in_scope = (
-                    candidate_project in (exact_scope or set())
-                    or any(
-                        candidate_project == prefix
-                        or candidate_project.startswith(prefix + ":")
-                        for prefix in (prefix_scope or set())
-                    )
-                )
-                if not in_scope:
-                    continue
-            score = (
-                _window_terminal_preference_rank(candidate),
-                int(bool(candidate.get("focused", False))),
-                int(not bool(candidate.get("hidden", False))),
-                int(not bool(candidate.get("floating", False))),
-                candidate_window_id,
-            )
-            if preferred_score is None or score > preferred_score:
-                preferred_score = score
-                preferred_window_id = candidate_window_id
-        return preferred_window_id
-
-    # Deterministic tmux-session mapping for remote windows when project/context
-    # metadata is absent or stale. When tmux identity is present, it is
-    # authoritative; we never fall back to project heuristics if this lookup
-    # is ambiguous or missing.
-    if session_tmux_session_key:
-        identity_candidates: List[Dict[str, Any]] = [
-            candidate for candidate in candidates if _identity_compatible(candidate)
-        ]
-        tmux_matches: List[int] = []
-        tmux_metadata_available = False
-        tmux_hint_exact: set[str] = set()
-        tmux_hint_prefixes: set[str] = set()
-        for candidate in identity_candidates:
-            candidate_tmux_session_key = _normalize_session_name_key(
-                candidate.get("remote_session_name") or ""
-            )
-            if not candidate_tmux_session_key:
-                continue
-            tmux_metadata_available = True
-            if candidate_tmux_session_key != session_tmux_session_key:
-                continue
-            candidate_project = str(candidate.get("project") or "").strip()
-            if candidate_project:
-                candidate_exact, candidate_prefixes = _session_project_candidates(candidate_project)
-                tmux_hint_exact.update(candidate_exact)
-                tmux_hint_prefixes.update(candidate_prefixes)
-            candidate_window_id = _safe_int(candidate.get("id"), 0)
-            if candidate_window_id > 0:
-                tmux_matches.append(candidate_window_id)
-
-        if len(tmux_matches) == 1:
-            return tmux_matches[0]
-        if tmux_hint_exact or tmux_hint_prefixes:
-            preferred_window_id = _pick_preferred_identity_window(
-                identity_candidates,
-                exact_scope=tmux_hint_exact,
-                prefix_scope=tmux_hint_prefixes,
-            )
-            if preferred_window_id is not None:
-                return preferred_window_id
-        if tmux_metadata_available:
-            upstream_window_project = str(
-                session.get("focus_project") or session.get("window_project") or ""
-            ).strip()
-            if upstream_window_project:
-                upstream_exact, upstream_prefixes = _session_project_candidates(
-                    upstream_window_project
-                )
-                preferred_window_id = _pick_preferred_identity_window(
-                    identity_candidates,
-                    exact_scope=upstream_exact,
-                    prefix_scope=upstream_prefixes,
-                )
-                if preferred_window_id is not None:
-                    return preferred_window_id
-            return None
-
-        # If daemon windows do not publish remote_session_name, allow one
-        # deterministic suffix-based match from project -> tmux session.
-        suffix_exact: set[str] = set()
-        suffix_prefixes: set[str] = set()
-        for candidate in identity_candidates:
-            candidate_project = str(candidate.get("project") or "").strip()
-            candidate_suffix = _normalize_session_name_key(
-                _project_session_suffix(candidate_project)
-            )
-            if not candidate_suffix or candidate_suffix != session_tmux_session_key:
-                continue
-            if candidate_project:
-                candidate_exact, candidate_prefixes = _session_project_candidates(candidate_project)
-                suffix_exact.update(candidate_exact)
-                suffix_prefixes.update(candidate_prefixes)
-        if suffix_exact or suffix_prefixes:
-            preferred_window_id = _pick_preferred_identity_window(
-                identity_candidates,
-                exact_scope=suffix_exact,
-                prefix_scope=suffix_prefixes,
-            )
-            if preferred_window_id is not None:
-                return preferred_window_id
-        return None
-
-    # Strict identity-only fallback:
-    # When project/tmux metadata is missing or stale, map by identity only if
-    # there is exactly one compatible candidate window. Otherwise do not guess.
-    identity_only_candidates: List[int] = []
-    if has_explicit_identity:
-        for candidate in candidates:
-            if not _identity_compatible(candidate):
-                continue
-            candidate_window_id = _safe_int(candidate.get("id"), 0)
-            if candidate_window_id > 0:
-                identity_only_candidates.append(candidate_window_id)
-    unique_identity_only_window_id: Optional[int] = (
-        identity_only_candidates[0] if len(identity_only_candidates) == 1 else None
-    )
-
-    best_window_id: Optional[int] = None
-    best_score: Optional[tuple[int, int, int, int, int, int, int, int]] = None
-    for candidate in candidates:
-        window_project = str(candidate.get("project") or "").strip()
-        if not window_project:
-            continue
-
-        match_rank = 0
-        if window_project in exact_candidates:
-            match_rank = 2
-        elif any(
-            window_project == prefix or window_project.startswith(prefix + ":")
-            for prefix in prefix_candidates
-        ):
-            match_rank = 1
-
-        window_mode = str(candidate.get("execution_mode") or "").strip()
-        window_connection = str(candidate.get("connection_key") or "").strip()
-        window_context = str(candidate.get("context_key") or "").strip()
-
-        # Hard filters when session identity is explicit.
-        if session_context and window_context and session_context != window_context:
-            continue
-        if session_mode and window_mode and session_mode != window_mode:
-            continue
-        if (
-            session_connection
-            and window_connection
-            and not _connection_keys_equivalent(session_connection, window_connection)
-        ):
-            continue
-
-        if match_rank == 0:
-            if not has_explicit_identity:
-                continue
-            # Deterministic only: never pick among multiple identity-compatible
-            # windows on the same remote/local context.
-            if unique_identity_only_window_id is None:
-                continue
-            window_id = _safe_int(candidate.get("id"), 0)
-            if window_id != unique_identity_only_window_id:
-                continue
-            match_rank = 1
-
-        identity_rank = 0
-        if session_context and window_context and session_context == window_context:
-            identity_rank = 3
-        elif session_mode and window_mode and session_mode == window_mode:
-            if (
-                session_connection
-                and window_connection
-                and _connection_keys_equivalent(session_connection, window_connection)
-            ):
-                identity_rank = 2
-            else:
-                identity_rank = 1
-
-        window_id = _safe_int(candidate.get("id"), 0)
-        if window_id == 0:
-            continue
-
-        terminal_preference = _window_terminal_preference_rank(candidate)
-        score = (
-            match_rank,
-            identity_rank,
-            terminal_preference,
-            int(bool(candidate.get("focused", False))),
-            int(not bool(candidate.get("hidden", False))),
-            int(str(candidate.get("class") or "") != "remote-sesh"),
-            int(not bool(candidate.get("floating", False))),
-            int(window_id),
-        )
-        if best_score is None or score > best_score:
-            best_score = score
-            best_window_id = window_id
-
-    return best_window_id
 
 
 def _connection_keys_equivalent(left: Any, right: Any) -> bool:
@@ -3791,483 +3012,6 @@ def _refresh_current_window_marker_in_payload(payload: Dict[str, Any]) -> bool:
     return changed
 
 
-def _build_otel_badges(
-    otel_sessions: Optional[List[Dict[str, Any]]],
-    window_project: str = "",
-    window_data: Optional[Dict[str, Any]] = None,
-) -> List[Dict[str, Any]]:
-    """
-    Build OTEL badges array for multi-indicator display.
-
-    Feature 136: Replaces _merge_badge_with_otel(). Returns an array of badges
-    for all AI sessions associated with a window, sorted by state priority.
-
-    Args:
-        otel_sessions: List of OTEL session info for this window (may be None or empty)
-        window_project: Canonical project label from owning window context
-
-    Returns:
-        List of badge dicts with otel_state, otel_tool, session_id, etc.
-        Sorted by state priority, limited to active states (ATTENTION/WORKING).
-    """
-    if not otel_sessions:
-        return []
-
-    badges = []
-    now_epoch = time.time()
-    window_data = window_data or {}
-    focus_identity = _window_tracking_identity(window_data) if isinstance(window_data, dict) else {}
-    for session in _coalesce_otel_badge_sessions(otel_sessions):
-        if not _session_tracking_contract_ok(session):
-            continue
-        state = str(session.get("state", "idle") or "idle").strip().lower()
-        if state not in _OTEL_VISIBLE_BADGE_STATES:
-            continue
-
-        terminal_context = session.get("terminal_context", {}) or {}
-        window_id_raw = session.get("window_id", terminal_context.get("window_id"))
-        window_id_int = _safe_int(window_id_raw, 0)
-        identity_raw = str(session.get("identity_confidence") or "")
-        confidence_level = _identity_confidence_level(identity_raw)
-        updated_epoch = _parse_timestamp_to_epoch(str(session.get("updated_at") or ""))
-        stale_age_seconds = int(max(0.0, now_epoch - updated_epoch)) if updated_epoch else 0
-        stale = state in {"idle", "completed"} and stale_age_seconds >= _AI_SESSION_STALE_THRESHOLD_SECONDS
-        stage_fields = _normalize_stage_fields(
-            {
-                **session,
-                "otel_state": state,
-                "stale": stale,
-                "stale_age_seconds": stale_age_seconds,
-            },
-            now_epoch=now_epoch,
-        )
-        stale_age_seconds = max(
-            stale_age_seconds,
-            int(stage_fields.get("activity_age_seconds") or stale_age_seconds),
-        )
-        stale = bool(stale or stage_fields.get("activity_freshness") == "stale")
-        tool = str(session.get("tool", "unknown") or "unknown")
-        project_labels = _resolve_session_project_labels(
-            session,
-            window_project=window_project,
-        )
-        session_project = str(project_labels.get("session_project") or "").strip()
-        display_project = str(project_labels.get("display_project") or "").strip()
-        focus_project = str(project_labels.get("focus_project") or "").strip()
-        project_source = str(project_labels.get("project_source") or "unknown")
-        tmux_session = str(terminal_context.get("tmux_session") or "")
-        tmux_window = str(terminal_context.get("tmux_window") or "")
-        tmux_pane = str(terminal_context.get("tmux_pane") or "")
-        pty = str(terminal_context.get("pty") or "")
-        native_session_id = str(session.get("native_session_id") or "")
-        session_id = str(session.get("session_id") or "")
-        context_fingerprint = str(session.get("context_fingerprint") or "")
-        identity = _resolve_session_execution_identity(session)
-        focus_execution_mode = str(focus_identity.get("execution_mode") or identity.get("execution_mode") or "local")
-        focus_connection_key = str(focus_identity.get("connection_key") or identity.get("connection_key") or "")
-        focus_context_key = str(focus_identity.get("context_key") or "")
-        badge = {
-            "badge_key": _otel_badge_merge_key(session),
-            "session_key": _build_active_session_key(
-                tool=tool,
-                project=session_project or display_project,
-                window_id=window_id_int,
-                terminal_context=terminal_context,
-                surface_key=str(session.get("surface_key") or ""),
-                terminal_anchor_id=str(
-                    terminal_context.get("binding_anchor_id")
-                    or session.get("binding_anchor_id")
-                    or terminal_context.get("terminal_anchor_id")
-                    or session.get("terminal_anchor_id")
-                    or ""
-                ),
-                native_session_id=native_session_id,
-                session_id=session_id,
-                context_fingerprint=context_fingerprint,
-                connection_key=str(identity.get("connection_key") or ""),
-                context_key=str(identity.get("context_key") or ""),
-            ),
-            "render_session_key": _build_active_session_key(
-                tool=tool,
-                project=session_project or display_project,
-                window_id=window_id_int,
-                terminal_context=terminal_context,
-                surface_key=str(session.get("surface_key") or ""),
-                terminal_anchor_id=str(
-                    terminal_context.get("binding_anchor_id")
-                    or session.get("binding_anchor_id")
-                    or terminal_context.get("terminal_anchor_id")
-                    or session.get("terminal_anchor_id")
-                    or ""
-                ),
-                native_session_id=native_session_id,
-                session_id=session_id,
-                context_fingerprint=context_fingerprint,
-                connection_key=str(identity.get("connection_key") or ""),
-                context_key=str(identity.get("context_key") or ""),
-            ),
-            "session_id": session_id,
-            "native_session_id": native_session_id,
-            "context_fingerprint": context_fingerprint,
-            "collision_group_id": str(session.get("collision_group_id") or ""),
-            "identity_confidence": identity_raw,
-            "confidence_level": confidence_level,
-            "otel_state": state,
-            "otel_tool": tool,
-            "project": session_project or display_project,
-            "session_project": session_project,
-            "window_project": window_project,
-            "focus_project": focus_project,
-            "display_project": display_project,
-            "project_source": project_source,
-            "project_path": str(session.get("project_path") or ""),
-            "pid": session.get("pid"),
-            "trace_id": session.get("trace_id"),
-            "last_activity_at": str(session.get("last_activity_at") or ""),
-            "pending_tools": session.get("pending_tools", 0),
-            "is_streaming": session.get("is_streaming", False),
-            "state_seq": _safe_int(session.get("state_seq"), 0),
-            "status_reason": str(session.get("status_reason") or ""),
-            "last_event_name": str(stage_fields.get("last_event_name") or session.get("last_event_name") or ""),
-            "stage": str(stage_fields.get("stage") or "idle"),
-            "stage_label": str(stage_fields.get("stage_label") or "Idle"),
-            "stage_detail": str(stage_fields.get("stage_detail") or ""),
-            "stage_class": str(stage_fields.get("stage_class") or "stage-idle"),
-            "stage_visual_state": str(stage_fields.get("stage_visual_state") or "idle"),
-            "stage_rank": int(stage_fields.get("stage_rank") or 0),
-            "stage_glyph": str(stage_fields.get("stage_glyph") or _AI_STAGE_GLYPHS.get(str(stage_fields.get("stage") or "idle"), "·")),
-            "needs_user_action": bool(stage_fields.get("needs_user_action", False)),
-            "user_action_reason": str(stage_fields.get("user_action_reason") or ""),
-            "output_ready": bool(stage_fields.get("output_ready", False)),
-            "output_unseen": bool(stage_fields.get("output_unseen", False)),
-            "llm_stopped": bool(stage_fields.get("llm_stopped", False)),
-            "terminal_state": str(stage_fields.get("terminal_state") or ""),
-            "terminal_state_at": str(stage_fields.get("terminal_state_at") or ""),
-            "terminal_state_label": str(stage_fields.get("terminal_state_label") or ""),
-            "terminal_state_source": str(stage_fields.get("terminal_state_source") or ""),
-            "provider_stop_signal": str(stage_fields.get("provider_stop_signal") or ""),
-            "session_phase": str(stage_fields.get("session_phase") or "idle"),
-            "session_phase_label": str(stage_fields.get("session_phase_label") or "Idle"),
-            "turn_owner": str(stage_fields.get("turn_owner") or "unknown"),
-            "turn_owner_label": str(stage_fields.get("turn_owner_label") or "Unknown"),
-            "activity_substate": str(stage_fields.get("activity_substate") or stage_fields.get("stage") or "idle"),
-            "activity_substate_label": str(stage_fields.get("activity_substate_label") or stage_fields.get("stage_label") or "Idle"),
-            "activity_freshness": str(stage_fields.get("activity_freshness") or "fresh"),
-            "activity_age_seconds": int(stage_fields.get("activity_age_seconds") or stale_age_seconds),
-            "activity_age_label": str(stage_fields.get("activity_age_label") or _format_activity_age(stale_age_seconds)),
-            "identity_source": str(stage_fields.get("identity_source") or ""),
-            "lifecycle_source": str(stage_fields.get("lifecycle_source") or ""),
-            "stale": stale,
-            "stale_age_seconds": stale_age_seconds,
-            "remote_source_stale": bool(session.get("remote_source_stale", False)),
-            "remote_source_age_seconds": int(session.get("remote_source_age_seconds", 0) or 0),
-            "execution_mode": str(identity.get("execution_mode") or "local"),
-            "connection_key": str(identity.get("connection_key") or ""),
-            "identity_key": str(identity.get("identity_key") or ""),
-            "context_key": str(identity.get("context_key") or ""),
-            "host_alias": str(identity.get("host_alias") or ""),
-            "focus_execution_mode": focus_execution_mode,
-            "focus_connection_key": focus_connection_key,
-            "focus_context_key": focus_context_key,
-            "host_name": str(
-                terminal_context.get("host_name")
-                or session.get("host_name")
-                or ""
-            ),
-            # Feature: AI badge click-to-focus context (window + tmux pane/session)
-            "window_id": window_id_int if window_id_int != 0 else window_id_raw,
-            "tmux_session": tmux_session,
-            "tmux_window": tmux_window,
-            "tmux_pane": tmux_pane,
-            "pty": pty,
-            "review_pending": False,
-            "review_state": "normal",
-            "finished_at": None,
-            "seen_at": None,
-            "synthetic": False,
-        }
-        badges.append(badge)
-
-    # Sort by state priority (highest first)
-    badges.sort(
-        key=lambda b: (
-            int(b.get("stage_rank", 0) or 0),
-            _OTEL_STATE_PRIORITY.get(b.get("otel_state", "idle"), 0),
-        ),
-        reverse=True
-    )
-
-    return badges
-
-
-def _build_active_ai_sessions(
-    otel_sessions: Optional[List[Dict[str, Any]]],
-    window_lookup: Optional[Dict[int, Dict[str, Any]]] = None,
-    active_project_name: str = "",
-    focused_window_id: Optional[int] = None,
-) -> List[Dict[str, Any]]:
-    """
-    Build a canonical list of active AI sessions for fast switching.
-
-    This list is separate from per-window badge rendering:
-    - includes completed sessions so users can jump back quickly
-    - emits a collision-safe session_key for duplicate native session IDs
-    - is sorted for keyboard cycling and visual scanning
-    """
-    if not otel_sessions:
-        return []
-
-    window_lookup = window_lookup or {}
-    merged_by_key: Dict[str, tuple[Dict[str, Any], Dict[str, Any]]] = {}
-    now_epoch = time.time()
-
-    for raw_session in _coalesce_otel_badge_sessions(otel_sessions):
-        if not _session_tracking_contract_ok(raw_session):
-            continue
-        state = str(raw_session.get("state", "idle") or "idle").strip().lower()
-        if state not in _OTEL_ACTIVE_SESSION_STATES:
-            continue
-
-        terminal_context = raw_session.get("terminal_context", {}) or {}
-        terminal_anchor_id = str(
-            raw_session.get("terminal_anchor_id")
-            or terminal_context.get("terminal_anchor_id")
-            or ""
-        ).strip()
-        window_id = raw_session.get("window_id", terminal_context.get("window_id"))
-        try:
-            window_id_int = int(window_id)
-        except (TypeError, ValueError):
-            # Focus/switch actions require a concrete window target.
-            continue
-
-        window_data = window_lookup.get(window_id_int, {})
-        if not window_data:
-            # Ignore stale OTEL records that point to windows no longer present
-            # in the current daemon snapshot.
-            continue
-        if not _window_matches_session_binding(window_data, raw_session):
-            continue
-        project_labels = _resolve_session_project_labels(
-            raw_session,
-            window_project=str(window_data.get("project") or ""),
-        )
-        session_project = str(project_labels.get("session_project") or "").strip()
-        display_project = str(project_labels.get("display_project") or "").strip()
-        focus_project = str(project_labels.get("focus_project") or "").strip()
-        project_source = str(project_labels.get("project_source") or "unknown")
-        tool = str(raw_session.get("tool", "unknown") or "unknown").strip() or "unknown"
-
-        tmux_session = str(terminal_context.get("tmux_session") or "")
-        tmux_window = str(terminal_context.get("tmux_window") or "")
-        tmux_pane = str(terminal_context.get("tmux_pane") or "")
-        pty = str(terminal_context.get("pty") or "")
-        host_name = str(terminal_context.get("host_name") or raw_session.get("host_name") or "")
-        has_tmux_focus_target = bool(tmux_session or tmux_window or tmux_pane or pty)
-        focus_tmux_session = str(
-            (
-                window_data.get("remote_session_name")
-                or window_data.get("tmux_session")
-                or tmux_session
-                or ""
-            )
-            if has_tmux_focus_target
-            else ""
-        )
-
-        native_session_id = str(raw_session.get("native_session_id") or "")
-        session_id = str(raw_session.get("session_id") or "")
-        context_fingerprint = str(raw_session.get("context_fingerprint") or "")
-        identity_raw = str(raw_session.get("identity_confidence") or "")
-        confidence_level = _identity_confidence_level(identity_raw)
-        updated_at = str(raw_session.get("updated_at") or "")
-        updated_epoch = _parse_timestamp_to_epoch(updated_at)
-        pending_tools = int(raw_session.get("pending_tools", 0) or 0)
-        is_streaming = bool(raw_session.get("is_streaming", False))
-        stale_age_seconds = int(max(0.0, now_epoch - updated_epoch)) if updated_epoch else 0
-        stale = state in {"idle", "completed"} and stale_age_seconds >= _AI_SESSION_STALE_THRESHOLD_SECONDS
-        stage_fields = _normalize_stage_fields(
-            {
-                **raw_session,
-                "otel_state": state,
-                "review_pending": False,
-                "stale": stale,
-                "stale_age_seconds": stale_age_seconds,
-            },
-            now_epoch=now_epoch,
-        )
-        stale_age_seconds = max(
-            stale_age_seconds,
-            int(stage_fields.get("activity_age_seconds") or stale_age_seconds),
-        )
-        stale = bool(stale or stage_fields.get("activity_freshness") == "stale")
-
-        terminal_anchor_id = str(
-            raw_session.get("terminal_anchor_id")
-            or terminal_context.get("binding_anchor_id")
-            or terminal_context.get("terminal_anchor_id")
-            or ""
-        ).strip()
-        session_key = _build_active_session_key(
-            tool=tool,
-            project=session_project or display_project,
-            window_id=window_id_int,
-            terminal_context=terminal_context,
-            surface_key=str(raw_session.get("surface_key") or ""),
-            terminal_anchor_id=terminal_anchor_id,
-            native_session_id=native_session_id,
-            session_id=session_id,
-            context_fingerprint=context_fingerprint,
-            connection_key=str(raw_session.get("connection_key") or ""),
-            context_key=str(raw_session.get("context_key") or ""),
-        )
-
-        display_target = f"win {window_id_int}"
-        if tmux_pane:
-            display_target = f"pane {tmux_pane}"
-        elif tmux_window:
-            display_target = f"tmux {tmux_window}"
-        elif pty:
-            display_target = pty
-
-        identity = _resolve_session_execution_identity(
-            raw_session,
-            window_data=window_data,
-        )
-        focus_identity = _window_tracking_identity(window_data)
-        execution_mode = str(identity.get("execution_mode") or "local")
-        focus_execution_mode = str(focus_identity.get("execution_mode") or execution_mode or "local")
-        focus_connection_key = str(focus_identity.get("connection_key") or identity.get("connection_key") or "")
-        focus_context_key = str(focus_identity.get("context_key") or "")
-
-        session_payload = {
-            "session_key": session_key,
-            "render_session_key": session_key,
-            "focus_target": (
-                dict(raw_session.get("focus_target") or {})
-                if isinstance(raw_session.get("focus_target"), dict)
-                else {
-                    "method": "session.focus",
-                    "params": {
-                        "session_key": session_key,
-                    },
-                }
-            ),
-            "display_tool": _OTEL_TOOL_LABELS.get(tool, tool if tool else "Unknown"),
-            "display_project": display_project,
-            "display_target": display_target,
-            "otel_state": state,
-            "project": session_project or display_project,
-            "session_project": session_project,
-            "window_project": str(window_data.get("project") or ""),
-            "focus_project": focus_project,
-            "project_source": project_source,
-            "project_path": str(raw_session.get("project_path") or ""),
-            "window_id": window_id_int,
-            "terminal_anchor_id": terminal_anchor_id,
-            "is_current_window": False,
-            "focusable": bool(raw_session.get("focusable", True)),
-            "invalid_reason": str(raw_session.get("invalid_reason") or ""),
-            "execution_mode": execution_mode,
-            "connection_key": str(identity.get("connection_key") or ""),
-            "identity_key": str(identity.get("identity_key") or ""),
-            "context_key": str(identity.get("context_key") or ""),
-            "host_alias": str(identity.get("host_alias") or ""),
-            "focus_execution_mode": focus_execution_mode,
-            "focus_connection_key": focus_connection_key,
-            "focus_context_key": focus_context_key,
-            "focus_tmux_session": focus_tmux_session,
-            "tmux_session": tmux_session,
-            "tmux_window": tmux_window,
-            "tmux_pane": tmux_pane,
-            "pty": pty,
-            "host_name": host_name,
-            "native_session_id": native_session_id,
-            "session_id": session_id,
-            "context_fingerprint": context_fingerprint,
-            "identity_confidence": identity_raw,
-            "confidence_level": confidence_level,
-            "trace_id": str(raw_session.get("trace_id") or ""),
-            "last_activity_at": str(raw_session.get("last_activity_at") or ""),
-            "pending_tools": pending_tools,
-            "is_streaming": is_streaming,
-            "state_seq": _safe_int(raw_session.get("state_seq"), 0),
-            "status_reason": str(raw_session.get("status_reason") or ""),
-            "last_event_name": str(stage_fields.get("last_event_name") or raw_session.get("last_event_name") or ""),
-            "stage": str(stage_fields.get("stage") or "idle"),
-            "stage_label": str(stage_fields.get("stage_label") or "Idle"),
-            "stage_detail": str(stage_fields.get("stage_detail") or ""),
-            "stage_class": str(stage_fields.get("stage_class") or "stage-idle"),
-            "stage_visual_state": str(stage_fields.get("stage_visual_state") or "idle"),
-            "stage_rank": int(stage_fields.get("stage_rank") or 0),
-            "stage_glyph": str(stage_fields.get("stage_glyph") or _AI_STAGE_GLYPHS.get(str(stage_fields.get("stage") or "idle"), "·")),
-            "needs_user_action": bool(stage_fields.get("needs_user_action", False)),
-            "user_action_reason": str(stage_fields.get("user_action_reason") or ""),
-            "output_ready": bool(stage_fields.get("output_ready", False)),
-            "output_unseen": bool(stage_fields.get("output_unseen", False)),
-            "llm_stopped": bool(stage_fields.get("llm_stopped", False)),
-            "terminal_state": str(stage_fields.get("terminal_state") or ""),
-            "terminal_state_at": str(stage_fields.get("terminal_state_at") or ""),
-            "terminal_state_label": str(stage_fields.get("terminal_state_label") or ""),
-            "terminal_state_source": str(stage_fields.get("terminal_state_source") or ""),
-            "provider_stop_signal": str(stage_fields.get("provider_stop_signal") or ""),
-            "session_phase": str(stage_fields.get("session_phase") or "idle"),
-            "session_phase_label": str(stage_fields.get("session_phase_label") or "Idle"),
-            "turn_owner": str(stage_fields.get("turn_owner") or "unknown"),
-            "turn_owner_label": str(stage_fields.get("turn_owner_label") or "Unknown"),
-            "activity_substate": str(stage_fields.get("activity_substate") or stage_fields.get("stage") or "idle"),
-            "activity_substate_label": str(stage_fields.get("activity_substate_label") or stage_fields.get("stage_label") or "Idle"),
-            "activity_freshness": str(stage_fields.get("activity_freshness") or "fresh"),
-            "activity_age_seconds": int(stage_fields.get("activity_age_seconds") or stale_age_seconds),
-            "activity_age_label": str(stage_fields.get("activity_age_label") or _format_activity_age(stale_age_seconds)),
-            "identity_source": str(stage_fields.get("identity_source") or ""),
-            "lifecycle_source": str(stage_fields.get("lifecycle_source") or ""),
-            "updated_at": updated_at,
-            "stale": stale,
-            "stale_age_seconds": stale_age_seconds,
-            "remote_source_stale": bool(raw_session.get("remote_source_stale", False)),
-            "remote_source_age_seconds": int(raw_session.get("remote_source_age_seconds", 0) or 0),
-            "surface_key": str(raw_session.get("surface_key") or _canonical_session_surface_key(terminal_context)),
-            "pinned": False,
-            "priority_score": int(stage_fields.get("stage_rank") or _OTEL_STATE_PRIORITY.get(state, 0)),
-            "tool": tool,
-            "review_pending": False,
-            "review_state": "normal",
-            "finished_at": None,
-            "seen_at": None,
-            "synthetic": False,
-        }
-
-        existing = merged_by_key.get(session_key)
-        if existing is None:
-            merged_by_key[session_key] = (dict(raw_session), session_payload)
-            continue
-
-        existing_raw, _ = existing
-        if _otel_badge_score(raw_session) > _otel_badge_score(existing_raw):
-            merged_by_key[session_key] = (dict(raw_session), session_payload)
-
-    active_sessions = [payload for _, payload in merged_by_key.values()]
-    surface_counts: Dict[str, int] = {}
-    for session in active_sessions:
-        surface_key = str(session.get("surface_key") or "").strip()
-        if not surface_key:
-            continue
-        surface_counts[surface_key] = surface_counts.get(surface_key, 0) + 1
-    for session in active_sessions:
-        surface_key = str(session.get("surface_key") or "").strip()
-        member_count = int(surface_counts.get(surface_key, 1)) if surface_key else 1
-        session["shared_surface"] = member_count > 1
-        session["surface_member_count"] = member_count
-    _apply_current_window_marker(active_sessions, focused_window_id)
-    _sort_active_ai_sessions_for_display(
-        active_sessions,
-        focused_window_id=focused_window_id,
-        active_project_name=active_project_name,
-    )
-    return active_sessions
-
-
 def _apply_ai_session_mru_order(
     active_sessions: List[Dict[str, Any]],
     mru_keys: Optional[List[str]] = None,
@@ -4384,7 +3128,7 @@ def _update_review_entry_from_session(
     _assign("tmux_pane", str(session.get("tmux_pane") or ""))
     _assign("pty", str(session.get("pty") or ""))
     _assign("tool", str(session.get("tool") or "unknown"))
-    _assign("display_tool", str(session.get("display_tool") or _OTEL_TOOL_LABELS.get(str(session.get("tool") or "unknown"), str(session.get("tool") or "unknown"))))
+    _assign("display_tool", str(session.get("display_tool") or _AI_TOOL_LABELS.get(str(session.get("tool") or "unknown"), str(session.get("tool") or "unknown"))))
     _assign("display_target", str(session.get("display_target") or ""))
     previous_state = str(entry.get("last_state") or "").strip().lower()
     _assign("last_state", state)
@@ -4475,7 +3219,7 @@ def _apply_review_lifecycle(
             continue
         live_keys.add(key)
         state = str(session.get("otel_state") or "idle")
-        if state not in _OTEL_ACTIVE_SESSION_STATES:
+        if state not in _AI_SESSION_REVIEW_STATES:
             continue
         entry = dict(review_sessions.get(key, {}))
         entry, entry_changed = _update_review_entry_from_session(
@@ -4496,7 +3240,7 @@ def _apply_review_lifecycle(
             continue
 
         last_state = str(entry.get("last_state") or "").strip().lower()
-        if last_state not in _OTEL_ACTIVE_SESSION_STATES:
+        if last_state not in _AI_SESSION_REVIEW_STATES:
             continue
 
         last_update = _safe_int(entry.get("updated_at"), 0)
@@ -4558,7 +3302,7 @@ def _apply_review_lifecycle(
                 changed = True
 
     # Prune expired or non-actionable entries, then synthesize unseen sessions
-    # for contexts where OTEL session already disappeared.
+    # for contexts where the daemon session already disappeared.
     synthetic_sessions: List[Dict[str, Any]] = []
     delete_keys: List[str] = []
     for key, entry in review_sessions.items():
@@ -4626,7 +3370,7 @@ def _apply_review_lifecycle(
         stage = "output_ready"
         synthetic_sessions.append({
             "session_key": key,
-            "display_tool": str(entry.get("display_tool") or _OTEL_TOOL_LABELS.get(tool, tool)),
+            "display_tool": str(entry.get("display_tool") or _AI_TOOL_LABELS.get(tool, tool)),
             "display_project": str(entry.get("display_project") or project),
             "display_target": display_target,
             "otel_state": state,
@@ -4687,7 +3431,7 @@ def _apply_review_lifecycle(
             "stale": state in {"idle", "completed"} and stale_age_seconds >= _AI_SESSION_STALE_THRESHOLD_SECONDS,
             "stale_age_seconds": stale_age_seconds,
             "pinned": False,
-            "priority_score": _OTEL_STATE_PRIORITY.get(state, 0),
+            "priority_score": _AI_SESSION_STATE_PRIORITY.get(state, 0),
             "tool": tool,
             "review_pending": True,
             "review_state": "finished_unseen",
@@ -4744,179 +3488,6 @@ def _apply_review_lifecycle(
     return sessions_out, review_sessions
 
 
-def _merge_review_state_into_window_badges(
-    all_windows: List[Dict[str, Any]],
-    sessions: List[Dict[str, Any]],
-) -> None:
-    """Annotate per-window OTEL badges with review lifecycle flags."""
-    by_session_key = {
-        str(session.get("session_key") or ""): session
-        for session in sessions
-        if str(session.get("session_key") or "")
-    }
-    synthetic_by_window: Dict[int, List[Dict[str, Any]]] = {}
-    for session in sessions:
-        if not bool(session.get("synthetic")):
-            continue
-        window_id = _safe_int(session.get("window_id"), 0)
-        if window_id <= 0:
-            continue
-        synthetic_by_window.setdefault(window_id, []).append(session)
-
-    for window in all_windows:
-        window_id = _safe_int(window.get("id"), 0)
-        badges = window.get("otel_badges", [])
-        if not isinstance(badges, list):
-            badges = []
-
-        badge_keys: set[str] = set()
-        badge_anchor_keys: set[str] = set()
-        for badge in badges:
-            if not isinstance(badge, dict):
-                continue
-            key = str(badge.get("session_key") or "").strip()
-            if key:
-                badge_keys.add(key)
-            anchor_key = _session_anchor_key(badge)
-            if anchor_key:
-                badge_anchor_keys.add(anchor_key)
-            session = by_session_key.get(key)
-            if session is None:
-                badge.setdefault("review_pending", False)
-                badge.setdefault("review_state", "normal")
-                badge.setdefault("finished_at", None)
-                badge.setdefault("seen_at", None)
-                badge.setdefault("synthetic", False)
-                continue
-            badge["review_pending"] = bool(session.get("review_pending", False))
-            badge["review_state"] = str(session.get("review_state") or "normal")
-            badge["finished_at"] = session.get("finished_at")
-            badge["seen_at"] = session.get("seen_at")
-            badge["synthetic"] = bool(session.get("synthetic", False))
-            for field in (
-                "stage",
-                "stage_label",
-                "stage_detail",
-                "stage_class",
-                "stage_visual_state",
-                "stage_rank",
-                "stage_glyph",
-                "session_phase",
-                "session_phase_label",
-                "turn_owner",
-                "turn_owner_label",
-                "activity_substate",
-                "activity_substate_label",
-                "needs_user_action",
-                "user_action_reason",
-                "output_ready",
-                "output_unseen",
-                "activity_freshness",
-                "activity_age_seconds",
-                "activity_age_label",
-                "last_event_name",
-                "identity_source",
-                "lifecycle_source",
-            ):
-                if field in session:
-                    badge[field] = session.get(field)
-
-        for session in synthetic_by_window.get(window_id, []):
-            key = str(session.get("session_key") or "")
-            anchor_key = _session_anchor_key(session)
-            if not key or key in badge_keys or (anchor_key and anchor_key in badge_anchor_keys):
-                continue
-            tool = str(session.get("tool") or "unknown")
-            state = str(session.get("otel_state") or "completed")
-            badges.append({
-                "badge_key": f"review:{key}",
-                "session_key": key,
-                "session_id": "",
-                "native_session_id": "",
-                "context_fingerprint": "",
-                "collision_group_id": "",
-                "identity_confidence": "review",
-                "confidence_level": "low",
-                "otel_state": state,
-                "stage": str(session.get("stage") or "output_ready"),
-                "stage_label": str(session.get("stage_label") or "Ready"),
-                "stage_detail": str(session.get("stage_detail") or "Unread output retained"),
-                "stage_class": str(session.get("stage_class") or "stage-output_ready"),
-                "stage_visual_state": str(session.get("stage_visual_state") or "completed"),
-                "stage_rank": int(session.get("stage_rank") or _AI_STAGE_RANKS["output_ready"]),
-                "stage_glyph": str(session.get("stage_glyph") or _AI_STAGE_GLYPHS["output_ready"]),
-                "session_phase": str(session.get("session_phase") or "needs_attention"),
-                "session_phase_label": str(session.get("session_phase_label") or "Needs attention"),
-                "turn_owner": str(session.get("turn_owner") or "user"),
-                "turn_owner_label": str(session.get("turn_owner_label") or "User"),
-                "activity_substate": str(session.get("activity_substate") or "output_ready"),
-                "activity_substate_label": str(session.get("activity_substate_label") or "Ready"),
-                "needs_user_action": False,
-                "user_action_reason": "",
-                "output_ready": True,
-                "output_unseen": True,
-                "activity_freshness": str(session.get("activity_freshness") or "warm"),
-                "activity_age_seconds": _safe_int(session.get("activity_age_seconds"), 0),
-                "activity_age_label": str(session.get("activity_age_label") or _format_activity_age(_safe_int(session.get("activity_age_seconds"), 0))),
-                "last_event_name": str(session.get("last_event_name") or "review.retained"),
-                "identity_source": "review",
-                "lifecycle_source": "review",
-                "otel_tool": tool,
-                "project": str(session.get("project") or window.get("project") or ""),
-                "pid": None,
-                "trace_id": "",
-                "pending_tools": 0,
-                "is_streaming": False,
-                "state_seq": 0,
-                "status_reason": "finished_unseen_retained",
-                "stale": bool(session.get("stale", False)),
-                "stale_age_seconds": _safe_int(session.get("stale_age_seconds"), 0),
-                "execution_mode": str(session.get("execution_mode") or "local"),
-                "connection_key": str(session.get("connection_key") or ""),
-                "identity_key": str(session.get("identity_key") or ""),
-                "context_key": str(session.get("context_key") or ""),
-                "host_alias": str(session.get("host_alias") or ""),
-                "focus_execution_mode": str(session.get("focus_execution_mode") or session.get("execution_mode") or "local"),
-                "focus_connection_key": str(session.get("focus_connection_key") or session.get("connection_key") or ""),
-                "focus_context_key": str(session.get("focus_context_key") or ""),
-                "host_name": "",
-                "window_id": window_id,
-                "is_current_window": False,
-                "session_project": str(session.get("session_project") or session.get("project") or ""),
-                "window_project": str(session.get("window_project") or window.get("project") or ""),
-                "focus_project": str(
-                    session.get("focus_project")
-                    or session.get("window_project")
-                    or window.get("project")
-                    or session.get("project")
-                    or ""
-                ),
-                "display_project": str(session.get("display_project") or session.get("project") or ""),
-                "project_source": str(session.get("project_source") or "review"),
-                "tmux_session": str(session.get("tmux_session") or ""),
-                "tmux_window": str(session.get("tmux_window") or ""),
-                "tmux_pane": str(session.get("tmux_pane") or ""),
-                "pty": str(session.get("pty") or ""),
-                "review_pending": True,
-                "review_state": "finished_unseen",
-                "finished_at": session.get("finished_at"),
-                "seen_at": None,
-                "synthetic": True,
-            })
-            if anchor_key:
-                badge_anchor_keys.add(anchor_key)
-
-        badges.sort(
-            key=lambda b: (
-                _active_ai_session_sort_rank(b),
-                _safe_int(b.get("finished_at"), 0),
-                _OTEL_STATE_PRIORITY.get(str(b.get("otel_state") or "idle"), 0),
-            ),
-            reverse=True,
-        )
-        window["otel_badges"] = [badge for badge in badges if _should_render_otel_badge(badge)]
-
-
 def _active_ai_session_sort_rank(session: Dict[str, Any]) -> int:
     """Sort rank for active AI rail with finished-unseen support."""
     phase = str(session.get("session_phase") or "").strip().lower()
@@ -4931,8 +3502,6 @@ def _active_ai_session_sort_rank(session: Dict[str, Any]) -> int:
 
 def _should_render_ai_session(session: Dict[str, Any]) -> bool:
     """Visible rail sessions: active work, pending review, or pinned."""
-    if _is_tmux_discovered_process_ghost(session):
-        return False
     if bool(session.get("pinned", False)):
         return True
     phase = str(session.get("session_phase") or "").strip().lower()
@@ -4953,73 +3522,9 @@ def _should_render_ai_session(session: Dict[str, Any]) -> bool:
     }
 
 
-def _should_render_otel_badge(badge: Dict[str, Any]) -> bool:
-    """Visible window badges: active work or pending review."""
-    if _is_tmux_discovered_process_ghost(badge):
-        return False
-    phase = str(badge.get("session_phase") or "").strip().lower()
-    if phase in {"working", "needs_attention", "done"}:
-        return True
-    if bool(badge.get("output_unseen", False) or badge.get("review_pending", False)):
-        return True
-    if bool(badge.get("stale", False)) or str(badge.get("activity_freshness") or "").strip().lower() == "stale":
-        return False
-    stage = str(badge.get("stage") or "").strip().lower()
-    return stage in {
-        "starting",
-        "thinking",
-        "tool_running",
-        "streaming",
-        "waiting_input",
-        "attention",
-    }
-
-
-def _is_tmux_discovered_process_ghost(session: Dict[str, Any]) -> bool:
-    """Suppress process-only tmux-derived sessions that conflict with window context.
-
-    This catches stale wrapper processes that keep advertising a project from an
-    old tmux session even though the owning window context now points at a
-    different project. Native or telemetry-backed sessions are kept.
-    """
-    if str(session.get("project_source") or "").strip() != "tmux_discovered":
-        return False
-
-    if str(session.get("identity_source") or "").strip().lower() not in {"pid", "pane", "heuristic"}:
-        return False
-
-    if str(session.get("native_session_id") or "").strip():
-        return False
-
-    status_reason = str(session.get("status_reason") or "").strip().lower()
-    if status_reason not in {"process_detected", "process_keepalive", "metrics_heartbeat_created"}:
-        return False
-
-    session_project = str(
-        session.get("project")
-        or session.get("session_project")
-        or session.get("display_project")
-        or ""
-    ).strip()
-    window_project = str(
-        session.get("window_project")
-        or session.get("focus_project")
-        or ""
-    ).strip()
-    if not session_project or not window_project:
-        return False
-
-    session_exact, _session_prefixes = _session_project_candidates(session_project)
-    window_exact, _window_prefixes = _session_project_candidates(window_project)
-    return not bool(
-        session_exact and window_exact and session_exact.intersection(window_exact)
-    )
-
-
 def transform_window(
     window: Dict[str, Any],
     badge_state: Optional[Dict[str, Any]] = None,
-    otel_sessions_by_window: Optional[Dict[int, List[Dict[str, Any]]]] = None
 ) -> Dict[str, Any]:
     """
     Transform daemon window data to Eww-friendly schema.
@@ -5028,8 +3533,6 @@ def transform_window(
         window: Window data from daemon (Sway IPC format)
         badge_state: Optional dict mapping window IDs (as strings) to badge metadata
                      (Feature 095: Visual Notification Badges)
-        otel_sessions_by_window: Optional dict mapping window IDs (as int) to LIST of OTEL sessions
-                     (Feature 136: Multi-indicator support - multiple AI sessions per window)
 
     Returns:
         WindowInfo dict matching data-model.md specification
@@ -5126,13 +3629,8 @@ def transform_window(
         # Feature 095: Notification badge data (if present)
         # badge_state is dict mapping window ID (string) to {"count": "1", "timestamp": ..., "source": "..."}
         "badge": badge_state.get(str(window.get("id", 0)), {}) if badge_state else {},
-        # Feature 136: OTEL badges array for multi-indicator display
-        # otel_sessions_by_window maps window_id (int) to LIST of session dicts
-        "otel_badges": _build_otel_badges(
-            otel_sessions_by_window.get(window.get("id", 0)) if otel_sessions_by_window else None,
-            str(window.get("project") or ""),
-            window_data=window,
-        ),
+        # Retired OTEL/tmux UI path. Keep an empty array for old JSON consumers.
+        "otel_badges": [],
     }
 
     # Generate Pango-markup colorized JSON for hover tooltip
@@ -5173,7 +3671,6 @@ def transform_workspace(
     workspace: Dict[str, Any],
     monitor_name: str,
     badge_state: Optional[Dict[str, Any]] = None,
-    otel_sessions_by_window: Optional[Dict[int, List[Dict[str, Any]]]] = None
 ) -> Dict[str, Any]:
     """
     Transform daemon workspace data to Eww-friendly schema.
@@ -5183,14 +3680,12 @@ def transform_workspace(
         monitor_name: Parent monitor name
         badge_state: Optional dict mapping window IDs (as strings) to badge metadata
                      (Feature 095: Visual Notification Badges)
-        otel_sessions_by_window: Optional dict mapping window IDs (as int) to LIST of OTEL sessions
-                     (Feature 136: Multi-indicator support)
 
     Returns:
         WorkspaceInfo dict matching data-model.md specification
     """
     windows = workspace.get("windows", [])
-    transformed_windows = [transform_window(w, badge_state, otel_sessions_by_window) for w in windows]
+    transformed_windows = [transform_window(w, badge_state) for w in windows]
 
     return {
         "number": workspace.get("num", workspace.get("number", 1)),
@@ -5206,7 +3701,6 @@ def transform_workspace(
 def transform_monitor(
     output: Dict[str, Any],
     badge_state: Optional[Dict[str, Any]] = None,
-    otel_sessions_by_window: Optional[Dict[int, List[Dict[str, Any]]]] = None
 ) -> Dict[str, Any]:
     """
     Transform daemon output/monitor data to Eww-friendly schema.
@@ -5215,15 +3709,13 @@ def transform_monitor(
         output: Output data from daemon (contains name, active status, workspaces)
         badge_state: Optional dict mapping window IDs (as strings) to badge metadata
                      (Feature 095: Visual Notification Badges)
-        otel_sessions_by_window: Optional dict mapping window IDs (as int) to LIST of OTEL sessions
-                     (Feature 136: Multi-indicator support)
 
     Returns:
         MonitorInfo dict matching data-model.md specification
     """
     monitor_name = output.get("name", "unknown")
     workspaces = output.get("workspaces", [])
-    transformed_workspaces = [transform_workspace(ws, monitor_name, badge_state, otel_sessions_by_window) for ws in workspaces]
+    transformed_workspaces = [transform_workspace(ws, monitor_name, badge_state) for ws in workspaces]
 
     # Determine if monitor has focused workspace
     has_focused = any(ws["focused"] for ws in transformed_workspaces)
@@ -5566,7 +4058,6 @@ def _build_remote_session_window(
     remote_target: str,
     remote_dir: str,
     session: Dict[str, Any],
-    otel_sessions: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Create synthetic window payload for a remote tmux/sesh session."""
     seed = f"{project_name}|{remote_target}|{session.get('name', '')}"
@@ -5583,12 +4074,6 @@ def _build_remote_session_window(
         summary = f"{summary} • attached"
 
     identity = _connection_identity(True, remote_target)
-    window_focus_data = {
-        "project": project_name,
-        "execution_mode": identity["execution_mode"],
-        "connection_key": identity["connection_key"],
-        "context_key": "",
-    }
 
     return {
         "id": synthetic_id,
@@ -5618,7 +4103,7 @@ def _build_remote_session_window(
         "geometry_width": 0,
         "geometry_height": 0,
         "badge": {},
-        "otel_badges": _build_otel_badges(otel_sessions, project_name, window_data=window_focus_data),
+        "otel_badges": [],
         "project_remote_enabled": True,
         "project_remote_target": remote_target,
         "project_remote_dir": remote_dir,
@@ -5909,7 +4394,6 @@ def _refresh_variant_flags(projects: List[Dict[str, Any]]) -> None:
 def _augment_projects_with_remote_sessions(
     projects_dict: Dict[str, Dict[str, Any]],
     remote_profiles: Optional[Dict[str, Dict[str, Any]]],
-    otel_sessions: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     """
     Add synthetic window items for remote SSH tmux/sesh sessions.
@@ -5971,7 +4455,6 @@ def _augment_projects_with_remote_sessions(
                 remote_target,
                 remote_dir,
                 session,
-                None,
             )
             synthetic_id = int(synthetic_window["id"])
             synthetic_session_name = _normalize_session_name_key(
@@ -5992,7 +4475,6 @@ def _augment_projects_with_remote_sessions(
 def transform_to_project_view(
     monitors: List[Dict[str, Any]],
     remote_profiles: Optional[Dict[str, Dict[str, Any]]] = None,
-    otel_sessions: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Transform monitor-based hierarchy to project-based view.
@@ -6117,7 +4599,7 @@ def transform_to_project_view(
             global_windows.append(window)
 
     # Augment project windows with remote tmux/sesh sessions for SSH projects.
-    _augment_projects_with_remote_sessions(projects_dict, remote_profiles, otel_sessions)
+    _augment_projects_with_remote_sessions(projects_dict, remote_profiles)
 
     # Convert dict to sorted list:
     # 1) project name alphabetical
@@ -6279,8 +4761,6 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
         daemon_current_ai_session_key = str(tree_data.get("current_ai_session_key") or "").strip()
 
         outputs = tree_data.get("outputs", [])
-        otel_sessions_by_window: Dict[int, List[Dict[str, Any]]] = {}
-        resolved_otel_sessions: List[Dict[str, Any]] = []
         otel_sessions_runtime = _empty_otel_sessions_runtime(
             "daemon_herdr_sessions_present"
             if daemon_active_ai_sessions
@@ -6288,7 +4768,7 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
         )
 
         # Transform daemon response to Eww schema
-        monitors = [transform_monitor(output, badge_state, otel_sessions_by_window) for output in outputs]
+        monitors = [transform_monitor(output, badge_state) for output in outputs]
 
         # Validate and compute summary counts
         counts = validate_and_count(monitors)
@@ -6296,7 +4776,7 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
         # Transform to project-based view (default view).
         # Overlay SSH remote metadata so window view can surface remote worktree context.
         remote_profiles = load_worktree_remote_profiles()
-        projects = transform_to_project_view(monitors, remote_profiles, resolved_otel_sessions)
+        projects = transform_to_project_view(monitors, remote_profiles)
         active_identity = _active_worktree_identity_from_context(active_context)
 
         # UX Enhancement: Add is_active flag to each project
@@ -6357,7 +4837,6 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
                 str(session.get("session_key") or ""),
             ),
         )
-        _merge_review_state_into_window_badges(all_windows, review_enriched_ai_sessions)
         pinned_session_keys = load_ai_session_pins()
         pinned_session_set = {str(key) for key in pinned_session_keys if str(key)}
         for session in review_enriched_ai_sessions:
@@ -6510,7 +4989,7 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             "current_ai_session_key": current_ai_session_key,
             "ai_monitor_metrics": ai_metrics,
             "ai_session_diagnostics": otel_diagnostics,
-            # Feature 123: OTEL AI sessions for window badge rendering
+            # Retired OTEL/tmux UI path. Kept inert for old JSON consumers.
             "otel_sessions": otel_sessions_runtime,
         }
 
