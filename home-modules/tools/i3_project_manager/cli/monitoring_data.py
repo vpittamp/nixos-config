@@ -94,9 +94,6 @@ def get_spinner_frame() -> str:
 # Format: $XDG_RUNTIME_DIR/i3pm-badges/<window_id>.json
 BADGE_STATE_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "i3pm-badges"
 
-# Feature 123: OTEL AI sessions file path
-# Written by otel-ai-monitor service, read here to include in monitoring_data output
-OTEL_SESSIONS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "otel-ai-sessions.json"
 AI_SESSION_SCHEMA_VERSION = "11"
 AI_SESSION_MRU_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-mru.json"
 AI_SESSION_PIN_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-pins.json"
@@ -166,21 +163,9 @@ def load_badge_state_from_files() -> Dict[str, Any]:
     return badge_state
 
 
-def load_otel_sessions() -> Dict[str, Any]:
-    """Load OTEL AI sessions from JSON file.
-
-    Feature 123: Reads session data written by otel-ai-monitor service.
-    This is used by EWW monitoring panel for window badge rendering.
-
-    Feature 136: Also returns sessions_by_window for efficient lookup.
-    Global/orphaned sessions are intentionally suppressed to enforce
-    project-scoped session visibility.
-
-    Returns:
-        Dict with 'sessions' list, 'has_working' boolean, and
-        'sessions_by_window' dict.
-    """
-    default_result = {
+def _empty_otel_sessions_runtime(disabled_reason: str) -> Dict[str, Any]:
+    """Return an inert OTEL payload for compatibility with old consumers."""
+    return {
         "schema_version": AI_SESSION_SCHEMA_VERSION,
         "sessions": [],
         "has_working": False,
@@ -188,37 +173,8 @@ def load_otel_sessions() -> Dict[str, Any]:
         "updated_at": "",
         "sessions_by_window": {},
         "diagnostics": [],
+        "disabled_reason": disabled_reason,
     }
-
-    if not OTEL_SESSIONS_FILE.exists():
-        return default_result
-
-    try:
-        with open(OTEL_SESSIONS_FILE, "r") as f:
-            data = json.load(f)
-            # Validate expected structure
-            sessions = data.get("sessions", [])
-            has_working = data.get("has_working", False)
-            timestamp = data.get("timestamp", 0)
-            updated_at = data.get("updated_at", "")
-            schema_version = str(data.get("schema_version", ""))
-            sessions_by_window = data.get("sessions_by_window", {})
-            diagnostics = data.get("diagnostics", [])
-            if schema_version != AI_SESSION_SCHEMA_VERSION:
-                return default_result
-
-            return {
-                "sessions": sessions,
-                "has_working": has_working,
-                "timestamp": timestamp,
-                "updated_at": updated_at,
-                "schema_version": schema_version,
-                "sessions_by_window": sessions_by_window,
-                "diagnostics": diagnostics,
-            }
-    except (json.JSONDecodeError, IOError) as e:
-        logger.warning(f"Feature 123: Failed to read OTEL sessions file: {e}")
-        return default_result
 
 
 def _parse_ssh_connection_key(connection_key: str) -> Optional[Dict[str, Any]]:
@@ -748,13 +704,7 @@ async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
 
     # Build list of paths to watch
     watch_paths = [str(BADGE_STATE_DIR)]
-    # Feature 123: Also watch OTEL sessions file for AI state changes
-    # IMPORTANT: Watch the PARENT DIRECTORY, not the file itself!
-    # output.py uses atomic writes (temp file + rename), which generates
-    # inotify events on the directory, not the file being replaced.
-    if OTEL_SESSIONS_FILE.parent.exists():
-        watch_paths.append(str(OTEL_SESSIONS_FILE.parent))
-    
+
     if AI_SESSION_MRU_FILE.parent.exists():
         if str(AI_SESSION_MRU_FILE.parent) not in watch_paths:
             watch_paths.append(str(AI_SESSION_MRU_FILE.parent))
@@ -779,11 +729,11 @@ async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
             "-q",           # Quiet (no initial watching message)
             "-e", "create,modify,delete,moved_to",
             "--format", "%w|%e|%f",  # Watched path, event type, filename (pipe-delimited)
-            *watch_paths,   # Watch badge dir and OTEL sessions parent dir
+            *watch_paths,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
-        logger.info(f"Feature 107/123: Started inotify watcher on {watch_paths} (pid={process.pid})")
+        logger.info(f"Feature 107: Started inotify watcher on {watch_paths} (pid={process.pid})")
         return process
     except Exception as e:
         logger.warning(f"Feature 107: Failed to start inotify watcher: {e}")
@@ -797,7 +747,7 @@ async def read_inotify_events(
     """Read inotify events from subprocess and signal badge changes.
 
     Feature 107: Runs as background task, sets event when badge files change.
-    Feature 135: Filter events from XDG_RUNTIME_DIR to only OTEL sessions file.
+    Feature 135: Filter events from watched runtime directories.
 
     Args:
         process: inotifywait subprocess
@@ -807,8 +757,6 @@ async def read_inotify_events(
         return
 
     # Get paths for filtering
-    otel_filename = OTEL_SESSIONS_FILE.name  # "otel-ai-sessions.json"
-    otel_tmp_filename = otel_filename.replace(".json", ".tmp")  # "otel-ai-sessions.tmp"
     mru_filename = AI_SESSION_MRU_FILE.name
     mru_tmp_filename = mru_filename + ".tmp"
     pin_filename = AI_SESSION_PIN_FILE.name
@@ -841,20 +789,18 @@ async def read_inotify_events(
 
             watched_path, event_type, filename = parts[0], parts[1], parts[2]
 
-            # Feature 135: Filter based on watched path
-            # Events from badge dir are always relevant
-            # Events from XDG_RUNTIME_DIR (OTEL sessions parent) must match specific files
+            # Feature 135: Filter based on watched path.
+            # Events from badge dir are always relevant.
             is_badge_dir = watched_path.rstrip("/") == badge_dir_path.rstrip("/")
-            is_otel_file = filename in (otel_filename, otel_tmp_filename)
             is_mru_file = filename in (mru_filename, mru_tmp_filename)
             is_pin_file = filename in (pin_filename, pin_tmp_filename)
             is_metrics_file = filename in (metrics_filename, metrics_tmp_filename)
             is_review_file = filename in (review_filename, review_tmp_filename)
             is_seen_events_file = filename in (seen_events_filename, seen_events_tmp_filename)
-            if is_badge_dir or is_otel_file or is_mru_file or is_pin_file or is_metrics_file or is_review_file or is_seen_events_file:
+            if is_badge_dir or is_mru_file or is_pin_file or is_metrics_file or is_review_file or is_seen_events_file:
                 logger.debug(f"Feature 107/135: inotify event: {watched_path} {event_type} {filename}")
                 on_badge_change.set()
-            # Else: ignore unrelated files in XDG_RUNTIME_DIR (pulse, dbus, etc.)
+            # Else: ignore unrelated files in shared runtime directories.
 
     except asyncio.CancelledError:
         logger.debug("Feature 107: inotify reader cancelled")
@@ -6333,108 +6279,13 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
         daemon_current_ai_session_key = str(tree_data.get("current_ai_session_key") or "").strip()
 
         outputs = tree_data.get("outputs", [])
-        window_candidates = _collect_output_window_candidates(outputs)
-        window_candidates_by_id: Dict[int, Dict[str, Any]] = {}
-        for candidate in window_candidates:
-            cid = _safe_int(candidate.get("id"), 0)
-            if cid > 0:
-                window_candidates_by_id[cid] = candidate
         otel_sessions_by_window: Dict[int, List[Dict[str, Any]]] = {}
         resolved_otel_sessions: List[Dict[str, Any]] = []
-        if daemon_active_ai_sessions:
-            otel_sessions_runtime: Dict[str, Any] = {
-                "schema_version": AI_SESSION_SCHEMA_VERSION,
-                "sessions": [],
-                "has_working": False,
-                "timestamp": 0,
-                "updated_at": "",
-                "sessions_by_window": {},
-                "diagnostics": [],
-                "disabled_reason": "daemon_herdr_sessions_present",
-            }
-        else:
-            # Feature 123/136: Load OTEL sessions only when daemon has no Herdr rows.
-            # Herdr-backed daemon sessions are the UI authority for AI state.
-            # Remote OTEL fanout was retired; remote AI rows now come from the
-            # daemon/Herdr boundary only.
-            otel_sessions = load_otel_sessions()
-            merged_otel_raw_sessions: List[Dict[str, Any]] = []
-            for raw_session in otel_sessions.get("sessions", []):
-                if isinstance(raw_session, dict):
-                    merged_otel_raw_sessions.append(dict(raw_session))
-            for raw_session in merged_otel_raw_sessions:
-                session = dict(raw_session)
-                terminal_context = session.get("terminal_context", {}) or {}
-                if not isinstance(terminal_context, dict):
-                    terminal_context = {}
-                terminal_context = dict(terminal_context)
-                session["terminal_context"] = terminal_context
-
-                window_id_raw = session.get("window_id", terminal_context.get("window_id"))
-                window_id_int = _safe_int(window_id_raw, 0)
-                if window_id_int != 0:
-                    existing_candidate = window_candidates_by_id.get(window_id_int, {})
-                    if isinstance(existing_candidate, dict) and existing_candidate:
-                        if _window_matches_session_binding(existing_candidate, session):
-                            session["window_id"] = window_id_int
-                            terminal_context["window_id"] = window_id_int
-                        else:
-                            logger.warning(
-                                "Dropping stale OTEL window binding during anchor cutover: session=%s window_id=%s",
-                                str(session.get("native_session_id") or session.get("session_id") or ""),
-                                window_id_int,
-                            )
-                            session.pop("window_id", None)
-                            terminal_context.pop("window_id", None)
-                            window_id_int = 0
-                if window_id_int == 0:
-                    resolved_window_id = _resolve_otel_session_window_id(
-                        session,
-                        outputs,
-                        window_candidates=window_candidates,
-                    )
-                    if resolved_window_id is not None:
-                        session["window_id"] = resolved_window_id
-                        terminal_context["window_id"] = resolved_window_id
-                resolved_otel_sessions.append(session)
-
-            otel_sessions_runtime = dict(otel_sessions)
-            otel_sessions_runtime["sessions"] = resolved_otel_sessions
-            otel_sessions_runtime["has_working"] = any(
-                str(session.get("state") or "").strip().lower() == "working"
-                for session in resolved_otel_sessions
-            )
-
-            per_window_seen: Dict[int, Dict[str, Dict[str, Any]]] = {}
-            for session in resolved_otel_sessions:
-                identity_confidence = str(session.get("identity_confidence") or "").strip().lower()
-                native_session_id = str(session.get("native_session_id") or "").strip()
-                if not native_session_id or identity_confidence != "native":
-                    continue
-
-                terminal_context = session.get("terminal_context", {}) or {}
-                window_id = session.get("window_id", terminal_context.get("window_id"))
-                if window_id is None:
-                    continue
-                try:
-                    window_id_int = int(window_id)
-                except (TypeError, ValueError):
-                    continue
-
-                window_candidate = window_candidates_by_id.get(window_id_int, {})
-                if not isinstance(window_candidate, dict):
-                    continue
-                if not _window_matches_session_binding(window_candidate, session):
-                    continue
-
-                window_seen = per_window_seen.setdefault(window_id_int, {})
-                dedupe_key = _otel_badge_merge_key(session)
-                existing = window_seen.get(dedupe_key)
-                if existing is None or _otel_badge_score(session) > _otel_badge_score(existing):
-                    window_seen[dedupe_key] = session
-
-            for window_id, seen in per_window_seen.items():
-                otel_sessions_by_window[window_id] = list(seen.values())
+        otel_sessions_runtime = _empty_otel_sessions_runtime(
+            "daemon_herdr_sessions_present"
+            if daemon_active_ai_sessions
+            else "daemon_herdr_sessions_required"
+        )
 
         # Transform daemon response to Eww schema
         monitors = [transform_monitor(output, badge_state, otel_sessions_by_window) for output in outputs]
@@ -6649,9 +6500,7 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             "error": None,
             # Feature 095 Enhancement: Animated spinner frame
             "spinner_frame": get_spinner_frame(),
-            "has_working_badge": has_working_badge if daemon_active_ai_sessions else (
-                has_working_badge or otel_sessions_runtime.get("has_working", False)
-            ),
+            "has_working_badge": has_working_badge,
             # Feature 117 Enhancement: Pre-computed list for Active AI Sessions bar
             "ai_sessions": ai_sessions,
             # Feature 138: Canonical active AI sessions rail + keyboard switching
@@ -6669,8 +6518,6 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
         # Expected errors: socket not found, timeout, connection lost
         logger.warning(f"Daemon error: {e}")
         error_timestamp = time.time()
-        # Still try to load OTEL sessions even on daemon error
-        otel_sessions = load_otel_sessions()
         return {
             "status": "error",
             "projects": [],
@@ -6680,21 +6527,19 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             "timestamp_friendly": format_friendly_timestamp(error_timestamp),
             "error": str(e),
             "spinner_frame": get_spinner_frame(),
-            "has_working_badge": otel_sessions.get("has_working", False),
+            "has_working_badge": False,
             "ai_sessions": [],
             "active_ai_sessions": [],
             "active_ai_sessions_mru": [],
             "current_ai_session_key": "",
             "ai_monitor_metrics": load_ai_monitor_metrics(),
-            "otel_sessions": otel_sessions,
+            "otel_sessions": _empty_otel_sessions_runtime("daemon_unavailable"),
         }
 
     except Exception as e:
         # Unexpected errors: log for debugging
         logger.error(f"Unexpected error querying daemon: {e}", exc_info=True)
         error_timestamp = time.time()
-        # Still try to load OTEL sessions even on unexpected error
-        otel_sessions = load_otel_sessions()
         return {
             "status": "error",
             "projects": [],
@@ -6704,13 +6549,13 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             "timestamp_friendly": format_friendly_timestamp(error_timestamp),
             "error": f"Unexpected error: {type(e).__name__}: {e}",
             "spinner_frame": get_spinner_frame(),
-            "has_working_badge": otel_sessions.get("has_working", False),
+            "has_working_badge": False,
             "ai_sessions": [],
             "active_ai_sessions": [],
             "active_ai_sessions_mru": [],
             "current_ai_session_key": "",
             "ai_monitor_metrics": load_ai_monitor_metrics(),
-            "otel_sessions": otel_sessions,
+            "otel_sessions": _empty_otel_sessions_runtime("unexpected_error"),
         }
 
 

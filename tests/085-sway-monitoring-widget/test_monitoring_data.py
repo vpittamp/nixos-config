@@ -626,301 +626,6 @@ class TestQueryMonitoringData:
             json_str = json.dumps(result)
             assert json_str is not None
 
-    @pytest.mark.asyncio
-    async def test_otel_session_without_window_id_maps_to_project_window(self):
-        """Best-effort project mapping should restore inline OTEL badges."""
-        mock_daemon_response = {
-            "outputs": [
-                {
-                    "name": "HEADLESS-1",
-                    "active": True,
-                    "workspaces": [
-                        {
-                            "num": 1,
-                            "name": "1",
-                            "visible": True,
-                            "focused": True,
-                            "windows": [
-                                {
-                                    "id": 142,
-                                    "class": "Ghostty",
-                                    "title": "Terminal",
-                                    "project": "vpittamp/nixos-config:main",
-                                    "workspace": 1,
-                                    "floating": False,
-                                    "hidden": False,
-                                    "focused": True,
-                                    "marks": [],
-                                }
-                            ],
-                        }
-                    ],
-                }
-            ]
-        }
-        otel_payload = {
-            "schema_version": "11",
-            "sessions": [
-                {
-                    "tool": "codex",
-                    "state": "working",
-                    "project": "/home/vpittamp/repos/vpittamp/nixos-config/main",
-                    "project_path": "/home/vpittamp/repos/vpittamp/nixos-config/main",
-                    "identity_confidence": "native",
-                    "native_session_id": "sid-123",
-                    "session_id": "codex:sid-123",
-                    "window_id": None,
-                    "terminal_anchor_id": "anchor-sid-123",
-                    "terminal_context": {
-                        "terminal_anchor_id": "anchor-sid-123",
-                        "pty": "/dev/pts/17",
-                    },
-                    "is_streaming": True,
-                    "updated_at": "2026-02-23T16:00:00+00:00",
-                }
-            ],
-            "has_working": True,
-            "timestamp": 0,
-            "updated_at": "",
-            "sessions_by_window": {},
-        }
-
-        with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
-             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=otel_payload):
-            mock_instance = AsyncMock()
-            mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
-            MockClient.return_value = mock_instance
-
-            result = await query_monitoring_data()
-
-            assert result["status"] == "ok"
-            assert result["active_ai_sessions"] == []
-
-    @pytest.mark.asyncio
-    async def test_otel_session_without_window_id_respects_ssh_identity(self):
-        """Missing window_id mapping should prefer ssh context over local sibling windows."""
-        mock_daemon_response = {
-            "outputs": [
-                {
-                    "name": "HEADLESS-1",
-                    "active": True,
-                    "workspaces": [
-                        {
-                            "num": 1,
-                            "name": "1",
-                            "visible": True,
-                            "focused": True,
-                            "windows": [
-                                {
-                                    "id": 142,
-                                    "pid": 1201,
-                                    "class": "Ghostty",
-                                    "title": "Local Terminal",
-                                    "project": "vpittamp/nixos-config:main",
-                                    "workspace": 1,
-                                    "floating": False,
-                                    "hidden": False,
-                                    "focused": False,
-                                    "marks": [
-                                        "scoped:terminal:vpittamp/nixos-config:main:142",
-                                        "ctx:vpittamp/nixos-config:main::local::local@thinkpad",
-                                    ],
-                                    "execution_mode": "local",
-                                    "connection_key": "local@thinkpad",
-                                    "context_key": "vpittamp/nixos-config:main::local::local@thinkpad",
-                                },
-                                {
-                                    "id": 314,
-                                    "pid": 2202,
-                                    "class": "Ghostty",
-                                    "title": "Remote Terminal",
-                                    "project": "vpittamp/nixos-config:main",
-                                    "workspace": 1,
-                                    "floating": False,
-                                    "hidden": False,
-                                    "focused": True,
-                                    "marks": [
-                                        "scoped:terminal:vpittamp/nixos-config:main:314",
-                                        "ctx:vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
-                                    ],
-                                    "execution_mode": "ssh",
-                                    "connection_key": "vpittamp@ryzen:22",
-                                    "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
-                                    "remote_enabled": "true",
-                                    "remote_user": "vpittamp",
-                                    "remote_host": "ryzen",
-                                    "remote_port": "22",
-                                    "remote_dir": "/home/vpittamp/repos/vpittamp/nixos-config/main",
-                                },
-                            ],
-                        }
-                    ],
-                }
-            ]
-        }
-        otel_payload = {
-            "schema_version": "11",
-            "sessions": [
-                {
-                    "tool": "codex",
-                    "state": "working",
-                    "project": "vpittamp/nixos-config:main",
-                    "project_path": "/home/vpittamp/repos/vpittamp/nixos-config/main",
-                    "identity_confidence": "native",
-                    "native_session_id": "sid-ssh",
-                    "session_id": "codex:sid-ssh",
-                    "window_id": None,
-                    "terminal_anchor_id": "anchor-sid-ssh",
-                    "terminal_context": {
-                        "terminal_anchor_id": "anchor-sid-ssh",
-                        "execution_mode": "ssh",
-                        "connection_key": "vpittamp@ryzen:22",
-                        "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
-                        "tmux_session": "nixos",
-                        "tmux_window": "1:main",
-                        "tmux_pane": "%9",
-                        "host_name": "ryzen",
-                    },
-                    "updated_at": "2026-02-23T16:10:00+00:00",
-                }
-            ],
-            "has_working": True,
-            "timestamp": 0,
-            "updated_at": "",
-            "sessions_by_window": {},
-        }
-
-        with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
-             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=otel_payload), \
-             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
-            mock_instance = AsyncMock()
-            mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
-            MockClient.return_value = mock_instance
-
-            result = await query_monitoring_data()
-
-        assert result["status"] == "ok"
-        assert result["active_ai_sessions"] == []
-
-        project_variants = {
-            (project.get("name"), project.get("variant")): project
-            for project in result["projects"]
-            if project.get("scope") == "scoped"
-        }
-        assert ("vpittamp/nixos-config:main", "local") in project_variants
-        assert ("vpittamp/nixos-config:main", "ssh") in project_variants
-
-        ssh_windows = project_variants[("vpittamp/nixos-config:main", "ssh")]["windows"]
-        local_windows = project_variants[("vpittamp/nixos-config:main", "local")]["windows"]
-        assert any(w.get("id") == 314 for w in ssh_windows)
-        assert any(w.get("id") == 142 for w in local_windows)
-        ssh_badges = [w for w in ssh_windows if w.get("id") == 314][0]["otel_badges"]
-        assert ssh_badges == []
-
-    @pytest.mark.asyncio
-    async def test_otel_session_without_project_uses_context_identity_mapping(self):
-        """Context-key identity should recover SSH sessions with non-canonical project paths."""
-        mock_daemon_response = {
-            "outputs": [
-                {
-                    "name": "HEADLESS-1",
-                    "active": True,
-                    "workspaces": [
-                        {
-                            "num": 2,
-                            "name": "2",
-                            "visible": True,
-                            "focused": True,
-                            "windows": [
-                                {
-                                    "id": 211,
-                                    "pid": 4101,
-                                    "class": "Ghostty",
-                                    "title": "Local Workflow Builder",
-                                    "project": "vpittamp/workflow-builder:main",
-                                    "workspace": 2,
-                                    "floating": False,
-                                    "hidden": False,
-                                    "focused": False,
-                                    "marks": [
-                                        "ctx:vpittamp/workflow-builder:main::local::local@thinkpad",
-                                    ],
-                                    "execution_mode": "local",
-                                    "connection_key": "local@thinkpad",
-                                    "context_key": "vpittamp/workflow-builder:main::local::local@thinkpad",
-                                },
-                                {
-                                    "id": 778,
-                                    "pid": 5102,
-                                    "class": "Ghostty",
-                                    "title": "Remote Workflow Builder",
-                                    "project": "vpittamp/workflow-builder:main",
-                                    "workspace": 2,
-                                    "floating": False,
-                                    "hidden": False,
-                                    "focused": True,
-                                    "marks": [
-                                        "ctx:vpittamp/workflow-builder:main::ssh::vpittamp@ryzen:22",
-                                    ],
-                                    "execution_mode": "ssh",
-                                    "connection_key": "vpittamp@ryzen:22",
-                                    "context_key": "vpittamp/workflow-builder:main::ssh::vpittamp@ryzen:22",
-                                    "remote_enabled": "true",
-                                    "remote_user": "vpittamp",
-                                    "remote_host": "ryzen",
-                                    "remote_port": "22",
-                                },
-                            ],
-                        }
-                    ],
-                }
-            ]
-        }
-        otel_payload = {
-            "schema_version": "11",
-            "sessions": [
-                {
-                    "tool": "codex",
-                    "state": "working",
-                    # Remote worktree path does not match ~/repos/<account>/<repo>/<branch>.
-                    "project": "/srv/worktrees/workflow-builder",
-                    "project_path": "/srv/worktrees/workflow-builder",
-                    "identity_confidence": "native",
-                    "native_session_id": "sid-workflow-ssh",
-                    "session_id": "codex:sid-workflow-ssh",
-                    "window_id": None,
-                    "terminal_anchor_id": "anchor-sid-workflow-ssh",
-                    "terminal_context": {
-                        "terminal_anchor_id": "anchor-sid-workflow-ssh",
-                        "execution_mode": "ssh",
-                        "connection_key": "vpittamp@ryzen:22",
-                        "context_key": "vpittamp/workflow-builder:main::ssh::vpittamp@ryzen:22",
-                        "tmux_session": "workflow-builder",
-                        "tmux_window": "1:main",
-                        "tmux_pane": "%17",
-                        "host_name": "ryzen",
-                    },
-                    "updated_at": "2026-02-23T16:22:00+00:00",
-                }
-            ],
-            "has_working": True,
-            "timestamp": 0,
-            "updated_at": "",
-            "sessions_by_window": {},
-        }
-
-        with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
-             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=otel_payload), \
-             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
-            mock_instance = AsyncMock()
-            mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
-            MockClient.return_value = mock_instance
-
-            result = await query_monitoring_data()
-
-        assert result["status"] == "ok"
-        assert result["active_ai_sessions"] == []
-
     def test_resolve_otel_window_id_avoids_ambiguous_identity_only_fallback(self):
         """Do not guess a window when only mode+connection are known and multiple SSH windows exist."""
         outputs = [
@@ -2894,7 +2599,6 @@ class TestAiReviewLifecycle:
         }
 
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
-             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=local_otel_payload) as mock_load_otel, \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
              patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}):
             mock_instance = AsyncMock()
@@ -2903,7 +2607,6 @@ class TestAiReviewLifecycle:
 
             result = await query_monitoring_data()
 
-        mock_load_otel.assert_not_called()
         assert result["status"] == "ok"
         assert result["active_ai_sessions"]
         session = result["active_ai_sessions"][0]
@@ -2996,7 +2699,6 @@ class TestAiReviewLifecycle:
         }
 
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
-             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value={"schema_version": "11", "sessions": []}) as mock_load_otel, \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
              patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}):
             mock_instance = AsyncMock()
@@ -3005,7 +2707,6 @@ class TestAiReviewLifecycle:
 
             result = await query_monitoring_data()
 
-        mock_load_otel.assert_not_called()
         assert result["status"] == "ok"
         assert [session["session_key"] for session in result["active_ai_sessions"]] == ["daemon-session-key"]
         assert result["current_ai_session_key"] == "daemon-session-key"
@@ -3073,7 +2774,6 @@ class TestAiReviewLifecycle:
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
              patch("i3_project_manager.cli.monitoring_data.transform_to_project_view", return_value=copy.deepcopy(project_cards)), \
              patch("i3_project_manager.cli.monitoring_data.validate_and_count", return_value={}), \
-             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value={"schema_version": "11", "sessions": []}), \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
              patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}), \
              patch("i3_project_manager.cli.monitoring_data.load_ai_session_pins", return_value=[]), \
