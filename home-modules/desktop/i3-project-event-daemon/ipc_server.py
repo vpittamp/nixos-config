@@ -7903,7 +7903,7 @@ class IPCServer:
 
     def _ai_session_seen_events_file(self) -> Path:
         """Return the daemon-owned AI review acknowledgement queue."""
-        return self._runtime_dir() / "i3pm" / "ai-session-seen-events.jsonl"
+        return self._runtime_dir() / "i3pm" / "ai-sessions" / "ai-session-seen-events.jsonl"
 
     def _record_ai_session_seen(self, session_key: str) -> None:
         """Append an explicit session-seen acknowledgement for review retention."""

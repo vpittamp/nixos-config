@@ -84,7 +84,7 @@ def test_ai_session_seen_queue_is_daemon_owned(server, monkeypatch, tmp_path):
 
     path = server._ai_session_seen_events_file()
 
-    assert path == tmp_path / "i3pm" / "ai-session-seen-events.jsonl"
+    assert path == tmp_path / "i3pm" / "ai-sessions" / "ai-session-seen-events.jsonl"
     assert "eww-monitoring-panel" not in str(path)
 
 

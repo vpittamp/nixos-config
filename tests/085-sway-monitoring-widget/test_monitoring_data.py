@@ -30,12 +30,21 @@ from i3_project_manager.cli.monitoring_data import (
 )
 
 
-def test_ai_session_seen_queue_uses_i3pm_runtime_path():
-    path = monitoring_data.AI_SESSION_SEEN_EVENTS_FILE
+def test_ai_session_state_files_use_i3pm_runtime_path():
+    paths = [
+        monitoring_data.AI_SESSION_MRU_FILE,
+        monitoring_data.AI_SESSION_PIN_FILE,
+        monitoring_data.AI_SESSION_NOTIFY_FILE,
+        monitoring_data.AI_MONITOR_METRICS_FILE,
+        monitoring_data.AI_SESSION_REVIEW_FILE,
+        monitoring_data.AI_SESSION_SEEN_EVENTS_FILE,
+    ]
 
-    assert path.parent.name == "i3pm"
-    assert path.name == "ai-session-seen-events.jsonl"
-    assert "eww-monitoring-panel" not in str(path)
+    assert monitoring_data.AI_SESSION_STATE_DIR.parent.name == "i3pm"
+    assert monitoring_data.AI_SESSION_STATE_DIR.name == "ai-sessions"
+    for path in paths:
+        assert path.parent == monitoring_data.AI_SESSION_STATE_DIR
+        assert "eww-monitoring-panel" not in str(path)
 
 
 def make_daemon_runtime_session(raw_session: dict, *, session_key: str | None = None, **overrides) -> dict:

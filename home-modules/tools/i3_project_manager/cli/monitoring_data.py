@@ -92,22 +92,24 @@ def get_spinner_frame() -> str:
 # Feature 095: File-based badge state directory
 # Badge state files are written by claude-hooks scripts and read by this script
 # Format: $XDG_RUNTIME_DIR/i3pm-badges/<window_id>.json
-BADGE_STATE_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "i3pm-badges"
+RUNTIME_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+BADGE_STATE_DIR = RUNTIME_DIR / "i3pm-badges"
 
 AI_SESSION_SCHEMA_VERSION = "11"
-AI_SESSION_MRU_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-mru.json"
-AI_SESSION_PIN_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-pins.json"
-AI_SESSION_NOTIFY_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-notify-state.json"
+AI_SESSION_STATE_DIR = RUNTIME_DIR / "i3pm" / "ai-sessions"
+AI_SESSION_MRU_FILE = AI_SESSION_STATE_DIR / "ai-session-mru.json"
+AI_SESSION_PIN_FILE = AI_SESSION_STATE_DIR / "ai-session-pins.json"
+AI_SESSION_NOTIFY_FILE = AI_SESSION_STATE_DIR / "ai-session-notify-state.json"
 AI_USER_INPUT_NOTIFICATION_DELAY_SECONDS = 1.0
-AI_MONITOR_METRICS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-monitor-metrics.json"
-AI_SESSION_REVIEW_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-review.json"
-AI_SESSION_SEEN_EVENTS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "i3pm" / "ai-session-seen-events.jsonl"
+AI_MONITOR_METRICS_FILE = AI_SESSION_STATE_DIR / "ai-monitor-metrics.json"
+AI_SESSION_REVIEW_FILE = AI_SESSION_STATE_DIR / "ai-session-review.json"
+AI_SESSION_SEEN_EVENTS_FILE = AI_SESSION_STATE_DIR / "ai-session-seen-events.jsonl"
 REPO_ROOT = Path(__file__).resolve().parents[4]
 AI_FINISHED_NOTIFICATION_SCRIPT = REPO_ROOT / "scripts" / "ai-finished-notification.sh"
 
 # Feature 101: Active worktree configuration file
 ACTIVE_WORKTREE_FILE = Path.home() / ".config" / "i3" / "active-worktree.json"
-DAEMON_SOCKET_PATH = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "i3-project-daemon" / "ipc.sock"
+DAEMON_SOCKET_PATH = RUNTIME_DIR / "i3-project-daemon" / "ipc.sock"
 
 # Feature 107: inotify watcher for immediate badge detection (<15ms latency)
 # Uses subprocess inotifywait to avoid adding Python dependencies
@@ -620,24 +622,12 @@ async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
         logger.warning("Feature 107: inotifywait not found, falling back to polling")
         return None
 
-    # Ensure badge directory exists before watching
+    # Ensure runtime state directories exist before watching them.
     BADGE_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    AI_SESSION_STATE_DIR.mkdir(parents=True, exist_ok=True)
 
     # Build list of paths to watch
-    watch_paths = [str(BADGE_STATE_DIR)]
-
-    if AI_SESSION_MRU_FILE.parent.exists():
-        if str(AI_SESSION_MRU_FILE.parent) not in watch_paths:
-            watch_paths.append(str(AI_SESSION_MRU_FILE.parent))
-    if AI_SESSION_PIN_FILE.parent.exists():
-        if str(AI_SESSION_PIN_FILE.parent) not in watch_paths:
-            watch_paths.append(str(AI_SESSION_PIN_FILE.parent))
-    if AI_MONITOR_METRICS_FILE.parent.exists():
-        if str(AI_MONITOR_METRICS_FILE.parent) not in watch_paths:
-            watch_paths.append(str(AI_MONITOR_METRICS_FILE.parent))
-    if AI_SESSION_REVIEW_FILE.parent.exists():
-        if str(AI_SESSION_REVIEW_FILE.parent) not in watch_paths:
-            watch_paths.append(str(AI_SESSION_REVIEW_FILE.parent))
+    watch_paths = [str(BADGE_STATE_DIR), str(AI_SESSION_STATE_DIR)]
     try:
         # inotifywait in monitor mode (-m) outputs events as they happen
         # -e create,modify,delete watches for file changes
