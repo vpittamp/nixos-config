@@ -9653,48 +9653,7 @@ FORMAT JSONEachRow
 
     async def _run_herdr_json(self, args: List[str], timeout: float = 2.0) -> Dict[str, Any]:
         """Run a Herdr CLI command that returns a single JSON object."""
-        if not shutil.which("herdr"):
-            return {
-                "success": False,
-                "error": "herdr_not_found",
-                "command": ["herdr", *args],
-            }
-
-        def run() -> subprocess.CompletedProcess[str]:
-            return subprocess.run(
-                ["herdr", *args],
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
-
-        try:
-            result = await asyncio.to_thread(run)
-        except subprocess.TimeoutExpired:
-            return {
-                "success": False,
-                "error": "timeout",
-                "command": ["herdr", *args],
-            }
-
-        stdout = str(result.stdout or "").strip()
-        stderr = str(result.stderr or "").strip()
-        payload: Dict[str, Any] = {}
-        if stdout:
-            try:
-                parsed = json.loads(stdout)
-                if isinstance(parsed, dict):
-                    payload = parsed
-            except json.JSONDecodeError:
-                payload = {}
-
-        payload.setdefault("success", result.returncode == 0)
-        payload.setdefault("returncode", result.returncode)
-        payload.setdefault("stdout", stdout)
-        payload.setdefault("stderr", stderr)
-        payload.setdefault("command", ["herdr", *args])
-        return payload
+        return await self.herdr_service.run_json(args, timeout=timeout)
 
     def _herdr_remote_targets_file(self) -> Path:
         return self.herdr_service.remote_targets_file()
@@ -9720,60 +9679,7 @@ FORMAT JSONEachRow
         timeout: float = 2.5,
     ) -> Dict[str, Any]:
         """Run a read-only Herdr command on a remote host over SSH."""
-        ssh_target = str(target.get("ssh_target") or "").strip()
-        if not ssh_target:
-            return {
-                "success": False,
-                "error": "missing_ssh_target",
-                "command": ["ssh", "", "herdr", *args],
-            }
-        if not shutil.which("ssh"):
-            return {
-                "success": False,
-                "error": "ssh_not_found",
-                "command": ["ssh", ssh_target, "herdr", *args],
-            }
-
-        command = self._herdr_ssh_command_prefix(ssh_target) + ["herdr", *args]
-
-        def run() -> subprocess.CompletedProcess[str]:
-            return subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
-
-        try:
-            result = await asyncio.to_thread(run)
-        except subprocess.TimeoutExpired:
-            return {
-                "success": False,
-                "error": "timeout",
-                "command": ["ssh", ssh_target, "herdr", *args],
-            }
-
-        stdout = str(result.stdout or "").strip()
-        stderr = str(result.stderr or "").strip()
-        payload: Dict[str, Any] = {}
-        if stdout:
-            try:
-                parsed = json.loads(stdout)
-                if isinstance(parsed, dict):
-                    payload = parsed
-            except json.JSONDecodeError:
-                payload = {}
-
-        payload.setdefault("success", result.returncode == 0)
-        payload.setdefault("returncode", result.returncode)
-        payload.setdefault("stdout", stdout)
-        payload.setdefault("stderr", stderr)
-        payload.setdefault("command", ["ssh", ssh_target, "herdr", *args])
-        payload.setdefault("herdr_host", str(target.get("host") or "").strip())
-        payload.setdefault("ssh_target", ssh_target)
-        payload.setdefault("connection_key", str(target.get("connection_key") or "").strip())
-        return payload
+        return await self.herdr_service.run_ssh_json(target, args, timeout=timeout)
 
     @staticmethod
     def _herdr_result_array(payload: Dict[str, Any], key: str) -> List[Dict[str, Any]]:
@@ -9800,18 +9706,7 @@ FORMAT JSONEachRow
 
     @staticmethod
     def _herdr_ssh_command_prefix(ssh_target: str) -> List[str]:
-        return [
-            "ssh",
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=1",
-            "-o", "ConnectionAttempts=1",
-            "-o", "ServerAliveInterval=1",
-            "-o", "ServerAliveCountMax=1",
-            "-o", "ControlMaster=auto",
-            "-o", "ControlPersist=30s",
-            "-o", "ControlPath=/tmp/i3pm-herdr-ssh-%C",
-            ssh_target,
-        ]
+        return HerdrService.ssh_command_prefix(ssh_target)
 
     @staticmethod
     def _herdr_git_run(path: str, args: List[str], *, ssh_target: str = "", timeout: float = 0.75) -> str:

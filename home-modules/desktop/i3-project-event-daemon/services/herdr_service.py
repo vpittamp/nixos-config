@@ -8,6 +8,8 @@ import json
 import logging
 import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
@@ -485,6 +487,127 @@ class HerdrService:
             item.setdefault("is_current_host", not bool(is_remote))
             annotated.append(item)
         return annotated
+
+    @staticmethod
+    def ssh_command_prefix(ssh_target: str) -> List[str]:
+        """Return the deterministic SSH transport prefix for remote Herdr calls."""
+        return [
+            "ssh",
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=1",
+            "-o", "ConnectionAttempts=1",
+            "-o", "ServerAliveInterval=1",
+            "-o", "ServerAliveCountMax=1",
+            "-o", "ControlMaster=auto",
+            "-o", "ControlPersist=30s",
+            "-o", "ControlPath=/tmp/i3pm-herdr-ssh-%C",
+            ssh_target,
+        ]
+
+    @staticmethod
+    def _json_payload_from_completed_process(
+        result: subprocess.CompletedProcess[str],
+        *,
+        command: List[str],
+    ) -> Dict[str, Any]:
+        stdout = str(result.stdout or "").strip()
+        stderr = str(result.stderr or "").strip()
+        payload: Dict[str, Any] = {}
+        if stdout:
+            try:
+                parsed = json.loads(stdout)
+                if isinstance(parsed, dict):
+                    payload = parsed
+            except json.JSONDecodeError:
+                payload = {}
+
+        payload.setdefault("success", result.returncode == 0)
+        payload.setdefault("returncode", result.returncode)
+        payload.setdefault("stdout", stdout)
+        payload.setdefault("stderr", stderr)
+        payload.setdefault("command", command)
+        return payload
+
+    async def run_json(self, args: List[str], timeout: float = 2.0) -> Dict[str, Any]:
+        """Run a local Herdr CLI command that returns a single JSON object."""
+        command = ["herdr", *args]
+        if not shutil.which("herdr"):
+            return {
+                "success": False,
+                "error": "herdr_not_found",
+                "command": command,
+            }
+
+        def run() -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+
+        try:
+            result = await asyncio.to_thread(run)
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "error": "timeout",
+                "command": command,
+            }
+
+        return self._json_payload_from_completed_process(result, command=command)
+
+    async def run_ssh_json(
+        self,
+        target: Dict[str, str],
+        args: List[str],
+        timeout: float = 2.5,
+    ) -> Dict[str, Any]:
+        """Run a Herdr command on a remote host over SSH."""
+        ssh_target = str(target.get("ssh_target") or "").strip()
+        fallback_command = ["ssh", ssh_target, "herdr", *args]
+        if not ssh_target:
+            return {
+                "success": False,
+                "error": "missing_ssh_target",
+                "command": ["ssh", "", "herdr", *args],
+            }
+        if not shutil.which("ssh"):
+            return {
+                "success": False,
+                "error": "ssh_not_found",
+                "command": fallback_command,
+            }
+
+        command = self.ssh_command_prefix(ssh_target) + ["herdr", *args]
+
+        def run() -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+
+        try:
+            result = await asyncio.to_thread(run)
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "error": "timeout",
+                "command": fallback_command,
+            }
+
+        payload = self._json_payload_from_completed_process(
+            result,
+            command=fallback_command,
+        )
+        payload.setdefault("herdr_host", str(target.get("host") or "").strip())
+        payload.setdefault("ssh_target", ssh_target)
+        payload.setdefault("connection_key", str(target.get("connection_key") or "").strip())
+        return payload
 
     def socket_path(self) -> Path:
         """Return the local Herdr API socket path."""

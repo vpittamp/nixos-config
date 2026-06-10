@@ -2,6 +2,7 @@ import asyncio
 import importlib
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -374,3 +375,116 @@ def test_herdr_service_annotates_rows_with_host_context():
         "is_remote_herdr": True,
         "is_current_host": False,
     }]
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_runs_local_json_command(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"success":true,"result":{"ok":true}}\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr(herdr_service_module.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(herdr_service_module.subprocess, "run", fake_run)
+
+    result = await service.run_json(["status", "--json"], timeout=1.5)
+
+    assert result["success"] is True
+    assert result["result"] == {"ok": True}
+    assert result["command"] == ["herdr", "status", "--json"]
+    assert calls[0][0] == ["herdr", "status", "--json"]
+    assert calls[0][1]["timeout"] == 1.5
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_reports_missing_local_binary(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    monkeypatch.setattr(herdr_service_module.shutil, "which", lambda _name: None)
+
+    result = await service.run_json(["status", "--json"])
+
+    assert result == {
+        "success": False,
+        "error": "herdr_not_found",
+        "command": ["herdr", "status", "--json"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_runs_remote_json_command(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"success":true,"result":{"agents":[]}}\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr(herdr_service_module.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(herdr_service_module.subprocess, "run", fake_run)
+
+    result = await service.run_ssh_json(
+        {
+            "host": "ryzen",
+            "ssh_target": "ryzen",
+            "connection_key": "vpittamp@ryzen:22",
+        },
+        ["agent", "list"],
+        timeout=1.25,
+    )
+
+    assert result["success"] is True
+    assert result["result"] == {"agents": []}
+    assert result["command"] == ["ssh", "ryzen", "herdr", "agent", "list"]
+    assert result["herdr_host"] == "ryzen"
+    assert result["ssh_target"] == "ryzen"
+    assert result["connection_key"] == "vpittamp@ryzen:22"
+    assert calls[0][0][-3:] == ["herdr", "agent", "list"]
+    assert calls[0][0][:2] == ["ssh", "-o"]
+    assert calls[0][1]["timeout"] == 1.25
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_reports_remote_transport_errors(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+
+    missing_target = await service.run_ssh_json({}, ["agent", "list"])
+    assert missing_target == {
+        "success": False,
+        "error": "missing_ssh_target",
+        "command": ["ssh", "", "herdr", "agent", "list"],
+    }
+
+    monkeypatch.setattr(herdr_service_module.shutil, "which", lambda _name: None)
+    missing_ssh = await service.run_ssh_json(
+        {"ssh_target": "ryzen"},
+        ["agent", "list"],
+    )
+    assert missing_ssh == {
+        "success": False,
+        "error": "ssh_not_found",
+        "command": ["ssh", "ryzen", "herdr", "agent", "list"],
+    }
