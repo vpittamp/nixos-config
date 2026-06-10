@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -182,6 +183,16 @@ async def test_notify_state_change_handles_subscriber_set_mutation(server):
 
     assert len(first_writer.buffer) == 1
     assert len(second_writer.buffer) == 1
+    notification = json.loads(first_writer.buffer[0].decode("utf-8"))
+    params = notification["params"]
+    assert notification["method"] == "state_changed"
+    assert params["schema_version"] == "i3pm.dashboard.event.v1"
+    assert params["type"] == "agent_session_changed"
+    assert params["event_type"] == "session.changed"
+    assert params["generation"] == params["snapshot_version"]
+    assert params["session_generation"] == 1
+    assert params["focus_generation"] == 1
+    assert params["changed_keys"] == ["focus_state", "active_ai_sessions", "worktrees"]
 
 
 @pytest.mark.asyncio

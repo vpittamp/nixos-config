@@ -94,6 +94,7 @@ HERDR_EVENT_SUBSCRIPTION_TYPES = (
 )
 DASHBOARD_SCHEMA_VERSION = "i3pm.dashboard.v2"
 FOCUS_STATE_SCHEMA_VERSION = "i3pm.focus_state.v1"
+DASHBOARD_EVENT_SCHEMA_VERSION = "i3pm.dashboard.event.v1"
 
 _DISCOVERED_WORKTREE_CACHE: Dict[str, Any] = {
     "file_path": "",
@@ -4392,6 +4393,43 @@ class IPCServer:
             "timestamp": int(time.time()),
         }
 
+    def _dashboard_event_type_for_state_change(self, event_type: str) -> str:
+        """Map legacy daemon invalidations to the typed dashboard event contract."""
+        normalized = str(event_type or "state_changed").strip() or "state_changed"
+        compact = normalized.replace("::", "_").replace(".", "_").replace("-", "_")
+        if compact.startswith("focus"):
+            return "focus.changed"
+        if compact.startswith("window"):
+            return "window.changed"
+        if compact.startswith("workspace"):
+            return "workspace.changed"
+        if compact.startswith("display") or compact.startswith("output") or compact.startswith("profile"):
+            return "display.changed"
+        if "herdr" in compact:
+            return "herdr.changed"
+        if compact.startswith("ai_session") or compact.startswith("agent_session") or compact.startswith("session"):
+            return "session.changed"
+        if compact.startswith("project") or compact.startswith("worktree"):
+            return "session.changed"
+        return "dashboard.invalidated"
+
+    def _dashboard_changed_keys_for_event(self, event_type: str) -> List[str]:
+        """Return coarse model keys affected by a typed dashboard event."""
+        typed_event = self._dashboard_event_type_for_state_change(event_type)
+        if typed_event == "focus.changed":
+            return ["focus_state"]
+        if typed_event == "window.changed":
+            return ["focus_state", "projects", "tracked_windows"]
+        if typed_event == "workspace.changed":
+            return ["focus_state", "outputs", "projects"]
+        if typed_event == "session.changed":
+            return ["focus_state", "active_ai_sessions", "worktrees"]
+        if typed_event == "herdr.changed":
+            return ["focus_state", "active_ai_sessions", "herdr"]
+        if typed_event == "display.changed":
+            return ["outputs", "display_layout"]
+        return ["dashboard"]
+
     async def notify_state_change(self, event_type: str = "state_changed") -> None:
         """Notify subscribed clients that state has changed.
 
@@ -4404,20 +4442,19 @@ class IPCServer:
         """
         self._snapshot_version += 1
         normalized_type = str(event_type or "state_changed")
-        if normalized_type.startswith("ai_session"):
+        typed_event_type = self._dashboard_event_type_for_state_change(normalized_type)
+        changed_keys = self._dashboard_changed_keys_for_event(normalized_type)
+        if typed_event_type in {"session.changed", "herdr.changed"}:
             self._session_generation += 1
         if (
-            normalized_type.startswith("focus")
-            or normalized_type.startswith("window")
-            or normalized_type.startswith("workspace")
-            or normalized_type.startswith("ai_session")
+            typed_event_type == "focus.changed"
+            or typed_event_type == "window.changed"
+            or typed_event_type == "workspace.changed"
+            or typed_event_type == "session.changed"
+            or typed_event_type == "herdr.changed"
         ):
             self._focus_generation += 1
-        if (
-            normalized_type.startswith("display")
-            or normalized_type.startswith("output")
-            or normalized_type.startswith("profile")
-        ):
+        if typed_event_type == "display.changed":
             self._display_generation += 1
         if normalized_type.startswith("project") or normalized_type.startswith("worktree"):
             self.invalidate_worktree_cache()
@@ -4430,6 +4467,11 @@ class IPCServer:
             "method": "state_changed",
             "params": {
                 "type": normalized_type,
+                "schema_version": DASHBOARD_EVENT_SCHEMA_VERSION,
+                "event_type": typed_event_type,
+                "generation": self._snapshot_version,
+                "changed_keys": changed_keys,
+                "payload": {},
                 "timestamp": time.time(),
                 "snapshot_version": self._snapshot_version,
                 "session_generation": self._session_generation,

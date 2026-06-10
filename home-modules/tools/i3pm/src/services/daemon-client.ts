@@ -374,6 +374,11 @@ export class DaemonClient {
    */
   async *subscribeToStateChanges(): AsyncIterableIterator<{
     type: string;
+    schema_version?: string;
+    event_type: string;
+    generation?: number;
+    changed_keys: string[];
+    payload?: Record<string, unknown>;
     timestamp: number;
     snapshot_version?: number;
     session_generation?: number;
@@ -404,8 +409,18 @@ export class DaemonClient {
           }
 
           const params = message.params as Record<string, unknown>;
+          const changedKeys = Array.isArray(params.changed_keys)
+            ? params.changed_keys.map((key) => String(key)).filter(Boolean)
+            : [];
           yield {
             type: String(params.type || "state_changed"),
+            schema_version: params.schema_version === undefined ? undefined : String(params.schema_version),
+            event_type: String(params.event_type || params.type || "dashboard.invalidated"),
+            generation: params.generation === undefined ? undefined : Number(params.generation),
+            changed_keys: changedKeys,
+            payload: params.payload && typeof params.payload === "object" && !Array.isArray(params.payload)
+              ? params.payload as Record<string, unknown>
+              : undefined,
             timestamp: Number(params.timestamp || Date.now()),
             snapshot_version: params.snapshot_version === undefined ? undefined : Number(params.snapshot_version),
             session_generation: params.session_generation === undefined ? undefined : Number(params.session_generation),

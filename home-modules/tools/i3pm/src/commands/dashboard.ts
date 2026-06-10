@@ -92,7 +92,7 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
         await emitSnapshot();
 
         for await (const event of subscriptionClient.subscribeToStateChanges()) {
-          const generation = Number(event.snapshot_version ?? -1);
+          const generation = Number(event.generation ?? event.snapshot_version ?? -1);
           if (Number.isFinite(generation) && generation >= 0 && generation <= lastSeenGeneration) {
             continue;
           }
