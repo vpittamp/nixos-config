@@ -536,6 +536,7 @@ PanelWindow {
                                 readonly property string groupKey: root.herdrSpaceGroupKey(space)
                                 readonly property bool groupCollapsed: root.herdrSpaceGroupCollapsed(groupKey)
                                 readonly property bool canFocus: root.herdrSpaceFocusTarget(space) !== null
+                                readonly property bool spaceFocused: root.herdrSpaceIsFocused(space)
                                 readonly property bool hovered: spaceMouse.containsMouse
                                 width: herdrSpacesList.width
                                 implicitHeight: herdrSessionContent.rowHeight
@@ -547,12 +548,12 @@ PanelWindow {
                                 Rectangle {
                                     anchors.left: parent.left
                                     anchors.verticalCenter: parent.verticalCenter
-                                    anchors.leftMargin: root.boolOrFalse(space.focused) ? 10 : 8
-                                    width: root.boolOrFalse(space.focused) ? 3 : 2
-                                    height: root.boolOrFalse(space.focused) ? 22 : (hovered ? 26 : 22)
+                                    anchors.leftMargin: herdrSpaceRow.spaceFocused ? 10 : 8
+                                    width: herdrSpaceRow.spaceFocused ? 3 : 2
+                                    height: herdrSpaceRow.spaceFocused ? 22 : (hovered ? 26 : 22)
                                     radius: 1
                                     color: root.herdrSpaceStatusColor(space)
-                                    opacity: root.boolOrFalse(space.focused) ? 0.38 : (hovered ? 0.72 : 0.46)
+                                    opacity: herdrSpaceRow.spaceFocused ? 0.38 : (hovered ? 0.72 : 0.46)
                                 }
 
                                 RowLayout {
@@ -597,7 +598,7 @@ PanelWindow {
                                         Text {
                                             Layout.fillWidth: true
                                             text: root.herdrSpaceTitle(space)
-                                            color: root.boolOrFalse(space.focused) ? colors.text : colors.textDim
+                                            color: herdrSpaceRow.spaceFocused ? colors.text : colors.textDim
                                             font.pixelSize: 12
                                             font.weight: Font.DemiBold
                                             elide: Text.ElideRight

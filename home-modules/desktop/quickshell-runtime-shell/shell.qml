@@ -4922,6 +4922,47 @@ ShellRoot {
         return key.length > 0 && collapsedHerdrSpaceGroups[key] === true;
     }
 
+    function herdrSpaceIsFocused(space) {
+        const focus = dashboardFocusState();
+        const currentPaneId = stringOrEmpty(focus.current_herdr_pane_id || focus.herdr_pane_id || focus.pane_id);
+        if (currentPaneId.length === 0) {
+            return false;
+        }
+
+        const currentHost = normalizeHostAlias(focus.current_herdr_host || focus.herdr_host || focus.host_name);
+        const targetSpaceKey = herdrSpaceKey(space);
+        const targetWorkspaceId = stringOrEmpty(space && space.workspace_id);
+        const targetHost = normalizeHostAlias(space && (space.host_key || space.host_label));
+        const sessions = activeSessions();
+        for (let i = 0; i < sessions.length; i += 1) {
+            const session = sessions[i];
+            const sessionPaneId = stringOrEmpty(session && (session.pane_id || session.tmux_pane));
+            if (sessionPaneId !== currentPaneId) {
+                continue;
+            }
+
+            const sessionHost = normalizeHostAlias(session && (session.herdr_host || session.host_name));
+            if (currentHost.length > 0 && sessionHost.length > 0 && currentHost !== sessionHost) {
+                continue;
+            }
+
+            const sessionSpace = herdrSessionSpace(session);
+            if (sessionSpace && herdrSpaceKey(sessionSpace) === targetSpaceKey) {
+                return true;
+            }
+
+            if (
+                targetWorkspaceId.length > 0
+                && targetWorkspaceId === stringOrEmpty(session && session.workspace_id)
+                && (!targetHost.length || !sessionHost.length || targetHost === sessionHost)
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     function toggleHerdrSpaceGroup(groupKey) {
         const key = stringOrEmpty(groupKey);
         if (!key) {
@@ -4991,7 +5032,7 @@ ShellRoot {
         for (let i = 0; i < spaces.length; i += 1) {
             const space = spaces[i];
             const groupKey = herdrSpaceGroupKey(space);
-            if (!root.boolOrFalse(space && space.is_linked_worktree) || !herdrSpaceGroupCollapsed(groupKey) || root.boolOrFalse(space && space.focused)) {
+            if (!root.boolOrFalse(space && space.is_linked_worktree) || !herdrSpaceGroupCollapsed(groupKey) || herdrSpaceIsFocused(space)) {
                 visible.push(space);
             }
         }
@@ -5133,7 +5174,7 @@ ShellRoot {
     }
 
     function herdrSpaceFill(space, hovered) {
-        if (boolOrFalse(space && space.focused)) {
+        if (herdrSpaceIsFocused(space)) {
             return hovered
                 ? Qt.tint(colors.cardAlt, Qt.rgba(0.40, 0.86, 0.92, 0.11))
                 : Qt.tint(colors.cardAlt, Qt.rgba(0.40, 0.86, 0.92, 0.07));
@@ -5142,7 +5183,7 @@ ShellRoot {
     }
 
     function herdrSpaceBorder(space, hovered) {
-        if (boolOrFalse(space && space.focused)) {
+        if (herdrSpaceIsFocused(space)) {
             return hovered ? colors.lineSoft : "transparent";
         }
         return hovered ? colors.lineSoft : "transparent";

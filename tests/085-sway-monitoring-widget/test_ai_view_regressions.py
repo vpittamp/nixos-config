@@ -374,10 +374,18 @@ def test_remote_host_token_uses_tailscale_blue_not_orange():
     assert "background: isRemote ? colors.orangeBg : colors.blueWash" not in text
 
 
-def test_herdr_collapsed_groups_hide_inactive_children_but_keep_focused_child():
+def test_herdr_space_focus_uses_daemon_focus_state_for_collapsed_children():
     text = SHELL_QML.read_text()
+    panel_text = RUNTIME_PANEL_WINDOW_QML.read_text()
     assert "function visibleHerdrSpaces()" in text
-    assert "!root.boolOrFalse(space && space.is_linked_worktree) || !herdrSpaceGroupCollapsed(groupKey) || root.boolOrFalse(space && space.focused)" in text
+    assert "function herdrSpaceIsFocused(space)" in text
+    assert "const focus = dashboardFocusState();" in text
+    assert "focus.current_herdr_pane_id" in text
+    assert "focus.current_herdr_host" in text
+    assert "!root.boolOrFalse(space && space.is_linked_worktree) || !herdrSpaceGroupCollapsed(groupKey) || herdrSpaceIsFocused(space)" in text
+    assert "readonly property bool spaceFocused: root.herdrSpaceIsFocused(space)" in panel_text
+    assert "space && space.focused" not in text
+    assert "space.focused" not in panel_text
 
 
 def test_herdr_group_aggregate_status_drives_collapsed_parent_dot():
