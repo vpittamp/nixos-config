@@ -543,6 +543,69 @@ def test_herdr_service_normalizes_local_and_remote_sessions(monkeypatch):
     }
 
 
+def test_herdr_service_builds_spaces_with_worktree_groups():
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    snapshot = {
+        "workspaces": [
+            {
+                "workspace_id": "main-ws",
+                "name": "nixos-config",
+                "focused": False,
+                "repo_key": "vpittamp/nixos-config",
+                "repo_name": "nixos-config",
+                "repo_root": "/repo/nixos-config",
+                "checkout_path": "/repo/nixos-config/main",
+                "is_linked_worktree": False,
+            },
+            {
+                "workspace_id": "feature-ws",
+                "name": "feature",
+                "focused": True,
+                "repo_key": "vpittamp/nixos-config",
+                "repo_name": "nixos-config",
+                "repo_root": "/repo/nixos-config",
+                "checkout_path": "/repo/nixos-config/worktree/feature",
+                "is_linked_worktree": True,
+                "branch_label": "feature",
+            },
+        ],
+        "agents": [{"workspace_id": "feature-ws", "herdr_host": "thinkpad"}],
+        "panes": [{"workspace_id": "feature-ws", "herdr_host": "thinkpad"}],
+        "tabs": [{"workspace_id": "feature-ws", "herdr_host": "thinkpad"}],
+        "worktrees": [],
+    }
+    sessions = [{
+        "source": "herdr",
+        "workspace_id": "feature-ws",
+        "project_name": "vpittamp/nixos-config:feature",
+        "agent_status": "NeedsInput",
+        "focused": True,
+        "herdr_host": "thinkpad",
+        "is_current_host": True,
+    }]
+
+    spaces = service.build_spaces(
+        snapshot,
+        sessions,
+        local_host="thinkpad",
+        normalize_connection_key=lambda value: value,
+    )
+    by_workspace = {space["workspace_id"]: space for space in spaces}
+
+    assert by_workspace["main-ws"]["is_group_parent"] is True
+    assert by_workspace["main-ws"]["group_member_count"] == 2
+    assert by_workspace["feature-ws"]["group_key"] == "thinkpad:vpittamp/nixos-config"
+    assert by_workspace["feature-ws"]["is_linked_worktree"] is True
+    assert by_workspace["feature-ws"]["focused"] is True
+    assert by_workspace["feature-ws"]["agent_status"] == "blocked"
+    assert by_workspace["feature-ws"]["agent_count"] == 1
+    assert by_workspace["feature-ws"]["pane_count"] == 1
+    assert by_workspace["feature-ws"]["tab_count"] == 1
+
+
 @pytest.mark.asyncio
 async def test_herdr_service_builds_remote_snapshot(monkeypatch):
     service = HerdrService(
