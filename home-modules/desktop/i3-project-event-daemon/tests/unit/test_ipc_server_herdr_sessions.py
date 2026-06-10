@@ -31,8 +31,10 @@ if "i3_project_daemon" not in sys.modules:
 
 ipc_server_module = importlib.import_module("i3_project_daemon.ipc_server")
 constants_module = importlib.import_module("i3_project_daemon.constants")
+herdr_service_module = importlib.import_module("i3_project_daemon.services.herdr_service")
 
 IPCServer = ipc_server_module.IPCServer
+HerdrService = herdr_service_module.HerdrService
 
 
 class DummyLaunchRegistry:
@@ -61,6 +63,24 @@ def server():
     return IPCServer(DummyStateManager())
 
 
+def normalize_herdr_sessions(server, snapshot, *, remote_target=None):
+    return server.herdr_service.normalize_sessions(
+        snapshot,
+        remote_target=remote_target,
+        local_host=server._local_host_alias(),
+        normalize_connection_key=server._normalize_connection_key,
+        project_for_cwd=server._herdr_project_for_cwd,
+    )
+
+
+def herdr_git_space_metadata(server, path, *, ssh_target=""):
+    return server.herdr_service.git_space_metadata(
+        path,
+        ssh_target=ssh_target,
+        normalize_connection_key=server._normalize_connection_key,
+    )
+
+
 def test_herdr_rows_preserve_status_and_targets(server, tmp_path, monkeypatch):
     repos_file = tmp_path / "repos.json"
     repos_file.write_text(json.dumps({
@@ -76,7 +96,7 @@ def test_herdr_rows_preserve_status_and_targets(server, tmp_path, monkeypatch):
     monkeypatch.setattr(constants_module.ConfigPaths, "REPOS_FILE", repos_file)
     ipc_server_module._load_discovered_worktree_cache(force_refresh=True)
 
-    rows = server._normalize_herdr_sessions({
+    rows = normalize_herdr_sessions(server, {
         "agents": [{
             "agent": "codex",
             "agent_status": "blocked",
@@ -157,7 +177,7 @@ def test_herdr_row_uses_git_cwd_when_foreground_cwd_is_not_repo(server, tmp_path
     monkeypatch.setattr(constants_module.ConfigPaths, "REPOS_FILE", repos_file)
     ipc_server_module._load_discovered_worktree_cache(force_refresh=True)
 
-    rows = server._normalize_herdr_sessions({
+    rows = normalize_herdr_sessions(server, {
         "agents": [{
             "agent": "codex",
             "agent_status": "working",
@@ -255,7 +275,7 @@ def test_herdr_git_metadata_repo_name_uses_repo_key_for_main_checkout(server, tm
     subprocess.run(["git", "init", "-b", "fix/repo-editor-commit-guard"], cwd=repo_path, check=True)
     subprocess.run(["git", "remote", "add", "origin", "git@github.com:PittampalliOrg/workflow-builder.git"], cwd=repo_path, check=True)
 
-    metadata = server._herdr_git_space_metadata(str(repo_path))
+    metadata = herdr_git_space_metadata(server, str(repo_path))
 
     assert metadata["repo_key"] == "PittampalliOrg/workflow-builder"
     assert metadata["repo_name"] == "workflow-builder"
@@ -264,7 +284,7 @@ def test_herdr_git_metadata_repo_name_uses_repo_key_for_main_checkout(server, tm
 
 
 def test_herdr_rows_skip_plain_panes_and_keep_unknown_status(server):
-    rows = server._normalize_herdr_sessions({
+    rows = normalize_herdr_sessions(server, {
         "agents": [],
         "panes": [{
             "agent_status": "unknown",
@@ -819,7 +839,7 @@ def test_herdr_spaces_do_not_fabricate_branch_label_from_checkout_basename(serve
 
 
 def test_herdr_worktree_result_array_normalizes_source_and_open_workspace(server):
-    rows = server._herdr_worktree_result_array({
+    rows = HerdrService.worktree_result_array({
         "success": True,
         "result": {
             "source": {

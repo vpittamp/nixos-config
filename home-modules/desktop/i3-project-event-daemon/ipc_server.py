@@ -8629,119 +8629,11 @@ FORMAT JSONEachRow
             },
         }
 
-    async def _run_herdr_json(self, args: List[str], timeout: float = 2.0) -> Dict[str, Any]:
-        """Run a Herdr CLI command that returns a single JSON object."""
-        return await self.herdr_service.run_json(args, timeout=timeout)
-
-    def _herdr_remote_targets_file(self) -> Path:
-        return self.herdr_service.remote_targets_file()
-
-    def _herdr_connection_key_for_target(self, ssh_target: str, explicit: str = "") -> str:
-        return self.herdr_service.connection_key_for_target(
-            ssh_target,
-            explicit,
-            parse_remote_target=self._parse_remote_target,
-            normalize_connection_key=self._normalize_connection_key,
-        )
-
     def _load_herdr_remote_targets(self) -> List[Dict[str, str]]:
         return self.herdr_service.load_remote_targets(
             parse_remote_target=self._parse_remote_target,
             normalize_connection_key=self._normalize_connection_key,
         )
-
-    async def _run_herdr_ssh_json(
-        self,
-        target: Dict[str, str],
-        args: List[str],
-        timeout: float = 2.5,
-    ) -> Dict[str, Any]:
-        """Run a read-only Herdr command on a remote host over SSH."""
-        return await self.herdr_service.run_ssh_json(target, args, timeout=timeout)
-
-    @staticmethod
-    def _herdr_result_array(payload: Dict[str, Any], key: str) -> List[Dict[str, Any]]:
-        return HerdrService.result_array(payload, key)
-
-    @staticmethod
-    def _herdr_worktree_result_array(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-        return HerdrService.worktree_result_array(payload)
-
-    @staticmethod
-    def _herdr_normalize_repo_url(value: Any) -> str:
-        return HerdrService.normalize_repo_url(value)
-
-    @staticmethod
-    def _herdr_ssh_command_prefix(ssh_target: str) -> List[str]:
-        return HerdrService.ssh_command_prefix(ssh_target)
-
-    def _herdr_git_run(self, path: str, args: List[str], *, ssh_target: str = "", timeout: float = 0.75) -> str:
-        return self.herdr_service.git_run(
-            path,
-            args,
-            ssh_target=ssh_target,
-            timeout=timeout,
-        )
-
-    def _herdr_path_is_git_worktree(self, path: Any, *, ssh_target: str = "") -> bool:
-        return self.herdr_service.path_is_git_worktree(path, ssh_target=ssh_target)
-
-    def _herdr_effective_cwd(self, row: Dict[str, Any], *, ssh_target: str = "") -> str:
-        return self.herdr_service.effective_cwd(row, ssh_target=ssh_target)
-
-    def _herdr_git_branch(self, path: Any, *, ssh_target: str = "") -> str:
-        return self.herdr_service.git_branch(path, ssh_target=ssh_target)
-
-    def _herdr_git_space_metadata(self, path: Any, *, ssh_target: str = "") -> Dict[str, Any]:
-        return self.herdr_service.git_space_metadata(
-            path,
-            ssh_target=ssh_target,
-            normalize_connection_key=self._normalize_connection_key,
-        )
-
-    @staticmethod
-    def _normalize_herdr_agent_status(value: Any, *, preserve_raw: bool = False) -> str:
-        return HerdrService.normalize_agent_status(value, preserve_raw=preserve_raw)
-
-    @staticmethod
-    def _herdr_agent_status_state(value: Any) -> str:
-        return HerdrService.agent_status_state(value)
-
-    @classmethod
-    def _herdr_agent_status_rank(cls, value: Any) -> int:
-        return HerdrService.agent_status_rank(value)
-
-    @staticmethod
-    def _normalize_herdr_text_field(value: Any) -> str:
-        return HerdrService.normalize_text_field(value)
-
-    @classmethod
-    def _normalize_herdr_state_labels(cls, value: Any) -> Dict[str, str]:
-        return HerdrService.normalize_state_labels(value)
-
-    def _annotate_herdr_rows(
-        self,
-        rows: List[Dict[str, Any]],
-        *,
-        host: str,
-        execution_mode: str,
-        connection_key: str,
-        ssh_target: str = "",
-        is_remote: bool = False,
-    ) -> List[Dict[str, Any]]:
-        return self.herdr_service.annotate_rows(
-            rows,
-            host=host,
-            execution_mode=execution_mode,
-            connection_key=connection_key,
-            ssh_target=ssh_target,
-            is_remote=is_remote,
-            normalize_connection_key=self._normalize_connection_key,
-        )
-
-    @staticmethod
-    def _herdr_session_key(row: Dict[str, Any], host: str = "") -> str:
-        return HerdrService.session_key(row, host)
 
     def _herdr_project_for_cwd(self, cwd: str) -> Dict[str, str]:
         discovered = resolve_discovered_worktree(cwd)
@@ -8755,34 +8647,6 @@ FORMAT JSONEachRow
             "project_name": "global",
             "project_path": normalized,
         }
-
-    def _normalize_herdr_session_row(
-        self,
-        row: Dict[str, Any],
-        *,
-        remote_target: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
-        return self.herdr_service.normalize_session_row(
-            row,
-            remote_target=remote_target,
-            local_host=self._local_host_alias(),
-            normalize_connection_key=self._normalize_connection_key,
-            project_for_cwd=self._herdr_project_for_cwd,
-        )
-
-    def _normalize_herdr_sessions(
-        self,
-        snapshot: Dict[str, Any],
-        *,
-        remote_target: Optional[Dict[str, str]] = None,
-    ) -> List[Dict[str, Any]]:
-        return self.herdr_service.normalize_sessions(
-            snapshot,
-            remote_target=remote_target,
-            local_host=self._local_host_alias(),
-            normalize_connection_key=self._normalize_connection_key,
-            project_for_cwd=self._herdr_project_for_cwd,
-        )
 
     async def _herdr_remote_snapshot(self, target: Dict[str, str]) -> Dict[str, Any]:
         """Return one remote Herdr host snapshot fetched through read-only SSH commands."""
@@ -8825,14 +8689,6 @@ FORMAT JSONEachRow
 
     async def _herdr_pane_close(self, params: Dict[str, Any]) -> Dict[str, Any]:
         return await self.herdr_service.pane_close(params)
-
-    def _resolve_herdr_remote_action_target(self, params: Dict[str, Any]) -> Dict[str, str]:
-        return self.herdr_service.resolve_remote_action_target(
-            params,
-            targets=self._load_herdr_remote_targets(),
-            parse_remote_target=self._parse_remote_target,
-            normalize_connection_key=self._normalize_connection_key,
-        )
 
     def _apply_remote_herdr_focus_cache(
         self,
