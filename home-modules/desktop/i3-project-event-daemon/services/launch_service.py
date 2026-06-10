@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import tempfile
 import time
@@ -14,6 +16,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from ..config import atomic_write_json
+
+logger = logging.getLogger(__name__)
 
 
 class LaunchService:
@@ -33,6 +37,9 @@ class LaunchService:
         canonical_tmux_socket: Optional[Callable[[], str]] = None,
         resolve_terminal_helper: Optional[Callable[[str], Path]] = None,
         run_command: Optional[Callable[..., subprocess.CompletedProcess[str]]] = None,
+        repo_root: Optional[Callable[[], Path]] = None,
+        which: Optional[Callable[[str], Optional[str]]] = None,
+        schedule_launch_reconcile: Optional[Callable[..., None]] = None,
     ) -> None:
         self._runtime_dir = runtime_dir
         self._load_json_file = load_json_file
@@ -45,6 +52,9 @@ class LaunchService:
         self._canonical_tmux_socket = canonical_tmux_socket or (lambda: "")
         self._resolve_terminal_helper = resolve_terminal_helper
         self._run_command = run_command or subprocess.run
+        self._repo_root = repo_root
+        self._which = which or shutil.which
+        self._schedule_launch_reconcile = schedule_launch_reconcile
 
     @staticmethod
     def _quote(value: Any) -> str:
@@ -495,4 +505,341 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         return {
             "success": True,
             "reason": "ok",
+        }
+
+    def resolve_terminal_helper(self, helper_name: str) -> Path:
+        """Resolve installed terminal helpers, with a repo fallback for local development."""
+        helper_dir = os.environ.get("I3PM_TERMINAL_HELPER_DIR", "").strip()
+        if helper_dir:
+            packaged_helper = Path(helper_dir) / helper_name
+            if packaged_helper.is_file():
+                return packaged_helper
+
+        local_helper = Path.home() / ".local" / "bin" / helper_name
+        if local_helper.is_file():
+            return local_helper
+
+        helper_path = self._which(helper_name)
+        if helper_path:
+            return Path(helper_path)
+
+        if self._repo_root is not None:
+            repo_helper = self._repo_root() / "scripts" / helper_name
+            if repo_helper.is_file():
+                return repo_helper
+
+        raise RuntimeError(f"Terminal helper not found: {helper_name}")
+
+    def _terminal_helper(self, helper_name: str) -> Path:
+        if self._resolve_terminal_helper is not None:
+            return self._resolve_terminal_helper(helper_name)
+        return self.resolve_terminal_helper(helper_name)
+
+    def reap_orphan_app_units(self, app_name: str, app_command: str) -> None:
+        """Stop orphan systemd user units left behind by a previous launch of this app."""
+        systemctl = self._which("systemctl") or "/run/current-system/sw/bin/systemctl"
+        binary = os.path.basename(str(app_command or "").strip())
+        sanitized_command = re.sub(r"[^a-zA-Z0-9_.-]+", "-", binary) if binary else ""
+        sanitized_app = re.sub(r"[^a-zA-Z0-9_.-]+", "-", str(app_name or "")).strip("-")
+
+        prefixes: list[tuple[str, str]] = []
+        if sanitized_command:
+            prefixes.append((f"app-{sanitized_command}-", ".scope"))
+        if sanitized_app:
+            prefixes.append((f"i3pm-launch-{sanitized_app}-", ".service"))
+
+        if not prefixes:
+            return
+
+        try:
+            result = self._run_command(
+                [
+                    systemctl,
+                    "--user",
+                    "list-units",
+                    "--all",
+                    "--no-legend",
+                    "--plain",
+                    "--type=scope,service",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.warning(
+                "Failed to enumerate user units while reaping orphans for %s: %s",
+                app_name,
+                exc,
+            )
+            return
+
+        units_to_stop: list[str] = []
+        for line in result.stdout.splitlines():
+            unit = line.split(maxsplit=1)[0].strip() if line.strip() else ""
+            if not unit:
+                continue
+            for prefix, suffix in prefixes:
+                if unit.startswith(prefix) and unit.endswith(suffix):
+                    units_to_stop.append(unit)
+                    break
+
+        for unit in units_to_stop:
+            try:
+                self._run_command(
+                    [systemctl, "--user", "stop", unit],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=10,
+                )
+                logger.info(
+                    "Reaped orphan unit %s before relaunching %s",
+                    unit,
+                    app_name,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                logger.warning("Failed to stop orphan unit %s: %s", unit, exc)
+
+    def execute_launch_spec(self, spec: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a daemon-prepared launch spec via systemd-run."""
+        app_name = str(spec.get("app_name") or "").strip()
+        command = str(spec.get("command") or "").strip()
+        args = [str(arg) for arg in (spec.get("args") or [])]
+        shell_command = ""
+        execution_mode = str(spec.get("execution_mode") or "local").strip() or "local"
+        connection_key = str(spec.get("connection_key") or "").strip()
+        local_project_dir = str(spec.get("local_project_directory") or "").strip()
+        environment = {
+            str(key): str(value)
+            for key, value in (spec.get("environment") or {}).items()
+        }
+        terminal_launch = spec.get("terminal_launch") or {}
+        terminal_mode = str(terminal_launch.get("mode") or "").strip()
+        helper_name = str(terminal_launch.get("helper_name") or "").strip()
+        helper_args = [str(arg) for arg in (terminal_launch.get("helper_args") or [])]
+        launch_transport = str(spec.get("launch_transport") or "").strip()
+        if not launch_transport and self._resolve_terminal_launch_transport is not None:
+            launch_transport = str(
+                self._resolve_terminal_launch_transport(
+                    execution_mode=execution_mode,
+                    connection_key=connection_key,
+                )
+            ).strip()
+        launch_transport = launch_transport or "local_helper"
+
+        if app_name == "k9s":
+            kubeconfig_path = Path.home() / ".kube" / "stacks" / "config"
+            if not kubeconfig_path.is_file():
+                sync_cmd = self._which("sync-stacks-kubeconfigs")
+                if not sync_cmd:
+                    raise RuntimeError("Expected kubeconfig not found and sync-stacks-kubeconfigs is unavailable")
+                self._run_command([sync_cmd], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if not kubeconfig_path.is_file():
+                    raise RuntimeError("Expected kubeconfig not found after sync")
+            environment["KUBECONFIG"] = str(kubeconfig_path)
+
+        launch_id = str((spec.get("launch") or {}).get("launch_id") or "").strip()
+
+        if terminal_mode == "managed_project_terminal" and launch_transport == "local_helper":
+            if not local_project_dir:
+                raise RuntimeError("Managed local terminal launch requires local_project_directory")
+            launch_script = self._terminal_helper(helper_name or "project-terminal-launch.sh")
+            shell_command = (
+                f"exec {shlex.quote(command)} -e "
+                + " ".join(
+                    shlex.quote(part)
+                    for part in [str(launch_script), local_project_dir, *helper_args]
+                )
+            )
+        elif terminal_mode == "managed_project_terminal" and launch_transport == "remote_helper":
+            spec["launch_kind"] = (
+                "attach_ai_session"
+                if bool((terminal_launch.get("remote_attach") or {}))
+                else "open_project_terminal"
+            )
+            spec_file = self.write_remote_spec(spec=spec, launch_kind=str(spec.get("launch_kind") or "open_project_terminal"))
+            launch_script = self._terminal_helper("project-remote-launch.py")
+            shell_command = (
+                f"exec {shlex.quote(command)} -e "
+                + " ".join(
+                    shlex.quote(part)
+                    for part in [str(launch_script), str(spec_file)]
+                )
+            )
+        elif terminal_mode == "dedicated_scoped_window" and launch_transport == "local_helper":
+            if not local_project_dir:
+                raise RuntimeError("Dedicated scoped terminal launch requires local_project_directory")
+            launch_script = self._terminal_helper(helper_name or "project-command-launch.sh")
+            shell_command = (
+                f"exec {shlex.quote(command)} -e "
+                + " ".join(
+                    shlex.quote(part)
+                    for part in [str(launch_script), local_project_dir, *helper_args]
+                )
+            )
+        elif terminal_mode == "dedicated_scoped_window" and launch_transport == "remote_helper":
+            spec["launch_kind"] = "open_project_terminal"
+            spec_file = self.write_remote_spec(spec=spec, launch_kind="open_project_terminal")
+            launch_script = self._terminal_helper("project-remote-launch.py")
+            shell_command = (
+                f"exec {shlex.quote(command)} -e "
+                + " ".join(
+                    shlex.quote(part)
+                    for part in [str(launch_script), str(spec_file)]
+                )
+            )
+        elif terminal_mode == "scoped_terminal_command" and launch_transport == "local_helper":
+            if not local_project_dir:
+                raise RuntimeError("Scoped local terminal launch requires local_project_directory")
+            launch_script = self._terminal_helper(helper_name or "project-command-launch.sh")
+            shell_command = (
+                f"exec {shlex.quote(command)} -e "
+                + " ".join(
+                    shlex.quote(part)
+                    for part in [str(launch_script), local_project_dir, *helper_args]
+                )
+            )
+        elif terminal_mode == "scoped_terminal_command" and launch_transport == "remote_helper":
+            spec["launch_kind"] = "open_project_terminal"
+            spec_file = self.write_remote_spec(spec=spec, launch_kind="open_project_terminal")
+            launch_script = self._terminal_helper("project-remote-launch.py")
+            shell_command = (
+                f"exec {shlex.quote(command)} -e "
+                + " ".join(
+                    shlex.quote(part)
+                    for part in [str(launch_script), str(spec_file)]
+                )
+            )
+        elif execution_mode == "ssh":
+            raise RuntimeError("Remote project execution only supports daemon-managed terminal launches")
+
+        if not command:
+            raise RuntimeError("Launch spec is missing command")
+        if self._which(command) is None and not Path(command).exists():
+            raise RuntimeError(f"Command not found: {command}")
+
+        workdir = Path.home()
+        if launch_transport == "local_helper" and local_project_dir:
+            workdir = Path(local_project_dir)
+
+        resolved_command = self._which(command) or command
+        direct_pwa_launch = (
+            execution_mode == "local"
+            and not terminal_mode
+            and Path(resolved_command).name == "launch-pwa-by-name"
+        )
+
+        if direct_pwa_launch:
+            env_prefix = [
+                "env",
+                *[
+                    f"{key}={value}"
+                    for key, value in environment.items()
+                ],
+            ]
+            shell_command = " ".join(
+                shlex.quote(part)
+                for part in [*env_prefix, resolved_command, *args]
+            )
+            result = self._run_command(
+                ["swaymsg", "--quiet", f"exec {shell_command}"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or "").strip()
+                if launch_id:
+                    self.write_status(
+                        launch_id=launch_id,
+                        status="failed",
+                        spec=spec,
+                        reason="launch_start_failed",
+                        error_code="launch_start_failed",
+                        error_message=detail or "swaymsg exec error",
+                    )
+                raise RuntimeError(f"Detached PWA launch failed: {detail or 'swaymsg exec error'}")
+            if launch_id:
+                self.write_status(
+                    launch_id=launch_id,
+                    status="waiting_window",
+                    spec=spec,
+                    reason="waiting_window",
+                )
+            return {
+                "success": True,
+                "pid": 0,
+                "launch_id": launch_id,
+                "status": self.read_status(launch_id) if launch_id else {},
+            }
+
+        unit_name = f"i3pm-launch-{re.sub(r'[^a-zA-Z0-9_.-]+', '-', app_name or 'app')}-{os.getpid()}-{int(time.time())}"
+        systemd_cmd = [
+            "systemd-run",
+            "--user",
+            "--quiet",
+            "--collect",
+            "--unit",
+            unit_name,
+            "--working-directory",
+            str(workdir),
+        ]
+        if terminal_mode == "managed_project_terminal" and launch_transport == "local_helper":
+            # This path may create the shared tmux server. Keep unit teardown from
+            # reaping that server and every pane attached to the canonical socket.
+            systemd_cmd.append("--property=KillMode=process")
+        for key, value in environment.items():
+            systemd_cmd.extend(["--setenv", f"{key}={value}"])
+        if shell_command:
+            systemd_cmd.extend(["bash", "-lc", shell_command])
+        else:
+            systemd_cmd.append(command)
+            systemd_cmd.extend(args)
+
+        if launch_id:
+            self.write_status(
+                launch_id=launch_id,
+                status="starting_terminal",
+                spec=spec,
+                reason="starting_terminal",
+            )
+        result = self._run_command(systemd_cmd, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            if launch_id:
+                self.write_status(
+                    launch_id=launch_id,
+                    status="failed",
+                    spec=spec,
+                    reason="launch_start_failed",
+                    error_code="launch_start_failed",
+                    error_message=detail or "systemd-run error",
+                )
+            raise RuntimeError(f"Detached launch failed: {detail or 'systemd-run error'}")
+
+        if launch_id:
+            if terminal_mode == "managed_project_terminal":
+                self.write_status(
+                    launch_id=launch_id,
+                    status="session_validating",
+                    spec=spec,
+                    reason="session_validating",
+                )
+                if launch_transport == "local_helper" and self._schedule_launch_reconcile is not None:
+                    self._schedule_launch_reconcile(launch_id, anchor_bound=None, attempts=30, delay_s=0.2)
+            else:
+                self.write_status(
+                    launch_id=launch_id,
+                    status="waiting_window",
+                    spec=spec,
+                    reason="waiting_window",
+                )
+
+        return {
+            "success": True,
+            "unit_name": unit_name,
+            "launch_id": launch_id,
+            "status": self.read_status(launch_id) if launch_id else {},
         }

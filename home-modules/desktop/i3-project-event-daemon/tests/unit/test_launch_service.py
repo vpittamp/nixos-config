@@ -56,16 +56,21 @@ def make_service(
     transport: str = "local_helper",
     run_commands: Optional[List[List[str]]] = None,
     helper_path: Path = Path("/tmp/project-remote-launch.py"),
+    which_map: Optional[Dict[str, str]] = None,
+    reconcile_calls: Optional[List[Dict[str, Any]]] = None,
 ) -> LaunchService:
     def fake_run(
         cmd: List[str],
-        capture_output: bool,
-        text: bool,
-        check: bool,
+        *args: Any,
+        **kwargs: Any,
     ) -> subprocess.CompletedProcess[str]:
         if run_commands is not None:
             run_commands.append(cmd)
         return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    def fake_reconcile(*args: Any, **kwargs: Any) -> None:
+        if reconcile_calls is not None:
+            reconcile_calls.append({"args": args, "kwargs": kwargs})
 
     return LaunchService(
         runtime_dir=lambda: tmp_path,
@@ -79,6 +84,9 @@ def make_service(
         canonical_tmux_socket=lambda: "/run/user/1000/tmux-1000/default",
         resolve_terminal_helper=lambda _name: helper_path,
         run_command=fake_run,
+        repo_root=lambda: PACKAGE_ROOT,
+        which=lambda command: (which_map or {}).get(command),
+        schedule_launch_reconcile=fake_reconcile,
     )
 
 
@@ -262,3 +270,69 @@ def test_dispatch_managed_terminal_command_local_uses_tmux_dispatch(tmp_path: Pa
     assert commands[0][:2] == ["bash", "-lc"]
     assert "tmux -S /run/user/1000/tmux-1000/default" in commands[0][2]
     assert "ssh -o" not in commands[0][2]
+
+
+def test_execute_launch_spec_local_managed_terminal_updates_status_and_reconciles(tmp_path: Path) -> None:
+    commands: List[List[str]] = []
+    reconcile_calls: List[Dict[str, Any]] = []
+    service = make_service(
+        tmp_path,
+        transport="local_helper",
+        run_commands=commands,
+        helper_path=Path("/tmp/project-terminal-launch.sh"),
+        which_map={"ghostty": "/usr/bin/ghostty"},
+        reconcile_calls=reconcile_calls,
+    )
+
+    result = service.execute_launch_spec({
+        "app_name": "terminal",
+        "command": "ghostty",
+        "args": ["-e", "bash"],
+        "execution_mode": "local",
+        "connection_key": "local@thinkpad",
+        "local_project_directory": "/repo/main",
+        "environment": {"I3PM_CONTEXT_KEY": "ctx"},
+        "launch": {"launch_id": "launch-managed"},
+        "terminal_launch": {
+            "mode": "managed_project_terminal",
+            "helper_name": "project-terminal-launch.sh",
+            "helper_args": ["codex"],
+        },
+    })
+
+    assert result["success"] is True
+    assert result["launch_id"] == "launch-managed"
+    assert commands[0][0] == "systemd-run"
+    assert "--property=KillMode=process" in commands[0]
+    assert commands[0][-3:] == ["bash", "-lc", "exec ghostty -e /tmp/project-terminal-launch.sh /repo/main codex"]
+    assert service.read_status("launch-managed")["status"] == "session_validating"
+    assert reconcile_calls == [{
+        "args": ("launch-managed",),
+        "kwargs": {"anchor_bound": None, "attempts": 30, "delay_s": 0.2},
+    }]
+
+
+def test_execute_launch_spec_local_pwa_uses_sway_exec(tmp_path: Path) -> None:
+    commands: List[List[str]] = []
+    service = make_service(
+        tmp_path,
+        transport="local_helper",
+        run_commands=commands,
+        which_map={"launch-pwa-by-name": "/usr/bin/launch-pwa-by-name"},
+    )
+
+    result = service.execute_launch_spec({
+        "app_name": "gmail-pwa",
+        "command": "launch-pwa-by-name",
+        "args": ["01JCYF9K4Q9V6X8YJ1MNSPT0D7"],
+        "execution_mode": "local",
+        "local_project_directory": "",
+        "environment": {"I3PM_CONTEXT_KEY": "ctx"},
+        "launch": {"launch_id": "launch-pwa"},
+    })
+
+    assert result["success"] is True
+    assert result["pid"] == 0
+    assert commands[0][:2] == ["swaymsg", "--quiet"]
+    assert "exec env I3PM_CONTEXT_KEY=ctx /usr/bin/launch-pwa-by-name 01JCYF9K4Q9V6X8YJ1MNSPT0D7" in commands[0][2]
+    assert service.read_status("launch-pwa")["status"] == "waiting_window"
