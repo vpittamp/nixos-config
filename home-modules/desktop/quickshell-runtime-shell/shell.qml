@@ -5339,7 +5339,6 @@ ShellRoot {
         return stringOrEmpty(
             dashboardFocusState().current_session_key
             || dashboardFocusState().current_ai_session_key
-            || dashboard.current_ai_session_key
         );
     }
 

@@ -90,6 +90,8 @@ def test_session_rows_use_daemon_focus_state_for_current_highlight():
     assert "currentOverride: root.sessionIsCurrent(modelData)" in panel_text
     assert "currentOverride: root.sessionIsCurrent(entry)" in launcher_text
     assert "const current = currentSessionKey();" in text
+    current_session_key_body = text.split("function currentSessionKey()", 1)[1].split("function sessionMatchesKey", 1)[0]
+    assert "dashboard.current_ai_session_key" not in current_session_key_body
 
 
 def test_launcher_session_search_indexes_herdr_fields():
