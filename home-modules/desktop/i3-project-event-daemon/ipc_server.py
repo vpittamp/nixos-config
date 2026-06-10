@@ -54,10 +54,10 @@ from .services.registry_loader import RegistryLoader, RegistryApp
 from .services.assistant_desktop_service import AssistantDesktopService
 from .services.dashboard_model import (
     build_dashboard_projects as build_dashboard_project_cards,
-    build_dashboard_worktree_rows,
 )
 from .services.dashboard_service import DashboardService
 from .services.dashboard_git_service import DashboardGitService
+from .services.dashboard_worktree_service import DashboardWorktreeService
 from .services.display_service import DisplayService
 from .services.focus_service import FocusService
 from .services.herdr_service import HerdrService
@@ -520,10 +520,7 @@ class IPCServer:
         self._window_tree_cache_time: float = 0.0
         self._window_tree_cache_ttl: float = 15.0  # Max cache age in seconds (fallback if invalidation missed)
 
-        self._worktree_cache: Optional[List[Dict[str, Any]]] = None
-        self._worktree_cache_time: float = 0.0
         self._worktree_cache_ttl: float = 10.0
-        self._worktree_cache_fingerprint: Dict[str, Any] = {}
         self._git_probe_timeout_seconds: float = 2.5
         self._git_snapshot_ttl_current: float = 3.0
         self._git_snapshot_ttl_visible: float = 8.0
@@ -542,6 +539,17 @@ class IPCServer:
             ttl_background=self._git_snapshot_ttl_background,
             ttl_failure=self._git_snapshot_failure_ttl,
             git_probe_timeout_seconds=self._git_probe_timeout_seconds,
+        )
+        self.dashboard_worktree_service = DashboardWorktreeService(
+            repo_list=lambda: self._repo_list({}),
+            load_usage_map=self._load_validated_project_usage_map,
+            flatten_runtime_windows=lambda runtime_snapshot: self._flatten_runtime_windows(runtime_snapshot),
+            cache_fingerprint=self._dashboard_worktree_cache_fingerprint,
+            normalize_target_host=self._normalize_target_host,
+            local_host_alias=self._local_host_alias,
+            canonical_project_name=lambda *args, **kwargs: self._canonical_discovered_project_name(*args, **kwargs),
+            get_worktree_host_profile=lambda qualified_name: self._get_worktree_host_profile(qualified_name),
+            ttl=self._worktree_cache_ttl,
         )
         self.session_action_service = SessionActionService(
             parse_remote_target=self._parse_remote_target,
@@ -2878,9 +2886,7 @@ class IPCServer:
 
     def invalidate_worktree_cache(self) -> None:
         """Invalidate the cached worktree summary used by dashboard snapshots."""
-        self._worktree_cache = None
-        self._worktree_cache_time = 0.0
-        self._worktree_cache_fingerprint = {}
+        self.dashboard_worktree_service.invalidate()
         self.dashboard_git_service.clear_snapshot_cache()
 
     def _canonical_discovered_project_name(
@@ -7055,43 +7061,7 @@ class IPCServer:
         runtime_snapshot: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         """Build a compact worktree list for the runtime shell."""
-        now = time.time()
-        active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
-        active_qualified = str(active_context.get("qualified_name") or active_context.get("project_name") or "").strip()
-        active_target_host = self._normalize_target_host(active_context.get("target_host") or self._local_host_alias())
-        cache_fingerprint = self._dashboard_worktree_cache_fingerprint(runtime_snapshot)
-        if (
-            self._worktree_cache is not None
-            and (now - self._worktree_cache_time) < self._worktree_cache_ttl
-            and self._worktree_cache_fingerprint == cache_fingerprint
-        ):
-            cached_active = next(
-                (
-                    str(item.get("qualified_name") or "").strip()
-                    for item in self._worktree_cache
-                    if isinstance(item, dict) and bool(item.get("is_active", False))
-                ),
-                "",
-            )
-            if cached_active == active_qualified:
-                return [dict(item) for item in self._worktree_cache]
-
-        repo_result = await self._repo_list({})
-        repositories = list(repo_result.get("repositories", []) or [])
-        usage_map = self._load_validated_project_usage_map()
-        worktrees = build_dashboard_worktree_rows(
-            runtime_snapshot=runtime_snapshot,
-            repositories=repositories,
-            usage_map=usage_map,
-            runtime_windows=self._flatten_runtime_windows(runtime_snapshot),
-            active_target_host=active_target_host,
-            canonical_project_name=self._canonical_discovered_project_name,
-            get_worktree_host_profile=self._get_worktree_host_profile,
-        )
-        self._worktree_cache = [dict(item) for item in worktrees]
-        self._worktree_cache_time = now
-        self._worktree_cache_fingerprint = cache_fingerprint
-        return worktrees
+        return await self.dashboard_worktree_service.build_worktrees(runtime_snapshot)
 
     async def _dashboard_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return the daemon-owned dashboard payload consumed by QuickShell."""

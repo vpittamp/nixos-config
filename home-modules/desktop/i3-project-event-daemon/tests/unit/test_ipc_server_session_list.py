@@ -1736,14 +1736,14 @@ async def test_build_dashboard_worktrees_rebuilds_when_cached_active_context_is_
         },
         "tracked_windows": [],
     }
-    server._worktree_cache = [{
+    server.dashboard_worktree_service._cache = [{
         "qualified_name": "PittampalliOrg/stacks:main",
         "is_active": True,
     }]
-    server._worktree_cache_time = time.time()
-    server._worktree_cache_fingerprint = {
+    server.dashboard_worktree_service._cache_time = time.time()
+    server.dashboard_worktree_service._cache_fingerprint_value = {
         "active_qualified": "PittampalliOrg/stacks:main",
-        "active_mode": "local",
+        "active_target_host": "local",
         "repos": (0, 0),
         "usage": (0, 0),
     }
