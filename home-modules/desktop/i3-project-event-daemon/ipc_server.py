@@ -13280,11 +13280,46 @@ FORMAT JSONEachRow
         def worktree_metadata_for(item: Dict[str, Any]) -> Dict[str, Any]:
             is_remote = bool(item.get("is_remote_herdr", False)) or str(item.get("execution_mode") or "") == "ssh"
             ssh_target = text_field(item, "ssh_target", "remote_target") if is_remote else ""
-            effective_cwd = self._herdr_effective_cwd(item, ssh_target=ssh_target) if (not is_remote or ssh_target) else ""
-            computed = self._herdr_git_space_metadata(effective_cwd, ssh_target=ssh_target) if effective_cwd else {}
             nested = item.get("worktree")
             if not isinstance(nested, dict):
                 nested = {}
+
+            has_materialized_metadata = bool(
+                text_field(
+                    item,
+                    "repo_key",
+                    "repoKey",
+                    "repo_name",
+                    "repoName",
+                    "repo_root",
+                    "repoRoot",
+                    "checkout_path",
+                    "checkoutPath",
+                    "branch_label",
+                    "branchLabel",
+                    "branch",
+                )
+                or text_field(
+                    nested,
+                    "repo_key",
+                    "repoKey",
+                    "repo_name",
+                    "repoName",
+                    "repo_root",
+                    "repoRoot",
+                    "checkout_path",
+                    "checkoutPath",
+                    "branch_label",
+                    "branchLabel",
+                    "branch",
+                )
+            )
+            effective_cwd = (
+                self._herdr_effective_cwd(item, ssh_target=ssh_target)
+                if (not is_remote and not has_materialized_metadata)
+                else ""
+            )
+            computed = self._herdr_git_space_metadata(effective_cwd) if effective_cwd else {}
             merged = dict(computed)
             merged.update(nested)
             for key in [
