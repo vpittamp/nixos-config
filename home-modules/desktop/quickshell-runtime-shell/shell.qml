@@ -39,7 +39,6 @@ ShellRoot {
     readonly property var snippetEditorProcess: runtimeServices ? runtimeServices.snippetEditorProcessRef : null
     readonly property var settingsCommandQueryProcess: runtimeServices ? runtimeServices.settingsCommandQueryProcessRef : null
     readonly property var launcherQueryProcess: runtimeServices ? runtimeServices.launcherQueryProcessRef : null
-    readonly property var sessionPreviewProcess: runtimeServices ? runtimeServices.sessionPreviewProcessRef : null
     readonly property var sessionCloseProcess: runtimeServices ? runtimeServices.sessionCloseProcessRef : null
     readonly property var displayApplyProcess: runtimeServices ? runtimeServices.displayApplyProcessRef : null
     readonly property var displayToggleOutputProcess: runtimeServices ? runtimeServices.displayToggleOutputProcessRef : null
@@ -234,7 +233,6 @@ ShellRoot {
     property string lidInhibitActionError: ""
     property string lidInhibitActionMode: ""
     property string sessionPreviewTargetKey: ""
-    property bool sessionPreviewStopExpected: false
     property var sessionPreview: ({
             status: "idle",
             kind: "status",
@@ -3796,24 +3794,6 @@ ShellRoot {
     function clearSessionPreview() {
         sessionPreviewTargetKey = "";
         sessionPreview = emptySessionPreview();
-        if (sessionPreviewProcess.running) {
-            sessionPreviewStopExpected = true;
-            sessionPreviewProcess.running = false;
-        }
-    }
-
-    function parseSessionPreview(payload) {
-        const raw = stringOrEmpty(payload).trim();
-        if (!raw || raw === "undefined" || raw === "null" || raw.indexOf("{") !== 0) {
-            return;
-        }
-
-        try {
-            const next = Object.assign(emptySessionPreview(), JSON.parse(raw));
-            sessionPreview = next;
-        } catch (error) {
-            console.warn("session.preview.parse:", raw, error);
-        }
     }
 
     function restartSessionPreview() {
@@ -3829,50 +3809,45 @@ ShellRoot {
             return;
         }
 
-        if (stringOrEmpty(entry.source) === "herdr" || stringOrEmpty(entry.pane_id)) {
-            sessionPreviewTargetKey = sessionKey;
-            if (sessionPreviewProcess.running) {
-                sessionPreviewStopExpected = true;
-                sessionPreviewProcess.running = false;
-            }
-            sessionPreview = Object.assign(emptySessionPreview(), {
-                status: "idle",
-                kind: "status",
-                session_key: sessionKey,
-                tool: toolLabel(entry),
-                project_name: stringOrEmpty(entry.project_name || entry.project),
-                host_name: stringOrEmpty(entry.host_name),
-                pane_label: sessionPaneLabel(entry),
-                agent_status: stringOrEmpty(entry.agent_status),
-                cwd: stringOrEmpty(entry.cwd),
-                foreground_cwd: stringOrEmpty(entry.foreground_cwd),
-                workspace_id: stringOrEmpty(entry.workspace_id),
-                tab_id: stringOrEmpty(entry.tab_id),
-                pane_id: stringOrEmpty(entry.pane_id),
-                terminal_id: stringOrEmpty(entry.terminal_id),
-                message: "Focus this Herdr pane to inspect live output."
-            });
-            return;
-        }
-
         sessionPreviewTargetKey = sessionKey;
+        const herdrSession = stringOrEmpty(entry.source) === "herdr" || stringOrEmpty(entry.pane_id);
         sessionPreview = Object.assign(emptySessionPreview(), {
             status: "focus_required",
             kind: "status",
             session_key: sessionKey,
+            preview_mode: "focus_only",
+            preview_reason: herdrSession ? "herdr_focus_only" : "herdr_focus_required",
             tool: toolLabel(entry),
             project_name: stringOrEmpty(entry.project_name || entry.project),
             host_name: stringOrEmpty(entry.host_name),
+            connection_key: stringOrEmpty(entry.connection_key),
+            execution_mode: stringOrEmpty(entry.execution_mode),
+            focus_mode: stringOrEmpty(entry.focus_mode),
+            window_id: Number(entry.window_id || 0),
             pane_label: sessionPaneLabel(entry),
-            message: "Focus this Herdr pane to inspect live output."
+            pane_title: stringOrEmpty(entry.pane_title),
+            tmux_session: stringOrEmpty(entry.tmux_session),
+            tmux_window: stringOrEmpty(entry.tmux_window),
+            tmux_pane: stringOrEmpty(entry.tmux_pane),
+            surface_key: stringOrEmpty(entry.surface_key),
+            session_phase: stringOrEmpty(entry.session_phase),
+            session_phase_label: stringOrEmpty(entry.session_phase_label),
+            turn_owner: stringOrEmpty(entry.turn_owner),
+            turn_owner_label: stringOrEmpty(entry.turn_owner_label),
+            activity_substate: stringOrEmpty(entry.activity_substate),
+            activity_substate_label: stringOrEmpty(entry.activity_substate_label),
+            status_reason: stringOrEmpty(entry.status_reason),
+            agent_status: stringOrEmpty(entry.agent_status),
+            cwd: stringOrEmpty(entry.cwd),
+            foreground_cwd: stringOrEmpty(entry.foreground_cwd),
+            workspace_id: stringOrEmpty(entry.workspace_id),
+            tab_id: stringOrEmpty(entry.tab_id),
+            pane_id: stringOrEmpty(entry.pane_id),
+            terminal_id: stringOrEmpty(entry.terminal_id),
+            message: herdrSession
+                ? "Focus this Herdr pane to inspect live output."
+                : "Live tmux preview has been retired. Focus the corresponding Herdr pane for live inspection."
         });
-
-        if (sessionPreviewProcess.running) {
-            sessionPreviewStopExpected = true;
-            sessionPreviewProcess.running = false;
-        }
-        sessionPreviewProcess.command = [shellConfig.i3pmBin, "session", "preview", sessionKey, "--jsonl", "--lines", "100"];
-        sessionPreviewProcess.running = true;
     }
 
     function ensureSessionPreviewForSelection() {
@@ -3888,11 +3863,7 @@ ShellRoot {
             return;
         }
 
-        if (sessionPreviewTargetKey === sessionKey && sessionPreviewProcess.running) {
-            return;
-        }
-
-        if (sessionPreviewTargetKey === sessionKey && !sessionPreviewProcess.running && stringOrEmpty(sessionPreview.status) !== "loading") {
+        if (sessionPreviewTargetKey === sessionKey && stringOrEmpty(sessionPreview.status) !== "loading") {
             return;
         }
 

@@ -36,7 +36,6 @@ Item {
     property alias snippetEditorProcessRef: snippetEditorProcess
     property alias settingsCommandQueryProcessRef: settingsCommandQueryProcess
     property alias launcherQueryProcessRef: launcherQueryProcess
-    property alias sessionPreviewProcessRef: sessionPreviewProcess
     property alias sessionCloseProcessRef: sessionCloseProcess
     property alias displayApplyProcessRef: displayApplyProcess
     property alias displayToggleOutputProcessRef: displayToggleOutputProcess
@@ -686,40 +685,6 @@ Item {
         onExited: function () {
             if (shellRoot.launcherMode === "apps" || shellRoot.launcherMode === "files" || shellRoot.launcherMode === "urls" || shellRoot.launcherMode === "runner" || shellRoot.launcherMode === "snippets" || shellRoot.launcherMode === "onepassword" || shellRoot.launcherMode === "clipboard") {
                 shellRoot.launcherLoading = false;
-            }
-        }
-    }
-
-    Process {
-        id: sessionPreviewProcess
-        command: [runtimeConfig.i3pmBin, "session", "preview", "", "--jsonl", "--lines", "100"]
-        running: false
-        stdout: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                shellRoot.parseSessionPreview(data);
-            }
-        }
-        stderr: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                if (data && data.trim()) {
-                    console.warn("session.preview:", data);
-                }
-            }
-        }
-        onExited: function () {
-            if (shellRoot.sessionPreviewStopExpected) {
-                shellRoot.sessionPreviewStopExpected = false;
-                return;
-            }
-            if (shellRoot.launcherVisible && shellRoot.launcherMode === "sessions" && shellRoot.activeLauncherSessionEntry() !== null && shellRoot.stringOrEmpty(shellRoot.sessionPreview.status) === "loading") {
-                shellRoot.sessionPreview = Object.assign(shellRoot.emptySessionPreview(), {
-                    status: "error",
-                    kind: "error",
-                    session_key: shellRoot.stringOrEmpty(shellRoot.activeLauncherSessionEntry().session_key || shellRoot.activeLauncherSessionEntry().identifier),
-                    message: "Unable to start session preview."
-                });
             }
         }
     }

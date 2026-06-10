@@ -306,20 +306,25 @@ def test_herdr_visual_metadata_controls_labels_without_changing_icon_family():
 
 
 def test_launcher_preview_for_herdr_sessions_is_focus_only():
-    """Herdr sessions should not start the old live tmux/session preview process."""
+    """Session launcher inspection should be focus-only instead of a tmux preview process."""
     text = SHELL_QML.read_text()
     launcher_text = LAUNCHER_WINDOW_QML.read_text()
+    runtime_services_text = RUNTIME_SERVICES_QML.read_text()
     session_command_text = I3PM_SESSION_TS.read_text()
     main_command_text = I3PM_MAIN_TS.read_text()
-    assert "if (stringOrEmpty(entry.source) === \"herdr\" || stringOrEmpty(entry.pane_id))" in text
-    assert "message: \"Focus this Herdr pane to inspect live output.\"" in text
-    assert "return;" in text
+    assert "const herdrSession = stringOrEmpty(entry.source) === \"herdr\" || stringOrEmpty(entry.pane_id);" in text
+    assert 'preview_mode: "focus_only"' in text
+    assert 'preview_reason: herdrSession ? "herdr_focus_only" : "herdr_focus_required"' in text
+    assert '"Focus this Herdr pane to inspect live output."' in text
     assert "function sessionPreviewStatusText()" in text
     assert "root.sessionPreviewStatusText()" in launcher_text
-    assert '"session", "preview", sessionKey, "--jsonl", "--lines", "100"' in text
-    assert '"session", "preview", "", "--jsonl", "--lines", "100"' in RUNTIME_SERVICES_QML.read_text()
+    assert "sessionPreviewProcess" not in text
+    assert "sessionPreviewProcess" not in runtime_services_text
+    assert "parseSessionPreview" not in text
+    assert '"session", "preview", sessionKey, "--jsonl", "--lines", "100"' not in text
+    assert '"session", "preview", "", "--jsonl", "--lines", "100"' not in runtime_services_text
     assert '"session", "preview", sessionKey, "--follow"' not in text
-    assert '"session", "preview", "", "--follow"' not in RUNTIME_SERVICES_QML.read_text()
+    assert '"session", "preview", "", "--follow"' not in runtime_services_text
     assert "--follow" not in session_command_text
     assert "session preview <session_key> --follow" not in main_command_text
     assert 'message: "Loading live pane preview..."' not in text
