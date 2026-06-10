@@ -575,7 +575,7 @@ async def test_dashboard_snapshot_includes_herdr_spaces(server, monkeypatch):
         return runtime_snapshot, sessions, {}
 
     monkeypatch.setattr(server, "_load_reconciled_session_runtime", fake_runtime)
-    monkeypatch.setattr(server, "_display_snapshot", AsyncMock(return_value={}))
+    monkeypatch.setattr(server.display_service, "snapshot", AsyncMock(return_value={}))
 
     dashboard = await server._dashboard_snapshot({})
 

@@ -130,7 +130,7 @@ async def test_display_snapshot_exposes_layout_options(monkeypatch):
         get_profile=lambda name: {"default": default_profile, "single": single_profile}[name],
     )
 
-    snapshot = await server._display_snapshot({})
+    snapshot = await server.display_service.snapshot(**server._display_service_context())
 
     assert snapshot["current_layout"] == "default"
     assert snapshot["layouts"] == ["default", "single"]

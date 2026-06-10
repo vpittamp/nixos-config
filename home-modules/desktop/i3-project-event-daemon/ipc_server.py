@@ -992,15 +992,15 @@ class IPCServer:
             elif method == "herdr.tab.focus":
                 result = await self._herdr_tab_focus(params)
             elif method == "display.snapshot":
-                result = await self._display_snapshot(params)
+                result = await self.display_service.snapshot(**self._display_service_context())
             elif method == "display.apply":
-                result = await self._display_apply(params)
+                result = await self.display_service.apply(params, **self._display_service_context())
             elif method == "display.cycle":
-                result = await self._display_cycle(params)
+                result = await self.display_service.cycle(params, **self._display_service_context())
             elif method == "display.toggle_output":
-                result = await self._display_toggle_output(params)
+                result = await self.display_service.toggle_output(params, **self._display_service_context())
             elif method == "display.set_scale":
-                result = await self._display_set_scale(params)
+                result = await self.display_service.set_scale(params, **self._display_service_context())
             elif method == "get_projects":
                 result = await self._get_projects()
             elif method == "get_windows":
@@ -2405,7 +2405,7 @@ class IPCServer:
                 "target_variant": str(payload.get("target_variant") or "").strip().lower(),
             })
         elif action_kind == "cycle_display_layout":
-            action_result = await self._display_cycle({})
+            action_result = await self.display_service.cycle({}, **self._display_service_context())
         else:
             raise ValueError(f"Unsupported assistant desktop action: {action_kind}")
 
@@ -11016,55 +11016,14 @@ FORMAT JSONEachRow
         self._worktree_cache_fingerprint = cache_fingerprint
         return worktrees
 
-    async def _display_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Return current output/layout state for QuickShell and CLI consumers."""
-        del params
-        return await self.display_service.snapshot(
-            i3_connection=self.i3_connection,
-            monitor_profile_service=getattr(self, "monitor_profile_service", None),
-            display_generation=self._display_generation,
-            snapshot_version=self._snapshot_version,
-        )
-
-    async def _display_apply(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply a named display layout/profile through the daemon."""
-        return await self.display_service.apply(
-            params,
-            i3_connection=self.i3_connection,
-            monitor_profile_service=getattr(self, "monitor_profile_service", None),
-            display_generation=self._display_generation,
-            snapshot_version=self._snapshot_version,
-        )
-
-    async def _display_cycle(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Cycle to the next available display layout/profile."""
-        return await self.display_service.cycle(
-            params,
-            i3_connection=self.i3_connection,
-            monitor_profile_service=getattr(self, "monitor_profile_service", None),
-            display_generation=self._display_generation,
-            snapshot_version=self._snapshot_version,
-        )
-
-    async def _display_toggle_output(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Toggle an individual output on or off."""
-        return await self.display_service.toggle_output(
-            params,
-            i3_connection=self.i3_connection,
-            monitor_profile_service=getattr(self, "monitor_profile_service", None),
-            display_generation=self._display_generation,
-            snapshot_version=self._snapshot_version,
-        )
-
-    async def _display_set_scale(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Set the scale factor for an individual output."""
-        return await self.display_service.set_scale(
-            params,
-            i3_connection=self.i3_connection,
-            monitor_profile_service=getattr(self, "monitor_profile_service", None),
-            display_generation=self._display_generation,
-            snapshot_version=self._snapshot_version,
-        )
+    def _display_service_context(self) -> Dict[str, Any]:
+        """Return daemon-owned context required by display service operations."""
+        return {
+            "i3_connection": self.i3_connection,
+            "monitor_profile_service": getattr(self, "monitor_profile_service", None),
+            "display_generation": self._display_generation,
+            "snapshot_version": self._snapshot_version,
+        }
 
     def _build_herdr_spaces(
         self,
@@ -11092,7 +11051,7 @@ FORMAT JSONEachRow
             params or {},
             close_windows=True,
         )
-        display_snapshot = await self._display_snapshot({})
+        display_snapshot = await self.display_service.snapshot(**self._display_service_context())
         current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
         herdr_snapshot = runtime_snapshot.get("herdr", {})
         if not isinstance(herdr_snapshot, dict):

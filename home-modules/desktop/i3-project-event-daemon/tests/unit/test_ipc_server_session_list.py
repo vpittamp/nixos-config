@@ -1669,7 +1669,7 @@ async def test_dashboard_snapshot_marks_remote_window_focused_from_current_sessi
         "focused_window_id": 175,
     }
 
-    server._display_snapshot = AsyncMock(return_value={"outputs": []})
+    server.display_service.snapshot = AsyncMock(return_value={"outputs": []})
     server._build_dashboard_worktrees = AsyncMock(return_value=[])
     server._load_reconciled_session_runtime = AsyncMock(return_value=(runtime_snapshot, sessions, {}))
 
@@ -1706,7 +1706,7 @@ async def test_dashboard_snapshot_preserves_runtime_active_project(server):
         "focused_window_id": 0,
     }
 
-    server._display_snapshot = AsyncMock(return_value={"outputs": []})
+    server.display_service.snapshot = AsyncMock(return_value={"outputs": []})
     server._build_dashboard_worktrees = AsyncMock(return_value=[])
     server._load_reconciled_session_runtime = AsyncMock(return_value=(runtime_snapshot, [], {}))
 
