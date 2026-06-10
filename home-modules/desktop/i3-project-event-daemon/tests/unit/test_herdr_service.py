@@ -938,6 +938,31 @@ async def test_herdr_service_builds_local_proxy_snapshot(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_herdr_service_proxy_pane_focus_adds_proxy_metadata(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+
+    async def fake_pane_focus(params):
+        assert params == {"pane_id": "pane-a"}
+        return {"success": True, "pane_id": "pane-a", "herdr": {"success": True}}
+
+    monkeypatch.setattr(service, "pane_focus", fake_pane_focus)
+
+    result = await service.proxy_pane_focus({"pane_id": "pane-a"}, local_host="Ryzen")
+
+    assert result == {
+        "success": True,
+        "pane_id": "pane-a",
+        "herdr": {"success": True},
+        "schema_version": "i3pm.herdr_proxy.v1",
+        "protocol_version": 1,
+        "proxy_host": "ryzen",
+    }
+
+
+@pytest.mark.asyncio
 async def test_herdr_service_combined_snapshot_merges_and_caches_remote_rows(monkeypatch):
     service = HerdrService(
         notify_state_change=lambda event_type: asyncio.sleep(0),

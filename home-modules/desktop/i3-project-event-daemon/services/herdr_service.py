@@ -1160,6 +1160,19 @@ class HerdrService:
         })
         return snapshot
 
+    async def proxy_pane_focus(
+        self,
+        params: Dict[str, Any],
+        *,
+        local_host: str,
+    ) -> Dict[str, Any]:
+        """Focus a local Herdr pane for remote proxy clients."""
+        result = await self.pane_focus(params)
+        result["schema_version"] = "i3pm.herdr_proxy.v1"
+        result["protocol_version"] = 1
+        result["proxy_host"] = self.normalize_host_key(local_host)
+        return result
+
     async def snapshot(
         self,
         params: Optional[Dict[str, Any]] = None,

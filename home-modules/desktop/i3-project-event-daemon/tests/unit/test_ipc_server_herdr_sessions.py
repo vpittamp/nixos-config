@@ -1133,7 +1133,8 @@ async def test_herdr_remote_pane_focus_switches_pane_then_reuses_herdr_app(serve
     assert result["launch"]["launch"]["reused_existing"] is True
 
 
-def test_herdr_remote_pane_focus_updates_cached_remote_rows(server):
+@pytest.mark.asyncio
+async def test_herdr_remote_pane_focus_updates_cached_remote_rows(server, monkeypatch):
     target = {
         "host": "ryzen",
         "ssh_target": "ryzen",
@@ -1183,11 +1184,33 @@ def test_herdr_remote_pane_focus_updates_cached_remote_rows(server):
         ],
     }
 
-    server._apply_remote_herdr_focus_cache(target=target, pane_id="remote-b")
+    async def fake_run_herdr_proxy_json(remote_target, args, timeout=2.5):
+        assert remote_target == target
+        assert args == ["focus", "remote-b", "--json"]
+        return {"success": True, "result": {"focused": True}}
+
+    monkeypatch.setattr(server.herdr_service, "load_remote_targets", lambda: [target])
+    monkeypatch.setattr(server.herdr_service, "run_proxy_json", fake_run_herdr_proxy_json)
+    server._launch_open = AsyncMock(return_value={"success": True, "launch": {"reused_existing": True}})
+    server.notify_state_change = AsyncMock(return_value=None)
+
+    result = await server._herdr_remote_pane_focus({
+        "pane_id": "remote-b",
+        "host": "ryzen",
+        "ssh_target": "ryzen",
+        "connection_key": "vpittamp@ryzen:22",
+    })
 
     sessions = server.herdr_service.snapshot_cache["sessions"]
     panes = server.herdr_service.snapshot_cache["panes"]
     remote_sessions = server.herdr_service.snapshot_cache["remote_snapshots"][0]["sessions"]
+    assert result["success"] is True
+    server._launch_open.assert_awaited_once_with({
+        "app_name": "herdr",
+        "__intent_epoch": 0,
+        "focus_fast": True,
+    })
+    server.notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
     assert sessions[0]["focused"] is False
     assert sessions[1]["focused"] is True
     assert sessions[1]["is_current_window"] is True
