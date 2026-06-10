@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+DEFAULT_STREAM_LIMIT_BYTES = 4 * 1024 * 1024
+
 
 class DaemonError(Exception):
     """Exception raised for daemon communication errors."""
@@ -39,6 +41,7 @@ class DaemonClient:
         self,
         socket_path: Optional[Path] = None,
         timeout: float = 5.0,
+        stream_limit_bytes: int = DEFAULT_STREAM_LIMIT_BYTES,
     ):
         """Initialize daemon client.
 
@@ -48,6 +51,7 @@ class DaemonClient:
         """
         self.socket_path = socket_path or get_default_socket_path()
         self.timeout = timeout
+        self.stream_limit_bytes = int(stream_limit_bytes or DEFAULT_STREAM_LIMIT_BYTES)
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
         self._request_id = 0
@@ -60,7 +64,10 @@ class DaemonClient:
         """
         try:
             self._reader, self._writer = await asyncio.wait_for(
-                asyncio.open_unix_connection(str(self.socket_path)),
+                asyncio.open_unix_connection(
+                    str(self.socket_path),
+                    limit=self.stream_limit_bytes,
+                ),
                 timeout=self.timeout,
             )
         except asyncio.TimeoutError:
