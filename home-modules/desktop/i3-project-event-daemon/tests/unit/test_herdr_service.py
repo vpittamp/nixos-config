@@ -92,6 +92,98 @@ def test_herdr_service_tracks_remote_generations_by_host():
     }
 
 
+@pytest.mark.asyncio
+async def test_herdr_service_remote_proxy_event_advances_remote_generation():
+    notifications = []
+    invalidations = 0
+
+    async def notify_state_change(event_type):
+        notifications.append(event_type)
+
+    def invalidate_snapshot_cache():
+        nonlocal invalidations
+        invalidations += 1
+
+    service = HerdrService(
+        notify_state_change=notify_state_change,
+        invalidate_snapshot_cache=invalidate_snapshot_cache,
+        notify_delay=0.0,
+    )
+    service.store_snapshot({"sessions": [{"pane_id": "stale"}]}, now=100.0)
+
+    await service.handle_remote_proxy_event(
+        {"host": "ryzen", "ssh_target": "ryzen"},
+        {
+            "schema_version": "i3pm.herdr_proxy.event.v1",
+            "protocol_version": 1,
+            "event_type": "herdr.changed",
+            "generation": 42,
+            "changed_keys": ["herdr"],
+        },
+    )
+    await asyncio.sleep(0)
+
+    assert service.remote_generation_for("ryzen") == 1
+    assert service.snapshot_cache == {}
+    assert invalidations == 1
+    assert notifications == ["ai_session_herdr_changed"]
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_ignores_unknown_remote_proxy_event_schema():
+    notifications = []
+    service = HerdrService(
+        notify_state_change=lambda event_type: notifications.append(event_type) or asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+        notify_delay=0.0,
+    )
+
+    await service.handle_remote_proxy_event(
+        {"host": "ryzen", "ssh_target": "ryzen"},
+        {"schema_version": "unexpected", "event_type": "herdr.changed"},
+    )
+    await asyncio.sleep(0)
+
+    assert service.remote_generation_for("ryzen") == 0
+    assert notifications == []
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_syncs_remote_proxy_subscription_tasks(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    created_targets = []
+
+    async def fake_run_remote_proxy_subscription(target):
+        created_targets.append(target)
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(service, "run_remote_proxy_subscription", fake_run_remote_proxy_subscription)
+
+    service.sync_remote_proxy_subscriptions([
+        {
+            "host": "ryzen",
+            "ssh_target": "ryzen",
+            "connection_key": "vpittamp@ryzen:22",
+        }
+    ])
+    await asyncio.sleep(0)
+
+    assert list(service.remote_subscription_tasks.keys()) == ["vpittamp@ryzen:22"]
+    assert created_targets == [{
+        "host": "ryzen",
+        "ssh_target": "ryzen",
+        "connection_key": "vpittamp@ryzen:22",
+    }]
+
+    task = service.remote_subscription_tasks["vpittamp@ryzen:22"]
+    service.sync_remote_proxy_subscriptions([])
+    await asyncio.gather(task, return_exceptions=True)
+    assert service.remote_subscription_tasks == {}
+
+
 def test_herdr_service_owns_snapshot_cache_with_local_and_remote_ttls():
     service = HerdrService(
         notify_state_change=lambda event_type: asyncio.sleep(0),

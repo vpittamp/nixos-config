@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path, PurePath
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,7 @@ class HerdrService:
         self.subscription_max_backoff = subscription_max_backoff
         self.notify_delay = notify_delay
         self.subscription_task: Optional[asyncio.Task] = None
+        self.remote_subscription_tasks: Dict[str, asyncio.Task] = {}
         self.notify_task: Optional[asyncio.Task] = None
         self.local_herdr_generation: int = 0
         self.remote_herdr_generation: Dict[str, int] = {}
@@ -102,6 +103,16 @@ class HerdrService:
         if not host_key:
             return 0
         return int(self.remote_herdr_generation.get(host_key, 0))
+
+    def remote_subscription_key(self, target: Dict[str, str]) -> str:
+        """Return a stable task key for a remote Herdr proxy subscription."""
+        connection_key = str(target.get("connection_key") or "").strip().lower()
+        if connection_key:
+            return connection_key
+        ssh_target = str(target.get("ssh_target") or "").strip().lower()
+        if ssh_target:
+            return ssh_target
+        return self.normalize_host_key(target.get("host"))
 
     def remote_generations_snapshot(self) -> Dict[str, int]:
         """Return a copy of remote Herdr host generations."""
@@ -2004,14 +2015,50 @@ class HerdrService:
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, self.subscription_max_backoff)
 
-    def start_subscription(self) -> None:
-        """Start the local Herdr event subscription task."""
+    def start_subscription(
+        self,
+        *,
+        parse_remote_target: Optional[Callable[[str], Tuple[str, str, int]]] = None,
+        normalize_connection_key: Optional[Callable[[str], str]] = None,
+    ) -> None:
+        """Start local and configured remote Herdr event subscription tasks."""
         if self.subscription_task and not self.subscription_task.done():
-            return
-        self.subscription_task = asyncio.create_task(
-            self.run_subscription(),
-            name="i3pm-herdr-event-subscription",
-        )
+            pass
+        else:
+            self.subscription_task = asyncio.create_task(
+                self.run_subscription(),
+                name="i3pm-herdr-event-subscription",
+            )
+        if parse_remote_target is not None and normalize_connection_key is not None:
+            self.sync_remote_proxy_subscriptions(
+                self.load_remote_targets(
+                    parse_remote_target=parse_remote_target,
+                    normalize_connection_key=normalize_connection_key,
+                )
+            )
+
+    def sync_remote_proxy_subscriptions(self, targets: List[Dict[str, str]]) -> None:
+        """Ensure one remote Herdr proxy event stream task per configured target."""
+        desired_keys: Set[str] = set()
+        for target in targets:
+            key = self.remote_subscription_key(target)
+            if not key:
+                continue
+            desired_keys.add(key)
+            existing = self.remote_subscription_tasks.get(key)
+            if existing is not None and not existing.done():
+                continue
+            self.remote_subscription_tasks[key] = asyncio.create_task(
+                self.run_remote_proxy_subscription(dict(target)),
+                name=f"i3pm-herdr-remote-proxy-{key}",
+            )
+
+        for key, task in list(self.remote_subscription_tasks.items()):
+            if key in desired_keys:
+                continue
+            self.remote_subscription_tasks.pop(key, None)
+            if not task.done():
+                task.cancel()
 
     async def stop_subscription(self) -> None:
         """Cancel Herdr event subscription and pending notification tasks."""
@@ -2024,9 +2071,77 @@ class HerdrService:
         task = self.subscription_task
         self.subscription_task = None
         if not task or task.done():
+            pass
+        else:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+        remote_tasks = list(self.remote_subscription_tasks.values())
+        self.remote_subscription_tasks = {}
+        for remote_task in remote_tasks:
+            if not remote_task.done():
+                remote_task.cancel()
+        if remote_tasks:
+            await asyncio.gather(*remote_tasks, return_exceptions=True)
+
+    async def connect_remote_proxy_subscription_once(self, target: Dict[str, str]) -> None:
+        """Connect once to a remote i3pm Herdr proxy event stream over SSH."""
+        ssh_target = str(target.get("ssh_target") or "").strip()
+        if not ssh_target:
+            raise ValueError("ssh_target is required for remote Herdr proxy events")
+        command = self.ssh_command_prefix(ssh_target) + ["i3pm", "herdr-proxy", "events", "--jsonl"]
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        try:
+            if process.stdout is None:
+                raise RuntimeError("remote Herdr proxy stream missing stdout")
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                payload = json.loads(line.decode("utf-8"))
+                if not isinstance(payload, dict):
+                    continue
+                await self.handle_remote_proxy_event(target, payload)
+            returncode = await process.wait()
+            if returncode != 0:
+                raise RuntimeError(f"remote Herdr proxy stream exited with {returncode}")
+        finally:
+            if process.returncode is None:
+                process.terminate()
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=1.0)
+                except TimeoutError:
+                    process.kill()
+                    await process.wait()
+
+    async def run_remote_proxy_subscription(self, target: Dict[str, str]) -> None:
+        """Maintain one remote Herdr proxy event stream with bounded reconnect backoff."""
+        backoff = self.subscription_initial_backoff
+        host = self.normalize_host_key(target.get("host") or target.get("ssh_target"))
+        while True:
+            try:
+                await self.connect_remote_proxy_subscription_once(target)
+                backoff = self.subscription_initial_backoff
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.debug("Remote Herdr proxy subscription unavailable for %s: %s", host, exc)
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, self.subscription_max_backoff)
+
+    async def handle_remote_proxy_event(self, target: Dict[str, str], event: Dict[str, Any]) -> None:
+        """Invalidate Herdr-derived dashboard state after a remote proxy event."""
+        if not isinstance(event, dict):
             return
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+        if str(event.get("schema_version") or "") != "i3pm.herdr_proxy.event.v1":
+            return
+        self.bump_remote_generation(target.get("host") or target.get("ssh_target"))
+        self.invalidate_snapshot_cache()
+        self.schedule_state_change_notification()
 
     async def handle_subscription_event(self, event: Dict[str, Any]) -> None:
         """Invalidate Herdr-derived dashboard state after a local Herdr event."""

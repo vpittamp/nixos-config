@@ -780,7 +780,10 @@ class IPCServer:
 
     def start_herdr_event_subscription(self) -> None:
         """Start the local Herdr event subscription task."""
-        self.herdr_service.start_subscription()
+        self.herdr_service.start_subscription(
+            parse_remote_target=self._parse_remote_target,
+            normalize_connection_key=self._normalize_connection_key,
+        )
 
     async def stop_herdr_event_subscription(self) -> None:
         """Cancel the local Herdr event subscription task."""

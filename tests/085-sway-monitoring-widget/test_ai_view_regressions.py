@@ -14,6 +14,7 @@ WORKTREE_APP_SERVICE_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-
 HERDR_NIX = REPO_ROOT / "home-modules" / "terminal" / "herdr.nix"
 I3PM_WINDOW_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "window.ts"
 I3PM_DASHBOARD_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "dashboard.ts"
+I3PM_HERDR_PROXY_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "herdr-proxy.ts"
 
 
 def test_session_phase_prefers_raw_herdr_agent_status():
@@ -157,6 +158,19 @@ def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
     assert 'dashboardWatchProcess.command = [appConfig.i3pmBin, "dashboard", "watch"];' in worktree_service_text
     assert "watch emits one initial snapshot, then typed dashboard delta events." in dashboard_command_text
     assert "const encoded = JSON.stringify(event);" in dashboard_command_text
+
+
+def test_i3pm_herdr_proxy_exposes_snapshot_focus_and_event_stream():
+    text = I3PM_HERDR_PROXY_TS.read_text()
+    assert 'subcommand === "snapshot"' in text
+    assert 'subcommand === "focus"' in text
+    assert 'subcommand === "events"' in text
+    assert '"herdr.proxy.snapshot"' in text
+    assert '"herdr.proxy.pane.focus"' in text
+    assert "client.subscribeToStateChanges()" in text
+    assert 'schema_version: "i3pm.herdr_proxy.event.v1"' in text
+    assert 'eventType === "herdr.changed"' in text
+    assert 'changedKeys.includes("herdr")' in text
 
 
 def test_side_panel_sessions_close_by_explicit_herdr_target():
