@@ -58,6 +58,7 @@ from .services.agent_harness import CodexHarnessManager
 from .services.dashboard_model import (
     DASHBOARD_EVENT_SCHEMA_VERSION,
     DASHBOARD_SCHEMA_VERSION,
+    build_dashboard_snapshot_payload,
     dashboard_changed_keys_for_event,
     dashboard_event_payload_from_snapshot,
     dashboard_event_type_for_state_change,
@@ -9319,7 +9320,6 @@ class IPCServer:
             close_windows=True,
         )
         display_snapshot = await self.display_service.snapshot()
-        current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
         herdr_snapshot = runtime_snapshot.get("herdr", {})
         if not isinstance(herdr_snapshot, dict):
             herdr_snapshot = {}
@@ -9333,85 +9333,25 @@ class IPCServer:
             sessions,
             generation=int(self._focus_generation or self._snapshot_version or 0),
         )
-        payload = {
-            "status": "ok",
-            "schema_version": DASHBOARD_SCHEMA_VERSION,
-            "timestamp": int(time.time()),
-            "snapshot_version": self._snapshot_version,
-            "session_generation": self._session_generation,
-            "display_generation": self._display_generation,
-            "focus_generation": self._focus_generation,
-            "active_project": runtime_snapshot.get("active_project"),
-            "active_context": runtime_snapshot.get("active_context", {}),
-            "active_terminal": runtime_snapshot.get("active_terminal", {}),
-            "outputs": runtime_snapshot.get("outputs", []),
-            "active_outputs": runtime_snapshot.get("active_outputs", []),
-            "display_layout": display_snapshot,
-            "total_windows": int(runtime_snapshot.get("total_windows", 0) or 0),
-            "window_count": int(runtime_snapshot.get("total_windows", 0) or 0),
-            "tracked_windows": runtime_snapshot.get("tracked_windows", []),
-            "state_health": runtime_snapshot.get("state_health", {}),
-            "launch_stats": runtime_snapshot.get("launch_stats", {}),
-            "launches": self.launch_service.list_statuses(limit=12),
-            "scratchpad": runtime_snapshot.get("scratchpad", {}),
-            "projects": projects,
-            "project_count": len(projects),
-            "worktrees": worktrees,
-            "worktree_count": len(worktrees),
-            "active_ai_sessions": sessions,
-            "active_ai_sessions_mru": sessions,
-            "current_ai_session_key": current_session_key,
-            "focus_state": focus_state,
-            "herdr": {
-                "herdr_generation": int(herdr_snapshot.get("herdr_generation") or 0),
-                "local_herdr_generation": int(herdr_snapshot.get("local_herdr_generation") or 0),
-                "remote_herdr_generation": herdr_snapshot.get("remote_herdr_generation", {}),
-                "status": herdr_snapshot.get("status", {}),
-                "workspace_count": len(herdr_snapshot.get("workspaces", []) or []),
-                "tab_count": len(herdr_snapshot.get("tabs", []) or []),
-                "pane_count": len(herdr_snapshot.get("panes", []) or []),
-                "agent_count": len(herdr_snapshot.get("agents", []) or []),
-                "errors": herdr_snapshot.get("errors", []),
-                "spaces": self.herdr_service.build_spaces(
-                    herdr_snapshot,
-                    sessions,
-                ),
-            },
-            "ai_monitor_metrics": {
-                "active_sessions": len(sessions),
-                "working_sessions": sum(
-                    1 for session in sessions
-                    if str(session.get("agent_status") or "").strip().lower() == "working"
-                ),
-                "attention_sessions": sum(
-                    1 for session in sessions
-                    if str(session.get("agent_status") or "").strip().lower() == "blocked"
-                ),
-                "done_sessions": sum(
-                    1 for session in sessions
-                    if str(session.get("agent_status") or "").strip().lower() == "done"
-                ),
-                "idle_sessions": sum(
-                    1 for session in sessions
-                    if str(session.get("agent_status") or "").strip().lower() == "idle"
-                ),
-                "unknown_sessions": sum(
-                    1 for session in sessions
-                    if str(session.get("agent_status") or "").strip().lower() == "unknown"
-                ),
-            },
-        }
-        dashboard_invariants = validate_dashboard_payload(
-            payload,
+        return build_dashboard_snapshot_payload(
+            runtime_snapshot=runtime_snapshot,
+            display_snapshot=display_snapshot,
+            projects=projects,
+            worktrees=worktrees,
+            sessions=sessions,
+            focus_state=focus_state,
+            herdr_spaces=self.herdr_service.build_spaces(
+                herdr_snapshot,
+                sessions,
+            ),
+            launches=self.launch_service.list_statuses(limit=12),
+            snapshot_version=self._snapshot_version,
+            session_generation=self._session_generation,
+            display_generation=self._display_generation,
+            focus_generation=self._focus_generation,
+            timestamp=int(time.time()),
             schema_version=DASHBOARD_SCHEMA_VERSION,
         )
-        payload["dashboard_invariants"] = dashboard_invariants
-        if not bool(dashboard_invariants.get("ok", False)):
-            raise RuntimeError(
-                "dashboard.snapshot invariant violation: "
-                + ",".join(str(issue) for issue in dashboard_invariants.get("issues", []) or [])
-            )
-        return payload
 
     async def _dashboard_validate(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return dashboard invariant status without requiring clients to know the rules."""

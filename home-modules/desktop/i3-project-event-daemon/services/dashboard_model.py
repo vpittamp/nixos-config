@@ -90,6 +90,121 @@ def dashboard_event_payload_from_snapshot(
     return payload
 
 
+def build_ai_monitor_metrics(sessions: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Summarize AI session state for dashboard consumers."""
+    normalized_sessions = [
+        session for session in sessions
+        if isinstance(session, dict)
+    ]
+
+    def count_status(status: str) -> int:
+        return sum(
+            1 for session in normalized_sessions
+            if str(session.get("agent_status") or "").strip().lower() == status
+        )
+
+    return {
+        "active_sessions": len(normalized_sessions),
+        "working_sessions": count_status("working"),
+        "attention_sessions": count_status("blocked"),
+        "done_sessions": count_status("done"),
+        "idle_sessions": count_status("idle"),
+        "unknown_sessions": count_status("unknown"),
+    }
+
+
+def build_herdr_dashboard_summary(
+    herdr_snapshot: Dict[str, Any],
+    *,
+    spaces: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Build the compact Herdr summary embedded in dashboard snapshots."""
+    if not isinstance(herdr_snapshot, dict):
+        herdr_snapshot = {}
+    return {
+        "herdr_generation": int(herdr_snapshot.get("herdr_generation") or 0),
+        "local_herdr_generation": int(herdr_snapshot.get("local_herdr_generation") or 0),
+        "remote_herdr_generation": herdr_snapshot.get("remote_herdr_generation", {}),
+        "status": herdr_snapshot.get("status", {}),
+        "workspace_count": len(herdr_snapshot.get("workspaces", []) or []),
+        "tab_count": len(herdr_snapshot.get("tabs", []) or []),
+        "pane_count": len(herdr_snapshot.get("panes", []) or []),
+        "agent_count": len(herdr_snapshot.get("agents", []) or []),
+        "errors": herdr_snapshot.get("errors", []),
+        "spaces": spaces,
+    }
+
+
+def build_dashboard_snapshot_payload(
+    *,
+    runtime_snapshot: Dict[str, Any],
+    display_snapshot: Dict[str, Any],
+    projects: List[Dict[str, Any]],
+    worktrees: List[Dict[str, Any]],
+    sessions: List[Dict[str, Any]],
+    focus_state: Dict[str, Any],
+    herdr_spaces: List[Dict[str, Any]],
+    launches: List[Dict[str, Any]],
+    snapshot_version: int,
+    session_generation: int,
+    display_generation: int,
+    focus_generation: int,
+    timestamp: int,
+    schema_version: str = DASHBOARD_SCHEMA_VERSION,
+) -> Dict[str, Any]:
+    """Assemble and validate the daemon dashboard snapshot payload."""
+    herdr_snapshot = runtime_snapshot.get("herdr", {}) if isinstance(runtime_snapshot, dict) else {}
+    if not isinstance(herdr_snapshot, dict):
+        herdr_snapshot = {}
+    current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
+    payload = {
+        "status": "ok",
+        "schema_version": schema_version,
+        "timestamp": timestamp,
+        "snapshot_version": snapshot_version,
+        "session_generation": session_generation,
+        "display_generation": display_generation,
+        "focus_generation": focus_generation,
+        "active_project": runtime_snapshot.get("active_project"),
+        "active_context": runtime_snapshot.get("active_context", {}),
+        "active_terminal": runtime_snapshot.get("active_terminal", {}),
+        "outputs": runtime_snapshot.get("outputs", []),
+        "active_outputs": runtime_snapshot.get("active_outputs", []),
+        "display_layout": display_snapshot,
+        "total_windows": int(runtime_snapshot.get("total_windows", 0) or 0),
+        "window_count": int(runtime_snapshot.get("total_windows", 0) or 0),
+        "tracked_windows": runtime_snapshot.get("tracked_windows", []),
+        "state_health": runtime_snapshot.get("state_health", {}),
+        "launch_stats": runtime_snapshot.get("launch_stats", {}),
+        "launches": launches,
+        "scratchpad": runtime_snapshot.get("scratchpad", {}),
+        "projects": projects,
+        "project_count": len(projects),
+        "worktrees": worktrees,
+        "worktree_count": len(worktrees),
+        "active_ai_sessions": sessions,
+        "active_ai_sessions_mru": sessions,
+        "current_ai_session_key": current_session_key,
+        "focus_state": focus_state,
+        "herdr": build_herdr_dashboard_summary(
+            herdr_snapshot,
+            spaces=herdr_spaces,
+        ),
+        "ai_monitor_metrics": build_ai_monitor_metrics(sessions),
+    }
+    dashboard_invariants = validate_dashboard_payload(
+        payload,
+        schema_version=schema_version,
+    )
+    payload["dashboard_invariants"] = dashboard_invariants
+    if not bool(dashboard_invariants.get("ok", False)):
+        raise RuntimeError(
+            "dashboard.snapshot invariant violation: "
+            + ",".join(str(issue) for issue in dashboard_invariants.get("issues", []) or [])
+        )
+    return payload
+
+
 def validate_dashboard_payload(
     payload: Dict[str, Any],
     *,

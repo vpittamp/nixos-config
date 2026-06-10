@@ -7,6 +7,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 
 PACKAGE_ROOT = Path(__file__).parent.parent.parent
 
@@ -28,6 +30,7 @@ validate_dashboard_payload = dashboard_model.validate_dashboard_payload
 dashboard_event_type_for_state_change = dashboard_model.dashboard_event_type_for_state_change
 dashboard_changed_keys_for_event = dashboard_model.dashboard_changed_keys_for_event
 dashboard_event_payload_from_snapshot = dashboard_model.dashboard_event_payload_from_snapshot
+build_dashboard_snapshot_payload = dashboard_model.build_dashboard_snapshot_payload
 
 
 def test_validate_dashboard_payload_accepts_single_daemon_current_row() -> None:
@@ -227,3 +230,99 @@ def test_dashboard_event_payload_contains_common_metadata_and_changed_models_onl
     assert payload["projects"] == [{"name": "demo"}]
     assert "outputs" not in payload
     assert "active_ai_sessions" not in payload
+
+
+def test_build_dashboard_snapshot_payload_shapes_metrics_and_herdr_summary() -> None:
+    runtime_snapshot = {
+        "active_project": "global",
+        "active_context": {"qualified_name": "vpittamp/nixos-config:main"},
+        "active_terminal": {"available": True},
+        "outputs": [{"name": "DP-1", "workspaces": [{"name": "1", "focused": True}]}],
+        "active_outputs": ["DP-1"],
+        "total_windows": 1,
+        "tracked_windows": [{"id": 101}],
+        "state_health": {"ok": True},
+        "launch_stats": {"pending": 0},
+        "scratchpad": {"visible": False},
+        "current_ai_session_key": "session-current",
+        "herdr": {
+            "herdr_generation": 11,
+            "local_herdr_generation": 7,
+            "remote_herdr_generation": {"ryzen": 4},
+            "status": {"running": True},
+            "workspaces": [{"id": "space-1"}],
+            "tabs": [{"id": "tab-1"}],
+            "panes": [{"id": "pane-1"}],
+            "agents": [{"id": "agent-1"}],
+            "errors": [],
+        },
+    }
+    sessions = [
+        {
+            "session_key": "session-current",
+            "is_current_window": True,
+            "agent_status": "working",
+            "source": "herdr",
+            "focused": True,
+            "is_current_host": True,
+        },
+        {
+            "session_key": "session-done",
+            "is_current_window": False,
+            "agent_status": "done",
+        },
+    ]
+
+    payload = build_dashboard_snapshot_payload(
+        runtime_snapshot=runtime_snapshot,
+        display_snapshot={"outputs": ["DP-1"]},
+        projects=[{"windows": [{"id": 101, "focused": True}]}],
+        worktrees=[{"qualified_name": "vpittamp/nixos-config:main"}],
+        sessions=sessions,
+        focus_state={
+            "current_session_key": "session-current",
+            "current_window_id": 101,
+            "current_workspace_name": "1",
+        },
+        herdr_spaces=[{"id": "space-1", "pane_count": 1}],
+        launches=[{"launch_id": "launch-1"}],
+        snapshot_version=12,
+        session_generation=8,
+        display_generation=3,
+        focus_generation=5,
+        timestamp=12345,
+    )
+
+    assert payload["schema_version"] == "i3pm.dashboard.v2"
+    assert payload["dashboard_invariants"]["ok"] is True
+    assert payload["project_count"] == 1
+    assert payload["worktree_count"] == 1
+    assert payload["herdr"]["local_herdr_generation"] == 7
+    assert payload["herdr"]["spaces"] == [{"id": "space-1", "pane_count": 1}]
+    assert payload["ai_monitor_metrics"] == {
+        "active_sessions": 2,
+        "working_sessions": 1,
+        "attention_sessions": 0,
+        "done_sessions": 1,
+        "idle_sessions": 0,
+        "unknown_sessions": 0,
+    }
+
+
+def test_build_dashboard_snapshot_payload_fails_fast_on_invariant_violation() -> None:
+    with pytest.raises(RuntimeError, match="current_session_key_not_unique"):
+        build_dashboard_snapshot_payload(
+            runtime_snapshot={"current_ai_session_key": "session-missing"},
+            display_snapshot={},
+            projects=[],
+            worktrees=[],
+            sessions=[],
+            focus_state={"current_session_key": "session-missing"},
+            herdr_spaces=[],
+            launches=[],
+            snapshot_version=1,
+            session_generation=1,
+            display_generation=1,
+            focus_generation=1,
+            timestamp=12345,
+        )
