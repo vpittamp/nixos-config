@@ -10,6 +10,7 @@ LAUNCHER_WINDOW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runti
 RUNTIME_PANEL_WINDOW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "RuntimePanelWindow.qml"
 RUNTIME_SERVICES_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "controllers" / "RuntimeServices.qml"
 QUICKSHELL_DEFAULT_NIX = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "default.nix"
+SWAY_KEYBINDINGS_NIX = REPO_ROOT / "home-modules" / "desktop" / "sway-keybindings.nix"
 NOTIFICATION_TOAST_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "NotificationToast.qml"
 WORKTREE_APP_SERVICE_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-worktree-app" / "WorktreeAppService.qml"
 WORKTREE_APP_SHELL_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-worktree-app" / "shell.qml"
@@ -192,6 +193,16 @@ def test_worktree_app_uses_daemon_focus_state_and_no_heartbeat_config():
     assert "windowData.focused" not in shell_text
     assert 'dashboardWatchProcess.command = [appConfig.i3pmBin, "dashboard", "watch"];' in service_text
     assert "dashboardHeartbeatMs" not in default_nix_text
+
+
+def test_panel_toggle_uses_quickshell_named_runtime_command():
+    runtime_shell_nix = QUICKSHELL_DEFAULT_NIX.read_text()
+    sway_keybindings_nix = SWAY_KEYBINDINGS_NIX.read_text()
+
+    assert 'writeShellScriptBin "toggle-runtime-panel"' in runtime_shell_nix
+    assert "exec toggle-runtime-panel" in sway_keybindings_nix
+    assert 'writeShellScriptBin "toggle-monitoring-panel"' not in runtime_shell_nix
+    assert "exec toggle-monitoring-panel" not in sway_keybindings_nix
 
 
 def test_i3pm_herdr_proxy_exposes_snapshot_focus_and_event_stream():

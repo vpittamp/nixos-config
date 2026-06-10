@@ -2308,7 +2308,7 @@ PY
       exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell ${functionName} "$@"
     '';
 
-  togglePanelScript = pkgs.writeShellScriptBin "toggle-monitoring-panel" ''
+  togglePanelScript = pkgs.writeShellScriptBin "toggle-runtime-panel" ''
     set -euo pipefail
     exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell togglePanel
   '';

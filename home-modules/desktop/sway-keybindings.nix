@@ -19,7 +19,7 @@ let
     in map (key: lib.replaceStrings ["$mod"] [modifier] key) keys;
   monitoringPanelBindings =
     if hasRuntimeShell
-    then lib.listToAttrs (map (key: lib.nameValuePair key "exec toggle-monitoring-panel") (lib.unique toggleKeyList))
+    then lib.listToAttrs (map (key: lib.nameValuePair key "exec toggle-runtime-panel") (lib.unique toggleKeyList))
     else {};
   worktreeAppBindings =
     if hasWorktreeApp
