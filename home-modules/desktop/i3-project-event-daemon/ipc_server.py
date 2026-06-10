@@ -56,6 +56,7 @@ from .services.window_filter import (
 from .services.registry_loader import RegistryLoader, RegistryApp
 from .services.agent_harness import CodexHarnessManager
 from .services.dashboard_model import validate_dashboard_payload
+from .services.display_service import DisplayService
 from .services.focus_service import FocusService
 from .services.herdr_service import HerdrService
 from .models.window_command import CommandBatch
@@ -577,6 +578,10 @@ class IPCServer:
         self.focus_service = FocusService(
             normalize_connection_key=lambda value: self._normalize_connection_key(value),
             schema_version=FOCUS_STATE_SCHEMA_VERSION,
+        )
+        self.display_service = DisplayService(
+            notify_state_change=lambda event_type: self.notify_state_change(event_type),
+            output_configure=lambda params: self._output_configure(params),
         )
         self.herdr_service = HerdrService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
@@ -12288,193 +12293,53 @@ FORMAT JSONEachRow
 
     async def _display_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return current output/layout state for QuickShell and CLI consumers."""
-        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
-            raise RuntimeError("Sway connection is unavailable")
-
-        outputs = await self.i3_connection.get_outputs()
-        output_states = None
-        try:
-            from .output_state_manager import load_output_states
-            output_states = load_output_states()
-        except Exception:
-            output_states = None
-
-        profile_name = ""
-        layouts: List[str] = []
-        layout_options: List[Dict[str, Any]] = []
-        if getattr(self, "monitor_profile_service", None):
-            try:
-                profile_name = str(self.monitor_profile_service.get_current_profile() or "")
-                layouts = list(self.monitor_profile_service.list_profiles())
-                for layout_name in layouts:
-                    profile = self.monitor_profile_service.get_profile(layout_name)
-                    output_names: List[str] = []
-                    output_count = 0
-                    description = ""
-                    default_layout = False
-                    outputs_detail: List[Dict[str, Any]] = []
-                    if profile is not None:
-                        description = str(getattr(profile, "description", "") or "")
-                        default_layout = bool(getattr(profile, "default", False))
-                        output_names = list(profile.get_enabled_outputs())
-                        output_count = len(output_names)
-                        for po in getattr(profile, "outputs", []):
-                            pos = getattr(po, "position", None)
-                            outputs_detail.append({
-                                "name": str(getattr(po, "name", "")),
-                                "enabled": bool(getattr(po, "enabled", True)),
-                                "scale": float(getattr(po, "scale", None) or 1.0),
-                                "x": int(getattr(pos, "x", 0) if pos else 0),
-                                "y": int(getattr(pos, "y", 0) if pos else 0),
-                                "width": int(getattr(pos, "width", 0) if pos else 0),
-                                "height": int(getattr(pos, "height", 0) if pos else 0),
-                            })
-                    layout_options.append({
-                        "name": layout_name,
-                        "label": layout_name.replace("-", " ").title(),
-                        "description": description,
-                        "output_names": output_names,
-                        "output_count": output_count,
-                        "outputs": outputs_detail,
-                        "default": default_layout,
-                        "current": layout_name == profile_name,
-                    })
-                layout_options.sort(
-                    key=lambda item: (
-                        0 if bool(item.get("current", False)) else 1,
-                        0 if bool(item.get("default", False)) else 1,
-                        str(item.get("name") or "").casefold(),
-                    ),
-                )
-            except Exception:
-                profile_name = ""
-                layouts = []
-                layout_options = []
-
-        active_outputs: List[Dict[str, Any]] = []
-        for output in outputs:
-            if str(getattr(output, "name", "")).startswith("__"):
-                continue
-            name = str(getattr(output, "name", "") or "")
-            active = bool(getattr(output, "active", False))
-            focused = bool(getattr(output, "focused", False))
-            enabled = active
-            if output_states is not None:
-                try:
-                    enabled = bool(output_states.is_output_enabled(name))
-                except Exception:
-                    enabled = active
-            active_outputs.append({
-                "name": name,
-                "active": active,
-                "enabled": enabled,
-                "focused": focused,
-                "primary": focused,
-                "scale": float(getattr(output, "scale", 1.0) or 1.0),
-                "rect": {
-                    "x": int(getattr(getattr(output, "rect", None), "x", 0) or 0),
-                    "y": int(getattr(getattr(output, "rect", None), "y", 0) or 0),
-                    "width": int(getattr(getattr(output, "rect", None), "width", 0) or 0),
-                    "height": int(getattr(getattr(output, "rect", None), "height", 0) or 0),
-                },
-            })
-
-        return {
-            "current_layout": profile_name,
-            "layouts": layouts,
-            "layout_options": layout_options,
-            "outputs": active_outputs,
-            "display_generation": self._display_generation,
-            "snapshot_version": self._snapshot_version,
-        }
+        del params
+        return await self.display_service.snapshot(
+            i3_connection=self.i3_connection,
+            monitor_profile_service=getattr(self, "monitor_profile_service", None),
+            display_generation=self._display_generation,
+            snapshot_version=self._snapshot_version,
+        )
 
     async def _display_apply(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Apply a named display layout/profile through the daemon."""
-        layout = str(params.get("layout") or params.get("profile") or "").strip()
-        if not layout:
-            raise ValueError("layout is required")
-        if not getattr(self, "monitor_profile_service", None):
-            raise RuntimeError("Monitor profile service is unavailable")
-        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
-            raise RuntimeError("Sway connection is unavailable")
-
-        applied = await self.monitor_profile_service.handle_profile_change(
-            self.i3_connection.conn,
-            layout,
+        return await self.display_service.apply(
+            params,
+            i3_connection=self.i3_connection,
+            monitor_profile_service=getattr(self, "monitor_profile_service", None),
+            display_generation=self._display_generation,
+            snapshot_version=self._snapshot_version,
         )
-        if not applied:
-            raise RuntimeError(f"Failed to apply display layout: {layout}")
-
-        try:
-            from .monitor_profile_service import CURRENT_PROFILE_FILE
-            CURRENT_PROFILE_FILE.parent.mkdir(parents=True, exist_ok=True)
-            CURRENT_PROFILE_FILE.write_text(layout + "\n", encoding="utf-8")
-        except Exception as exc:
-            logger.warning("display.apply persisted layout state incompletely: %s", exc)
-
-        await self.notify_state_change("display_layout_changed")
-        snapshot = await self._display_snapshot({})
-        snapshot["applied"] = True
-        return snapshot
 
     async def _display_cycle(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Cycle to the next available display layout/profile."""
-        if not getattr(self, "monitor_profile_service", None):
-            raise RuntimeError("Monitor profile service is unavailable")
-
-        layouts = list(self.monitor_profile_service.list_profiles())
-        if not layouts:
-            raise RuntimeError("No display layouts are configured")
-
-        current = str(self.monitor_profile_service.get_current_profile() or "")
-        if current in layouts:
-            next_index = (layouts.index(current) + 1) % len(layouts)
-        else:
-            next_index = 0
-        return await self._display_apply({"layout": layouts[next_index]})
+        return await self.display_service.cycle(
+            params,
+            i3_connection=self.i3_connection,
+            monitor_profile_service=getattr(self, "monitor_profile_service", None),
+            display_generation=self._display_generation,
+            snapshot_version=self._snapshot_version,
+        )
 
     async def _display_toggle_output(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Toggle an individual output on or off."""
-        output_name = str(params.get("output") or "").strip()
-        if not output_name:
-            raise ValueError("output is required")
-
-        from .output_state_manager import load_output_states, toggle_output_state, get_enabled_outputs
-
-        enabled_outputs = get_enabled_outputs()
-        current_states = load_output_states()
-        is_currently_enabled = current_states.is_output_enabled(output_name)
-
-        if is_currently_enabled and len(enabled_outputs) <= 1:
-            raise RuntimeError(f"Cannot disable {output_name}: it is the only enabled output")
-
-        new_state = toggle_output_state(output_name)
-
-        snapshot = await self._display_snapshot({})
-        snapshot["toggled_output"] = output_name
-        snapshot["toggled_enabled"] = new_state
-        return snapshot
+        return await self.display_service.toggle_output(
+            params,
+            i3_connection=self.i3_connection,
+            monitor_profile_service=getattr(self, "monitor_profile_service", None),
+            display_generation=self._display_generation,
+            snapshot_version=self._snapshot_version,
+        )
 
     async def _display_set_scale(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Set the scale factor for an individual output."""
-        output_name = str(params.get("output") or "").strip()
-        if not output_name:
-            raise ValueError("output is required")
-        scale = params.get("scale")
-        if scale is None:
-            raise ValueError("scale is required")
-        scale = float(scale)
-        if scale <= 0:
-            raise ValueError("scale must be positive")
-
-        result = await self._output_configure({"output_name": output_name, "scale": scale})
-        if not result.get("success"):
-            raise RuntimeError(f"Failed to set scale for {output_name}: {result.get('error', 'unknown')}")
-
-        snapshot = await self._display_snapshot({})
-        snapshot["scaled_output"] = output_name
-        snapshot["scaled_value"] = scale
-        return snapshot
+        return await self.display_service.set_scale(
+            params,
+            i3_connection=self.i3_connection,
+            monitor_profile_service=getattr(self, "monitor_profile_service", None),
+            display_generation=self._display_generation,
+            snapshot_version=self._snapshot_version,
+        )
 
     def _build_herdr_spaces(
         self,

@@ -338,8 +338,8 @@ async def test_handle_profile_change_uses_hybrid_profiles_without_hostname_gate(
     assert saved_states.is_output_enabled("eDP-1") is True
     assert saved_states.is_output_enabled("HEADLESS-1") is True
     assert saved_states.is_output_enabled("HEADLESS-2") is False
-    assert "output eDP-1 mode 1920x1200 position 0 0 scale 1.25" in commands
-    assert "output HEADLESS-1 mode 1920x1200 position 1536 0 scale 1.0" in commands
+    assert "output eDP-1 enable mode 1920x1200 position 0 0 scale 1.25" in commands
+    assert "output HEADLESS-1 enable mode 1920x1200 position 1536 0 scale 1.0" in commands
 
 
 @pytest.mark.asyncio
