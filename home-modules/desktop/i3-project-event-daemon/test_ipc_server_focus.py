@@ -171,8 +171,8 @@ async def test_session_focus_window_only_identity_sets_override_before_wait(serv
 
     async def fake_wait(session_key, *, attempts=8, delay_s=0.2):
         assert session_key == "session-window-only"
-        assert server._focus_session_override_key == "session-window-only"
-        assert server._focus_window_override["window_id"] == 146
+        assert server.focus_service.session_override_key == "session-window-only"
+        assert server.focus_service.window_override["window_id"] == 146
         return {
             "success": True,
             "reason": "ok",
@@ -399,8 +399,8 @@ async def test_focus_remote_session_attach_tmux_target_sets_override_without_wai
     assert result["focus"]["current_ai_session_key_after"] == "session-remote-pane"
     assert result["focus"]["focus_state_after"]["current_ai_session_key"] == "session-remote-pane"
     assert result["tmux_select"]["success"] is True
-    assert server._focus_session_override_key == "session-remote-pane"
-    assert server._focus_window_override["window_id"] == 20
+    assert server.focus_service.session_override_key == "session-remote-pane"
+    assert server.focus_service.window_override["window_id"] == 20
     server._wait_for_session_focus.assert_not_awaited()
 
 
@@ -914,8 +914,8 @@ async def test_focus_state_clears_verified_remote_override_without_local_ai_focu
             "tmux_pane": "%1",
         },
     ]
-    server._focus_session_override_key = "session-remote-current"
-    server._focus_window_override = {"window_id": 30, "connection_key": "vpittamp@ryzen:22"}
+    server.focus_service.session_override_key = "session-remote-current"
+    server.focus_service.set_window_override(window_id=30, connection_key="vpittamp@ryzen:22")
     server._runtime_snapshot = AsyncMock(return_value=runtime_snapshot)
     monkeypatch.setattr(server, "_load_session_items", lambda _snapshot: sessions)
     monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
@@ -1008,7 +1008,7 @@ async def test_focus_state_prefers_focused_local_window_over_stale_override(serv
             "is_current_host": False,
         },
     ]
-    server._focus_session_override_key = "session-remote-selected"
+    server.focus_service.session_override_key = "session-remote-selected"
     server._runtime_snapshot = AsyncMock(return_value=runtime_snapshot)
     monkeypatch.setattr(server, "_load_session_items", lambda _snapshot: sessions)
     monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))

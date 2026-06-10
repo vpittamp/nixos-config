@@ -269,8 +269,8 @@ async def test_launch_open_clears_stale_focus_override_for_explicit_project_inte
 
     assert result["success"] is True
     assert result["launch"]["reused_existing"] is True
-    assert server_local._focus_session_override_key == ""
-    assert server_local._focus_window_override == {"window_id": 0, "connection_key": ""}
+    assert server_local.focus_service.session_override_key == ""
+    assert server_local.focus_service.window_override == {"window_id": 0, "connection_key": ""}
 
 
 @pytest.mark.asyncio

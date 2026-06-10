@@ -38,6 +38,22 @@ class FocusService:
         }
         self.pending_intent_id = ""
 
+    def set_window_override(
+        self,
+        *,
+        window_id: int = 0,
+        connection_key: str = "",
+    ) -> None:
+        """Persist a normalized explicit window focus target."""
+        self.window_override = {
+            "window_id": int(window_id or 0),
+            "connection_key": self._normalize_connection_key(str(connection_key or "").strip()),
+        }
+
+    def set_pending_intent(self, intent_id: str) -> None:
+        """Persist the daemon-owned pending focus intent identifier."""
+        self.pending_intent_id = str(intent_id or "").strip()
+
     def clear_focus_overrides(self) -> None:
         """Clear session/window overrides and any pending focus intent."""
         self.session_override_key = ""

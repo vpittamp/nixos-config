@@ -341,7 +341,7 @@ def test_select_current_session_key_ignores_stale_override_when_focus_moves_wind
     )
 
     assert current_session_key == "session-new"
-    assert server._focus_session_override_key == ""
+    assert server.focus_service.session_override_key == ""
 
 
 def test_select_current_session_key_clears_override_when_focus_moves_to_non_session_window(server):
@@ -366,8 +366,8 @@ def test_select_current_session_key_clears_override_when_focus_moves_to_non_sess
     )
 
     assert current_session_key == ""
-    assert server._focus_session_override_key == ""
-    assert server._focus_window_override == {"window_id": 0, "connection_key": ""}
+    assert server.focus_service.session_override_key == ""
+    assert server.focus_service.window_override == {"window_id": 0, "connection_key": ""}
 
 
 def test_select_current_session_key_preserves_override_when_focused_window_still_matches(server):
@@ -392,7 +392,7 @@ def test_select_current_session_key_preserves_override_when_focused_window_still
     )
 
     assert current_session_key == "session-remote"
-    assert server._focus_session_override_key == "session-remote"
+    assert server.focus_service.session_override_key == "session-remote"
 
 
 def test_select_current_session_key_prefers_focused_herdr_override_over_local_focus(server):

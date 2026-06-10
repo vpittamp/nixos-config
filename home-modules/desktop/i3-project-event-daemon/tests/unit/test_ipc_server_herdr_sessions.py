@@ -1196,7 +1196,7 @@ def test_herdr_remote_pane_focus_updates_cached_remote_rows(server):
     assert panes[1]["focused"] is True
     assert remote_sessions[0]["focused"] is False
     assert remote_sessions[1]["focused"] is True
-    assert server._focus_session_override_key == "herdr:ryzen:pane:remote-b"
+    assert server.focus_service.session_override_key == "herdr:ryzen:pane:remote-b"
 
 
 @pytest.mark.asyncio

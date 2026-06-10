@@ -622,38 +622,6 @@ class IPCServer:
         self._malformed_json_by_peer: Dict[str, int] = {}
         self.agent_harness = CodexHarnessManager(on_change=self._notify_agent_harness_change)
 
-    @property
-    def _focus_session_override_key(self) -> str:
-        """Compatibility accessor for the focus-service-owned session override."""
-        return str(self.focus_service.session_override_key or "").strip()
-
-    @_focus_session_override_key.setter
-    def _focus_session_override_key(self, value: str) -> None:
-        self.focus_service.session_override_key = str(value or "").strip()
-
-    @property
-    def _focus_window_override(self) -> Dict[str, Any]:
-        """Compatibility accessor for the focus-service-owned window override."""
-        return self.focus_service.window_override
-
-    @_focus_window_override.setter
-    def _focus_window_override(self, value: Dict[str, Any]) -> None:
-        if not isinstance(value, dict):
-            value = {}
-        self.focus_service.window_override = {
-            "window_id": int(value.get("window_id") or 0),
-            "connection_key": self._normalize_connection_key(str(value.get("connection_key") or "").strip()),
-        }
-
-    @property
-    def _focus_pending_intent_id(self) -> str:
-        """Compatibility accessor for the focus-service-owned pending intent."""
-        return str(self.focus_service.pending_intent_id or "").strip()
-
-    @_focus_pending_intent_id.setter
-    def _focus_pending_intent_id(self, value: str) -> None:
-        self.focus_service.pending_intent_id = str(value or "").strip()
-
     @classmethod
     async def from_systemd_socket(
         cls,
@@ -9535,7 +9503,7 @@ FORMAT JSONEachRow
             "workspace.focus",
             "workspace.focus_fast",
         }:
-            self._focus_pending_intent_id = intent_id
+            self.focus_service.set_pending_intent(intent_id)
         payload = params or {}
         logger.info(
             "User intent epoch=%s method=%s project=%s variant=%s connection=%s session=%s app=%s",
@@ -10504,7 +10472,7 @@ FORMAT JSONEachRow
                 tmux_socket=tmux_socket,
             )
             success = bool(tmux_result.get("success", False))
-            if success and str(self._focus_session_override_key or "").strip() == session_key:
+            if success and str(self.focus_service.session_override_key or "").strip() == session_key:
                 self._set_focus_overrides(session_key="", window_id=0, connection_key="")
             if success:
                 await self.notify_state_change("ai_session_close")
@@ -10533,7 +10501,7 @@ FORMAT JSONEachRow
             }
 
         closed = await self._close_managed_window(window_id)
-        if closed and str(self._focus_session_override_key or "").strip() == session_key:
+        if closed and str(self.focus_service.session_override_key or "").strip() == session_key:
             self._set_focus_overrides(session_key="", window_id=0, connection_key="")
         if closed:
             await self.notify_state_change("ai_session_close")
@@ -16030,19 +15998,17 @@ FORMAT JSONEachRow
         stale_window_ids = {int(item.get("window_id") or 0) for item in stale_bridges if int(item.get("window_id") or 0) > 0}
 
         cleared_session_override = False
-        if (
-            str(self._focus_session_override_key or "").strip()
-            and str(self._focus_session_override_key or "").strip() not in live_session_keys
-        ):
-            self._focus_session_override_key = ""
+        session_override_key = str(self.focus_service.session_override_key or "").strip()
+        if session_override_key and session_override_key not in live_session_keys:
+            self.focus_service.session_override_key = ""
             cleared_session_override = True
 
         cleared_window_override = False
-        override_window_id = int(self._focus_window_override.get("window_id") or 0)
+        override_window_id = int(self.focus_service.window_override.get("window_id") or 0)
         if override_window_id > 0 and (
             override_window_id not in live_window_ids or override_window_id in stale_window_ids
         ):
-            self._focus_window_override = {"window_id": 0, "connection_key": ""}
+            self.focus_service.set_window_override(window_id=0, connection_key="")
             cleared_window_override = True
 
         cleaned_windows: List[Dict[str, Any]] = []
@@ -16141,9 +16107,9 @@ FORMAT JSONEachRow
             "current_ai_session_key": current_session_key,
             "focused_window_id": focused_window_id,
             "focus_override": {
-                "session_key": str(self._focus_session_override_key or "").strip(),
-                "window_id": int(self._focus_window_override.get("window_id") or 0),
-                "connection_key": str(self._focus_window_override.get("connection_key") or "").strip(),
+                "session_key": str(self.focus_service.session_override_key or "").strip(),
+                "window_id": int(self.focus_service.window_override.get("window_id") or 0),
+                "connection_key": str(self.focus_service.window_override.get("connection_key") or "").strip(),
             },
             "session_count": len(sessions),
             "bridge_window_count": len(bridge_windows),
@@ -17999,7 +17965,7 @@ FORMAT JSONEachRow
                 "fallback_method": "workspace.focus",
             }
 
-        self._focus_pending_intent_id = ""
+        self.focus_service.set_pending_intent("")
         await self.notify_state_change("focus_changed")
         return {"success": True, "workspace": workspace_ref, "fast": True}
 
@@ -18021,7 +17987,7 @@ FORMAT JSONEachRow
         if not self._sway_command_succeeded(result):
             return {"success": False, "workspace": workspace_ref, "error": f"command_failed:{command}"}
         await self._send_tick_barrier(f"i3pm:workspace-focus:{workspace_ref}")
-        self._focus_pending_intent_id = ""
+        self.focus_service.set_pending_intent("")
 
         focused_workspace = await self._get_focused_workspace_name()
         if focused_workspace != workspace_ref:
