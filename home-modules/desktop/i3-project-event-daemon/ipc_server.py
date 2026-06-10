@@ -8262,36 +8262,15 @@ class IPCServer:
         machinery, which already handles the "no existing window → launch" path.
         """
         session_key = str(params.get("session_key") or "").strip()
-        if not session_key:
-            raise ValueError("session_key is required")
-
         sessions_result = await self._session_list({})
-        sessions = sessions_result.get("sessions", [])
-        session = next(
-            (
-                item for item in sessions
-                if isinstance(item, dict)
-                and str(item.get("session_key") or "").strip() == session_key
-            ),
-            None,
-        )
-        if not isinstance(session, dict):
-            raise RuntimeError(f"Unknown session_key: {session_key}")
-
-        execution_mode = str(session.get("execution_mode") or "").strip().lower()
-        if execution_mode != "ssh":
-            raise RuntimeError(
-                f"Session {session_key} is not remote (execution_mode={execution_mode!r})"
-            )
-
-        self._record_ai_session_seen(session_key)
-        self._acknowledge_stopped_session_notification(session)
-        self._acknowledge_user_input_session_notification(session)
-
-        return await self._focus_remote_session_attach(
+        return await self.session_action_service.spawn_remote_attach(
             session_key=session_key,
-            session=session,
+            sessions=list(sessions_result.get("sessions", []) or []),
             intent_epoch=int(params.get("__intent_epoch") or 0),
+            record_session_seen=self._record_ai_session_seen,
+            acknowledge_stopped_session=self._acknowledge_stopped_session_notification,
+            acknowledge_user_input_session=self._acknowledge_user_input_session_notification,
+            focus_remote_session_attach=self._focus_remote_session_attach,
         )
 
     async def _session_close(self, params: Dict[str, Any]) -> Dict[str, Any]:

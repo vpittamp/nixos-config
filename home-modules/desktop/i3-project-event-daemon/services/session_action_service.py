@@ -741,6 +741,49 @@ class SessionActionService:
             "verification": verification,
         }
 
+    async def spawn_remote_attach(
+        self,
+        *,
+        session_key: str,
+        sessions: List[Dict[str, Any]],
+        intent_epoch: int,
+        record_session_seen: Callable[[str], Any],
+        acknowledge_stopped_session: Callable[[Dict[str, Any]], Any],
+        acknowledge_user_input_session: Callable[[Dict[str, Any]], Any],
+        focus_remote_session_attach: Callable[..., Awaitable[Dict[str, Any]]],
+    ) -> Dict[str, Any]:
+        """Spawn a local SSH terminal that attaches to a daemon-known remote session."""
+        normalized_key = str(session_key or "").strip()
+        if not normalized_key:
+            raise ValueError("session_key is required")
+
+        session = next(
+            (
+                item for item in sessions
+                if isinstance(item, dict)
+                and str(item.get("session_key") or "").strip() == normalized_key
+            ),
+            None,
+        )
+        if not isinstance(session, dict):
+            raise RuntimeError(f"Unknown session_key: {normalized_key}")
+
+        execution_mode = str(session.get("execution_mode") or "").strip().lower()
+        if execution_mode != "ssh":
+            raise RuntimeError(
+                f"Session {normalized_key} is not remote (execution_mode={execution_mode!r})"
+            )
+
+        record_session_seen(normalized_key)
+        acknowledge_stopped_session(session)
+        acknowledge_user_input_session(session)
+
+        return await focus_remote_session_attach(
+            session_key=normalized_key,
+            session=session,
+            intent_epoch=int(intent_epoch or 0),
+        )
+
     async def close_session(
         self,
         *,

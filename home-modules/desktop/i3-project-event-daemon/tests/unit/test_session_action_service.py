@@ -388,6 +388,62 @@ async def test_focus_remote_session_attach_returns_stale_result_before_launch():
 
 
 @pytest.mark.asyncio
+async def test_spawn_remote_attach_acknowledges_and_routes_remote_session():
+    service, _calls = make_service()
+    record_seen = MagicMock()
+    acknowledge_stopped = MagicMock()
+    acknowledge_user_input = MagicMock()
+    focus_remote = AsyncMock(return_value={
+        "success": True,
+        "session_key": "session-remote-pane",
+        "focus_mode": "remote_bridge_bound",
+    })
+    session = {
+        "session_key": "session-remote-pane",
+        "execution_mode": "ssh",
+    }
+
+    result = await service.spawn_remote_attach(
+        session_key="session-remote-pane",
+        sessions=[session],
+        intent_epoch=9,
+        record_session_seen=record_seen,
+        acknowledge_stopped_session=acknowledge_stopped,
+        acknowledge_user_input_session=acknowledge_user_input,
+        focus_remote_session_attach=focus_remote,
+    )
+
+    record_seen.assert_called_once_with("session-remote-pane")
+    acknowledge_stopped.assert_called_once_with(session)
+    acknowledge_user_input.assert_called_once_with(session)
+    focus_remote.assert_awaited_once_with(
+        session_key="session-remote-pane",
+        session=session,
+        intent_epoch=9,
+    )
+    assert result["focus_mode"] == "remote_bridge_bound"
+
+
+@pytest.mark.asyncio
+async def test_spawn_remote_attach_rejects_local_session():
+    service, _calls = make_service()
+
+    with pytest.raises(RuntimeError, match="is not remote"):
+        await service.spawn_remote_attach(
+            session_key="session-local-pane",
+            sessions=[{
+                "session_key": "session-local-pane",
+                "execution_mode": "local",
+            }],
+            intent_epoch=0,
+            record_session_seen=MagicMock(),
+            acknowledge_stopped_session=MagicMock(),
+            acknowledge_user_input_session=MagicMock(),
+            focus_remote_session_attach=AsyncMock(),
+        )
+
+
+@pytest.mark.asyncio
 async def test_focus_session_routes_remote_attach_and_acknowledges_boundaries():
     service, _calls = make_service()
     session = {
