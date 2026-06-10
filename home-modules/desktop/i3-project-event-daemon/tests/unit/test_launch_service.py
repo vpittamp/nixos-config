@@ -350,6 +350,65 @@ def test_build_terminal_identity_shapes_dedicated_scoped_app(tmp_path: Path) -> 
     }
 
 
+def test_build_remote_session_attach_spec_shapes_exact_tmux_bridge(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+
+    spec = service.build_remote_session_attach_spec(
+        app=SimpleNamespace(
+            name="terminal",
+            command="ghostty",
+            parameters=["-e", "bash", "-lc", "true"],
+            terminal=True,
+            scope="scoped",
+            expected_class="com.mitchellh.ghostty",
+            preferred_workspace=1,
+        ),
+        session={
+            "session_key": "codex|remote-session",
+            "surface_key": "surface-remote",
+            "project_name": "vpittamp/nixos-config:main",
+            "connection_key": "vpittamp@ryzen:22",
+            "tmux_session": "i3pm-vpittamp-nixos-config-ma-6e1abb85",
+            "tmux_window": "0:main",
+            "tmux_pane": "%2",
+            "terminal_context": {
+                "tmux_socket": "/run/user/1000/tmux-1000/default",
+                "tmux_server_key": "/run/user/1000/tmux-1000/default",
+            },
+        },
+        attach_profile={
+            "connection_key": "vpittamp@ryzen:22",
+            "remote_host": "ryzen",
+            "remote_user": "vpittamp",
+            "remote_port": 22,
+            "remote_dir": "/srv/worktrees/nixos-config/main",
+        },
+        remote_context={
+            "target_host": "ryzen",
+            "connection_key": "local@ryzen",
+            "context_key": "vpittamp/nixos-config:main::host::ryzen",
+            "remote": {
+                "host": "ryzen",
+                "user": "vpittamp",
+                "port": 22,
+                "remote_dir": "/srv/worktrees/nixos-config/main",
+            },
+        },
+        launcher_pid=123,
+        pending_count=4,
+        remote_terminal_role="remote-session:abcd1234",
+    )
+
+    assert spec["launch_strategy"] == "managed_remote_terminal"
+    assert spec["launch_transport"] == "remote_helper"
+    assert spec["connection_key"] == "local@ryzen"
+    assert spec["context_key"] == "vpittamp/nixos-config:main::host::ryzen"
+    assert spec["environment"]["I3PM_CONNECTION_KEY"] == "vpittamp@ryzen:22"
+    assert spec["environment"]["I3PM_REMOTE_SESSION_KEY"] == "codex|remote-session"
+    assert spec["terminal_launch"]["remote_attach"]["tmux_pane"] == "%2"
+    assert spec["launch"]["pending_count"] == 4
+
+
 def test_launch_parameter_substitution_and_scoped_command_validation(tmp_path: Path) -> None:
     service = make_service(tmp_path)
 
