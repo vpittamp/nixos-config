@@ -144,6 +144,166 @@ def test_kill_tmux_pane_rejects_missing_remote_target():
 
 
 @pytest.mark.asyncio
+async def test_focus_session_routes_remote_attach_and_acknowledges_boundaries():
+    service, _calls = make_service()
+    session = {
+        "session_key": "session-remote",
+        "window_id": 0,
+        "focus_mode": "remote_bridge_attachable",
+    }
+    record_seen = MagicMock()
+    acknowledge_stopped = MagicMock()
+    acknowledge_user_input = MagicMock()
+    focus_remote = AsyncMock(return_value={
+        "success": True,
+        "focus_mode": "remote_bridge_bound",
+        "current_ai_session_key_after": "session-remote",
+    })
+
+    result = await service.focus_session(
+        session_key="session-remote",
+        sessions=[session],
+        intent_epoch=7,
+        record_session_seen=record_seen,
+        acknowledge_stopped_session=acknowledge_stopped,
+        acknowledge_user_input_session=acknowledge_user_input,
+        focus_remote_session_attach=focus_remote,
+        focus_local_session_attach=AsyncMock(),
+        window_focus=AsyncMock(),
+        wait_for_session_focus=AsyncMock(),
+        focus_state=AsyncMock(),
+        set_focus_overrides=MagicMock(),
+    )
+
+    record_seen.assert_called_once_with("session-remote")
+    acknowledge_stopped.assert_called_once_with(session)
+    acknowledge_user_input.assert_called_once_with(session)
+    focus_remote.assert_awaited_once_with(
+        session_key="session-remote",
+        session=session,
+        intent_epoch=7,
+    )
+    assert result["success"] is True
+    assert result["focus_mode"] == "remote_bridge_bound"
+
+
+@pytest.mark.asyncio
+async def test_focus_session_local_tmux_uses_tmux_verification_without_wait():
+    service, _calls = make_service()
+    service.select_tmux_target = MagicMock(return_value={"success": True, "reason": "ok"})
+    service.verify_tmux_target = MagicMock(return_value={
+        "success": True,
+        "reason": "ok",
+        "active_tmux_pane": "%1",
+        "tmux_pane": "%1",
+    })
+    wait_for_session_focus = AsyncMock(return_value={"success": False, "reason": "should_not_wait"})
+    set_focus_overrides = MagicMock()
+
+    result = await service.focus_session(
+        session_key="session-local-pane",
+        sessions=[{
+            "session_key": "session-local-pane",
+            "window_id": 101,
+            "focus_mode": "local_window",
+            "focus_project": "vpittamp/nixos-config:main",
+            "focus_execution_mode": "local",
+            "focus_connection_key": "local@ryzen",
+            "connection_key": "local@ryzen",
+            "surface_key": "surface-local-pane",
+            "conflict_state": "",
+            "execution_mode": "local",
+            "tmux_session": "i3pm-main",
+            "tmux_window": "1:codex-raw",
+            "tmux_pane": "%1",
+            "terminal_context": {},
+        }],
+        intent_epoch=0,
+        record_session_seen=MagicMock(),
+        acknowledge_stopped_session=MagicMock(),
+        acknowledge_user_input_session=MagicMock(),
+        focus_remote_session_attach=AsyncMock(),
+        focus_local_session_attach=AsyncMock(),
+        window_focus=AsyncMock(return_value={"success": True}),
+        wait_for_session_focus=wait_for_session_focus,
+        focus_state=AsyncMock(return_value={
+            "current_ai_session_key": "session-local-pane",
+            "focused_window_id": 101,
+        }),
+        set_focus_overrides=set_focus_overrides,
+    )
+
+    service.select_tmux_target.assert_called_once()
+    service.verify_tmux_target.assert_called_once()
+    wait_for_session_focus.assert_not_awaited()
+    set_focus_overrides.assert_called_once_with(
+        session_key="session-local-pane",
+        window_id=101,
+        connection_key="local@ryzen",
+    )
+    assert result["success"] is True
+    assert result["verification"]["verification_source"] == "tmux"
+    assert result["current_ai_session_key_after"] == "session-local-pane"
+
+
+@pytest.mark.asyncio
+async def test_focus_session_window_only_sets_override_before_waiting():
+    service, _calls = make_service()
+    overrides = []
+
+    def set_focus_overrides(**kwargs):
+        overrides.append(kwargs)
+
+    async def wait_for_session_focus(session_key):
+        assert session_key == "session-window-only"
+        assert overrides == [{
+            "session_key": "session-window-only",
+            "window_id": 146,
+            "connection_key": "vpittamp@ryzen:22",
+        }]
+        return {
+            "success": True,
+            "reason": "ok",
+            "session_key": session_key,
+            "current_session_key": session_key,
+        }
+
+    result = await service.focus_session(
+        session_key="session-window-only",
+        sessions=[{
+            "session_key": "session-window-only",
+            "window_id": 146,
+            "focus_mode": "local_window",
+            "focus_project": "PittampalliOrg/workflow-builder:main",
+            "focus_execution_mode": "ssh",
+            "focus_connection_key": "vpittamp@ryzen:22",
+            "connection_key": "vpittamp@ryzen:22",
+            "surface_key": "surface-window-only",
+            "conflict_state": "",
+            "terminal_context": {},
+        }],
+        intent_epoch=0,
+        record_session_seen=MagicMock(),
+        acknowledge_stopped_session=MagicMock(),
+        acknowledge_user_input_session=MagicMock(),
+        focus_remote_session_attach=AsyncMock(),
+        focus_local_session_attach=AsyncMock(),
+        window_focus=AsyncMock(return_value={"success": True}),
+        wait_for_session_focus=wait_for_session_focus,
+        focus_state=AsyncMock(return_value={
+            "current_ai_session_key": "session-window-only",
+            "focused_window_id": 146,
+        }),
+        set_focus_overrides=set_focus_overrides,
+    )
+
+    assert len(overrides) == 2
+    assert result["success"] is True
+    assert result["verification"]["success"] is True
+    assert result["focused_window_id_after"] == 146
+
+
+@pytest.mark.asyncio
 async def test_close_session_kills_local_tmux_pane_and_notifies():
     service, _calls = make_service(current_host=True)
     service.kill_tmux_pane = MagicMock(return_value={"success": True, "reason": "ok", "stderr": ""})

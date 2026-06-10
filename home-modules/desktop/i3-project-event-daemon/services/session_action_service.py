@@ -230,6 +230,153 @@ class SessionActionService:
             "stderr": str(result.stderr or "").strip(),
         }
 
+    async def focus_session(
+        self,
+        *,
+        session_key: str,
+        sessions: List[Dict[str, Any]],
+        intent_epoch: int,
+        record_session_seen: Callable[[str], Any],
+        acknowledge_stopped_session: Callable[[Dict[str, Any]], Any],
+        acknowledge_user_input_session: Callable[[Dict[str, Any]], Any],
+        focus_remote_session_attach: Callable[..., Awaitable[Dict[str, Any]]],
+        focus_local_session_attach: Callable[..., Awaitable[Dict[str, Any]]],
+        window_focus: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
+        wait_for_session_focus: Callable[..., Awaitable[Dict[str, Any]]],
+        focus_state: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
+        set_focus_overrides: Callable[..., Any],
+    ) -> Dict[str, Any]:
+        """Focus an AI session by daemon-owned session key."""
+        normalized_key = str(session_key or "").strip()
+        if not normalized_key:
+            raise ValueError("session_key is required")
+
+        session = next(
+            (
+                item for item in sessions
+                if isinstance(item, dict)
+                and str(item.get("session_key") or "").strip() == normalized_key
+            ),
+            None,
+        )
+        if not isinstance(session, dict):
+            raise RuntimeError(f"Unknown session_key: {normalized_key}")
+
+        record_session_seen(normalized_key)
+        acknowledge_stopped_session(session)
+        acknowledge_user_input_session(session)
+
+        window_id = int(session.get("window_id") or 0)
+        focus_mode = str(session.get("focus_mode") or "").strip() or "unavailable"
+        if window_id <= 0 and focus_mode not in {"remote_bridge_bound", "remote_bridge_attachable", "local_tmux_attachable"}:
+            raise RuntimeError(f"Session {normalized_key} is not focusable")
+
+        if focus_mode in {"remote_bridge_bound", "remote_bridge_attachable"}:
+            return await focus_remote_session_attach(
+                session_key=normalized_key,
+                session=session,
+                intent_epoch=int(intent_epoch or 0),
+            )
+        if focus_mode == "local_tmux_attachable":
+            return await focus_local_session_attach(
+                session_key=normalized_key,
+                session=session,
+                intent_epoch=int(intent_epoch or 0),
+            )
+
+        focus_result = await window_focus({
+            "window_id": window_id,
+            "project_name": str(session.get("focus_project") or session.get("project_name") or "").strip(),
+            "target_variant": str(session.get("focus_execution_mode") or session.get("execution_mode") or "").strip(),
+            "connection_key": str(session.get("focus_connection_key") or session.get("connection_key") or "").strip(),
+        })
+        terminal_context = session.get("terminal_context") or {}
+        if not isinstance(terminal_context, dict):
+            terminal_context = {}
+        tmux_result: Dict[str, Any] = {
+            "success": False,
+            "reason": "not_applicable",
+        }
+        tmux_session = str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip()
+        tmux_window = str(session.get("tmux_window") or terminal_context.get("tmux_window") or "").strip()
+        tmux_pane = str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip()
+        tmux_socket = str(terminal_context.get("tmux_socket") or "").strip()
+        if tmux_session and tmux_window:
+            tmux_result = self.select_tmux_target(
+                execution_mode=str(session.get("execution_mode") or terminal_context.get("execution_mode") or "local").strip() or "local",
+                tmux_session=tmux_session,
+                tmux_window=tmux_window,
+                tmux_pane=tmux_pane,
+                remote_target=str(terminal_context.get("remote_target") or "").strip(),
+                connection_key=str(session.get("connection_key") or terminal_context.get("connection_key") or "").strip(),
+                tmux_socket=tmux_socket,
+            )
+        overall_success = bool(focus_result.get("success", False)) and (
+            not (tmux_session and tmux_window) or bool(tmux_result.get("success", False))
+        )
+        uses_window_only_identity = not bool(tmux_session and tmux_window and tmux_pane)
+        verification: Dict[str, Any] = {
+            "success": False,
+            "reason": "focus_failed",
+            "session_key": normalized_key,
+            "current_session_key": "",
+        }
+        if overall_success:
+            if tmux_session and tmux_window and tmux_pane and bool(tmux_result.get("success", False)):
+                tmux_verification = self.verify_tmux_target(
+                    execution_mode=str(session.get("execution_mode") or terminal_context.get("execution_mode") or "local").strip() or "local",
+                    tmux_session=tmux_session,
+                    tmux_window=tmux_window,
+                    tmux_pane=tmux_pane,
+                    remote_target=str(terminal_context.get("remote_target") or "").strip(),
+                    connection_key=str(session.get("connection_key") or terminal_context.get("connection_key") or "").strip(),
+                    tmux_socket=tmux_socket,
+                )
+                verification = {
+                    "success": bool(tmux_verification.get("success", False)),
+                    "reason": str(tmux_verification.get("reason") or "tmux_target_mismatch"),
+                    "session_key": normalized_key,
+                    "current_session_key": normalized_key if bool(tmux_verification.get("success", False)) else "",
+                    "verification_source": "tmux",
+                    "active_tmux_pane": str(tmux_verification.get("active_tmux_pane") or "").strip(),
+                    "tmux_pane": str(tmux_verification.get("tmux_pane") or "").strip(),
+                }
+            else:
+                if uses_window_only_identity:
+                    set_focus_overrides(
+                        session_key=normalized_key,
+                        window_id=int(window_id),
+                        connection_key=str(
+                            session.get("focus_connection_key")
+                            or session.get("connection_key")
+                            or ""
+                        ).strip(),
+                    )
+                verification = await wait_for_session_focus(normalized_key)
+            overall_success = overall_success and bool(verification.get("success", False))
+        focus_state_after = await focus_state({})
+        if overall_success:
+            set_focus_overrides(
+                session_key=normalized_key,
+                window_id=int(window_id),
+                connection_key=str(session.get("focus_connection_key") or session.get("connection_key") or "").strip(),
+            )
+        return {
+            "success": overall_success,
+            "session_key": normalized_key,
+            "window_id": window_id,
+            "surface_key": str(session.get("surface_key") or "").strip(),
+            "conflict_state": str(session.get("conflict_state") or "").strip(),
+            "focus_mode": "local_window",
+            "focus_target_host": "",
+            "focus": focus_result,
+            "current_ai_session_key_after": str(focus_state_after.get("current_ai_session_key") or "").strip(),
+            "focused_window_id_after": int(focus_state_after.get("focused_window_id") or 0),
+            "focus_state_after": focus_state_after,
+            "tmux": tmux_result,
+            "verification": verification,
+        }
+
     async def close_session(
         self,
         *,
