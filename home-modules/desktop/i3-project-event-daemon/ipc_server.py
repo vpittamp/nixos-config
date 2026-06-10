@@ -8634,28 +8634,6 @@ FORMAT JSONEachRow
 
         return {}
 
-    @staticmethod
-    def _session_has_exact_remote_identity(session: Dict[str, Any]) -> bool:
-        """Return whether a session is remote to this viewer and has exact bridge identity."""
-        terminal_context = session.get("terminal_context") or {}
-        if not isinstance(terminal_context, dict):
-            terminal_context = {}
-        execution_mode = str(
-            session.get("execution_mode")
-            or terminal_context.get("execution_mode")
-            or "local"
-        ).strip().lower() or "local"
-        source_is_current_host = bool(session.get("source_is_current_host", False))
-        if execution_mode != "ssh" and source_is_current_host:
-            return False
-        return bool(
-            str(session.get("session_key") or "").strip()
-            and str(session.get("surface_key") or "").strip()
-            and str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip()
-            and str(session.get("tmux_window") or terminal_context.get("tmux_window") or "").strip()
-            and str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip()
-        )
-
     def _load_live_tmux_focus_state(
         self,
         tmux_targets: List[Dict[str, str]],
@@ -9762,7 +9740,10 @@ FORMAT JSONEachRow
         local_window_id = int(getattr(existing_window, "window_id", 0) or 0) if existing_window is not None else 0
 
         if existing_window is not None:
-            stale_bridge_reason = self._remote_bridge_window_mismatch_reason(existing_window, session)
+            stale_bridge_reason = self.herdr_service.remote_bridge_window_mismatch_reason(
+                existing_window,
+                session,
+            )
             if stale_bridge_reason:
                 await self._close_managed_window(local_window_id)
                 await self.state_manager.remove_window(local_window_id)
@@ -15555,76 +15536,6 @@ FORMAT JSONEachRow
         digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
         return f"remote-session:{digest}"
 
-    @staticmethod
-    def _remote_bridge_identity_from_window(window_like: Any) -> Dict[str, str]:
-        """Return the remote bridge identity recorded on a local terminal window."""
-        if isinstance(window_like, dict):
-            getter = window_like.get
-        else:
-            getter = lambda key, default="": getattr(window_like, key, default)
-        return {
-            "remote_session_key": str(getter("remote_session_key", "") or "").strip(),
-            "remote_surface_key": str(getter("remote_surface_key", "") or "").strip(),
-            "tmux_socket": str(getter("remote_tmux_socket", "") or "").strip(),
-            "tmux_server_key": str(
-                getter("remote_tmux_server_key", "")
-                or getter("remote_tmux_socket", "")
-                or ""
-            ).strip(),
-            "tmux_session": str(getter("remote_tmux_session", "") or "").strip(),
-            "tmux_window": str(getter("remote_tmux_window", "") or "").strip(),
-            "tmux_pane": str(getter("remote_tmux_pane", "") or "").strip(),
-        }
-
-    @staticmethod
-    def _remote_bridge_identity_from_session(session: Dict[str, Any]) -> Dict[str, str]:
-        """Return the canonical remote tmux identity for a normalized session item."""
-        terminal_context = session.get("terminal_context") or {}
-        if not isinstance(terminal_context, dict):
-            terminal_context = {}
-        return {
-            "remote_session_key": str(session.get("session_key") or "").strip(),
-            "remote_surface_key": str(session.get("surface_key") or "").strip(),
-            "tmux_socket": str(terminal_context.get("tmux_socket") or "").strip(),
-            "tmux_server_key": str(
-                terminal_context.get("tmux_server_key")
-                or terminal_context.get("tmux_socket")
-                or ""
-            ).strip(),
-            "tmux_session": str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip(),
-            "tmux_window": str(session.get("tmux_window") or terminal_context.get("tmux_window") or "").strip(),
-            "tmux_pane": str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip(),
-        }
-
-    def _remote_bridge_window_mismatch_reason(
-        self,
-        window_like: Any,
-        session: Dict[str, Any],
-    ) -> str:
-        """Return why a local bridge window no longer matches the remote session identity."""
-        window_identity = self._remote_bridge_identity_from_window(window_like)
-        session_identity = self._remote_bridge_identity_from_session(session)
-
-        if not (window_identity["remote_surface_key"] and window_identity["remote_session_key"]):
-            return "missing_remote_identity"
-        if (
-            window_identity["remote_surface_key"] != session_identity["remote_surface_key"]
-        ):
-            return "remote_surface_mismatch"
-        if (
-            window_identity["remote_session_key"] != session_identity["remote_session_key"]
-        ):
-            return "remote_session_mismatch"
-
-        for key in ("tmux_server_key", "tmux_session", "tmux_window", "tmux_pane"):
-            if (
-                window_identity[key]
-                and session_identity[key]
-                and window_identity[key] != session_identity[key]
-            ):
-                return f"{key}_mismatch"
-        return ""
-
     async def _close_managed_window(self, window_id: int) -> bool:
         """Close a managed Sway window by container id."""
         target = int(window_id or 0)
@@ -15635,66 +15546,6 @@ FORMAT JSONEachRow
         result = await self._sway_ipc_command(f"[con_id={target}] kill")
         return any(bool(item.get("success", False)) for item in (result or []))
 
-    def _stale_remote_bridge_windows(
-        self,
-        runtime_snapshot: Dict[str, Any],
-        sessions: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        """Return stale local bridge windows that no longer map to a live remote session."""
-        tracked_windows = list(runtime_snapshot.get("tracked_windows", []) or [])
-        live_by_surface = {
-            str(session.get("surface_key") or "").strip(): session
-            for session in sessions
-            if isinstance(session, dict)
-            and self._session_has_exact_remote_identity(session)
-            and str(session.get("surface_key") or "").strip()
-        }
-        live_by_session = {
-            str(session.get("session_key") or "").strip(): session
-            for session in sessions
-            if isinstance(session, dict)
-            and self._session_has_exact_remote_identity(session)
-            and str(session.get("session_key") or "").strip()
-        }
-        stale: List[Dict[str, Any]] = []
-        for window in tracked_windows:
-            if not isinstance(window, dict):
-                continue
-            if str(window.get("execution_mode") or "").strip() != "ssh":
-                continue
-            window_identity = self._remote_bridge_identity_from_window(window)
-            if not (window_identity["remote_surface_key"] or window_identity["remote_session_key"]):
-                continue
-            session = (
-                live_by_surface.get(window_identity["remote_surface_key"])
-                or live_by_session.get(window_identity["remote_session_key"])
-            )
-            if session is None:
-                stale.append({
-                    "window_id": int(window.get("window_id") or window.get("id") or 0),
-                    "reason": "missing_remote_session",
-                    "remote_surface_key": window_identity["remote_surface_key"],
-                    "remote_session_key": window_identity["remote_session_key"],
-                })
-                continue
-            if bool(session.get("remote_source_stale", False)):
-                stale.append({
-                    "window_id": int(window.get("window_id") or window.get("id") or 0),
-                    "reason": "stale_remote_source",
-                    "remote_surface_key": window_identity["remote_surface_key"],
-                    "remote_session_key": window_identity["remote_session_key"],
-                })
-                continue
-            mismatch_reason = self._remote_bridge_window_mismatch_reason(window, session)
-            if mismatch_reason:
-                stale.append({
-                    "window_id": int(window.get("window_id") or window.get("id") or 0),
-                    "reason": mismatch_reason,
-                    "remote_surface_key": window_identity["remote_surface_key"],
-                    "remote_session_key": window_identity["remote_session_key"],
-                })
-        return stale
-
     async def _reconcile_session_runtime_state(
         self,
         runtime_snapshot: Dict[str, Any],
@@ -15704,7 +15555,7 @@ FORMAT JSONEachRow
     ) -> Dict[str, Any]:
         """Prune stale bridge windows and clear overrides that no longer resolve."""
         tracked_windows = list(runtime_snapshot.get("tracked_windows", []) or [])
-        stale_bridges = self._stale_remote_bridge_windows(runtime_snapshot, sessions)
+        stale_bridges = self.herdr_service.stale_remote_bridge_windows(runtime_snapshot, sessions)
         live_window_ids = {
             int(window.get("window_id") or window.get("id") or 0)
             for window in tracked_windows
@@ -15770,49 +15621,7 @@ FORMAT JSONEachRow
             sessions,
             focused_window_id=focused_window_id,
         )
-        session_by_surface = {
-            str(session.get("surface_key") or "").strip(): session
-            for session in sessions
-            if isinstance(session, dict) and str(session.get("surface_key") or "").strip()
-        }
-        session_by_key = {
-            str(session.get("session_key") or "").strip(): session
-            for session in sessions
-            if isinstance(session, dict) and str(session.get("session_key") or "").strip()
-        }
-        bridge_windows: List[Dict[str, Any]] = []
-        for window in runtime_snapshot.get("tracked_windows", []) or []:
-            if not isinstance(window, dict):
-                continue
-            identity = self._remote_bridge_identity_from_window(window)
-            if not (identity["remote_surface_key"] or identity["remote_session_key"]):
-                continue
-            session = (
-                session_by_surface.get(identity["remote_surface_key"])
-                or session_by_key.get(identity["remote_session_key"])
-            )
-            mismatch_reason = ""
-            if session is None:
-                mismatch_reason = "missing_remote_session"
-            else:
-                mismatch_reason = self._remote_bridge_window_mismatch_reason(window, session)
-            bridge_windows.append({
-                "window_id": int(window.get("window_id") or window.get("id") or 0),
-                "project": str(window.get("project") or "").strip(),
-                "execution_mode": str(window.get("execution_mode") or "").strip(),
-                "connection_key": str(window.get("connection_key") or "").strip(),
-                "context_key": str(window.get("context_key") or "").strip(),
-                "focused": bool(window.get("focused", False)),
-                "hidden": bool(window.get("hidden", False)),
-                "remote_session_key": identity["remote_session_key"],
-                "remote_surface_key": identity["remote_surface_key"],
-                "remote_tmux_server_key": identity["tmux_server_key"],
-                "remote_tmux_session": identity["tmux_session"],
-                "remote_tmux_window": identity["tmux_window"],
-                "remote_tmux_pane": identity["tmux_pane"],
-                "matched_session_key": str(session.get("session_key") or "").strip() if isinstance(session, dict) else "",
-                "mismatch_reason": mismatch_reason,
-            })
+        bridge_windows = self.herdr_service.bridge_diagnostics(runtime_snapshot, sessions)
 
         return {
             "success": True,
