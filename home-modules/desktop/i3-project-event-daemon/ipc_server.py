@@ -962,7 +962,13 @@ class IPCServer:
             elif method == "herdr.pane.close":
                 result = await self.herdr_service.pane_close(params)
             elif method == "herdr.remote.pane.focus":
-                result = await self._herdr_remote_pane_focus(params)
+                result = await self.herdr_service.remote_pane_focus(
+                    params,
+                    targets=self.herdr_service.load_remote_targets(),
+                    normalize_connection_key=self._normalize_connection_key,
+                    launch_open=self._launch_open,
+                    set_focus_overrides=self._set_focus_overrides,
+                )
             elif method == "herdr.workspace.focus":
                 result = await self.herdr_service.workspace_focus(params)
             elif method == "herdr.tab.focus":
@@ -8605,15 +8611,6 @@ FORMAT JSONEachRow
             local_host=self._local_host_alias(),
             normalize_connection_key=self._normalize_connection_key,
             project_for_cwd=self.herdr_service.project_for_cwd,
-        )
-
-    async def _herdr_remote_pane_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        return await self.herdr_service.remote_pane_focus(
-            params,
-            targets=self.herdr_service.load_remote_targets(),
-            normalize_connection_key=self._normalize_connection_key,
-            launch_open=self._launch_open,
-            set_focus_overrides=self._set_focus_overrides,
         )
 
     def _build_window_focus_target(

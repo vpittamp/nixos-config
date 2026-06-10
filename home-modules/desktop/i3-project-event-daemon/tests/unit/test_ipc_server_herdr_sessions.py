@@ -1113,13 +1113,19 @@ async def test_herdr_remote_pane_focus_switches_pane_then_reuses_herdr_app(serve
         },
     })
 
-    result = await server._herdr_remote_pane_focus({
-        "pane_id": "remote-pane",
-        "host": "ryzen",
-        "ssh_target": "ryzen",
-        "connection_key": "vpittamp@ryzen:22",
-        "__intent_epoch": 12,
-    })
+    result = await server.herdr_service.remote_pane_focus(
+        {
+            "pane_id": "remote-pane",
+            "host": "ryzen",
+            "ssh_target": "ryzen",
+            "connection_key": "vpittamp@ryzen:22",
+            "__intent_epoch": 12,
+        },
+        targets=server.herdr_service.load_remote_targets(),
+        normalize_connection_key=server._normalize_connection_key,
+        launch_open=server._launch_open,
+        set_focus_overrides=server._set_focus_overrides,
+    )
 
     assert calls == [(target, ["focus", "remote-pane", "--json"])]
     server._launch_open.assert_awaited_once_with({
@@ -1194,12 +1200,18 @@ async def test_herdr_remote_pane_focus_updates_cached_remote_rows(server, monkey
     server._launch_open = AsyncMock(return_value={"success": True, "launch": {"reused_existing": True}})
     server.notify_state_change = AsyncMock(return_value=None)
 
-    result = await server._herdr_remote_pane_focus({
-        "pane_id": "remote-b",
-        "host": "ryzen",
-        "ssh_target": "ryzen",
-        "connection_key": "vpittamp@ryzen:22",
-    })
+    result = await server.herdr_service.remote_pane_focus(
+        {
+            "pane_id": "remote-b",
+            "host": "ryzen",
+            "ssh_target": "ryzen",
+            "connection_key": "vpittamp@ryzen:22",
+        },
+        targets=server.herdr_service.load_remote_targets(),
+        normalize_connection_key=server._normalize_connection_key,
+        launch_open=server._launch_open,
+        set_focus_overrides=server._set_focus_overrides,
+    )
 
     sessions = server.herdr_service.snapshot_cache["sessions"]
     panes = server.herdr_service.snapshot_cache["panes"]
