@@ -21,7 +21,7 @@ import subprocess
 import tempfile
 import time
 from datetime import datetime
-from pathlib import Path, PurePath
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -578,9 +578,9 @@ class IPCServer:
         self._launch_reconcile_tasks: Dict[str, asyncio.Task] = {}
         self._session_items_cache_key: Optional[Tuple[Any, ...]] = None
         self._session_items_cache_rows: List[Dict[str, Any]] = []
-        self._herdr_git_metadata_cache: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
         self.herdr_service = HerdrService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
+            normalize_project_path=normalize_project_path,
         )
         self._malformed_json_count: int = 0
         self._deferred_filter_task: Optional[asyncio.Task] = None
@@ -9691,128 +9691,35 @@ FORMAT JSONEachRow
 
     @staticmethod
     def _herdr_normalize_repo_url(value: Any) -> str:
-        text = str(value or "").strip()
-        if not text:
-            return ""
-        if text.endswith(".git"):
-            text = text[:-4]
-        github_ssh = re.match(r"^git@github\.com:(?P<path>[^/]+/.+)$", text)
-        if github_ssh:
-            return github_ssh.group("path").strip("/")
-        github_https = re.match(r"^https://github\.com/(?P<path>[^/]+/.+)$", text)
-        if github_https:
-            return github_https.group("path").strip("/")
-        return text.rstrip("/")
+        return HerdrService.normalize_repo_url(value)
 
     @staticmethod
     def _herdr_ssh_command_prefix(ssh_target: str) -> List[str]:
         return HerdrService.ssh_command_prefix(ssh_target)
 
-    @staticmethod
-    def _herdr_git_run(path: str, args: List[str], *, ssh_target: str = "", timeout: float = 0.75) -> str:
-        if not str(path or "").strip():
-            return ""
-        command: List[str]
-        if ssh_target:
-            remote_args = " ".join(shlex.quote(part) for part in ["git", "-C", path, *args])
-            command = IPCServer._herdr_ssh_command_prefix(ssh_target) + [remote_args]
-        else:
-            normalized = normalize_project_path(path)
-            if not normalized or not Path(normalized).exists():
-                return ""
-            command = ["git", "-C", normalized, *args]
-
-        try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return ""
-        if result.returncode != 0:
-            return ""
-        return str(result.stdout or "").strip()
+    def _herdr_git_run(self, path: str, args: List[str], *, ssh_target: str = "", timeout: float = 0.75) -> str:
+        return self.herdr_service.git_run(
+            path,
+            args,
+            ssh_target=ssh_target,
+            timeout=timeout,
+        )
 
     def _herdr_path_is_git_worktree(self, path: Any, *, ssh_target: str = "") -> bool:
-        value = str(path or "").strip()
-        if not value:
-            return False
-        return self._herdr_git_run(
-            value,
-            ["rev-parse", "--is-inside-work-tree"],
-            ssh_target=ssh_target,
-        ).lower() == "true"
+        return self.herdr_service.path_is_git_worktree(path, ssh_target=ssh_target)
 
     def _herdr_effective_cwd(self, row: Dict[str, Any], *, ssh_target: str = "") -> str:
-        cwd = str(row.get("cwd") or "").strip()
-        foreground_cwd = str(row.get("foreground_cwd") or "").strip()
-        if foreground_cwd and self._herdr_path_is_git_worktree(foreground_cwd, ssh_target=ssh_target):
-            return foreground_cwd
-        if cwd and self._herdr_path_is_git_worktree(cwd, ssh_target=ssh_target):
-            return cwd
-        return foreground_cwd or cwd
+        return self.herdr_service.effective_cwd(row, ssh_target=ssh_target)
 
     def _herdr_git_branch(self, path: Any, *, ssh_target: str = "") -> str:
-        value = str(path or "").strip()
-        if not value:
-            return ""
-        branch = self._herdr_git_run(value, ["branch", "--show-current"], ssh_target=ssh_target)
-        if branch:
-            return branch
-        branch = self._herdr_git_run(value, ["symbolic-ref", "--short", "HEAD"], ssh_target=ssh_target)
-        if branch:
-            return branch
-        branch = self._herdr_git_run(value, ["rev-parse", "--abbrev-ref", "HEAD"], ssh_target=ssh_target)
-        if branch and branch != "HEAD":
-            return branch
-        return self._herdr_git_run(value, ["rev-parse", "--short", "HEAD"], ssh_target=ssh_target)
+        return self.herdr_service.git_branch(path, ssh_target=ssh_target)
 
     def _herdr_git_space_metadata(self, path: Any, *, ssh_target: str = "") -> Dict[str, Any]:
-        value = str(path or "").strip()
-        if not value:
-            return {}
-        cache_key = (self._normalize_connection_key(ssh_target) if ssh_target else "local", ssh_target, value)
-        if cache_key in self._herdr_git_metadata_cache:
-            return dict(self._herdr_git_metadata_cache[cache_key])
-
-        if not self._herdr_path_is_git_worktree(value, ssh_target=ssh_target):
-            self._herdr_git_metadata_cache[cache_key] = {}
-            return {}
-
-        checkout_path = self._herdr_git_run(value, ["rev-parse", "--show-toplevel"], ssh_target=ssh_target)
-        if not checkout_path:
-            self._herdr_git_metadata_cache[cache_key] = {}
-            return {}
-
-        common_dir = self._herdr_git_run(value, ["rev-parse", "--git-common-dir"], ssh_target=ssh_target)
-        if common_dir and not common_dir.startswith("/"):
-            common_dir = str(PurePath(checkout_path) / common_dir)
-        repo_root = common_dir or checkout_path
-        if repo_root.endswith("/.git"):
-            repo_root = repo_root[:-5]
-        origin = self._herdr_git_run(value, ["config", "--get", "remote.origin.url"], ssh_target=ssh_target)
-        repo_key = self._herdr_normalize_repo_url(origin) or repo_root
-        if repo_key and not repo_key.startswith("/") and "/" in repo_key:
-            repo_name = repo_key.rstrip("/").rsplit("/", 1)[-1]
-        else:
-            repo_root_parts = [part for part in repo_root.rstrip("/").split("/") if part]
-            if repo_root_parts and repo_root_parts[-1] in {".bare", ".git"} and len(repo_root_parts) >= 2:
-                repo_name = repo_root_parts[-2]
-            else:
-                repo_name = checkout_path.rstrip("/").rsplit("/", 1)[-1]
-        metadata = {
-            "repo_key": repo_key,
-            "repo_name": repo_name,
-            "repo_root": repo_root,
-            "checkout_path": checkout_path,
-            "is_linked_worktree": False,
-            "branch_label": self._herdr_git_branch(value, ssh_target=ssh_target),
-        }
-        self._herdr_git_metadata_cache[cache_key] = metadata
-        return dict(metadata)
+        return self.herdr_service.git_space_metadata(
+            path,
+            ssh_target=ssh_target,
+            normalize_connection_key=self._normalize_connection_key,
+        )
 
     @staticmethod
     def _normalize_herdr_agent_status(value: Any, *, preserve_raw: bool = False) -> str:
@@ -10064,7 +9971,7 @@ FORMAT JSONEachRow
 
     async def _herdr_remote_snapshot(self, target: Dict[str, str]) -> Dict[str, Any]:
         """Return one remote Herdr host snapshot fetched through read-only SSH commands."""
-        self._herdr_git_metadata_cache.clear()
+        self.herdr_service.clear_git_metadata_cache()
         # Keep remote collection sequential. Some hosts reject bursts of parallel
         # SSH startups, and this path is dashboard polling rather than latency-critical.
         status_payload = await self._run_herdr_ssh_json(target, ["status", "--json"])
@@ -10175,7 +10082,7 @@ FORMAT JSONEachRow
             if cached_snapshot is not None:
                 return cached_snapshot
 
-        self._herdr_git_metadata_cache.clear()
+        self.herdr_service.clear_git_metadata_cache()
         status_payload, agent_payload, pane_payload, workspace_payload, tab_payload, worktree_payload = await asyncio.gather(
             self._run_herdr_json(["status", "--json"]),
             self._run_herdr_json(["agent", "list"]),

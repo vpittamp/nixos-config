@@ -377,6 +377,76 @@ def test_herdr_service_annotates_rows_with_host_context():
     }]
 
 
+def test_herdr_service_normalizes_repo_urls_and_effective_cwd(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+
+    assert service.normalize_repo_url("git@github.com:PittampalliOrg/workflow-builder.git") == (
+        "PittampalliOrg/workflow-builder"
+    )
+    assert service.normalize_repo_url("https://github.com/vpittamp/nixos-config.git") == (
+        "vpittamp/nixos-config"
+    )
+
+    checked = []
+
+    def fake_is_worktree(path, *, ssh_target=""):
+        checked.append((path, ssh_target))
+        return path == "/repo/foreground"
+
+    monkeypatch.setattr(service, "path_is_git_worktree", fake_is_worktree)
+
+    assert service.effective_cwd(
+        {"cwd": "/repo/cwd", "foreground_cwd": "/repo/foreground"},
+        ssh_target="ryzen",
+    ) == "/repo/foreground"
+    assert checked == [("/repo/foreground", "ryzen")]
+
+
+def test_herdr_service_git_space_metadata_is_cached(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    calls = []
+
+    responses = {
+        ("rev-parse", "--is-inside-work-tree"): "true",
+        ("rev-parse", "--show-toplevel"): "/repo/workflow-builder/main",
+        ("rev-parse", "--git-common-dir"): "../.bare",
+        ("config", "--get", "remote.origin.url"): "git@github.com:PittampalliOrg/workflow-builder.git",
+        ("branch", "--show-current"): "feature/focus",
+    }
+
+    def fake_git_run(path, args, *, ssh_target="", timeout=0.75):
+        calls.append((path, tuple(args), ssh_target, timeout))
+        return responses.get(tuple(args), "")
+
+    monkeypatch.setattr(service, "git_run", fake_git_run)
+
+    metadata = service.git_space_metadata(
+        "/repo/workflow-builder/main",
+        normalize_connection_key=lambda value: value,
+    )
+    cached = service.git_space_metadata(
+        "/repo/workflow-builder/main",
+        normalize_connection_key=lambda value: value,
+    )
+
+    assert metadata == {
+        "repo_key": "PittampalliOrg/workflow-builder",
+        "repo_name": "workflow-builder",
+        "repo_root": "/repo/workflow-builder/main/../.bare",
+        "checkout_path": "/repo/workflow-builder/main",
+        "is_linked_worktree": False,
+        "branch_label": "feature/focus",
+    }
+    assert cached == metadata
+    assert [call[1] for call in calls].count(("rev-parse", "--show-toplevel")) == 1
+
+
 @pytest.mark.asyncio
 async def test_herdr_service_runs_local_json_command(monkeypatch):
     service = HerdrService(

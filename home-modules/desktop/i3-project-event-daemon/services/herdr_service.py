@@ -8,9 +8,10 @@ import json
 import logging
 import os
 import re
+import shlex
 import shutil
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,7 @@ class HerdrService:
         notify_delay: float = 0.05,
         snapshot_cache_ttl: float = 0.5,
         remote_snapshot_cache_ttl: float = 10.0,
+        normalize_project_path: Optional[Callable[[Optional[str]], Optional[str]]] = None,
     ) -> None:
         self._notify_state_change = notify_state_change
         self._external_invalidate_snapshot_cache = invalidate_snapshot_cache
@@ -64,6 +66,15 @@ class HerdrService:
         self.remote_snapshot_cache_ttl: float = remote_snapshot_cache_ttl
         self.remote_targets_cache: List[Dict[str, str]] = []
         self.remote_targets_cache_signature: Tuple[Any, ...] = ("", False, 0, 0)
+        self.git_metadata_cache: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+        self._normalize_project_path = normalize_project_path or self._default_normalize_project_path
+
+    @staticmethod
+    def _default_normalize_project_path(value: Optional[str]) -> Optional[str]:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        return str(Path(text).expanduser())
 
     @staticmethod
     def normalize_host_key(host: Any) -> str:
@@ -140,6 +151,10 @@ class HerdrService:
         self.snapshot_cache_time = 0.0
         if self._external_invalidate_snapshot_cache is not None:
             self._external_invalidate_snapshot_cache()
+
+    def clear_git_metadata_cache(self) -> None:
+        """Clear cached git metadata used to enrich Herdr spaces."""
+        self.git_metadata_cache.clear()
 
     def apply_remote_focus_cache(
         self,
@@ -401,6 +416,150 @@ class HerdrService:
                 row["branch_label"] = str(row.get("branch") or "").strip()
             normalized.append(row)
         return normalized
+
+    @staticmethod
+    def normalize_repo_url(value: Any) -> str:
+        """Normalize common git remote URLs into a stable repository key."""
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        if text.endswith(".git"):
+            text = text[:-4]
+        github_ssh = re.match(r"^git@github\.com:(?P<path>[^/]+/.+)$", text)
+        if github_ssh:
+            return github_ssh.group("path").strip("/")
+        github_https = re.match(r"^https://github\.com/(?P<path>[^/]+/.+)$", text)
+        if github_https:
+            return github_https.group("path").strip("/")
+        return text.rstrip("/")
+
+    def git_run(
+        self,
+        path: str,
+        args: List[str],
+        *,
+        ssh_target: str = "",
+        timeout: float = 0.75,
+    ) -> str:
+        """Run a bounded git metadata command locally or on a Herdr remote."""
+        if not str(path or "").strip():
+            return ""
+
+        command: List[str]
+        if ssh_target:
+            remote_args = " ".join(shlex.quote(part) for part in ["git", "-C", path, *args])
+            command = self.ssh_command_prefix(ssh_target) + [remote_args]
+        else:
+            normalized = self._normalize_project_path(path)
+            if not normalized or not Path(normalized).exists():
+                return ""
+            command = ["git", "-C", normalized, *args]
+
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+        if result.returncode != 0:
+            return ""
+        return str(result.stdout or "").strip()
+
+    def path_is_git_worktree(self, path: Any, *, ssh_target: str = "") -> bool:
+        """Return whether a path is inside a git worktree."""
+        value = str(path or "").strip()
+        if not value:
+            return False
+        return self.git_run(
+            value,
+            ["rev-parse", "--is-inside-work-tree"],
+            ssh_target=ssh_target,
+        ).lower() == "true"
+
+    def effective_cwd(self, row: Dict[str, Any], *, ssh_target: str = "") -> str:
+        """Prefer Herdr foreground CWD only when it resolves to a git worktree."""
+        cwd = str(row.get("cwd") or "").strip()
+        foreground_cwd = str(row.get("foreground_cwd") or "").strip()
+        if foreground_cwd and self.path_is_git_worktree(foreground_cwd, ssh_target=ssh_target):
+            return foreground_cwd
+        if cwd and self.path_is_git_worktree(cwd, ssh_target=ssh_target):
+            return cwd
+        return foreground_cwd or cwd
+
+    def git_branch(self, path: Any, *, ssh_target: str = "") -> str:
+        """Return the current branch name or detached commit label for a path."""
+        value = str(path or "").strip()
+        if not value:
+            return ""
+        branch = self.git_run(value, ["branch", "--show-current"], ssh_target=ssh_target)
+        if branch:
+            return branch
+        branch = self.git_run(value, ["symbolic-ref", "--short", "HEAD"], ssh_target=ssh_target)
+        if branch:
+            return branch
+        branch = self.git_run(value, ["rev-parse", "--abbrev-ref", "HEAD"], ssh_target=ssh_target)
+        if branch and branch != "HEAD":
+            return branch
+        return self.git_run(value, ["rev-parse", "--short", "HEAD"], ssh_target=ssh_target)
+
+    def git_space_metadata(
+        self,
+        path: Any,
+        *,
+        ssh_target: str = "",
+        normalize_connection_key: Callable[[str], str],
+    ) -> Dict[str, Any]:
+        """Return git metadata used to group and label Herdr spaces."""
+        value = str(path or "").strip()
+        if not value:
+            return {}
+        cache_key = (
+            normalize_connection_key(ssh_target) if ssh_target else "local",
+            ssh_target,
+            value,
+        )
+        if cache_key in self.git_metadata_cache:
+            return dict(self.git_metadata_cache[cache_key])
+
+        if not self.path_is_git_worktree(value, ssh_target=ssh_target):
+            self.git_metadata_cache[cache_key] = {}
+            return {}
+
+        checkout_path = self.git_run(value, ["rev-parse", "--show-toplevel"], ssh_target=ssh_target)
+        if not checkout_path:
+            self.git_metadata_cache[cache_key] = {}
+            return {}
+
+        common_dir = self.git_run(value, ["rev-parse", "--git-common-dir"], ssh_target=ssh_target)
+        if common_dir and not common_dir.startswith("/"):
+            common_dir = str(PurePath(checkout_path) / common_dir)
+        repo_root = common_dir or checkout_path
+        if repo_root.endswith("/.git"):
+            repo_root = repo_root[:-5]
+        origin = self.git_run(value, ["config", "--get", "remote.origin.url"], ssh_target=ssh_target)
+        repo_key = self.normalize_repo_url(origin) or repo_root
+        if repo_key and not repo_key.startswith("/") and "/" in repo_key:
+            repo_name = repo_key.rstrip("/").rsplit("/", 1)[-1]
+        else:
+            repo_root_parts = [part for part in repo_root.rstrip("/").split("/") if part]
+            if repo_root_parts and repo_root_parts[-1] in {".bare", ".git"} and len(repo_root_parts) >= 2:
+                repo_name = repo_root_parts[-2]
+            else:
+                repo_name = checkout_path.rstrip("/").rsplit("/", 1)[-1]
+        metadata = {
+            "repo_key": repo_key,
+            "repo_name": repo_name,
+            "repo_root": repo_root,
+            "checkout_path": checkout_path,
+            "is_linked_worktree": False,
+            "branch_label": self.git_branch(value, ssh_target=ssh_target),
+        }
+        self.git_metadata_cache[cache_key] = metadata
+        return dict(metadata)
 
     @staticmethod
     def normalize_agent_status(value: Any, *, preserve_raw: bool = False) -> str:
