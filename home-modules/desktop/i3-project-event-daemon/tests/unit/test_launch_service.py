@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -94,6 +95,7 @@ def make_service(
     which_map: Optional[Dict[str, str]] = None,
     reconcile_calls: Optional[List[Dict[str, Any]]] = None,
     launch_registry: Optional[DummyLaunchRegistry] = None,
+    require_registry_app: Optional[Any] = None,
 ) -> LaunchService:
     def fake_run(
         cmd: List[str],
@@ -124,6 +126,7 @@ def make_service(
         which=lambda command: (which_map or {}).get(command),
         schedule_launch_reconcile=fake_reconcile,
         launch_registry=(lambda: launch_registry) if launch_registry is not None else None,
+        require_registry_app=require_registry_app,
     )
 
 
@@ -254,6 +257,86 @@ def test_build_launch_open_response_shapes_reuse_contract(tmp_path: Path) -> Non
     assert result["spec"]["launch_strategy"] == "focus_existing_window"
     assert result["spec"]["reused_existing"] is True
     assert result["spec"]["window_id"] == 456
+
+
+@pytest.mark.asyncio
+async def test_open_launch_reuses_existing_single_instance_app_window(tmp_path: Path) -> None:
+    app = SimpleNamespace(name="code", multi_instance=False, terminal=False, command="code")
+    service = make_service(tmp_path, require_registry_app=lambda _app_name: app)
+    existing_window = SimpleNamespace(window_id=456)
+    spec = {
+        "app_name": "code",
+        "project_name": "vpittamp/nixos-config:main",
+        "context_key": "ctx",
+        "execution_mode": "local",
+        "connection_key": "local@thinkpad",
+        "terminal_anchor_id": "code-anchor",
+        "terminal_launch": {},
+    }
+    service.get_reusable_context_app_window = AsyncMock(return_value=existing_window)
+    service.register_launch_for_spec = AsyncMock()
+    service.execute_launch_spec = MagicMock()
+    focus_window = AsyncMock(return_value={"success": True, "window_id": 456})
+    focus_window_fast = AsyncMock(return_value={"success": True, "window_id": 999})
+    clear_focus_overrides = MagicMock()
+
+    result = await service.open_launch(
+        payload={"app_name": "code"},
+        prepare_launch=AsyncMock(return_value=spec),
+        focus_window=focus_window,
+        focus_window_fast=focus_window_fast,
+        clear_focus_overrides=clear_focus_overrides,
+    )
+
+    service.get_reusable_context_app_window.assert_awaited_once()
+    service.register_launch_for_spec.assert_not_awaited()
+    service.execute_launch_spec.assert_not_called()
+    focus_window.assert_awaited_once_with({
+        "window_id": 456,
+        "project_name": "vpittamp/nixos-config:main",
+        "target_variant": "local",
+        "connection_key": "local@thinkpad",
+    })
+    focus_window_fast.assert_not_awaited()
+    clear_focus_overrides.assert_not_called()
+    assert result["launch"]["reused_existing"] is True
+    assert result["launch"]["window_id"] == 456
+    assert result["spec"]["launch_strategy"] == "focus_existing_window"
+
+
+@pytest.mark.asyncio
+async def test_open_launch_registers_and_executes_when_no_reusable_window(tmp_path: Path) -> None:
+    app = SimpleNamespace(name="terminal", multi_instance=True, terminal=True, command="alacritty")
+    service = make_service(tmp_path, require_registry_app=lambda _app_name: app)
+    spec = {
+        "app_name": "terminal",
+        "project_name": "vpittamp/nixos-config:main",
+        "context_key": "ctx",
+        "execution_mode": "local",
+        "connection_key": "local@thinkpad",
+        "terminal_anchor_id": "terminal-anchor",
+        "terminal_launch": {"mode": "managed_project_terminal"},
+        "terminal_role": "project-main",
+        "tmux_session_name": "i3pm-main",
+    }
+    service.get_reusable_context_terminal_window = AsyncMock(return_value=None)
+    service.register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
+    service.execute_launch_spec = MagicMock(return_value={"success": True, "launch_id": "launch-1"})
+
+    result = await service.open_launch(
+        payload={"app_name": "terminal"},
+        prepare_launch=AsyncMock(return_value=spec),
+        focus_window=AsyncMock(),
+        focus_window_fast=AsyncMock(),
+        clear_focus_overrides=MagicMock(),
+    )
+
+    service.get_reusable_context_terminal_window.assert_awaited_once()
+    service.register_launch_for_spec.assert_awaited_once_with(spec)
+    service.execute_launch_spec.assert_called_once_with(spec)
+    assert spec["launch"] == {"launch_id": "launch-1"}
+    assert result["launch"] == {"success": True, "launch_id": "launch-1"}
+    assert result["spec"]["window_id"] == 0
 
 
 def test_build_terminal_launch_config_shapes_managed_remote_command(tmp_path: Path) -> None:

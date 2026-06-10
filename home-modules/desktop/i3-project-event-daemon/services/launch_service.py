@@ -777,6 +777,138 @@ class LaunchService:
             "spec": spec_payload,
         }
 
+    async def open_launch(
+        self,
+        *,
+        payload: Dict[str, Any],
+        prepare_launch: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
+        focus_window: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
+        focus_window_fast: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
+        clear_focus_overrides: Callable[[], None],
+    ) -> Dict[str, Any]:
+        """Prepare, reuse, or execute a launch-open request."""
+        spec = await prepare_launch(payload)
+        if self._require_registry_app is None:
+            raise RuntimeError("LaunchService requires a registry app resolver for launch.open")
+        app = self._require_registry_app(str(spec.get("app_name") or "").strip())
+        if int(payload.get("__intent_epoch") or 0) > 0 and str(spec.get("project_name") or "").strip():
+            clear_focus_overrides()
+
+        reused_existing = False
+        reused_window_id = 0
+        focus_fast = bool(payload.get("focus_fast", False))
+
+        async def focus_existing_window(existing_window: Any) -> Dict[str, Any]:
+            focus_params = {
+                "window_id": int(getattr(existing_window, "window_id", 0) or 0),
+                "project_name": str(spec.get("project_name") or "").strip(),
+                "target_variant": str(spec.get("execution_mode") or "").strip().lower(),
+                "connection_key": str(spec.get("connection_key") or "").strip(),
+            }
+            if focus_fast:
+                return await focus_window_fast(focus_params)
+            return await focus_window(focus_params)
+
+        terminal_launch = spec.get("terminal_launch") or {}
+        terminal_mode = str(terminal_launch.get("mode") or "").strip()
+        launch_transport = str(
+            spec.get("launch_transport")
+            or (
+                self._resolve_terminal_launch_transport(
+                    execution_mode=str(spec.get("execution_mode") or "local").strip() or "local",
+                    connection_key=str(spec.get("connection_key") or "").strip(),
+                )
+                if self._resolve_terminal_launch_transport is not None
+                else "local_helper"
+            )
+        ).strip() or "local_helper"
+        if terminal_mode == "managed_project_terminal":
+            existing_window = await self.get_reusable_context_terminal_window(
+                project_name=str(spec.get("project_name") or "").strip(),
+                context_key=str(spec.get("context_key") or "").strip(),
+                execution_mode=str(spec.get("execution_mode") or "local").strip() or "local",
+                app_name="terminal",
+                terminal_role=str(spec.get("terminal_role") or "project-main").strip(),
+            )
+            if existing_window is not None and launch_transport == "local_helper":
+                probe = self.managed_tmux_session_probe(spec)
+                if not bool(probe.get("exists", False) and probe.get("healthy", False)):
+                    logger.warning(
+                        "Refusing to reuse live terminal window %s for %s because managed session %s is invalid (%s)",
+                        int(getattr(existing_window, "window_id", 0) or 0),
+                        str(spec.get("context_key") or "").strip(),
+                        str(spec.get("tmux_session_name") or "").strip(),
+                        str(probe.get("reason") or "unknown"),
+                    )
+                    existing_window = None
+            if existing_window is not None:
+                self.dispatch_managed_terminal_command(spec)
+                focus_result = await focus_existing_window(existing_window)
+                if bool(focus_result.get("success", False)):
+                    reused_existing = True
+                    reused_window_id = int(focus_result.get("window_id") or 0)
+                    return self.build_launch_open_response(
+                        spec=spec,
+                        launch_result={
+                            "success": True,
+                            "tmux_session_name": str(spec.get("tmux_session_name") or "").strip(),
+                        },
+                        launch_strategy="focus_existing_terminal",
+                        reused_existing=True,
+                        window_id=reused_window_id,
+                    )
+        elif terminal_mode == "dedicated_scoped_window":
+            existing_window = await self.get_reusable_context_terminal_window(
+                project_name=str(spec.get("project_name") or "").strip(),
+                context_key=str(spec.get("context_key") or "").strip(),
+                execution_mode=str(spec.get("execution_mode") or "local").strip() or "local",
+                app_name=str(spec.get("app_name") or "").strip(),
+                terminal_role=str(spec.get("terminal_role") or "").strip(),
+            )
+            if existing_window is not None:
+                focus_result = await focus_existing_window(existing_window)
+                if bool(focus_result.get("success", False)):
+                    reused_existing = True
+                    reused_window_id = int(focus_result.get("window_id") or 0)
+                    return self.build_launch_open_response(
+                        spec=spec,
+                        launch_result={"success": True},
+                        launch_strategy="focus_existing_dedicated_terminal_window",
+                        reused_existing=True,
+                        window_id=reused_window_id,
+                    )
+        elif not app.multi_instance and (not app.terminal or not terminal_mode):
+            existing_window = await self.get_reusable_context_app_window(
+                app=app,
+                project_name=str(spec.get("project_name") or "").strip(),
+                execution_mode=str(spec.get("execution_mode") or "local").strip() or "local",
+            )
+            if existing_window is None and not app.terminal:
+                self.reap_orphan_app_units(app.name, str(app.command or ""))
+            if existing_window is not None:
+                focus_result = await focus_existing_window(existing_window)
+                if bool(focus_result.get("success", False)):
+                    reused_existing = True
+                    reused_window_id = int(focus_result.get("window_id") or 0)
+                    return self.build_launch_open_response(
+                        spec=spec,
+                        launch_result={"success": True},
+                        launch_strategy="focus_existing_window",
+                        reused_existing=True,
+                        window_id=reused_window_id,
+                        include_spec_window_id=True,
+                    )
+
+        spec["launch"] = await self.register_launch_for_spec(spec)
+        launch_result = self.execute_launch_spec(spec)
+        return self.build_launch_open_response(
+            spec=spec,
+            launch_result=launch_result,
+            reused_existing=reused_existing,
+            window_id=reused_window_id,
+            include_spec_window_id=True,
+        )
+
     def build_terminal_launch_config(
         self,
         *,
