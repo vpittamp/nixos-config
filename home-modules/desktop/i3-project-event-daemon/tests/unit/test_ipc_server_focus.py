@@ -376,13 +376,13 @@ async def test_session_focus_local_tmux_attachable_rebinds_managed_terminal(serv
             "terminal_anchor_id": "anchor-1",
         },
     })
-    server._wait_for_launch_status = AsyncMock(return_value={
+    server.launch_service.wait_for_launch_status = AsyncMock(return_value={
         "success": True,
         "launch_id": "launch-1",
         "status": "running",
         "reason": "window_bound",
     })
-    server._wait_for_terminal_window = AsyncMock(return_value={
+    server.launch_service.wait_for_terminal_window = AsyncMock(return_value={
         "matched": True,
         "window_id": 144,
         "terminal_anchor_id": "anchor-1",
@@ -887,7 +887,7 @@ async def test_focus_remote_session_attach_tmux_target_sets_override_without_wai
             "focused_window_id": 20,
         },
     })
-    server._wait_for_launch_status = AsyncMock(side_effect=AssertionError("should not wait"))
+    server.launch_service.wait_for_launch_status = AsyncMock(side_effect=AssertionError("should not wait"))
     server._wait_for_session_focus = AsyncMock(return_value={"success": False, "reason": "should_not_run"})
     server._focus_state = AsyncMock(return_value={
         "success": True,
@@ -951,8 +951,8 @@ async def test_focus_remote_session_attach_replaces_stale_bridge_before_relaunch
     server.state_manager.remove_window = AsyncMock()
     server.launch_service.register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
     server.launch_service.execute_launch_spec = lambda _spec: {"success": True}
-    server._wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
-    server._wait_for_launch_status = AsyncMock(return_value={"success": True, "launch_id": "launch-1", "status": "attaching_tmux", "reason": "ok"})
+    server.launch_service.wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
+    server.launch_service.wait_for_launch_status = AsyncMock(return_value={"success": True, "launch_id": "launch-1", "status": "attaching_tmux", "reason": "ok"})
     server._window_focus = AsyncMock(return_value={
         "success": True,
         "current_ai_session_key_after": "session-stale",
@@ -1019,8 +1019,8 @@ async def test_focus_remote_session_attach_launches_new_exact_bridge_when_projec
     server._get_reusable_context_terminal_window = AsyncMock(return_value=None)
     server.launch_service.register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
     server.launch_service.execute_launch_spec = lambda _spec: {"success": True}
-    server._wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
-    server._wait_for_launch_status = AsyncMock(return_value={"success": True, "launch_id": "launch-1", "status": "attaching_tmux", "reason": "ok"})
+    server.launch_service.wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
+    server.launch_service.wait_for_launch_status = AsyncMock(return_value={"success": True, "launch_id": "launch-1", "status": "attaching_tmux", "reason": "ok"})
     server._window_focus = AsyncMock(return_value={
         "success": True,
         "current_ai_session_key_after": "",
@@ -1088,8 +1088,8 @@ async def test_focus_remote_session_attach_focuses_local_bridge_without_project_
     server._get_reusable_context_terminal_window = AsyncMock(return_value=None)
     server.launch_service.register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
     server.launch_service.execute_launch_spec = lambda _spec: {"success": True}
-    server._wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
-    server._wait_for_launch_status = AsyncMock(return_value={
+    server.launch_service.wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
+    server.launch_service.wait_for_launch_status = AsyncMock(return_value={
         "success": True,
         "launch_id": "launch-1",
         "status": "attaching_tmux",
@@ -1252,8 +1252,8 @@ async def test_focus_remote_session_attach_relaunches_live_window_without_exact_
     server.state_manager.remove_window = AsyncMock()
     server.launch_service.register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
     server.launch_service.execute_launch_spec = lambda _spec: {"success": True}
-    server._wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
-    server._wait_for_launch_status = AsyncMock(return_value={"success": True, "launch_id": "launch-1", "status": "attaching_tmux", "reason": "ok"})
+    server.launch_service.wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
+    server.launch_service.wait_for_launch_status = AsyncMock(return_value={"success": True, "launch_id": "launch-1", "status": "attaching_tmux", "reason": "ok"})
     server._window_focus = AsyncMock(return_value={
         "success": True,
         "current_ai_session_key_after": "",

@@ -10306,7 +10306,9 @@ FORMAT JSONEachRow
             spec["launch"] = await self.launch_service.register_launch_for_spec(spec)
             launch_result = dict(prior_launch_state)
             launch_result.update(self.launch_service.execute_launch_spec(spec))
-            anchor_result = await self._wait_for_terminal_window(str(spec.get("terminal_anchor_id") or "").strip())
+            anchor_result = await self.launch_service.wait_for_terminal_window(
+                str(spec.get("terminal_anchor_id") or "").strip()
+            )
             local_window_id = int(anchor_result.get("window_id") or 0)
             if local_window_id <= 0:
                 raise RuntimeError(
@@ -10346,7 +10348,7 @@ FORMAT JSONEachRow
             "reason": "reused_existing" if existing_window is not None else "not_applicable",
         }
         if existing_window is None and launch_id:
-            launch_status = await self._wait_for_launch_status(
+            launch_status = await self.launch_service.wait_for_launch_status(
                 launch_id,
                 terminal_anchor_id=str(spec.get("terminal_anchor_id") or "").strip(),
             )
@@ -10448,13 +10450,13 @@ FORMAT JSONEachRow
             "reason": "reused_existing" if reused_existing else "not_applicable",
         }
         if not reused_existing and launch_id:
-            launch_status = await self._wait_for_launch_status(
+            launch_status = await self.launch_service.wait_for_launch_status(
                 launch_id,
                 terminal_anchor_id=terminal_anchor_id,
             )
 
         if local_window_id <= 0 and terminal_anchor_id:
-            anchor_result = await self._wait_for_terminal_window(terminal_anchor_id)
+            anchor_result = await self.launch_service.wait_for_terminal_window(terminal_anchor_id)
             local_window_id = int(anchor_result.get("window_id") or 0)
         if local_window_id <= 0:
             raise RuntimeError(
@@ -16676,36 +16678,6 @@ FORMAT JSONEachRow
         if not launch_id:
             raise ValueError("launch_id is required")
         return await self.launch_service.launch_status(launch_id)
-
-    async def _wait_for_launch_status(
-        self,
-        launch_id: str,
-        *,
-        terminal_anchor_id: str = "",
-        attempts: int = 50,
-        delay_s: float = 0.2,
-    ) -> Dict[str, Any]:
-        """Poll persisted launch status until a deterministic terminal state is reached."""
-        return await self.launch_service.wait_for_launch_status(
-            launch_id,
-            terminal_anchor_id=terminal_anchor_id,
-            attempts=attempts,
-            delay_s=delay_s,
-        )
-
-    async def _wait_for_terminal_window(
-        self,
-        terminal_anchor_id: str,
-        *,
-        attempts: int = 30,
-        delay_s: float = 0.2,
-    ) -> Dict[str, Any]:
-        """Poll daemon tracking until a launched terminal anchor resolves to a window."""
-        return await self.launch_service.wait_for_terminal_window(
-            terminal_anchor_id,
-            attempts=attempts,
-            delay_s=delay_s,
-        )
 
     def _connection_target_is_current_host(self, connection_key: str) -> bool:
         """Return whether an SSH connection target resolves back to this host."""
