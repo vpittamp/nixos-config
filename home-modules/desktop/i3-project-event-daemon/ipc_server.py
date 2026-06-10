@@ -66,6 +66,7 @@ from .services.dashboard_model import (
     dashboard_invalidated_payload,
     validate_dashboard_payload,
 )
+from .services.dashboard_git_service import DashboardGitService
 from .services.display_service import DisplayService
 from .services.focus_service import FocusService
 from .services.herdr_service import HerdrService
@@ -551,6 +552,12 @@ class IPCServer:
         self.focus_service = FocusService(
             normalize_connection_key=lambda value: self._normalize_connection_key(value),
             schema_version=FOCUS_STATE_SCHEMA_VERSION,
+        )
+        self.dashboard_git_service = DashboardGitService(
+            ttl_current=self._git_snapshot_ttl_current,
+            ttl_visible=self._git_snapshot_ttl_visible,
+            ttl_background=self._git_snapshot_ttl_background,
+            ttl_failure=self._git_snapshot_failure_ttl,
         )
         self.session_action_service = SessionActionService(
             parse_remote_target=self._parse_remote_target,
@@ -3678,28 +3685,6 @@ class IPCServer:
 
         return stats
 
-    def _git_snapshot_ttl(self, priority: str, *, success: bool = True) -> float:
-        """Return the cache TTL for a live git snapshot priority bucket."""
-        if not success:
-            return self._git_snapshot_failure_ttl
-        normalized = str(priority or "background").strip().lower()
-        if normalized == "current":
-            return self._git_snapshot_ttl_current
-        if normalized == "visible":
-            return self._git_snapshot_ttl_visible
-        return self._git_snapshot_ttl_background
-
-    @staticmethod
-    def _git_snapshot_freshness(age_seconds: int, ttl_seconds: float, *, success: bool) -> str:
-        """Classify a cached git snapshot by freshness."""
-        if not success:
-            return "stale"
-        if age_seconds <= ttl_seconds:
-            return "fresh"
-        if age_seconds <= (ttl_seconds * 3):
-            return "aging"
-        return "stale"
-
     @staticmethod
     def _stat_fingerprint(path: Path) -> Tuple[int, int]:
         """Return a cheap file fingerprint tuple for cache coherence checks."""
@@ -3721,102 +3706,6 @@ class IPCServer:
             "repos": self._stat_fingerprint(ConfigPaths.REPOS_FILE),
             "usage": self._stat_fingerprint(ConfigPaths.PROJECT_USAGE_FILE),
         }
-
-    @staticmethod
-    def _git_snapshot_state(*, has_conflicts: bool, dirty_count: int) -> str:
-        """Normalize the visual git state label."""
-        if has_conflicts:
-            return "conflicted"
-        if dirty_count > 0:
-            return "dirty"
-        return "clean"
-
-    @staticmethod
-    def _parse_ahead_behind(branch_header: str) -> Tuple[int, int]:
-        """Parse ahead/behind counts from `git status --porcelain=v1 --branch`."""
-        ahead = 0
-        behind = 0
-        match = re.search(r"\[([^\]]+)\]", str(branch_header or ""))
-        if not match:
-            return ahead, behind
-        for part in match.group(1).split(","):
-            normalized = str(part or "").strip()
-            if normalized.startswith("ahead "):
-                try:
-                    ahead = int(normalized.split()[-1])
-                except (TypeError, ValueError):
-                    ahead = 0
-            elif normalized.startswith("behind "):
-                try:
-                    behind = int(normalized.split()[-1])
-                except (TypeError, ValueError):
-                    behind = 0
-        return ahead, behind
-
-    def _build_git_status_strings(self, snapshot: Dict[str, Any]) -> Tuple[str, str, str]:
-        """Build compact and expanded git status labels for UI consumers."""
-        state = str(snapshot.get("state") or "unknown").strip()
-        dirty_count = int(snapshot.get("dirty_count") or 0)
-        ahead = int(snapshot.get("ahead") or 0)
-        behind = int(snapshot.get("behind") or 0)
-        branch = str(snapshot.get("branch") or "").strip()
-        head_oid_short = str(snapshot.get("head_oid_short") or "").strip()
-        freshness = str(snapshot.get("freshness") or "").strip()
-        age_seconds = int(snapshot.get("age_seconds") or 0)
-
-        compact_parts: List[str] = []
-        if state == "conflicted":
-            compact_parts.append("!")
-        elif dirty_count > 0:
-            compact_parts.append(f"● {dirty_count}")
-        if ahead > 0:
-            compact_parts.append(f"↑{ahead}")
-        if behind > 0:
-            compact_parts.append(f"↓{behind}")
-        compact = " ".join(compact_parts)
-
-        if state == "conflicted":
-            label = "Conflict"
-        elif dirty_count > 0:
-            label = "Dirty"
-        elif ahead > 0 or behind > 0:
-            label = "Synced" if ahead == 0 and behind == 0 else "Tracked"
-        else:
-            label = "Clean"
-
-        tooltip_parts: List[str] = []
-        branch_bits = [bit for bit in [branch, head_oid_short] if bit]
-        if branch_bits:
-            tooltip_parts.append("Branch: " + " @ ".join(branch_bits))
-
-        status_bits: List[str] = []
-        staged_count = int(snapshot.get("staged_count") or 0)
-        modified_count = int(snapshot.get("modified_count") or 0)
-        untracked_count = int(snapshot.get("untracked_count") or 0)
-        if state == "conflicted":
-            status_bits.append("conflicts")
-        if staged_count > 0:
-            status_bits.append(f"{staged_count} staged")
-        if modified_count > 0:
-            status_bits.append(f"{modified_count} modified")
-        if untracked_count > 0:
-            status_bits.append(f"{untracked_count} untracked")
-        if not status_bits:
-            status_bits.append("clean")
-        tooltip_parts.append("Status: " + ", ".join(status_bits))
-
-        sync_bits: List[str] = []
-        if ahead > 0:
-            sync_bits.append(f"{ahead} to push")
-        if behind > 0:
-            sync_bits.append(f"{behind} to pull")
-        if sync_bits:
-            tooltip_parts.append("Sync: " + ", ".join(sync_bits))
-
-        if freshness:
-            tooltip_parts.append(f"Snapshot: {freshness} ({age_seconds}s old)")
-
-        return compact, label, "\n".join(tooltip_parts)
 
     async def _run_git_probe_command(
         self,
@@ -3909,7 +3798,7 @@ class IPCServer:
             header_branch = header.split("...", 1)[0].strip()
             if header_branch and header_branch != "HEAD (no branch)":
                 branch = header_branch
-            ahead, behind = self._parse_ahead_behind(header)
+            ahead, behind = self.dashboard_git_service.parse_ahead_behind(header)
             lines = lines[1:]
 
         for line in lines:
@@ -3927,7 +3816,7 @@ class IPCServer:
                 untracked_count += 1
 
         dirty_count = staged_count + modified_count + untracked_count
-        state = self._git_snapshot_state(
+        state = self.dashboard_git_service.snapshot_state(
             has_conflicts=has_conflicts,
             dirty_count=dirty_count,
         )
@@ -3952,55 +3841,6 @@ class IPCServer:
             "probe_success": probe_success,
         }
 
-    def _git_snapshot_cache_fingerprint(self, snapshot: Dict[str, Any]) -> str:
-        """Return a stable fingerprint for git-state change detection."""
-        payload = {
-            "qualified_name": str(snapshot.get("qualified_name") or "").strip(),
-            "branch": str(snapshot.get("branch") or "").strip(),
-            "head_oid_short": str(snapshot.get("head_oid_short") or "").strip(),
-            "state": str(snapshot.get("state") or "").strip(),
-            "has_conflicts": bool(snapshot.get("has_conflicts", False)),
-            "staged_count": int(snapshot.get("staged_count") or 0),
-            "modified_count": int(snapshot.get("modified_count") or 0),
-            "untracked_count": int(snapshot.get("untracked_count") or 0),
-            "dirty_count": int(snapshot.get("dirty_count") or 0),
-            "ahead": int(snapshot.get("ahead") or 0),
-            "behind": int(snapshot.get("behind") or 0),
-            "available": bool(snapshot.get("available", False)),
-            "probe_success": bool(snapshot.get("probe_success", False)),
-        }
-        return hashlib.sha256(
-            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
-
-    def _decorate_cached_git_snapshot(
-        self,
-        snapshot: Dict[str, Any],
-        *,
-        priority: str,
-        attribution: str,
-    ) -> Dict[str, Any]:
-        """Attach freshness and UI strings to a cached git snapshot."""
-        decorated = dict(snapshot)
-        age_seconds = int(max(0, time.time() - float(snapshot.get("snapshot_at") or 0)))
-        freshness = self._git_snapshot_freshness(
-            age_seconds,
-            self._git_snapshot_ttl(
-                priority,
-                success=bool(snapshot.get("probe_success", False)),
-            ),
-            success=bool(snapshot.get("probe_success", False)),
-        )
-        decorated["age_seconds"] = age_seconds
-        decorated["freshness"] = freshness
-        decorated["attribution"] = attribution
-        compact, label, tooltip = self._build_git_status_strings(decorated)
-        decorated["status_compact"] = compact
-        decorated["status_label"] = label
-        decorated["status_tooltip"] = tooltip
-        decorated["show_chip"] = bool(compact)
-        return decorated
-
     async def _refresh_git_snapshot(
         self,
         *,
@@ -4021,7 +3861,7 @@ class IPCServer:
             qualified_name=qualified_name,
             branch_hint=branch_hint,
         )
-        fingerprint = self._git_snapshot_cache_fingerprint(snapshot)
+        fingerprint = self.dashboard_git_service.cache_fingerprint(snapshot)
         self._git_snapshot_cache[normalized_path] = {
             "snapshot": snapshot,
             "fingerprint": fingerprint,
@@ -4029,7 +3869,7 @@ class IPCServer:
 
         previous_fingerprint = ""
         if isinstance(previous_snapshot, dict) and previous_snapshot:
-            previous_fingerprint = self._git_snapshot_cache_fingerprint(previous_snapshot)
+            previous_fingerprint = self.dashboard_git_service.cache_fingerprint(previous_snapshot)
         if notify and previous_fingerprint and previous_fingerprint != fingerprint:
             await self.notify_state_change("ai_session_git_changed")
         return snapshot
@@ -4081,7 +3921,7 @@ class IPCServer:
 
         entry = self._git_snapshot_cache.get(normalized_path)
         if isinstance(entry, dict) and isinstance(entry.get("snapshot"), dict):
-            decorated = self._decorate_cached_git_snapshot(
+            decorated = self.dashboard_git_service.decorate_cached_snapshot(
                 entry["snapshot"],
                 priority=priority,
                 attribution=attribution,
@@ -4104,7 +3944,7 @@ class IPCServer:
                 notify=False,
             )
             if isinstance(refreshed, dict):
-                return self._decorate_cached_git_snapshot(
+                return self.dashboard_git_service.decorate_cached_snapshot(
                     refreshed,
                     priority=priority,
                     attribution=attribution,
@@ -4116,52 +3956,6 @@ class IPCServer:
             branch_hint=branch_hint,
         )
         return None
-
-    @staticmethod
-    def _apply_git_snapshot_to_session(
-        session: Dict[str, Any],
-        snapshot: Optional[Dict[str, Any]],
-    ) -> None:
-        """Copy git snapshot fields onto a session row payload."""
-        if not isinstance(session, dict):
-            return
-        if not isinstance(snapshot, dict):
-            session["git_snapshot"] = {}
-            session["git_state"] = "unknown"
-            session["git_compact"] = ""
-            session["git_freshness"] = ""
-            session["git_attribution"] = ""
-            session["git_tooltip"] = ""
-            return
-        session["git_snapshot"] = dict(snapshot)
-        session["git_state"] = str(snapshot.get("state") or "unknown").strip()
-        session["git_compact"] = str(snapshot.get("status_compact") or "").strip()
-        session["git_freshness"] = str(snapshot.get("freshness") or "").strip()
-        session["git_attribution"] = str(snapshot.get("attribution") or "").strip()
-        session["git_tooltip"] = str(snapshot.get("status_tooltip") or "").strip()
-
-    @staticmethod
-    def _apply_git_snapshot_to_worktree(
-        worktree: Dict[str, Any],
-        snapshot: Optional[Dict[str, Any]],
-    ) -> None:
-        """Overlay live git data onto a dashboard worktree payload."""
-        if not isinstance(worktree, dict) or not isinstance(snapshot, dict):
-            return
-        worktree["git_state"] = str(snapshot.get("state") or "unknown").strip()
-        worktree["git_freshness"] = str(snapshot.get("freshness") or "").strip()
-        worktree["git_status_compact"] = str(snapshot.get("status_compact") or "").strip()
-        worktree["git_status_tooltip"] = str(snapshot.get("status_tooltip") or "").strip()
-        if worktree["git_state"] == "unknown":
-            return
-        worktree["is_clean"] = worktree["git_state"] == "clean"
-        worktree["has_conflicts"] = bool(snapshot.get("has_conflicts", False))
-        worktree["ahead"] = int(snapshot.get("ahead") or 0)
-        worktree["behind"] = int(snapshot.get("behind") or 0)
-        worktree["staged_count"] = int(snapshot.get("staged_count") or 0)
-        worktree["modified_count"] = int(snapshot.get("modified_count") or 0)
-        worktree["untracked_count"] = int(snapshot.get("untracked_count") or 0)
-        worktree["dirty_count"] = int(snapshot.get("dirty_count") or 0)
 
     async def _hydrate_runtime_git_state(
         self,
@@ -4260,14 +4054,14 @@ class IPCServer:
                 or ""
             ).strip()
             snapshot = snapshots_by_project.get(project_name)
-            self._apply_git_snapshot_to_session(session, snapshot)
+            self.dashboard_git_service.apply_snapshot_to_session(session, snapshot)
 
         enriched_worktrees: List[Dict[str, Any]] = []
         for worktree in worktrees:
             if not isinstance(worktree, dict):
                 continue
             item = dict(worktree)
-            self._apply_git_snapshot_to_worktree(
+            self.dashboard_git_service.apply_snapshot_to_worktree(
                 item,
                 snapshots_by_project.get(str(item.get("qualified_name") or "").strip()),
             )
