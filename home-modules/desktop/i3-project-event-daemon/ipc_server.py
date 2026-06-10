@@ -11004,19 +11004,6 @@ FORMAT JSONEachRow
             "snapshot_version": self._snapshot_version,
         }
 
-    def _build_herdr_spaces(
-        self,
-        herdr_snapshot: Dict[str, Any],
-        sessions: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        """Build Herdr workspace/project rows for the persistent sidebar."""
-        return self.herdr_service.build_spaces(
-            herdr_snapshot,
-            sessions,
-            local_host=self._local_host_alias(),
-            normalize_connection_key=self._normalize_connection_key,
-        )
-
     def _validate_dashboard_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Validate dashboard focus invariants before the payload leaves the daemon."""
         return validate_dashboard_payload(
@@ -11080,7 +11067,12 @@ FORMAT JSONEachRow
                 "pane_count": len(herdr_snapshot.get("panes", []) or []),
                 "agent_count": len(herdr_snapshot.get("agents", []) or []),
                 "errors": herdr_snapshot.get("errors", []),
-                "spaces": self._build_herdr_spaces(herdr_snapshot, sessions),
+                "spaces": self.herdr_service.build_spaces(
+                    herdr_snapshot,
+                    sessions,
+                    local_host=self._local_host_alias(),
+                    normalize_connection_key=self._normalize_connection_key,
+                ),
             },
             "ai_monitor_metrics": {
                 "active_sessions": len(sessions),

@@ -81,6 +81,15 @@ def herdr_git_space_metadata(server, path, *, ssh_target=""):
     )
 
 
+def build_herdr_spaces(server, snapshot, sessions):
+    return server.herdr_service.build_spaces(
+        snapshot,
+        sessions,
+        local_host=server._local_host_alias(),
+        normalize_connection_key=server._normalize_connection_key,
+    )
+
+
 def test_herdr_rows_preserve_status_and_targets(server, tmp_path, monkeypatch):
     repos_file = tmp_path / "repos.json"
     repos_file.write_text(json.dumps({
@@ -258,7 +267,7 @@ def test_herdr_space_computes_git_metadata_when_worktree_list_misses_repo(server
         "tabs": [],
     }
 
-    spaces = server._build_herdr_spaces(snapshot, sessions)
+    spaces = build_herdr_spaces(server, snapshot, sessions)
 
     assert len(spaces) == 1
     assert spaces[0]["label"] == "workflow-builder"
@@ -383,7 +392,7 @@ def test_herdr_spaces_group_by_host_workspace_and_prioritize_status(server):
         ],
     }
 
-    spaces = server._build_herdr_spaces(snapshot, sessions)
+    spaces = build_herdr_spaces(server, snapshot, sessions)
 
     assert [space["space_key"] for space in spaces] == [
         "herdr:ryzen:workspace:remote-ws",
@@ -446,7 +455,7 @@ def test_herdr_spaces_use_sidebar_names_and_single_effective_focus(server):
         "tabs": [],
     }
 
-    spaces = server._build_herdr_spaces(snapshot, sessions)
+    spaces = build_herdr_spaces(server, snapshot, sessions)
 
     assert [space["label"] for space in spaces] == ["nixos-config"]
     assert [space["focused"] for space in spaces] == [True]
@@ -510,7 +519,7 @@ def test_herdr_spaces_skip_agentless_local_workspaces_when_remote_agents_exist(s
         "tabs": [],
     }
 
-    spaces = server._build_herdr_spaces(snapshot, sessions)
+    spaces = build_herdr_spaces(server, snapshot, sessions)
 
     assert [space["space_key"] for space in spaces] == ["herdr:ryzen:workspace:remote-ws"]
     assert spaces[0]["agent_count"] == 1
@@ -663,7 +672,7 @@ def test_herdr_spaces_build_worktree_group_metadata(server):
         "agents": [],
     }
 
-    spaces = server._build_herdr_spaces(snapshot, [])
+    spaces = build_herdr_spaces(server, snapshot, [])
     by_workspace = {space["workspace_id"]: space for space in spaces}
     parent = by_workspace["main-ws"]
     child = by_workspace["feature-ws"]
@@ -717,7 +726,7 @@ def test_herdr_explicit_worktree_metadata_wins_over_computed_fallback(server, tm
         "agents": [],
     }
 
-    spaces = server._build_herdr_spaces(snapshot, [])
+    spaces = build_herdr_spaces(server, snapshot, [])
 
     assert spaces[0]["repo_key"] == "herdr/source-repo"
     assert spaces[0]["repo_root"] == "/herdr/source"
@@ -753,7 +762,7 @@ def test_herdr_spaces_linked_only_workspaces_remain_flat(server):
         "agents": [],
     }
 
-    spaces = server._build_herdr_spaces(snapshot, [])
+    spaces = build_herdr_spaces(server, snapshot, [])
 
     assert [space["group_key"] for space in spaces] == ["", ""]
     assert [space["is_group_parent"] for space in spaces] == [False, False]
@@ -778,7 +787,7 @@ def test_herdr_spaces_non_worktree_repo_matches_remain_flat(server):
         "agents": [],
     }
 
-    spaces = server._build_herdr_spaces(snapshot, [])
+    spaces = build_herdr_spaces(server, snapshot, [])
 
     assert [space["group_key"] for space in spaces] == ["", ""]
 
@@ -808,7 +817,7 @@ def test_herdr_computed_git_workspaces_sharing_repo_remain_flat(server, tmp_path
         "agents": [],
     }
 
-    spaces = server._build_herdr_spaces(snapshot, [])
+    spaces = build_herdr_spaces(server, snapshot, [])
 
     assert [space["repo_key"] for space in spaces] == ["PittampalliOrg/workflow-builder", "PittampalliOrg/workflow-builder"]
     assert [space["is_linked_worktree"] for space in spaces] == [False, False]
@@ -833,7 +842,7 @@ def test_herdr_spaces_do_not_fabricate_branch_label_from_checkout_basename(serve
         "agents": [],
     }
 
-    spaces = server._build_herdr_spaces(snapshot, [])
+    spaces = build_herdr_spaces(server, snapshot, [])
 
     assert spaces[0]["branch_label"] == ""
 
@@ -891,7 +900,7 @@ def test_herdr_remote_worktree_space_remains_focus_only(server):
         "agents": [],
     }
 
-    spaces = server._build_herdr_spaces(snapshot, [])
+    spaces = build_herdr_spaces(server, snapshot, [])
 
     assert spaces[0]["execution_mode"] == "ssh"
     assert spaces[0]["is_current_host"] is False
