@@ -339,7 +339,7 @@ async def test_mark_launch_window_closed_sets_reusable_headless(server_local, tm
         reason="window_bound",
     )
 
-    result = await server_local._mark_launch_window_closed(SimpleNamespace(
+    result = await server_local.launch_service.mark_launch_window_closed(SimpleNamespace(
         correlation_launch_id=launch_id,
         terminal_anchor_id=spec["terminal_anchor_id"],
     ))
@@ -362,7 +362,7 @@ async def test_mark_launch_window_bound_sets_running_for_non_terminal_launch(ser
         reason="waiting_window",
     )
 
-    result = await server_local._mark_launch_window_bound(
+    result = await server_local.launch_service.mark_launch_window_bound(
         launch_id=launch_id,
         window_id=183,
         terminal_anchor_id=spec["terminal_anchor_id"],
@@ -384,12 +384,12 @@ async def test_launch_open_clears_stale_focus_override_for_explicit_project_inte
     server_local._get_reusable_context_terminal_window = AsyncMock(
         return_value=SimpleNamespace(window_id=7)
     )
-    server_local._managed_tmux_session_probe = MagicMock(return_value={
+    server_local.launch_service.managed_tmux_session_probe = MagicMock(return_value={
         "exists": True,
         "healthy": True,
         "reason": "healthy",
     })
-    server_local._dispatch_managed_terminal_command = lambda _spec: None
+    server_local.launch_service.dispatch_managed_terminal_command = lambda _spec: None
     server_local._window_focus = AsyncMock(return_value={"success": True, "window_id": 7})
 
     result = await server_local._launch_open({
@@ -595,7 +595,7 @@ def test_build_remote_helper_script_for_scoped_terminal_command(server_ssh):
         },
     }
 
-    helper_path = server_ssh._build_remote_terminal_helper_script(spec)
+    helper_path = server_ssh.launch_service.build_remote_terminal_helper_script(spec)
     try:
         content = helper_path.read_text()
     finally:
@@ -638,7 +638,7 @@ def test_build_remote_helper_script_for_remote_attach_without_remote_dir(server_
         },
     }
 
-    helper_path = server_ssh._build_remote_terminal_helper_script(spec)
+    helper_path = server_ssh.launch_service.build_remote_terminal_helper_script(spec)
     try:
         content = helper_path.read_text()
     finally:
@@ -671,7 +671,7 @@ def test_build_remote_helper_script_allows_current_host_ssh_launch(server_ssh_cu
         },
     }
 
-    helper_path = server_ssh_current_host._build_remote_terminal_helper_script(spec)
+    helper_path = server_ssh_current_host.launch_service.build_remote_terminal_helper_script(spec)
     try:
         content = helper_path.read_text()
     finally:
@@ -682,7 +682,7 @@ def test_build_remote_helper_script_allows_current_host_ssh_launch(server_ssh_cu
 
 
 def test_managed_tmux_command_shell_uses_canonical_socket(server_local):
-    script = server_local._managed_tmux_command_shell(
+    script = server_local.launch_service.managed_tmux_command_shell(
         session_name="i3pm-vpittamp-nixos-config-main",
         tmux_socket=server_local._canonical_tmux_socket(),
         working_dir=LOCAL_PROJECT,
@@ -729,7 +729,7 @@ def test_dispatch_managed_terminal_command_ssh_current_host_uses_local_tmux_disp
 
     monkeypatch.setattr(ipc_server_module.subprocess, "run", fake_run)
 
-    result = server_ssh_current_host._dispatch_managed_terminal_command(spec)
+    result = server_ssh_current_host.launch_service.dispatch_managed_terminal_command(spec)
 
     assert result["success"] is True
     assert captured["cmd"][:2] == ["bash", "-lc"]
@@ -754,7 +754,7 @@ def test_execute_launch_spec_uses_project_command_helper_for_local_scoped_termin
     }
     captured = {}
 
-    monkeypatch.setattr(server_local, "_resolve_terminal_helper", lambda _name: Path("/tmp/project-command-launch.sh"))
+    monkeypatch.setattr(server_local.launch_service, "_resolve_terminal_helper", lambda _name: Path("/tmp/project-command-launch.sh"))
     monkeypatch.setattr(ipc_server_module.shutil, "which", lambda _name: f"/usr/bin/{_name}")
 
     def fake_run(cmd, capture_output, text, check):
@@ -793,8 +793,7 @@ def test_execute_launch_spec_ssh_current_host_uses_local_terminal_helper(server_
     }
     captured = {}
 
-    monkeypatch.setattr(server_ssh_current_host, "_resolve_terminal_helper", lambda _name: Path("/tmp/project-terminal-launch.sh"))
-    monkeypatch.setattr(server_ssh_current_host, "_build_remote_terminal_helper_script", lambda _spec: (_ for _ in ()).throw(AssertionError("unexpected remote helper")))
+    monkeypatch.setattr(server_ssh_current_host.launch_service, "_resolve_terminal_helper", lambda _name: Path("/tmp/project-terminal-launch.sh"))
     monkeypatch.setattr(ipc_server_module.shutil, "which", lambda _name: f"/usr/bin/{_name}")
 
     def fake_run(cmd, capture_output, text, check):
@@ -873,7 +872,7 @@ def test_resolve_terminal_helper_prefers_packaged_helper_dir(server_local, monke
     monkeypatch.setenv("I3PM_TERMINAL_HELPER_DIR", str(packaged_dir))
     monkeypatch.setattr(ipc_server_module.Path, "home", lambda: tmp_path)
 
-    resolved = server_local._resolve_terminal_helper(helper_name)
+    resolved = server_local.launch_service.resolve_terminal_helper(helper_name)
 
     assert resolved == packaged_helper
 

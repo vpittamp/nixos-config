@@ -598,7 +598,6 @@ class IPCServer:
             resolve_terminal_launch_transport=lambda **kwargs: self._resolve_terminal_launch_transport(**kwargs),
             tmux_command_prefix=lambda tmux_socket="": self._tmux_command_prefix(tmux_socket),
             canonical_tmux_socket=lambda: self._canonical_tmux_socket(),
-            resolve_terminal_helper=lambda helper_name: self._resolve_terminal_helper(helper_name),
             run_command=lambda *args, **kwargs: subprocess.run(*args, **kwargs),
             repo_root=lambda: self._repo_root(),
             which=lambda command: shutil.which(command),
@@ -7788,72 +7787,6 @@ class IPCServer:
 
         return None
 
-    def _managed_tmux_session_probe(self, spec: Dict[str, Any]) -> Dict[str, Any]:
-        """Inspect managed tmux session health for a deterministic launch spec."""
-        return self.launch_service.managed_tmux_session_probe(spec)
-
-    async def _reconcile_launch_runtime_status(
-        self,
-        launch_id: str,
-        *,
-        anchor_bound: Optional[bool] = None,
-    ) -> Dict[str, Any]:
-        """Advance a persisted launch status using tmux metadata and anchor binding."""
-        return await self.launch_service.reconcile_launch_runtime_status(
-            launch_id,
-            anchor_bound=anchor_bound,
-        )
-
-    async def _run_launch_reconcile_loop(
-        self,
-        launch_id: str,
-        *,
-        anchor_bound: Optional[bool],
-        attempts: int,
-        delay_s: float,
-    ) -> None:
-        """Drive a deterministic launch to a terminal state without client polling."""
-        await self.launch_service.run_launch_reconcile_loop(
-            launch_id,
-            anchor_bound=anchor_bound,
-            attempts=attempts,
-            delay_s=delay_s,
-        )
-
-    def _schedule_launch_reconcile(
-        self,
-        launch_id: str,
-        *,
-        anchor_bound: Optional[bool],
-        attempts: int = 25,
-        delay_s: float = 0.2,
-    ) -> None:
-        """Ensure a bounded daemon task reconciles launch status without external polling."""
-        self.launch_service.schedule_launch_reconcile(
-            launch_id,
-            anchor_bound=anchor_bound,
-            attempts=attempts,
-            delay_s=delay_s,
-        )
-
-    async def _mark_launch_window_bound(
-        self,
-        *,
-        launch_id: str,
-        window_id: int,
-        terminal_anchor_id: str = "",
-    ) -> Dict[str, Any]:
-        """Mark a terminal launch as running once a window is bound."""
-        return await self.launch_service.mark_launch_window_bound(
-            launch_id=launch_id,
-            window_id=window_id,
-            terminal_anchor_id=terminal_anchor_id,
-        )
-
-    async def _mark_launch_window_closed(self, window_info: Any) -> Dict[str, Any]:
-        """Reconcile a managed-terminal launch after its client window closes."""
-        return await self.launch_service.mark_launch_window_closed(window_info)
-
     async def _get_reusable_remote_project_bridge_window(
         self,
         *,
@@ -11518,50 +11451,6 @@ FORMAT JSONEachRow
             "warnings": list(invariants.get("warnings", []) or []),
         }
 
-    def _build_remote_terminal_helper_script(self, spec: Dict[str, Any]) -> Path:
-        """Create a thin deterministic helper script for managed SSH terminals."""
-        return self.launch_service.build_remote_terminal_helper_script(spec)
-
-    def _managed_tmux_command_shell(
-        self,
-        *,
-        session_name: str,
-        tmux_socket: str,
-        working_dir: str,
-        command_args: List[str],
-        environment: Dict[str, str],
-    ) -> str:
-        """Build a shell snippet that opens a command in the canonical project tmux session."""
-        return self.launch_service.managed_tmux_command_shell(
-            session_name=session_name,
-            tmux_socket=tmux_socket,
-            working_dir=working_dir,
-            command_args=command_args,
-            environment=environment,
-        )
-
-    def _dispatch_managed_terminal_command(self, spec: Dict[str, Any]) -> Dict[str, Any]:
-        """Run a scoped terminal command inside the canonical project tmux session."""
-        return self.launch_service.dispatch_managed_terminal_command(spec)
-
-    def _resolve_terminal_helper(self, helper_name: str) -> Path:
-        """Resolve installed terminal helpers, with a repo fallback for local development."""
-        return self.launch_service.resolve_terminal_helper(helper_name)
-
-    def _reap_orphan_app_units(self, app_name: str, app_command: str) -> None:
-        """Stop orphan systemd user units left behind by a previous launch of this app.
-
-        Electron-based apps (Headlamp is the known case) re-parent their backend
-        processes into a separate ``app-<basename>-<pid>.scope`` managed by the user
-        systemd manager. When the GUI window closes, the scope keeps running because
-        the backend processes (e.g. headlamp-server on port 4466, zygotes) survive
-        the renderer. A subsequent launch then silently exits due to the
-        single-instance user-data-dir lock or the bound port. We pre-emptively stop
-        any such orphan scopes (and stale ``i3pm-launch-<app>-*.service`` units)
-        before falling through to a fresh launch.
-        """
-        self.launch_service.reap_orphan_app_units(app_name, app_command)
-
     async def _launch_open(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Prepare and execute an application launch entirely inside the daemon."""
         payload = dict(params or {})
@@ -11605,7 +11494,7 @@ FORMAT JSONEachRow
                 terminal_role=str(spec.get("terminal_role") or "project-main").strip(),
             )
             if existing_window is not None and launch_transport == "local_helper":
-                probe = self._managed_tmux_session_probe(spec)
+                probe = self.launch_service.managed_tmux_session_probe(spec)
                 if not bool(probe.get("exists", False) and probe.get("healthy", False)):
                     logger.warning(
                         "Refusing to reuse live terminal window %s for %s because managed session %s is invalid (%s)",
@@ -11616,7 +11505,7 @@ FORMAT JSONEachRow
                     )
                     existing_window = None
             if existing_window is not None:
-                self._dispatch_managed_terminal_command(spec)
+                self.launch_service.dispatch_managed_terminal_command(spec)
                 focus_result = await focus_existing_window(existing_window)
                 if bool(focus_result.get("success", False)):
                     reused_existing = True
@@ -11663,7 +11552,7 @@ FORMAT JSONEachRow
                 # whose backend processes outlived the GUI window. Otherwise the
                 # fresh launch below silently exits due to single-instance locks
                 # or bound ports (e.g. Headlamp on 4466).
-                self._reap_orphan_app_units(app.name, str(app.command or ""))
+                self.launch_service.reap_orphan_app_units(app.name, str(app.command or ""))
             if existing_window is not None:
                 focus_result = await focus_existing_window(existing_window)
                 if bool(focus_result.get("success", False)):
