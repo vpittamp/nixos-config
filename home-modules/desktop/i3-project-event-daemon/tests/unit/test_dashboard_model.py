@@ -25,6 +25,9 @@ if "i3_project_daemon" not in sys.modules:
 dashboard_model = importlib.import_module("i3_project_daemon.services.dashboard_model")
 
 validate_dashboard_payload = dashboard_model.validate_dashboard_payload
+dashboard_event_type_for_state_change = dashboard_model.dashboard_event_type_for_state_change
+dashboard_changed_keys_for_event = dashboard_model.dashboard_changed_keys_for_event
+dashboard_event_payload_from_snapshot = dashboard_model.dashboard_event_payload_from_snapshot
 
 
 def test_validate_dashboard_payload_accepts_single_daemon_current_row() -> None:
@@ -168,3 +171,59 @@ def test_validate_dashboard_payload_rejects_remote_herdr_focus_mismatch() -> Non
 
     assert result["ok"] is False
     assert "remote_herdr_focus_mismatch" in result["issues"]
+
+
+def test_dashboard_event_type_maps_legacy_invalidations_to_typed_events() -> None:
+    assert dashboard_event_type_for_state_change("focus_changed") == "focus.changed"
+    assert dashboard_event_type_for_state_change("window::focus") == "window.changed"
+    assert dashboard_event_type_for_state_change("workspace.focus") == "workspace.changed"
+    assert dashboard_event_type_for_state_change("display-profile-applied") == "display.changed"
+    assert dashboard_event_type_for_state_change("ai_session_herdr_changed") == "herdr.changed"
+    assert dashboard_event_type_for_state_change("agent_session_changed") == "session.changed"
+    assert dashboard_event_type_for_state_change("worktree_changed") == "session.changed"
+    assert dashboard_event_type_for_state_change("unknown") == "dashboard.invalidated"
+
+
+def test_dashboard_changed_keys_follow_typed_event_contract() -> None:
+    assert dashboard_changed_keys_for_event("focus_changed") == ["focus_state", "outputs", "projects"]
+    assert dashboard_changed_keys_for_event("window_changed") == ["focus_state", "projects", "tracked_windows"]
+    assert dashboard_changed_keys_for_event("display_changed") == ["outputs", "active_outputs", "display_layout"]
+    assert dashboard_changed_keys_for_event("ai_session_herdr_changed") == [
+        "focus_state",
+        "active_ai_sessions",
+        "active_ai_sessions_mru",
+        "current_ai_session_key",
+        "herdr",
+        "ai_monitor_metrics",
+    ]
+    assert dashboard_changed_keys_for_event("state_changed") == ["dashboard"]
+
+
+def test_dashboard_event_payload_contains_common_metadata_and_changed_models_only() -> None:
+    snapshot = {
+        "status": "ok",
+        "schema_version": "i3pm.dashboard.v2",
+        "timestamp": 12345,
+        "snapshot_version": 7,
+        "session_generation": 3,
+        "display_generation": 2,
+        "focus_generation": 5,
+        "total_windows": 8,
+        "window_count": 8,
+        "project_count": 2,
+        "worktree_count": 4,
+        "state_health": {"ok": True},
+        "dashboard_invariants": {"ok": True},
+        "focus_state": {"current_window_id": 101},
+        "projects": [{"name": "demo"}],
+        "outputs": [{"name": "eDP-1"}],
+        "active_ai_sessions": [{"session_key": "session-a"}],
+    }
+
+    payload = dashboard_event_payload_from_snapshot(snapshot, ["focus_state", "projects"])
+
+    assert payload["snapshot_version"] == 7
+    assert payload["focus_state"] == {"current_window_id": 101}
+    assert payload["projects"] == [{"name": "demo"}]
+    assert "outputs" not in payload
+    assert "active_ai_sessions" not in payload

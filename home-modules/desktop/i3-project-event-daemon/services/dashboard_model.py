@@ -6,6 +6,88 @@ from typing import Any, Dict, List
 
 
 DASHBOARD_SCHEMA_VERSION = "i3pm.dashboard.v2"
+DASHBOARD_EVENT_SCHEMA_VERSION = "i3pm.dashboard.event.v1"
+
+
+def dashboard_event_type_for_state_change(event_type: str) -> str:
+    """Map legacy daemon invalidations to the typed dashboard event contract."""
+    normalized = str(event_type or "state_changed").strip() or "state_changed"
+    compact = normalized.replace("::", "_").replace(".", "_").replace("-", "_")
+    if compact.startswith("focus"):
+        return "focus.changed"
+    if compact.startswith("window"):
+        return "window.changed"
+    if compact.startswith("workspace"):
+        return "workspace.changed"
+    if compact.startswith("display") or compact.startswith("output") or compact.startswith("profile"):
+        return "display.changed"
+    if "herdr" in compact:
+        return "herdr.changed"
+    if compact.startswith("ai_session") or compact.startswith("agent_session") or compact.startswith("session"):
+        return "session.changed"
+    if compact.startswith("project") or compact.startswith("worktree"):
+        return "session.changed"
+    return "dashboard.invalidated"
+
+
+def dashboard_changed_keys_for_event(event_type: str) -> List[str]:
+    """Return coarse dashboard model keys affected by a typed dashboard event."""
+    typed_event = dashboard_event_type_for_state_change(event_type)
+    if typed_event == "focus.changed":
+        return ["focus_state", "outputs", "projects"]
+    if typed_event == "window.changed":
+        return ["focus_state", "projects", "tracked_windows"]
+    if typed_event == "workspace.changed":
+        return ["focus_state", "outputs", "projects"]
+    if typed_event == "session.changed":
+        return [
+            "focus_state",
+            "active_ai_sessions",
+            "active_ai_sessions_mru",
+            "current_ai_session_key",
+            "worktrees",
+            "ai_monitor_metrics",
+        ]
+    if typed_event == "herdr.changed":
+        return [
+            "focus_state",
+            "active_ai_sessions",
+            "active_ai_sessions_mru",
+            "current_ai_session_key",
+            "herdr",
+            "ai_monitor_metrics",
+        ]
+    if typed_event == "display.changed":
+        return ["outputs", "active_outputs", "display_layout"]
+    return ["dashboard"]
+
+
+def dashboard_event_payload_from_snapshot(
+    snapshot: Dict[str, Any],
+    changed_keys: List[str],
+    *,
+    schema_version: str = DASHBOARD_SCHEMA_VERSION,
+) -> Dict[str, Any]:
+    """Build a partial dashboard payload for a typed state-change event."""
+    payload: Dict[str, Any] = {
+        "status": snapshot.get("status", "ok"),
+        "schema_version": snapshot.get("schema_version", schema_version),
+        "timestamp": snapshot.get("timestamp"),
+        "snapshot_version": snapshot.get("snapshot_version"),
+        "session_generation": snapshot.get("session_generation"),
+        "display_generation": snapshot.get("display_generation"),
+        "focus_generation": snapshot.get("focus_generation"),
+        "total_windows": snapshot.get("total_windows"),
+        "window_count": snapshot.get("window_count"),
+        "project_count": snapshot.get("project_count"),
+        "worktree_count": snapshot.get("worktree_count"),
+        "state_health": snapshot.get("state_health", {}),
+        "dashboard_invariants": snapshot.get("dashboard_invariants", {}),
+    }
+    for key in changed_keys:
+        if key in snapshot:
+            payload[key] = snapshot[key]
+    return payload
 
 
 def validate_dashboard_payload(

@@ -55,7 +55,14 @@ from .services.window_filter import (
 )
 from .services.registry_loader import RegistryLoader, RegistryApp
 from .services.agent_harness import CodexHarnessManager
-from .services.dashboard_model import validate_dashboard_payload
+from .services.dashboard_model import (
+    DASHBOARD_EVENT_SCHEMA_VERSION,
+    DASHBOARD_SCHEMA_VERSION,
+    dashboard_changed_keys_for_event,
+    dashboard_event_payload_from_snapshot,
+    dashboard_event_type_for_state_change,
+    validate_dashboard_payload,
+)
 from .services.display_service import DisplayService
 from .services.focus_service import FocusService
 from .services.herdr_service import HerdrService
@@ -81,9 +88,7 @@ ICON_EXTENSIONS = (".svg", ".png", ".xpm")
 APP_REGISTRY_PATH = Path.home() / ".config/i3/application-registry.json"
 PWA_REGISTRY_PATH = Path.home() / ".config/i3/pwa-registry.json"
 CHROME_SCOPED_TMP_PREFIX = "/tmp/com.google.Chrome.scoped_dir."
-DASHBOARD_SCHEMA_VERSION = "i3pm.dashboard.v2"
 FOCUS_STATE_SCHEMA_VERSION = "i3pm.focus_state.v1"
-DASHBOARD_EVENT_SCHEMA_VERSION = "i3pm.dashboard.event.v1"
 
 _DISCOVERED_WORKTREE_CACHE: Dict[str, Any] = {
     "file_path": "",
@@ -4430,77 +4435,20 @@ class IPCServer:
 
     def _dashboard_event_type_for_state_change(self, event_type: str) -> str:
         """Map legacy daemon invalidations to the typed dashboard event contract."""
-        normalized = str(event_type or "state_changed").strip() or "state_changed"
-        compact = normalized.replace("::", "_").replace(".", "_").replace("-", "_")
-        if compact.startswith("focus"):
-            return "focus.changed"
-        if compact.startswith("window"):
-            return "window.changed"
-        if compact.startswith("workspace"):
-            return "workspace.changed"
-        if compact.startswith("display") or compact.startswith("output") or compact.startswith("profile"):
-            return "display.changed"
-        if "herdr" in compact:
-            return "herdr.changed"
-        if compact.startswith("ai_session") or compact.startswith("agent_session") or compact.startswith("session"):
-            return "session.changed"
-        if compact.startswith("project") or compact.startswith("worktree"):
-            return "session.changed"
-        return "dashboard.invalidated"
+        return dashboard_event_type_for_state_change(event_type)
 
     def _dashboard_changed_keys_for_event(self, event_type: str) -> List[str]:
         """Return coarse model keys affected by a typed dashboard event."""
-        typed_event = self._dashboard_event_type_for_state_change(event_type)
-        if typed_event == "focus.changed":
-            return ["focus_state", "outputs", "projects"]
-        if typed_event == "window.changed":
-            return ["focus_state", "projects", "tracked_windows"]
-        if typed_event == "workspace.changed":
-            return ["focus_state", "outputs", "projects"]
-        if typed_event == "session.changed":
-            return [
-                "focus_state",
-                "active_ai_sessions",
-                "active_ai_sessions_mru",
-                "current_ai_session_key",
-                "worktrees",
-                "ai_monitor_metrics",
-            ]
-        if typed_event == "herdr.changed":
-            return [
-                "focus_state",
-                "active_ai_sessions",
-                "active_ai_sessions_mru",
-                "current_ai_session_key",
-                "herdr",
-                "ai_monitor_metrics",
-            ]
-        if typed_event == "display.changed":
-            return ["outputs", "active_outputs", "display_layout"]
-        return ["dashboard"]
+        return dashboard_changed_keys_for_event(event_type)
 
     async def _dashboard_event_payload(self, changed_keys: List[str]) -> Dict[str, Any]:
         """Build a partial dashboard payload for a typed state-change event."""
         snapshot = await self._dashboard_snapshot({"skip_git_hydration": True})
-        payload: Dict[str, Any] = {
-            "status": snapshot.get("status", "ok"),
-            "schema_version": snapshot.get("schema_version", DASHBOARD_SCHEMA_VERSION),
-            "timestamp": snapshot.get("timestamp"),
-            "snapshot_version": snapshot.get("snapshot_version"),
-            "session_generation": snapshot.get("session_generation"),
-            "display_generation": snapshot.get("display_generation"),
-            "focus_generation": snapshot.get("focus_generation"),
-            "total_windows": snapshot.get("total_windows"),
-            "window_count": snapshot.get("window_count"),
-            "project_count": snapshot.get("project_count"),
-            "worktree_count": snapshot.get("worktree_count"),
-            "state_health": snapshot.get("state_health", {}),
-            "dashboard_invariants": snapshot.get("dashboard_invariants", {}),
-        }
-        for key in changed_keys:
-            if key in snapshot:
-                payload[key] = snapshot[key]
-        return payload
+        return dashboard_event_payload_from_snapshot(
+            snapshot,
+            changed_keys,
+            schema_version=DASHBOARD_SCHEMA_VERSION,
+        )
 
     async def notify_state_change(self, event_type: str = "state_changed") -> None:
         """Notify subscribed clients that state has changed.
