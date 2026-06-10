@@ -47,7 +47,6 @@ QtObject {
   readonly property bool topBarShowSeconds: ${if cfg.topBarShowSeconds then "true" else "false"}
   readonly property int panelWidth: ${toString cfg.panelWidth}
   readonly property int barHeight: ${toString cfg.barHeight}
-  readonly property int dashboardHeartbeatMs: ${toString cfg.dashboardHeartbeatMs}
   readonly property string notificationBackend: "${cfg.notifications.backend}"
   readonly property int notificationHistoryLimit: ${toString cfg.notifications.historyLimit}
   readonly property int notificationToastMaxPerOutput: ${toString cfg.notifications.toastMaxPerOutput}
@@ -2414,12 +2413,6 @@ in
       type = lib.types.int;
       default = 38;
       description = "Height of the bottom workspace bar in pixels.";
-    };
-
-    dashboardHeartbeatMs = lib.mkOption {
-      type = lib.types.int;
-      default = 5000;
-      description = "Fallback dashboard refresh cadence in milliseconds for the shell watcher.";
     };
 
     primaryOutputs = lib.mkOption {

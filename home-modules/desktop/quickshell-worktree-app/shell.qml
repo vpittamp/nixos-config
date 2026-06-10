@@ -75,6 +75,20 @@ ShellRoot {
         return Number.isFinite(number) ? number : 0;
     }
 
+    function windowIdValue(windowData) {
+        return Number(windowData && (windowData.id || windowData.window_id) || 0);
+    }
+
+    function dashboardFocusState() {
+        return appService.dashboard && typeof appService.dashboard.focus_state === "object" ? appService.dashboard.focus_state : {};
+    }
+
+    function windowIsFocused(windowData) {
+        const windowId = windowIdValue(windowData);
+        const currentWindowId = Number(dashboardFocusState().current_window_id || dashboardFocusState().focused_window_id || 0);
+        return windowId > 0 && currentWindowId > 0 && windowId === currentWindowId;
+    }
+
     function shortProject(qualifiedName) {
         const qualified = stringOrEmpty(qualifiedName);
         const repo = qualified.split(":")[0];
@@ -151,7 +165,7 @@ ShellRoot {
 
     function selectedWindowForGroup(group) {
         const windows = arrayOrEmpty(group && group.windows).filter(windowData => !boolOrFalse(windowData.hidden));
-        const focusedWindow = windows.find(windowData => boolOrFalse(windowData.focused));
+        const focusedWindow = windows.find(windowData => windowIsFocused(windowData));
         return focusedWindow || (windows.length ? windows[0] : null);
     }
 

@@ -12,6 +12,8 @@ RUNTIME_SERVICES_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runt
 QUICKSHELL_DEFAULT_NIX = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "default.nix"
 NOTIFICATION_TOAST_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "NotificationToast.qml"
 WORKTREE_APP_SERVICE_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-worktree-app" / "WorktreeAppService.qml"
+WORKTREE_APP_SHELL_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-worktree-app" / "shell.qml"
+WORKTREE_APP_DEFAULT_NIX = REPO_ROOT / "home-modules" / "desktop" / "quickshell-worktree-app" / "default.nix"
 HERDR_NIX = REPO_ROOT / "home-modules" / "terminal" / "herdr.nix"
 I3PM_WINDOW_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "window.ts"
 I3PM_DASHBOARD_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "dashboard.ts"
@@ -150,6 +152,7 @@ def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
     worktree_service_text = WORKTREE_APP_SERVICE_QML.read_text()
     dashboard_command_text = I3PM_DASHBOARD_TS.read_text()
     daemon_client_text = I3PM_DAEMON_CLIENT_TS.read_text()
+    quickshell_default_nix_text = QUICKSHELL_DEFAULT_NIX.read_text()
     assert "function applySnapshot(snapshot)" in text
     assert "function applyEvent(event)" in text
     assert "function resetDashboard(status, errorMessage)" in text
@@ -163,6 +166,7 @@ def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
     assert "applySnapshot(parsed);" in text
     assert 'command: [runtimeConfig.i3pmBin, "dashboard", "watch"]' in services_text
     assert '"--interval", String(runtimeConfig.dashboardHeartbeatMs)' not in services_text
+    assert "dashboardHeartbeatMs" not in quickshell_default_nix_text
     assert "function applyDashboardSnapshot(payload)" in worktree_service_text
     assert "function applyDashboardEvent(event)" in worktree_service_text
     assert 'dashboardWatchProcess.command = [appConfig.i3pmBin, "dashboard", "watch"];' in worktree_service_text
@@ -172,6 +176,20 @@ def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
     assert "if (params.event_type === undefined)" in daemon_client_text
     assert "const eventType = String(params.event_type);" in daemon_client_text
     assert 'if (!eventType.includes(".") || message.method !== eventType)' in daemon_client_text
+
+
+def test_worktree_app_uses_daemon_focus_state_and_no_heartbeat_config():
+    """Standalone worktree app should render focus from daemon focus_state and rely on dashboard events."""
+    shell_text = WORKTREE_APP_SHELL_QML.read_text()
+    service_text = WORKTREE_APP_SERVICE_QML.read_text()
+    default_nix_text = WORKTREE_APP_DEFAULT_NIX.read_text()
+
+    assert "function dashboardFocusState()" in shell_text
+    assert "function windowIsFocused(windowData)" in shell_text
+    assert "windows.find(windowData => windowIsFocused(windowData))" in shell_text
+    assert "windowData.focused" not in shell_text
+    assert 'dashboardWatchProcess.command = [appConfig.i3pmBin, "dashboard", "watch"];' in service_text
+    assert "dashboardHeartbeatMs" not in default_nix_text
 
 
 def test_i3pm_herdr_proxy_exposes_snapshot_focus_and_event_stream():

@@ -20,7 +20,6 @@ QtObject {
   readonly property string windowTitle: "${cfg.windowTitle}"
   readonly property int windowWidth: ${toString cfg.windowWidth}
   readonly property int windowHeight: ${toString cfg.windowHeight}
-  readonly property int dashboardHeartbeatMs: ${toString cfg.dashboardHeartbeatMs}
   readonly property string i3pmBin: "${config.home.profileDirectory}/bin/i3pm"
   readonly property string gioBin: "${pkgs.glib}/bin/gio"
 }
@@ -144,11 +143,6 @@ in
       description = "Window height in pixels.";
     };
 
-    dashboardHeartbeatMs = lib.mkOption {
-      type = lib.types.int;
-      default = 5000;
-      description = "Fallback dashboard refresh cadence in milliseconds for the worktree app watcher.";
-    };
   };
 
   config = lib.mkIf cfg.enable {
