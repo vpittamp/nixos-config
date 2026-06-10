@@ -264,8 +264,8 @@ async def test_register_launch_for_spec_persists_local_spec_and_status(server_lo
 
     registration = await server_local.launch_service.register_launch_for_spec(spec)
     launch_id = registration["launch_id"]
-    spec_payload = json.loads(server_local._launch_spec_file(launch_id).read_text())
-    status_payload = json.loads(server_local._launch_status_file(launch_id).read_text())
+    spec_payload = json.loads(server_local.launch_service.spec_file(launch_id).read_text())
+    status_payload = json.loads(server_local.launch_service.status_file(launch_id).read_text())
 
     assert spec_payload["launch_id"] == launch_id
     assert spec_payload["launch_transport"] == "local_helper"
@@ -292,7 +292,7 @@ async def test_launch_status_reconciles_managed_session_to_waiting_and_running(s
         "matched": False,
         "window_id": 0,
     })
-    server_local._write_launch_status(
+    server_local.launch_service.write_status(
         launch_id=launch_id,
         status="session_validating",
         spec=spec,
@@ -332,7 +332,7 @@ async def test_mark_launch_window_closed_sets_reusable_headless(server_local, tm
         "tmux_session_name": spec["tmux_session_name"],
         "tmux_socket": server_local._canonical_tmux_socket(),
     })
-    server_local._write_launch_status(
+    server_local.launch_service.write_status(
         launch_id=launch_id,
         status="running",
         spec=spec,
@@ -355,7 +355,7 @@ async def test_mark_launch_window_bound_sets_running_for_non_terminal_launch(ser
     registration = await server_local.launch_service.register_launch_for_spec(spec)
     launch_id = registration["launch_id"]
 
-    server_local._write_launch_status(
+    server_local.launch_service.write_status(
         launch_id=launch_id,
         status="waiting_window",
         spec=spec,

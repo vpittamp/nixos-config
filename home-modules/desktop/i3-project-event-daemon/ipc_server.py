@@ -8216,88 +8216,6 @@ class IPCServer:
         """Return the XDG runtime directory used by daemon-owned helpers."""
         return Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
 
-    def _launch_runtime_dir(self) -> Path:
-        """Return the runtime directory used for deterministic launch specs and status."""
-        return self.launch_service.runtime_dir()
-
-    def _launch_status_file(self, launch_id: str) -> Path:
-        """Return the canonical launch-status file for a launch id."""
-        return self.launch_service.status_file(launch_id)
-
-    def _launch_spec_file(self, launch_id: str) -> Path:
-        """Return the canonical launch-spec file for a launch id."""
-        return self.launch_service.spec_file(launch_id)
-
-    def _read_launch_spec(self, launch_id: str) -> Dict[str, Any]:
-        """Return persisted spec for a deterministic launch id."""
-        return self.launch_service.read_spec(launch_id)
-
-    def _write_launch_spec_payload(
-        self,
-        *,
-        launch_id: str,
-        payload: Dict[str, Any],
-    ) -> Path:
-        """Persist an exact launch payload for reconciliation and diagnostics."""
-        return self.launch_service.write_spec_payload(
-            launch_id=launch_id,
-            payload=payload,
-        )
-
-    def _write_launch_status(
-        self,
-        *,
-        launch_id: str,
-        status: str,
-        spec: Optional[Dict[str, Any]] = None,
-        error_code: str = "",
-        error_message: str = "",
-        reason: str = "",
-        extra: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """Persist deterministic launch status for UI and RPC consumers."""
-        return self.launch_service.write_status(
-            launch_id=launch_id,
-            status=status,
-            spec=spec,
-            error_code=error_code,
-            error_message=error_message,
-            reason=reason,
-            extra=extra,
-        )
-
-    def _read_launch_status(self, launch_id: str) -> Dict[str, Any]:
-        """Return persisted status for a deterministic launch id."""
-        return self.launch_service.read_status(launch_id)
-
-    def _list_launch_statuses(self, *, limit: int = 20) -> List[Dict[str, Any]]:
-        """Return recent persisted launch statuses for dashboard consumers."""
-        return self.launch_service.list_statuses(limit=limit)
-
-    def _write_remote_launch_spec(
-        self,
-        *,
-        spec: Dict[str, Any],
-        launch_kind: str,
-    ) -> Path:
-        """Persist the exact remote launch payload consumed by the remote launcher."""
-        return self.launch_service.write_remote_spec(
-            spec=spec,
-            launch_kind=launch_kind,
-        )
-
-    def _write_local_launch_spec(
-        self,
-        *,
-        spec: Dict[str, Any],
-        launch_kind: str,
-    ) -> Path:
-        """Persist the exact local launch payload consumed by managed terminal reconciliation."""
-        return self.launch_service.write_local_spec(
-            spec=spec,
-            launch_kind=launch_kind,
-        )
-
     def _canonical_tmux_socket(self) -> str:
         """Return the canonical managed tmux socket path for the current host user."""
         uid = os.getuid()
@@ -11528,7 +11446,7 @@ FORMAT JSONEachRow
             "tracked_windows": runtime_snapshot.get("tracked_windows", []),
             "state_health": runtime_snapshot.get("state_health", {}),
             "launch_stats": runtime_snapshot.get("launch_stats", {}),
-            "launches": self._list_launch_statuses(limit=12),
+            "launches": self.launch_service.list_statuses(limit=12),
             "scratchpad": runtime_snapshot.get("scratchpad", {}),
             "projects": projects,
             "project_count": len(projects),
