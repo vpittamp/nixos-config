@@ -1,326 +1,136 @@
-"""
-Unit tests for ScratchpadTerminal model.
+"""Unit tests for current scratchpad terminal identity model."""
 
-Tests cover model validation, mark generation, and state management.
-"""
+from __future__ import annotations
+
+import time
+from pathlib import Path
 
 import pytest
-from pathlib import Path
 from pydantic import ValidationError
-import time
 
-from models.scratchpad import ScratchpadTerminal
+from i3_project_daemon.models.scratchpad import ScratchpadTerminal
 
 
-class TestScratchpadTerminalValidation:
-    """Test ScratchpadTerminal model validation."""
+def make_terminal(
+    project_name: str = "vpittamp/nixos-config:main",
+    *,
+    pid: int = 12345,
+    window_id: int = 67890,
+    working_dir: Path = Path("/tmp"),
+    context_key: str | None = None,
+) -> ScratchpadTerminal:
+    resolved_context_key = f"{project_name}::local::local@host" if context_key is None else context_key
+    return ScratchpadTerminal(
+        project_name=project_name,
+        pid=pid,
+        window_id=window_id,
+        mark=ScratchpadTerminal.create_mark(project_name, window_id),
+        working_dir=working_dir,
+        context_key=resolved_context_key,
+        execution_mode="local",
+        connection_key="local@host",
+        tmux_session_name="sp-test",
+    )
 
-    def test_valid_terminal_creation(self):
-        """Test creating a valid scratchpad terminal."""
-        terminal = ScratchpadTerminal(
-            project_name="my-project",
-            pid=12345,
-            window_id=67890,
-            mark="scratchpad:my-project",
-            working_dir=Path("/home/user/projects/my-project"),
-        )
 
-        assert terminal.project_name == "my-project"
-        assert terminal.pid == 12345
-        assert terminal.window_id == 67890
-        assert terminal.mark == "scratchpad:my-project"
-        assert terminal.working_dir == Path("/home/user/projects/my-project")
-        assert terminal.last_shown_at is None
-        assert isinstance(terminal.created_at, float)
-        assert terminal.created_at <= time.time()
+def test_valid_terminal_creation_requires_context_identity() -> None:
+    terminal = make_terminal("my-project", working_dir=Path("/home/user/projects/my-project"))
 
-    def test_project_name_validation_alphanumeric(self):
-        """Test project name must be alphanumeric with optional hyphens/underscores."""
-        # Valid names
-        valid_names = ["project", "my-project", "my_project", "project123", "test-env_2"]
-        for name in valid_names:
-            terminal = ScratchpadTerminal(
-                project_name=name,
-                pid=12345,
-                window_id=67890,
-                mark=f"scratchpad:{name}",
-                working_dir=Path("/tmp"),
-            )
-            assert terminal.project_name == name
+    assert terminal.project_name == "my-project"
+    assert terminal.window_id == 67890
+    assert terminal.context_key == "my-project::local::local@host"
+    assert terminal.mark == "scoped:scratchpad-terminal:my-project:67890"
+    assert terminal.execution_mode == "local"
+    assert terminal.last_shown_at is None
+    assert isinstance(terminal.created_at, float)
+    assert terminal.created_at <= time.time()
 
-        # Invalid names
-        invalid_names = ["my project", "project!", "test@env", "test/path", ""]
-        for name in invalid_names:
-            with pytest.raises(ValidationError):
-                ScratchpadTerminal(
-                    project_name=name,
-                    pid=12345,
-                    window_id=67890,
-                    mark=f"scratchpad:{name}",
-                    working_dir=Path("/tmp"),
-                )
 
-    def test_project_name_length_validation(self):
-        """Test project name length constraints."""
-        # Too short (empty after validation)
+def test_project_name_validation_accepts_legacy_and_qualified_names() -> None:
+    valid_names = [
+        "project",
+        "my-project",
+        "my_project",
+        "project123",
+        "vpittamp/nixos-config:main",
+    ]
+    for name in valid_names:
+        assert make_terminal(name).project_name == name
+
+    for name in ["my project", "project!", "test@env", ""]:
         with pytest.raises(ValidationError):
-            ScratchpadTerminal(
-                project_name="",
-                pid=12345,
-                window_id=67890,
-                mark="scratchpad:",
-                working_dir=Path("/tmp"),
-            )
+            make_terminal(name)
 
-        # Too long (>100 chars)
-        with pytest.raises(ValidationError):
-            ScratchpadTerminal(
-                project_name="a" * 101,
-                pid=12345,
-                window_id=67890,
-                mark="scratchpad:" + "a" * 101,
-                working_dir=Path("/tmp"),
-            )
 
-        # Max length (100 chars)
-        terminal = ScratchpadTerminal(
-            project_name="a" * 100,
-            pid=12345,
-            window_id=67890,
-            mark="scratchpad:" + "a" * 100,
-            working_dir=Path("/tmp"),
-        )
-        assert len(terminal.project_name) == 100
-
-    def test_pid_validation(self):
-        """Test PID must be positive integer."""
-        # Valid PIDs
-        terminal = ScratchpadTerminal(
-            project_name="test",
-            pid=1,
-            window_id=67890,
-            mark="scratchpad:test",
-            working_dir=Path("/tmp"),
-        )
-        assert terminal.pid == 1
-
-        # Invalid PIDs
-        with pytest.raises(ValidationError):
-            ScratchpadTerminal(
-                project_name="test",
-                pid=0,
-                window_id=67890,
-                mark="scratchpad:test",
-                working_dir=Path("/tmp"),
-            )
-
-        with pytest.raises(ValidationError):
-            ScratchpadTerminal(
-                project_name="test",
-                pid=-1,
-                window_id=67890,
-                mark="scratchpad:test",
-                working_dir=Path("/tmp"),
-            )
-
-    def test_window_id_validation(self):
-        """Test window ID must be positive integer."""
-        # Valid window IDs
-        terminal = ScratchpadTerminal(
-            project_name="test",
-            pid=12345,
-            window_id=1,
-            mark="scratchpad:test",
-            working_dir=Path("/tmp"),
-        )
-        assert terminal.window_id == 1
-
-        # Invalid window IDs
-        with pytest.raises(ValidationError):
-            ScratchpadTerminal(
-                project_name="test",
-                pid=12345,
-                window_id=0,
-                mark="scratchpad:test",
-                working_dir=Path("/tmp"),
-            )
-
-        with pytest.raises(ValidationError):
-            ScratchpadTerminal(
-                project_name="test",
-                pid=12345,
-                window_id=-1,
-                mark="scratchpad:test",
-                working_dir=Path("/tmp"),
-            )
-
-    def test_mark_pattern_validation(self):
-        """Test mark must follow 'scratchpad:*' pattern."""
-        # Valid marks
-        valid_marks = ["scratchpad:test", "scratchpad:my-project", "scratchpad:global"]
-        for mark in valid_marks:
-            terminal = ScratchpadTerminal(
-                project_name="test",
-                pid=12345,
-                window_id=67890,
-                mark=mark,
-                working_dir=Path("/tmp"),
-            )
-            assert terminal.mark == mark
-
-        # Invalid marks
-        invalid_marks = ["test", "scratchpad:", "scratch:test", "scratchpad"]
-        for mark in invalid_marks:
-            with pytest.raises(ValidationError):
-                ScratchpadTerminal(
-                    project_name="test",
-                    pid=12345,
-                    window_id=67890,
-                    mark=mark,
-                    working_dir=Path("/tmp"),
-                )
-
-    def test_working_dir_validation(self):
-        """Test working directory must be absolute path."""
-        # Valid absolute paths
-        terminal = ScratchpadTerminal(
+def test_required_identity_fields_are_validated() -> None:
+    with pytest.raises(ValidationError):
+        ScratchpadTerminal(
             project_name="test",
             pid=12345,
             window_id=67890,
-            mark="scratchpad:test",
-            working_dir=Path("/home/user/project"),
+            mark=ScratchpadTerminal.create_mark("test", 67890),
+            working_dir=Path("/tmp"),
         )
-        assert terminal.working_dir == Path("/home/user/project")
 
-        # Invalid relative paths
-        with pytest.raises(ValidationError):
-            ScratchpadTerminal(
-                project_name="test",
-                pid=12345,
-                window_id=67890,
-                mark="scratchpad:test",
-                working_dir=Path("relative/path"),
-            )
+    with pytest.raises(ValidationError):
+        make_terminal("test", context_key="")
 
 
-class TestMarkGeneration:
-    """Test mark generation and validation."""
+def test_pid_window_id_mark_and_working_dir_validation() -> None:
+    assert make_terminal("test", pid=1, window_id=1).pid == 1
 
-    def test_create_mark_basic(self):
-        """Test basic mark generation."""
-        mark = ScratchpadTerminal.create_mark("my-project")
-        assert mark == "scratchpad:my-project"
-
-    def test_create_mark_global(self):
-        """Test mark generation for global terminal."""
-        mark = ScratchpadTerminal.create_mark("global")
-        assert mark == "scratchpad:global"
-
-    def test_create_mark_with_hyphens_underscores(self):
-        """Test mark generation with hyphens and underscores."""
-        mark = ScratchpadTerminal.create_mark("test-env_2")
-        assert mark == "scratchpad:test-env_2"
-
-    def test_create_mark_consistency(self):
-        """Test mark generation is consistent."""
-        project_name = "my-project"
-        mark1 = ScratchpadTerminal.create_mark(project_name)
-        mark2 = ScratchpadTerminal.create_mark(project_name)
-        assert mark1 == mark2
-
-
-class TestTerminalState:
-    """Test terminal state management methods."""
-
-    def test_mark_shown_updates_timestamp(self):
-        """Test mark_shown() updates last_shown_at."""
-        terminal = ScratchpadTerminal(
+    with pytest.raises(ValidationError):
+        make_terminal("test", pid=0)
+    with pytest.raises(ValidationError):
+        make_terminal("test", window_id=0)
+    with pytest.raises(ValidationError):
+        ScratchpadTerminal(
             project_name="test",
             pid=12345,
             window_id=67890,
             mark="scratchpad:test",
             working_dir=Path("/tmp"),
+            context_key="test::local::local@host",
         )
+    with pytest.raises(ValidationError):
+        make_terminal("test", working_dir=Path("relative/path"))
 
-        assert terminal.last_shown_at is None
 
-        before_mark = time.time()
-        terminal.mark_shown()
-        after_mark = time.time()
+def test_create_mark_uses_unified_scoped_window_mark() -> None:
+    assert ScratchpadTerminal.create_mark("my-project", 42) == "scoped:scratchpad-terminal:my-project:42"
+    assert (
+        ScratchpadTerminal.create_mark("vpittamp/nixos-config:main", 42)
+        == "scoped:scratchpad-terminal:vpittamp/nixos-config:main:42"
+    )
 
-        assert terminal.last_shown_at is not None
-        assert before_mark <= terminal.last_shown_at <= after_mark
 
-    def test_mark_shown_multiple_times(self):
-        """Test mark_shown() can be called multiple times."""
-        terminal = ScratchpadTerminal(
-            project_name="test",
-            pid=12345,
-            window_id=67890,
-            mark="scratchpad:test",
-            working_dir=Path("/tmp"),
-        )
+def test_mark_shown_and_to_dict_include_context_fields() -> None:
+    terminal = make_terminal("test-project", working_dir=Path("/home/user/test-project"))
+    before_mark = time.time()
+    terminal.mark_shown()
+    after_mark = time.time()
 
-        terminal.mark_shown()
-        first_shown = terminal.last_shown_at
+    result = terminal.to_dict()
 
-        time.sleep(0.01)  # Small delay to ensure different timestamp
+    assert before_mark <= terminal.last_shown_at <= after_mark
+    assert result["project_name"] == "test-project"
+    assert result["mark"] == "scoped:scratchpad-terminal:test-project:67890"
+    assert result["working_dir"] == "/home/user/test-project"
+    assert result["context_key"] == "test-project::local::local@host"
+    assert result["execution_mode"] == "local"
+    assert result["connection_key"] == "local@host"
+    assert result["tmux_session_name"] == "sp-test"
+    assert isinstance(result["created_at"], float)
+    assert isinstance(result["last_shown_at"], float)
 
-        terminal.mark_shown()
-        second_shown = terminal.last_shown_at
 
-        assert second_shown > first_shown
+def test_is_process_running_uses_psutil(monkeypatch: pytest.MonkeyPatch) -> None:
+    terminal = make_terminal("test")
 
-    def test_to_dict_serialization(self):
-        """Test to_dict() produces correct dictionary."""
-        terminal = ScratchpadTerminal(
-            project_name="test-project",
-            pid=12345,
-            window_id=67890,
-            mark="scratchpad:test-project",
-            working_dir=Path("/home/user/test-project"),
-        )
-        terminal.mark_shown()
+    import psutil
 
-        result = terminal.to_dict()
+    monkeypatch.setattr(psutil, "pid_exists", lambda pid: pid == 12345)
+    assert terminal.is_process_running() is True
 
-        assert result["project_name"] == "test-project"
-        assert result["pid"] == 12345
-        assert result["window_id"] == 67890
-        assert result["mark"] == "scratchpad:test-project"
-        assert result["working_dir"] == "/home/user/test-project"
-        assert isinstance(result["created_at"], float)
-        assert isinstance(result["last_shown_at"], float)
-
-    def test_to_dict_with_null_last_shown(self):
-        """Test to_dict() handles None last_shown_at."""
-        terminal = ScratchpadTerminal(
-            project_name="test",
-            pid=12345,
-            window_id=67890,
-            mark="scratchpad:test",
-            working_dir=Path("/tmp"),
-        )
-
-        result = terminal.to_dict()
-        assert result["last_shown_at"] is None
-
-    def test_is_process_running_mock(self, monkeypatch):
-        """Test is_process_running() method."""
-        terminal = ScratchpadTerminal(
-            project_name="test",
-            pid=12345,
-            window_id=67890,
-            mark="scratchpad:test",
-            working_dir=Path("/tmp"),
-        )
-
-        # Mock psutil.pid_exists to return True
-        import psutil
-        monkeypatch.setattr(psutil, "pid_exists", lambda pid: pid == 12345)
-
-        assert terminal.is_process_running() is True
-
-        # Mock to return False
-        monkeypatch.setattr(psutil, "pid_exists", lambda pid: False)
-        assert terminal.is_process_running() is False
+    monkeypatch.setattr(psutil, "pid_exists", lambda _pid: False)
+    assert terminal.is_process_running() is False

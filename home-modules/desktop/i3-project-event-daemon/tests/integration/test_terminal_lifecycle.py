@@ -11,8 +11,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 import time
 
-from services.scratchpad_manager import ScratchpadManager, read_process_environ
-from models.scratchpad import ScratchpadTerminal
+from i3_project_daemon.services.scratchpad_manager import ScratchpadManager, read_process_environ
+from i3_project_daemon.models.scratchpad import ScratchpadTerminal
 
 
 @pytest.fixture

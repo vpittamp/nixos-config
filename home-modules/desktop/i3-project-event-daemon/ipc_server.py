@@ -524,8 +524,6 @@ class IPCServer:
         self._worktree_cache_time: float = 0.0
         self._worktree_cache_ttl: float = 10.0
         self._worktree_cache_fingerprint: Dict[str, Any] = {}
-        self._git_snapshot_cache: Dict[str, Dict[str, Any]] = {}
-        self._git_snapshot_tasks: Dict[str, asyncio.Task] = {}
         self._git_probe_timeout_seconds: float = 2.5
         self._git_snapshot_ttl_current: float = 3.0
         self._git_snapshot_ttl_visible: float = 8.0
@@ -543,6 +541,7 @@ class IPCServer:
             ttl_visible=self._git_snapshot_ttl_visible,
             ttl_background=self._git_snapshot_ttl_background,
             ttl_failure=self._git_snapshot_failure_ttl,
+            git_probe_timeout_seconds=self._git_probe_timeout_seconds,
         )
         self.session_action_service = SessionActionService(
             parse_remote_target=self._parse_remote_target,
@@ -2882,7 +2881,7 @@ class IPCServer:
         self._worktree_cache = None
         self._worktree_cache_time = 0.0
         self._worktree_cache_fingerprint = {}
-        self._git_snapshot_cache.clear()
+        self.dashboard_git_service.clear_snapshot_cache()
 
     def _canonical_discovered_project_name(
         self,
@@ -3048,31 +3047,7 @@ class IPCServer:
         *args: str,
     ) -> Tuple[int, str, str]:
         """Run a bounded git command for live session/worktree status."""
-        proc: Optional[asyncio.subprocess.Process] = None
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "git",
-                *args,
-                cwd=str(repo_path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=self._git_probe_timeout_seconds,
-            )
-            return (
-                int(proc.returncode or 0),
-                stdout.decode("utf-8", errors="replace").strip(),
-                stderr.decode("utf-8", errors="replace").strip(),
-            )
-        except asyncio.TimeoutError:
-            if proc is not None:
-                proc.kill()
-                await proc.communicate()
-            return (-1, "", "timeout")
-        except Exception as exc:
-            return (-1, "", str(exc))
+        return await self.dashboard_git_service.run_git_probe_command(repo_path, *args)
 
     async def _probe_git_snapshot(
         self,
@@ -3082,99 +3057,11 @@ class IPCServer:
         branch_hint: str = "",
     ) -> Dict[str, Any]:
         """Probe live git state for a specific worktree path."""
-        path = Path(str(worktree_path or "").strip())
-        now = int(time.time())
-        if not path.exists() or not path.is_dir():
-            return {
-                "available": False,
-                "worktree_path": str(path),
-                "qualified_name": str(qualified_name or "").strip(),
-                "branch": str(branch_hint or "").strip(),
-                "head_oid_short": "",
-                "state": "unknown",
-                "staged_count": 0,
-                "modified_count": 0,
-                "untracked_count": 0,
-                "dirty_count": 0,
-                "ahead": 0,
-                "behind": 0,
-                "repo_root": "",
-                "snapshot_at": now,
-                "source": "git_probe",
-                "probe_success": False,
-            }
-
-        top_level_task = self._run_git_probe_command(path, "rev-parse", "--show-toplevel")
-        head_task = self._run_git_probe_command(path, "rev-parse", "--short", "HEAD")
-        status_task = self._run_git_probe_command(path, "status", "--porcelain=v1", "--branch")
-        top_level_result, head_result, status_result = await asyncio.gather(
-            top_level_task,
-            head_task,
-            status_task,
+        return await self.dashboard_git_service.probe_git_snapshot(
+            worktree_path=worktree_path,
+            qualified_name=qualified_name,
+            branch_hint=branch_hint,
         )
-
-        repo_root = top_level_result[1] if top_level_result[0] == 0 else ""
-        head_oid_short = head_result[1][:7] if head_result[0] == 0 and head_result[1] else ""
-
-        branch = str(branch_hint or "").strip()
-        ahead = 0
-        behind = 0
-        staged_count = 0
-        modified_count = 0
-        untracked_count = 0
-        has_conflicts = False
-
-        lines = [
-            line for line in status_result[1].splitlines()
-            if str(line or "").strip()
-        ] if status_result[0] == 0 else []
-        if lines and lines[0].startswith("## "):
-            header = lines[0][3:]
-            header_branch = header.split("...", 1)[0].strip()
-            if header_branch and header_branch != "HEAD (no branch)":
-                branch = header_branch
-            ahead, behind = self.dashboard_git_service.parse_ahead_behind(header)
-            lines = lines[1:]
-
-        for line in lines:
-            if len(line) < 2:
-                continue
-            x_status = line[0]
-            y_status = line[1]
-            if x_status == "U" or y_status == "U" or (x_status == "A" and y_status == "A") or (x_status == "D" and y_status == "D"):
-                has_conflicts = True
-            if x_status not in {" ", "?"}:
-                staged_count += 1
-            if y_status in {"M", "D"}:
-                modified_count += 1
-            if x_status == "?" and y_status == "?":
-                untracked_count += 1
-
-        dirty_count = staged_count + modified_count + untracked_count
-        state = self.dashboard_git_service.snapshot_state(
-            has_conflicts=has_conflicts,
-            dirty_count=dirty_count,
-        )
-        probe_success = status_result[0] == 0
-        return {
-            "available": bool(repo_root or probe_success),
-            "worktree_path": str(path),
-            "qualified_name": str(qualified_name or "").strip(),
-            "branch": branch,
-            "head_oid_short": head_oid_short,
-            "state": state,
-            "has_conflicts": has_conflicts,
-            "staged_count": staged_count,
-            "modified_count": modified_count,
-            "untracked_count": untracked_count,
-            "dirty_count": dirty_count,
-            "ahead": ahead,
-            "behind": behind,
-            "repo_root": repo_root,
-            "snapshot_at": now,
-            "source": "git_probe",
-            "probe_success": probe_success,
-        }
 
     async def _refresh_git_snapshot(
         self,
@@ -3185,29 +3072,13 @@ class IPCServer:
         notify: bool,
     ) -> Optional[Dict[str, Any]]:
         """Refresh one worktree's live git snapshot and update cache."""
-        normalized_path = str(worktree_path or "").strip()
-        if not normalized_path:
-            return None
-
-        previous_entry = self._git_snapshot_cache.get(normalized_path, {})
-        previous_snapshot = previous_entry.get("snapshot", {}) if isinstance(previous_entry, dict) else {}
-        snapshot = await self._probe_git_snapshot(
-            worktree_path=normalized_path,
+        return await self.dashboard_git_service.refresh_git_snapshot(
+            worktree_path=worktree_path,
             qualified_name=qualified_name,
             branch_hint=branch_hint,
+            notify=notify,
+            notify_state_change=self.notify_state_change,
         )
-        fingerprint = self.dashboard_git_service.cache_fingerprint(snapshot)
-        self._git_snapshot_cache[normalized_path] = {
-            "snapshot": snapshot,
-            "fingerprint": fingerprint,
-        }
-
-        previous_fingerprint = ""
-        if isinstance(previous_snapshot, dict) and previous_snapshot:
-            previous_fingerprint = self.dashboard_git_service.cache_fingerprint(previous_snapshot)
-        if notify and previous_fingerprint and previous_fingerprint != fingerprint:
-            await self.notify_state_change("ai_session_git_changed")
-        return snapshot
 
     def _ensure_git_snapshot_refresh(
         self,
@@ -3217,28 +3088,12 @@ class IPCServer:
         branch_hint: str = "",
     ) -> None:
         """Schedule a background git refresh if one is not already running."""
-        normalized_path = str(worktree_path or "").strip()
-        if not normalized_path:
-            return
-        task = self._git_snapshot_tasks.get(normalized_path)
-        if task is not None and not task.done():
-            return
-
-        async def runner() -> None:
-            try:
-                await self._refresh_git_snapshot(
-                    worktree_path=normalized_path,
-                    qualified_name=qualified_name,
-                    branch_hint=branch_hint,
-                    notify=True,
-                )
-            finally:
-                current = self._git_snapshot_tasks.get(normalized_path)
-                if current is task_ref:
-                    self._git_snapshot_tasks.pop(normalized_path, None)
-
-        task_ref = asyncio.create_task(runner())
-        self._git_snapshot_tasks[normalized_path] = task_ref
+        self.dashboard_git_service.ensure_git_snapshot_refresh(
+            worktree_path=worktree_path,
+            qualified_name=qualified_name,
+            branch_hint=branch_hint,
+            notify_state_change=self.notify_state_change,
+        )
 
     async def _get_or_schedule_git_snapshot(
         self,
@@ -3250,47 +3105,14 @@ class IPCServer:
         attribution: str,
     ) -> Optional[Dict[str, Any]]:
         """Return the best available git snapshot, refreshing lazily when possible."""
-        normalized_path = str(worktree_path or "").strip()
-        if not normalized_path:
-            return None
-
-        entry = self._git_snapshot_cache.get(normalized_path)
-        if isinstance(entry, dict) and isinstance(entry.get("snapshot"), dict):
-            decorated = self.dashboard_git_service.decorate_cached_snapshot(
-                entry["snapshot"],
-                priority=priority,
-                attribution=attribution,
-            )
-            if decorated["freshness"] == "fresh":
-                return decorated
-            if priority != "current":
-                self._ensure_git_snapshot_refresh(
-                    worktree_path=normalized_path,
-                    qualified_name=qualified_name,
-                    branch_hint=branch_hint,
-                )
-                return decorated
-
-        if priority == "current" or entry is None:
-            refreshed = await self._refresh_git_snapshot(
-                worktree_path=normalized_path,
-                qualified_name=qualified_name,
-                branch_hint=branch_hint,
-                notify=False,
-            )
-            if isinstance(refreshed, dict):
-                return self.dashboard_git_service.decorate_cached_snapshot(
-                    refreshed,
-                    priority=priority,
-                    attribution=attribution,
-                )
-
-        self._ensure_git_snapshot_refresh(
-            worktree_path=normalized_path,
+        return await self.dashboard_git_service.get_or_schedule_git_snapshot(
+            worktree_path=worktree_path,
             qualified_name=qualified_name,
             branch_hint=branch_hint,
+            priority=priority,
+            attribution=attribution,
+            notify_state_change=self.notify_state_change,
         )
-        return None
 
     async def _hydrate_runtime_git_state(
         self,
@@ -3298,111 +3120,12 @@ class IPCServer:
         sessions: List[Dict[str, Any]],
     ) -> None:
         """Attach live git snapshots to session rows and priority dashboard worktrees."""
-        worktrees = await self._build_dashboard_worktrees(runtime_snapshot)
-        worktree_by_name = {
-            str(item.get("qualified_name") or "").strip(): item
-            for item in worktrees
-            if isinstance(item, dict) and str(item.get("qualified_name") or "").strip()
-        }
-        target_specs: Dict[str, Dict[str, str]] = {}
-
-        active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
-        active_project = str(
-            active_context.get("qualified_name")
-            or active_context.get("project_name")
-            or ""
-        ).strip()
-        if active_project and active_project in worktree_by_name:
-            target_specs[active_project] = {
-                "priority": "current",
-                "attribution": "exact_worktree",
-            }
-
-        for worktree in worktrees:
-            if not isinstance(worktree, dict):
-                continue
-            qualified_name = str(worktree.get("qualified_name") or "").strip()
-            if not qualified_name:
-                continue
-            if bool(worktree.get("is_active", False)):
-                target_specs[qualified_name] = {
-                    "priority": "current",
-                    "attribution": "exact_worktree",
-                }
-                continue
-            if int(worktree.get("visible_window_count", 0) or 0) > 0 or int(worktree.get("scoped_window_count", 0) or 0) > 0:
-                target_specs.setdefault(qualified_name, {
-                    "priority": "visible",
-                    "attribution": "exact_worktree",
-                })
-
-        current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
-        current_session = next(
-            (
-                session for session in sessions
-                if isinstance(session, dict) and str(session.get("session_key") or "").strip() == current_session_key
-            ),
-            None,
+        await self.dashboard_git_service.hydrate_runtime_git_state(
+            runtime_snapshot,
+            sessions,
+            build_dashboard_worktrees=self._build_dashboard_worktrees,
+            get_or_schedule_git_snapshot=self._get_or_schedule_git_snapshot,
         )
-        for session in sessions:
-            if not isinstance(session, dict):
-                continue
-            project_name = str(
-                session.get("canonical_project_name")
-                or session.get("project_name")
-                or session.get("project")
-                or ""
-            ).strip()
-            if not project_name or project_name not in worktree_by_name:
-                continue
-            priority = "current" if session is current_session else "visible"
-            existing = target_specs.get(project_name, {})
-            existing_priority = str(existing.get("priority") or "").strip()
-            if existing_priority != "current":
-                target_specs[project_name] = {
-                    "priority": priority,
-                    "attribution": "exact_worktree",
-                }
-
-        snapshots_by_project: Dict[str, Dict[str, Any]] = {}
-        for qualified_name, spec in target_specs.items():
-            worktree = worktree_by_name.get(qualified_name)
-            if not isinstance(worktree, dict):
-                continue
-            snapshot = await self._get_or_schedule_git_snapshot(
-                worktree_path=str(worktree.get("path") or "").strip(),
-                qualified_name=qualified_name,
-                branch_hint=str(worktree.get("branch") or "").strip(),
-                priority=str(spec.get("priority") or "background"),
-                attribution=str(spec.get("attribution") or "exact_worktree"),
-            )
-            if isinstance(snapshot, dict):
-                snapshots_by_project[qualified_name] = snapshot
-
-        for session in sessions:
-            if not isinstance(session, dict):
-                continue
-            project_name = str(
-                session.get("canonical_project_name")
-                or session.get("project_name")
-                or session.get("project")
-                or ""
-            ).strip()
-            snapshot = snapshots_by_project.get(project_name)
-            self.dashboard_git_service.apply_snapshot_to_session(session, snapshot)
-
-        enriched_worktrees: List[Dict[str, Any]] = []
-        for worktree in worktrees:
-            if not isinstance(worktree, dict):
-                continue
-            item = dict(worktree)
-            self.dashboard_git_service.apply_snapshot_to_worktree(
-                item,
-                snapshots_by_project.get(str(item.get("qualified_name") or "").strip()),
-            )
-            enriched_worktrees.append(item)
-
-        runtime_snapshot["dashboard_worktrees"] = enriched_worktrees
 
     async def _worktree_refresh(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Invalidate worktree/dashboard caches after CLI-side worktree mutations."""

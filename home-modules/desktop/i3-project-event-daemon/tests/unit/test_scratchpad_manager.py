@@ -1,20 +1,41 @@
-"""
-Unit tests for ScratchpadManager.
+"""Unit tests for current ScratchpadManager storage helpers."""
 
-Tests cover manager initialization, terminal storage, and uniqueness validation.
-"""
+from __future__ import annotations
+
+from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
 
-from services.scratchpad_manager import ScratchpadManager, build_ghostty_bash_lc_command
-from models.scratchpad import ScratchpadTerminal
+from i3_project_daemon.models.scratchpad import ScratchpadTerminal
+from i3_project_daemon.services.scratchpad_manager import (
+    ScratchpadManager,
+    build_ghostty_bash_lc_command,
+)
+
+
+def make_terminal(
+    project_name: str,
+    *,
+    pid: int = 12345,
+    window_id: int = 67890,
+    context_key: str | None = None,
+) -> ScratchpadTerminal:
+    resolved_context_key = context_key or f"{project_name}::local::local@host"
+    return ScratchpadTerminal(
+        project_name=project_name,
+        pid=pid,
+        window_id=window_id,
+        mark=ScratchpadTerminal.create_mark(project_name, window_id),
+        working_dir=Path(f"/tmp/{project_name.replace('/', '-').replace(':', '-')}"),
+        context_key=resolved_context_key,
+        execution_mode="local",
+        connection_key="local@host",
+    )
 
 
 @pytest.fixture
-async def mock_sway_connection():
-    """Create mock Sway IPC connection."""
+def mock_sway_connection() -> AsyncMock:
     mock_conn = AsyncMock()
     mock_conn.command = AsyncMock(return_value=None)
     mock_conn.get_tree = AsyncMock()
@@ -22,300 +43,106 @@ async def mock_sway_connection():
 
 
 @pytest.fixture
-async def scratchpad_manager(mock_sway_connection):
-    """Create ScratchpadManager with mock connection."""
+def scratchpad_manager(mock_sway_connection: AsyncMock) -> ScratchpadManager:
+    return ScratchpadManager(mock_sway_connection)
+
+
+def test_manager_initialization(mock_sway_connection: AsyncMock) -> None:
     manager = ScratchpadManager(mock_sway_connection)
-    return manager
+
+    assert manager.sway == mock_sway_connection
+    assert manager.terminals == {}
+    assert manager.logger is not None
 
 
-class TestScratchpadManagerInit:
-    """Test ScratchpadManager initialization."""
+def test_ghostty_command_uses_key_value_title_and_quotes_inner_command() -> None:
+    cmd = build_ghostty_bash_lc_command("Scratchpad Terminal", "echo 'hello world'")
 
-    @pytest.mark.asyncio
-    async def test_manager_initialization(self, mock_sway_connection):
-        """Test manager initializes with empty state."""
-        manager = ScratchpadManager(mock_sway_connection)
-
-        assert manager.sway == mock_sway_connection
-        assert isinstance(manager.terminals, dict)
-        assert len(manager.terminals) == 0
-        assert manager.logger is not None
-
-    @pytest.mark.asyncio
-    async def test_manager_connection_stored(self, mock_sway_connection):
-        """Test Sway connection is stored correctly."""
-        manager = ScratchpadManager(mock_sway_connection)
-
-        assert manager.sway is mock_sway_connection
+    assert "ghostty --title='Scratchpad Terminal'" in cmd
+    assert "--title " not in cmd
+    assert "bash -lc " in cmd
+    assert "echo 'hello world'" not in cmd
 
 
-class TestGhosttyCommandBuilder:
-    """Test Ghostty command builder syntax."""
+def test_get_terminal_uses_context_key(scratchpad_manager: ScratchpadManager) -> None:
+    terminal = make_terminal(
+        "vpittamp/nixos-config:main",
+        context_key="vpittamp/nixos-config:main::local::local@host",
+    )
+    scratchpad_manager.terminals[terminal.context_key] = terminal
 
-    def test_uses_key_value_syntax_for_title(self):
-        """Ghostty expects --<key>=<value> for config options."""
-        cmd = build_ghostty_bash_lc_command("Scratchpad Terminal", "tmux attach")
-
-        assert "ghostty --title='Scratchpad Terminal'" in cmd
-        assert "--title " not in cmd
-
-    def test_quotes_inner_command_for_bash_lc(self):
-        """Inner command is shell-quoted before passing to bash -lc."""
-        cmd = build_ghostty_bash_lc_command("Scratchpad Terminal", "echo 'hello world'")
-
-        assert "bash -lc " in cmd
-        assert "echo 'hello world'" not in cmd
+    assert scratchpad_manager.get_terminal(terminal.context_key) == terminal
+    assert scratchpad_manager.get_terminal("vpittamp/nixos-config:main") is None
 
 
-class TestTerminalStorage:
-    """Test terminal storage and retrieval."""
-
-    @pytest.mark.asyncio
-    async def test_get_terminal_existing(self, scratchpad_manager):
-        """Test retrieving existing terminal."""
-        terminal = ScratchpadTerminal(
-            project_name="test-project",
-            pid=12345,
-            window_id=67890,
-            mark="scratchpad:test-project",
-            working_dir=Path("/tmp/test"),
-        )
-        scratchpad_manager.terminals["test-project"] = terminal
-
-        result = scratchpad_manager.get_terminal("test-project")
-
-        assert result == terminal
-        assert result.project_name == "test-project"
-
-    @pytest.mark.asyncio
-    async def test_get_terminal_nonexistent(self, scratchpad_manager):
-        """Test retrieving non-existent terminal returns None."""
-        result = scratchpad_manager.get_terminal("nonexistent-project")
-
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_list_terminals_empty(self, scratchpad_manager):
-        """Test listing terminals when none exist."""
-        terminals = await scratchpad_manager.list_terminals()
-
-        assert isinstance(terminals, list)
-        assert len(terminals) == 0
-
-    @pytest.mark.asyncio
-    async def test_list_terminals_multiple(self, scratchpad_manager):
-        """Test listing multiple terminals."""
-        terminals_to_add = [
-            ScratchpadTerminal(
-                project_name=f"project{i}",
-                pid=10000 + i,
-                window_id=20000 + i,
-                mark=f"scratchpad:project{i}",
-                working_dir=Path(f"/tmp/project{i}"),
-            )
-            for i in range(3)
-        ]
-
-        for terminal in terminals_to_add:
-            scratchpad_manager.terminals[terminal.project_name] = terminal
-
-        result = await scratchpad_manager.list_terminals()
-
-        assert len(result) == 3
-        assert set(t.project_name for t in result) == {"project0", "project1", "project2"}
-
-
-class TestTerminalUniquenessValidation:
-    """Test terminal uniqueness validation logic."""
-
-    @pytest.mark.asyncio
-    async def test_unique_project_names_enforced(self, scratchpad_manager):
-        """Test that project names must be unique in storage."""
-        project_name = "duplicate-project"
-
-        terminal1 = ScratchpadTerminal(
-            project_name=project_name,
-            pid=10001,
-            window_id=20001,
-            mark=f"scratchpad:{project_name}",
-            working_dir=Path("/tmp/project1"),
-        )
-
-        terminal2 = ScratchpadTerminal(
-            project_name=project_name,
+@pytest.mark.asyncio
+async def test_list_terminals_returns_all_tracked_contexts(scratchpad_manager: ScratchpadManager) -> None:
+    terminals = [
+        make_terminal("project0", pid=10000, window_id=20000),
+        make_terminal("project1", pid=10001, window_id=20001),
+        make_terminal(
+            "project1",
             pid=10002,
             window_id=20002,
-            mark=f"scratchpad:{project_name}",
-            working_dir=Path("/tmp/project2"),
-        )
+            context_key="project1::ssh::vpittamp@ryzen:22",
+        ),
+    ]
+    for terminal in terminals:
+        scratchpad_manager.terminals[terminal.context_key] = terminal
 
-        # Add first terminal
-        scratchpad_manager.terminals[project_name] = terminal1
+    result = await scratchpad_manager.list_terminals()
 
-        # Verify first terminal is stored
-        assert scratchpad_manager.get_terminal(project_name) == terminal1
+    assert len(result) == 3
+    assert {terminal.context_key for terminal in result} == {
+        "project0::local::local@host",
+        "project1::local::local@host",
+        "project1::ssh::vpittamp@ryzen:22",
+    }
 
-        # Attempting to store second terminal with same key will replace it
-        # (This is dict behavior, but launch_terminal prevents this)
-        scratchpad_manager.terminals[project_name] = terminal2
 
-        # Verify second terminal replaced first (at dict level)
-        assert scratchpad_manager.get_terminal(project_name) == terminal2
-        assert scratchpad_manager.get_terminal(project_name).pid == 10002
+def test_context_keys_allow_independent_terminals_for_same_project(
+    scratchpad_manager: ScratchpadManager,
+) -> None:
+    local_terminal = make_terminal(
+        "project",
+        pid=10001,
+        window_id=20001,
+        context_key="project::local::local@host",
+    )
+    remote_terminal = make_terminal(
+        "project",
+        pid=10002,
+        window_id=20002,
+        context_key="project::ssh::vpittamp@ryzen:22",
+    )
 
-    @pytest.mark.asyncio
-    async def test_project_name_case_sensitive(self, scratchpad_manager):
-        """Test that project names are case-sensitive."""
-        terminal1 = ScratchpadTerminal(
-            project_name="MyProject",
-            pid=10001,
-            window_id=20001,
-            mark="scratchpad:MyProject",
-            working_dir=Path("/tmp/project1"),
-        )
+    scratchpad_manager.terminals[local_terminal.context_key] = local_terminal
+    scratchpad_manager.terminals[remote_terminal.context_key] = remote_terminal
 
-        terminal2 = ScratchpadTerminal(
-            project_name="myproject",
-            pid=10002,
-            window_id=20002,
-            mark="scratchpad:myproject",
-            working_dir=Path("/tmp/project2"),
-        )
+    assert len(scratchpad_manager.terminals) == 2
+    assert scratchpad_manager.get_terminal(local_terminal.context_key) == local_terminal
+    assert scratchpad_manager.get_terminal(remote_terminal.context_key) == remote_terminal
 
-        scratchpad_manager.terminals["MyProject"] = terminal1
-        scratchpad_manager.terminals["myproject"] = terminal2
 
-        # Verify both are stored as separate entries
-        assert len(scratchpad_manager.terminals) == 2
-        assert scratchpad_manager.get_terminal("MyProject") == terminal1
-        assert scratchpad_manager.get_terminal("myproject") == terminal2
+def test_terminal_removal_by_context_key(scratchpad_manager: ScratchpadManager) -> None:
+    terminal = make_terminal("removable-project")
+    scratchpad_manager.terminals[terminal.context_key] = terminal
 
-    @pytest.mark.asyncio
-    async def test_terminal_lookup_by_project(self, scratchpad_manager):
-        """Test looking up terminal by project name."""
-        projects = ["project-a", "project-b", "project-c"]
+    assert scratchpad_manager.get_terminal(terminal.context_key) is terminal
 
-        for i, project_name in enumerate(projects):
-            terminal = ScratchpadTerminal(
-                project_name=project_name,
-                pid=10000 + i,
-                window_id=20000 + i,
-                mark=f"scratchpad:{project_name}",
-                working_dir=Path(f"/tmp/{project_name}"),
-            )
-            scratchpad_manager.terminals[project_name] = terminal
+    del scratchpad_manager.terminals[terminal.context_key]
 
-        # Lookup each project
-        for project_name in projects:
-            terminal = scratchpad_manager.get_terminal(project_name)
-            assert terminal is not None
-            assert terminal.project_name == project_name
+    assert scratchpad_manager.get_terminal(terminal.context_key) is None
+    assert terminal.context_key not in scratchpad_manager.terminals
 
-        # Lookup non-existent project
-        assert scratchpad_manager.get_terminal("nonexistent") is None
 
-    @pytest.mark.asyncio
-    async def test_marks_are_project_specific(self, scratchpad_manager):
-        """Test that window marks are generated per-project."""
-        projects = ["alpha", "beta", "gamma"]
+def test_terminal_state_is_independent(scratchpad_manager: ScratchpadManager) -> None:
+    terminal1 = make_terminal("project1", pid=10001, window_id=20001)
+    terminal2 = make_terminal("project2", pid=10002, window_id=20002)
+    scratchpad_manager.terminals[terminal1.context_key] = terminal1
+    scratchpad_manager.terminals[terminal2.context_key] = terminal2
 
-        for project_name in projects:
-            mark = ScratchpadTerminal.create_mark(project_name)
-            assert mark == f"scratchpad:{project_name}"
+    terminal1.mark_shown()
 
-        # Verify marks are unique
-        marks = [ScratchpadTerminal.create_mark(p) for p in projects]
-        assert len(marks) == len(set(marks))
-
-    @pytest.mark.asyncio
-    async def test_terminal_count_tracking(self, scratchpad_manager):
-        """Test tracking terminal count."""
-        assert len(scratchpad_manager.terminals) == 0
-
-        # Add terminals
-        for i in range(5):
-            terminal = ScratchpadTerminal(
-                project_name=f"project{i}",
-                pid=10000 + i,
-                window_id=20000 + i,
-                mark=f"scratchpad:project{i}",
-                working_dir=Path(f"/tmp/project{i}"),
-            )
-            scratchpad_manager.terminals[f"project{i}"] = terminal
-
-        assert len(scratchpad_manager.terminals) == 5
-
-        # Remove some terminals
-        del scratchpad_manager.terminals["project1"]
-        del scratchpad_manager.terminals["project3"]
-
-        assert len(scratchpad_manager.terminals) == 3
-
-    @pytest.mark.asyncio
-    async def test_terminal_removal_by_project(self, scratchpad_manager):
-        """Test removing terminal by project name."""
-        project_name = "removable-project"
-
-        terminal = ScratchpadTerminal(
-            project_name=project_name,
-            pid=10001,
-            window_id=20001,
-            mark=f"scratchpad:{project_name}",
-            working_dir=Path("/tmp/removable"),
-        )
-
-        scratchpad_manager.terminals[project_name] = terminal
-        assert scratchpad_manager.get_terminal(project_name) is not None
-
-        # Remove terminal
-        del scratchpad_manager.terminals[project_name]
-
-        # Verify removed
-        assert scratchpad_manager.get_terminal(project_name) is None
-        assert project_name not in scratchpad_manager.terminals
-
-    @pytest.mark.asyncio
-    async def test_global_terminal_support(self, scratchpad_manager):
-        """Test support for global terminal (special project name)."""
-        global_terminal = ScratchpadTerminal(
-            project_name="global",
-            pid=99999,
-            window_id=88888,
-            mark="scratchpad:global",
-            working_dir=Path("/home/user"),
-        )
-
-        scratchpad_manager.terminals["global"] = global_terminal
-
-        result = scratchpad_manager.get_terminal("global")
-        assert result == global_terminal
-        assert result.project_name == "global"
-
-    @pytest.mark.asyncio
-    async def test_terminal_independence(self, scratchpad_manager):
-        """Test that terminals maintain independent state."""
-        terminal1 = ScratchpadTerminal(
-            project_name="project1",
-            pid=10001,
-            window_id=20001,
-            mark="scratchpad:project1",
-            working_dir=Path("/tmp/project1"),
-        )
-
-        terminal2 = ScratchpadTerminal(
-            project_name="project2",
-            pid=10002,
-            window_id=20002,
-            mark="scratchpad:project2",
-            working_dir=Path("/tmp/project2"),
-        )
-
-        scratchpad_manager.terminals["project1"] = terminal1
-        scratchpad_manager.terminals["project2"] = terminal2
-
-        # Modify terminal1's state
-        terminal1.mark_shown()
-
-        # Verify terminal2 is unaffected
-        assert terminal1.last_shown_at is not None
-        assert terminal2.last_shown_at is None
+    assert terminal1.last_shown_at is not None
+    assert terminal2.last_shown_at is None

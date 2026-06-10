@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from models.window_state import (
+from i3_project_daemon.models.window_state import (
     WindowState,
     WindowStateInfo,
     RunMode,

@@ -9,8 +9,8 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.scratchpad_manager import ScratchpadManager
-from models.scratchpad import ScratchpadTerminal
+from i3_project_daemon.services.scratchpad_manager import ScratchpadManager
+from i3_project_daemon.models.scratchpad import ScratchpadTerminal
 
 
 @pytest.fixture

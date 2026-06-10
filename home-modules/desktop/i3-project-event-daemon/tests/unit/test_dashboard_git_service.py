@@ -7,7 +7,9 @@ import importlib.util
 import sys
 import time
 from pathlib import Path
+from unittest.mock import AsyncMock
 
+import pytest
 
 PACKAGE_ROOT = Path(__file__).parent.parent.parent
 
@@ -131,3 +133,117 @@ def test_apply_missing_snapshot_to_session_clears_git_fields() -> None:
     assert session["git_snapshot"] == {}
     assert session["git_state"] == "unknown"
     assert session["git_compact"] == ""
+
+
+@pytest.mark.asyncio
+async def test_hydrate_runtime_git_state_enriches_sessions_and_worktrees() -> None:
+    service = DashboardGitService()
+    runtime_snapshot = {
+        "active_context": {
+            "qualified_name": "vpittamp/nixos-config:main",
+        },
+        "current_ai_session_key": "session-1",
+    }
+    sessions = [
+        {
+            "session_key": "session-1",
+            "project_name": "vpittamp/nixos-config:main",
+        },
+        {
+            "session_key": "session-2",
+            "project_name": "vpittamp/nixos-config:main",
+        },
+    ]
+    build_worktrees = AsyncMock(return_value=[{
+        "qualified_name": "vpittamp/nixos-config:main",
+        "path": "/tmp/nixos-config",
+        "branch": "main",
+        "is_active": True,
+        "visible_window_count": 1,
+        "scoped_window_count": 1,
+        "is_clean": True,
+    }])
+    get_snapshot = AsyncMock(return_value={
+        "state": "dirty",
+        "freshness": "fresh",
+        "status_compact": "● 2",
+        "status_tooltip": "Status: 2 modified",
+        "attribution": "exact_worktree",
+        "has_conflicts": False,
+        "ahead": 0,
+        "behind": 0,
+        "staged_count": 0,
+        "modified_count": 2,
+        "untracked_count": 0,
+        "dirty_count": 2,
+    })
+
+    await service.hydrate_runtime_git_state(
+        runtime_snapshot,
+        sessions,
+        build_dashboard_worktrees=build_worktrees,
+        get_or_schedule_git_snapshot=get_snapshot,
+    )
+
+    get_snapshot.assert_awaited_once()
+    assert sessions[0]["git_state"] == "dirty"
+    assert sessions[1]["git_compact"] == "● 2"
+    assert runtime_snapshot["dashboard_worktrees"][0]["git_state"] == "dirty"
+    assert runtime_snapshot["dashboard_worktrees"][0]["dirty_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_refresh_git_snapshot_notifies_only_after_cached_fingerprint_changes() -> None:
+    service = DashboardGitService()
+    base_snapshot = {
+        "available": True,
+        "worktree_path": "/tmp/nixos-config",
+        "qualified_name": "vpittamp/nixos-config:main",
+        "branch": "main",
+        "head_oid_short": "abc1234",
+        "state": "clean",
+        "has_conflicts": False,
+        "staged_count": 0,
+        "modified_count": 0,
+        "untracked_count": 0,
+        "dirty_count": 0,
+        "ahead": 0,
+        "behind": 0,
+        "repo_root": "/tmp/nixos-config",
+        "snapshot_at": int(time.time()),
+        "source": "git_probe",
+        "probe_success": True,
+    }
+    dirty_snapshot = dict(
+        base_snapshot,
+        state="dirty",
+        modified_count=1,
+        dirty_count=1,
+    )
+    service.probe_git_snapshot = AsyncMock(side_effect=[
+        base_snapshot,
+        dict(base_snapshot),
+        dirty_snapshot,
+    ])
+    notifications: list[str] = []
+
+    async def notify(event_type: str) -> None:
+        notifications.append(event_type)
+
+    await service.refresh_git_snapshot(
+        worktree_path="/tmp/nixos-config",
+        notify=True,
+        notify_state_change=notify,
+    )
+    await service.refresh_git_snapshot(
+        worktree_path="/tmp/nixos-config",
+        notify=True,
+        notify_state_change=notify,
+    )
+    await service.refresh_git_snapshot(
+        worktree_path="/tmp/nixos-config",
+        notify=True,
+        notify_state_change=notify,
+    )
+
+    assert notifications == ["ai_session_git_changed"]

@@ -76,8 +76,9 @@ async def test_notify_state_change_handles_subscriber_set_mutation(server):
 
     first_writer = _DummyWriter(on_drain=remove_second)
     second_writer = _DummyWriter()
-    server.state_change_subscribers = {first_writer, second_writer}
-    server._dashboard_event_payload = AsyncMock(return_value={
+    server.dashboard_service.subscribers = {first_writer, second_writer}
+    server.state_change_subscribers = server.dashboard_service.subscribers
+    server.dashboard_service.event_payload = AsyncMock(return_value={
         "schema_version": "i3pm.dashboard.v2",
         "snapshot_version": 1,
         "focus_state": {},
@@ -104,7 +105,7 @@ async def test_notify_state_change_handles_subscriber_set_mutation(server):
         "worktrees",
     ]
     assert params["payload"]["schema_version"] == "i3pm.dashboard.v2"
-    server._dashboard_event_payload.assert_awaited_once_with(params["changed_keys"])
+    server.dashboard_service.event_payload.assert_awaited_once_with(params["changed_keys"])
 
 
 @pytest.mark.asyncio

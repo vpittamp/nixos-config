@@ -24,8 +24,8 @@ from layout.models import (
     RestoreCorrelation,
     CorrelationStatus,
 )
-from models.config import ProjectConfiguration
-from models.legacy import DaemonState
+from i3_project_daemon.models.config import ProjectConfiguration
+from i3_project_daemon.models.legacy import DaemonState
 
 
 # ============================================================================
