@@ -399,8 +399,8 @@ async def test_session_focus_local_tmux_attachable_rebinds_managed_terminal(serv
         "terminal_anchor_id": "anchor-1",
     })
     server._window_focus = AsyncMock(return_value={"success": True, "verification": {"success": True}})
-    server._select_tmux_target = Mock(return_value={"success": True, "reason": "ok"})
-    server._verify_tmux_target = Mock(return_value={
+    server.session_action_service.select_tmux_target = Mock(return_value={"success": True, "reason": "ok"})
+    server.session_action_service.verify_tmux_target = Mock(return_value={
         "success": True,
         "reason": "ok",
         "active_tmux_pane": "%9",
@@ -441,7 +441,7 @@ async def test_session_close_local_tmux_kills_tracked_pane(server):
         },
     }
     server._session_list = AsyncMock(return_value={"sessions": [dict(local_session)]})
-    server._kill_tmux_pane = Mock(return_value={"success": True, "reason": "ok", "stderr": ""})
+    server.session_action_service.kill_tmux_pane = Mock(return_value={"success": True, "reason": "ok", "stderr": ""})
     server.notify_state_change = AsyncMock()
     server._set_focus_overrides(session_key="session-local-pane", window_id=12, connection_key="local@thinkpad")
     server._connection_target_is_current_host = lambda connection_key: connection_key == "local@thinkpad"
@@ -451,7 +451,7 @@ async def test_session_close_local_tmux_kills_tracked_pane(server):
     assert result["success"] is True
     assert result["close_mode"] == "local_tmux_pane"
     assert result["killed_tmux_pane"] == "%7"
-    server._kill_tmux_pane.assert_called_once_with(
+    server.session_action_service.kill_tmux_pane.assert_called_once_with(
         execution_mode="local",
         tmux_pane="%7",
         remote_target="local@thinkpad",
@@ -479,7 +479,7 @@ async def test_session_close_remote_tmux_uses_source_connection_key(server):
         },
     }
     server._session_list = AsyncMock(return_value={"sessions": [dict(remote_session)]})
-    server._kill_tmux_pane = Mock(return_value={"success": True, "reason": "ok", "stderr": ""})
+    server.session_action_service.kill_tmux_pane = Mock(return_value={"success": True, "reason": "ok", "stderr": ""})
     server.notify_state_change = AsyncMock()
     server._connection_target_is_current_host = lambda _connection_key: False
 
@@ -487,7 +487,7 @@ async def test_session_close_remote_tmux_uses_source_connection_key(server):
 
     assert result["success"] is True
     assert result["close_mode"] == "remote_tmux_pane"
-    server._kill_tmux_pane.assert_called_once_with(
+    server.session_action_service.kill_tmux_pane.assert_called_once_with(
         execution_mode="ssh",
         tmux_pane="%5",
         remote_target="vpittamp@ryzen:22",
@@ -835,8 +835,8 @@ async def test_session_focus_tmux_target_uses_tmux_verification(server, monkeypa
     }
     server._session_list = AsyncMock(return_value={"sessions": [dict(local_session)]})
     server._window_focus = AsyncMock(return_value={"success": True, "verification": {"success": True}})
-    server._select_tmux_target = lambda **_kwargs: {"success": True, "reason": "ok", "stderr": ""}
-    server._verify_tmux_target = lambda **_kwargs: {
+    server.session_action_service.select_tmux_target = lambda **_kwargs: {"success": True, "reason": "ok", "stderr": ""}
+    server.session_action_service.verify_tmux_target = lambda **_kwargs: {
         "success": True,
         "reason": "ok",
         "active_tmux_pane": "%1",
@@ -1193,12 +1193,12 @@ async def test_focus_remote_session_attach_prefers_already_bound_window(server):
             "focused_window_id": 39,
         },
     })
-    server._select_tmux_target = lambda **_kwargs: {
+    server.session_action_service.select_tmux_target = lambda **_kwargs: {
         "success": True,
         "reason": "ok",
         "stderr": "",
     }
-    server._verify_tmux_target = lambda **_kwargs: {
+    server.session_action_service.verify_tmux_target = lambda **_kwargs: {
         "success": True,
         "reason": "ok",
         "active_tmux_pane": "%2",
@@ -1275,12 +1275,12 @@ async def test_focus_remote_session_attach_relaunches_live_window_without_exact_
             "focused_window_id": 44,
         },
     })
-    server._select_tmux_target = lambda **_kwargs: {
+    server.session_action_service.select_tmux_target = lambda **_kwargs: {
         "success": True,
         "reason": "ok",
         "stderr": "",
     }
-    server._verify_tmux_target = lambda **_kwargs: {
+    server.session_action_service.verify_tmux_target = lambda **_kwargs: {
         "success": True,
         "reason": "ok",
         "active_tmux_pane": "%3",
@@ -1369,9 +1369,9 @@ async def test_select_tmux_target_uses_local_socket_for_current_host_ssh_context
         commands.append(args)
         return _Result()
 
-    monkeypatch.setattr(ipc_server_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(server.session_action_service, "_run_command", fake_run)
 
-    result = server._select_tmux_target(
+    result = server.session_action_service.select_tmux_target(
         execution_mode="ssh",
         tmux_session="i3pm-test",
         tmux_window="1:codex-raw",

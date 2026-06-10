@@ -67,6 +67,7 @@ from .services.display_service import DisplayService
 from .services.focus_service import FocusService
 from .services.herdr_service import HerdrService
 from .services.launch_service import LaunchService
+from .services.session_action_service import SessionActionService
 from .services.session_preview_service import SessionPreviewService
 from .models.window_command import CommandBatch
 
@@ -548,6 +549,11 @@ class IPCServer:
             normalize_connection_key=lambda value: self._normalize_connection_key(value),
             schema_version=FOCUS_STATE_SCHEMA_VERSION,
         )
+        self.session_action_service = SessionActionService(
+            parse_remote_target=self._parse_remote_target,
+            connection_target_is_current_host=lambda value: self._connection_target_is_current_host(value),
+            run_command=lambda *args, **kwargs: subprocess.run(*args, **kwargs),
+        )
         self.display_service = DisplayService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
             output_configure=lambda params: self._output_configure(params),
@@ -564,7 +570,7 @@ class IPCServer:
             transport_kind_for_target_host=lambda value: self._transport_kind_for_target_host(value),
             local_host_alias=lambda: self._local_host_alias(),
             resolve_terminal_launch_transport=lambda **kwargs: self._resolve_terminal_launch_transport(**kwargs),
-            tmux_command_prefix=lambda tmux_socket="": self._tmux_command_prefix(tmux_socket),
+            tmux_command_prefix=lambda tmux_socket="": self.session_action_service.tmux_command_prefix(tmux_socket),
             canonical_tmux_socket=lambda: self._canonical_tmux_socket(),
             run_command=lambda *args, **kwargs: subprocess.run(*args, **kwargs),
             repo_root=lambda: self._repo_root(),
@@ -7953,13 +7959,6 @@ class IPCServer:
                 port = 22
         return user_part.strip(), host.strip(), port
 
-    @staticmethod
-    def _tmux_command_prefix(tmux_socket: str = "") -> str:
-        socket_path = str(tmux_socket or "").strip()
-        if socket_path:
-            return f"tmux -S {shlex.quote(socket_path)}"
-        return "tmux"
-
     def _resolve_terminal_launch_transport(
         self,
         *,
@@ -7971,208 +7970,6 @@ class IPCServer:
         if mode != "ssh":
             return "local_helper"
         return "remote_helper"
-
-    def _select_tmux_target(
-        self,
-        *,
-        execution_mode: str,
-        tmux_session: str,
-        tmux_window: str,
-        tmux_pane: str = "",
-        remote_target: str = "",
-        connection_key: str = "",
-        tmux_socket: str = "",
-    ) -> Dict[str, Any]:
-        """Select a tmux window/pane locally or over SSH."""
-        if not tmux_session or not tmux_window:
-            return {
-                "success": False,
-                "reason": "missing_tmux_target",
-            }
-
-        tmux_cmd = self._tmux_command_prefix(tmux_socket)
-        tmux_window_index = str(tmux_window or "").split(":", 1)[0].strip() or str(tmux_window or "").strip()
-        select_script = (
-            f"{tmux_cmd} select-window -t {shlex.quote(f'{tmux_session}:{tmux_window_index}')} >/dev/null 2>&1"
-        )
-        if tmux_pane:
-            select_script += f" && {tmux_cmd} select-pane -t {shlex.quote(tmux_pane)} >/dev/null 2>&1"
-
-        if execution_mode == "ssh" and not self._connection_target_is_current_host(connection_key):
-            remote_user, remote_host, remote_port = self._parse_remote_target(remote_target, connection_key)
-            if not remote_host:
-                return {
-                    "success": False,
-                    "reason": "missing_remote_target",
-                }
-            destination = f"{remote_user}@{remote_host}" if remote_user else remote_host
-            result = subprocess.run(
-                [
-                    "ssh",
-                    "-o",
-                    "BatchMode=yes",
-                    "-o",
-                    "ConnectTimeout=2",
-                    "-p",
-                    str(remote_port),
-                    destination,
-                    f"bash -lc {shlex.quote(select_script)}",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            return {
-                "success": result.returncode == 0,
-                "reason": "ok" if result.returncode == 0 else "remote_tmux_select_failed",
-                "stderr": str(result.stderr or "").strip(),
-            }
-
-        result = subprocess.run(
-            ["bash", "-lc", select_script],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        return {
-            "success": result.returncode == 0,
-            "reason": "ok" if result.returncode == 0 else "local_tmux_select_failed",
-            "stderr": str(result.stderr or "").strip(),
-        }
-
-    def _verify_tmux_target(
-        self,
-        *,
-        execution_mode: str,
-        tmux_session: str,
-        tmux_window: str,
-        tmux_pane: str,
-        remote_target: str = "",
-        connection_key: str = "",
-        tmux_socket: str = "",
-    ) -> Dict[str, Any]:
-        """Verify the active tmux pane for a target session/window."""
-        if not tmux_session or not tmux_window or not tmux_pane:
-            return {
-                "success": False,
-                "reason": "missing_tmux_target",
-            }
-
-        tmux_cmd = self._tmux_command_prefix(tmux_socket)
-        tmux_window_index = str(tmux_window or "").split(":", 1)[0].strip() or str(tmux_window or "").strip()
-        verify_script = (
-            f"{tmux_cmd} list-panes -t {shlex.quote(f'{tmux_session}:{tmux_window_index}')} "
-            "-F '#{pane_active} #{pane_id}' | "
-            "awk '$1 == 1 { print $2; exit }'"
-        )
-
-        if execution_mode == "ssh" and not self._connection_target_is_current_host(connection_key):
-            remote_user, remote_host, remote_port = self._parse_remote_target(remote_target, connection_key)
-            if not remote_host:
-                return {
-                    "success": False,
-                    "reason": "missing_remote_target",
-                }
-            destination = f"{remote_user}@{remote_host}" if remote_user else remote_host
-            result = subprocess.run(
-                [
-                    "ssh",
-                    "-o",
-                    "BatchMode=yes",
-                    "-o",
-                    "ConnectTimeout=2",
-                    "-p",
-                    str(remote_port),
-                    destination,
-                    f"bash -lc {shlex.quote(verify_script)}",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-        else:
-            result = subprocess.run(
-                ["bash", "-lc", verify_script],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-
-        active_pane = str(result.stdout or "").strip()
-        success = result.returncode == 0 and active_pane == str(tmux_pane or "").strip()
-        return {
-            "success": success,
-            "reason": "ok" if success else "tmux_target_mismatch",
-            "tmux_session": tmux_session,
-            "tmux_window": tmux_window,
-            "tmux_pane": str(tmux_pane or "").strip(),
-            "active_tmux_pane": active_pane,
-            "stderr": str(result.stderr or "").strip(),
-        }
-
-    def _kill_tmux_pane(
-        self,
-        *,
-        execution_mode: str,
-        tmux_pane: str,
-        remote_target: str = "",
-        connection_key: str = "",
-        tmux_socket: str = "",
-    ) -> Dict[str, Any]:
-        """Kill a tmux pane locally or over SSH."""
-        pane_id = str(tmux_pane or "").strip()
-        if not pane_id:
-            return {
-                "success": False,
-                "reason": "missing_tmux_pane",
-                "stderr": "",
-            }
-
-        tmux_cmd = self._tmux_command_prefix(tmux_socket)
-        kill_script = f"{tmux_cmd} kill-pane -t {shlex.quote(pane_id)} >/dev/null 2>&1"
-
-        if execution_mode == "ssh" and not self._connection_target_is_current_host(connection_key):
-            remote_user, remote_host, remote_port = self._parse_remote_target(remote_target, connection_key)
-            if not remote_host:
-                return {
-                    "success": False,
-                    "reason": "missing_remote_target",
-                    "stderr": "",
-                }
-            destination = f"{remote_user}@{remote_host}" if remote_user else remote_host
-            result = subprocess.run(
-                [
-                    "ssh",
-                    "-o",
-                    "BatchMode=yes",
-                    "-o",
-                    "ConnectTimeout=2",
-                    "-p",
-                    str(remote_port),
-                    destination,
-                    f"bash -lc {shlex.quote(kill_script)}",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            return {
-                "success": result.returncode == 0,
-                "reason": "ok" if result.returncode == 0 else "remote_tmux_kill_failed",
-                "stderr": str(result.stderr or "").strip(),
-            }
-
-        result = subprocess.run(
-            ["bash", "-lc", kill_script],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        return {
-            "success": result.returncode == 0,
-            "reason": "ok" if result.returncode == 0 else "local_tmux_kill_failed",
-            "stderr": str(result.stderr or "").strip(),
-        }
 
     def _build_window_focus_target(
         self,
@@ -8869,7 +8666,7 @@ class IPCServer:
         }
         overall_success = bool(launch_result.get("success", False)) and bool(launch_status.get("success", False)) and bool(focus_result.get("success", False))
         if overall_success and tmux_session and tmux_window:
-            tmux_result = self._select_tmux_target(
+            tmux_result = self.session_action_service.select_tmux_target(
                 execution_mode="local",
                 tmux_session=tmux_session,
                 tmux_window=tmux_window,
@@ -8881,7 +8678,7 @@ class IPCServer:
             overall_success = overall_success and bool(tmux_result.get("success", False))
 
         if overall_success and tmux_session and tmux_window and tmux_pane:
-            tmux_verification = self._verify_tmux_target(
+            tmux_verification = self.session_action_service.verify_tmux_target(
                 execution_mode="local",
                 tmux_session=tmux_session,
                 tmux_window=tmux_window,
@@ -8986,7 +8783,7 @@ class IPCServer:
         tmux_pane = str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip()
         tmux_socket = str(terminal_context.get("tmux_socket") or "").strip()
         if tmux_session and tmux_window:
-            tmux_result = self._select_tmux_target(
+            tmux_result = self.session_action_service.select_tmux_target(
                 execution_mode=str(session.get("execution_mode") or terminal_context.get("execution_mode") or "local").strip() or "local",
                 tmux_session=tmux_session,
                 tmux_window=tmux_window,
@@ -9007,7 +8804,7 @@ class IPCServer:
         }
         if overall_success:
             if tmux_session and tmux_window and tmux_pane and bool(tmux_result.get("success", False)):
-                tmux_verification = self._verify_tmux_target(
+                tmux_verification = self.session_action_service.verify_tmux_target(
                     execution_mode=str(session.get("execution_mode") or terminal_context.get("execution_mode") or "local").strip() or "local",
                     tmux_session=tmux_session,
                     tmux_window=tmux_window,
@@ -9151,7 +8948,7 @@ class IPCServer:
         target_is_current_host = self._connection_target_is_current_host(connection_hint)
 
         if tmux_session and tmux_window and tmux_pane:
-            tmux_result = self._kill_tmux_pane(
+            tmux_result = self.session_action_service.kill_tmux_pane(
                 execution_mode="local" if target_is_current_host else "ssh",
                 tmux_pane=tmux_pane,
                 remote_target=remote_target,
