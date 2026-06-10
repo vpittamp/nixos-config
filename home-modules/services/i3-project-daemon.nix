@@ -90,7 +90,7 @@ let
             "Recovered after failure: ''${MESSAGE:-unknown}"
         fi
         ;;
-      failed)
+      stopped|failed)
         RESULT="''${SERVICE_RESULT:-unknown}"
         EXIT_CODE="''${EXIT_CODE:-unknown}"
         EXIT_STATUS="''${EXIT_STATUS:-unknown}"
@@ -244,7 +244,7 @@ in
         # This ensures the daemon works even after Sway restarts
         ExecStart = "${daemonWrapper}/bin/i3-project-daemon-wrapper";
         ExecStartPost = "-${daemonNotifyScript}/bin/i3pm-daemon-notify started";
-        ExecStopPost = "-${daemonNotifyScript}/bin/i3pm-daemon-notify failed";
+        ExecStopPost = "-${daemonNotifyScript}/bin/i3pm-daemon-notify stopped";
 
         # Working directory for project config
         WorkingDirectory = "%h/.config/i3";
