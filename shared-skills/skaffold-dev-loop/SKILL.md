@@ -141,10 +141,10 @@ The wrappers fix several invariants that bare `skaffold` commands violate:
 
 ## ArgoCD pause / resume
 
-If Skaffold is `kill -9`'d (or the wrapper's trap doesn't fire for any reason), Argo stays paused. Recover with:
+If Skaffold is `kill -9`'d (or the wrapper's trap doesn't fire for any reason), Argo stays paused. **The exit hook can also silently skip ryzen's app even on a clean exit** — when the resume path receives the bare module name, the `ryzen-<svc>` Application lookup no-ops with no error. Diagnostic: the app still carries `argocd.argoproj.io/skip-reconcile=true` and the live Deployment is stuck on the `workflow-builder-dev` image long after the session ended. Recover **from the workflow-builder repo root** with the `ryzen-` prefixed app name:
 
 ```bash
-ARGO_APPS="workflow-builder" bash skaffold/hooks/argo-resume.sh
+ARGO_APPS=ryzen-workflow-builder bash skaffold/hooks/argo-resume.sh
 ```
 
 Both `argo-pause.sh` and `argo-resume.sh` are idempotent and accept positional args:
@@ -195,6 +195,7 @@ Before calling the outer loop done:
 
 - **Stacks repo: dedicated cache clone for commit-pin.** `commit-pin.sh` avoids touching the developer's primary `stacks/main` checkout; it uses a dedicated cache clone at `~/.cache/skaffold/stacks-ryzen` tracking the configured remote (GitHub `main` branch — `inner-loop` is retired). The cache is force-reset to the remote tip each run, so any local cruft is discarded.
 - **`stacks/main` is a git worktree.** `.git` is a file (containing `gitdir: ...`), not a directory. Don't use `[ -d "$stacks_dir/.git" ]` to check repo presence; use `git rev-parse --git-dir`.
+- **A killed `skaffold dev` can silently skip the ryzen Argo resume AND leave stale git `index.lock`s.** Two distinct residues after a non-clean exit (and the resume skip has been seen even on apparently clean exits): (1) the `ryzen-<svc>` app stays paused — symptom is the `argocd.argoproj.io/skip-reconcile=true` annotation plus a Deployment stuck on the `workflow-builder-dev` image; fix with `ARGO_APPS=ryzen-workflow-builder bash skaffold/hooks/argo-resume.sh` run from the wfb repo root (see *ArgoCD pause / resume*). (2) a stale `index.lock` under the worktree git dir — `.bare/worktrees/main/index.lock` in the workflow-builder repo AND in the stacks cached clone — which makes every subsequent git operation fail `Unable to create ... index.lock: File exists`. Verify no git process is still running (`pgrep -fa git`), then remove the lock file.
 - **Skaffold v2.17's tar walker mis-parses allowlist-style `.dockerignore`.** With `inputDigest` tag policy it errors "file pattern [package.json] must match at least one file" before docker even sees the context. Use `gitCommit:AbbrevCommitSha` tag policy for dev images instead.
 - **`context: .` in a module yaml resolves to the module file's directory** (`skaffold/`), not the repo root. Use `context: ..` and adjust `dockerfile:` accordingly so build context = `workflow-builder/main/`.
 - **PodSecurity warning at apply time is expected.** The dev container runs as root for hot-reload; the namespace's `restricted:latest` profile warns but doesn't block. Don't try to "fix" by going non-root.
