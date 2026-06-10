@@ -55,6 +55,7 @@ from .services.window_filter import (
 )
 from .services.registry_loader import RegistryLoader, RegistryApp
 from .services.agent_harness import CodexHarnessManager
+from .services.herdr_service import HerdrService
 from .models.window_command import CommandBatch
 
 logger = logging.getLogger(__name__)
@@ -76,22 +77,6 @@ ICON_EXTENSIONS = (".svg", ".png", ".xpm")
 APP_REGISTRY_PATH = Path.home() / ".config/i3/application-registry.json"
 PWA_REGISTRY_PATH = Path.home() / ".config/i3/pwa-registry.json"
 CHROME_SCOPED_TMP_PREFIX = "/tmp/com.google.Chrome.scoped_dir."
-HERDR_EVENT_SUBSCRIPTION_TYPES = (
-    "workspace.created",
-    "workspace.updated",
-    "workspace.renamed",
-    "workspace.closed",
-    "workspace.focused",
-    "tab.created",
-    "tab.closed",
-    "tab.focused",
-    "tab.renamed",
-    "pane.created",
-    "pane.closed",
-    "pane.focused",
-    "pane.exited",
-    "pane.agent_detected",
-)
 DASHBOARD_SCHEMA_VERSION = "i3pm.dashboard.v2"
 FOCUS_STATE_SCHEMA_VERSION = "i3pm.focus_state.v1"
 DASHBOARD_EVENT_SCHEMA_VERSION = "i3pm.dashboard.event.v1"
@@ -600,11 +585,10 @@ class IPCServer:
         self._herdr_git_metadata_cache: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
         self._herdr_remote_targets_cache: List[Dict[str, str]] = []
         self._herdr_remote_targets_cache_signature: Tuple[Any, ...] = ("", False, 0, 0)
-        self._herdr_event_subscription_task: Optional[asyncio.Task] = None
-        self._herdr_event_notify_task: Optional[asyncio.Task] = None
-        self._herdr_event_notify_delay: float = 0.05
-        self._herdr_event_subscription_initial_backoff: float = 0.5
-        self._herdr_event_subscription_max_backoff: float = 30.0
+        self.herdr_service = HerdrService(
+            notify_state_change=lambda event_type: self.notify_state_change(event_type),
+            invalidate_snapshot_cache=self.invalidate_herdr_snapshot_cache,
+        )
         self._malformed_json_count: int = 0
         self._deferred_filter_task: Optional[asyncio.Task] = None
         self._malformed_json_last_at: Optional[str] = None
@@ -744,63 +728,66 @@ class IPCServer:
 
     def start_herdr_event_subscription(self) -> None:
         """Start the local Herdr event subscription task."""
-        if self._herdr_event_subscription_task and not self._herdr_event_subscription_task.done():
-            return
-        self._herdr_event_subscription_task = asyncio.create_task(
-            self._run_herdr_event_subscription(),
-            name="i3pm-herdr-event-subscription",
-        )
+        self.herdr_service.start_subscription()
 
     async def stop_herdr_event_subscription(self) -> None:
         """Cancel the local Herdr event subscription task."""
-        notify_task = self._herdr_event_notify_task
-        self._herdr_event_notify_task = None
-        if notify_task and not notify_task.done():
-            notify_task.cancel()
-            await self._await_with_timeout(
-                asyncio.gather(notify_task, return_exceptions=True),
-                timeout=0.5,
-                timeout_message="Timed out waiting for Herdr event notification debounce to stop; continuing shutdown",
-            )
+        await self.herdr_service.stop_subscription()
 
-        task = self._herdr_event_subscription_task
-        self._herdr_event_subscription_task = None
-        if not task or task.done():
-            return
-        task.cancel()
-        await self._await_with_timeout(
-            asyncio.gather(task, return_exceptions=True),
-            timeout=0.5,
-            timeout_message="Timed out waiting for Herdr event subscription to stop; continuing shutdown",
-        )
+    @property
+    def _herdr_event_subscription_task(self) -> Optional[asyncio.Task]:
+        return self.herdr_service.subscription_task
+
+    @_herdr_event_subscription_task.setter
+    def _herdr_event_subscription_task(self, value: Optional[asyncio.Task]) -> None:
+        self.herdr_service.subscription_task = value
+
+    @property
+    def _herdr_event_notify_task(self) -> Optional[asyncio.Task]:
+        return self.herdr_service.notify_task
+
+    @_herdr_event_notify_task.setter
+    def _herdr_event_notify_task(self, value: Optional[asyncio.Task]) -> None:
+        self.herdr_service.notify_task = value
+
+    @property
+    def _herdr_event_notify_delay(self) -> float:
+        return self.herdr_service.notify_delay
+
+    @_herdr_event_notify_delay.setter
+    def _herdr_event_notify_delay(self, value: float) -> None:
+        self.herdr_service.notify_delay = float(value)
+
+    @property
+    def _herdr_event_subscription_initial_backoff(self) -> float:
+        return self.herdr_service.subscription_initial_backoff
+
+    @_herdr_event_subscription_initial_backoff.setter
+    def _herdr_event_subscription_initial_backoff(self, value: float) -> None:
+        self.herdr_service.subscription_initial_backoff = float(value)
+
+    @property
+    def _herdr_event_subscription_max_backoff(self) -> float:
+        return self.herdr_service.subscription_max_backoff
+
+    @_herdr_event_subscription_max_backoff.setter
+    def _herdr_event_subscription_max_backoff(self, value: float) -> None:
+        self.herdr_service.subscription_max_backoff = float(value)
 
     def _herdr_socket_path(self) -> Path:
         """Return the local Herdr API socket path."""
-        override = str(os.environ.get("I3PM_HERDR_SOCKET") or "").strip()
-        if override:
-            return Path(os.path.expanduser(override))
-        return Path.home() / ".config" / "herdr" / "herdr.sock"
+        return self.herdr_service.socket_path()
 
     def _herdr_event_subscribe_payload(self) -> Dict[str, Any]:
         """Return the JSON-RPC payload for Herdr's event stream API."""
-        return {
-            "id": "i3pm-herdr-events",
-            "method": "events.subscribe",
-            "params": {
-                "subscriptions": [
-                    {"type": event_type}
-                    for event_type in HERDR_EVENT_SUBSCRIPTION_TYPES
-                ],
-            },
-        }
+        return self.herdr_service.event_subscribe_payload()
 
     async def _write_herdr_json_line(
         self,
         writer: asyncio.StreamWriter,
         payload: Dict[str, Any],
     ) -> None:
-        writer.write(json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\n")
-        await writer.drain()
+        await self.herdr_service.write_json_line(writer, payload)
 
     async def _read_herdr_json_line(
         self,
@@ -808,90 +795,23 @@ class IPCServer:
         *,
         timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
-        if timeout:
-            line = await asyncio.wait_for(reader.readline(), timeout=timeout)
-        else:
-            line = await reader.readline()
-        if not line:
-            raise ConnectionError("Herdr event stream closed")
-        payload = json.loads(line.decode("utf-8"))
-        if not isinstance(payload, dict):
-            raise ValueError("Herdr event stream returned non-object JSON")
-        return payload
+        return await self.herdr_service.read_json_line(reader, timeout=timeout)
 
     async def _connect_herdr_event_subscription_once(self) -> None:
         """Connect once to the local Herdr event stream and process events until it closes."""
-        socket_path = self._herdr_socket_path()
-        reader, writer = await asyncio.open_unix_connection(str(socket_path))
-        try:
-            request = self._herdr_event_subscribe_payload()
-            await self._write_herdr_json_line(writer, request)
-            ack = await self._read_herdr_json_line(reader, timeout=3.0)
-            result = ack.get("result") if isinstance(ack, dict) else {}
-            if (
-                ack.get("id") != request["id"]
-                or not isinstance(result, dict)
-                or result.get("type") != "subscription_started"
-            ):
-                raise RuntimeError(f"Herdr event subscription failed: {ack}")
-            logger.info("Subscribed to local Herdr events at %s", socket_path)
-
-            while True:
-                event = await self._read_herdr_json_line(reader)
-                await self._handle_herdr_subscription_event(event)
-        finally:
-            writer.close()
-            await self._await_with_timeout(
-                writer.wait_closed(),
-                timeout=self._CLIENT_CLOSE_TIMEOUT_SECONDS,
-                timeout_message="Timed out waiting for Herdr event socket to close; continuing",
-            )
+        await self.herdr_service.connect_subscription_once()
 
     async def _run_herdr_event_subscription(self) -> None:
         """Maintain a local Herdr event subscription with bounded reconnect backoff."""
-        backoff = self._herdr_event_subscription_initial_backoff
-        while True:
-            try:
-                await self._connect_herdr_event_subscription_once()
-                backoff = self._herdr_event_subscription_initial_backoff
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                logger.debug("Local Herdr event subscription unavailable: %s", e)
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, self._herdr_event_subscription_max_backoff)
+        await self.herdr_service.run_subscription()
 
     async def _handle_herdr_subscription_event(self, event: Dict[str, Any]) -> None:
         """Invalidate Herdr-derived dashboard state after a local Herdr event."""
-        if not isinstance(event, dict):
-            return
-        self.invalidate_herdr_snapshot_cache()
-        self._schedule_herdr_state_change_notification()
+        await self.herdr_service.handle_subscription_event(event)
 
     def _schedule_herdr_state_change_notification(self) -> None:
         """Coalesce bursts of local Herdr socket events into one dashboard update."""
-        task = self._herdr_event_notify_task
-        if task is not None and not task.done():
-            return
-
-        async def notify_later() -> None:
-            try:
-                delay = max(0.0, float(self._herdr_event_notify_delay))
-                if delay > 0:
-                    await asyncio.sleep(delay)
-                await self.notify_state_change("ai_session_herdr_changed")
-            except asyncio.CancelledError:
-                raise
-            finally:
-                current = self._herdr_event_notify_task
-                if current is task_ref:
-                    self._herdr_event_notify_task = None
-
-        task_ref = asyncio.create_task(
-            notify_later(),
-            name="i3pm-herdr-event-notify",
-        )
-        self._herdr_event_notify_task = task_ref
+        self.herdr_service.schedule_state_change_notification()
 
     def invalidate_herdr_snapshot_cache(self) -> None:
         """Clear cached Herdr snapshots so the next dashboard read is fresh."""

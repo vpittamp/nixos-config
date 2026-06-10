@@ -1175,7 +1175,7 @@ async def test_herdr_event_subscription_sends_expected_payload_and_invalidates_c
         await writer.wait_closed()
 
     unix_server = await asyncio.start_unix_server(handle_client, path=str(socket_path))
-    monkeypatch.setattr(server, "_herdr_socket_path", lambda: socket_path)
+    monkeypatch.setattr(server.herdr_service, "socket_path", lambda: socket_path)
     server._herdr_snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
     server._herdr_snapshot_cache_time = 123.0
     server._herdr_event_notify_delay = 0.0
@@ -1252,7 +1252,7 @@ async def test_herdr_event_subscription_retries_after_failure(server):
             second_attempt.set()
         raise RuntimeError("invalid ack")
 
-    server._connect_herdr_event_subscription_once = fail_connect_once
+    server.herdr_service.connect_subscription_once = fail_connect_once
     server._herdr_event_subscription_initial_backoff = 0.01
     server._herdr_event_subscription_max_backoff = 0.02
 
