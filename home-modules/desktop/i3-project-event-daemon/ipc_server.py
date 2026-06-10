@@ -8369,145 +8369,19 @@ class IPCServer:
         intent_epoch: int = 0,
     ) -> Dict[str, Any]:
         """Attach a local tmux-backed session into a managed project terminal."""
-        project_name = str(
-            session.get("canonical_project_name")
-            or session.get("project_name")
-            or session.get("project")
-            or ""
-        ).strip()
-        if not project_name:
-            raise RuntimeError(f"Session {session_key} is missing canonical worktree identity")
-        if not self._user_intent_is_current(intent_epoch):
-            return self._stale_intent_result(
-                session_key=session_key,
-                project_name=project_name,
-                reason="superseded_before_local_attach",
-            )
-
-        terminal_context = session.get("terminal_context") or {}
-        if not isinstance(terminal_context, dict):
-            terminal_context = {}
-
-        launch_wrapper = await self._launch_open({
-            "app_name": "terminal",
-            "qualified_name": project_name,
-            "context_variant_override": "local",
-            "__intent_epoch": intent_epoch,
-        })
-        launch_result = dict(launch_wrapper.get("launch") or {})
-        launch_spec = dict(launch_wrapper.get("spec") or {})
-        reused_existing = bool(launch_result.get("reused_existing", False))
-        launch_id = str(launch_result.get("launch_id") or "").strip()
-        terminal_anchor_id = str(launch_spec.get("terminal_anchor_id") or "").strip()
-        local_window_id = int(launch_result.get("window_id") or 0)
-
-        launch_status: Dict[str, Any] = {
-            "success": True,
-            "launch_id": launch_id,
-            "status": "reused_existing" if reused_existing else "not_applicable",
-            "reason": "reused_existing" if reused_existing else "not_applicable",
-        }
-        if not reused_existing and launch_id:
-            launch_status = await self.launch_service.wait_for_launch_status(
-                launch_id,
-                terminal_anchor_id=terminal_anchor_id,
-            )
-
-        if local_window_id <= 0 and terminal_anchor_id:
-            anchor_result = await self.launch_service.wait_for_terminal_window(terminal_anchor_id)
-            local_window_id = int(anchor_result.get("window_id") or 0)
-        if local_window_id <= 0:
-            raise RuntimeError(
-                f"Local session terminal for {session_key} did not bind to a live window"
-            )
-
-        if not self._user_intent_is_current(intent_epoch):
-            return self._stale_intent_result(
-                session_key=session_key,
-                project_name=project_name,
-                reason="superseded_before_local_focus",
-            )
-
-        focus_result = await self._window_focus({
-            "window_id": local_window_id,
-            "project_name": project_name,
-            "target_variant": "local",
-            "connection_key": str(session.get("focus_connection_key") or session.get("connection_key") or "").strip(),
-        })
-
-        tmux_session = str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip()
-        tmux_window = str(session.get("tmux_window") or terminal_context.get("tmux_window") or "").strip()
-        tmux_pane = str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip()
-        tmux_socket = str(terminal_context.get("tmux_socket") or "").strip()
-        tmux_result: Dict[str, Any] = {
-            "success": True,
-            "reason": "not_required",
-        }
-        verification: Dict[str, Any] = {
-            "success": False,
-            "reason": "focus_failed",
-            "session_key": session_key,
-            "current_session_key": "",
-        }
-        overall_success = bool(launch_result.get("success", False)) and bool(launch_status.get("success", False)) and bool(focus_result.get("success", False))
-        if overall_success and tmux_session and tmux_window:
-            tmux_result = self.session_action_service.select_tmux_target(
-                execution_mode="local",
-                tmux_session=tmux_session,
-                tmux_window=tmux_window,
-                tmux_pane=tmux_pane,
-                remote_target="",
-                connection_key=str(session.get("connection_key") or terminal_context.get("connection_key") or "").strip(),
-                tmux_socket=tmux_socket,
-            )
-            overall_success = overall_success and bool(tmux_result.get("success", False))
-
-        if overall_success and tmux_session and tmux_window and tmux_pane:
-            tmux_verification = self.session_action_service.verify_tmux_target(
-                execution_mode="local",
-                tmux_session=tmux_session,
-                tmux_window=tmux_window,
-                tmux_pane=tmux_pane,
-                remote_target="",
-                connection_key=str(session.get("connection_key") or terminal_context.get("connection_key") or "").strip(),
-                tmux_socket=tmux_socket,
-            )
-            verification = {
-                "success": bool(tmux_verification.get("success", False)),
-                "reason": str(tmux_verification.get("reason") or "tmux_target_mismatch"),
-                "session_key": session_key,
-                "current_session_key": session_key if bool(tmux_verification.get("success", False)) else "",
-                "verification_source": "tmux",
-                "active_tmux_pane": str(tmux_verification.get("active_tmux_pane") or "").strip(),
-                "tmux_pane": str(tmux_verification.get("tmux_pane") or "").strip(),
-            }
-            overall_success = overall_success and bool(verification.get("success", False))
-
-        focus_state_after = await self._focus_state({})
-        if overall_success:
-            self._set_focus_overrides(
-                session_key=session_key,
-                window_id=local_window_id,
-                connection_key=str(session.get("focus_connection_key") or session.get("connection_key") or "").strip(),
-            )
-
-        return {
-            "success": overall_success,
-            "session_key": session_key,
-            "window_id": local_window_id,
-            "surface_key": str(session.get("surface_key") or "").strip(),
-            "conflict_state": str(session.get("conflict_state") or "").strip(),
-            "focus_mode": "local_tmux_attachable",
-            "focus_target_host": "",
-            "focus": focus_result,
-            "launch": launch_result,
-            "launch_status": launch_status,
-            "current_ai_session_key_after": str(focus_state_after.get("current_ai_session_key") or "").strip(),
-            "focused_window_id_after": int(focus_state_after.get("focused_window_id") or 0),
-            "focus_state_after": focus_state_after,
-            "tmux": tmux_result,
-            "verification": verification,
-        }
+        return await self.session_action_service.focus_local_session_attach(
+            session_key=session_key,
+            session=session,
+            intent_epoch=intent_epoch,
+            user_intent_is_current=self._user_intent_is_current,
+            stale_intent_result=self._stale_intent_result,
+            launch_open=self._launch_open,
+            wait_for_launch_status=self.launch_service.wait_for_launch_status,
+            wait_for_terminal_window=self.launch_service.wait_for_terminal_window,
+            window_focus=self._window_focus,
+            focus_state=self._focus_state,
+            set_focus_overrides=self._set_focus_overrides,
+        )
 
     async def _session_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Focus an AI session by its daemon-owned session key."""

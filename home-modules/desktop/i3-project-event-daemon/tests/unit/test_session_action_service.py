@@ -144,6 +144,123 @@ def test_kill_tmux_pane_rejects_missing_remote_target():
 
 
 @pytest.mark.asyncio
+async def test_focus_local_session_attach_rebinds_managed_terminal_and_verifies_tmux():
+    service, _calls = make_service()
+    service.select_tmux_target = MagicMock(return_value={"success": True, "reason": "ok"})
+    service.verify_tmux_target = MagicMock(return_value={
+        "success": True,
+        "reason": "ok",
+        "active_tmux_pane": "%9",
+        "tmux_pane": "%9",
+    })
+    launch_open = AsyncMock(return_value={
+        "success": True,
+        "launch": {
+            "success": True,
+            "launch_id": "launch-1",
+        },
+        "spec": {
+            "terminal_anchor_id": "anchor-1",
+        },
+    })
+    set_focus_overrides = MagicMock()
+
+    result = await service.focus_local_session_attach(
+        session_key="session-local-attach",
+        session={
+            "session_key": "session-local-attach",
+            "canonical_project_name": "PittampalliOrg/workflow-builder:main",
+            "focus_connection_key": "local@thinkpad",
+            "connection_key": "local@thinkpad",
+            "surface_key": "surface-local-attach",
+            "conflict_state": "",
+            "tmux_session": "i3pm-workflow-builder",
+            "tmux_window": "0:main",
+            "tmux_pane": "%9",
+            "terminal_context": {
+                "tmux_socket": "/tmp/tmux-local",
+                "connection_key": "local@thinkpad",
+            },
+        },
+        intent_epoch=3,
+        user_intent_is_current=lambda epoch: epoch == 3,
+        stale_intent_result=MagicMock(),
+        launch_open=launch_open,
+        wait_for_launch_status=AsyncMock(return_value={
+            "success": True,
+            "launch_id": "launch-1",
+            "status": "running",
+            "reason": "window_bound",
+        }),
+        wait_for_terminal_window=AsyncMock(return_value={
+            "matched": True,
+            "window_id": 144,
+            "terminal_anchor_id": "anchor-1",
+        }),
+        window_focus=AsyncMock(return_value={"success": True}),
+        focus_state=AsyncMock(return_value={
+            "current_ai_session_key": "session-local-attach",
+            "focused_window_id": 144,
+        }),
+        set_focus_overrides=set_focus_overrides,
+    )
+
+    launch_open.assert_awaited_once_with({
+        "app_name": "terminal",
+        "qualified_name": "PittampalliOrg/workflow-builder:main",
+        "context_variant_override": "local",
+        "__intent_epoch": 3,
+    })
+    service.select_tmux_target.assert_called_once()
+    service.verify_tmux_target.assert_called_once()
+    set_focus_overrides.assert_called_once_with(
+        session_key="session-local-attach",
+        window_id=144,
+        connection_key="local@thinkpad",
+    )
+    assert result["success"] is True
+    assert result["focus_mode"] == "local_tmux_attachable"
+    assert result["window_id"] == 144
+    assert result["verification"]["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_focus_local_session_attach_returns_stale_result_before_launch():
+    service, _calls = make_service()
+    stale_intent_result = MagicMock(return_value={
+        "success": False,
+        "reason": "superseded_before_local_attach",
+    })
+
+    result = await service.focus_local_session_attach(
+        session_key="session-local-attach",
+        session={
+            "session_key": "session-local-attach",
+            "project_name": "PittampalliOrg/workflow-builder:main",
+        },
+        intent_epoch=1,
+        user_intent_is_current=lambda _epoch: False,
+        stale_intent_result=stale_intent_result,
+        launch_open=AsyncMock(),
+        wait_for_launch_status=AsyncMock(),
+        wait_for_terminal_window=AsyncMock(),
+        window_focus=AsyncMock(),
+        focus_state=AsyncMock(),
+        set_focus_overrides=MagicMock(),
+    )
+
+    stale_intent_result.assert_called_once_with(
+        session_key="session-local-attach",
+        project_name="PittampalliOrg/workflow-builder:main",
+        reason="superseded_before_local_attach",
+    )
+    assert result == {
+        "success": False,
+        "reason": "superseded_before_local_attach",
+    }
+
+
+@pytest.mark.asyncio
 async def test_focus_session_routes_remote_attach_and_acknowledges_boundaries():
     service, _calls = make_service()
     session = {
