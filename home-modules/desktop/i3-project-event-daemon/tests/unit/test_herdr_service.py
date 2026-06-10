@@ -290,3 +290,87 @@ def test_herdr_service_resolves_remote_action_target_from_params():
         "ssh_target": "devbox",
         "connection_key": "vpittamp@devbox:22",
     }
+
+
+def test_herdr_service_normalizes_result_arrays_and_status_labels():
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+
+    assert service.result_array({
+        "result": {
+            "panes": [
+                {"pane_id": "a"},
+                "invalid",
+                {"pane_id": "b"},
+            ],
+        },
+    }, "panes") == [{"pane_id": "a"}, {"pane_id": "b"}]
+    assert service.worktree_result_array({
+        "result": {
+            "source": {
+                "repo_key": "vpittamp/nixos-config",
+                "repo_name": "nixos-config",
+                "repo_root": "/repo",
+            },
+            "worktrees": [{
+                "path": "/repo/main",
+                "branch": "main",
+                "open_workspace_id": "workspace-a",
+            }],
+        },
+    }) == [{
+        "path": "/repo/main",
+        "branch": "main",
+        "open_workspace_id": "workspace-a",
+        "workspace_id": "workspace-a",
+        "repo_key": "vpittamp/nixos-config",
+        "repo_name": "nixos-config",
+        "repo_root": "/repo",
+        "checkout_path": "/repo/main",
+        "branch_label": "main",
+    }]
+
+    assert service.normalize_agent_status("NeedsInput") == "unknown"
+    assert service.normalize_agent_status("NeedsInput", preserve_raw=True) == "NeedsInput"
+    assert service.agent_status_state("NeedsInput") == "blocked"
+    assert service.agent_status_state("tool-running") == "working"
+    assert service.agent_status_rank("NeedsInput") > service.agent_status_rank("working")
+    assert service.normalize_state_labels({
+        "NeedsInput": "waiting",
+        "working": "running",
+        "mystery": "ignored",
+        "done": "",
+    }) == {
+        "blocked": "waiting",
+        "working": "running",
+    }
+
+
+def test_herdr_service_annotates_rows_with_host_context():
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+
+    assert service.annotate_rows(
+        [{"pane_id": "a"}],
+        host="Ryzen",
+        execution_mode="ssh",
+        connection_key="VPITTAMP@RYZEN:22",
+        ssh_target="ryzen",
+        is_remote=True,
+        normalize_connection_key=lambda value: value.lower(),
+    ) == [{
+        "pane_id": "a",
+        "host_name": "ryzen",
+        "herdr_host": "ryzen",
+        "target_host": "ryzen",
+        "execution_mode": "ssh",
+        "connection_key": "vpittamp@ryzen:22",
+        "ssh_target": "ryzen",
+        "remote_target": "ryzen",
+        "is_remote_herdr": True,
+        "is_current_host": False,
+    }]

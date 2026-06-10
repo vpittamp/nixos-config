@@ -7,6 +7,7 @@ import copy
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
@@ -358,6 +359,132 @@ class HerdrService:
             }
 
         raise ValueError("ssh_target is required for remote Herdr pane focus")
+
+    @staticmethod
+    def result_array(payload: Dict[str, Any], key: str) -> List[Dict[str, Any]]:
+        """Return a normalized object array from a Herdr JSON payload."""
+        result = payload.get("result") if isinstance(payload, dict) else {}
+        if not isinstance(result, dict):
+            result = {}
+        rows = result.get(key, [])
+        if not isinstance(rows, list):
+            return []
+        return [dict(item) for item in rows if isinstance(item, dict)]
+
+    @staticmethod
+    def worktree_result_array(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Return normalized Herdr worktree rows with source metadata filled in."""
+        result = payload.get("result") if isinstance(payload, dict) else {}
+        if not isinstance(result, dict):
+            result = {}
+        source = result.get("source")
+        if not isinstance(source, dict):
+            source = {}
+        rows = result.get("worktrees", [])
+        if not isinstance(rows, list):
+            return []
+
+        normalized: List[Dict[str, Any]] = []
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            row = dict(item)
+            if not str(row.get("workspace_id") or "").strip() and str(row.get("open_workspace_id") or "").strip():
+                row["workspace_id"] = str(row.get("open_workspace_id") or "").strip()
+            row.setdefault("repo_key", source.get("repo_key"))
+            row.setdefault("repo_name", source.get("repo_name"))
+            row.setdefault("repo_root", source.get("repo_root"))
+            row.setdefault("checkout_path", row.get("path"))
+            if str(row.get("branch") or "").strip() and not str(row.get("branch_label") or "").strip():
+                row["branch_label"] = str(row.get("branch") or "").strip()
+            normalized.append(row)
+        return normalized
+
+    @staticmethod
+    def normalize_agent_status(value: Any, *, preserve_raw: bool = False) -> str:
+        """Normalize Herdr agent status while preserving raw labels when requested."""
+        raw = str(value or "").strip()
+        if preserve_raw:
+            return raw or "unknown"
+        status = raw.lower()
+        if status in {"working", "blocked", "done", "idle", "unknown"}:
+            return status
+        return "unknown"
+
+    @staticmethod
+    def agent_status_state(value: Any) -> str:
+        """Map Herdr and display status variants to dashboard status states."""
+        raw = str(value or "").strip().lower()
+        normalized = re.sub(r"[^a-z0-9]+", "_", raw).strip("_")
+        if normalized in {"blocked", "needs_input", "needsinput", "waiting_input", "waiting_for_input"}:
+            return "blocked"
+        if normalized in {"done", "complete", "completed", "success", "succeeded", "finished"}:
+            return "done"
+        if normalized in {"working", "running", "thinking", "streaming", "tool_running", "busy"}:
+            return "working"
+        if normalized in {"idle", "ready"}:
+            return "idle"
+        return "unknown"
+
+    @classmethod
+    def agent_status_rank(cls, value: Any) -> int:
+        """Return display priority for a Herdr agent status."""
+        priority = {
+            "unknown": 0,
+            "idle": 1,
+            "working": 2,
+            "done": 3,
+            "blocked": 4,
+        }
+        return priority.get(cls.agent_status_state(value), 0)
+
+    @staticmethod
+    def normalize_text_field(value: Any) -> str:
+        """Normalize optional Herdr text fields."""
+        return str(value or "").strip()
+
+    @classmethod
+    def normalize_state_labels(cls, value: Any) -> Dict[str, str]:
+        """Normalize Herdr state label maps by canonical status state."""
+        if not isinstance(value, dict):
+            return {}
+        labels: Dict[str, str] = {}
+        for key, label in value.items():
+            state = cls.agent_status_state(key)
+            text = cls.normalize_text_field(label)
+            if state == "unknown" or not text:
+                continue
+            labels[state] = text
+        return labels
+
+    def annotate_rows(
+        self,
+        rows: List[Dict[str, Any]],
+        *,
+        host: str,
+        execution_mode: str,
+        connection_key: str,
+        ssh_target: str = "",
+        is_remote: bool = False,
+        normalize_connection_key: Callable[[str], str],
+    ) -> List[Dict[str, Any]]:
+        """Add normalized host/execution fields to Herdr rows."""
+        annotated: List[Dict[str, Any]] = []
+        host_key = self.normalize_host_key(host)
+        normalized_connection = normalize_connection_key(connection_key)
+        for row in rows:
+            item = dict(row)
+            item.setdefault("host_name", host_key)
+            item.setdefault("herdr_host", host_key)
+            item.setdefault("target_host", host_key)
+            item.setdefault("execution_mode", execution_mode)
+            item.setdefault("connection_key", normalized_connection)
+            item.setdefault("ssh_target", ssh_target)
+            item.setdefault("remote_target", ssh_target)
+            item.setdefault("is_remote_herdr", bool(is_remote))
+            item.setdefault("is_current_host", not bool(is_remote))
+            annotated.append(item)
+        return annotated
 
     def socket_path(self) -> Path:
         """Return the local Herdr API socket path."""

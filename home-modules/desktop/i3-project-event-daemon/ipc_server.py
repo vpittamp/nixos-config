@@ -9777,41 +9777,11 @@ FORMAT JSONEachRow
 
     @staticmethod
     def _herdr_result_array(payload: Dict[str, Any], key: str) -> List[Dict[str, Any]]:
-        result = payload.get("result") if isinstance(payload, dict) else {}
-        if not isinstance(result, dict):
-            result = {}
-        rows = result.get(key, [])
-        if not isinstance(rows, list):
-            return []
-        return [dict(item) for item in rows if isinstance(item, dict)]
+        return HerdrService.result_array(payload, key)
 
     @staticmethod
     def _herdr_worktree_result_array(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-        result = payload.get("result") if isinstance(payload, dict) else {}
-        if not isinstance(result, dict):
-            result = {}
-        source = result.get("source")
-        if not isinstance(source, dict):
-            source = {}
-        rows = result.get("worktrees", [])
-        if not isinstance(rows, list):
-            return []
-
-        normalized: List[Dict[str, Any]] = []
-        for item in rows:
-            if not isinstance(item, dict):
-                continue
-            row = dict(item)
-            if not str(row.get("workspace_id") or "").strip() and str(row.get("open_workspace_id") or "").strip():
-                row["workspace_id"] = str(row.get("open_workspace_id") or "").strip()
-            row.setdefault("repo_key", source.get("repo_key"))
-            row.setdefault("repo_name", source.get("repo_name"))
-            row.setdefault("repo_root", source.get("repo_root"))
-            row.setdefault("checkout_path", row.get("path"))
-            if str(row.get("branch") or "").strip() and not str(row.get("branch_label") or "").strip():
-                row["branch_label"] = str(row.get("branch") or "").strip()
-            normalized.append(row)
-        return normalized
+        return HerdrService.worktree_result_array(payload)
 
     @staticmethod
     def _herdr_normalize_repo_url(value: Any) -> str:
@@ -9951,55 +9921,23 @@ FORMAT JSONEachRow
 
     @staticmethod
     def _normalize_herdr_agent_status(value: Any, *, preserve_raw: bool = False) -> str:
-        raw = str(value or "").strip()
-        if preserve_raw:
-            return raw or "unknown"
-        status = raw.lower()
-        if status in {"working", "blocked", "done", "idle", "unknown"}:
-            return status
-        return "unknown"
+        return HerdrService.normalize_agent_status(value, preserve_raw=preserve_raw)
 
     @staticmethod
     def _herdr_agent_status_state(value: Any) -> str:
-        raw = str(value or "").strip().lower()
-        normalized = re.sub(r"[^a-z0-9]+", "_", raw).strip("_")
-        if normalized in {"blocked", "needs_input", "needsinput", "waiting_input", "waiting_for_input"}:
-            return "blocked"
-        if normalized in {"done", "complete", "completed", "success", "succeeded", "finished"}:
-            return "done"
-        if normalized in {"working", "running", "thinking", "streaming", "tool_running", "busy"}:
-            return "working"
-        if normalized in {"idle", "ready"}:
-            return "idle"
-        return "unknown"
+        return HerdrService.agent_status_state(value)
 
     @classmethod
     def _herdr_agent_status_rank(cls, value: Any) -> int:
-        priority = {
-            "unknown": 0,
-            "idle": 1,
-            "working": 2,
-            "done": 3,
-            "blocked": 4,
-        }
-        return priority.get(cls._herdr_agent_status_state(value), 0)
+        return HerdrService.agent_status_rank(value)
 
     @staticmethod
     def _normalize_herdr_text_field(value: Any) -> str:
-        return str(value or "").strip()
+        return HerdrService.normalize_text_field(value)
 
     @classmethod
     def _normalize_herdr_state_labels(cls, value: Any) -> Dict[str, str]:
-        if not isinstance(value, dict):
-            return {}
-        labels: Dict[str, str] = {}
-        for key, label in value.items():
-            state = cls._herdr_agent_status_state(key)
-            text = cls._normalize_herdr_text_field(label)
-            if state == "unknown" or not text:
-                continue
-            labels[state] = text
-        return labels
+        return HerdrService.normalize_state_labels(value)
 
     def _annotate_herdr_rows(
         self,
@@ -10011,22 +9949,15 @@ FORMAT JSONEachRow
         ssh_target: str = "",
         is_remote: bool = False,
     ) -> List[Dict[str, Any]]:
-        annotated: List[Dict[str, Any]] = []
-        host_key = str(host or "").strip().lower()
-        normalized_connection = self._normalize_connection_key(connection_key)
-        for row in rows:
-            item = dict(row)
-            item.setdefault("host_name", host_key)
-            item.setdefault("herdr_host", host_key)
-            item.setdefault("target_host", host_key)
-            item.setdefault("execution_mode", execution_mode)
-            item.setdefault("connection_key", normalized_connection)
-            item.setdefault("ssh_target", ssh_target)
-            item.setdefault("remote_target", ssh_target)
-            item.setdefault("is_remote_herdr", bool(is_remote))
-            item.setdefault("is_current_host", not bool(is_remote))
-            annotated.append(item)
-        return annotated
+        return self.herdr_service.annotate_rows(
+            rows,
+            host=host,
+            execution_mode=execution_mode,
+            connection_key=connection_key,
+            ssh_target=ssh_target,
+            is_remote=is_remote,
+            normalize_connection_key=self._normalize_connection_key,
+        )
 
     @staticmethod
     def _herdr_session_key(row: Dict[str, Any], host: str = "") -> str:
