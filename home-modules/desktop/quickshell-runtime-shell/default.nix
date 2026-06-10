@@ -128,12 +128,27 @@ EOF
     esac
 
     uid="$(${pkgs.coreutils}/bin/id -u)"
-    for pid in $(${pkgs.procps}/bin/pgrep -u "$uid" -f "$pattern" 2>/dev/null || true); do
+    stale_pids="$(${pkgs.procps}/bin/pgrep -u "$uid" -f "$pattern" 2>/dev/null || true)"
+    for pid in $stale_pids; do
       if [ "$pid" != "$$" ]; then
         kill "$pid" 2>/dev/null || true
       fi
     done
-    ${pkgs.coreutils}/bin/sleep 0.1
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      remaining=""
+      for pid in $stale_pids; do
+        if [ "$pid" != "$$" ] && kill -0 "$pid" 2>/dev/null; then
+          remaining="$remaining $pid"
+        fi
+      done
+      if [ -z "$remaining" ]; then
+        break
+      fi
+      ${pkgs.coreutils}/bin/sleep 0.1
+    done
+    for pid in $remaining; do
+      kill -KILL "$pid" 2>/dev/null || true
+    done
     exec "$i3pm_bin" "$@"
   '';
 

@@ -174,6 +174,8 @@ def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
     assert 'command: [runtimeConfig.i3pmWatchBin, "dashboard", "watch"]' in services_text
     assert "readonly property string i3pmWatchBin" in quickshell_default_nix_text
     assert "quickshell-i3pm-watch" in quickshell_default_nix_text
+    assert "kill -KILL" in quickshell_default_nix_text
+    assert "kill -0" in quickshell_default_nix_text
     assert '"--interval", String(runtimeConfig.dashboardHeartbeatMs)' not in services_text
     assert "dashboardHeartbeatMs" not in quickshell_default_nix_text
     assert "function applyDashboardSnapshot(payload)" in worktree_service_text
