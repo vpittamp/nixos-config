@@ -66,6 +66,7 @@ from .services.session_action_service import SessionActionService
 from .services.session_attention_service import SessionAttentionService
 from .services.session_preview_service import SessionPreviewService
 from .services.session_runtime_service import SessionRuntimeService
+from .services.worktree_profile_service import WorktreeProfileService
 from .models.window_command import CommandBatch
 
 logger = logging.getLogger(__name__)
@@ -551,6 +552,7 @@ class IPCServer:
             get_worktree_host_profile=lambda qualified_name: self._get_worktree_host_profile(qualified_name),
             ttl=self._worktree_cache_ttl,
         )
+        self.worktree_profile_service = WorktreeProfileService()
         self.session_action_service = SessionActionService(
             parse_remote_target=self._parse_remote_target,
             connection_target_is_current_host=lambda value: self._connection_target_is_current_host(value),
@@ -11208,119 +11210,19 @@ class IPCServer:
 
     def _load_worktree_host_profiles(self) -> Dict[str, Any]:
         """Load worktree host profile mapping from disk."""
-        default_data: Dict[str, Any] = {
-            "version": 1,
-            "updated_at": int(time.time()),
-            "profiles": {},
-        }
-
-        profiles_file = ConfigPaths.WORKTREE_HOST_PROFILES_FILE
-        if (
-            not profiles_file.exists()
-            and ConfigPaths.LEGACY_WORKTREE_REMOTE_PROFILES_FILE.exists()
-        ):
-            legacy = ConfigPaths.LEGACY_WORKTREE_REMOTE_PROFILES_FILE
-            try:
-                data = json.loads(legacy.read_text())
-                profiles = data.get("profiles", {}) if isinstance(data, dict) else {}
-                normalized_profiles = {}
-                if isinstance(profiles, dict):
-                    for qualified_name, raw_profile in profiles.items():
-                        if not isinstance(raw_profile, dict):
-                            continue
-                        profile = self._normalize_host_profile(raw_profile)
-                        if profile.get("host"):
-                            normalized_profiles[str(qualified_name)] = profile
-                migrated = {
-                    "version": 1,
-                    "updated_at": int(time.time()),
-                    "profiles": normalized_profiles,
-                }
-                profiles_file.parent.mkdir(parents=True, exist_ok=True)
-                atomic_write_json(profiles_file, migrated)
-                legacy.unlink(missing_ok=True)
-            except Exception as e:
-                logger.warning(f"[Feature 087] Failed to migrate legacy remote profiles: {e}")
-        if not profiles_file.exists():
-            return default_data
-
-        try:
-            data = json.loads(profiles_file.read_text())
-            if not isinstance(data, dict):
-                return default_data
-
-            profiles = data.get("profiles", {})
-            if not isinstance(profiles, dict):
-                profiles = {}
-
-            return {
-                "version": 1,
-                "updated_at": int(data.get("updated_at", int(time.time()))),
-                "profiles": profiles,
-            }
-        except Exception as e:
-            logger.warning(f"[Feature 087] Failed to read host profiles (using empty map): {e}")
-            return default_data
+        return self.worktree_profile_service.load_host_profiles()
 
     def _save_worktree_host_profiles(self, data: Dict[str, Any]) -> None:
         """Persist worktree host profile mapping to disk."""
-        profiles = data.get("profiles", {})
-        if not isinstance(profiles, dict):
-            profiles = {}
-        to_save = {
-            "version": 1,
-            "updated_at": int(time.time()),
-            "profiles": profiles,
-        }
-        ConfigPaths.WORKTREE_HOST_PROFILES_FILE.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(ConfigPaths.WORKTREE_HOST_PROFILES_FILE, to_save)
+        self.worktree_profile_service.save_host_profiles(data)
 
     def _normalize_host_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
         """Normalize host profile payload and support legacy aliases."""
-        directory = str(
-            profile.get("directory")
-            or profile.get("remote_dir")
-            or profile.get("working_dir")
-            or ""
-        ).strip()
-        host = str(profile.get("host") or "ryzen").strip()
-        user = str(profile.get("user") or os.environ.get("USER", "vpittamp")).strip()
-
-        enabled_raw = profile.get("enabled", True)
-        if isinstance(enabled_raw, str):
-            enabled = enabled_raw.strip().lower() in {"1", "true", "yes", "on"}
-        else:
-            enabled = bool(enabled_raw)
-
-        try:
-            port = int(profile.get("port", 22))
-        except Exception:
-            port = 22
-
-        return {
-            "enabled": enabled,
-            "host": host,
-            "user": user,
-            "port": port,
-            "directory": directory,
-        }
+        return self.worktree_profile_service.normalize_host_profile(profile)
 
     def _validate_host_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
         """Validate normalized host profile."""
-        normalized = self._normalize_host_profile(profile)
-
-        if not normalized["host"]:
-            raise ValueError("host is required")
-        if not normalized["user"]:
-            raise ValueError("user is required")
-        if not normalized["directory"]:
-            raise ValueError("directory is required")
-        if not normalized["directory"].startswith("/"):
-            raise ValueError("directory must be an absolute path")
-        if not (1 <= normalized["port"] <= 65535):
-            raise ValueError("port must be between 1 and 65535")
-
-        return normalized
+        return self.worktree_profile_service.validate_host_profile(profile)
 
     def _find_worktree_by_qualified_name(self, qualified_name: str) -> Dict[str, Any]:
         """Resolve worktree metadata from repos.json."""
@@ -11369,14 +11271,7 @@ class IPCServer:
 
     def _get_worktree_host_profile(self, qualified_name: str) -> Optional[Dict[str, Any]]:
         """Get normalized host profile for a specific worktree."""
-        data = self._load_worktree_host_profiles()
-        raw_profile = data.get("profiles", {}).get(qualified_name)
-        if not isinstance(raw_profile, dict):
-            return None
-        normalized = self._normalize_host_profile(raw_profile)
-        if not normalized.get("enabled"):
-            return None
-        return normalized
+        return self.worktree_profile_service.get_host_profile(qualified_name)
 
     def _normalize_target_host(self, value: Optional[str]) -> str:
         """Normalize target host aliases for host-targeted worktree contexts."""
@@ -11462,42 +11357,19 @@ class IPCServer:
         return self._normalize_connection_key(raw_connection_key)
 
     def _load_worktree_remote_profiles(self) -> Dict[str, Any]:
-        return self._load_worktree_host_profiles()
+        return self.worktree_profile_service.load_remote_profiles()
 
     def _save_worktree_remote_profiles(self, data: Dict[str, Any]) -> None:
-        self._save_worktree_host_profiles(data)
+        self.worktree_profile_service.save_remote_profiles(data)
 
     def _normalize_remote_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
-        normalized = self._normalize_host_profile(profile)
-        return {
-            "enabled": normalized["enabled"],
-            "host": normalized["host"],
-            "user": normalized["user"],
-            "port": normalized["port"],
-            "remote_dir": normalized["directory"],
-        }
+        return self.worktree_profile_service.normalize_remote_profile(profile)
 
     def _validate_remote_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
-        normalized = self._validate_host_profile(profile)
-        return {
-            "enabled": normalized["enabled"],
-            "host": normalized["host"],
-            "user": normalized["user"],
-            "port": normalized["port"],
-            "remote_dir": normalized["directory"],
-        }
+        return self.worktree_profile_service.validate_remote_profile(profile)
 
     def _get_worktree_remote_profile(self, qualified_name: str) -> Optional[Dict[str, Any]]:
-        profile = self._get_worktree_host_profile(qualified_name)
-        if not isinstance(profile, dict):
-            return None
-        return {
-            "enabled": bool(profile.get("enabled", False)),
-            "host": str(profile.get("host") or "").strip(),
-            "user": str(profile.get("user") or "").strip(),
-            "port": int(profile.get("port", 22) or 22),
-            "remote_dir": str(profile.get("directory") or "").strip(),
-        }
+        return self.worktree_profile_service.get_remote_profile(qualified_name)
 
     def _normalize_connection_key(self, value: str) -> str:
         """Normalize connection identity for stable context keys."""
