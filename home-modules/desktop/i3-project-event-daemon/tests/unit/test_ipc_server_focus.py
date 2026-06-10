@@ -33,8 +33,10 @@ if "i3_project_daemon" not in sys.modules:
 
 ipc_server_module = importlib.import_module("i3_project_daemon.ipc_server")
 window_filter_module = importlib.import_module("i3_project_daemon.services.window_filter")
+dashboard_model = importlib.import_module("i3_project_daemon.services.dashboard_model")
 
 IPCServer = ipc_server_module.IPCServer
+validate_dashboard_payload = dashboard_model.validate_dashboard_payload
 
 
 class DummyLaunchRegistry:
@@ -1655,7 +1657,7 @@ def test_dashboard_invariants_accept_single_daemon_current_row(server):
         ],
     }
 
-    result = server._validate_dashboard_payload(payload)
+    result = validate_dashboard_payload(payload)
 
     assert result["ok"] is True
     assert result["issues"] == []
@@ -1678,7 +1680,7 @@ def test_dashboard_invariants_reject_duplicate_current_rows(server):
         "outputs": [],
     }
 
-    result = server._validate_dashboard_payload(payload)
+    result = validate_dashboard_payload(payload)
 
     assert result["ok"] is False
     assert "current_session_row_not_unique" in result["issues"]
@@ -1719,7 +1721,7 @@ def test_dashboard_invariants_warn_on_transient_window_focus_rows(server):
         ],
     }
 
-    result = server._validate_dashboard_payload(payload)
+    result = validate_dashboard_payload(payload)
 
     assert result["ok"] is True
     assert result["issues"] == []
@@ -1800,7 +1802,7 @@ def test_dashboard_invariants_reject_remote_herdr_focus_mismatch(server):
         "outputs": [],
     }
 
-    result = server._validate_dashboard_payload(payload)
+    result = validate_dashboard_payload(payload)
 
     assert result["ok"] is False
     assert "remote_herdr_focus_mismatch" in result["issues"]

@@ -10890,13 +10890,6 @@ FORMAT JSONEachRow
             "snapshot_version": self._snapshot_version,
         }
 
-    def _validate_dashboard_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate dashboard focus invariants before the payload leaves the daemon."""
-        return validate_dashboard_payload(
-            payload,
-            schema_version=DASHBOARD_SCHEMA_VERSION,
-        )
-
     async def _dashboard_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return the daemon-owned dashboard payload consumed by QuickShell."""
         runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
@@ -10984,7 +10977,10 @@ FORMAT JSONEachRow
                 ),
             },
         }
-        dashboard_invariants = self._validate_dashboard_payload(payload)
+        dashboard_invariants = validate_dashboard_payload(
+            payload,
+            schema_version=DASHBOARD_SCHEMA_VERSION,
+        )
         payload["dashboard_invariants"] = dashboard_invariants
         if not bool(dashboard_invariants.get("ok", False)):
             raise RuntimeError(
@@ -10998,7 +10994,10 @@ FORMAT JSONEachRow
         payload = await self._dashboard_snapshot(params or {})
         invariants = payload.get("dashboard_invariants")
         if not isinstance(invariants, dict):
-            invariants = self._validate_dashboard_payload(payload)
+            invariants = validate_dashboard_payload(
+                payload,
+                schema_version=DASHBOARD_SCHEMA_VERSION,
+            )
         return {
             "success": bool(invariants.get("ok", False)),
             "schema_version": str(payload.get("schema_version") or ""),
