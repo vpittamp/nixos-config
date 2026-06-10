@@ -420,17 +420,19 @@ class DaemonClient:
             raise DaemonError(f"Subscription error: {e}")
 
     async def subscribe_state_changes(self):
-        """Subscribe to state change notifications from daemon.
+        """Subscribe to typed dashboard notifications from daemon.
 
         Feature 123: Efficient monitoring panel updates.
 
-        Returns an async iterator that yields state change notifications.
-        This allows monitoring_data.py to subscribe to daemon events instead
-        of Sway IPC directly, eliminating duplicate event processing.
+        Returns an async iterator that yields typed dashboard notifications.
+        Consumers use these events to refresh or apply daemon-owned dashboard
+        state without subscribing to Sway directly.
 
         Yields:
             Event dict with keys:
-                - type: str - Type of state change ("window::new", "window::close", etc.)
+                - event_type: str - Typed event name ("window.changed", etc.)
+                - type: str - Original daemon invalidation reason
+                - changed_keys: list[str] - Changed dashboard model keys
                 - timestamp: float - Event timestamp
 
         Raises:
@@ -440,7 +442,7 @@ class DaemonClient:
             ```python
             async with DaemonClient() as client:
                 async for event in client.subscribe_state_changes():
-                    print(f"State changed: {event['type']}")
+                    print(f"Dashboard event: {event['event_type']}")
                     # Query daemon for updated state
             ```
 
@@ -492,9 +494,15 @@ class DaemonClient:
                     if "jsonrpc" in event and "method" not in event:
                         continue
 
-                    # Yield state change notification
-                    if "method" in event and event["method"] == "state_changed":
-                        yield event.get("params", {})
+                    params = event.get("params", {})
+                    if not isinstance(params, dict):
+                        continue
+                    event_type = params.get("event_type")
+                    if not isinstance(event_type, str):
+                        continue
+                    if "." not in event_type or event.get("method") != event_type:
+                        continue
+                    yield params
 
                 except json.JSONDecodeError:
                     # Skip invalid JSON lines

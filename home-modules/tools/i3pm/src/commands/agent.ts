@@ -92,17 +92,34 @@ export async function agentCommand(args: string[], _flags: CommandOptions): Prom
   if (subcommand === "desktop-watch") {
     const includeProcesses = Boolean(parsed.processes);
     const processLimit = parsed.limit ? Number(parsed.limit) : undefined;
-    const shouldRefreshForEvent = (eventType: string): boolean => {
-      return [
-        "state_changed",
-        "window",
-        "workspace",
-        "project",
-        "display",
-        "scratchpad",
-        "agent_session",
-        "focus",
-      ].some((fragment) => eventType.includes(fragment));
+    const shouldRefreshForEvent = (event: { event_type?: string; changed_keys?: string[] }): boolean => {
+      const eventType = String(event.event_type || "");
+      if ([
+        "focus.changed",
+        "window.changed",
+        "workspace.changed",
+        "session.changed",
+        "herdr.changed",
+        "display.changed",
+        "dashboard.invalidated",
+      ].includes(eventType)) {
+        return true;
+      }
+      const changedKeys = Array.isArray(event.changed_keys) ? event.changed_keys : [];
+      return changedKeys.some((key) =>
+        [
+          "focus_state",
+          "outputs",
+          "projects",
+          "tracked_windows",
+          "active_ai_sessions",
+          "active_ai_sessions_mru",
+          "worktrees",
+          "herdr",
+          "display_layout",
+          "dashboard",
+        ].includes(String(key))
+      );
     };
 
     while (true) {
@@ -119,7 +136,7 @@ export async function agentCommand(args: string[], _flags: CommandOptions): Prom
         }));
 
         for await (const event of client.subscribeToStateChanges()) {
-          if (!shouldRefreshForEvent(String(event.type || ""))) {
+          if (!shouldRefreshForEvent(event)) {
             continue;
           }
           const snapshotClient = new DaemonClient();
@@ -130,7 +147,7 @@ export async function agentCommand(args: string[], _flags: CommandOptions): Prom
             });
             console.log(JSON.stringify({
               kind: "snapshot",
-              cause: event.type,
+              cause: event.event_type,
               snapshot: nextSnapshot,
             }));
           } finally {

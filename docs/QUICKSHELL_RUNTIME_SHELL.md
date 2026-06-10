@@ -125,9 +125,8 @@ Current shell process model:
 
 Current CLI/daemon model:
 - `i3pm dashboard watch` performs an initial snapshot fetch
-- then subscribes to daemon `state_changed` notifications
-- then refetches only on invalidation events
-- a slower heartbeat remains as a fallback recovery path
+- then subscribes to typed daemon dashboard events such as `focus.changed`, `window.changed`, and `dashboard.invalidated`
+- then applies delta payloads, refetching only after missed generations, invalidation, or parse failure
 - the dashboard payload includes a shell-oriented `worktrees` list with:
   - `qualified_name`
   - `remote_available`

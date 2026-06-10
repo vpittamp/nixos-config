@@ -154,6 +154,7 @@ def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
     services_text = (REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "controllers" / "RuntimeServices.qml").read_text()
     worktree_service_text = WORKTREE_APP_SERVICE_QML.read_text()
     dashboard_command_text = I3PM_DASHBOARD_TS.read_text()
+    agent_command_text = (REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "agent.ts").read_text()
     daemon_client_text = I3PM_DAEMON_CLIENT_TS.read_text()
     quickshell_default_nix_text = QUICKSHELL_DEFAULT_NIX.read_text()
     assert "function applySnapshot(snapshot)" in text
@@ -176,6 +177,8 @@ def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
     assert "watch emits one initial snapshot, then typed dashboard delta events." in dashboard_command_text
     assert "const encoded = JSON.stringify(event);" in dashboard_command_text
     assert 'message.method !== "state_changed"' not in daemon_client_text
+    assert 'event["method"] == "state_changed"' not in (REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "core" / "daemon_client.py").read_text()
+    assert '"state_changed"' not in agent_command_text
     assert "if (params.event_type === undefined)" in daemon_client_text
     assert "const eventType = String(params.event_type);" in daemon_client_text
     assert 'if (!eventType.includes(".") || message.method !== eventType)' in daemon_client_text

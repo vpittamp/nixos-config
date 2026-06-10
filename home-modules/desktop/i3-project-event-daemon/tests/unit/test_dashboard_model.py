@@ -196,7 +196,7 @@ def test_dashboard_changed_keys_follow_typed_event_contract() -> None:
         "herdr",
         "ai_monitor_metrics",
     ]
-    assert dashboard_changed_keys_for_event("state_changed") == ["dashboard"]
+    assert dashboard_changed_keys_for_event("dashboard_invalidated") == ["dashboard"]
 
 
 def test_dashboard_event_payload_contains_common_metadata_and_changed_models_only() -> None:

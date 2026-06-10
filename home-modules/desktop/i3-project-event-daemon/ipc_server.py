@@ -4283,18 +4283,18 @@ class IPCServer:
             schema_version=DASHBOARD_SCHEMA_VERSION,
         )
 
-    async def notify_state_change(self, event_type: str = "state_changed") -> None:
-        """Notify subscribed clients that state has changed.
+    async def notify_state_change(self, event_type: str = "dashboard_invalidated") -> None:
+        """Notify subscribed clients with a typed dashboard event.
 
-        Called by event handlers after processing Sway events.
-        Allows monitoring_data.py to subscribe and react to daemon events
-        instead of subscribing to Sway directly.
+        Called by event handlers after processing Sway and service events.
+        Subscribers receive typed dashboard events and can refresh or apply the
+        daemon-owned payload without subscribing to Sway directly.
 
         Args:
             event_type: Type of state change event (for debugging)
         """
         self._snapshot_version += 1
-        normalized_type = str(event_type or "state_changed")
+        normalized_type = str(event_type or "dashboard_invalidated")
         typed_event_type = dashboard_event_type_for_state_change(normalized_type)
         changed_keys = dashboard_changed_keys_for_event(normalized_type)
         if typed_event_type in {"session.changed", "herdr.changed"}:

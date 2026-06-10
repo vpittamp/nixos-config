@@ -10,8 +10,8 @@ DASHBOARD_EVENT_SCHEMA_VERSION = "i3pm.dashboard.event.v1"
 
 
 def dashboard_event_type_for_state_change(event_type: str) -> str:
-    """Map legacy daemon invalidations to the typed dashboard event contract."""
-    normalized = str(event_type or "state_changed").strip() or "state_changed"
+    """Map daemon invalidations to the typed dashboard event contract."""
+    normalized = str(event_type or "dashboard_invalidated").strip() or "dashboard_invalidated"
     compact = normalized.replace("::", "_").replace(".", "_").replace("-", "_")
     if compact.startswith("focus"):
         return "focus.changed"
