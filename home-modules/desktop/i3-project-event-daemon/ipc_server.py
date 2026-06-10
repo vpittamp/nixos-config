@@ -7,7 +7,6 @@ Updated: 2025-10-23 - Added unified event logging for all IPC methods
 """
 
 import asyncio
-import copy
 import hashlib
 import json
 import logging
@@ -66,6 +65,7 @@ from .services.launch_service import LaunchService
 from .services.session_action_service import SessionActionService
 from .services.session_attention_service import SessionAttentionService
 from .services.session_preview_service import SessionPreviewService
+from .services.session_runtime_service import SessionRuntimeService
 from .models.window_command import CommandBatch
 
 logger = logging.getLogger(__name__)
@@ -594,6 +594,16 @@ class IPCServer:
             parse_remote_target=self._parse_remote_target,
             normalize_connection_key=self._normalize_connection_key,
             local_host=lambda: self._local_host_alias(),
+        )
+        self.session_runtime_service = SessionRuntimeService(
+            stale_remote_bridge_windows=lambda runtime_snapshot, sessions: self.herdr_service.stale_remote_bridge_windows(
+                runtime_snapshot,
+                sessions,
+            ),
+            prune_invalid_overrides=lambda **kwargs: self.focus_service.prune_invalid_overrides(**kwargs),
+            close_managed_window=lambda window_id: self._close_managed_window(window_id),
+            remove_window=lambda window_id: self._remove_window_from_state(window_id),
+            invalidate_window_tree_cache=self.invalidate_window_tree_cache,
         )
         self.dashboard_service = DashboardService(
             runtime_loader=lambda *args, **kwargs: self._load_reconciled_session_runtime(*args, **kwargs),
@@ -7071,15 +7081,7 @@ class IPCServer:
     @staticmethod
     def _stale_bridge_close_reasons() -> set[str]:
         """Return stale bridge reasons that are safe to close automatically."""
-        return {
-            "missing_remote_session",
-            "remote_surface_mismatch",
-            "remote_session_mismatch",
-            "tmux_server_key_mismatch",
-            "tmux_session_mismatch",
-            "tmux_window_mismatch",
-            "tmux_pane_mismatch",
-        }
+        return set(SessionRuntimeService.stale_bridge_close_reasons())
 
     @staticmethod
     def _stopped_boundary_key(session: Dict[str, Any]) -> str:
@@ -7134,18 +7136,7 @@ class IPCServer:
         runtime_snapshot: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         """Return Herdr-native AI session items for an existing runtime snapshot."""
-        sessions_raw = runtime_snapshot.get("sessions", [])
-        if not isinstance(sessions_raw, list):
-            return []
-        sessions = [copy.deepcopy(session) for session in sessions_raw if isinstance(session, dict)]
-        sessions.sort(key=lambda session: (
-            0 if bool(session.get("focused", False)) else 1,
-            str(session.get("workspace_name") or session.get("workspace_id") or ""),
-            str(session.get("tab_title") or session.get("tab_id") or ""),
-            str(session.get("agent") or session.get("tool") or ""),
-            str(session.get("pane_id") or session.get("session_key") or ""),
-        ))
-        return sessions
+        return self.session_runtime_service.load_session_items(runtime_snapshot)
 
     async def _load_reconciled_session_runtime(
         self,
@@ -11880,6 +11871,11 @@ class IPCServer:
         result = await self._sway_ipc_command(f"[con_id={target}] kill")
         return any(bool(item.get("success", False)) for item in (result or []))
 
+    async def _remove_window_from_state(self, window_id: int) -> None:
+        """Remove a window from daemon state when the state manager supports it."""
+        if hasattr(self.state_manager, "remove_window"):
+            await self.state_manager.remove_window(int(window_id or 0))
+
     async def _reconcile_session_runtime_state(
         self,
         runtime_snapshot: Dict[str, Any],
@@ -11888,54 +11884,11 @@ class IPCServer:
         close_windows: bool,
     ) -> Dict[str, Any]:
         """Prune stale bridge windows and clear overrides that no longer resolve."""
-        tracked_windows = list(runtime_snapshot.get("tracked_windows", []) or [])
-        stale_bridges = self.herdr_service.stale_remote_bridge_windows(runtime_snapshot, sessions)
-        live_window_ids = {
-            int(window.get("window_id") or window.get("id") or 0)
-            for window in tracked_windows
-            if isinstance(window, dict) and int(window.get("window_id") or window.get("id") or 0) > 0
-        }
-        live_session_keys = {
-            str(session.get("session_key") or "").strip()
-            for session in sessions
-            if isinstance(session, dict) and str(session.get("session_key") or "").strip()
-        }
-        stale_window_ids = {int(item.get("window_id") or 0) for item in stale_bridges if int(item.get("window_id") or 0) > 0}
-
-        focus_cleanup = self.focus_service.prune_invalid_overrides(
-            live_session_keys=live_session_keys,
-            live_window_ids=live_window_ids,
-            stale_window_ids=stale_window_ids,
+        return await self.session_runtime_service.reconcile_runtime_state(
+            runtime_snapshot,
+            sessions,
+            close_windows=close_windows,
         )
-
-        cleaned_windows: List[Dict[str, Any]] = []
-        close_reasons = self._stale_bridge_close_reasons()
-        if close_windows:
-            for item in stale_bridges:
-                window_id = int(item.get("window_id") or 0)
-                if window_id <= 0:
-                    continue
-                if str(item.get("reason") or "").strip() not in close_reasons:
-                    continue
-                closed = await self._close_managed_window(window_id)
-                if hasattr(self.state_manager, "remove_window"):
-                    await self.state_manager.remove_window(window_id)
-                cleaned_windows.append({
-                    "window_id": window_id,
-                    "closed": bool(closed),
-                    "reason": str(item.get("reason") or "").strip(),
-                })
-            if cleaned_windows:
-                self.invalidate_window_tree_cache()
-
-        return {
-            "stale_bridge_count": len(stale_bridges),
-            "stale_bridges": stale_bridges,
-            "cleaned_window_count": len(cleaned_windows),
-            "cleaned_windows": cleaned_windows,
-            "cleared_session_override": bool(focus_cleanup.get("cleared_session_override", False)),
-            "cleared_window_override": bool(focus_cleanup.get("cleared_window_override", False)),
-        }
 
     async def _session_doctor(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return an operator-facing AI session diagnostic snapshot."""
