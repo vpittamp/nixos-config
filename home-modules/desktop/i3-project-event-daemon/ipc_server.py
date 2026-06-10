@@ -7721,18 +7721,6 @@ class IPCServer:
             terminal_role=terminal_role,
         )
 
-    def _extract_scoped_terminal_command(
-        self,
-        *,
-        app_name: str,
-        prepared_args: List[str],
-    ) -> List[str]:
-        """Extract the command executed inside Ghostty for scoped terminal apps."""
-        return self.launch_service.extract_scoped_terminal_command(
-            app_name=app_name,
-            prepared_args=prepared_args,
-        )
-
     def _find_context_terminal_window(
         self,
         *,
@@ -7921,27 +7909,6 @@ class IPCServer:
     ) -> Optional[Any]:
         """Disabled after deterministic remote-launch cutover."""
         return None
-
-    def _substitute_launch_parameter(
-        self,
-        value: str,
-        *,
-        project_name: str,
-        project_dir: str,
-        session_name: str,
-        project_display_name: str,
-        project_icon: str,
-        preferred_workspace: Optional[int],
-    ) -> str:
-        return self.launch_service.substitute_launch_parameter(
-            value,
-            project_name=project_name,
-            project_dir=project_dir,
-            session_name=session_name,
-            project_display_name=project_display_name,
-            project_icon=project_icon,
-            preferred_workspace=preferred_workspace,
-        )
 
     def _build_launch_env(
         self,
@@ -8224,18 +8191,15 @@ class IPCServer:
         session_name = f"{worktree_repo}_{worktree_branch}" if worktree_repo and worktree_branch else ""
         project_display_name = worktree_branch
         substitution_project_dir = project_dir if execution_mode == "ssh" else local_project_dir
-        prepared_args = [
-            self._substitute_launch_parameter(
-                parameter,
-                project_name=project_name,
-                project_dir=substitution_project_dir,
-                session_name=session_name,
-                project_display_name=project_display_name,
-                project_icon="",
-                preferred_workspace=app.preferred_workspace,
-            )
-            for parameter in app.parameters
-        ]
+        prepared_args = self.launch_service.build_prepared_args(
+            parameters=app.parameters,
+            project_name=project_name,
+            project_dir=substitution_project_dir,
+            session_name=session_name,
+            project_display_name=project_display_name,
+            project_icon="",
+            preferred_workspace=app.preferred_workspace,
+        )
 
         launch_identity = self._build_launch_identity(
             app_name=app.name,
@@ -16999,18 +16963,15 @@ FORMAT JSONEachRow
             project_name=project_name,
             launcher_pid=launcher_pid,
         )
-        prepared_args = [
-            self._substitute_launch_parameter(
-                parameter,
-                project_name=project_name,
-                project_dir=project_directory,
-                session_name=session_name,
-                project_display_name=parsed.branch,
-                project_icon="",
-                preferred_workspace=app.preferred_workspace,
-            )
-            for parameter in app.parameters
-        ]
+        prepared_args = self.launch_service.build_prepared_args(
+            parameters=app.parameters,
+            project_name=project_name,
+            project_dir=project_directory,
+            session_name=session_name,
+            project_display_name=parsed.branch,
+            project_icon="",
+            preferred_workspace=app.preferred_workspace,
+        )
 
         remote_terminal_role = self._remote_session_terminal_role(
             str(remote_context.get("context_key") or "").strip()

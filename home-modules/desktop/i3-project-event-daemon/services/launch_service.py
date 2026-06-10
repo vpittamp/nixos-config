@@ -287,6 +287,31 @@ class LaunchService:
             }))
         return rendered
 
+    def build_prepared_args(
+        self,
+        *,
+        parameters: Iterable[Any],
+        project_name: str,
+        project_dir: str,
+        session_name: str,
+        project_display_name: str,
+        project_icon: str,
+        preferred_workspace: Optional[int],
+    ) -> List[str]:
+        """Render registry launch parameters into executable arguments."""
+        return [
+            self.substitute_launch_parameter(
+                str(parameter),
+                project_name=project_name,
+                project_dir=project_dir,
+                session_name=session_name,
+                project_display_name=project_display_name,
+                project_icon=project_icon,
+                preferred_workspace=preferred_workspace,
+            )
+            for parameter in parameters
+        ]
+
     def build_launch_env(
         self,
         *,

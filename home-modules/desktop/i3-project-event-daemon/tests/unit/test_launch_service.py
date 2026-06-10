@@ -385,6 +385,32 @@ def test_launch_parameter_substitution_and_scoped_command_validation(tmp_path: P
         )
 
 
+def test_build_prepared_args_renders_registry_parameters(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+
+    result = service.build_prepared_args(
+        parameters=[
+            "-e",
+            "bash",
+            "-lc",
+            "cd $PROJECT_DIR && echo $PROJECT_NAME $PROJECT_DISPLAY_NAME $SESSION_NAME $WORKSPACE",
+        ],
+        project_name="vpittamp/nixos-config:main",
+        project_dir="/home/vpittamp/repos/vpittamp/nixos-config/main",
+        session_name="nixos-config_main",
+        project_display_name="main",
+        project_icon="",
+        preferred_workspace=7,
+    )
+
+    assert result == [
+        "-e",
+        "bash",
+        "-lc",
+        "cd /home/vpittamp/repos/vpittamp/nixos-config/main && echo vpittamp/nixos-config:main main nixos-config_main 7",
+    ]
+
+
 def test_build_launch_env_includes_remote_tmux_and_worktree_metadata(tmp_path: Path) -> None:
     service = make_service(tmp_path)
 
