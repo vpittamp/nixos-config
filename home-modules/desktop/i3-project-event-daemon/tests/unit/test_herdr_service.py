@@ -357,6 +357,24 @@ def test_herdr_service_loads_remote_targets_from_env(monkeypatch):
     ) == targets
 
 
+def test_herdr_service_loads_remote_targets_with_configured_resolvers(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+        parse_remote_target=lambda value: ("vpittamp", value, 2200),
+        normalize_connection_key=lambda value: value.strip().lower(),
+    )
+    monkeypatch.setenv("I3PM_HERDR_REMOTE_TARGETS", json.dumps([
+        {"ssh_target": "Ryzen"},
+    ]))
+
+    assert service.load_remote_targets() == [{
+        "host": "ryzen",
+        "ssh_target": "Ryzen",
+        "connection_key": "vpittamp@ryzen:2200",
+    }]
+
+
 def test_herdr_service_loads_remote_targets_from_file(tmp_path, monkeypatch):
     target_file = tmp_path / "targets.json"
     target_file.write_text(json.dumps([

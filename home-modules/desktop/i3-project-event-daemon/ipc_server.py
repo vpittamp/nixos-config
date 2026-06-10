@@ -614,6 +614,8 @@ class IPCServer:
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
             normalize_project_path=normalize_project_path,
             resolve_worktree_for_path=resolve_discovered_worktree,
+            parse_remote_target=self._parse_remote_target,
+            normalize_connection_key=self._normalize_connection_key,
         )
         self._malformed_json_count: int = 0
         self._deferred_filter_task: Optional[asyncio.Task] = None
@@ -748,10 +750,7 @@ class IPCServer:
 
     def start_herdr_event_subscription(self) -> None:
         """Start the local Herdr event subscription task."""
-        self.herdr_service.start_subscription(
-            parse_remote_target=self._parse_remote_target,
-            normalize_connection_key=self._normalize_connection_key,
-        )
+        self.herdr_service.start_subscription()
 
     async def stop_herdr_event_subscription(self) -> None:
         """Cancel the local Herdr event subscription task."""
@@ -8598,17 +8597,11 @@ FORMAT JSONEachRow
             },
         }
 
-    def _load_herdr_remote_targets(self) -> List[Dict[str, str]]:
-        return self.herdr_service.load_remote_targets(
-            parse_remote_target=self._parse_remote_target,
-            normalize_connection_key=self._normalize_connection_key,
-        )
-
     async def _herdr_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return Herdr-native local and configured remote state."""
         return await self.herdr_service.snapshot(
             params or {},
-            remote_targets=self._load_herdr_remote_targets(),
+            remote_targets=self.herdr_service.load_remote_targets(),
             local_host=self._local_host_alias(),
             normalize_connection_key=self._normalize_connection_key,
             project_for_cwd=self.herdr_service.project_for_cwd,
@@ -8655,8 +8648,7 @@ FORMAT JSONEachRow
     async def _herdr_remote_pane_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
         return await self.herdr_service.remote_pane_focus(
             params,
-            targets=self._load_herdr_remote_targets(),
-            parse_remote_target=self._parse_remote_target,
+            targets=self.herdr_service.load_remote_targets(),
             normalize_connection_key=self._normalize_connection_key,
             launch_open=self._launch_open,
             set_focus_overrides=self._set_focus_overrides,

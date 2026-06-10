@@ -51,6 +51,8 @@ class HerdrService:
         remote_snapshot_cache_ttl: float = 10.0,
         normalize_project_path: Optional[Callable[[Optional[str]], Optional[str]]] = None,
         resolve_worktree_for_path: Optional[Callable[[Optional[str]], Optional[Dict[str, str]]]] = None,
+        parse_remote_target: Optional[Callable[[str], Tuple[str, str, int]]] = None,
+        normalize_connection_key: Optional[Callable[[str], str]] = None,
     ) -> None:
         self._notify_state_change = notify_state_change
         self._external_invalidate_snapshot_cache = invalidate_snapshot_cache
@@ -72,6 +74,8 @@ class HerdrService:
         self.git_metadata_cache: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
         self._normalize_project_path = normalize_project_path or self._default_normalize_project_path
         self._resolve_worktree_for_path = resolve_worktree_for_path
+        self._parse_remote_target = parse_remote_target or self._default_parse_remote_target
+        self._normalize_connection_key = normalize_connection_key or self._default_normalize_connection_key
 
     @staticmethod
     def _default_normalize_project_path(value: Optional[str]) -> Optional[str]:
@@ -79,6 +83,29 @@ class HerdrService:
         if not text:
             return None
         return str(Path(text).expanduser())
+
+    @staticmethod
+    def _default_normalize_connection_key(value: str) -> str:
+        return str(value or "").strip().lower()
+
+    @staticmethod
+    def _default_parse_remote_target(value: str) -> Tuple[str, str, int]:
+        text = str(value or "").strip()
+        if not text:
+            return ("", "", 22)
+        user = ""
+        host_port = text
+        if "@" in host_port:
+            user, host_port = host_port.split("@", 1)
+        host = host_port
+        port = 22
+        if ":" in host_port and not host_port.startswith("["):
+            host, raw_port = host_port.rsplit(":", 1)
+            try:
+                port = int(raw_port or 22)
+            except ValueError:
+                port = 22
+        return (user.strip(), host.strip(), port)
 
     @staticmethod
     def normalize_host_key(host: Any) -> str:
@@ -295,26 +322,30 @@ class HerdrService:
         ssh_target: str,
         explicit: str = "",
         *,
-        parse_remote_target: Callable[[str], Tuple[str, str, int]],
-        normalize_connection_key: Callable[[str], str],
+        parse_remote_target: Optional[Callable[[str], Tuple[str, str, int]]] = None,
+        normalize_connection_key: Optional[Callable[[str], str]] = None,
     ) -> str:
         """Return a normalized connection key for a remote Herdr target."""
+        parse_target = parse_remote_target or self._parse_remote_target
+        normalize_key = normalize_connection_key or self._normalize_connection_key
         explicit_key = str(explicit or "").strip()
         if explicit_key:
-            return normalize_connection_key(explicit_key)
-        user, host, port = parse_remote_target(ssh_target)
+            return normalize_key(explicit_key)
+        user, host, port = parse_target(ssh_target)
         if not host:
             return "unknown"
         user = user or os.environ.get("USER") or "vpittamp"
-        return normalize_connection_key(f"{user}@{host}:{port or 22}")
+        return normalize_key(f"{user}@{host}:{port or 22}")
 
     def load_remote_targets(
         self,
         *,
-        parse_remote_target: Callable[[str], Tuple[str, str, int]],
-        normalize_connection_key: Callable[[str], str],
+        parse_remote_target: Optional[Callable[[str], Tuple[str, str, int]]] = None,
+        normalize_connection_key: Optional[Callable[[str], str]] = None,
     ) -> List[Dict[str, str]]:
         """Load and normalize configured remote Herdr targets."""
+        parse_target = parse_remote_target or self._parse_remote_target
+        normalize_key = normalize_connection_key or self._normalize_connection_key
         path = self.remote_targets_file()
         env_payload = str(os.environ.get("I3PM_HERDR_REMOTE_TARGETS") or "").strip()
         signature = (env_payload, *self.file_signature(path))
@@ -348,13 +379,13 @@ class HerdrService:
             if not ssh_target:
                 continue
             if not host:
-                _user, parsed_host, _port = parse_remote_target(ssh_target)
+                _user, parsed_host, _port = parse_target(ssh_target)
                 host = parsed_host.lower()
             connection_key = self.connection_key_for_target(
                 ssh_target,
                 str(item.get("connection_key") or item.get("connectionKey") or ""),
-                parse_remote_target=parse_remote_target,
-                normalize_connection_key=normalize_connection_key,
+                parse_remote_target=parse_target,
+                normalize_connection_key=normalize_key,
             )
             dedupe_key = connection_key if connection_key != "unknown" else ssh_target.lower()
             if dedupe_key in seen:
@@ -375,18 +406,20 @@ class HerdrService:
         params: Dict[str, Any],
         *,
         targets: List[Dict[str, str]],
-        parse_remote_target: Callable[[str], Tuple[str, str, int]],
-        normalize_connection_key: Callable[[str], str],
+        parse_remote_target: Optional[Callable[[str], Tuple[str, str, int]]] = None,
+        normalize_connection_key: Optional[Callable[[str], str]] = None,
     ) -> Dict[str, str]:
         """Resolve a remote Herdr action target from request params and config."""
+        parse_target = parse_remote_target or self._parse_remote_target
+        normalize_key = normalize_connection_key or self._normalize_connection_key
         host = str(params.get("host") or params.get("herdr_host") or "").strip().lower()
         ssh_target = str(params.get("ssh_target") or params.get("remote_target") or "").strip()
-        connection_key = normalize_connection_key(str(params.get("connection_key") or "").strip())
+        connection_key = normalize_key(str(params.get("connection_key") or "").strip())
 
         for target in targets:
             target_host = str(target.get("host") or "").strip().lower()
             target_ssh = str(target.get("ssh_target") or "").strip()
-            target_connection = normalize_connection_key(str(target.get("connection_key") or "").strip())
+            target_connection = normalize_key(str(target.get("connection_key") or "").strip())
             if ssh_target and target_ssh == ssh_target:
                 return dict(target)
             if connection_key and target_connection == connection_key:
@@ -400,8 +433,8 @@ class HerdrService:
                 "ssh_target": ssh_target,
                 "connection_key": connection_key or self.connection_key_for_target(
                     ssh_target,
-                    parse_remote_target=parse_remote_target,
-                    normalize_connection_key=normalize_connection_key,
+                    parse_remote_target=parse_target,
+                    normalize_connection_key=normalize_key,
                 ),
             }
 
@@ -1276,12 +1309,13 @@ class HerdrService:
         params: Dict[str, Any],
         *,
         targets: List[Dict[str, str]],
-        parse_remote_target: Callable[[str], Tuple[str, str, int]],
-        normalize_connection_key: Callable[[str], str],
+        parse_remote_target: Optional[Callable[[str], Tuple[str, str, int]]] = None,
+        normalize_connection_key: Optional[Callable[[str], str]] = None,
         launch_open: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
         set_focus_overrides: Callable[..., None],
     ) -> Dict[str, Any]:
         """Focus a remote Herdr pane and reuse the configured local Herdr app."""
+        normalize_key = normalize_connection_key or self._normalize_connection_key
         pane_id = str(params.get("pane_id") or "").strip()
         if not pane_id:
             raise ValueError("pane_id is required")
@@ -1290,7 +1324,7 @@ class HerdrService:
             params,
             targets=targets,
             parse_remote_target=parse_remote_target,
-            normalize_connection_key=normalize_connection_key,
+            normalize_connection_key=normalize_key,
         )
         focus_result = await self.run_proxy_json(target, ["focus", pane_id, "--json"])
         if bool(focus_result.get("success", False)):
@@ -1298,7 +1332,7 @@ class HerdrService:
             cache_result = self.apply_remote_focus_cache(
                 target=target,
                 pane_id=pane_id,
-                normalize_connection_key=normalize_connection_key,
+                normalize_connection_key=normalize_key,
                 now=time.time(),
             )
             focused_session_key = str(cache_result.get("focused_session_key") or "").strip()
@@ -2033,12 +2067,7 @@ class HerdrService:
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, self.subscription_max_backoff)
 
-    def start_subscription(
-        self,
-        *,
-        parse_remote_target: Optional[Callable[[str], Tuple[str, str, int]]] = None,
-        normalize_connection_key: Optional[Callable[[str], str]] = None,
-    ) -> None:
+    def start_subscription(self) -> None:
         """Start local and configured remote Herdr event subscription tasks."""
         if self.subscription_task and not self.subscription_task.done():
             pass
@@ -2047,13 +2076,7 @@ class HerdrService:
                 self.run_subscription(),
                 name="i3pm-herdr-event-subscription",
             )
-        if parse_remote_target is not None and normalize_connection_key is not None:
-            self.sync_remote_proxy_subscriptions(
-                self.load_remote_targets(
-                    parse_remote_target=parse_remote_target,
-                    normalize_connection_key=normalize_connection_key,
-                )
-            )
+        self.sync_remote_proxy_subscriptions(self.load_remote_targets())
 
     def sync_remote_proxy_subscriptions(self, targets: List[Dict[str, str]]) -> None:
         """Ensure one remote Herdr proxy event stream task per configured target."""

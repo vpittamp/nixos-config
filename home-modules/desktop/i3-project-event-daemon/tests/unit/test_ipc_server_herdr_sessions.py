@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -987,7 +987,7 @@ async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
             "errors": [],
         }
 
-    monkeypatch.setattr(server, "_load_herdr_remote_targets", lambda: [target])
+    monkeypatch.setattr(server.herdr_service, "load_remote_targets", lambda: [target])
     monkeypatch.setattr(server.herdr_service, "run_json", fake_run_herdr_json)
     monkeypatch.setattr(server.herdr_service, "run_proxy_json", fake_run_herdr_proxy_json)
 
@@ -1101,7 +1101,7 @@ async def test_herdr_remote_pane_focus_switches_pane_then_reuses_herdr_app(serve
         calls.append((remote_target, args))
         return {"success": True, "result": {"focused": True}}
 
-    monkeypatch.setattr(server, "_load_herdr_remote_targets", lambda: [target])
+    monkeypatch.setattr(server.herdr_service, "load_remote_targets", lambda: [target])
     monkeypatch.setattr(server.herdr_service, "run_proxy_json", fake_run_herdr_proxy_json)
     server.notify_state_change = AsyncMock(return_value=None)
     server._launch_open = AsyncMock(return_value={
@@ -1266,8 +1266,8 @@ async def test_herdr_subscription_event_does_not_collect_remote_snapshots(server
     server.herdr_service.snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
     server.herdr_service.notify_delay = 0.0
     server.notify_state_change = AsyncMock()
-    load_remote_targets = AsyncMock()
-    monkeypatch.setattr(server, "_load_herdr_remote_targets", load_remote_targets)
+    load_remote_targets = MagicMock(return_value=[])
+    monkeypatch.setattr(server.herdr_service, "load_remote_targets", load_remote_targets)
 
     await server.herdr_service.handle_subscription_event({"event": "workspace_updated", "data": {}})
 
