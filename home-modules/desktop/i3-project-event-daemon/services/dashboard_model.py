@@ -2,11 +2,212 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+import re
+
+from typing import Any, Callable, Dict, List, Tuple
 
 
 DASHBOARD_SCHEMA_VERSION = "i3pm.dashboard.v2"
 DASHBOARD_EVENT_SCHEMA_VERSION = "i3pm.dashboard.event.v1"
+
+
+def dashboard_workspace_sort_key(value: Any) -> Tuple[int, str]:
+    """Return the stable dashboard sort key for workspace labels."""
+    workspace = str(value or "").strip()
+    if workspace.lower().startswith("scratchpad"):
+        return (1_000_000, workspace)
+    match = re.match(r"^(\d+)", workspace)
+    if match:
+        return (int(match.group(1)), workspace)
+    if not workspace:
+        return (999_999, "")
+    return (500_000, workspace)
+
+
+def build_dashboard_projects(
+    runtime_snapshot: Dict[str, Any],
+    sessions: List[Dict[str, Any]],
+    *,
+    canonical_project_name: Callable[..., str],
+    normalize_target_host: Callable[[Any], str],
+    parse_context_key_target_host: Callable[[Any], str],
+    target_host_from_context_payload: Callable[..., str],
+    local_host_alias: Callable[[], str],
+    execution_mode_for_target_host: Callable[[str], str],
+    build_target_context_key: Callable[[str, str], str],
+    transport_kind_for_target_host: Callable[[Any], str],
+    window_matches_focus_override: Callable[..., bool],
+    build_window_focus_target: Callable[..., Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Group tracked windows into dashboard project cards."""
+    sessions_by_window: Dict[int, List[Dict[str, Any]]] = {}
+    for session in sessions:
+        if not isinstance(session, dict):
+            continue
+        window_id = int(session.get("window_id") or 0)
+        if window_id <= 0:
+            continue
+        sessions_by_window.setdefault(window_id, []).append(session)
+
+    active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
+    active_project_name = str(
+        active_context.get("qualified_name")
+        or active_context.get("project_name")
+        or ""
+    ).strip()
+    active_target_host = target_host_from_context_payload(
+        active_context,
+        project_name=active_project_name,
+    )
+    focused_window_id = int(runtime_snapshot.get("focused_window_id") or 0)
+    grouped: Dict[str, Dict[str, Any]] = {}
+    for window in list(runtime_snapshot.get("tracked_windows", []) or []):
+        if not isinstance(window, dict):
+            continue
+        window_id = int(window.get("window_id") or window.get("id") or 0)
+        if window_id <= 0:
+            continue
+        raw_project_name = str(window.get("project") or "global").strip() or "global"
+        project_name = canonical_project_name(
+            raw_project_name,
+            project_path=window.get("project_path"),
+        ) or "global"
+        target_host = normalize_target_host(
+            window.get("target_host")
+            or parse_context_key_target_host(window.get("context_key"))
+            or local_host_alias()
+        )
+        execution_mode = str(window.get("execution_mode") or execution_mode_for_target_host(target_host)).strip() or "local"
+        group_key = project_name if project_name == "global" else build_target_context_key(project_name, target_host)
+        hidden = bool(window.get("hidden", False))
+        session_items: List[Dict[str, Any]] = []
+        for session in sessions_by_window.get(window_id, []):
+            if not isinstance(session, dict):
+                continue
+            session_target_host = normalize_target_host(
+                session.get("target_host")
+                or session.get("host_name")
+                or target_host
+            )
+            session_items.append({
+                "session_key": str(session.get("session_key") or ""),
+                "focus_target": dict(session.get("focus_target") or {}),
+                "close_target": dict(session.get("close_target") or {}),
+                "source": str(session.get("source") or "").strip(),
+                "agent": str(session.get("agent") or "").strip(),
+                "tool": str(session.get("tool") or ""),
+                "display_tool": str(session.get("display_tool") or session.get("tool") or ""),
+                "agent_status": str(session.get("agent_status") or "unknown").strip() or "unknown",
+                "pane_id": str(session.get("pane_id") or "").strip(),
+                "tab_id": str(session.get("tab_id") or "").strip(),
+                "workspace_id": str(session.get("workspace_id") or "").strip(),
+                "terminal_id": str(session.get("terminal_id") or "").strip(),
+                "cwd": str(session.get("cwd") or "").strip(),
+                "foreground_cwd": str(session.get("foreground_cwd") or "").strip(),
+                "pane_label": str(session.get("pane_label") or session.get("pane_title") or session.get("pane_id") or "").strip(),
+                "is_current_window": bool(session.get("is_current_window", False)),
+                "pane_active": bool(session.get("pane_active", False)),
+                "window_active": bool(session.get("window_active", False)),
+                "target_host": session_target_host,
+                "transport_kind": str(
+                    session.get("transport_kind")
+                    or transport_kind_for_target_host(session_target_host)
+                ).strip(),
+            })
+
+        session_items.sort(
+            key=lambda item: (
+                bool(item.get("is_current_window", False)),
+                bool(item.get("pane_active", False)),
+                str(item.get("agent_status") or ""),
+                str(item.get("pane_label") or ""),
+                str(item.get("session_key") or ""),
+            ),
+            reverse=True,
+        )
+        has_active_session = any(
+            bool(item.get("window_active", False)) or bool(item.get("pane_active", False))
+            for item in session_items
+        )
+        matches_focus_override = window_matches_focus_override(
+            window_id=window_id,
+            connection_key=str(window.get("connection_key") or "").strip(),
+        )
+        derived_focused = focused_window_id > 0 and window_id == focused_window_id
+        derived_visible = bool(window.get("visible", False)) or has_active_session or matches_focus_override
+        derived_hidden = bool(hidden and not derived_visible)
+
+        entry = grouped.setdefault(group_key, {
+            "project": project_name,
+            "display_project": project_name,
+            "target_host": target_host,
+            "transport_kind": transport_kind_for_target_host(target_host),
+            "focused": False,
+            "windows": [],
+            "visible_window_count": 0,
+            "hidden_window_count": 0,
+            "ai_session_count": 0,
+            "is_active": (
+                project_name == active_project_name
+                and target_host == active_target_host
+            ),
+        })
+        entry["focused"] = bool(entry["focused"]) or derived_focused
+        if derived_hidden:
+            entry["hidden_window_count"] = int(entry["hidden_window_count"]) + 1
+        else:
+            entry["visible_window_count"] = int(entry["visible_window_count"]) + 1
+        entry["ai_session_count"] = int(entry["ai_session_count"]) + len(session_items)
+        entry["windows"].append({
+            "id": window_id,
+            "title": str(window.get("title") or "(untitled)"),
+            "app_key": str(window.get("app_key") or ""),
+            "app_name": str(window.get("app_name") or window.get("class") or "window"),
+            "icon_path": str(window.get("icon_path") or "").strip(),
+            "project": project_name,
+            "target_host": target_host,
+            "transport_kind": transport_kind_for_target_host(target_host),
+            "connection_key": str(window.get("connection_key") or "").strip(),
+            "workspace": str(window.get("workspace") or "").strip(),
+            "output": str(window.get("output") or "").strip(),
+            "focused": derived_focused,
+            "is_current_window": focused_window_id > 0 and window_id == focused_window_id,
+            "visible": derived_visible,
+            "hidden": derived_hidden,
+            "floating": bool(window.get("floating", False)),
+            "scope": str(window.get("scope") or "").strip(),
+            "focus_target": build_window_focus_target(
+                window_id=window_id,
+                project_name=project_name,
+                target_variant=execution_mode,
+                connection_key=str(window.get("connection_key") or "").strip(),
+            ),
+            "sessions": session_items,
+            "ai_session_count": len(session_items),
+        })
+
+    projects = list(grouped.values())
+    for project in projects:
+        project_windows = list(project.get("windows", []) or [])
+        project_windows.sort(
+            key=lambda item: (
+                dashboard_workspace_sort_key(item.get("workspace")),
+                str(item.get("app_name") or item.get("app_key") or "").casefold(),
+                int(item.get("id") or 0),
+                str(item.get("title") or "").casefold(),
+            ),
+        )
+        project["windows"] = project_windows
+        project["window_count"] = len(project.get("windows", []))
+    projects.sort(
+        key=lambda item: (
+            str(item.get("project") or "global").strip().lower() == "global",
+            str(item.get("project") or "").casefold(),
+            str(item.get("target_host") or "").casefold(),
+        ),
+    )
+    return projects
+
 
 
 def dashboard_event_type_for_state_change(event_type: str) -> str:

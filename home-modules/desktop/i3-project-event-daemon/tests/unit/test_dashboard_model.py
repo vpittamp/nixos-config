@@ -30,7 +30,51 @@ validate_dashboard_payload = dashboard_model.validate_dashboard_payload
 dashboard_event_type_for_state_change = dashboard_model.dashboard_event_type_for_state_change
 dashboard_changed_keys_for_event = dashboard_model.dashboard_changed_keys_for_event
 dashboard_event_payload_from_snapshot = dashboard_model.dashboard_event_payload_from_snapshot
+build_dashboard_projects = dashboard_model.build_dashboard_projects
 build_dashboard_snapshot_payload = dashboard_model.build_dashboard_snapshot_payload
+
+
+def _project_builder_callbacks(*, override_windows=None):
+    override_windows = set(override_windows or [])
+
+    def canonical_project_name(value, *, project_path=None):
+        _ = project_path
+        return str(value or "").strip()
+
+    def normalize_target_host(value):
+        return str(value or "local").strip() or "local"
+
+    def parse_context_key_target_host(value):
+        text = str(value or "")
+        if "::host::" in text:
+            return text.rsplit("::host::", 1)[1]
+        return ""
+
+    def target_host_from_context_payload(context, *, project_name=""):
+        _ = project_name
+        return normalize_target_host((context or {}).get("target_host") or "local")
+
+    def transport_kind_for_target_host(value):
+        return "local" if normalize_target_host(value) == "local" else "ssh"
+
+    return {
+        "canonical_project_name": canonical_project_name,
+        "normalize_target_host": normalize_target_host,
+        "parse_context_key_target_host": parse_context_key_target_host,
+        "target_host_from_context_payload": target_host_from_context_payload,
+        "local_host_alias": lambda: "local",
+        "execution_mode_for_target_host": lambda value: "local" if normalize_target_host(value) == "local" else "ssh",
+        "build_target_context_key": lambda project_name, target_host: f"{project_name}::{target_host}",
+        "transport_kind_for_target_host": transport_kind_for_target_host,
+        "window_matches_focus_override": lambda **kwargs: int(kwargs.get("window_id") or 0) in override_windows,
+        "build_window_focus_target": lambda **kwargs: {
+            "kind": "window",
+            "window_id": int(kwargs.get("window_id") or 0),
+            "project_name": str(kwargs.get("project_name") or ""),
+            "target_variant": str(kwargs.get("target_variant") or ""),
+            "connection_key": str(kwargs.get("connection_key") or ""),
+        },
+    }
 
 
 def test_validate_dashboard_payload_accepts_single_daemon_current_row() -> None:
@@ -81,6 +125,99 @@ def test_validate_dashboard_payload_accepts_single_daemon_current_row() -> None:
     assert result["ok"] is True
     assert result["issues"] == []
     assert result["warnings"] == []
+
+
+def test_build_dashboard_projects_groups_windows_and_shapes_session_rows() -> None:
+    runtime_snapshot = {
+        "focused_window_id": 101,
+        "active_context": {
+            "qualified_name": "vpittamp/nixos-config:main",
+            "target_host": "local",
+        },
+        "tracked_windows": [
+            {
+                "window_id": 101,
+                "title": "Editor",
+                "app_name": "terminal",
+                "project": "vpittamp/nixos-config:main",
+                "target_host": "local",
+                "connection_key": "local@ryzen",
+                "workspace": "2",
+                "visible": True,
+            },
+            {
+                "window_id": 202,
+                "title": "Remote",
+                "class": "Alacritty",
+                "project": "vpittamp/nixos-config:main",
+                "target_host": "ryzen",
+                "connection_key": "vpittamp@ryzen:22",
+                "workspace": "1",
+                "hidden": True,
+            },
+        ],
+    }
+    sessions = [
+        {
+            "session_key": "session-current",
+            "window_id": 101,
+            "source": "herdr",
+            "tool": "codex",
+            "agent_status": "working",
+            "pane_id": "pane-1",
+            "pane_label": "agent",
+            "is_current_window": True,
+            "pane_active": True,
+            "window_active": True,
+        },
+        {
+            "session_key": "session-hidden",
+            "window_id": 202,
+            "source": "herdr",
+            "tool": "claude",
+            "agent_status": "idle",
+        },
+    ]
+
+    projects = build_dashboard_projects(
+        runtime_snapshot,
+        sessions,
+        **_project_builder_callbacks(override_windows={202}),
+    )
+
+    assert [project["target_host"] for project in projects] == ["local", "ryzen"]
+    local_project = projects[0]
+    remote_project = projects[1]
+    assert local_project["is_active"] is True
+    assert local_project["focused"] is True
+    assert local_project["window_count"] == 1
+    assert local_project["windows"][0]["focus_target"]["window_id"] == 101
+    assert local_project["windows"][0]["sessions"][0]["session_key"] == "session-current"
+    assert local_project["windows"][0]["sessions"][0]["transport_kind"] == "local"
+    assert remote_project["visible_window_count"] == 1
+    assert remote_project["hidden_window_count"] == 0
+    assert remote_project["windows"][0]["visible"] is True
+    assert remote_project["windows"][0]["hidden"] is False
+
+
+def test_build_dashboard_projects_sorts_windows_by_workspace_and_app() -> None:
+    runtime_snapshot = {
+        "focused_window_id": 0,
+        "active_context": {},
+        "tracked_windows": [
+            {"window_id": 3, "project": "global", "workspace": "scratchpad", "app_name": "zeta"},
+            {"window_id": 2, "project": "global", "workspace": "10", "app_name": "beta"},
+            {"window_id": 1, "project": "global", "workspace": "2", "app_name": "alpha"},
+        ],
+    }
+
+    projects = build_dashboard_projects(
+        runtime_snapshot,
+        [],
+        **_project_builder_callbacks(),
+    )
+
+    assert [window["id"] for window in projects[0]["windows"]] == [1, 2, 3]
 
 
 def test_validate_dashboard_payload_rejects_duplicate_current_rows() -> None:
