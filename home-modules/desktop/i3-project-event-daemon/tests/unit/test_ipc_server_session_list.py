@@ -230,7 +230,7 @@ async def test_runtime_snapshot_keeps_transient_unbound_window_visible(server, m
     })
     monkeypatch.setattr(server, "_context_get_active", fake_context_get_active)
     monkeypatch.setattr(server.state_manager, "get_window_map_snapshot", fake_window_map_snapshot, raising=False)
-    monkeypatch.setattr(server, "_get_reusable_context_terminal_window", AsyncMock(return_value=None))
+    monkeypatch.setattr(server.launch_service, "get_reusable_context_terminal_window", AsyncMock(return_value=None))
     monkeypatch.setattr(server, "_get_launch_stats", AsyncMock(return_value={}))
 
     snapshot = await server._runtime_snapshot({})

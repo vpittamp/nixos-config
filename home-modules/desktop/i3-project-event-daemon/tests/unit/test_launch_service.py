@@ -793,6 +793,108 @@ def test_find_context_app_window_candidates_allows_global_app_any_project(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_get_reusable_context_terminal_window_prunes_stale_candidate(tmp_path: Path) -> None:
+    stale = SimpleNamespace(
+        window_id=31,
+        project="repo/main",
+        context_key="repo/main::local::local@thinkpad",
+        execution_mode="local",
+        terminal_role="project-main",
+        app_identifier="terminal",
+        tmux_session_name="i3pm-main",
+        workspace="1",
+    )
+    removed: List[int] = []
+    invalidated: List[bool] = []
+
+    async def fake_live_window(_window_id: int) -> Optional[Any]:
+        return None
+
+    async def fake_remove_window(window_id: int) -> None:
+        removed.append(window_id)
+
+    service = LaunchService(
+        runtime_dir=lambda: tmp_path,
+        load_json_file=load_json_file,
+        normalize_target_host=lambda value: str(value or "").strip().lower(),
+        parse_context_target_host=parse_context_target_host,
+        transport_kind_for_target_host=lambda _value: "local_process",
+        local_host_alias=lambda: "thinkpad",
+        window_map_items=lambda: [(31, stale)],
+        find_live_window=fake_live_window,
+        remove_window=fake_remove_window,
+        invalidate_window_tree_cache=lambda: invalidated.append(True),
+    )
+
+    result = await service.get_reusable_context_terminal_window(
+        project_name="repo/main",
+        context_key="repo/main::local::local@thinkpad",
+        execution_mode="local",
+        app_name="terminal",
+        terminal_role="project-main",
+    )
+
+    assert result is None
+    assert removed == [31]
+    assert invalidated == [True]
+
+
+@pytest.mark.asyncio
+async def test_get_reusable_context_app_window_returns_first_live_candidate(tmp_path: Path) -> None:
+    stale = SimpleNamespace(
+        window_id=41,
+        execution_mode="local",
+        project="repo/main",
+        window_class="code",
+        window_instance="code",
+        created=20,
+    )
+    live = SimpleNamespace(
+        window_id=42,
+        execution_mode="local",
+        project="repo/main",
+        window_class="code",
+        window_instance="code",
+        created=10,
+    )
+    removed: List[int] = []
+
+    async def fake_live_window(window_id: int) -> Optional[Any]:
+        return SimpleNamespace(id=window_id) if window_id == 42 else None
+
+    async def fake_remove_window(window_id: int) -> None:
+        removed.append(window_id)
+
+    service = LaunchService(
+        runtime_dir=lambda: tmp_path,
+        load_json_file=load_json_file,
+        normalize_target_host=lambda value: str(value or "").strip().lower(),
+        parse_context_target_host=parse_context_target_host,
+        transport_kind_for_target_host=lambda _value: "local_process",
+        local_host_alias=lambda: "thinkpad",
+        window_map_items=lambda: [(41, stale), (42, live)],
+        find_live_window=fake_live_window,
+        remove_window=fake_remove_window,
+    )
+    app = SimpleNamespace(
+        name="code",
+        scope="scoped",
+        terminal=False,
+        expected_class="code",
+        pwa_match_domains=[],
+    )
+
+    result = await service.get_reusable_context_app_window(
+        app=app,
+        project_name="repo/main",
+        execution_mode="local",
+    )
+
+    assert result is live
+    assert removed == []
+
+
+@pytest.mark.asyncio
 async def test_launch_stats_and_pending_launches_use_registry_boundary(tmp_path: Path) -> None:
     registry = DummyLaunchRegistry()
     service = make_service(tmp_path, launch_registry=registry)

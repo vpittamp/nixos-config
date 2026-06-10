@@ -618,6 +618,9 @@ class IPCServer:
                 attach_profile
             ),
             remote_session_terminal_role=lambda context_key: self._remote_session_terminal_role(context_key),
+            find_live_window=lambda window_id: self._find_live_sway_window(window_id),
+            remove_window=lambda window_id: self.state_manager.remove_window(window_id),
+            invalidate_window_tree_cache=lambda: self.invalidate_window_tree_cache(),
         )
         self.herdr_service = HerdrService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
@@ -7575,77 +7578,6 @@ class IPCServer:
 
         return find_window(tree)
 
-    async def _get_reusable_context_terminal_window(
-        self,
-        *,
-        project_name: str,
-        context_key: str,
-        execution_mode: str,
-        app_name: str = "",
-        terminal_role: str = "",
-    ) -> Optional[Any]:
-        """Return a reusable terminal only if the tracked window still exists in Sway."""
-        candidate = self.launch_service.find_context_terminal_window(
-            project_name=project_name,
-            context_key=context_key,
-            execution_mode=execution_mode,
-            app_name=app_name,
-            terminal_role=terminal_role,
-        )
-        if candidate is None:
-            return None
-
-        candidate_window_id = int(getattr(candidate, "window_id", 0) or 0)
-        live_window = await self._find_live_sway_window(candidate_window_id)
-        if live_window is not None:
-            return candidate
-
-        logger.warning(
-            "Discarding stale tracked terminal window %s for %s (%s)",
-            candidate_window_id,
-            project_name,
-            context_key,
-        )
-        await self.state_manager.remove_window(candidate_window_id)
-        self.invalidate_window_tree_cache()
-        return None
-
-    async def _get_reusable_context_app_window(
-        self,
-        *,
-        app: RegistryApp,
-        project_name: str,
-        execution_mode: str,
-    ) -> Optional[Any]:
-        """Return an existing live app window for single-instance launches."""
-        candidates = self.launch_service.find_context_app_window_candidates(
-            app=app,
-            project_name=project_name,
-            execution_mode=execution_mode,
-        )
-        stale_window_ids: list[int] = []
-
-        for candidate in candidates:
-            candidate_window_id = int(getattr(candidate, "window_id", 0) or 0)
-            live_window = await self._find_live_sway_window(candidate_window_id)
-            if live_window is not None:
-                return candidate
-
-            stale_window_ids.append(candidate_window_id)
-
-        for stale_window_id in stale_window_ids:
-            logger.warning(
-                "Discarding stale tracked app window %s for %s",
-                stale_window_id,
-                app.name,
-            )
-            await self.state_manager.remove_window(stale_window_id)
-
-        if stale_window_ids:
-            self.invalidate_window_tree_cache()
-
-        return None
-
     async def _get_reusable_remote_project_bridge_window(
         self,
         *,
@@ -9818,7 +9750,7 @@ FORMAT JSONEachRow
 
         if existing_window is None:
             remote_terminal_role = str(spec.get("terminal_role") or "").strip()
-            existing_window = await self._get_reusable_context_terminal_window(
+            existing_window = await self.launch_service.get_reusable_context_terminal_window(
                 project_name=project_name,
                 context_key=str(spec.get("context_key") or "").strip(),
                 execution_mode="ssh",
@@ -10987,7 +10919,7 @@ FORMAT JSONEachRow
             )
         ).strip() or "local_helper"
         if terminal_mode == "managed_project_terminal":
-            existing_window = await self._get_reusable_context_terminal_window(
+            existing_window = await self.launch_service.get_reusable_context_terminal_window(
                 project_name=str(spec.get("project_name") or "").strip(),
                 context_key=str(spec.get("context_key") or "").strip(),
                 execution_mode=str(spec.get("execution_mode") or "local").strip() or "local",
@@ -11022,7 +10954,7 @@ FORMAT JSONEachRow
                         window_id=reused_window_id,
                     )
         elif terminal_mode == "dedicated_scoped_window":
-            existing_window = await self._get_reusable_context_terminal_window(
+            existing_window = await self.launch_service.get_reusable_context_terminal_window(
                 project_name=str(spec.get("project_name") or "").strip(),
                 context_key=str(spec.get("context_key") or "").strip(),
                 execution_mode=str(spec.get("execution_mode") or "local").strip() or "local",
@@ -11042,7 +10974,7 @@ FORMAT JSONEachRow
                         window_id=reused_window_id,
                     )
         elif not app.multi_instance and (not app.terminal or not terminal_mode):
-            existing_window = await self._get_reusable_context_app_window(
+            existing_window = await self.launch_service.get_reusable_context_app_window(
                 app=app,
                 project_name=str(spec.get("project_name") or "").strip(),
                 execution_mode=str(spec.get("execution_mode") or "local").strip() or "local",
@@ -13673,7 +13605,7 @@ FORMAT JSONEachRow
             "project_directory": str(active_context.get("directory") or active_context.get("local_directory") or "").strip(),
         }
 
-        existing_terminal = await self._get_reusable_context_terminal_window(
+        existing_terminal = await self.launch_service.get_reusable_context_terminal_window(
             project_name=active_project_name,
             context_key=active_context_key,
             execution_mode=active_execution_mode,

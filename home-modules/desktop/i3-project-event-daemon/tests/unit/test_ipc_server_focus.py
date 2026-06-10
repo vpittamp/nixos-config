@@ -873,7 +873,7 @@ async def test_focus_remote_session_attach_tmux_target_sets_override_without_wai
         "terminal_role": "remote-session:abc123",
         "execution_mode": "ssh",
     })
-    server._get_reusable_context_terminal_window = AsyncMock(return_value=SimpleNamespace(
+    server.launch_service.get_reusable_context_terminal_window = AsyncMock(return_value=SimpleNamespace(
         window_id=20,
         terminal_role="remote-session:abc123",
         remote_surface_key="surface-remote-pane",
@@ -940,7 +940,7 @@ async def test_focus_remote_session_attach_replaces_stale_bridge_before_relaunch
         "terminal_anchor_id": "bridge-anchor",
         "execution_mode": "ssh",
     })
-    server._get_reusable_context_terminal_window = AsyncMock(return_value=SimpleNamespace(
+    server.launch_service.get_reusable_context_terminal_window = AsyncMock(return_value=SimpleNamespace(
         window_id=20,
         remote_surface_key="surface-remote-pane",
         remote_session_key="session-remote-pane",
@@ -1018,7 +1018,7 @@ async def test_focus_remote_session_attach_launches_new_exact_bridge_when_projec
         "terminal_anchor_id": "bridge-anchor",
         "execution_mode": "ssh",
     })
-    server._get_reusable_context_terminal_window = AsyncMock(return_value=None)
+    server.launch_service.get_reusable_context_terminal_window = AsyncMock(return_value=None)
     server.launch_service.register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
     server.launch_service.execute_launch_spec = lambda _spec: {"success": True}
     server.launch_service.wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
@@ -1087,7 +1087,7 @@ async def test_focus_remote_session_attach_focuses_local_bridge_without_project_
         "terminal_anchor_id": "bridge-anchor",
         "execution_mode": "ssh",
     })
-    server._get_reusable_context_terminal_window = AsyncMock(return_value=None)
+    server.launch_service.get_reusable_context_terminal_window = AsyncMock(return_value=None)
     server.launch_service.register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
     server.launch_service.execute_launch_spec = lambda _spec: {"success": True}
     server.launch_service.wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
@@ -1173,7 +1173,7 @@ async def test_focus_remote_session_attach_prefers_already_bound_window(server):
         remote_tmux_pane="%2",
     )
     server._find_live_sway_window = AsyncMock(return_value=SimpleNamespace(id=39))
-    server._get_reusable_context_terminal_window = AsyncMock(side_effect=AssertionError("unexpected lookup"))
+    server.launch_service.get_reusable_context_terminal_window = AsyncMock(side_effect=AssertionError("unexpected lookup"))
     server._window_focus = AsyncMock(return_value={
         "success": True,
         "current_ai_session_key_after": "",
@@ -1249,7 +1249,7 @@ async def test_focus_remote_session_attach_relaunches_live_window_without_exact_
         "execution_mode": "ssh",
     })
     server._find_live_sway_window = AsyncMock(return_value=SimpleNamespace(id=44))
-    server._get_reusable_context_terminal_window = AsyncMock(side_effect=AssertionError("unexpected lookup"))
+    server.launch_service.get_reusable_context_terminal_window = AsyncMock(side_effect=AssertionError("unexpected lookup"))
     server._close_managed_window = AsyncMock(return_value=True)
     server.state_manager.remove_window = AsyncMock()
     server.launch_service.register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})

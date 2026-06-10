@@ -51,6 +51,9 @@ class LaunchService:
         resolve_remote_attach_profile: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
         build_remote_attach_runtime_context: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
         remote_session_terminal_role: Optional[Callable[[str], str]] = None,
+        find_live_window: Optional[Callable[[int], Awaitable[Any]]] = None,
+        remove_window: Optional[Callable[[int], Awaitable[Any]]] = None,
+        invalidate_window_tree_cache: Optional[Callable[[], None]] = None,
     ) -> None:
         self._runtime_dir = runtime_dir
         self._load_json_file = load_json_file
@@ -74,6 +77,9 @@ class LaunchService:
         self._resolve_remote_attach_profile = resolve_remote_attach_profile
         self._build_remote_attach_runtime_context = build_remote_attach_runtime_context
         self._remote_session_terminal_role = remote_session_terminal_role
+        self._find_live_window = find_live_window
+        self._remove_window = remove_window
+        self._invalidate_window_tree_cache = invalidate_window_tree_cache
         self._launch_reconcile_tasks: Dict[str, asyncio.Task] = {}
 
     @staticmethod
@@ -593,6 +599,45 @@ class LaunchService:
         )
         return candidates[0]
 
+    async def get_reusable_context_terminal_window(
+        self,
+        *,
+        project_name: str,
+        context_key: str,
+        execution_mode: str,
+        app_name: str = "",
+        terminal_role: str = "",
+    ) -> Optional[Any]:
+        """Return a reusable terminal only if the tracked window still exists."""
+        candidate = self.find_context_terminal_window(
+            project_name=project_name,
+            context_key=context_key,
+            execution_mode=execution_mode,
+            app_name=app_name,
+            terminal_role=terminal_role,
+        )
+        if candidate is None:
+            return None
+        if self._find_live_window is None:
+            return candidate
+
+        candidate_window_id = int(getattr(candidate, "window_id", 0) or 0)
+        live_window = await self._find_live_window(candidate_window_id)
+        if live_window is not None:
+            return candidate
+
+        logger.warning(
+            "Discarding stale tracked terminal window %s for %s (%s)",
+            candidate_window_id,
+            project_name,
+            context_key,
+        )
+        if self._remove_window is not None and candidate_window_id > 0:
+            await self._remove_window(candidate_window_id)
+        if self._invalidate_window_tree_cache is not None:
+            self._invalidate_window_tree_cache()
+        return None
+
     def find_context_app_window_candidates(
         self,
         *,
@@ -653,6 +698,44 @@ class LaunchService:
                 matched_candidates.append(candidate)
 
         return matched_candidates
+
+    async def get_reusable_context_app_window(
+        self,
+        *,
+        app: Any,
+        project_name: str,
+        execution_mode: str,
+    ) -> Optional[Any]:
+        """Return an existing live app window for single-instance launches."""
+        candidates = self.find_context_app_window_candidates(
+            app=app,
+            project_name=project_name,
+            execution_mode=execution_mode,
+        )
+        if self._find_live_window is None:
+            return candidates[0] if candidates else None
+
+        stale_window_ids: List[int] = []
+        for candidate in candidates:
+            candidate_window_id = int(getattr(candidate, "window_id", 0) or 0)
+            live_window = await self._find_live_window(candidate_window_id)
+            if live_window is not None:
+                return candidate
+            if candidate_window_id > 0:
+                stale_window_ids.append(candidate_window_id)
+
+        for stale_window_id in stale_window_ids:
+            logger.warning(
+                "Discarding stale tracked app window %s for %s",
+                stale_window_id,
+                getattr(app, "name", ""),
+            )
+            if self._remove_window is not None:
+                await self._remove_window(stale_window_id)
+
+        if stale_window_ids and self._invalidate_window_tree_cache is not None:
+            self._invalidate_window_tree_cache()
+        return None
 
     def build_launch_open_response(
         self,
