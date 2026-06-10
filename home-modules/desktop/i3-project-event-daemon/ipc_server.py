@@ -608,6 +608,8 @@ class IPCServer:
                     terminal_anchor_id
                 )
             ),
+            launch_registry=lambda: self.state_manager.launch_registry,
+            require_registry_app=lambda app_name: self._require_registry_app(app_name),
         )
         self.herdr_service = HerdrService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
@@ -8101,72 +8103,18 @@ class IPCServer:
         terminal_anchor_id: str,
         preferred_workspace: Optional[int],
     ) -> Dict[str, Any]:
-        from .models import PendingLaunch
-
-        if preferred_workspace is None:
-            return {
-                "status": "skipped",
-                "launch_id": "",
-                "terminal_anchor_id": terminal_anchor_id,
-                "expected_class": app.expected_class,
-                "pending_count": self.state_manager.launch_registry.get_stats().total_pending,
-            }
-
-        pending_launch = PendingLaunch(
-            app_name=app.name,
-            project_name=project_name or "global",
-            project_directory=Path(project_directory),
+        return await self.launch_service.register_pending_launch(
+            app=app,
+            project_name=project_name,
+            project_directory=project_directory,
             launcher_pid=launcher_pid,
-            workspace_number=preferred_workspace,
-            timestamp=time.time(),
-            expected_class=app.expected_class,
-            pwa_match_domains=list(app.pwa_match_domains or []),
             terminal_anchor_id=terminal_anchor_id,
-            matched=False,
+            preferred_workspace=preferred_workspace,
         )
-        launch_id = await self.state_manager.launch_registry.add(pending_launch)
-        stats = self.state_manager.launch_registry.get_stats()
-        return {
-            "status": "success",
-            "launch_id": launch_id,
-            "terminal_anchor_id": terminal_anchor_id,
-            "expected_class": app.expected_class,
-            "pending_count": stats.total_pending,
-        }
 
     async def _register_launch_for_spec(self, spec: Dict[str, Any]) -> Dict[str, Any]:
         """Register a pending launch for a prepared spec."""
-        app = self._require_registry_app(str(spec.get("app_name") or "").strip())
-        registration = await self._register_pending_launch(
-            app=app,
-            project_name=str(spec.get("project_name") or "").strip(),
-            project_directory=(
-                str(spec.get("local_project_directory") or "").strip()
-                or str(Path.home())
-            ),
-            launcher_pid=int(spec.get("environment", {}).get("I3PM_LAUNCHER_PID") or os.getpid()),
-            terminal_anchor_id=str(spec.get("terminal_anchor_id") or "").strip(),
-            preferred_workspace=(
-                int(spec.get("preferred_workspace"))
-                if spec.get("preferred_workspace") is not None
-                else None
-            ),
-        )
-        launch_id = str(registration.get("launch_id") or "").strip()
-        if launch_id:
-            spec["launch"] = {"launch_id": launch_id}
-            launch_transport = str(spec.get("launch_transport") or "").strip()
-            if launch_transport == "remote_helper":
-                self._write_remote_launch_spec(
-                    spec=spec,
-                    launch_kind=str(spec.get("launch_kind") or "open_project_terminal").strip(),
-                )
-            else:
-                self._write_local_launch_spec(
-                    spec=spec,
-                    launch_kind=str(spec.get("launch_kind") or "open_project_terminal").strip(),
-                )
-        return registration
+        return await self.launch_service.register_launch_for_spec(spec)
 
     async def _prepare_launch(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Build a deterministic launch spec and register pending launch state."""

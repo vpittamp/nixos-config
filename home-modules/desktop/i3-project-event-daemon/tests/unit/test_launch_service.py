@@ -53,6 +53,25 @@ def parse_context_target_host(value: Any) -> str:
     return ""
 
 
+class DummyLaunchRegistry:
+    def __init__(self) -> None:
+        self._launches: Dict[str, Any] = {}
+
+    def get_stats(self) -> SimpleNamespace:
+        return SimpleNamespace(total_pending=len(self._launches))
+
+    async def add(self, launch: Any) -> str:
+        launch_id = f"launch-{len(self._launches) + 1}"
+        self._launches[launch_id] = launch
+        return launch_id
+
+    async def get_by_terminal_anchor(self, terminal_anchor_id: str) -> Any:
+        for launch in self._launches.values():
+            if str(getattr(launch, "terminal_anchor_id", "") or "").strip() == str(terminal_anchor_id or "").strip():
+                return launch
+        return None
+
+
 def make_service(
     tmp_path: Path,
     *,
@@ -61,6 +80,7 @@ def make_service(
     helper_path: Path = Path("/tmp/project-remote-launch.py"),
     which_map: Optional[Dict[str, str]] = None,
     reconcile_calls: Optional[List[Dict[str, Any]]] = None,
+    launch_registry: Optional[DummyLaunchRegistry] = None,
 ) -> LaunchService:
     def fake_run(
         cmd: List[str],
@@ -90,6 +110,7 @@ def make_service(
         repo_root=lambda: PACKAGE_ROOT,
         which=lambda command: (which_map or {}).get(command),
         schedule_launch_reconcile=fake_reconcile,
+        launch_registry=(lambda: launch_registry) if launch_registry is not None else None,
     )
 
 
@@ -298,6 +319,101 @@ def test_write_remote_spec_persists_remote_payload(tmp_path: Path) -> None:
     assert payload["status_file"] == str(service.status_file("launch-remote"))
     assert status["connection_key"] == "vpittamp@ryzen:22"
     assert status["launch_kind"] == "open_project_terminal"
+
+
+@pytest.mark.asyncio
+async def test_register_pending_launch_skips_without_workspace(tmp_path: Path) -> None:
+    registry = DummyLaunchRegistry()
+    service = make_service(tmp_path, launch_registry=registry)
+    app = SimpleNamespace(
+        name="terminal",
+        expected_class="com.mitchellh.ghostty",
+        pwa_match_domains=[],
+    )
+
+    result = await service.register_pending_launch(
+        app=app,
+        project_name="repo/main",
+        project_directory="/repo/main",
+        launcher_pid=123,
+        terminal_anchor_id="anchor-skip",
+        preferred_workspace=None,
+    )
+
+    assert result["status"] == "skipped"
+    assert result["launch_id"] == ""
+    assert result["pending_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_register_launch_for_spec_persists_local_spec(tmp_path: Path) -> None:
+    registry = DummyLaunchRegistry()
+    app = SimpleNamespace(
+        name="terminal",
+        expected_class="com.mitchellh.ghostty",
+        pwa_match_domains=["example.com"],
+    )
+    service = make_service(tmp_path, launch_registry=registry)
+    spec = {
+        "app_name": "terminal",
+        "project_name": "repo/main",
+        "target_host": "thinkpad",
+        "transport_kind": "local_process",
+        "connection_key": "local@thinkpad",
+        "context_key": "repo/main::local::local@thinkpad",
+        "project_directory": "/repo/main",
+        "local_project_directory": "/repo/main",
+        "preferred_workspace": 1,
+        "terminal_anchor_id": "anchor-local",
+        "tmux_session_name": "i3pm-main",
+        "terminal_role": "project-main",
+        "terminal_launch": {"mode": "managed_project_terminal"},
+        "environment": {"I3PM_LAUNCHER_PID": "123"},
+        "launch_transport": "local_helper",
+    }
+
+    result = await service.register_launch_for_spec(spec, app=app)
+
+    assert result["status"] == "success"
+    assert result["launch_id"] == "launch-1"
+    assert spec["launch"] == {"launch_id": "launch-1"}
+    assert load_json_file(service.spec_file("launch-1"))["launch_transport"] == "local_helper"
+    assert service.read_status("launch-1")["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_register_launch_for_spec_persists_remote_spec(tmp_path: Path) -> None:
+    registry = DummyLaunchRegistry()
+    app = SimpleNamespace(
+        name="terminal",
+        expected_class="com.mitchellh.ghostty",
+        pwa_match_domains=[],
+    )
+    service = make_service(tmp_path, launch_registry=registry)
+    spec = {
+        "app_name": "terminal",
+        "project_name": "repo/main",
+        "target_host": "ryzen",
+        "transport_kind": "ssh",
+        "connection_key": "vpittamp@ryzen:22",
+        "context_key": "repo/main::ssh::vpittamp@ryzen:22",
+        "project_directory": "/srv/repo/main",
+        "local_project_directory": "/repo/main",
+        "preferred_workspace": 1,
+        "terminal_anchor_id": "anchor-remote",
+        "tmux_session_name": "i3pm-main",
+        "terminal_launch": {"mode": "managed_project_terminal"},
+        "environment": {"I3PM_LAUNCHER_PID": "123"},
+        "launch_transport": "remote_helper",
+    }
+
+    result = await service.register_launch_for_spec(spec, app=app)
+
+    assert result["launch_id"] == "launch-1"
+    payload = load_json_file(service.spec_file("launch-1"))
+    assert payload["launch_transport"] == "remote_helper"
+    assert payload["target_host"] == "ryzen"
+    assert service.read_status("launch-1")["transport_kind"] == "ssh"
 
 
 def test_build_remote_helper_script_for_remote_attach_without_remote_dir(tmp_path: Path) -> None:

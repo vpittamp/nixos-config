@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
 
 from ..config import atomic_write_json
+from ..models import PendingLaunch
 from ..worktree_utils import canonicalize_context_key
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,8 @@ class LaunchService:
         get_terminal_anchor: Optional[Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]] = None,
         window_map_items: Optional[Callable[[], Iterable[Tuple[int, Any]]]] = None,
         get_pending_launch_by_terminal_anchor: Optional[Callable[[str], Awaitable[Any]]] = None,
+        launch_registry: Optional[Callable[[], Any]] = None,
+        require_registry_app: Optional[Callable[[str], Any]] = None,
     ) -> None:
         self._runtime_dir = runtime_dir
         self._load_json_file = load_json_file
@@ -63,6 +66,8 @@ class LaunchService:
         self._get_terminal_anchor = get_terminal_anchor
         self._window_map_items = window_map_items
         self._get_pending_launch_by_terminal_anchor = get_pending_launch_by_terminal_anchor
+        self._launch_registry = launch_registry
+        self._require_registry_app = require_registry_app
         self._launch_reconcile_tasks: Dict[str, asyncio.Task] = {}
 
     @staticmethod
@@ -190,6 +195,11 @@ class LaunchService:
             if len(items) >= max(int(limit), 1):
                 break
         return items
+
+    def _registry(self) -> Any:
+        if self._launch_registry is None:
+            raise RuntimeError("Launch registry is unavailable")
+        return self._launch_registry()
 
     def build_launch_identity(
         self,
@@ -368,6 +378,88 @@ class LaunchService:
             if value:
                 env[key] = value
         return env
+
+    async def register_pending_launch(
+        self,
+        *,
+        app: Any,
+        project_name: str,
+        project_directory: str,
+        launcher_pid: int,
+        terminal_anchor_id: str,
+        preferred_workspace: Optional[int],
+    ) -> Dict[str, Any]:
+        """Register pending launch metadata used to correlate future windows."""
+        registry = self._registry()
+        stats = registry.get_stats()
+        if preferred_workspace is None:
+            return {
+                "status": "skipped",
+                "launch_id": "",
+                "terminal_anchor_id": terminal_anchor_id,
+                "expected_class": app.expected_class,
+                "pending_count": stats.total_pending,
+            }
+
+        pending_launch = PendingLaunch(
+            app_name=app.name,
+            project_name=project_name or "global",
+            project_directory=Path(project_directory),
+            launcher_pid=launcher_pid,
+            workspace_number=preferred_workspace,
+            timestamp=time.time(),
+            expected_class=app.expected_class,
+            pwa_match_domains=list(app.pwa_match_domains or []),
+            terminal_anchor_id=terminal_anchor_id,
+            matched=False,
+        )
+        launch_id = await registry.add(pending_launch)
+        stats = registry.get_stats()
+        return {
+            "status": "success",
+            "launch_id": launch_id,
+            "terminal_anchor_id": terminal_anchor_id,
+            "expected_class": app.expected_class,
+            "pending_count": stats.total_pending,
+        }
+
+    async def register_launch_for_spec(
+        self,
+        spec: Dict[str, Any],
+        *,
+        app: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Register pending launch state and persist the deterministic launch spec."""
+        target_app = app
+        if target_app is None:
+            if self._require_registry_app is None:
+                raise RuntimeError("Application registry lookup is unavailable")
+            target_app = self._require_registry_app(str(spec.get("app_name") or "").strip())
+        registration = await self.register_pending_launch(
+            app=target_app,
+            project_name=str(spec.get("project_name") or "").strip(),
+            project_directory=(
+                str(spec.get("local_project_directory") or "").strip()
+                or str(Path.home())
+            ),
+            launcher_pid=int(spec.get("environment", {}).get("I3PM_LAUNCHER_PID") or os.getpid()),
+            terminal_anchor_id=str(spec.get("terminal_anchor_id") or "").strip(),
+            preferred_workspace=(
+                int(spec.get("preferred_workspace"))
+                if spec.get("preferred_workspace") is not None
+                else None
+            ),
+        )
+        launch_id = str(registration.get("launch_id") or "").strip()
+        if launch_id:
+            spec["launch"] = {"launch_id": launch_id}
+            launch_transport = str(spec.get("launch_transport") or "").strip()
+            launch_kind = str(spec.get("launch_kind") or "open_project_terminal").strip()
+            if launch_transport == "remote_helper":
+                self.write_remote_spec(spec=spec, launch_kind=launch_kind)
+            else:
+                self.write_local_spec(spec=spec, launch_kind=launch_kind)
+        return registration
 
     def write_remote_spec(
         self,
