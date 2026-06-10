@@ -621,6 +621,7 @@ class IPCServer:
             resolve_worktree_for_path=resolve_discovered_worktree,
             parse_remote_target=self._parse_remote_target,
             normalize_connection_key=self._normalize_connection_key,
+            local_host=lambda: self._local_host_alias(),
         )
         self._malformed_json_count: int = 0
         self._deferred_filter_task: Optional[asyncio.Task] = None
@@ -949,25 +950,11 @@ class IPCServer:
             elif method == "dashboard.validate":
                 result = await self._dashboard_validate(params)
             elif method == "herdr.snapshot":
-                result = await self.herdr_service.snapshot(
-                    params,
-                    remote_targets=self.herdr_service.load_remote_targets(),
-                    local_host=self._local_host_alias(),
-                    normalize_connection_key=self._normalize_connection_key,
-                    project_for_cwd=self.herdr_service.project_for_cwd,
-                )
+                result = await self.herdr_service.snapshot(params)
             elif method == "herdr.proxy.snapshot":
-                result = await self.herdr_service.proxy_snapshot(
-                    params,
-                    local_host=self._local_host_alias(),
-                    normalize_connection_key=self._normalize_connection_key,
-                    project_for_cwd=self.herdr_service.project_for_cwd,
-                )
+                result = await self.herdr_service.proxy_snapshot(params)
             elif method == "herdr.proxy.pane.focus":
-                result = await self.herdr_service.proxy_pane_focus(
-                    params,
-                    local_host=self._local_host_alias(),
-                )
+                result = await self.herdr_service.proxy_pane_focus(params)
             elif method == "herdr.pane.focus":
                 result = await self.herdr_service.pane_focus(params)
             elif method == "herdr.pane.close":
@@ -975,8 +962,6 @@ class IPCServer:
             elif method == "herdr.remote.pane.focus":
                 result = await self.herdr_service.remote_pane_focus(
                     params,
-                    targets=self.herdr_service.load_remote_targets(),
-                    normalize_connection_key=self._normalize_connection_key,
                     launch_open=self._launch_open,
                     set_focus_overrides=self._set_focus_overrides,
                 )
@@ -10914,8 +10899,6 @@ FORMAT JSONEachRow
                 "spaces": self.herdr_service.build_spaces(
                     herdr_snapshot,
                     sessions,
-                    local_host=self._local_host_alias(),
-                    normalize_connection_key=self._normalize_connection_key,
                 ),
             },
             "ai_monitor_metrics": {
@@ -13742,13 +13725,7 @@ FORMAT JSONEachRow
             "active_terminal": active_terminal_summary,
             "launch_stats": await self._get_launch_stats(),
         }
-        herdr_snapshot = await self.herdr_service.snapshot(
-            {},
-            remote_targets=self.herdr_service.load_remote_targets(),
-            local_host=self._local_host_alias(),
-            normalize_connection_key=self._normalize_connection_key,
-            project_for_cwd=self.herdr_service.project_for_cwd,
-        )
+        herdr_snapshot = await self.herdr_service.snapshot({})
         sessions = [
             session for session in herdr_snapshot.get("sessions", [])
             if isinstance(session, dict)

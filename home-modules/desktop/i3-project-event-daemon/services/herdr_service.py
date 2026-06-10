@@ -53,6 +53,9 @@ class HerdrService:
         resolve_worktree_for_path: Optional[Callable[[Optional[str]], Optional[Dict[str, str]]]] = None,
         parse_remote_target: Optional[Callable[[str], Tuple[str, str, int]]] = None,
         normalize_connection_key: Optional[Callable[[str], str]] = None,
+        load_remote_targets: Optional[Callable[[], List[Dict[str, str]]]] = None,
+        local_host: Optional[Callable[[], str]] = None,
+        project_for_cwd: Optional[Callable[[str], Dict[str, str]]] = None,
     ) -> None:
         self._notify_state_change = notify_state_change
         self._external_invalidate_snapshot_cache = invalidate_snapshot_cache
@@ -76,6 +79,9 @@ class HerdrService:
         self._resolve_worktree_for_path = resolve_worktree_for_path
         self._parse_remote_target = parse_remote_target or self._default_parse_remote_target
         self._normalize_connection_key = normalize_connection_key or self._default_normalize_connection_key
+        self._load_remote_targets = load_remote_targets
+        self._local_host = local_host
+        self._project_for_cwd = project_for_cwd
 
     @staticmethod
     def _default_normalize_project_path(value: Optional[str]) -> Optional[str]:
@@ -87,6 +93,22 @@ class HerdrService:
     @staticmethod
     def _default_normalize_connection_key(value: str) -> str:
         return str(value or "").strip().lower()
+
+    def configured_remote_targets(self) -> List[Dict[str, str]]:
+        """Return daemon-configured remote Herdr targets for merged snapshots."""
+        if self._load_remote_targets is None:
+            return self.load_remote_targets()
+        return self._load_remote_targets()
+
+    def configured_local_host(self) -> str:
+        """Return the daemon host key used for local Herdr rows."""
+        if self._local_host is not None:
+            return self._local_host()
+        return str(os.environ.get("HOSTNAME") or os.uname().nodename or "").strip()
+
+    def configured_project_for_cwd(self) -> Callable[[str], Dict[str, str]]:
+        """Return the project resolver used while normalizing Herdr rows."""
+        return self._project_for_cwd or self.project_for_cwd
 
     @staticmethod
     def _default_parse_remote_target(value: str) -> Tuple[str, str, int]:
@@ -1141,20 +1163,23 @@ class HerdrService:
         self,
         params: Optional[Dict[str, Any]] = None,
         *,
-        local_host: str,
-        normalize_connection_key: Callable[[str], str],
-        project_for_cwd: Callable[[str], Dict[str, str]],
+        local_host: Optional[str] = None,
+        normalize_connection_key: Optional[Callable[[str], str]] = None,
+        project_for_cwd: Optional[Callable[[str], Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
         """Return a local-only compact snapshot for remote i3pm Herdr proxy clients."""
+        resolved_local_host = local_host or self.configured_local_host()
+        resolved_normalize_connection_key = normalize_connection_key or self._normalize_connection_key
+        resolved_project_for_cwd = project_for_cwd or self.configured_project_for_cwd()
         snapshot = await self.local_snapshot(
-            local_host=local_host,
-            normalize_connection_key=normalize_connection_key,
-            project_for_cwd=project_for_cwd,
+            local_host=resolved_local_host,
+            normalize_connection_key=resolved_normalize_connection_key,
+            project_for_cwd=resolved_project_for_cwd,
         )
         snapshot.update({
             "schema_version": "i3pm.herdr_proxy.v1",
             "protocol_version": 1,
-            "proxy_host": self.normalize_host_key(local_host),
+            "proxy_host": self.normalize_host_key(resolved_local_host),
             "generated_at": int(time.time()),
             "refresh": bool((params or {}).get("refresh", False)),
         })
@@ -1164,58 +1189,63 @@ class HerdrService:
         self,
         params: Dict[str, Any],
         *,
-        local_host: str,
+        local_host: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Focus a local Herdr pane for remote proxy clients."""
+        resolved_local_host = local_host or self.configured_local_host()
         result = await self.pane_focus(params)
         result["schema_version"] = "i3pm.herdr_proxy.v1"
         result["protocol_version"] = 1
-        result["proxy_host"] = self.normalize_host_key(local_host)
+        result["proxy_host"] = self.normalize_host_key(resolved_local_host)
         return result
 
     async def snapshot(
         self,
         params: Optional[Dict[str, Any]] = None,
         *,
-        remote_targets: List[Dict[str, str]],
-        local_host: str,
-        normalize_connection_key: Callable[[str], str],
-        project_for_cwd: Callable[[str], Dict[str, str]],
+        remote_targets: Optional[List[Dict[str, str]]] = None,
+        local_host: Optional[str] = None,
+        normalize_connection_key: Optional[Callable[[str], str]] = None,
+        project_for_cwd: Optional[Callable[[str], Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
         """Return local Herdr state merged with configured remote hosts."""
         params = params or {}
+        resolved_remote_targets = remote_targets if remote_targets is not None else self.configured_remote_targets()
+        resolved_local_host = local_host or self.configured_local_host()
+        resolved_normalize_connection_key = normalize_connection_key or self._normalize_connection_key
+        resolved_project_for_cwd = project_for_cwd or self.configured_project_for_cwd()
         use_cache = not bool(params.get("refresh", False))
         now = time.time()
         if use_cache:
             cached_snapshot = self.cached_snapshot(
                 now=now,
-                has_remote_targets=bool(remote_targets),
+                has_remote_targets=bool(resolved_remote_targets),
             )
             if cached_snapshot is not None:
                 return cached_snapshot
 
         snapshot = await self.local_snapshot(
-            local_host=local_host,
-            normalize_connection_key=normalize_connection_key,
-            project_for_cwd=project_for_cwd,
+            local_host=resolved_local_host,
+            normalize_connection_key=resolved_normalize_connection_key,
+            project_for_cwd=resolved_project_for_cwd,
         )
 
         remote_snapshots = await asyncio.gather(
             *(
                 self.remote_snapshot(
                     target,
-                    local_host=local_host,
-                    normalize_connection_key=normalize_connection_key,
-                    project_for_cwd=project_for_cwd,
+                    local_host=resolved_local_host,
+                    normalize_connection_key=resolved_normalize_connection_key,
+                    project_for_cwd=resolved_project_for_cwd,
                 )
-                for target in remote_targets
+                for target in resolved_remote_targets
             ),
             return_exceptions=True,
         )
 
         normalized_remote_snapshots: List[Dict[str, Any]] = []
         for index, remote_snapshot in enumerate(remote_snapshots):
-            target = remote_targets[index]
+            target = resolved_remote_targets[index]
             if isinstance(remote_snapshot, Exception):
                 error_entry = {
                     "remote": True,
@@ -1252,7 +1282,7 @@ class HerdrService:
             ])
             snapshot["errors"].extend(remote_snapshot.get("errors", []) or [])
 
-        snapshot["remote_targets"] = remote_targets
+        snapshot["remote_targets"] = resolved_remote_targets
         snapshot["remote_snapshots"] = normalized_remote_snapshots
         snapshot["remote_herdr_generation"] = self.remote_generations_snapshot()
         snapshot["remote_errors"] = [
@@ -1321,13 +1351,14 @@ class HerdrService:
         self,
         params: Dict[str, Any],
         *,
-        targets: List[Dict[str, str]],
+        targets: Optional[List[Dict[str, str]]] = None,
         parse_remote_target: Optional[Callable[[str], Tuple[str, str, int]]] = None,
         normalize_connection_key: Optional[Callable[[str], str]] = None,
         launch_open: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
         set_focus_overrides: Callable[..., None],
     ) -> Dict[str, Any]:
         """Focus a remote Herdr pane and reuse the configured local Herdr app."""
+        resolved_targets = targets if targets is not None else self.configured_remote_targets()
         normalize_key = normalize_connection_key or self._normalize_connection_key
         pane_id = str(params.get("pane_id") or "").strip()
         if not pane_id:
@@ -1335,7 +1366,7 @@ class HerdrService:
 
         target = self.resolve_remote_action_target(
             params,
-            targets=targets,
+            targets=resolved_targets,
             parse_remote_target=parse_remote_target,
             normalize_connection_key=normalize_key,
         )
@@ -1378,11 +1409,12 @@ class HerdrService:
         herdr_snapshot: Dict[str, Any],
         sessions: List[Dict[str, Any]],
         *,
-        local_host: str,
-        normalize_connection_key: Callable[[str], str],
+        local_host: Optional[str] = None,
+        normalize_connection_key: Optional[Callable[[str], str]] = None,
     ) -> List[Dict[str, Any]]:
         """Build Herdr workspace/project rows for the persistent sidebar."""
-        local_host = self.normalize_host_key(local_host)
+        resolved_normalize_connection_key = normalize_connection_key or self._normalize_connection_key
+        local_host = self.normalize_host_key(local_host or self.configured_local_host())
         spaces: Dict[str, Dict[str, Any]] = {}
 
         def host_key_for(item: Dict[str, Any]) -> str:
@@ -1469,7 +1501,7 @@ class HerdrService:
             )
             computed = self.git_space_metadata(
                 effective_cwd,
-                normalize_connection_key=normalize_connection_key,
+                normalize_connection_key=resolved_normalize_connection_key,
             ) if effective_cwd else {}
             merged = dict(computed)
             merged.update(nested)
