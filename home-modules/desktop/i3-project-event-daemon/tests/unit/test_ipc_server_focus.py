@@ -865,7 +865,7 @@ async def test_focus_remote_session_attach_tmux_target_sets_override_without_wai
     }
     server._resolve_remote_attach_profile = lambda _session: {"host": "ryzen"}
     server._switch_to_explicit_remote_context = AsyncMock()
-    server._build_remote_session_attach_spec = AsyncMock(return_value={
+    server.launch_service.prepare_remote_session_attach_spec = Mock(return_value={
         "app_name": "terminal",
         "project_name": "PittampalliOrg/workflow-builder:main",
         "connection_key": "vpittamp@ryzen:22",
@@ -931,7 +931,7 @@ async def test_focus_remote_session_attach_replaces_stale_bridge_before_relaunch
     }
     server._resolve_remote_attach_profile = lambda _session: {"host": "ryzen"}
     server._switch_to_explicit_remote_context = AsyncMock()
-    server._build_remote_session_attach_spec = AsyncMock(return_value={
+    server.launch_service.prepare_remote_session_attach_spec = Mock(return_value={
         "app_name": "terminal",
         "project_name": "PittampalliOrg/workflow-builder:main",
         "connection_key": "vpittamp@ryzen:22",
@@ -1008,7 +1008,7 @@ async def test_focus_remote_session_attach_launches_new_exact_bridge_when_projec
         "context_key": "vpittamp/t3code:main::host::ryzen",
     }
     server._switch_to_explicit_remote_context = AsyncMock()
-    server._build_remote_session_attach_spec = AsyncMock(return_value={
+    server.launch_service.prepare_remote_session_attach_spec = Mock(return_value={
         "app_name": "terminal",
         "project_name": "vpittamp/t3code:main",
         "connection_key": "vpittamp@ryzen:22",
@@ -1077,7 +1077,7 @@ async def test_focus_remote_session_attach_focuses_local_bridge_without_project_
         "connection_key": "vpittamp@ryzen:22",
         "context_key": f"{remote_project}::host::ryzen",
     }
-    server._build_remote_session_attach_spec = AsyncMock(return_value={
+    server.launch_service.prepare_remote_session_attach_spec = Mock(return_value={
         "app_name": "terminal",
         "project_name": remote_project,
         "connection_key": "vpittamp@ryzen:22",
@@ -1154,7 +1154,7 @@ async def test_focus_remote_session_attach_prefers_already_bound_window(server):
         "context_key": "PittampalliOrg/workflow-builder:main::host::ryzen",
     }
     server._switch_to_explicit_remote_context = AsyncMock()
-    server._build_remote_session_attach_spec = AsyncMock(return_value={
+    server.launch_service.prepare_remote_session_attach_spec = Mock(return_value={
         "app_name": "terminal",
         "project_name": "PittampalliOrg/workflow-builder:main",
         "connection_key": "vpittamp@ryzen:22",
@@ -1238,7 +1238,7 @@ async def test_focus_remote_session_attach_relaunches_live_window_without_exact_
         "context_key": "vpittamp/t3code:main::host::ryzen",
     }
     server._switch_to_explicit_remote_context = AsyncMock()
-    server._build_remote_session_attach_spec = AsyncMock(return_value={
+    server.launch_service.prepare_remote_session_attach_spec = Mock(return_value={
         "app_name": "terminal",
         "project_name": "vpittamp/t3code:main",
         "connection_key": "vpittamp@ryzen:22",

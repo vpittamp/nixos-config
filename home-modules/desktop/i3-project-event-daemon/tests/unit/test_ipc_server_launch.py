@@ -512,7 +512,10 @@ async def test_build_remote_session_attach_spec_overrides_bridge_context_env(ser
         "remote_dir": "",
     }
 
-    spec = await server_ssh._build_remote_session_attach_spec(session, attach_profile=attach_profile)
+    spec = server_ssh.launch_service.prepare_remote_session_attach_spec(
+        session,
+        attach_profile=attach_profile,
+    )
 
     assert spec["connection_key"] == "local@thinkpad"
     assert spec["context_key"] == f"{QUALIFIED_NAME}::host::thinkpad"
@@ -557,7 +560,10 @@ async def test_build_remote_session_attach_spec_does_not_require_local_worktree(
         lambda _qualified_name: (_ for _ in ()).throw(AssertionError("should not resolve local worktree")),
     )
 
-    spec = await server_ssh._build_remote_session_attach_spec(session, attach_profile=attach_profile)
+    spec = server_ssh.launch_service.prepare_remote_session_attach_spec(
+        session,
+        attach_profile=attach_profile,
+    )
 
     assert spec["project_name"] == remote_only_project
     assert spec["execution_mode"] == "ssh"

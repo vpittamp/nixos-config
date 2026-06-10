@@ -48,6 +48,9 @@ class LaunchService:
         get_pending_launch_by_terminal_anchor: Optional[Callable[[str], Awaitable[Any]]] = None,
         launch_registry: Optional[Callable[[], Any]] = None,
         require_registry_app: Optional[Callable[[str], Any]] = None,
+        resolve_remote_attach_profile: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+        build_remote_attach_runtime_context: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+        remote_session_terminal_role: Optional[Callable[[str], str]] = None,
     ) -> None:
         self._runtime_dir = runtime_dir
         self._load_json_file = load_json_file
@@ -68,6 +71,9 @@ class LaunchService:
         self._get_pending_launch_by_terminal_anchor = get_pending_launch_by_terminal_anchor
         self._launch_registry = launch_registry
         self._require_registry_app = require_registry_app
+        self._resolve_remote_attach_profile = resolve_remote_attach_profile
+        self._build_remote_attach_runtime_context = build_remote_attach_runtime_context
+        self._remote_session_terminal_role = remote_session_terminal_role
         self._launch_reconcile_tasks: Dict[str, asyncio.Task] = {}
 
     @staticmethod
@@ -964,6 +970,60 @@ class LaunchService:
             "terminal_anchor_id": launch_identity["terminal_anchor_id"],
             "app_instance_id": launch_identity["app_instance_id"],
         }
+
+    def prepare_remote_session_attach_spec(
+        self,
+        session: Dict[str, Any],
+        *,
+        attach_profile: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Resolve daemon context and build the exact local SSH bridge launch spec."""
+        project_name = str(session.get("project_name") or session.get("project") or "").strip()
+        if not project_name:
+            raise RuntimeError("Remote session is missing project metadata")
+
+        if self._build_remote_attach_runtime_context is None:
+            raise RuntimeError("Remote attach context resolver is unavailable")
+        if self._require_registry_app is None:
+            raise RuntimeError("Registry app resolver is unavailable")
+
+        if attach_profile is None:
+            if self._resolve_remote_attach_profile is None:
+                raise RuntimeError("Remote attach profile resolver is unavailable")
+            attach_profile = self._resolve_remote_attach_profile(session)
+        else:
+            attach_profile = dict(attach_profile)
+            attach_profile.setdefault("project_name", project_name)
+            attach_profile.setdefault(
+                "remote_profile",
+                {
+                    "enabled": True,
+                    "host": str(attach_profile.get("remote_host") or "").strip(),
+                    "user": str(attach_profile.get("remote_user") or "").strip(),
+                    "port": int(attach_profile.get("remote_port", 22) or 22),
+                    "remote_dir": str(attach_profile.get("remote_dir") or "").strip(),
+                },
+            )
+
+        remote_context = self._build_remote_attach_runtime_context(attach_profile)
+        app = self._require_registry_app("terminal")
+        pending_count = 0
+        if self._launch_registry is not None:
+            pending_count = int(getattr(self._launch_registry().get_stats(), "total_pending", 0) or 0)
+        remote_terminal_role = ""
+        if self._remote_session_terminal_role is not None:
+            remote_terminal_role = self._remote_session_terminal_role(
+                str(remote_context.get("context_key") or "").strip()
+            )
+        return self.build_remote_session_attach_spec(
+            app=app,
+            session=session,
+            attach_profile=attach_profile,
+            remote_context=remote_context,
+            launcher_pid=os.getpid(),
+            pending_count=pending_count,
+            remote_terminal_role=remote_terminal_role,
+        )
 
     def write_remote_spec(
         self,

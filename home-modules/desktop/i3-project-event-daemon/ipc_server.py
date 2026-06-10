@@ -609,6 +609,11 @@ class IPCServer:
             ),
             launch_registry=lambda: self.state_manager.launch_registry,
             require_registry_app=lambda app_name: self._require_registry_app(app_name),
+            resolve_remote_attach_profile=lambda session: self._resolve_remote_attach_profile(session),
+            build_remote_attach_runtime_context=lambda attach_profile: self._build_remote_attach_runtime_context(
+                attach_profile
+            ),
+            remote_session_terminal_role=lambda context_key: self._remote_session_terminal_role(context_key),
         )
         self.herdr_service = HerdrService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
@@ -9806,7 +9811,10 @@ FORMAT JSONEachRow
                 reason="superseded_before_remote_attach",
             )
         attach_profile = self._resolve_remote_attach_profile(session)
-        spec = await self._build_remote_session_attach_spec(session, attach_profile=attach_profile)
+        spec = self.launch_service.prepare_remote_session_attach_spec(
+            session,
+            attach_profile=attach_profile,
+        )
         project_name = str(spec.get("project_name") or "").strip()
         connection_key = str(spec.get("connection_key") or "").strip()
         focus_target_host = str(session.get("host_name") or "").strip()
@@ -16095,61 +16103,6 @@ FORMAT JSONEachRow
         }
         context.update(identity)
         return context
-
-    async def _build_remote_session_attach_spec(
-        self,
-        session: Dict[str, Any],
-        *,
-        attach_profile: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """Prepare a local SSH terminal launch spec that lands on an exact remote tmux pane."""
-        project_name = str(session.get("project_name") or session.get("project") or "").strip()
-        if not project_name:
-            raise RuntimeError("Remote session is missing project metadata")
-
-        terminal_context = session.get("terminal_context") or {}
-        if not isinstance(terminal_context, dict):
-            terminal_context = {}
-
-        tmux_session = str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip()
-        tmux_window = str(session.get("tmux_window") or terminal_context.get("tmux_window") or "").strip()
-        tmux_pane = str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip()
-        surface_key = str(session.get("surface_key") or "").strip()
-        session_key = str(session.get("session_key") or "").strip()
-        if not (tmux_session and tmux_window and tmux_pane and surface_key and session_key):
-            raise RuntimeError("Remote session is missing stable tmux identity")
-
-        if attach_profile is None:
-            attach_profile = self._resolve_remote_attach_profile(session)
-        else:
-            attach_profile = dict(attach_profile)
-            attach_profile.setdefault("project_name", project_name)
-            attach_profile.setdefault(
-                "remote_profile",
-                {
-                    "enabled": True,
-                    "host": str(attach_profile.get("remote_host") or "").strip(),
-                    "user": str(attach_profile.get("remote_user") or "").strip(),
-                    "port": int(attach_profile.get("remote_port", 22) or 22),
-                    "remote_dir": str(attach_profile.get("remote_dir") or "").strip(),
-                },
-            )
-        remote_context = self._build_remote_attach_runtime_context(attach_profile)
-        app = self._require_registry_app("terminal")
-        launcher_pid = os.getpid()
-        remote_terminal_role = self._remote_session_terminal_role(
-            str(remote_context.get("context_key") or "").strip()
-        )
-        pending_count = self.state_manager.launch_registry.get_stats().total_pending
-        return self.launch_service.build_remote_session_attach_spec(
-            app=app,
-            session=session,
-            attach_profile=attach_profile,
-            remote_context=remote_context,
-            launcher_pid=launcher_pid,
-            pending_count=pending_count,
-            remote_terminal_role=remote_terminal_role,
-        )
 
     async def _get_reusable_remote_attach_window(
         self,
