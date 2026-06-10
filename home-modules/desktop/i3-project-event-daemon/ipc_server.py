@@ -55,6 +55,7 @@ from .services.window_filter import (
 )
 from .services.registry_loader import RegistryLoader, RegistryApp
 from .services.agent_harness import CodexHarnessManager
+from .services.focus_service import FocusService
 from .services.herdr_service import HerdrService
 from .models.window_command import CommandBatch
 
@@ -566,18 +567,16 @@ class IPCServer:
         self._git_snapshot_ttl_background: float = 20.0
         self._git_snapshot_failure_ttl: float = 30.0
         self._active_runtime_context: Optional[Dict[str, Any]] = None
-        self._focus_session_override_key: str = ""
-        self._focus_window_override: Dict[str, Any] = {
-            "window_id": 0,
-            "connection_key": "",
-        }
-        self._focus_pending_intent_id: str = ""
         self._stopped_session_notifications: Dict[str, Dict[str, Any]] = {}
         self._user_input_session_notifications: Dict[str, Dict[str, Any]] = {}
         self._user_intent_epoch: int = 0
         self._launch_reconcile_tasks: Dict[str, asyncio.Task] = {}
         self._session_items_cache_key: Optional[Tuple[Any, ...]] = None
         self._session_items_cache_rows: List[Dict[str, Any]] = []
+        self.focus_service = FocusService(
+            normalize_connection_key=lambda value: self._normalize_connection_key(value),
+            schema_version=FOCUS_STATE_SCHEMA_VERSION,
+        )
         self.herdr_service = HerdrService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
             normalize_project_path=normalize_project_path,
@@ -589,6 +588,38 @@ class IPCServer:
         self._malformed_json_last_error: str = ""
         self._malformed_json_by_peer: Dict[str, int] = {}
         self.agent_harness = CodexHarnessManager(on_change=self._notify_agent_harness_change)
+
+    @property
+    def _focus_session_override_key(self) -> str:
+        """Compatibility accessor for the focus-service-owned session override."""
+        return str(self.focus_service.session_override_key or "").strip()
+
+    @_focus_session_override_key.setter
+    def _focus_session_override_key(self, value: str) -> None:
+        self.focus_service.session_override_key = str(value or "").strip()
+
+    @property
+    def _focus_window_override(self) -> Dict[str, Any]:
+        """Compatibility accessor for the focus-service-owned window override."""
+        return self.focus_service.window_override
+
+    @_focus_window_override.setter
+    def _focus_window_override(self, value: Dict[str, Any]) -> None:
+        if not isinstance(value, dict):
+            value = {}
+        self.focus_service.window_override = {
+            "window_id": int(value.get("window_id") or 0),
+            "connection_key": self._normalize_connection_key(str(value.get("connection_key") or "").strip()),
+        }
+
+    @property
+    def _focus_pending_intent_id(self) -> str:
+        """Compatibility accessor for the focus-service-owned pending intent."""
+        return str(self.focus_service.pending_intent_id or "").strip()
+
+    @_focus_pending_intent_id.setter
+    def _focus_pending_intent_id(self, value: str) -> None:
+        self.focus_service.pending_intent_id = str(value or "").strip()
 
     @classmethod
     async def from_systemd_socket(
@@ -10786,22 +10817,19 @@ FORMAT JSONEachRow
         connection_key: str = "",
     ) -> None:
         """Persist the last successful daemon-owned focus target for dashboard consumers."""
-        self._focus_session_override_key = str(session_key or "").strip()
-        self._focus_window_override = {
-            "window_id": int(window_id or 0),
-            "connection_key": self._normalize_connection_key(str(connection_key or "").strip()),
-        }
-        self._focus_pending_intent_id = ""
+        self.focus_service.set_focus_overrides(
+            session_key=session_key,
+            window_id=window_id,
+            connection_key=connection_key,
+        )
 
     def _clear_focus_overrides(self) -> None:
         """Clear both session and window focus overrides."""
-        self._focus_session_override_key = ""
-        self._focus_window_override = {"window_id": 0, "connection_key": ""}
-        self._focus_pending_intent_id = ""
+        self.focus_service.clear_focus_overrides()
 
     def _clear_session_focus_override(self) -> None:
         """Clear the session override while keeping any explicit window target."""
-        self._focus_session_override_key = ""
+        self.focus_service.clear_session_override()
 
     def _advance_user_intent_epoch(
         self,
@@ -10880,21 +10908,10 @@ FORMAT JSONEachRow
         focused_window_id: int = 0,
     ) -> str:
         """Return the daemon-owned current-session override if it still resolves."""
-        override_key = str(self._focus_session_override_key or "").strip()
-        if not override_key:
-            return ""
-        match = next(
-            (
-                session for session in sessions
-                if isinstance(session, dict)
-                and str(session.get("session_key") or "").strip() == override_key
-            ),
-            None,
+        return self.focus_service.current_session_override_key(
+            sessions,
+            focused_window_id=focused_window_id,
         )
-        if isinstance(match, dict):
-            return override_key
-        self._focus_session_override_key = ""
-        return ""
 
     def _window_matches_focus_override(
         self,
@@ -10903,13 +10920,10 @@ FORMAT JSONEachRow
         connection_key: str,
     ) -> bool:
         """Return whether a window matches the last successful daemon-owned focus target."""
-        override_window_id = int(self._focus_window_override.get("window_id") or 0)
-        if override_window_id <= 0 or override_window_id != int(window_id or 0):
-            return False
-        override_connection_key = self._normalize_connection_key(
-            str(self._focus_window_override.get("connection_key") or "").strip()
+        return self.focus_service.window_matches_focus_override(
+            window_id=window_id,
+            connection_key=connection_key,
         )
-        return override_connection_key == self._normalize_connection_key(str(connection_key or "").strip())
 
     def _select_current_session_key(
         self,
@@ -10918,104 +10932,10 @@ FORMAT JSONEachRow
         focused_window_id: int,
     ) -> str:
         """Return the single session key that owns current focus in the dashboard."""
-        override_key = self._current_session_override_key(
+        return self.focus_service.select_current_session_key(
             sessions,
             focused_window_id=focused_window_id,
         )
-        if override_key:
-            override_session = next(
-                (
-                    session for session in sessions
-                    if isinstance(session, dict)
-                    and str(session.get("session_key") or "").strip() == override_key
-                ),
-                None,
-            )
-            if (
-                isinstance(override_session, dict)
-                and str(override_session.get("source") or "").strip() == "herdr"
-                and bool(override_session.get("focused", False))
-            ):
-                return override_key
-
-        local_herdr_focused = next(
-            (
-                str(session.get("session_key") or "").strip()
-                for session in sessions
-                if isinstance(session, dict)
-                and str(session.get("source") or "").strip() == "herdr"
-                and bool(session.get("focused", False))
-                and bool(session.get("is_current_host", False))
-                and str(session.get("session_key") or "").strip()
-            ),
-            "",
-        )
-        if local_herdr_focused:
-            return local_herdr_focused
-
-        remote_herdr_focused = next(
-            (
-                str(session.get("session_key") or "").strip()
-                for session in sessions
-                if isinstance(session, dict)
-                and str(session.get("source") or "").strip() == "herdr"
-                and bool(session.get("focused", False))
-                and str(session.get("session_key") or "").strip()
-            ),
-            "",
-        )
-        if remote_herdr_focused:
-            return remote_herdr_focused
-
-        if focused_window_id > 0:
-            window_sessions = [
-                session for session in sessions
-                if int(session.get("window_id") or 0) == focused_window_id
-                and bool(session.get("is_current_host", False))
-            ]
-            if window_sessions:
-                override_match = next(
-                    (
-                        str(session.get("session_key") or "").strip()
-                        for session in window_sessions
-                        if str(session.get("session_key") or "").strip() == override_key
-                    ),
-                    "",
-                )
-                if override_match:
-                    return override_match
-
-                if override_key:
-                    self._focus_session_override_key = ""
-                    self._focus_window_override = {"window_id": 0, "connection_key": ""}
-
-                exact_match = next(
-                    (
-                        str(session.get("session_key") or "")
-                        for session in window_sessions
-                        if bool(session.get("window_active", False))
-                        and bool(session.get("pane_active", False))
-                    ),
-                    "",
-                )
-                if exact_match:
-                    return exact_match
-
-                return str(window_sessions[0].get("session_key") or "")
-
-            override_window_id = int(self._focus_window_override.get("window_id") or 0)
-            if override_key and override_window_id > 0 and override_window_id == focused_window_id:
-                return override_key
-
-            if override_key:
-                self._focus_session_override_key = ""
-                self._focus_window_override = {"window_id": 0, "connection_key": ""}
-                return ""
-
-        if override_key:
-            return override_key
-
-        return ""
 
     @staticmethod
     def _stale_bridge_close_reasons() -> set[str]:
@@ -11037,14 +10957,10 @@ FORMAT JSONEachRow
         current_session_key: str,
     ) -> None:
         """Normalize is_current_window so exactly one rendered session is current."""
-        current_key = str(current_session_key or "").strip()
-        for session in sessions:
-            if not isinstance(session, dict):
-                continue
-            session["is_current_window"] = bool(
-                current_key
-                and str(session.get("session_key") or "").strip() == current_key
-            )
+        self.focus_service.mark_current_session(
+            sessions,
+            current_session_key=current_session_key,
+        )
 
     @staticmethod
     def _session_matches_current(
@@ -11054,13 +10970,10 @@ FORMAT JSONEachRow
         focused_window_id: int,
     ) -> bool:
         """Return whether a session currently owns the visible interaction surface."""
-        session_key = str(session.get("session_key") or "").strip()
-        if session_key and session_key == str(current_session_key or "").strip():
-            return True
-        return bool(
-            int(session.get("window_id") or 0) == focused_window_id
-            and focused_window_id > 0
-            and bool(session.get("pane_active", False))
+        return FocusService.session_matches_current(
+            session,
+            current_session_key=current_session_key,
+            focused_window_id=focused_window_id,
         )
 
     @staticmethod
@@ -11327,75 +11240,11 @@ FORMAT JSONEachRow
         sessions: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """Build the daemon-owned focus view model consumed by dashboard clients."""
-        focused_window_id = int(runtime_snapshot.get("focused_window_id") or 0)
-        current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
-        active_session = next(
-            (
-                session for session in sessions
-                if isinstance(session, dict)
-                and str(session.get("session_key") or "").strip() == current_session_key
-            ),
-            {},
+        return self.focus_service.build_focus_state_payload(
+            runtime_snapshot,
+            sessions,
+            generation=int(self._focus_generation or self._snapshot_version or 0),
         )
-        if not isinstance(active_session, dict):
-            active_session = {}
-        active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
-        current_workspace_name = ""
-        for output in runtime_snapshot.get("outputs", []) or []:
-            if not isinstance(output, dict):
-                continue
-            output_current = str(output.get("current_workspace") or "").strip()
-            for workspace in output.get("workspaces", []) or []:
-                if not isinstance(workspace, dict):
-                    continue
-                name = str(workspace.get("name") or "").strip()
-                if bool(workspace.get("focused", False)) or (output_current and name == output_current):
-                    current_workspace_name = name or output_current
-                    break
-            if current_workspace_name:
-                break
-        return {
-            "success": True,
-            "schema_version": FOCUS_STATE_SCHEMA_VERSION,
-            "generation": int(self._focus_generation or self._snapshot_version or 0),
-            "current_session_key": current_session_key,
-            "current_ai_session_key": current_session_key,
-            "current_window_id": focused_window_id,
-            "focused_window_id": focused_window_id,
-            "current_workspace_name": current_workspace_name,
-            "current_herdr_pane_id": str(
-                active_session.get("pane_id")
-                or active_session.get("tmux_pane")
-                or ""
-            ).strip(),
-            "current_herdr_host": str(
-                active_session.get("host_name")
-                or active_session.get("herdr_host")
-                or ""
-            ).strip(),
-            "pending_intent_id": str(self._focus_pending_intent_id or "").strip(),
-            "active_context": active_context if isinstance(active_context, dict) else {},
-            "active_session": {
-                "session_key": str(active_session.get("session_key") or "").strip(),
-                "herdr_session": str(active_session.get("herdr_session") or "").strip(),
-                "workspace_id": str(active_session.get("workspace_id") or "").strip(),
-                "tab_id": str(active_session.get("tab_id") or "").strip(),
-                "pane_id": str(active_session.get("pane_id") or "").strip(),
-                "terminal_id": str(active_session.get("terminal_id") or "").strip(),
-                "agent": str(active_session.get("agent") or "").strip(),
-                "agent_status": str(active_session.get("agent_status") or "").strip(),
-                "focused": bool(active_session.get("focused", False)),
-                "window_id": int(active_session.get("window_id") or 0),
-                "project_name": str(active_session.get("project_name") or active_session.get("project") or "").strip(),
-                "execution_mode": str(active_session.get("execution_mode") or "").strip(),
-                "connection_key": str(active_session.get("connection_key") or "").strip(),
-                "focus_connection_key": str(active_session.get("focus_connection_key") or "").strip(),
-                "host_name": str(active_session.get("host_name") or "").strip(),
-                "tmux_session": str(active_session.get("tmux_session") or "").strip(),
-                "tmux_window": str(active_session.get("tmux_window") or "").strip(),
-                "tmux_pane": str(active_session.get("tmux_pane") or "").strip(),
-            },
-        }
 
     async def _focus_state(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return canonical focus state for acceptance checks and UI confirmation."""
