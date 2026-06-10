@@ -629,6 +629,7 @@ class HerdrService:
         ssh_target: str = "",
         is_remote: bool = False,
         normalize_connection_key: Callable[[str], str],
+        overwrite_context: bool = False,
     ) -> List[Dict[str, Any]]:
         """Add normalized host/execution fields to Herdr rows."""
         annotated: List[Dict[str, Any]] = []
@@ -636,15 +637,22 @@ class HerdrService:
         normalized_connection = normalize_connection_key(connection_key)
         for row in rows:
             item = dict(row)
-            item.setdefault("host_name", host_key)
-            item.setdefault("herdr_host", host_key)
-            item.setdefault("target_host", host_key)
-            item.setdefault("execution_mode", execution_mode)
-            item.setdefault("connection_key", normalized_connection)
-            item.setdefault("ssh_target", ssh_target)
-            item.setdefault("remote_target", ssh_target)
-            item.setdefault("is_remote_herdr", bool(is_remote))
-            item.setdefault("is_current_host", not bool(is_remote))
+            context_fields = {
+                "host_name": host_key,
+                "herdr_host": host_key,
+                "target_host": host_key,
+                "execution_mode": execution_mode,
+                "connection_key": normalized_connection,
+                "ssh_target": ssh_target,
+                "remote_target": ssh_target,
+                "is_remote_herdr": bool(is_remote),
+                "is_current_host": not bool(is_remote),
+            }
+            if overwrite_context:
+                item.update(context_fields)
+            else:
+                for key, value in context_fields.items():
+                    item.setdefault(key, value)
             annotated.append(item)
         return annotated
 
@@ -873,39 +881,22 @@ class HerdrService:
         normalize_connection_key: Callable[[str], str],
         project_for_cwd: Callable[[str], Dict[str, str]],
     ) -> Dict[str, Any]:
-        """Fetch and normalize one remote Herdr host snapshot."""
+        """Fetch and normalize one remote Herdr host snapshot through its i3pm proxy."""
         self.clear_git_metadata_cache()
-        status_payload = await self.run_ssh_json(target, ["status", "--json"])
-        agent_payload = await self.run_ssh_json(target, ["agent", "list"])
-        pane_payload = await self.run_ssh_json(target, ["pane", "list"])
-        workspace_payload = await self.run_ssh_json(target, ["workspace", "list"])
-        tab_payload = await self.run_ssh_json(target, ["tab", "list"])
-        worktree_payload = await self.run_ssh_json(target, ["worktree", "list"])
-        payloads = [
-            status_payload,
-            agent_payload,
-            pane_payload,
-            workspace_payload,
-            tab_payload,
-            worktree_payload,
-        ]
+        proxy_payload = await self.run_proxy_json(target, ["snapshot", "--json"])
         host = str(target.get("host") or "").strip()
         ssh_target = str(target.get("ssh_target") or "").strip()
         connection_key = str(target.get("connection_key") or "").strip()
-        errors = [
-            {
+        if not bool(proxy_payload.get("success", False)):
+            error_entry = {
                 "remote": True,
                 "host": host,
                 "ssh_target": ssh_target,
                 "connection_key": connection_key,
-                "command": payload.get("command"),
-                "error": payload.get("error") or payload.get("stderr") or payload.get("stdout"),
-                "returncode": payload.get("returncode"),
+                "command": proxy_payload.get("command"),
+                "error": proxy_payload.get("error") or proxy_payload.get("stderr") or proxy_payload.get("stdout"),
+                "returncode": proxy_payload.get("returncode"),
             }
-            for payload in payloads
-            if not bool(payload.get("success", False))
-        ]
-        if not bool(status_payload.get("success", False)):
             return {
                 "success": False,
                 "remote": True,
@@ -913,14 +904,14 @@ class HerdrService:
                 "ssh_target": ssh_target,
                 "connection_key": connection_key,
                 "herdr_generation": self.remote_generation_for(host),
-                "status": status_payload,
+                "status": proxy_payload,
                 "agents": [],
                 "panes": [],
                 "workspaces": [],
                 "tabs": [],
                 "worktrees": [],
                 "sessions": [],
-                "errors": errors,
+                "errors": [error_entry],
             }
 
         snapshot = {
@@ -930,53 +921,63 @@ class HerdrService:
             "ssh_target": ssh_target,
             "connection_key": connection_key,
             "herdr_generation": self.bump_remote_generation(host),
-            "status": status_payload,
+            "proxy_schema_version": str(proxy_payload.get("schema_version") or ""),
+            "proxy_protocol_version": int(proxy_payload.get("protocol_version") or 0),
+            "status": proxy_payload.get("status", {}),
             "agents": self.annotate_rows(
-                self.result_array(agent_payload, "agents"),
+                [item for item in proxy_payload.get("agents", []) or [] if isinstance(item, dict)],
                 host=host,
                 execution_mode="ssh",
                 connection_key=connection_key,
                 ssh_target=ssh_target,
                 is_remote=True,
                 normalize_connection_key=normalize_connection_key,
+                overwrite_context=True,
             ),
             "panes": self.annotate_rows(
-                self.result_array(pane_payload, "panes"),
+                [item for item in proxy_payload.get("panes", []) or [] if isinstance(item, dict)],
                 host=host,
                 execution_mode="ssh",
                 connection_key=connection_key,
                 ssh_target=ssh_target,
                 is_remote=True,
                 normalize_connection_key=normalize_connection_key,
+                overwrite_context=True,
             ),
             "workspaces": self.annotate_rows(
-                self.result_array(workspace_payload, "workspaces"),
+                [item for item in proxy_payload.get("workspaces", []) or [] if isinstance(item, dict)],
                 host=host,
                 execution_mode="ssh",
                 connection_key=connection_key,
                 ssh_target=ssh_target,
                 is_remote=True,
                 normalize_connection_key=normalize_connection_key,
+                overwrite_context=True,
             ),
             "tabs": self.annotate_rows(
-                self.result_array(tab_payload, "tabs"),
+                [item for item in proxy_payload.get("tabs", []) or [] if isinstance(item, dict)],
                 host=host,
                 execution_mode="ssh",
                 connection_key=connection_key,
                 ssh_target=ssh_target,
                 is_remote=True,
                 normalize_connection_key=normalize_connection_key,
+                overwrite_context=True,
             ),
             "worktrees": self.annotate_rows(
-                self.worktree_result_array(worktree_payload),
+                [item for item in proxy_payload.get("worktrees", []) or [] if isinstance(item, dict)],
                 host=host,
                 execution_mode="ssh",
                 connection_key=connection_key,
                 ssh_target=ssh_target,
                 is_remote=True,
                 normalize_connection_key=normalize_connection_key,
+                overwrite_context=True,
             ),
-            "errors": errors,
+            "errors": [
+                item for item in proxy_payload.get("errors", []) or []
+                if isinstance(item, dict)
+            ],
         }
         snapshot["sessions"] = self.normalize_sessions(
             snapshot,
@@ -1072,6 +1073,29 @@ class HerdrService:
             normalize_connection_key=normalize_connection_key,
             project_for_cwd=project_for_cwd,
         )
+        return snapshot
+
+    async def proxy_snapshot(
+        self,
+        params: Optional[Dict[str, Any]] = None,
+        *,
+        local_host: str,
+        normalize_connection_key: Callable[[str], str],
+        project_for_cwd: Callable[[str], Dict[str, str]],
+    ) -> Dict[str, Any]:
+        """Return a local-only compact snapshot for remote i3pm Herdr proxy clients."""
+        snapshot = await self.local_snapshot(
+            local_host=local_host,
+            normalize_connection_key=normalize_connection_key,
+            project_for_cwd=project_for_cwd,
+        )
+        snapshot.update({
+            "schema_version": "i3pm.herdr_proxy.v1",
+            "protocol_version": 1,
+            "proxy_host": self.normalize_host_key(local_host),
+            "generated_at": int(time.time()),
+            "refresh": bool((params or {}).get("refresh", False)),
+        })
         return snapshot
 
     async def snapshot(
@@ -1239,7 +1263,7 @@ class HerdrService:
             parse_remote_target=parse_remote_target,
             normalize_connection_key=normalize_connection_key,
         )
-        focus_result = await self.run_ssh_json(target, ["agent", "focus", pane_id])
+        focus_result = await self.run_proxy_json(target, ["focus", pane_id, "--json"])
         if bool(focus_result.get("success", False)):
             self.bump_remote_generation(target.get("host"))
             cache_result = self.apply_remote_focus_cache(
@@ -1818,6 +1842,57 @@ class HerdrService:
             }
 
         command = self.ssh_command_prefix(ssh_target) + ["herdr", *args]
+
+        def run() -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+
+        try:
+            result = await asyncio.to_thread(run)
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "error": "timeout",
+                "command": fallback_command,
+            }
+
+        payload = self._json_payload_from_completed_process(
+            result,
+            command=fallback_command,
+        )
+        payload.setdefault("herdr_host", str(target.get("host") or "").strip())
+        payload.setdefault("ssh_target", ssh_target)
+        payload.setdefault("connection_key", str(target.get("connection_key") or "").strip())
+        return payload
+
+    async def run_proxy_json(
+        self,
+        target: Dict[str, str],
+        args: List[str],
+        timeout: float = 2.5,
+    ) -> Dict[str, Any]:
+        """Run the remote host's i3pm Herdr proxy over one bounded SSH command."""
+        ssh_target = str(target.get("ssh_target") or "").strip()
+        fallback_command = ["ssh", ssh_target, "i3pm", "herdr-proxy", *args]
+        if not ssh_target:
+            return {
+                "success": False,
+                "error": "missing_ssh_target",
+                "command": ["ssh", "", "i3pm", "herdr-proxy", *args],
+            }
+        if not shutil.which("ssh"):
+            return {
+                "success": False,
+                "error": "ssh_not_found",
+                "command": fallback_command,
+            }
+
+        command = self.ssh_command_prefix(ssh_target) + ["i3pm", "herdr-proxy", *args]
 
         def run() -> subprocess.CompletedProcess[str]:
             return subprocess.run(

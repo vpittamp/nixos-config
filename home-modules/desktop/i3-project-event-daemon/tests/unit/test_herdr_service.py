@@ -618,44 +618,39 @@ async def test_herdr_service_builds_remote_snapshot(monkeypatch):
         "connection_key": "VPITTAMP@RYZEN:22",
     }
 
-    payloads = {
-        ("status", "--json"): {"success": True, "result": {"protocol": 13}},
-        ("agent", "list"): {
-            "success": True,
-            "result": {
-                "agents": [{
-                    "pane_id": "pane-r",
-                    "workspace_id": "workspace-r",
-                    "agent": "codex",
-                    "agent_status": "NeedsInput",
-                    "focused": True,
-                }],
-            },
-        },
-        ("pane", "list"): {
-            "success": True,
-            "result": {
-                "panes": [{
-                    "pane_id": "pane-r",
-                    "workspace_id": "workspace-r",
-                    "cwd": "/repo/remote",
-                }],
-            },
-        },
-        ("workspace", "list"): {
-            "success": True,
-            "result": {"workspaces": [{"workspace_id": "workspace-r", "focused": True}]},
-        },
-        ("tab", "list"): {"success": True, "result": {"tabs": []}},
-        ("worktree", "list"): {"success": True, "result": {"worktrees": []}},
-    }
+    proxy_calls = []
 
-    async def fake_run_ssh_json(_target, args, timeout=2.5):
-        payload = dict(payloads[tuple(args)])
-        payload["command"] = ["ssh", "ryzen", "herdr", *args]
-        return payload
+    async def fake_run_proxy_json(_target, args, timeout=2.5):
+        proxy_calls.append(args)
+        return {
+            "success": True,
+            "schema_version": "i3pm.herdr_proxy.v1",
+            "protocol_version": 1,
+            "status": {"success": True, "result": {"protocol": 13}},
+            "agents": [{
+                "pane_id": "pane-r",
+                "workspace_id": "workspace-r",
+                "agent": "codex",
+                "agent_status": "NeedsInput",
+                "focused": True,
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+            }],
+            "panes": [{
+                "pane_id": "pane-r",
+                "workspace_id": "workspace-r",
+                "cwd": "/repo/remote",
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+            }],
+            "workspaces": [{"workspace_id": "workspace-r", "focused": True}],
+            "tabs": [],
+            "worktrees": [],
+            "errors": [],
+            "command": ["ssh", "ryzen", "i3pm", "herdr-proxy", *args],
+        }
 
-    monkeypatch.setattr(service, "run_ssh_json", fake_run_ssh_json)
+    monkeypatch.setattr(service, "run_proxy_json", fake_run_proxy_json)
     monkeypatch.setattr(
         service,
         "effective_cwd",
@@ -677,11 +672,15 @@ async def test_herdr_service_builds_remote_snapshot(monkeypatch):
     assert snapshot["success"] is True
     assert snapshot["remote"] is True
     assert snapshot["herdr_generation"] == 1
+    assert snapshot["proxy_schema_version"] == "i3pm.herdr_proxy.v1"
+    assert proxy_calls == [["snapshot", "--json"]]
     assert snapshot["agents"][0]["herdr_host"] == "ryzen"
+    assert snapshot["agents"][0]["execution_mode"] == "ssh"
     assert snapshot["agents"][0]["connection_key"] == "vpittamp@ryzen:22"
     assert snapshot["sessions"][0]["session_key"] == "herdr:ryzen:pane:pane-r"
     assert snapshot["sessions"][0]["agent_status"] == "NeedsInput"
     assert snapshot["sessions"][0]["focus_target"]["method"] == "herdr.remote.pane.focus"
+    assert snapshot["sessions"][0]["is_remote_herdr"] is True
     assert snapshot["errors"] == []
 
 
@@ -760,6 +759,46 @@ async def test_herdr_service_builds_local_snapshot(monkeypatch):
         "params": {"pane_id": "pane-l"},
     }
     assert snapshot["errors"] == []
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_builds_local_proxy_snapshot(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+
+    async def fake_local_snapshot(**kwargs):
+        assert kwargs["local_host"] == "Ryzen"
+        return {
+            "success": True,
+            "herdr_generation": 3,
+            "local_herdr_generation": 3,
+            "remote_herdr_generation": {},
+            "status": {"success": True},
+            "agents": [],
+            "panes": [],
+            "workspaces": [],
+            "tabs": [],
+            "worktrees": [],
+            "sessions": [],
+            "errors": [],
+        }
+
+    monkeypatch.setattr(service, "local_snapshot", fake_local_snapshot)
+
+    snapshot = await service.proxy_snapshot(
+        {"refresh": True},
+        local_host="Ryzen",
+        normalize_connection_key=lambda value: value.lower(),
+        project_for_cwd=lambda path: {"project_name": "global", "project_path": path},
+    )
+
+    assert snapshot["success"] is True
+    assert snapshot["schema_version"] == "i3pm.herdr_proxy.v1"
+    assert snapshot["protocol_version"] == 1
+    assert snapshot["proxy_host"] == "ryzen"
+    assert snapshot["refresh"] is True
 
 
 @pytest.mark.asyncio
@@ -853,17 +892,15 @@ async def test_herdr_service_remote_snapshot_reports_status_failure(monkeypatch)
         invalidate_snapshot_cache=lambda: None,
     )
 
-    async def fake_run_ssh_json(_target, args, timeout=2.5):
-        if args == ["status", "--json"]:
-            return {
-                "success": False,
-                "error": "timeout",
-                "command": ["ssh", "ryzen", "herdr", *args],
-                "returncode": None,
-            }
-        return {"success": True, "result": {}, "command": ["ssh", "ryzen", "herdr", *args]}
+    async def fake_run_proxy_json(_target, args, timeout=2.5):
+        return {
+            "success": False,
+            "error": "timeout",
+            "command": ["ssh", "ryzen", "i3pm", "herdr-proxy", *args],
+            "returncode": None,
+        }
 
-    monkeypatch.setattr(service, "run_ssh_json", fake_run_ssh_json)
+    monkeypatch.setattr(service, "run_proxy_json", fake_run_proxy_json)
 
     snapshot = await service.remote_snapshot(
         {
@@ -884,7 +921,7 @@ async def test_herdr_service_remote_snapshot_reports_status_failure(monkeypatch)
         "host": "ryzen",
         "ssh_target": "ryzen",
         "connection_key": "vpittamp@ryzen:22",
-        "command": ["ssh", "ryzen", "herdr", "status", "--json"],
+        "command": ["ssh", "ryzen", "i3pm", "herdr-proxy", "snapshot", "--json"],
         "error": "timeout",
         "returncode": None,
     }]
@@ -973,6 +1010,47 @@ async def test_herdr_service_runs_remote_json_command(monkeypatch):
     assert result["ssh_target"] == "ryzen"
     assert result["connection_key"] == "vpittamp@ryzen:22"
     assert calls[0][0][-3:] == ["herdr", "agent", "list"]
+    assert calls[0][0][:2] == ["ssh", "-o"]
+    assert calls[0][1]["timeout"] == 1.25
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_runs_remote_proxy_command(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"success":true,"schema_version":"i3pm.herdr_proxy.v1","agents":[]}\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr(herdr_service_module.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(herdr_service_module.subprocess, "run", fake_run)
+
+    result = await service.run_proxy_json(
+        {
+            "host": "ryzen",
+            "ssh_target": "ryzen",
+            "connection_key": "vpittamp@ryzen:22",
+        },
+        ["snapshot", "--json"],
+        timeout=1.25,
+    )
+
+    assert result["success"] is True
+    assert result["schema_version"] == "i3pm.herdr_proxy.v1"
+    assert result["command"] == ["ssh", "ryzen", "i3pm", "herdr-proxy", "snapshot", "--json"]
+    assert result["herdr_host"] == "ryzen"
+    assert result["ssh_target"] == "ryzen"
+    assert result["connection_key"] == "vpittamp@ryzen:22"
+    assert calls[0][0][-4:] == ["i3pm", "herdr-proxy", "snapshot", "--json"]
     assert calls[0][0][:2] == ["ssh", "-o"]
     assert calls[0][1]["timeout"] == 1.25
 
@@ -1068,19 +1146,19 @@ async def test_herdr_service_remote_pane_focus_owns_transport_cache_and_launch(m
             },
         ],
     }
-    ssh_calls = []
+    proxy_calls = []
     launch_calls = []
     focus_overrides = []
 
-    async def fake_run_ssh_json(remote_target, args, timeout=2.5):
-        ssh_calls.append((remote_target, args))
+    async def fake_run_proxy_json(remote_target, args, timeout=2.5):
+        proxy_calls.append((remote_target, args))
         return {"success": True, "result": {"focused": True}}
 
     async def fake_launch_open(params):
         launch_calls.append(params)
         return {"success": True, "launch": {"reused_existing": True}}
 
-    monkeypatch.setattr(service, "run_ssh_json", fake_run_ssh_json)
+    monkeypatch.setattr(service, "run_proxy_json", fake_run_proxy_json)
 
     result = await service.remote_pane_focus(
         {
@@ -1095,7 +1173,7 @@ async def test_herdr_service_remote_pane_focus_owns_transport_cache_and_launch(m
         set_focus_overrides=lambda **kwargs: focus_overrides.append(kwargs),
     )
 
-    assert ssh_calls == [(target, ["agent", "focus", "remote-b"])]
+    assert proxy_calls == [(target, ["focus", "remote-b", "--json"])]
     assert launch_calls == [{
         "app_name": "herdr",
         "__intent_epoch": 9,

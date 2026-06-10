@@ -43,6 +43,7 @@ COMMANDS:
   worktree         Git worktree project management (Feature 077)
   launch           Daemon-owned application launch commands
   session          AI session inspection and focus commands
+  herdr-proxy      Host-local Herdr proxy for remote dashboard aggregation
   window           Daemon-owned window focus/action commands
   workspace        Daemon-owned workspace focus commands
   dashboard        Dashboard snapshot and watch commands
@@ -74,6 +75,7 @@ EXAMPLES:
   i3pm launch open terminal           Launch an app through the daemon
   i3pm session focus <session_key>    Focus an AI session
   i3pm session preview <session_key> --follow --jsonl
+  i3pm herdr-proxy snapshot --json    Emit local Herdr proxy snapshot
   i3pm window focus <window_id>       Focus a managed window
   i3pm workspace focus 2              Focus a workspace
   i3pm dashboard snapshot             Show dashboard state
@@ -178,6 +180,17 @@ async function main(): Promise<void> {
       {
         const { sessionCommand } = await import("./commands/session.ts");
         const exitCode = await sessionCommand(commandArgs, {
+          verbose: args.verbose,
+          debug: args.debug,
+        });
+        Deno.exit(exitCode);
+      }
+      break;
+
+    case "herdr-proxy":
+      {
+        const { herdrProxyCommand } = await import("./commands/herdr-proxy.ts");
+        const exitCode = await herdrProxyCommand(commandArgs, {
           verbose: args.verbose,
           debug: args.debug,
         });

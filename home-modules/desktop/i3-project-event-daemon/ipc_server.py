@@ -1090,6 +1090,10 @@ class IPCServer:
                 result = await self._dashboard_validate(params)
             elif method == "herdr.snapshot":
                 result = await self._herdr_snapshot(params)
+            elif method == "herdr.proxy.snapshot":
+                result = await self._herdr_proxy_snapshot(params)
+            elif method == "herdr.proxy.pane.focus":
+                result = await self._herdr_proxy_pane_focus(params)
             elif method == "herdr.pane.focus":
                 result = await self._herdr_pane_focus(params)
             elif method == "herdr.pane.close":
@@ -9720,6 +9724,23 @@ FORMAT JSONEachRow
             normalize_connection_key=self._normalize_connection_key,
             project_for_cwd=self._herdr_project_for_cwd,
         )
+
+    async def _herdr_proxy_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Return local-only Herdr state for remote proxy clients."""
+        return await self.herdr_service.proxy_snapshot(
+            params or {},
+            local_host=self._local_host_alias(),
+            normalize_connection_key=self._normalize_connection_key,
+            project_for_cwd=self._herdr_project_for_cwd,
+        )
+
+    async def _herdr_proxy_pane_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Focus a local Herdr pane for remote proxy clients."""
+        result = await self.herdr_service.pane_focus(params)
+        result["schema_version"] = "i3pm.herdr_proxy.v1"
+        result["protocol_version"] = 1
+        result["proxy_host"] = self._local_host_alias()
+        return result
 
     async def _herdr_pane_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
         return await self.herdr_service.pane_focus(params)

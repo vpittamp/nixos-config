@@ -52,6 +52,9 @@ interface HerdrRemoteHealth extends HerdrHealth {
   host: string;
   ssh_target: string;
   connection_key: string;
+  proxy_reachable: boolean;
+  proxy_schema_version: string;
+  proxy_protocol_version: number;
 }
 
 interface McpBrowserCandidate {
@@ -185,6 +188,23 @@ function parseSystemctlShow(payload: string): Record<string, string> {
     result[trimmed.slice(0, idx)] = trimmed.slice(idx + 1);
   }
   return result;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function herdrStatusRoot(payload: Record<string, unknown>): Record<string, unknown> {
+  if (Object.keys(asRecord(payload.client)).length > 0 || Object.keys(asRecord(payload.server)).length > 0) {
+    return payload;
+  }
+  return asRecord(payload.result);
 }
 
 async function loadUnitStatus(name: string, scope: "user" | "system"): Promise<UnitStatus> {
@@ -384,8 +404,9 @@ async function collectHerdrHealth(
     };
   }
 
-  const client = (statusPayload.client || {}) as Record<string, unknown>;
-  const server = (statusPayload.server || {}) as Record<string, unknown>;
+  const statusRoot = herdrStatusRoot(statusPayload);
+  const client = asRecord(statusRoot.client);
+  const server = asRecord(statusRoot.server);
   const agentList = await runHerdr(["agent", "list"]);
   const paneList = await runHerdr(["pane", "list"]);
   const integrationStatus = await runHerdr(["integration", "status"]);
@@ -471,38 +492,117 @@ async function loadHerdrHealth(): Promise<HerdrHealth | null> {
 async function loadHerdrRemoteHealth(): Promise<HerdrRemoteHealth[]> {
   const targets = await loadHerdrRemoteTargets();
   const results = await Promise.all(targets.map(async (target): Promise<HerdrRemoteHealth> => {
-    const runHerdr = async (args: string[]): Promise<{ code: number; stdout: string; stderr: string }> => {
-      try {
-        return await runCommand([
-          "ssh",
-          "-o",
-          "BatchMode=yes",
-          "-o",
-          "ConnectTimeout=1",
-          "-o",
-          "ConnectionAttempts=1",
-          "-o",
-          "ServerAliveInterval=1",
-          "-o",
-          "ServerAliveCountMax=1",
-          target.ssh_target,
-          "herdr",
-          ...args,
-        ], 3000);
-      } catch (error) {
-        return {
-          code: 1,
-          stdout: "",
-          stderr: error instanceof Error ? error.message : String(error),
-        };
-      }
-    };
-    const health = await collectHerdrHealth(runHerdr);
-    return {
-      ...health,
+    let proxyResult: { code: number; stdout: string; stderr: string };
+    try {
+      proxyResult = await runCommand([
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=1",
+        "-o",
+        "ConnectionAttempts=1",
+        "-o",
+        "ServerAliveInterval=1",
+        "-o",
+        "ServerAliveCountMax=1",
+        target.ssh_target,
+        "i3pm",
+        "herdr-proxy",
+        "snapshot",
+        "--json",
+      ], 3000);
+    } catch (error) {
+      proxyResult = {
+        code: 1,
+        stdout: "",
+        stderr: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    const base = {
       host: target.host,
       ssh_target: target.ssh_target,
       connection_key: target.connection_key,
+      proxy_reachable: false,
+      proxy_schema_version: "",
+      proxy_protocol_version: 0,
+    };
+    if (proxyResult.code !== 0 || !proxyResult.stdout) {
+      return {
+        ...base,
+        healthy: false,
+        issues: [`Herdr proxy unreachable: ${proxyResult.stderr || proxyResult.stdout || "no output"}`],
+        client_version: "",
+        server_version: "",
+        protocol: 0,
+        compatible: false,
+        server_running: false,
+        agent_count: 0,
+        pane_count: 0,
+        integrations: { claude: false, codex: false },
+      };
+    }
+
+    let snapshot: Record<string, unknown>;
+    try {
+      snapshot = JSON.parse(proxyResult.stdout) as Record<string, unknown>;
+    } catch {
+      return {
+        ...base,
+        proxy_reachable: true,
+        healthy: false,
+        issues: ["Herdr proxy returned invalid JSON"],
+        client_version: "",
+        server_version: "",
+        protocol: 0,
+        compatible: false,
+        server_running: false,
+        agent_count: 0,
+        pane_count: 0,
+        integrations: { claude: false, codex: false },
+      };
+    }
+
+    const proxySchemaVersion = String(snapshot.schema_version || "");
+    const proxyProtocolVersion = Number(snapshot.protocol_version || 0);
+    const statusRoot = herdrStatusRoot(asRecord(snapshot.status));
+    const client = asRecord(statusRoot.client);
+    const server = asRecord(statusRoot.server);
+    const issues: string[] = [];
+    if (proxySchemaVersion !== "i3pm.herdr_proxy.v1") {
+      issues.push(`Herdr proxy schema mismatch: ${proxySchemaVersion || "missing"}`);
+    }
+    if (proxyProtocolVersion !== 1) {
+      issues.push(`Herdr proxy protocol mismatch: ${proxyProtocolVersion || "missing"}`);
+    }
+    const serverRunning = server.running === true;
+    const compatible = server.compatible === true;
+    if (!serverRunning) {
+      issues.push("Remote Herdr server is not running");
+    }
+    if (!compatible) {
+      issues.push("Remote Herdr client/server protocol is not compatible");
+    }
+
+    const health: HerdrHealth = {
+      healthy: issues.length === 0,
+      issues,
+      client_version: String(client.version || ""),
+      server_version: String(server.version || ""),
+      protocol: Number(client.protocol || server.protocol || 0),
+      compatible,
+      server_running: serverRunning,
+      agent_count: asArray(snapshot.agents).length,
+      pane_count: asArray(snapshot.panes).length,
+      integrations: { claude: false, codex: false },
+    };
+    return {
+      ...health,
+      ...base,
+      proxy_reachable: true,
+      proxy_schema_version: proxySchemaVersion,
+      proxy_protocol_version: proxyProtocolVersion,
     };
   }));
   return results;
@@ -805,7 +905,13 @@ function printReport(report: HealthReport): void {
       const label = remote.host || remote.ssh_target || remote.connection_key || "remote";
       console.log(
         `  ${label} ${remote.healthy ? green("healthy") : yellow("warning")} ${
-          dim(`${remote.connection_key || remote.ssh_target} agents ${remote.agent_count} panes ${remote.pane_count}`)
+          dim(
+            `${remote.connection_key || remote.ssh_target} proxy ${
+              remote.proxy_reachable ? "reachable" : "down"
+            } ${remote.proxy_schema_version || "missing-schema"} protocol ${
+              remote.proxy_protocol_version || "unknown"
+            } agents ${remote.agent_count} panes ${remote.pane_count}`,
+          )
         }`,
       );
       for (const issue of remote.issues) {

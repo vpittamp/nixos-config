@@ -922,45 +922,45 @@ async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
         key = args[0] + "s"
         return {"success": True, "result": {key: []}}
 
-    async def fake_run_herdr_ssh_json(remote_target, args, timeout=2.5):
+    proxy_calls = []
+
+    async def fake_run_herdr_proxy_json(remote_target, args, timeout=2.5):
         assert remote_target == target
-        command = " ".join(args)
-        if command == "status --json":
-            return {"success": True, "result": {"ok": True}}
-        if command == "agent list":
-            return {
-                "success": True,
-                "result": {
-                    "agents": [{
-                        "agent": "claude",
-                        "agent_status": "NeedsInput",
-                        "cwd": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
-                        "focused": True,
-                        "foreground_cwd": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
-                        "pane_id": "remote-pane",
-                    }],
-                },
-            }
-        if command == "pane list":
-            return {
-                "success": True,
-                "result": {
-                    "panes": [{
-                        "agent": "claude",
-                        "agent_status": "NeedsInput",
-                        "cwd": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
-                        "focused": True,
-                        "foreground_cwd": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
-                        "pane_id": "remote-pane",
-                    }],
-                },
-            }
-        key = args[0] + "s"
-        return {"success": True, "result": {key: []}}
+        proxy_calls.append(args)
+        return {
+            "success": True,
+            "schema_version": "i3pm.herdr_proxy.v1",
+            "protocol_version": 1,
+            "status": {"success": True, "result": {"ok": True}},
+            "agents": [{
+                "agent": "claude",
+                "agent_status": "NeedsInput",
+                "cwd": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+                "focused": True,
+                "foreground_cwd": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+                "pane_id": "remote-pane",
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+            }],
+            "panes": [{
+                "agent": "claude",
+                "agent_status": "NeedsInput",
+                "cwd": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+                "focused": True,
+                "foreground_cwd": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
+                "pane_id": "remote-pane",
+                "execution_mode": "local",
+                "connection_key": "local@ryzen",
+            }],
+            "workspaces": [],
+            "tabs": [],
+            "worktrees": [],
+            "errors": [],
+        }
 
     monkeypatch.setattr(server, "_load_herdr_remote_targets", lambda: [target])
     monkeypatch.setattr(server.herdr_service, "run_json", fake_run_herdr_json)
-    monkeypatch.setattr(server.herdr_service, "run_ssh_json", fake_run_herdr_ssh_json)
+    monkeypatch.setattr(server.herdr_service, "run_proxy_json", fake_run_herdr_proxy_json)
 
     snapshot = await server._herdr_snapshot({"refresh": True})
     rows = snapshot["sessions"]
@@ -968,6 +968,8 @@ async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
     assert snapshot["local_herdr_generation"] == 0
     assert snapshot["remote_herdr_generation"] == {"ryzen": 1}
     assert snapshot["remote_snapshots"][0]["herdr_generation"] == 1
+    assert snapshot["remote_snapshots"][0]["proxy_schema_version"] == "i3pm.herdr_proxy.v1"
+    assert proxy_calls == [["snapshot", "--json"]]
     assert [row["session_key"] for row in rows] == [
         "herdr:pane:local-pane",
         "herdr:ryzen:pane:remote-pane",
@@ -1004,16 +1006,16 @@ async def test_herdr_remote_unreachable_reports_error_without_rows(server, monke
         "connection_key": "vpittamp@ryzen:22",
     }
 
-    async def fake_run_herdr_ssh_json(_remote_target, args, timeout=2.5):
+    async def fake_run_herdr_proxy_json(_remote_target, args, timeout=2.5):
         return {
             "success": False,
             "error": "timeout",
             "stderr": "",
-            "command": ["ssh", "ryzen", "herdr", *args],
+            "command": ["ssh", "ryzen", "i3pm", "herdr-proxy", *args],
             "returncode": None,
         }
 
-    monkeypatch.setattr(server.herdr_service, "run_ssh_json", fake_run_herdr_ssh_json)
+    monkeypatch.setattr(server.herdr_service, "run_proxy_json", fake_run_herdr_proxy_json)
 
     snapshot = await server._herdr_remote_snapshot(target)
 
@@ -1061,12 +1063,12 @@ async def test_herdr_remote_pane_focus_switches_pane_then_reuses_herdr_app(serve
     }
     calls = []
 
-    async def fake_run_herdr_ssh_json(remote_target, args, timeout=2.5):
+    async def fake_run_herdr_proxy_json(remote_target, args, timeout=2.5):
         calls.append((remote_target, args))
         return {"success": True, "result": {"focused": True}}
 
     monkeypatch.setattr(server, "_load_herdr_remote_targets", lambda: [target])
-    monkeypatch.setattr(server.herdr_service, "run_ssh_json", fake_run_herdr_ssh_json)
+    monkeypatch.setattr(server.herdr_service, "run_proxy_json", fake_run_herdr_proxy_json)
     server.notify_state_change = AsyncMock(return_value=None)
     server._launch_open = AsyncMock(return_value={
         "success": True,
@@ -1085,7 +1087,7 @@ async def test_herdr_remote_pane_focus_switches_pane_then_reuses_herdr_app(serve
         "__intent_epoch": 12,
     })
 
-    assert calls == [(target, ["agent", "focus", "remote-pane"])]
+    assert calls == [(target, ["focus", "remote-pane", "--json"])]
     server._launch_open.assert_awaited_once_with({
         "app_name": "herdr",
         "__intent_epoch": 12,
