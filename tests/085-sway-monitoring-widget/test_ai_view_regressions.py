@@ -157,7 +157,6 @@ def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
     services_text = (REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "controllers" / "RuntimeServices.qml").read_text()
     worktree_service_text = WORKTREE_APP_SERVICE_QML.read_text()
     dashboard_command_text = I3PM_DASHBOARD_TS.read_text()
-    agent_command_text = (REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "agent.ts").read_text()
     daemon_client_text = I3PM_DAEMON_CLIENT_TS.read_text()
     quickshell_default_nix_text = QUICKSHELL_DEFAULT_NIX.read_text()
     assert "function applySnapshot(snapshot)" in text
@@ -175,8 +174,6 @@ def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
     assert "readonly property string i3pmWatchBin" in quickshell_default_nix_text
     assert "quickshell-i3pm-watch" in quickshell_default_nix_text
     assert "[d]eno .*main[.]ts dashboard watch" in quickshell_default_nix_text
-    assert "[d]eno .*main[.]ts agent watch" in quickshell_default_nix_text
-    assert "[d]eno .*main[.]ts agent desktop-watch" in quickshell_default_nix_text
     assert "kill -KILL" in quickshell_default_nix_text
     assert "kill -0" in quickshell_default_nix_text
     assert '"--interval", String(runtimeConfig.dashboardHeartbeatMs)' not in services_text
@@ -188,7 +185,7 @@ def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
     assert "const encoded = JSON.stringify(event);" in dashboard_command_text
     assert 'message.method !== "state_changed"' not in daemon_client_text
     assert 'event["method"] == "state_changed"' not in (REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "core" / "daemon_client.py").read_text()
-    assert '"state_changed"' not in agent_command_text
+    assert '"state_changed"' not in dashboard_command_text
     assert "if (params.event_type === undefined)" in daemon_client_text
     assert "const eventType = String(params.event_type);" in daemon_client_text
     assert 'if (!eventType.includes(".") || message.method !== eventType)' in daemon_client_text

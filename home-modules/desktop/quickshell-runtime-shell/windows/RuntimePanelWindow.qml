@@ -12,7 +12,6 @@ PanelWindow {
     required property QtObject runtimeConfig
     required property var colors
     readonly property QtObject root: shellRoot
-    required property QtObject assistantService
     id: panelWindow
     screen: root.primaryScreen
     visible: root.panelVisible
@@ -71,41 +70,6 @@ PanelWindow {
                     }
                 }
 
-                Rectangle {
-                    Layout.fillWidth: true
-                    implicitHeight: 30
-                    radius: 10
-                    color: root.panelSection === "assistant" ? colors.accentBg : colors.cardAlt
-                    border.color: root.panelSection === "assistant" ? colors.accent : colors.border
-                    border.width: 1
-
-                    RowLayout {
-                        anchors.centerIn: parent
-                        spacing: 6
-
-                        Text {
-                            text: "Agents"
-                            color: root.panelSection === "assistant" ? colors.accent : colors.textDim
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
-                        }
-
-                        Rectangle {
-                            visible: assistantService.isGenerating
-                            width: 7
-                            height: 7
-                            radius: 4
-                            color: colors.accent
-                        }
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.showAssistantPanel()
-                    }
-                }
             }
 
             ColumnLayout {
@@ -1181,17 +1145,6 @@ PanelWindow {
                 }
             }
 
-            }
-
-            RootComponents.AgentHarnessPanel {
-                id: assistantPanel
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                visible: root.panelSection === "assistant"
-                service: assistantService
-                palette: colors
-                contextLabel: root.worktreePickerSummaryTitle()
-                contextDetails: root.activeContextSummaryLabel()
             }
         }
     }

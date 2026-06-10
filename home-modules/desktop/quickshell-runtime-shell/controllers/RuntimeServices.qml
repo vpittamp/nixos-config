@@ -9,7 +9,6 @@ Item {
 
     required property QtObject shellRoot
     required property QtObject runtimeConfig
-    required property QtObject assistantService
 
     property alias clockRef: clock
     property alias dashboardRestartTimerRef: dashboardRestartTimer
@@ -1030,10 +1029,6 @@ Item {
             shellRoot.showRuntimePanelSection("balanced");
         }
 
-        function showAssistant() {
-            shellRoot.showAssistantPanel();
-        }
-
         function nextSession() {
             shellRoot.cycleSessions("next");
         }
@@ -1106,42 +1101,4 @@ Item {
         }
     }
 
-    IpcHandler {
-        target: "assistant"
-
-        function toggle() {
-            shellRoot.toggleAssistantPanel();
-        }
-
-        function open() {
-            shellRoot.showAssistantPanel();
-        }
-
-        function close() {
-            shellRoot.panelVisible = false;
-        }
-
-        function send(message: string) {
-            shellRoot.showAssistantPanel();
-            assistantService.sendMessage(message);
-        }
-
-        function newChat() {
-            shellRoot.showAssistantPanel();
-            assistantService.newChat();
-        }
-
-        function setProvider(provider: string) {
-            assistantService.setProvider(provider);
-        }
-
-        function setModel(model: string) {
-            assistantService.setModel(model);
-        }
-
-        function translateText(text: string, targetLang: string) {
-            shellRoot.showAssistantPanel();
-            assistantService.sendMessage(text);
-        }
-    }
 }

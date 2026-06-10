@@ -53,7 +53,6 @@ from .services.window_filter import (
     read_process_environ_with_fallback,
 )
 from .services.registry_loader import RegistryLoader, RegistryApp
-from .services.agent_harness import CodexHarnessManager
 from .services.dashboard_model import (
     DASHBOARD_EVENT_SCHEMA_VERSION,
     DASHBOARD_SCHEMA_VERSION,
@@ -529,7 +528,6 @@ class IPCServer:
 
         # Feature 123: Clients subscribed to state change events (for monitoring panel)
         self.state_change_subscribers: set[asyncio.StreamWriter] = set()
-        self.agent_event_subscribers: set[asyncio.StreamWriter] = set()
         self._snapshot_version = 0
         self._session_generation = 0
         self._display_generation = 0
@@ -617,7 +615,6 @@ class IPCServer:
         self._malformed_json_last_peer: str = ""
         self._malformed_json_last_error: str = ""
         self._malformed_json_by_peer: Dict[str, int] = {}
-        self.agent_harness = CodexHarnessManager(on_change=self._notify_agent_harness_change)
 
     @classmethod
     async def from_systemd_socket(
@@ -721,7 +718,6 @@ class IPCServer:
     async def stop(self) -> None:
         """Stop IPC server and close all connections."""
         await self.stop_herdr_event_subscription()
-        await self.agent_harness.stop()
         await self.launch_service.stop_reconcile_tasks(
             timeout=self._RECONCILE_TASKS_CLOSE_TIMEOUT_SECONDS,
         )
@@ -795,7 +791,6 @@ class IPCServer:
             self.clients.discard(writer)
             self.subscribed_clients.discard(writer)  # Remove from subscriptions if subscribed
             self.state_change_subscribers.discard(writer)  # Feature 123: Remove from state change subscriptions
-            self.agent_event_subscribers.discard(writer)
             await self._close_client_writer(writer)
 
     async def _close_client_writer(self, writer: asyncio.StreamWriter) -> None:
@@ -1108,16 +1103,6 @@ class IPCServer:
                 result = await self._session_doctor(params)
             elif method == "session.exit":
                 result = await self._session_exit(params)
-            elif method == "agent.snapshot":
-                result = await self._agent_snapshot(params)
-            elif method == "agent.session.start":
-                result = await self._agent_session_start(params)
-            elif method == "agent.session.send":
-                result = await self._agent_session_send(params)
-            elif method == "agent.session.cancel":
-                result = await self._agent_session_cancel(params)
-            elif method == "agent.session.respond":
-                result = await self._agent_session_respond(params)
             elif method == "assistant.desktop.snapshot":
                 result = await self._assistant_desktop_snapshot(params)
             elif method == "assistant.desktop.preview":
@@ -1346,8 +1331,6 @@ class IPCServer:
             # Feature 123: State change subscription for efficient monitoring panel updates
             elif method == "subscribe_state_changes":
                 result = await self._subscribe_state_changes(params, writer)
-            elif method == "subscribe_agent_events":
-                result = await self._subscribe_agent_events(params, writer)
 
             else:
                 return {
@@ -1765,19 +1748,6 @@ class IPCServer:
             "requested_target_host": requested_target_host,
             "context": context,
         }
-
-    async def _agent_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        _ = params
-        snapshot = await self.agent_harness.snapshot()
-        active_context = await self._context_get_active({})
-        runtime_snapshot = {
-            "active_context": active_context,
-            "windows": [],
-            "session_items": [],
-        }
-        snapshot["active_context"] = active_context
-        snapshot["available_worktrees"] = await self._build_dashboard_worktrees(runtime_snapshot)
-        return snapshot
 
     def _assistant_desktop_window_search_text(self, window: Dict[str, Any]) -> str:
         parts = [
@@ -2392,101 +2362,6 @@ class IPCServer:
             or "Action completed"
         )
         return resolved
-
-    async def _agent_session_start(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        params = params or {}
-        active_context = await self._context_get_active({})
-        requested_qualified_name = str(params.get("qualified_name") or "").strip()
-
-        if requested_qualified_name:
-            resolved = self._find_worktree_by_qualified_name(requested_qualified_name)
-            context = self._build_active_worktree_context(
-                resolved["full_qualified_name"],
-                resolved["repo_name"],
-                resolved["repo"],
-                resolved["worktree"],
-                target_host=self._local_host_alias(),
-            )
-            cwd = str(
-                params.get("cwd")
-                or context.get("local_directory")
-                or context.get("directory")
-                or Path.home()
-            ).strip()
-            self._record_project_usage(resolved["full_qualified_name"])
-        else:
-            execution_mode = str(active_context.get("execution_mode") or "global").strip()
-            if execution_mode == "ssh":
-                raise ValueError("Daemon-owned agent harness currently supports local contexts only")
-            context = active_context
-            cwd = str(
-                params.get("cwd")
-                or active_context.get("local_directory")
-                or active_context.get("directory")
-                or Path.home()
-            ).strip()
-
-        if not cwd:
-            cwd = str(Path.home())
-        if not Path(cwd).exists():
-            raise ValueError(f"Working directory does not exist: {cwd}")
-
-        model = str(params.get("model") or "").strip() or None
-        session = await self.agent_harness.start_session(
-            cwd=cwd,
-            context=context,
-            model=model,
-        )
-        return {
-            "success": True,
-            "session": session,
-            "snapshot": await self._agent_snapshot({}),
-        }
-
-    async def _agent_session_send(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        params = params or {}
-        session_key = str(params.get("session_key") or "").strip()
-        text = str(params.get("text") or "").strip()
-        if not session_key:
-            raise ValueError("session_key is required")
-        if not text:
-            raise ValueError("text is required")
-        session = await self.agent_harness.send_message(session_key, text)
-        return {
-            "success": True,
-            "session": session,
-            "snapshot": await self._agent_snapshot({}),
-        }
-
-    async def _agent_session_cancel(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        params = params or {}
-        session_key = str(params.get("session_key") or "").strip()
-        if not session_key:
-            raise ValueError("session_key is required")
-        session = await self.agent_harness.cancel(session_key)
-        return {
-            "success": True,
-            "session": session,
-            "snapshot": await self._agent_snapshot({}),
-        }
-
-    async def _agent_session_respond(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        params = params or {}
-        session_key = str(params.get("session_key") or "").strip()
-        request_id = str(params.get("request_id") or "").strip()
-        decision = str(params.get("decision") or "").strip().lower()
-        if not session_key:
-            raise ValueError("session_key is required")
-        if not request_id:
-            raise ValueError("request_id is required")
-        if decision not in {"approve", "deny"}:
-            raise ValueError("decision must be one of: approve, deny")
-        session = await self.agent_harness.respond_to_approval(session_key, request_id, decision)
-        return {
-            "success": True,
-            "session": session,
-            "snapshot": await self._agent_snapshot({}),
-        }
 
     async def _get_projects(self) -> Dict[str, Any]:
         """List all projects with window counts.
@@ -4162,42 +4037,6 @@ class IPCServer:
         if dead_clients:
             logger.debug(f"[Feature 123] Removed {len(dead_clients)} dead state change subscribers")
 
-    async def _broadcast_agent_event(self, event: Dict[str, Any]) -> None:
-        if not self.agent_event_subscribers:
-            return
-
-        notification = json.dumps({
-            "jsonrpc": "2.0",
-            "method": "agent_event",
-            "params": event,
-        })
-
-        dead_clients = set()
-        for writer in list(self.agent_event_subscribers):
-            try:
-                writer.write((notification + "\n").encode())
-                await asyncio.wait_for(writer.drain(), timeout=0.25)
-            except asyncio.TimeoutError:
-                logger.warning("Timed out notifying agent event subscriber")
-                dead_clients.add(writer)
-            except (ConnectionResetError, BrokenPipeError, ConnectionError):
-                dead_clients.add(writer)
-            except Exception as e:
-                logger.warning(f"Error notifying agent event subscriber: {e}")
-                dead_clients.add(writer)
-
-        self.agent_event_subscribers -= dead_clients
-
-    async def _notify_agent_harness_change(self, event: Dict[str, Any]) -> None:
-        async def emit_change() -> None:
-            try:
-                await self._broadcast_agent_event(event)
-                await self.notify_state_change("agent_session_changed")
-            except Exception:
-                logger.exception("Failed to emit agent harness state change")
-
-        asyncio.create_task(emit_change())
-
     async def _subscribe_state_changes(self, params: Dict[str, Any], writer: asyncio.StreamWriter) -> Dict[str, Any]:
         """Subscribe to state change notifications (Feature 123).
 
@@ -4220,14 +4059,6 @@ class IPCServer:
         return {
             "subscribed": True,
             "subscriber_count": subscriber_count,
-        }
-
-    async def _subscribe_agent_events(self, params: Dict[str, Any], writer: asyncio.StreamWriter) -> Dict[str, Any]:
-        _ = params
-        self.agent_event_subscribers.add(writer)
-        return {
-            "subscribed": True,
-            "subscriber_count": len(self.agent_event_subscribers),
         }
 
     async def _get_window_tree(self, params: Dict[str, Any]) -> Dict[str, Any]:

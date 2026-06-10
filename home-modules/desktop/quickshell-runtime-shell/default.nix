@@ -33,8 +33,6 @@ let
     cp ${./SessionRow.qml} "$out/SessionRow.qml"
     cp ${./NotificationToast.qml} "$out/NotificationToast.qml"
     cp ${./NotificationRailCard.qml} "$out/NotificationRailCard.qml"
-    cp ${./AgentHarnessPanel.qml} "$out/AgentHarnessPanel.qml"
-    cp ${./AgentHarnessService.qml} "$out/AgentHarnessService.qml"
     cp ${./AssistantPanel.qml} "$out/AssistantPanel.qml"
     cp ${./AssistantService.qml} "$out/AssistantService.qml"
     cp ${./AssistantProviderLogic.js} "$out/AssistantProviderLogic.js"
@@ -115,12 +113,6 @@ EOF
     case "$1:$2" in
       dashboard:watch)
         pattern='([d]eno .*main[.]ts dashboard watch|[i]3pm .*dashboard watch)'
-        ;;
-      agent:watch)
-        pattern='([d]eno .*main[.]ts agent watch($| )|[i]3pm .*agent watch($| ))'
-        ;;
-      agent:desktop-watch)
-        pattern='([d]eno .*main[.]ts agent desktop-watch|[i]3pm .*agent desktop-watch)'
         ;;
       *)
         exec "$i3pm_bin" "$@"
@@ -2537,7 +2529,7 @@ in
       agentActionToastMaxPerOutput = lib.mkOption {
         type = lib.types.int;
         default = 0;
-        description = "Maximum number of visible i3pm agent action-required toasts per output, independent of the general toast limit.";
+        description = "Maximum number of visible AI action-required toasts per output, independent of the general toast limit.";
       };
 
       defaultTimeoutMs = lib.mkOption {

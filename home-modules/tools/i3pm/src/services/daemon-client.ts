@@ -264,10 +264,6 @@ export class DaemonClient {
     return await this.request<T>("assistant.desktop.snapshot", params ?? {});
   }
 
-  async getAgentSnapshot<T = unknown>(): Promise<T> {
-    return await this.request<T>("agent.snapshot", {});
-  }
-
   async getDashboardSnapshot<T = unknown>(): Promise<T> {
     return await this.request<T>("dashboard.snapshot", {});
   }
@@ -434,37 +430,6 @@ export class DaemonClient {
             display_generation: params.display_generation === undefined ? undefined : Number(params.display_generation),
             focus_generation: params.focus_generation === undefined ? undefined : Number(params.focus_generation),
           };
-        } catch {
-          // Ignore malformed notification lines and continue consuming the stream.
-        }
-      }
-    }
-  }
-
-  async *subscribeToAgentEvents(): AsyncIterableIterator<Record<string, unknown>> {
-    if (!this.conn) {
-      throw new DaemonError("Not connected to daemon");
-    }
-
-    await this.request("subscribe_agent_events", {});
-
-    const decoder = new TextDecoder();
-    let partialLine = "";
-
-    for await (const chunk of this.conn.readable) {
-      const text = partialLine + decoder.decode(chunk);
-      const lines = text.split("\n");
-      partialLine = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-
-        try {
-          const message = JSON.parse(line);
-          if (message.method !== "agent_event" || !message.params) {
-            continue;
-          }
-          yield message.params as Record<string, unknown>;
         } catch {
           // Ignore malformed notification lines and continue consuming the stream.
         }

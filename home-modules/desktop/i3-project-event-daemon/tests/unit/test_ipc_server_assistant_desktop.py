@@ -1,4 +1,4 @@
-"""Unit tests for daemon-owned agent harness RPC methods."""
+"""Unit tests for assistant desktop RPC helpers and shared event delivery."""
 
 from __future__ import annotations
 
@@ -51,11 +51,6 @@ class DummyStateManager:
         return self.state.active_project
 
 
-@pytest.fixture
-def server():
-    return IPCServer(DummyStateManager())
-
-
 class _DummyWriter:
     def __init__(self, on_drain=None):
         self.on_drain = on_drain
@@ -69,105 +64,9 @@ class _DummyWriter:
             await self.on_drain()
 
 
-@pytest.mark.asyncio
-async def test_agent_session_start_uses_local_context(server, tmp_path):
-    context = {
-        "execution_mode": "local",
-        "directory": str(tmp_path),
-        "local_directory": str(tmp_path),
-        "context_key": "repo::local::local@host",
-    }
-    server._context_get_active = AsyncMock(return_value=context)
-    server.agent_harness.start_session = AsyncMock(return_value={"session_key": "codex:abc"})
-    server.agent_harness.snapshot = AsyncMock(return_value={"sessions": [], "active_session_key": ""})
-
-    result = await server._agent_session_start({})
-
-    assert result["success"] is True
-    server.agent_harness.start_session.assert_awaited_once_with(
-        cwd=str(tmp_path),
-        context=context,
-        model=None,
-    )
-
-
-@pytest.mark.asyncio
-async def test_agent_session_start_uses_explicit_worktree_target(server, tmp_path):
-    active_context = {
-        "execution_mode": "local",
-        "directory": "/tmp/other-project",
-        "local_directory": "/tmp/other-project",
-        "context_key": "other::local::local@host",
-    }
-    target_context = {
-        "qualified_name": "vpittamp/nixos-config:main",
-        "directory": str(tmp_path),
-        "local_directory": str(tmp_path),
-        "execution_mode": "local",
-        "context_key": "vpittamp/nixos-config:main::local::local@host",
-    }
-    server._context_get_active = AsyncMock(return_value=active_context)
-    server._find_worktree_by_qualified_name = lambda qualified_name: {
-        "repo_name": "vpittamp/nixos-config",
-        "repo": {"account": "vpittamp", "name": "nixos-config"},
-        "worktree": {"branch": "main", "path": str(tmp_path)},
-        "full_qualified_name": qualified_name,
-    }
-    server._build_active_worktree_context = lambda *args, **kwargs: dict(target_context)
-    server._record_project_usage = lambda qualified_name: None
-    server.agent_harness.start_session = AsyncMock(return_value={"session_key": "codex:abc"})
-    server.agent_harness.snapshot = AsyncMock(return_value={"sessions": [], "active_session_key": ""})
-    server._build_dashboard_worktrees = AsyncMock(return_value=[])
-
-    result = await server._agent_session_start({"qualified_name": "vpittamp/nixos-config:main"})
-
-    assert result["success"] is True
-    server.agent_harness.start_session.assert_awaited_once_with(
-        cwd=str(tmp_path),
-        context=target_context,
-        model=None,
-    )
-
-
-@pytest.mark.asyncio
-async def test_agent_session_start_rejects_ssh_context(server):
-    server._context_get_active = AsyncMock(return_value={
-        "execution_mode": "ssh",
-        "directory": "/tmp/project",
-        "local_directory": "/tmp/project",
-    })
-
-    with pytest.raises(ValueError, match="local contexts only"):
-        await server._agent_session_start({})
-
-
-@pytest.mark.asyncio
-async def test_agent_session_send_proxies_to_harness(server):
-    server.agent_harness.send_message = AsyncMock(return_value={"session_key": "codex:abc"})
-    server._agent_snapshot = AsyncMock(return_value={"sessions": [{"session_key": "codex:abc"}]})
-
-    result = await server._agent_session_send({
-        "session_key": "codex:abc",
-        "text": "hello",
-    })
-
-    assert result["success"] is True
-    server.agent_harness.send_message.assert_awaited_once_with("codex:abc", "hello")
-
-
-@pytest.mark.asyncio
-async def test_agent_session_respond_proxies_to_harness(server):
-    server.agent_harness.respond_to_approval = AsyncMock(return_value={"session_key": "codex:abc"})
-    server._agent_snapshot = AsyncMock(return_value={"sessions": [{"session_key": "codex:abc"}]})
-
-    result = await server._agent_session_respond({
-        "session_key": "codex:abc",
-        "request_id": "7",
-        "decision": "approve",
-    })
-
-    assert result["success"] is True
-    server.agent_harness.respond_to_approval.assert_awaited_once_with("codex:abc", "7", "approve")
+@pytest.fixture
+def server():
+    return IPCServer(DummyStateManager())
 
 
 @pytest.mark.asyncio
@@ -208,35 +107,6 @@ async def test_notify_state_change_handles_subscriber_set_mutation(server):
     ]
     assert params["payload"]["schema_version"] == "i3pm.dashboard.v2"
     server._dashboard_event_payload.assert_awaited_once_with(params["changed_keys"])
-
-
-@pytest.mark.asyncio
-async def test_broadcast_agent_event_handles_subscriber_set_mutation(server):
-    async def remove_second():
-        server.agent_event_subscribers.discard(second_writer)
-
-    first_writer = _DummyWriter(on_drain=remove_second)
-    second_writer = _DummyWriter()
-    server.agent_event_subscribers = {first_writer, second_writer}
-
-    await server._broadcast_agent_event({"sequence": 1, "type": "session_updated"})
-
-    assert len(first_writer.buffer) == 1
-    assert len(second_writer.buffer) == 1
-
-
-@pytest.mark.asyncio
-async def test_agent_snapshot_includes_available_worktrees(server):
-    active_context = {"qualified_name": "vpittamp/nixos-config:main"}
-    worktrees = [{"qualified_name": "vpittamp/nixos-config:main"}]
-    server.agent_harness.snapshot = AsyncMock(return_value={"sessions": [], "active_session_key": ""})
-    server._context_get_active = AsyncMock(return_value=active_context)
-    server._build_dashboard_worktrees = AsyncMock(return_value=worktrees)
-
-    result = await server._agent_snapshot({})
-
-    assert result["active_context"] == active_context
-    assert result["available_worktrees"] == worktrees
 
 
 @pytest.mark.asyncio

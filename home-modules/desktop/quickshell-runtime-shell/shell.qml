@@ -23,15 +23,6 @@ ShellRoot {
         id: shellConfig
     }
 
-    AgentHarnessService {
-        id: assistantService
-        shellConfigName: shellConfig.configName
-        i3pmBin: shellConfig.i3pmBin
-        i3pmWatchBin: shellConfig.i3pmWatchBin
-        contextLabel: root.worktreePickerSummaryTitle()
-        contextDetails: root.activeContextSummaryLabel()
-    }
-
     readonly property var launcherField: launcherWindow ? launcherWindow.launcherFieldRef : null
     readonly property var launcherList: launcherWindow ? launcherWindow.launcherListRef : null
     readonly property var sessionPreviewFlick: launcherWindow ? launcherWindow.sessionPreviewFlickRef : null
@@ -5329,10 +5320,6 @@ ShellRoot {
             panelVisible = false;
             return;
         }
-        if (panelSection === "assistant") {
-            showAssistantPanel();
-            return;
-        }
         showRuntimePanel();
     }
 
@@ -7463,24 +7450,6 @@ ShellRoot {
         ensureRuntimePanelExpandedSection();
     }
 
-    function showAssistantPanel() {
-        panelVisible = true;
-        panelSection = "assistant";
-        worktreePickerVisible = false;
-        notificationCenterVisible = false;
-        audioPopupVisible = false;
-        bluetoothPopupVisible = false;
-        displaySelectorVisible = false;
-    }
-
-    function toggleAssistantPanel() {
-        if (panelVisible && panelSection === "assistant") {
-            panelVisible = false;
-            return;
-        }
-        showAssistantPanel();
-    }
-
     function focusSession(sessionKey) {
         const sessionData = (typeof sessionKey === "object") ? sessionKey : null;
         const resolvedSessionKey = stringOrEmpty(sessionData && sessionData.session_key) || stringOrEmpty(sessionKey);
@@ -8484,7 +8453,6 @@ ShellRoot {
         id: runtimeServices
         shellRoot: shellRootRef
         runtimeConfig: shellConfig
-        assistantService: assistantService
     }
 
 
@@ -8559,7 +8527,6 @@ ShellRoot {
         shellRoot: shellRootRef
         runtimeConfig: shellConfig
         colors: shellRootRef.colors
-        assistantService: assistantService
     }
 
 }
