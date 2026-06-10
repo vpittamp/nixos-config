@@ -1037,7 +1037,12 @@ async def test_herdr_remote_unreachable_reports_error_without_rows(server, monke
 
     monkeypatch.setattr(server.herdr_service, "run_proxy_json", fake_run_herdr_proxy_json)
 
-    snapshot = await server._herdr_remote_snapshot(target)
+    snapshot = await server.herdr_service.remote_snapshot(
+        target,
+        local_host=server._local_host_alias(),
+        normalize_connection_key=server._normalize_connection_key,
+        project_for_cwd=server._herdr_project_for_cwd,
+    )
 
     assert snapshot["success"] is False
     assert snapshot["sessions"] == []

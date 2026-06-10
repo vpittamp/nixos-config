@@ -8648,15 +8648,6 @@ FORMAT JSONEachRow
             "project_path": normalized,
         }
 
-    async def _herdr_remote_snapshot(self, target: Dict[str, str]) -> Dict[str, Any]:
-        """Return one remote Herdr host snapshot fetched through read-only SSH commands."""
-        return await self.herdr_service.remote_snapshot(
-            target,
-            local_host=self._local_host_alias(),
-            normalize_connection_key=self._normalize_connection_key,
-            project_for_cwd=self._herdr_project_for_cwd,
-        )
-
     async def _herdr_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return Herdr-native local and configured remote state."""
         return await self.herdr_service.snapshot(
