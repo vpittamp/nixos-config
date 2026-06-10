@@ -601,6 +601,8 @@ class IPCServer:
         self._herdr_remote_targets_cache: List[Dict[str, str]] = []
         self._herdr_remote_targets_cache_signature: Tuple[Any, ...] = ("", False, 0, 0)
         self._herdr_event_subscription_task: Optional[asyncio.Task] = None
+        self._herdr_event_notify_task: Optional[asyncio.Task] = None
+        self._herdr_event_notify_delay: float = 0.05
         self._herdr_event_subscription_initial_backoff: float = 0.5
         self._herdr_event_subscription_max_backoff: float = 30.0
         self._malformed_json_count: int = 0
@@ -751,6 +753,16 @@ class IPCServer:
 
     async def stop_herdr_event_subscription(self) -> None:
         """Cancel the local Herdr event subscription task."""
+        notify_task = self._herdr_event_notify_task
+        self._herdr_event_notify_task = None
+        if notify_task and not notify_task.done():
+            notify_task.cancel()
+            await self._await_with_timeout(
+                asyncio.gather(notify_task, return_exceptions=True),
+                timeout=0.5,
+                timeout_message="Timed out waiting for Herdr event notification debounce to stop; continuing shutdown",
+            )
+
         task = self._herdr_event_subscription_task
         self._herdr_event_subscription_task = None
         if not task or task.done():
@@ -854,7 +866,32 @@ class IPCServer:
         if not isinstance(event, dict):
             return
         self.invalidate_herdr_snapshot_cache()
-        await self.notify_state_change("ai_session_herdr_changed")
+        self._schedule_herdr_state_change_notification()
+
+    def _schedule_herdr_state_change_notification(self) -> None:
+        """Coalesce bursts of local Herdr socket events into one dashboard update."""
+        task = self._herdr_event_notify_task
+        if task is not None and not task.done():
+            return
+
+        async def notify_later() -> None:
+            try:
+                delay = max(0.0, float(self._herdr_event_notify_delay))
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                await self.notify_state_change("ai_session_herdr_changed")
+            except asyncio.CancelledError:
+                raise
+            finally:
+                current = self._herdr_event_notify_task
+                if current is task_ref:
+                    self._herdr_event_notify_task = None
+
+        task_ref = asyncio.create_task(
+            notify_later(),
+            name="i3pm-herdr-event-notify",
+        )
+        self._herdr_event_notify_task = task_ref
 
     def invalidate_herdr_snapshot_cache(self) -> None:
         """Clear cached Herdr snapshots so the next dashboard read is fresh."""

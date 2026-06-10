@@ -193,10 +193,12 @@ def test_herdr_space_computes_git_metadata_when_worktree_list_misses_repo(server
     subprocess.run(["git", "remote", "add", "origin", "git@github.com:PittampalliOrg/workflow-builder.git"], cwd=repo_path, check=True)
     local_host = server._local_host_alias()
     sessions = [{
+        "session_key": "herdr:pane:local-pane",
         "source": "herdr",
         "agent": "codex",
         "agent_status": "working",
         "focused": True,
+        "is_current_window": True,
         "herdr_host": local_host,
         "host_name": local_host,
         "is_current_host": True,
@@ -498,10 +500,12 @@ def test_herdr_spaces_skip_agentless_local_workspaces_when_remote_agents_exist(s
 async def test_dashboard_snapshot_includes_herdr_spaces(server, monkeypatch):
     local_host = server._local_host_alias()
     sessions = [{
+        "session_key": "herdr:pane:local-pane",
         "source": "herdr",
         "agent": "codex",
         "agent_status": "working",
         "focused": True,
+        "is_current_window": True,
         "herdr_host": local_host,
         "host_name": local_host,
         "is_current_host": True,
@@ -1174,6 +1178,7 @@ async def test_herdr_event_subscription_sends_expected_payload_and_invalidates_c
     monkeypatch.setattr(server, "_herdr_socket_path", lambda: socket_path)
     server._herdr_snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
     server._herdr_snapshot_cache_time = 123.0
+    server._herdr_event_notify_delay = 0.0
     server.notify_state_change = AsyncMock()
 
     try:
@@ -1202,12 +1207,14 @@ async def test_herdr_event_subscription_sends_expected_payload_and_invalidates_c
     assert {"type": "pane.agent_detected"} in subscriptions
     assert server._herdr_snapshot_cache == {}
     assert server._herdr_snapshot_cache_time == 0.0
+    await asyncio.sleep(0)
     server.notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
 
 
 @pytest.mark.asyncio
 async def test_herdr_subscription_event_does_not_collect_remote_snapshots(server, monkeypatch):
     server._herdr_snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
+    server._herdr_event_notify_delay = 0.0
     server.notify_state_change = AsyncMock()
     load_remote_targets = AsyncMock()
     monkeypatch.setattr(server, "_load_herdr_remote_targets", load_remote_targets)
@@ -1216,6 +1223,20 @@ async def test_herdr_subscription_event_does_not_collect_remote_snapshots(server
 
     assert server._herdr_snapshot_cache == {}
     load_remote_targets.assert_not_called()
+    await asyncio.sleep(0)
+    server.notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
+
+
+@pytest.mark.asyncio
+async def test_herdr_subscription_events_are_coalesced(server):
+    server._herdr_event_notify_delay = 0.01
+    server.notify_state_change = AsyncMock()
+
+    await server._handle_herdr_subscription_event({"event": "pane_updated", "data": {"pane_id": "a"}})
+    await server._handle_herdr_subscription_event({"event": "pane_updated", "data": {"pane_id": "b"}})
+    await server._handle_herdr_subscription_event({"event": "pane_updated", "data": {"pane_id": "c"}})
+    await asyncio.sleep(0.03)
+
     server.notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
 
 
