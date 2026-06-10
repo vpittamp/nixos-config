@@ -11650,11 +11650,19 @@ FORMAT JSONEachRow
         availability_state = str(session.get("availability_state") or "").strip()
         focusability_reason = str(session.get("focusability_reason") or "").strip()
         source_is_current_host = bool(session.get("source_is_current_host", False))
+        is_herdr_session = (
+            str(session.get("source") or "").strip() == "herdr"
+            or bool(str(session.get("pane_id") or "").strip())
+        )
         has_tmux_identity = bool(tmux_session and tmux_pane)
         remote_user = ""
         remote_host = ""
         remote_port = 22
-        if has_tmux_identity and focus_mode in {"remote_bridge_bound", "remote_bridge_attachable"}:
+        if (
+            not is_herdr_session
+            and has_tmux_identity
+            and focus_mode in {"remote_bridge_bound", "remote_bridge_attachable"}
+        ):
             try:
                 attach_profile = self._resolve_remote_attach_profile(session)
                 remote_user = str(attach_profile.get("remote_user") or "").strip()
@@ -11670,7 +11678,12 @@ FORMAT JSONEachRow
         is_live = False
         is_remote = not source_is_current_host
 
-        if availability_state == "stale_source":
+        if is_herdr_session:
+            preview_mode = "focus_only"
+            preview_reason = "herdr_focus_only"
+            is_live = False
+            is_remote = bool(session.get("is_remote_herdr", False)) or not source_is_current_host
+        elif availability_state == "stale_source":
             preview_mode = "unavailable"
             preview_reason = "stale_remote_source"
             is_live = False
@@ -11691,6 +11704,11 @@ FORMAT JSONEachRow
             "session_key": session_key,
             "preview_mode": preview_mode,
             "preview_reason": preview_reason,
+            "message": (
+                "Focus this Herdr pane to inspect live output."
+                if is_herdr_session
+                else ""
+            ),
             "lines": lines,
             "is_live": is_live,
             "is_remote": is_remote,

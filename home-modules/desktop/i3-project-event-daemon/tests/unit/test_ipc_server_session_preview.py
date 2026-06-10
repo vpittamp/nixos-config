@@ -154,6 +154,47 @@ async def test_session_preview_returns_ssh_stream_for_remote_session(server, mon
 
 
 @pytest.mark.asyncio
+async def test_session_preview_keeps_herdr_sessions_focus_only_even_with_tmux_metadata(server, monkeypatch):
+    herdr_session = make_session(
+        session_key="herdr:ryzen:pane:pane-r",
+        source="herdr",
+        pane_id="pane-r",
+        is_remote_herdr=True,
+        project_name="vpittamp/nixos-config:main",
+        host_name="ryzen",
+        connection_key="vpittamp@ryzen:22",
+        focus_connection_key="vpittamp@ryzen:22",
+        execution_mode="ssh",
+        focus_mode="remote_herdr_attach",
+        availability_state="remote_herdr_attachable",
+        focusability_reason="herdr_pane_focus",
+        is_current_host=False,
+        source_is_current_host=False,
+        tmux_pane="%99",
+        terminal_context={
+            "execution_mode": "ssh",
+            "tmux_session": "legacy",
+            "tmux_window": "0:legacy",
+            "tmux_pane": "%99",
+            "tmux_socket": "/tmp/legacy",
+        },
+    )
+    server._session_list = AsyncMock(return_value={"sessions": [herdr_session]})
+    resolve_attach_profile = AsyncMock(return_value={})
+    monkeypatch.setattr(server, "_resolve_remote_attach_profile", resolve_attach_profile)
+
+    result = await server._session_preview({"session_key": "herdr:ryzen:pane:pane-r"})
+
+    assert result["preview_mode"] == "focus_only"
+    assert result["preview_reason"] == "herdr_focus_only"
+    assert result["message"] == "Focus this Herdr pane to inspect live output."
+    assert result["is_live"] is False
+    assert result["is_remote"] is True
+    assert result["tmux_pane"] == "%99"
+    resolve_attach_profile.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_session_preview_prefers_remote_source_connection_for_bound_remote_session(server, monkeypatch):
     remote_session = make_session(
         session_key="session-remote-bound",
