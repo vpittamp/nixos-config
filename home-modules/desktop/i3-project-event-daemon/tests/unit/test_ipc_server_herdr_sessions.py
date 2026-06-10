@@ -1037,9 +1037,9 @@ async def test_herdr_pane_actions_call_herdr_with_pane_id(server, monkeypatch):
 
     monkeypatch.setattr(server.herdr_service, "run_json", fake_run_herdr_json)
 
-    server._herdr_snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
+    server.herdr_service.snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
     focus_result = await server._herdr_pane_focus({"pane_id": "w123-1"})
-    server._herdr_snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
+    server.herdr_service.snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
     close_result = await server._herdr_pane_close({"pane_id": "w123-1"})
 
     assert calls == [
@@ -1051,7 +1051,7 @@ async def test_herdr_pane_actions_call_herdr_with_pane_id(server, monkeypatch):
     assert close_result["success"] is True
     assert close_result["pane_id"] == "w123-1"
     assert server.herdr_service.local_herdr_generation == 2
-    assert server._herdr_snapshot_cache == {}
+    assert server.herdr_service.snapshot_cache == {}
 
 
 @pytest.mark.asyncio
@@ -1105,7 +1105,7 @@ def test_herdr_remote_pane_focus_updates_cached_remote_rows(server):
         "ssh_target": "ryzen",
         "connection_key": "vpittamp@ryzen:22",
     }
-    server._herdr_snapshot_cache = {
+    server.herdr_service.snapshot_cache = {
         "sessions": [
             {
                 "session_key": "herdr:ryzen:pane:remote-a",
@@ -1151,9 +1151,9 @@ def test_herdr_remote_pane_focus_updates_cached_remote_rows(server):
 
     server._apply_remote_herdr_focus_cache(target=target, pane_id="remote-b")
 
-    sessions = server._herdr_snapshot_cache["sessions"]
-    panes = server._herdr_snapshot_cache["panes"]
-    remote_sessions = server._herdr_snapshot_cache["remote_snapshots"][0]["sessions"]
+    sessions = server.herdr_service.snapshot_cache["sessions"]
+    panes = server.herdr_service.snapshot_cache["panes"]
+    remote_sessions = server.herdr_service.snapshot_cache["remote_snapshots"][0]["sessions"]
     assert sessions[0]["focused"] is False
     assert sessions[1]["focused"] is True
     assert sessions[1]["is_current_window"] is True
@@ -1192,20 +1192,20 @@ async def test_herdr_event_subscription_sends_expected_payload_and_invalidates_c
 
     unix_server = await asyncio.start_unix_server(handle_client, path=str(socket_path))
     monkeypatch.setattr(server.herdr_service, "socket_path", lambda: socket_path)
-    server._herdr_snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
-    server._herdr_snapshot_cache_time = 123.0
-    server._herdr_event_notify_delay = 0.0
+    server.herdr_service.snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
+    server.herdr_service.snapshot_cache_time = 123.0
+    server.herdr_service.notify_delay = 0.0
     server.notify_state_change = AsyncMock()
 
     try:
         with pytest.raises(ConnectionError):
-            await server._connect_herdr_event_subscription_once()
+            await server.herdr_service.connect_subscription_once()
     finally:
         unix_server.close()
         await unix_server.wait_closed()
 
     assert received_event.is_set()
-    assert requests == [server._herdr_event_subscribe_payload()]
+    assert requests == [server.herdr_service.event_subscribe_payload()]
     subscriptions = requests[0]["params"]["subscriptions"]
     assert {"type": "workspace.created"} in subscriptions
     assert {"type": "workspace.updated"} in subscriptions
@@ -1221,23 +1221,23 @@ async def test_herdr_event_subscription_sends_expected_payload_and_invalidates_c
     assert {"type": "pane.focused"} in subscriptions
     assert {"type": "pane.exited"} in subscriptions
     assert {"type": "pane.agent_detected"} in subscriptions
-    assert server._herdr_snapshot_cache == {}
-    assert server._herdr_snapshot_cache_time == 0.0
+    assert server.herdr_service.snapshot_cache == {}
+    assert server.herdr_service.snapshot_cache_time == 0.0
     await asyncio.sleep(0)
     server.notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
 
 
 @pytest.mark.asyncio
 async def test_herdr_subscription_event_does_not_collect_remote_snapshots(server, monkeypatch):
-    server._herdr_snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
-    server._herdr_event_notify_delay = 0.0
+    server.herdr_service.snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
+    server.herdr_service.notify_delay = 0.0
     server.notify_state_change = AsyncMock()
     load_remote_targets = AsyncMock()
     monkeypatch.setattr(server, "_load_herdr_remote_targets", load_remote_targets)
 
-    await server._handle_herdr_subscription_event({"event": "workspace_updated", "data": {}})
+    await server.herdr_service.handle_subscription_event({"event": "workspace_updated", "data": {}})
 
-    assert server._herdr_snapshot_cache == {}
+    assert server.herdr_service.snapshot_cache == {}
     load_remote_targets.assert_not_called()
     await asyncio.sleep(0)
     server.notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
@@ -1245,12 +1245,12 @@ async def test_herdr_subscription_event_does_not_collect_remote_snapshots(server
 
 @pytest.mark.asyncio
 async def test_herdr_subscription_events_are_coalesced(server):
-    server._herdr_event_notify_delay = 0.01
+    server.herdr_service.notify_delay = 0.01
     server.notify_state_change = AsyncMock()
 
-    await server._handle_herdr_subscription_event({"event": "pane_updated", "data": {"pane_id": "a"}})
-    await server._handle_herdr_subscription_event({"event": "pane_updated", "data": {"pane_id": "b"}})
-    await server._handle_herdr_subscription_event({"event": "pane_updated", "data": {"pane_id": "c"}})
+    await server.herdr_service.handle_subscription_event({"event": "pane_updated", "data": {"pane_id": "a"}})
+    await server.herdr_service.handle_subscription_event({"event": "pane_updated", "data": {"pane_id": "b"}})
+    await server.herdr_service.handle_subscription_event({"event": "pane_updated", "data": {"pane_id": "c"}})
     await asyncio.sleep(0.03)
 
     server.notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
@@ -1269,10 +1269,10 @@ async def test_herdr_event_subscription_retries_after_failure(server):
         raise RuntimeError("invalid ack")
 
     server.herdr_service.connect_subscription_once = fail_connect_once
-    server._herdr_event_subscription_initial_backoff = 0.01
-    server._herdr_event_subscription_max_backoff = 0.02
+    server.herdr_service.subscription_initial_backoff = 0.01
+    server.herdr_service.subscription_max_backoff = 0.02
 
-    task = asyncio.create_task(server._run_herdr_event_subscription())
+    task = asyncio.create_task(server.herdr_service.run_subscription())
     try:
         await asyncio.wait_for(second_attempt.wait(), timeout=1.0)
     finally:
