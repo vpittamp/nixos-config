@@ -178,6 +178,12 @@ async def test_notify_state_change_handles_subscriber_set_mutation(server):
     first_writer = _DummyWriter(on_drain=remove_second)
     second_writer = _DummyWriter()
     server.state_change_subscribers = {first_writer, second_writer}
+    server._dashboard_event_payload = AsyncMock(return_value={
+        "schema_version": "i3pm.dashboard.v2",
+        "snapshot_version": 1,
+        "focus_state": {},
+        "active_ai_sessions": [],
+    })
 
     await server.notify_state_change("agent_session_changed")
 
@@ -192,7 +198,16 @@ async def test_notify_state_change_handles_subscriber_set_mutation(server):
     assert params["generation"] == params["snapshot_version"]
     assert params["session_generation"] == 1
     assert params["focus_generation"] == 1
-    assert params["changed_keys"] == ["focus_state", "active_ai_sessions", "worktrees"]
+    assert params["changed_keys"] == [
+        "focus_state",
+        "active_ai_sessions",
+        "active_ai_sessions_mru",
+        "current_ai_session_key",
+        "worktrees",
+        "ai_monitor_metrics",
+    ]
+    assert params["payload"]["schema_version"] == "i3pm.dashboard.v2"
+    server._dashboard_event_payload.assert_awaited_once_with(params["changed_keys"])
 
 
 @pytest.mark.asyncio

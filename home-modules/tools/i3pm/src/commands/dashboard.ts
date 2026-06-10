@@ -20,6 +20,58 @@ async function fetchSnapshot(client: DaemonClient): Promise<unknown> {
   return await client.getDashboardSnapshot();
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function isDeltaEvent(event: {
+  event_type: string;
+  changed_keys: string[];
+  payload?: Record<string, unknown>;
+}): boolean {
+  if (event.event_type === "dashboard.invalidated") {
+    return false;
+  }
+  if (event.changed_keys.includes("dashboard")) {
+    return false;
+  }
+  return event.payload !== undefined && Object.keys(event.payload).length > 0;
+}
+
+function applyDashboardEvent(
+  currentSnapshot: Record<string, unknown>,
+  event: {
+    generation?: number;
+    snapshot_version?: number;
+    session_generation?: number;
+    display_generation?: number;
+    focus_generation?: number;
+    payload?: Record<string, unknown>;
+  },
+): Record<string, unknown> {
+  const payload = event.payload || {};
+  const next: Record<string, unknown> = {
+    ...currentSnapshot,
+    ...payload,
+  };
+  const generation = Number(event.generation ?? event.snapshot_version ?? -1);
+  if (Number.isFinite(generation) && generation >= 0) {
+    next.snapshot_version = generation;
+  }
+  if (event.session_generation !== undefined) {
+    next.session_generation = event.session_generation;
+  }
+  if (event.display_generation !== undefined) {
+    next.display_generation = event.display_generation;
+  }
+  if (event.focus_generation !== undefined) {
+    next.focus_generation = event.focus_generation;
+  }
+  return next;
+}
+
 export async function dashboardCommand(args: string[], _flags: CommandOptions): Promise<number> {
   const parsed = parseArgs(args, {
     boolean: ["help", "json"],
@@ -46,6 +98,7 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
   if (subcommand === "watch") {
     let lastPayload = "";
     let lastSeenGeneration = -1;
+    let currentSnapshot: Record<string, unknown> | null = null;
 
     while (true) {
       const snapshotClient = new DaemonClient();
@@ -63,8 +116,8 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
         try {
           do {
             snapshotQueued = false;
-            const snapshot = await fetchSnapshot(snapshotClient);
-            if (snapshot === undefined || snapshot === null) {
+            const snapshot = asRecord(await fetchSnapshot(snapshotClient));
+            if (snapshot === null) {
               continue;
             }
 
@@ -73,12 +126,11 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
               continue;
             }
 
-            if (snapshot && typeof snapshot === "object") {
-              const generation = Number((snapshot as { snapshot_version?: unknown }).snapshot_version ?? -1);
-              if (Number.isFinite(generation)) {
-                lastSeenGeneration = Math.max(lastSeenGeneration, generation);
-              }
+            const generation = Number(snapshot.snapshot_version ?? -1);
+            if (Number.isFinite(generation)) {
+              lastSeenGeneration = Math.max(lastSeenGeneration, generation);
             }
+            currentSnapshot = snapshot;
 
             if (encoded !== lastPayload) {
               console.log(encoded);
@@ -100,7 +152,23 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
           if (Number.isFinite(generation) && generation >= 0 && generation <= lastSeenGeneration) {
             continue;
           }
-          await emitSnapshot();
+          if (
+            !currentSnapshot
+            || !Number.isFinite(generation)
+            || generation > lastSeenGeneration + 1
+            || !isDeltaEvent(event)
+          ) {
+            await emitSnapshot();
+            continue;
+          }
+
+          currentSnapshot = applyDashboardEvent(currentSnapshot, event);
+          lastSeenGeneration = generation;
+          const encoded = JSON.stringify(currentSnapshot);
+          if (encoded !== lastPayload) {
+            console.log(encoded);
+            lastPayload = encoded;
+          }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

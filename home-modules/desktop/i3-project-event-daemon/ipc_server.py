@@ -4423,12 +4423,49 @@ class IPCServer:
         if typed_event == "workspace.changed":
             return ["focus_state", "outputs", "projects"]
         if typed_event == "session.changed":
-            return ["focus_state", "active_ai_sessions", "worktrees"]
+            return [
+                "focus_state",
+                "active_ai_sessions",
+                "active_ai_sessions_mru",
+                "current_ai_session_key",
+                "worktrees",
+                "ai_monitor_metrics",
+            ]
         if typed_event == "herdr.changed":
-            return ["focus_state", "active_ai_sessions", "herdr"]
+            return [
+                "focus_state",
+                "active_ai_sessions",
+                "active_ai_sessions_mru",
+                "current_ai_session_key",
+                "herdr",
+                "ai_monitor_metrics",
+            ]
         if typed_event == "display.changed":
-            return ["outputs", "display_layout"]
+            return ["outputs", "active_outputs", "display_layout"]
         return ["dashboard"]
+
+    async def _dashboard_event_payload(self, changed_keys: List[str]) -> Dict[str, Any]:
+        """Build a partial dashboard payload for a typed state-change event."""
+        snapshot = await self._dashboard_snapshot({})
+        payload: Dict[str, Any] = {
+            "status": snapshot.get("status", "ok"),
+            "schema_version": snapshot.get("schema_version", DASHBOARD_SCHEMA_VERSION),
+            "timestamp": snapshot.get("timestamp"),
+            "snapshot_version": snapshot.get("snapshot_version"),
+            "session_generation": snapshot.get("session_generation"),
+            "display_generation": snapshot.get("display_generation"),
+            "focus_generation": snapshot.get("focus_generation"),
+            "total_windows": snapshot.get("total_windows"),
+            "window_count": snapshot.get("window_count"),
+            "project_count": snapshot.get("project_count"),
+            "worktree_count": snapshot.get("worktree_count"),
+            "state_health": snapshot.get("state_health", {}),
+            "dashboard_invariants": snapshot.get("dashboard_invariants", {}),
+        }
+        for key in changed_keys:
+            if key in snapshot:
+                payload[key] = snapshot[key]
+        return payload
 
     async def notify_state_change(self, event_type: str = "state_changed") -> None:
         """Notify subscribed clients that state has changed.
@@ -4462,6 +4499,23 @@ class IPCServer:
         if not self.state_change_subscribers:
             return
 
+        event_payload: Dict[str, Any] = {}
+        try:
+            event_payload = await self._dashboard_event_payload(changed_keys)
+        except Exception as exc:
+            logger.warning("Failed to build dashboard event payload for %s: %s", normalized_type, exc)
+            typed_event_type = "dashboard.invalidated"
+            changed_keys = ["dashboard"]
+            event_payload = {
+                "status": "invalidated",
+                "schema_version": DASHBOARD_SCHEMA_VERSION,
+                "snapshot_version": self._snapshot_version,
+                "session_generation": self._session_generation,
+                "display_generation": self._display_generation,
+                "focus_generation": self._focus_generation,
+                "error": str(exc),
+            }
+
         notification = json.dumps({
             "jsonrpc": "2.0",
             "method": "state_changed",
@@ -4471,7 +4525,7 @@ class IPCServer:
                 "event_type": typed_event_type,
                 "generation": self._snapshot_version,
                 "changed_keys": changed_keys,
-                "payload": {},
+                "payload": event_payload,
                 "timestamp": time.time(),
                 "snapshot_version": self._snapshot_version,
                 "session_generation": self._session_generation,
