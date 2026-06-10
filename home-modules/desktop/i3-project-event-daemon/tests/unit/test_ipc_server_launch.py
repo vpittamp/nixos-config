@@ -288,10 +288,6 @@ async def test_launch_status_reconciles_managed_session_to_waiting_and_running(s
         "tmux_session_name": spec["tmux_session_name"],
         "tmux_socket": server_local._canonical_tmux_socket(),
     })
-    server_local._get_terminal_anchor = AsyncMock(return_value={
-        "matched": False,
-        "window_id": 0,
-    })
     server_local.launch_service.write_status(
         launch_id=launch_id,
         status="session_validating",

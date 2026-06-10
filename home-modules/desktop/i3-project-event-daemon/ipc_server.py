@@ -1115,7 +1115,7 @@ class IPCServer:
             elif method == "get_pending_launches":
                 result = await self._get_pending_launches(params)
             elif method == "get_terminal_anchor":
-                result = await self._get_terminal_anchor(params)
+                result = await self.launch_service.terminal_anchor(params.get("terminal_anchor_id", ""))
             elif method == "window.focus":
                 result = await self._window_focus(params)
             elif method == "window.focus_fast":
@@ -11322,13 +11322,6 @@ FORMAT JSONEachRow
         )
 
         return result
-
-    async def _get_terminal_anchor(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Resolve canonical terminal anchor state from daemon-owned window tracking."""
-        terminal_anchor_id = str(params.get("terminal_anchor_id") or "").strip()
-        if not terminal_anchor_id:
-            raise ValueError("'terminal_anchor_id' is required")
-        return await self.launch_service.terminal_anchor(terminal_anchor_id)
 
     # ======================
     # Feature 058: Project Management JSON-RPC Handlers (T030-T033)
