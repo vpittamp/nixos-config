@@ -136,6 +136,94 @@ class HerdrService:
         if self._external_invalidate_snapshot_cache is not None:
             self._external_invalidate_snapshot_cache()
 
+    def apply_remote_focus_cache(
+        self,
+        *,
+        target: Dict[str, str],
+        pane_id: str,
+        normalize_connection_key: Callable[[str], str],
+        now: float,
+    ) -> Dict[str, Any]:
+        """Optimistically reflect remote pane focus in the cached Herdr snapshot."""
+        pane_key = str(pane_id or "").strip()
+        if not pane_key or not self.snapshot_cache:
+            return {
+                "updated": False,
+                "focused_session_key": "",
+                "connection_key": "",
+            }
+
+        host = self.normalize_host_key(target.get("host"))
+        ssh_target = str(target.get("ssh_target") or "").strip()
+        connection_key = normalize_connection_key(
+            str(target.get("connection_key") or "").strip()
+        )
+
+        def matches_remote(item: Dict[str, Any]) -> bool:
+            item_host = self.normalize_host_key(
+                item.get("herdr_host") or item.get("host_name") or item.get("host")
+            )
+            item_ssh = str(item.get("ssh_target") or item.get("remote_target") or "").strip()
+            item_connection = normalize_connection_key(str(item.get("connection_key") or "").strip())
+            if host and item_host == host:
+                return True
+            if ssh_target and item_ssh == ssh_target:
+                return True
+            return bool(connection_key and item_connection == connection_key)
+
+        focused_session_key = ""
+        updated = False
+        for collection_name in ("sessions", "panes", "agents"):
+            rows = self.snapshot_cache.get(collection_name)
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if not isinstance(row, dict) or not matches_remote(row):
+                    continue
+                focused = str(row.get("pane_id") or "").strip() == pane_key
+                row["focused"] = focused
+                row["is_current_window"] = focused
+                row["window_active"] = focused
+                row["pane_active"] = focused
+                updated = True
+                if focused and collection_name == "sessions":
+                    focused_session_key = str(
+                        row.get("session_key") or row.get("herdr_session") or ""
+                    ).strip()
+
+        remote_snapshots = self.snapshot_cache.get("remote_snapshots")
+        if isinstance(remote_snapshots, list):
+            for remote_snapshot in remote_snapshots:
+                if not isinstance(remote_snapshot, dict):
+                    continue
+                snapshot_target = {
+                    "host": str(remote_snapshot.get("host") or "").strip(),
+                    "ssh_target": str(remote_snapshot.get("ssh_target") or "").strip(),
+                    "connection_key": normalize_connection_key(
+                        str(remote_snapshot.get("connection_key") or "").strip()
+                    ),
+                }
+                if not matches_remote(snapshot_target):
+                    continue
+                for collection_name in ("sessions", "panes", "agents"):
+                    rows = remote_snapshot.get(collection_name)
+                    if not isinstance(rows, list):
+                        continue
+                    for row in rows:
+                        if not isinstance(row, dict):
+                            continue
+                        row["focused"] = str(row.get("pane_id") or "").strip() == pane_key
+                        updated = True
+
+        if updated:
+            self.touch_snapshot_cache(now=now)
+
+        return {
+            "updated": updated,
+            "focused_session_key": focused_session_key,
+            "connection_key": connection_key,
+        }
+
     def socket_path(self) -> Path:
         """Return the local Herdr API socket path."""
         override = str(os.environ.get(self._socket_env_var) or "").strip()

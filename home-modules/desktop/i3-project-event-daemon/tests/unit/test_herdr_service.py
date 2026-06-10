@@ -130,3 +130,67 @@ def test_herdr_service_invalidates_snapshot_cache():
     assert service.snapshot_cache == {}
     assert service.snapshot_cache_time == 0.0
     assert invalidations == 1
+
+
+def test_herdr_service_applies_remote_focus_cache():
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    service.snapshot_cache = {
+        "sessions": [
+            {
+                "session_key": "herdr:ryzen:pane:a",
+                "herdr_host": "ryzen",
+                "pane_id": "a",
+                "focused": True,
+                "connection_key": "vpittamp@ryzen:22",
+            },
+            {
+                "session_key": "herdr:ryzen:pane:b",
+                "herdr_host": "ryzen",
+                "pane_id": "b",
+                "focused": False,
+                "connection_key": "vpittamp@ryzen:22",
+            },
+        ],
+        "panes": [
+            {"herdr_host": "ryzen", "pane_id": "a", "focused": True},
+            {"herdr_host": "ryzen", "pane_id": "b", "focused": False},
+        ],
+        "remote_snapshots": [{
+            "host": "ryzen",
+            "connection_key": "vpittamp@ryzen:22",
+            "sessions": [
+                {"pane_id": "a", "focused": True},
+                {"pane_id": "b", "focused": False},
+            ],
+        }],
+    }
+    service.snapshot_cache_time = 100.0
+
+    result = service.apply_remote_focus_cache(
+        target={
+            "host": "ryzen",
+            "ssh_target": "ryzen",
+            "connection_key": "vpittamp@ryzen:22",
+        },
+        pane_id="b",
+        normalize_connection_key=lambda value: value,
+        now=200.0,
+    )
+
+    assert result == {
+        "updated": True,
+        "focused_session_key": "herdr:ryzen:pane:b",
+        "connection_key": "vpittamp@ryzen:22",
+    }
+    assert service.snapshot_cache_time == 200.0
+    assert service.snapshot_cache["sessions"][0]["focused"] is False
+    assert service.snapshot_cache["sessions"][1]["focused"] is True
+    assert service.snapshot_cache["sessions"][1]["is_current_window"] is True
+    assert service.snapshot_cache["panes"][0]["focused"] is False
+    assert service.snapshot_cache["panes"][1]["focused"] is True
+    remote_sessions = service.snapshot_cache["remote_snapshots"][0]["sessions"]
+    assert remote_sessions[0]["focused"] is False
+    assert remote_sessions[1]["focused"] is True
