@@ -1,7 +1,9 @@
-"""
-Monitoring Panel Data Backend Script
+"""Legacy monitoring data compatibility backend.
 
-Queries i3pm daemon for window/workspace/project state and outputs JSON for Eww consumption.
+This module is retained for older JSON consumers and focused regression tests.
+It is no longer the active QuickShell runtime state authority. Current desktop
+UI state flows from i3-project-daemon dashboard snapshots/events into
+QuickShell; AI/session identity flows from Herdr-shaped daemon rows.
 
 Usage:
     python3 -m i3_project_manager.cli.monitoring_data                   # Windows view (default)
@@ -13,14 +15,14 @@ Usage:
     python3 -m i3_project_manager.cli.monitoring_data --mode traces     # Window traces view (Feature 101)
     python3 -m i3_project_manager.cli.monitoring_data --listen          # Stream mode (deflisten)
 
-Output: Single-line JSON to stdout (see contracts/eww-defpoll.md)
+Output: Single-line JSON to stdout.
 
 Performance: <50ms execution time for typical workload (20-30 windows)
 
 Stream Mode (--listen):
-    - Subscribes to Sway window/workspace/output events
-    - Outputs JSON on every state change (<100ms latency)
-    - Includes heartbeat every 5s to detect stale connections
+    - Subscribes to typed daemon dashboard events
+    - Outputs JSON on relevant state changes
+    - Includes polling fallbacks for legacy consumers
     - Automatic reconnection with exponential backoff
     - Graceful shutdown on SIGTERM/SIGPIPE
 """

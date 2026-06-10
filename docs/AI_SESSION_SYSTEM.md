@@ -1,6 +1,6 @@
 # AI Session System
 
-Last updated: 2026-06-08
+Last updated: 2026-06-10
 
 ## Purpose
 
@@ -20,6 +20,14 @@ The panel answers:
 4. QuickShell renders those rows directly.
 
 The daemon keeps the historical dashboard field name during migration, but the row shape is Herdr-native.
+
+## Runtime Authority
+
+- i3-project-daemon owns desktop/dashboard focus state and emits typed dashboard events.
+- Herdr owns agent/workspace/tab/pane state.
+- QuickShell renders daemon state and sends explicit daemon/Herdr actions.
+- OTEL remains telemetry-only and does not decide active AI session identity.
+- tmux metadata is label/launch context only and is not a live preview or current-row authority.
 
 ## Row Contract
 
@@ -58,6 +66,7 @@ Rows also carry daemon action targets:
 - client/server protocol is compatible
 - `herdr agent list` and `herdr pane list` return valid JSON
 - Claude and Codex Herdr integrations are installed
+- dashboard schema, focus invariants, QuickShell generation, and Herdr remote proxy compatibility are healthy
 
 Useful commands:
 
@@ -80,3 +89,4 @@ The QuickShell AI session panel no longer reads or depends on:
 - ClickHouse AI-session aggregation
 - tmux identity as a display requirement
 - custom `session_phase`, `stage`, `turn_owner`, or trace metadata for AI row rendering
+- Eww monitoring panel state, defpolls, or `monitoring_data.py` as UI authority

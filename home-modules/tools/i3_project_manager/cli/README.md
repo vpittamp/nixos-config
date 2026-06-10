@@ -219,14 +219,14 @@ monitoring-data-backend --mode health | jq '.health.categories[].services[] | se
 - i3-project-daemon (socket-activated)
 - sway-tree-monitor
 
-### UI Services (7)
-- eww-top-bar
-- eww-workspace-bar
-- eww-monitoring-panel
-- eww-quick-panel
+### UI Services
+- quickshell-runtime-shell (active top/bottom bars, launcher, runtime panel)
 - swaync (notification center)
 - sov (workspace overview)
 - elephant (launcher)
+
+Legacy Eww panel services are no longer active runtime state authorities. Keep
+old monitoring-panel helpers scoped to historical tests or migration work only.
 
 ### System Services (1)
 - sway-config-manager

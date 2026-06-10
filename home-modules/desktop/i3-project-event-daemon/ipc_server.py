@@ -4412,8 +4412,8 @@ class IPCServer:
         Adds the client to the state change subscriber set. The client will
         receive JSON-RPC notifications when window/workspace state changes.
 
-        This allows monitoring_data.py to subscribe to daemon events instead
-        of subscribing to Sway directly, eliminating duplicate event processing.
+        This allows legacy compatibility consumers to subscribe to daemon events
+        without owning Sway subscriptions or UI state.
 
         Args:
             params: Subscription parameters (currently unused)

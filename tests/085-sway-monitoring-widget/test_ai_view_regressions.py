@@ -22,6 +22,9 @@ I3PM_HERDR_PROXY_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "c
 I3PM_SESSION_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "session.ts"
 I3PM_MAIN_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "main.ts"
 I3PM_DAEMON_CLIENT_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "services" / "daemon-client.ts"
+I3PM_MONITORING_DATA_PY = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "monitoring_data.py"
+I3PM_CLI_README = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "README.md"
+AI_SESSION_SYSTEM_DOC = REPO_ROOT / "docs" / "AI_SESSION_SYSTEM.md"
 
 
 def test_session_phase_prefers_raw_herdr_agent_status():
@@ -206,6 +209,19 @@ def test_panel_toggle_uses_quickshell_named_runtime_command():
     assert "exec toggle-runtime-panel" in sway_keybindings_nix
     assert 'writeShellScriptBin "toggle-monitoring-panel"' not in runtime_shell_nix
     assert "exec toggle-monitoring-panel" not in sway_keybindings_nix
+
+
+def test_legacy_monitoring_docs_do_not_claim_ai_or_ui_authority():
+    monitoring_data_text = I3PM_MONITORING_DATA_PY.read_text()
+    cli_readme_text = I3PM_CLI_README.read_text()
+    ai_session_doc_text = AI_SESSION_SYSTEM_DOC.read_text()
+
+    assert "Legacy monitoring data compatibility backend" in monitoring_data_text
+    assert "It is no longer the active QuickShell runtime state authority." in monitoring_data_text
+    assert "outputs JSON for Eww consumption" not in monitoring_data_text
+    assert "eww-monitoring-panel" not in cli_readme_text
+    assert "OTEL remains telemetry-only" in ai_session_doc_text
+    assert "Eww monitoring panel state, defpolls, or `monitoring_data.py` as UI authority" in ai_session_doc_text
 
 
 def test_i3pm_herdr_proxy_exposes_snapshot_focus_and_event_stream():
