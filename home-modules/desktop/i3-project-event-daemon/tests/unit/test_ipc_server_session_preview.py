@@ -98,7 +98,11 @@ def make_session(**overrides):
 async def test_session_preview_returns_live_local_stream_for_current_host_tmux_session(server):
     server._session_list = AsyncMock(return_value={"sessions": [make_session()]})
 
-    result = await server._session_preview({"session_key": "session-local", "lines": 120})
+    result = await server._session_preview({
+        "session_key": "session-local",
+        "lines": 120,
+        "allow_legacy_tmux_preview": True,
+    })
 
     assert result["success"] is True
     assert result["preview_mode"] == "local_stream"
@@ -109,6 +113,18 @@ async def test_session_preview_returns_live_local_stream_for_current_host_tmux_s
     assert result["tmux_pane"] == "%17"
     assert result["availability_state"] == "local_window"
     assert result["focusability_reason"] == "local_window_bound"
+
+
+@pytest.mark.asyncio
+async def test_session_preview_disables_tmux_streams_by_default(server):
+    server._session_list = AsyncMock(return_value={"sessions": [make_session()]})
+
+    result = await server._session_preview({"session_key": "session-local", "lines": 120})
+
+    assert result["preview_mode"] == "unavailable"
+    assert result["preview_reason"] == "legacy_tmux_preview_disabled"
+    assert result["is_live"] is False
+    assert result["tmux_pane"] == "%17"
 
 
 @pytest.mark.asyncio
@@ -141,7 +157,10 @@ async def test_session_preview_returns_ssh_stream_for_remote_session(server, mon
         "remote_port": 22,
     })
 
-    result = await server._session_preview({"session_key": "session-remote"})
+    result = await server._session_preview({
+        "session_key": "session-remote",
+        "allow_legacy_tmux_preview": True,
+    })
 
     assert result["preview_mode"] == "ssh_stream"
     assert result["preview_reason"] == "remote_host"
@@ -233,7 +252,10 @@ async def test_session_preview_prefers_remote_source_connection_for_bound_remote
 
     monkeypatch.setattr(server, "_resolve_remote_attach_profile", resolve_attach_profile)
 
-    result = await server._session_preview({"session_key": "session-remote-bound"})
+    result = await server._session_preview({
+        "session_key": "session-remote-bound",
+        "allow_legacy_tmux_preview": True,
+    })
 
     assert result["preview_mode"] == "ssh_stream"
     assert result["remote_host"] == "thinkpad"

@@ -11674,6 +11674,7 @@ FORMAT JSONEachRow
         availability_state = str(session.get("availability_state") or "").strip()
         focusability_reason = str(session.get("focusability_reason") or "").strip()
         source_is_current_host = bool(session.get("source_is_current_host", False))
+        allow_legacy_tmux_preview = bool(params.get("allow_legacy_tmux_preview", False))
         is_herdr_session = (
             str(session.get("source") or "").strip() == "herdr"
             or bool(str(session.get("pane_id") or "").strip())
@@ -11710,6 +11711,11 @@ FORMAT JSONEachRow
         elif availability_state == "stale_source":
             preview_mode = "unavailable"
             preview_reason = "stale_remote_source"
+            is_live = False
+            is_remote = not source_is_current_host
+        elif has_tmux_identity and not allow_legacy_tmux_preview:
+            preview_mode = "unavailable"
+            preview_reason = "legacy_tmux_preview_disabled"
             is_live = False
             is_remote = not source_is_current_host
         elif has_tmux_identity and focus_mode in {"remote_bridge_bound", "remote_bridge_attachable"}:

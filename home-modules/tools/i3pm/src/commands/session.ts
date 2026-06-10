@@ -48,7 +48,7 @@ interface SessionPreviewInfo {
 function showHelp(): void {
   console.log(`i3pm session <list|focus|close|preview|cleanup|doctor> [session_key] [--json]
 
-  i3pm session preview <session_key> [--follow] [--lines <n>] [--jsonl]
+  i3pm session preview <session_key> [--follow] [--lines <n>] [--jsonl] [--legacy-tmux-preview]
   i3pm session close <session_key> [--json]
   i3pm session cleanup [--json]
   i3pm session doctor [--json]`);
@@ -214,19 +214,22 @@ function previewFallbackMessage(info: SessionPreviewInfo): string {
   if (info.preview_reason === "stale_remote_source") {
     return "The remote session source is stale, so live preview is temporarily unavailable.";
   }
+  if (info.preview_reason === "legacy_tmux_preview_disabled") {
+    return "Live tmux preview is disabled for this session. Focus the Herdr pane for live inspection, or pass --legacy-tmux-preview for the old tmux preview path.";
+  }
   return "Preview is unavailable for this session.";
 }
 
 async function runPreview(client: DaemonClient, subArgs: string[]): Promise<number> {
   const parsed = parseArgs(subArgs, {
-    boolean: ["help", "json"],
+    boolean: ["help", "json", "follow", "jsonl", "legacy-tmux-preview"],
     string: ["lines"],
     alias: { h: "help" },
   });
 
   const sessionKey = String(parsed._[0] || "");
-  const follow = subArgs.includes("--follow");
-  const jsonl = subArgs.includes("--jsonl");
+  const follow = Boolean(parsed.follow);
+  const jsonl = Boolean(parsed.jsonl);
   const lineCount = Math.max(20, Math.min(200, Number(parsed.lines || 100) || 100));
 
   if (parsed.help || !sessionKey) {
@@ -237,6 +240,7 @@ async function runPreview(client: DaemonClient, subArgs: string[]): Promise<numb
   const info = await client.request<SessionPreviewInfo>("session.preview", {
     session_key: sessionKey,
     lines: lineCount,
+    allow_legacy_tmux_preview: Boolean(parsed["legacy-tmux-preview"]),
   });
 
   if (parsed.json && !follow && !jsonl) {

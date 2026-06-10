@@ -15,6 +15,7 @@ HERDR_NIX = REPO_ROOT / "home-modules" / "terminal" / "herdr.nix"
 I3PM_WINDOW_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "window.ts"
 I3PM_DASHBOARD_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "dashboard.ts"
 I3PM_HERDR_PROXY_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "herdr-proxy.ts"
+I3PM_SESSION_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "session.ts"
 
 
 def test_session_phase_prefers_raw_herdr_agent_status():
@@ -241,11 +242,15 @@ def test_launcher_preview_for_herdr_sessions_is_focus_only():
     """Herdr sessions should not start the old live tmux/session preview process."""
     text = SHELL_QML.read_text()
     launcher_text = LAUNCHER_WINDOW_QML.read_text()
+    session_command_text = I3PM_SESSION_TS.read_text()
     assert "if (stringOrEmpty(entry.source) === \"herdr\" || stringOrEmpty(entry.pane_id))" in text
     assert "message: \"Focus this Herdr pane to inspect live output.\"" in text
     assert "return;" in text
     assert "function sessionPreviewStatusText()" in text
     assert "root.sessionPreviewStatusText()" in launcher_text
+    assert '"legacy-tmux-preview"' in session_command_text
+    assert "allow_legacy_tmux_preview: Boolean(parsed[\"legacy-tmux-preview\"])" in session_command_text
+    assert "legacy_tmux_preview_disabled" in session_command_text
 
 
 def test_herdr_space_groups_collapse_state_defaults_expanded():
