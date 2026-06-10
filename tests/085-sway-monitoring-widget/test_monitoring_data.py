@@ -413,9 +413,9 @@ class TestQueryMonitoringData:
             assert isinstance(result["projects"], list)
             assert result["error"] is None
             assert "timestamp" in result
-            assert "active_ai_sessions" in result
-            assert "active_ai_sessions_mru" in result
-            assert "ai_monitor_metrics" in result
+            assert "active_ai_sessions" not in result
+            assert "active_ai_sessions_mru" not in result
+            assert "ai_monitor_metrics" not in result
 
     @pytest.mark.asyncio
     async def test_daemon_error_handling(self):
@@ -431,8 +431,8 @@ class TestQueryMonitoringData:
 
             assert result["status"] == "error"
             assert result["projects"] == []
-            assert result["active_ai_sessions"] == []
-            assert result["active_ai_sessions_mru"] == []
+            assert "active_ai_sessions" not in result
+            assert "active_ai_sessions_mru" not in result
             assert "Socket not found" in result["error"]
             assert "timestamp" in result
 
@@ -468,10 +468,10 @@ class TestQueryMonitoringData:
             assert "active_project" in result
             assert "spinner_frame" in result
             assert "has_working_badge" in result
-            assert "active_ai_sessions" in result
-            assert "active_ai_sessions_mru" in result
-            assert "ai_monitor_metrics" in result
-            assert "otel_sessions" in result
+            assert "active_ai_sessions" not in result
+            assert "active_ai_sessions_mru" not in result
+            assert "ai_monitor_metrics" not in result
+            assert "otel_sessions" not in result
             assert "timestamp" in result
             assert "error" in result
 
@@ -651,7 +651,7 @@ class TestQueryTailscaleData:
 
 
 class TestLegacyAiCompatibility:
-    """Legacy monitoring-data JSON keeps AI-session fields inert."""
+    """Legacy monitoring-data JSON no longer exports AI-session fields."""
 
     @pytest.mark.asyncio
     async def test_query_monitoring_data_suppresses_daemon_sessions_in_legacy_payload(self):
@@ -771,11 +771,11 @@ class TestLegacyAiCompatibility:
             result = await query_monitoring_data()
 
         assert result["status"] == "ok"
-        assert result["active_ai_sessions"] == []
-        assert result["active_ai_sessions_mru"] == []
-        assert result["current_ai_session_key"] == ""
-        assert result["ai_monitor_metrics"]["disabled_reason"] == "herdr_dashboard_authority"
-        assert result["otel_sessions"]["disabled_reason"] == "herdr_dashboard_authority"
+        assert "active_ai_sessions" not in result
+        assert "active_ai_sessions_mru" not in result
+        assert "current_ai_session_key" not in result
+        assert "ai_monitor_metrics" not in result
+        assert "otel_sessions" not in result
         assert any(
             window["id"] == 14
             for project in result["projects"]
@@ -875,12 +875,11 @@ class TestLegacyAiCompatibility:
             result = await query_monitoring_data()
 
         assert result["status"] == "ok"
-        assert result["active_ai_sessions"] == []
-        assert result["active_ai_sessions_mru"] == []
-        assert result["current_ai_session_key"] == ""
-        assert result["ai_monitor_metrics"]["active_sessions"] == 0
-        assert result["ai_monitor_metrics"]["disabled_reason"] == "herdr_dashboard_authority"
-        assert result["otel_sessions"]["disabled_reason"] == "herdr_dashboard_authority"
+        assert "active_ai_sessions" not in result
+        assert "active_ai_sessions_mru" not in result
+        assert "current_ai_session_key" not in result
+        assert "ai_monitor_metrics" not in result
+        assert "otel_sessions" not in result
 
     def test_active_worktree_identity_from_context_uses_runtime_snapshot_context(self):
         identity = monitoring_data._active_worktree_identity_from_context({
@@ -936,8 +935,7 @@ class TestLegacyAiCompatibility:
              patch("i3_project_manager.cli.monitoring_data.transform_to_project_view", return_value=copy.deepcopy(project_cards)), \
              patch("i3_project_manager.cli.monitoring_data.validate_and_count", return_value={}), \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
-             patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}), \
-             patch("i3_project_manager.cli.monitoring_data.load_ai_monitor_metrics", return_value={}):
+             patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}):
             mock_instance = AsyncMock()
             mock_instance.get_runtime_snapshot.return_value = runtime_snapshot
             MockClient.return_value = mock_instance

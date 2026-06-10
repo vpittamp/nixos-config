@@ -94,8 +94,6 @@ def get_spinner_frame() -> str:
 RUNTIME_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
 BADGE_STATE_DIR = RUNTIME_DIR / "i3pm-badges"
 
-AI_SESSION_SCHEMA_VERSION = "11"
-
 # Feature 101: Active worktree configuration file
 ACTIVE_WORKTREE_FILE = Path.home() / ".config" / "i3" / "active-worktree.json"
 DAEMON_SOCKET_PATH = RUNTIME_DIR / "i3-project-daemon" / "ipc.sock"
@@ -146,20 +144,6 @@ def load_badge_state_from_files() -> Dict[str, Any]:
             continue
 
     return badge_state
-
-
-def _empty_otel_sessions_runtime(disabled_reason: str) -> Dict[str, Any]:
-    """Return an inert OTEL payload for compatibility with old consumers."""
-    return {
-        "schema_version": AI_SESSION_SCHEMA_VERSION,
-        "sessions": [],
-        "has_working": False,
-        "timestamp": 0,
-        "updated_at": "",
-        "sessions_by_window": {},
-        "diagnostics": [],
-        "disabled_reason": disabled_reason,
-    }
 
 
 def _parse_ssh_connection_key(connection_key: str) -> Optional[Dict[str, Any]]:
@@ -248,51 +232,6 @@ def _connection_key_aliases(value: str) -> set[str]:
         if port == 22:
             aliases.add(_normalize_connection_key(f"{base_target}:22"))
     return {alias for alias in aliases if alias and alias not in {"unknown", "global"}}
-
-
-def load_ai_monitor_metrics() -> Dict[str, Any]:
-    """Return inert AI metrics for legacy JSON consumers.
-
-    Herdr/daemon dashboard state is the active AI session authority. The
-    monitoring-data compatibility backend no longer reads or maintains the old
-    AI monitor metrics file.
-    """
-    return {
-        "focus_attempts": 0,
-        "focus_success": 0,
-        "focus_fail": 0,
-        "focus_success_rate": 0.0,
-        "last_focus": {},
-        "review_pending_sessions": 0,
-        "output_ready_sessions": 0,
-        "stage_tool_running_sessions": 0,
-        "stage_streaming_sessions": 0,
-        "stage_waiting_sessions": 0,
-        "stage_from_native": 0,
-        "stage_from_process": 0,
-        "stage_from_review": 0,
-        "stale_source_sessions": 0,
-        "remote_push_health": "retired",
-        "remote_push_consecutive_failures": 0,
-        "remote_push_last_attempt_at": "",
-        "remote_push_last_success_at": "",
-        "remote_push_last_error_at": "",
-        "remote_push_last_error_summary": "",
-        "remote_push_endpoint": "",
-        "remote_push_source_connection_key": "",
-        "disabled_reason": "herdr_dashboard_authority",
-        "active_sessions": 0,
-        "working_sessions": 0,
-        "attention_sessions": 0,
-        "done_sessions": 0,
-        "stale_sessions": 0,
-        "pinned_sessions": 0,
-        "window_project_source": 0,
-        "missing_project_source": 0,
-        "remote_relabel_prevented": 0,
-        "missing_context_sessions": 0,
-        "invalid_sessions": 0,
-    }
 
 
 async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
@@ -2503,7 +2442,7 @@ def transform_to_project_view(
     return projects
 
 
-async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Dict[str, Any]:
+async def query_monitoring_data() -> Dict[str, Any]:
     """
     Query i3pm daemon for monitoring panel data.
 
@@ -2609,7 +2548,6 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
         if not isinstance(tree_data, dict):
             raise RuntimeError("runtime.snapshot contract violation: payload must be an object")
         outputs = tree_data.get("outputs", [])
-        otel_sessions_runtime = _empty_otel_sessions_runtime("herdr_dashboard_authority")
 
         # Transform daemon response to Eww schema
         monitors = [transform_monitor(output, badge_state) for output in outputs]
@@ -2660,14 +2598,6 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             if bool(window.get("focused", False)):
                 focused_window_id = window_id_int
 
-        # AI/session UI state is no longer shaped by this legacy Eww backend.
-        # Herdr-owned daemon dashboard rows are the only active session surface.
-        active_ai_sessions: List[Dict[str, Any]] = []
-        active_ai_sessions_mru: List[Dict[str, Any]] = []
-        current_ai_session_key = ""
-        ai_metrics = load_ai_monitor_metrics()
-        otel_diagnostics = otel_sessions_runtime.get("diagnostics", []) if isinstance(otel_sessions_runtime, dict) else []
-
         # NOTE: Workspace pills removed from UI - workspaces list no longer needed
 
         # Get current timestamp for friendly formatting
@@ -2704,8 +2634,6 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
                     "session_started": badge.get("session_started", 0),
                 })
 
-        # NOTE: otel_sessions already loaded before transforms (line ~1550)
-
         # Return success state with project-based view
         # NOTE: Removed for payload optimization:
         # - all_windows (~11KB) - detail view disabled
@@ -2724,15 +2652,6 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             "has_working_badge": has_working_badge,
             # Feature 117 Enhancement: Pre-computed list for Active AI Sessions bar
             "ai_sessions": ai_sessions,
-            # Feature 138: Canonical active AI sessions rail + keyboard switching
-            "active_ai_sessions": active_ai_sessions,
-            # Feature 139: MRU-ordered list for rapid Alt+Tab-style switching.
-            "active_ai_sessions_mru": active_ai_sessions_mru,
-            "current_ai_session_key": current_ai_session_key,
-            "ai_monitor_metrics": ai_metrics,
-            "ai_session_diagnostics": otel_diagnostics,
-            # Retired OTEL/tmux UI path. Kept inert for old JSON consumers.
-            "otel_sessions": otel_sessions_runtime,
         }
 
     except DaemonError as e:
@@ -2750,11 +2669,6 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             "spinner_frame": get_spinner_frame(),
             "has_working_badge": False,
             "ai_sessions": [],
-            "active_ai_sessions": [],
-            "active_ai_sessions_mru": [],
-            "current_ai_session_key": "",
-            "ai_monitor_metrics": load_ai_monitor_metrics(),
-            "otel_sessions": _empty_otel_sessions_runtime("daemon_unavailable"),
         }
 
     except Exception as e:
@@ -2772,11 +2686,6 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             "spinner_frame": get_spinner_frame(),
             "has_working_badge": False,
             "ai_sessions": [],
-            "active_ai_sessions": [],
-            "active_ai_sessions_mru": [],
-            "current_ai_session_key": "",
-            "ai_monitor_metrics": load_ai_monitor_metrics(),
-            "otel_sessions": _empty_otel_sessions_runtime("unexpected_error"),
         }
 
 
@@ -4403,9 +4312,7 @@ async def stream_monitoring_data():
                 """Query daemon and output updated JSON with change detection."""
                 nonlocal last_update, has_working_badge, last_payload_hash, last_payload_json, last_payload_data
                 try:
-                    data = await query_monitoring_data(
-                        str(last_payload_data.get("current_ai_session_key") or "")
-                    )
+                    data = await query_monitoring_data()
                     # Track if we have working badges to enable spinner updates
                     has_working_badge = data.get("has_working_badge", False)
 
