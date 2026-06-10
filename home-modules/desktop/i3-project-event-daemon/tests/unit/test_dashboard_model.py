@@ -32,6 +32,9 @@ dashboard_changed_keys_for_event = dashboard_model.dashboard_changed_keys_for_ev
 dashboard_event_payload_from_snapshot = dashboard_model.dashboard_event_payload_from_snapshot
 build_dashboard_projects = dashboard_model.build_dashboard_projects
 build_dashboard_snapshot_payload = dashboard_model.build_dashboard_snapshot_payload
+advance_dashboard_event_state = dashboard_model.advance_dashboard_event_state
+dashboard_event_notification = dashboard_model.dashboard_event_notification
+dashboard_invalidated_payload = dashboard_model.dashboard_invalidated_payload
 
 
 def _project_builder_callbacks(*, override_windows=None):
@@ -337,6 +340,98 @@ def test_dashboard_changed_keys_follow_typed_event_contract() -> None:
         "ai_monitor_metrics",
     ]
     assert dashboard_changed_keys_for_event("dashboard_invalidated") == ["dashboard"]
+
+
+def test_advance_dashboard_event_state_updates_generations_by_typed_event() -> None:
+    focus_state = advance_dashboard_event_state(
+        event_type="focus_changed",
+        snapshot_version=10,
+        session_generation=20,
+        display_generation=30,
+        focus_generation=40,
+    )
+    assert focus_state["event_type"] == "focus.changed"
+    assert focus_state["changed_keys"] == ["focus_state", "outputs", "projects"]
+    assert focus_state["snapshot_version"] == 11
+    assert focus_state["session_generation"] == 20
+    assert focus_state["display_generation"] == 30
+    assert focus_state["focus_generation"] == 41
+    assert focus_state["invalidate_worktree_cache"] is False
+
+    herdr_state = advance_dashboard_event_state(
+        event_type="ai_session_herdr_changed",
+        snapshot_version=10,
+        session_generation=20,
+        display_generation=30,
+        focus_generation=40,
+    )
+    assert herdr_state["event_type"] == "herdr.changed"
+    assert herdr_state["snapshot_version"] == 11
+    assert herdr_state["session_generation"] == 21
+    assert herdr_state["focus_generation"] == 41
+
+    display_state = advance_dashboard_event_state(
+        event_type="display_changed",
+        snapshot_version=10,
+        session_generation=20,
+        display_generation=30,
+        focus_generation=40,
+    )
+    assert display_state["event_type"] == "display.changed"
+    assert display_state["display_generation"] == 31
+    assert display_state["focus_generation"] == 40
+
+    worktree_state = advance_dashboard_event_state(
+        event_type="worktree_changed",
+        snapshot_version=10,
+        session_generation=20,
+        display_generation=30,
+        focus_generation=40,
+    )
+    assert worktree_state["event_type"] == "session.changed"
+    assert worktree_state["invalidate_worktree_cache"] is True
+
+
+def test_dashboard_event_notification_wraps_payload_with_generation_metadata() -> None:
+    state = advance_dashboard_event_state(
+        event_type="focus_changed",
+        snapshot_version=10,
+        session_generation=20,
+        display_generation=30,
+        focus_generation=40,
+    )
+
+    notification = dashboard_event_notification(
+        state=state,
+        payload={"focus_state": {"current_window_id": 101}},
+        timestamp=123.5,
+    )
+
+    assert notification["jsonrpc"] == "2.0"
+    assert notification["method"] == "focus.changed"
+    assert notification["params"]["generation"] == 11
+    assert notification["params"]["schema_version"] == "i3pm.dashboard.event.v1"
+    assert notification["params"]["payload"] == {"focus_state": {"current_window_id": 101}}
+
+
+def test_dashboard_invalidated_payload_preserves_generation_context() -> None:
+    payload = dashboard_invalidated_payload(
+        error=RuntimeError("bad payload"),
+        snapshot_version=11,
+        session_generation=21,
+        display_generation=31,
+        focus_generation=41,
+    )
+
+    assert payload == {
+        "status": "invalidated",
+        "schema_version": "i3pm.dashboard.v2",
+        "snapshot_version": 11,
+        "session_generation": 21,
+        "display_generation": 31,
+        "focus_generation": 41,
+        "error": "bad payload",
+    }
 
 
 def test_dashboard_event_payload_contains_common_metadata_and_changed_models_only() -> None:

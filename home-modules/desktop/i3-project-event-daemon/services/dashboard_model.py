@@ -263,6 +263,94 @@ def dashboard_changed_keys_for_event(event_type: str) -> List[str]:
     return ["dashboard"]
 
 
+def advance_dashboard_event_state(
+    *,
+    event_type: str,
+    snapshot_version: int,
+    session_generation: int,
+    display_generation: int,
+    focus_generation: int,
+) -> Dict[str, Any]:
+    """Advance dashboard generations for one typed state-change event."""
+    normalized_type = str(event_type or "dashboard_invalidated")
+    typed_event_type = dashboard_event_type_for_state_change(normalized_type)
+    changed_keys = dashboard_changed_keys_for_event(normalized_type)
+    next_snapshot_version = int(snapshot_version or 0) + 1
+    next_session_generation = int(session_generation or 0)
+    next_display_generation = int(display_generation or 0)
+    next_focus_generation = int(focus_generation or 0)
+    if typed_event_type in {"session.changed", "herdr.changed"}:
+        next_session_generation += 1
+    if typed_event_type in {
+        "focus.changed",
+        "window.changed",
+        "workspace.changed",
+        "session.changed",
+        "herdr.changed",
+    }:
+        next_focus_generation += 1
+    if typed_event_type == "display.changed":
+        next_display_generation += 1
+    return {
+        "type": normalized_type,
+        "event_type": typed_event_type,
+        "changed_keys": changed_keys,
+        "snapshot_version": next_snapshot_version,
+        "session_generation": next_session_generation,
+        "display_generation": next_display_generation,
+        "focus_generation": next_focus_generation,
+        "invalidate_worktree_cache": normalized_type.startswith("project") or normalized_type.startswith("worktree"),
+    }
+
+
+def dashboard_invalidated_payload(
+    *,
+    error: Exception,
+    snapshot_version: int,
+    session_generation: int,
+    display_generation: int,
+    focus_generation: int,
+    schema_version: str = DASHBOARD_SCHEMA_VERSION,
+) -> Dict[str, Any]:
+    """Build the fallback payload when a typed delta cannot be constructed."""
+    return {
+        "status": "invalidated",
+        "schema_version": schema_version,
+        "snapshot_version": snapshot_version,
+        "session_generation": session_generation,
+        "display_generation": display_generation,
+        "focus_generation": focus_generation,
+        "error": str(error),
+    }
+
+
+def dashboard_event_notification(
+    *,
+    state: Dict[str, Any],
+    payload: Dict[str, Any],
+    timestamp: float,
+    event_schema_version: str = DASHBOARD_EVENT_SCHEMA_VERSION,
+) -> Dict[str, Any]:
+    """Build a JSON-RPC dashboard event notification envelope."""
+    return {
+        "jsonrpc": "2.0",
+        "method": str(state.get("event_type") or "dashboard.invalidated"),
+        "params": {
+            "type": str(state.get("type") or "dashboard_invalidated"),
+            "schema_version": event_schema_version,
+            "event_type": str(state.get("event_type") or "dashboard.invalidated"),
+            "generation": int(state.get("snapshot_version") or 0),
+            "changed_keys": list(state.get("changed_keys", []) or []),
+            "payload": payload,
+            "timestamp": timestamp,
+            "snapshot_version": int(state.get("snapshot_version") or 0),
+            "session_generation": int(state.get("session_generation") or 0),
+            "display_generation": int(state.get("display_generation") or 0),
+            "focus_generation": int(state.get("focus_generation") or 0),
+        },
+    }
+
+
 def dashboard_event_payload_from_snapshot(
     snapshot: Dict[str, Any],
     changed_keys: List[str],

@@ -58,11 +58,12 @@ from .services.agent_harness import CodexHarnessManager
 from .services.dashboard_model import (
     DASHBOARD_EVENT_SCHEMA_VERSION,
     DASHBOARD_SCHEMA_VERSION,
+    advance_dashboard_event_state,
     build_dashboard_projects as build_dashboard_project_cards,
     build_dashboard_snapshot_payload,
-    dashboard_changed_keys_for_event,
     dashboard_event_payload_from_snapshot,
-    dashboard_event_type_for_state_change,
+    dashboard_event_notification,
+    dashboard_invalidated_payload,
     validate_dashboard_payload,
 )
 from .services.display_service import DisplayService
@@ -4303,23 +4304,20 @@ class IPCServer:
         Args:
             event_type: Type of state change event (for debugging)
         """
-        self._snapshot_version += 1
-        normalized_type = str(event_type or "dashboard_invalidated")
-        typed_event_type = dashboard_event_type_for_state_change(normalized_type)
-        changed_keys = dashboard_changed_keys_for_event(normalized_type)
-        if typed_event_type in {"session.changed", "herdr.changed"}:
-            self._session_generation += 1
-        if (
-            typed_event_type == "focus.changed"
-            or typed_event_type == "window.changed"
-            or typed_event_type == "workspace.changed"
-            or typed_event_type == "session.changed"
-            or typed_event_type == "herdr.changed"
-        ):
-            self._focus_generation += 1
-        if typed_event_type == "display.changed":
-            self._display_generation += 1
-        if normalized_type.startswith("project") or normalized_type.startswith("worktree"):
+        event_state = advance_dashboard_event_state(
+            event_type=event_type,
+            snapshot_version=self._snapshot_version,
+            session_generation=self._session_generation,
+            display_generation=self._display_generation,
+            focus_generation=self._focus_generation,
+        )
+        self._snapshot_version = int(event_state.get("snapshot_version") or 0)
+        self._session_generation = int(event_state.get("session_generation") or 0)
+        self._display_generation = int(event_state.get("display_generation") or 0)
+        self._focus_generation = int(event_state.get("focus_generation") or 0)
+        normalized_type = str(event_state.get("type") or "dashboard_invalidated")
+        changed_keys = list(event_state.get("changed_keys", []) or [])
+        if bool(event_state.get("invalidate_worktree_cache", False)):
             self.invalidate_worktree_cache()
 
         if not self.state_change_subscribers:
@@ -4330,35 +4328,25 @@ class IPCServer:
             event_payload = await self._dashboard_event_payload(changed_keys)
         except Exception as exc:
             logger.warning("Failed to build dashboard event payload for %s: %s", normalized_type, exc)
-            typed_event_type = "dashboard.invalidated"
+            event_state = dict(event_state)
+            event_state["event_type"] = "dashboard.invalidated"
             changed_keys = ["dashboard"]
-            event_payload = {
-                "status": "invalidated",
-                "schema_version": DASHBOARD_SCHEMA_VERSION,
-                "snapshot_version": self._snapshot_version,
-                "session_generation": self._session_generation,
-                "display_generation": self._display_generation,
-                "focus_generation": self._focus_generation,
-                "error": str(exc),
-            }
+            event_state["changed_keys"] = changed_keys
+            event_payload = dashboard_invalidated_payload(
+                error=exc,
+                snapshot_version=self._snapshot_version,
+                session_generation=self._session_generation,
+                display_generation=self._display_generation,
+                focus_generation=self._focus_generation,
+                schema_version=DASHBOARD_SCHEMA_VERSION,
+            )
 
-        notification = json.dumps({
-            "jsonrpc": "2.0",
-            "method": typed_event_type,
-            "params": {
-                "type": normalized_type,
-                "schema_version": DASHBOARD_EVENT_SCHEMA_VERSION,
-                "event_type": typed_event_type,
-                "generation": self._snapshot_version,
-                "changed_keys": changed_keys,
-                "payload": event_payload,
-                "timestamp": time.time(),
-                "snapshot_version": self._snapshot_version,
-                "session_generation": self._session_generation,
-                "display_generation": self._display_generation,
-                "focus_generation": self._focus_generation,
-            }
-        })
+        notification = json.dumps(dashboard_event_notification(
+            state=event_state,
+            payload=event_payload,
+            timestamp=time.time(),
+            event_schema_version=DASHBOARD_EVENT_SCHEMA_VERSION,
+        ))
 
         dead_clients = set()
         subscribers = list(self.state_change_subscribers)
