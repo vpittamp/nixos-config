@@ -16,9 +16,49 @@ class DisplayService:
         *,
         notify_state_change: Callable[[str], Awaitable[None]],
         output_configure: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
+        i3_connection: Optional[Callable[[], Any]] = None,
+        monitor_profile_service: Optional[Callable[[], Any]] = None,
+        display_generation: Optional[Callable[[], int]] = None,
+        snapshot_version: Optional[Callable[[], int]] = None,
     ) -> None:
         self._notify_state_change = notify_state_change
         self._output_configure = output_configure
+        self._i3_connection = i3_connection
+        self._monitor_profile_service = monitor_profile_service
+        self._display_generation = display_generation
+        self._snapshot_version = snapshot_version
+
+    def _context(
+        self,
+        *,
+        i3_connection: Any = None,
+        monitor_profile_service: Any = None,
+        display_generation: Optional[int] = None,
+        snapshot_version: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Return display operation context, preferring explicit test overrides."""
+        resolved_i3_connection = i3_connection
+        if resolved_i3_connection is None and self._i3_connection is not None:
+            resolved_i3_connection = self._i3_connection()
+
+        resolved_monitor_profile_service = monitor_profile_service
+        if resolved_monitor_profile_service is None and self._monitor_profile_service is not None:
+            resolved_monitor_profile_service = self._monitor_profile_service()
+
+        resolved_display_generation = display_generation
+        if resolved_display_generation is None and self._display_generation is not None:
+            resolved_display_generation = self._display_generation()
+
+        resolved_snapshot_version = snapshot_version
+        if resolved_snapshot_version is None and self._snapshot_version is not None:
+            resolved_snapshot_version = self._snapshot_version()
+
+        return {
+            "i3_connection": resolved_i3_connection,
+            "monitor_profile_service": resolved_monitor_profile_service,
+            "display_generation": int(resolved_display_generation or 0),
+            "snapshot_version": int(resolved_snapshot_version or 0),
+        }
 
     @staticmethod
     async def _get_outputs(i3_connection: Any) -> List[Any]:
@@ -99,13 +139,19 @@ class DisplayService:
     async def snapshot(
         self,
         *,
-        i3_connection: Any,
-        monitor_profile_service: Any,
-        display_generation: int,
-        snapshot_version: int,
+        i3_connection: Any = None,
+        monitor_profile_service: Any = None,
+        display_generation: Optional[int] = None,
+        snapshot_version: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Return current output/layout state for QuickShell and CLI consumers."""
-        outputs = await self._get_outputs(i3_connection)
+        context = self._context(
+            i3_connection=i3_connection,
+            monitor_profile_service=monitor_profile_service,
+            display_generation=display_generation,
+            snapshot_version=snapshot_version,
+        )
+        outputs = await self._get_outputs(context["i3_connection"])
         output_states = None
         try:
             from ..output_state_manager import load_output_states
@@ -113,7 +159,7 @@ class DisplayService:
         except Exception:
             output_states = None
 
-        layout = self._profile_layout_options(monitor_profile_service)
+        layout = self._profile_layout_options(context["monitor_profile_service"])
 
         active_outputs: List[Dict[str, Any]] = []
         for output in outputs:
@@ -148,20 +194,28 @@ class DisplayService:
             "layouts": layout["layouts"],
             "layout_options": layout["layout_options"],
             "outputs": active_outputs,
-            "display_generation": int(display_generation or 0),
-            "snapshot_version": int(snapshot_version or 0),
+            "display_generation": int(context["display_generation"] or 0),
+            "snapshot_version": int(context["snapshot_version"] or 0),
         }
 
     async def apply(
         self,
         params: Dict[str, Any],
         *,
-        i3_connection: Any,
-        monitor_profile_service: Any,
-        display_generation: int,
-        snapshot_version: int,
+        i3_connection: Any = None,
+        monitor_profile_service: Any = None,
+        display_generation: Optional[int] = None,
+        snapshot_version: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Apply a named display layout/profile through the daemon."""
+        context = self._context(
+            i3_connection=i3_connection,
+            monitor_profile_service=monitor_profile_service,
+            display_generation=display_generation,
+            snapshot_version=snapshot_version,
+        )
+        i3_connection = context["i3_connection"]
+        monitor_profile_service = context["monitor_profile_service"]
         layout = str(params.get("layout") or params.get("profile") or "").strip()
         if not layout:
             raise ValueError("layout is required")
@@ -188,8 +242,8 @@ class DisplayService:
         result = await self.snapshot(
             i3_connection=i3_connection,
             monitor_profile_service=monitor_profile_service,
-            display_generation=display_generation,
-            snapshot_version=snapshot_version,
+            display_generation=context["display_generation"],
+            snapshot_version=context["snapshot_version"],
         )
         result["applied"] = True
         return result
@@ -198,13 +252,21 @@ class DisplayService:
         self,
         params: Dict[str, Any],
         *,
-        i3_connection: Any,
-        monitor_profile_service: Any,
-        display_generation: int,
-        snapshot_version: int,
+        i3_connection: Any = None,
+        monitor_profile_service: Any = None,
+        display_generation: Optional[int] = None,
+        snapshot_version: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Cycle to the next available display layout/profile."""
         del params
+        context = self._context(
+            i3_connection=i3_connection,
+            monitor_profile_service=monitor_profile_service,
+            display_generation=display_generation,
+            snapshot_version=snapshot_version,
+        )
+        i3_connection = context["i3_connection"]
+        monitor_profile_service = context["monitor_profile_service"]
         if not monitor_profile_service:
             raise RuntimeError("Monitor profile service is unavailable")
 
@@ -221,20 +283,26 @@ class DisplayService:
             {"layout": layouts[next_index]},
             i3_connection=i3_connection,
             monitor_profile_service=monitor_profile_service,
-            display_generation=display_generation,
-            snapshot_version=snapshot_version,
+            display_generation=context["display_generation"],
+            snapshot_version=context["snapshot_version"],
         )
 
     async def toggle_output(
         self,
         params: Dict[str, Any],
         *,
-        i3_connection: Any,
-        monitor_profile_service: Any,
-        display_generation: int,
-        snapshot_version: int,
+        i3_connection: Any = None,
+        monitor_profile_service: Any = None,
+        display_generation: Optional[int] = None,
+        snapshot_version: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Toggle an individual output on or off."""
+        context = self._context(
+            i3_connection=i3_connection,
+            monitor_profile_service=monitor_profile_service,
+            display_generation=display_generation,
+            snapshot_version=snapshot_version,
+        )
         output_name = str(params.get("output") or "").strip()
         if not output_name:
             raise ValueError("output is required")
@@ -251,10 +319,10 @@ class DisplayService:
         new_state = toggle_output_state(output_name)
 
         result = await self.snapshot(
-            i3_connection=i3_connection,
-            monitor_profile_service=monitor_profile_service,
-            display_generation=display_generation,
-            snapshot_version=snapshot_version,
+            i3_connection=context["i3_connection"],
+            monitor_profile_service=context["monitor_profile_service"],
+            display_generation=context["display_generation"],
+            snapshot_version=context["snapshot_version"],
         )
         result["toggled_output"] = output_name
         result["toggled_enabled"] = new_state
@@ -264,12 +332,18 @@ class DisplayService:
         self,
         params: Dict[str, Any],
         *,
-        i3_connection: Any,
-        monitor_profile_service: Any,
-        display_generation: int,
-        snapshot_version: int,
+        i3_connection: Any = None,
+        monitor_profile_service: Any = None,
+        display_generation: Optional[int] = None,
+        snapshot_version: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Set the scale factor for an individual output."""
+        context = self._context(
+            i3_connection=i3_connection,
+            monitor_profile_service=monitor_profile_service,
+            display_generation=display_generation,
+            snapshot_version=snapshot_version,
+        )
         output_name = str(params.get("output") or "").strip()
         if not output_name:
             raise ValueError("output is required")
@@ -285,10 +359,10 @@ class DisplayService:
             raise RuntimeError(f"Failed to set scale for {output_name}: {result.get('error', 'unknown')}")
 
         snapshot = await self.snapshot(
-            i3_connection=i3_connection,
-            monitor_profile_service=monitor_profile_service,
-            display_generation=display_generation,
-            snapshot_version=snapshot_version,
+            i3_connection=context["i3_connection"],
+            monitor_profile_service=context["monitor_profile_service"],
+            display_generation=context["display_generation"],
+            snapshot_version=context["snapshot_version"],
         )
         snapshot["scaled_output"] = output_name
         snapshot["scaled_value"] = scale

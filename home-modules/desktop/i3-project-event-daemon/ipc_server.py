@@ -587,6 +587,10 @@ class IPCServer:
         self.display_service = DisplayService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
             output_configure=lambda params: self._output_configure(params),
+            i3_connection=lambda: self.i3_connection,
+            monitor_profile_service=lambda: getattr(self, "monitor_profile_service", None),
+            display_generation=lambda: self._display_generation,
+            snapshot_version=lambda: self._snapshot_version,
         )
         self.launch_service = LaunchService(
             runtime_dir=lambda: self._runtime_dir(),
@@ -970,15 +974,15 @@ class IPCServer:
             elif method == "herdr.tab.focus":
                 result = await self.herdr_service.tab_focus(params)
             elif method == "display.snapshot":
-                result = await self.display_service.snapshot(**self._display_service_context())
+                result = await self.display_service.snapshot()
             elif method == "display.apply":
-                result = await self.display_service.apply(params, **self._display_service_context())
+                result = await self.display_service.apply(params)
             elif method == "display.cycle":
-                result = await self.display_service.cycle(params, **self._display_service_context())
+                result = await self.display_service.cycle(params)
             elif method == "display.toggle_output":
-                result = await self.display_service.toggle_output(params, **self._display_service_context())
+                result = await self.display_service.toggle_output(params)
             elif method == "display.set_scale":
-                result = await self.display_service.set_scale(params, **self._display_service_context())
+                result = await self.display_service.set_scale(params)
             elif method == "get_projects":
                 result = await self._get_projects()
             elif method == "get_windows":
@@ -2383,7 +2387,7 @@ class IPCServer:
                 "target_variant": str(payload.get("target_variant") or "").strip().lower(),
             })
         elif action_kind == "cycle_display_layout":
-            action_result = await self.display_service.cycle({}, **self._display_service_context())
+            action_result = await self.display_service.cycle({})
         else:
             raise ValueError(f"Unsupported assistant desktop action: {action_kind}")
 
@@ -10827,22 +10831,13 @@ FORMAT JSONEachRow
         self._worktree_cache_fingerprint = cache_fingerprint
         return worktrees
 
-    def _display_service_context(self) -> Dict[str, Any]:
-        """Return daemon-owned context required by display service operations."""
-        return {
-            "i3_connection": self.i3_connection,
-            "monitor_profile_service": getattr(self, "monitor_profile_service", None),
-            "display_generation": self._display_generation,
-            "snapshot_version": self._snapshot_version,
-        }
-
     async def _dashboard_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return the daemon-owned dashboard payload consumed by QuickShell."""
         runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
             params or {},
             close_windows=True,
         )
-        display_snapshot = await self.display_service.snapshot(**self._display_service_context())
+        display_snapshot = await self.display_service.snapshot()
         current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
         herdr_snapshot = runtime_snapshot.get("herdr", {})
         if not isinstance(herdr_snapshot, dict):
