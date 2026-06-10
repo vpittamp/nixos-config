@@ -4334,7 +4334,7 @@ class IPCServer:
 
         notification = json.dumps({
             "jsonrpc": "2.0",
-            "method": "state_changed",
+            "method": typed_event_type,
             "params": {
                 "type": normalized_type,
                 "schema_version": DASHBOARD_EVENT_SCHEMA_VERSION,

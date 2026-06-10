@@ -191,7 +191,7 @@ async def test_notify_state_change_handles_subscriber_set_mutation(server):
     assert len(second_writer.buffer) == 1
     notification = json.loads(first_writer.buffer[0].decode("utf-8"))
     params = notification["params"]
-    assert notification["method"] == "state_changed"
+    assert notification["method"] == "session.changed"
     assert params["schema_version"] == "i3pm.dashboard.event.v1"
     assert params["type"] == "agent_session_changed"
     assert params["event_type"] == "session.changed"

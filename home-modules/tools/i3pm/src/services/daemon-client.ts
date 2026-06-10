@@ -404,18 +404,25 @@ export class DaemonClient {
 
         try {
           const message = JSON.parse(line);
-          if (message.method !== "state_changed" || !message.params) {
+          if (!message.params) {
             continue;
           }
 
           const params = message.params as Record<string, unknown>;
+          if (params.event_type === undefined) {
+            continue;
+          }
+          const eventType = String(params.event_type);
+          if (!eventType.includes(".") || message.method !== eventType) {
+            continue;
+          }
           const changedKeys = Array.isArray(params.changed_keys)
             ? params.changed_keys.map((key) => String(key)).filter(Boolean)
             : [];
           yield {
-            type: String(params.type || "state_changed"),
+            type: String(params.type || eventType),
             schema_version: params.schema_version === undefined ? undefined : String(params.schema_version),
-            event_type: String(params.event_type || params.type || "dashboard.invalidated"),
+            event_type: eventType,
             generation: params.generation === undefined ? undefined : Number(params.generation),
             changed_keys: changedKeys,
             payload: params.payload && typeof params.payload === "object" && !Array.isArray(params.payload)

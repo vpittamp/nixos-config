@@ -18,6 +18,7 @@ I3PM_DASHBOARD_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "com
 I3PM_HERDR_PROXY_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "herdr-proxy.ts"
 I3PM_SESSION_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "session.ts"
 I3PM_MAIN_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "main.ts"
+I3PM_DAEMON_CLIENT_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "services" / "daemon-client.ts"
 
 
 def test_session_phase_prefers_raw_herdr_agent_status():
@@ -148,6 +149,7 @@ def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
     services_text = (REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "controllers" / "RuntimeServices.qml").read_text()
     worktree_service_text = WORKTREE_APP_SERVICE_QML.read_text()
     dashboard_command_text = I3PM_DASHBOARD_TS.read_text()
+    daemon_client_text = I3PM_DAEMON_CLIENT_TS.read_text()
     assert "function applySnapshot(snapshot)" in text
     assert "function applyEvent(event)" in text
     assert "function resetDashboard(status, errorMessage)" in text
@@ -166,6 +168,10 @@ def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
     assert 'dashboardWatchProcess.command = [appConfig.i3pmBin, "dashboard", "watch"];' in worktree_service_text
     assert "watch emits one initial snapshot, then typed dashboard delta events." in dashboard_command_text
     assert "const encoded = JSON.stringify(event);" in dashboard_command_text
+    assert 'message.method !== "state_changed"' not in daemon_client_text
+    assert "if (params.event_type === undefined)" in daemon_client_text
+    assert "const eventType = String(params.event_type);" in daemon_client_text
+    assert 'if (!eventType.includes(".") || message.method !== eventType)' in daemon_client_text
 
 
 def test_i3pm_herdr_proxy_exposes_snapshot_focus_and_event_stream():
