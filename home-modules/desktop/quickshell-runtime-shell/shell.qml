@@ -5096,10 +5096,6 @@ ShellRoot {
             const hostCount = groupedSessionBands().length;
             const spaceCount = visibleHerdrSpaces().length;
             const sessionCount = panelSessions().length;
-            const aiMetrics = (dashboard && typeof dashboard.ai_monitor_metrics === "object")
-                ? dashboard.ai_monitor_metrics
-                : {};
-            const remotePushHealth = stringOrEmpty(aiMetrics.remote_push_health).toLowerCase();
             const bits = [];
             if (hostCount > 0) {
                 bits.push(String(hostCount) + (hostCount === 1 ? " host" : " hosts"));
@@ -5109,9 +5105,6 @@ ShellRoot {
             }
             if (sessionCount > 0) {
                 bits.push(String(sessionCount) + (sessionCount === 1 ? " agent" : " agents"));
-            }
-            if (remotePushHealth === "degraded" || remotePushHealth === "down") {
-                bits.push(remotePushHealth === "down" ? "remote push down" : "remote push degraded");
             }
             return bits.join(" • ");
         }

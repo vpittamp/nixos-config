@@ -119,24 +119,6 @@ INOTIFYWAIT_CMD = "inotifywait"  # Requires inotify-tools package
 # Remote sesh/tmux session discovery cache (for SSH project window augmentation)
 REMOTE_SESH_CACHE_TTL_SECONDS = 15
 REMOTE_SESH_CACHE: Dict[str, Dict[str, Any]] = {}
-REMOTE_OTEL_PUSH_STATE_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "remote-otel-push-state.json"
-REMOTE_OTEL_SOURCE_STALE_SECONDS = float(
-    os.environ.get("I3PM_MONITORING_REMOTE_OTEL_STALE_SECONDS", "20")
-)
-REMOTE_OTEL_PUSH_STATE_CACHE: Dict[str, Any] = {
-    "mtime_ns": None,
-    "size": None,
-    "payload": {},
-}
-# K8s session-aggregator client cache. TTL-based since the aggregator returns
-# fresh aggregated state on every request; revalidating more than once per
-# broadcast interval (~5s) just wastes a round trip.
-AGGREGATOR_CACHE: Dict[str, Any] = {
-    "fetched_at": 0.0,
-    "url": "",
-    "payload": {},
-}
-AGGREGATOR_CACHE_TTL_SECONDS = 4.0
 DISCOVERED_TMUX_PROJECT_HINT_CACHE: Dict[str, Any] = {
     "mtime_ns": None,
     "size": None,
@@ -239,19 +221,6 @@ def load_otel_sessions() -> Dict[str, Any]:
         return default_result
 
 
-def _remote_otel_merge_enabled() -> bool:
-    """Whether deterministic remote OTEL sink merge is enabled."""
-    raw = str(os.environ.get("I3PM_MONITORING_REMOTE_OTEL", "auto") or "auto").strip().lower()
-    if raw in {"0", "false", "no", "off"}:
-        return False
-    if raw in {"1", "true", "yes", "on"}:
-        return True
-    # Auto mode: disable during pytest to keep unit tests deterministic/fast.
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        return False
-    return True
-
-
 def _parse_ssh_connection_key(connection_key: str) -> Optional[Dict[str, Any]]:
     """Parse normalized ssh connection key into ssh target fields."""
     raw = str(connection_key or "").strip()
@@ -304,40 +273,6 @@ def _canonical_host_context_key(qualified_name: Any, target_host: Any) -> str:
     if not qualified or not host:
         return ""
     return f"{qualified}::host::{host}"
-
-
-def _load_remote_otel_push_state() -> Dict[str, Any]:
-    """Load deterministic remote OTEL push sender state."""
-    if not REMOTE_OTEL_PUSH_STATE_FILE.exists():
-        REMOTE_OTEL_PUSH_STATE_CACHE.update({
-            "mtime_ns": None,
-            "size": None,
-            "payload": {},
-        })
-        return {}
-    try:
-        stat_result = REMOTE_OTEL_PUSH_STATE_FILE.stat()
-        cached_mtime = REMOTE_OTEL_PUSH_STATE_CACHE.get("mtime_ns")
-        cached_size = REMOTE_OTEL_PUSH_STATE_CACHE.get("size")
-        if (
-            cached_mtime == stat_result.st_mtime_ns
-            and cached_size == stat_result.st_size
-        ):
-            cached_payload = REMOTE_OTEL_PUSH_STATE_CACHE.get("payload")
-            if isinstance(cached_payload, dict):
-                return dict(cached_payload)
-        with open(REMOTE_OTEL_PUSH_STATE_FILE, "r") as f:
-            payload = json.load(f)
-            if isinstance(payload, dict):
-                REMOTE_OTEL_PUSH_STATE_CACHE.update({
-                    "mtime_ns": stat_result.st_mtime_ns,
-                    "size": stat_result.st_size,
-                    "payload": dict(payload),
-                })
-                return payload
-    except (json.JSONDecodeError, IOError, OSError):
-        return {}
-    return {}
 
 
 def _window_candidates_cache_fingerprint(window_candidates: Optional[List[Dict[str, Any]]]) -> str:
@@ -448,425 +383,6 @@ def _connection_key_aliases(value: str) -> set[str]:
         if port == 22:
             aliases.add(_normalize_connection_key(f"{base_target}:22"))
     return {alias for alias in aliases if alias and alias not in {"unknown", "global"}}
-
-
-def _match_remote_otel_sink_source(
-    sink_payload: Dict[str, Any],
-    normalized_connection_key: str,
-) -> Dict[str, Any]:
-    """Resolve remote sink source for the requested normalized connection key."""
-    sources = sink_payload.get("sources", {})
-    if not isinstance(sources, dict):
-        return {}
-
-    direct = sources.get(normalized_connection_key)
-    if isinstance(direct, dict):
-        return direct
-
-    target_aliases = _connection_key_aliases(normalized_connection_key)
-    if normalized_connection_key:
-        target_aliases.add(_normalize_connection_key(normalized_connection_key))
-
-    for key, source in sources.items():
-        if not isinstance(source, dict):
-            continue
-        source_aliases = _connection_key_aliases(str(key or ""))
-        source_aliases.update(
-            _connection_key_aliases(str(source.get("connection_key") or ""))
-        )
-        if target_aliases.intersection(source_aliases):
-            return source
-    return {}
-
-
-def _normalize_remote_otel_session(
-    session: Dict[str, Any],
-    connection_key: str,
-    host: str,
-    remote_target: str,
-    *,
-    source_stale: bool = False,
-    source_age_seconds: int = 0,
-) -> Dict[str, Any]:
-    """Ensure remote OTEL session has canonical SSH identity metadata."""
-    normalized = dict(session)
-    terminal_context = normalized.get("terminal_context", {}) or {}
-    if not isinstance(terminal_context, dict):
-        terminal_context = {}
-    raw_context_key = str(
-        terminal_context.get("context_key") or normalized.get("context_key") or ""
-    ).strip()
-    canonical_context_key = ""
-    if raw_context_key:
-        parsed_context = _parse_context_key(raw_context_key)
-        qualified_name = str(parsed_context.get("qualified_name") or "").strip()
-        parsed_target_host = str(parsed_context.get("target_host") or "").strip()
-        expected_target_host = _target_host_from_connection_key(connection_key) or _normalize_connection_key(host)
-        if qualified_name and parsed_target_host and parsed_target_host == expected_target_host:
-            canonical_context_key = _canonical_host_context_key(qualified_name, expected_target_host)
-
-    normalized["execution_mode"] = "ssh"
-    normalized["connection_key"] = connection_key
-    if canonical_context_key:
-        normalized["context_key"] = canonical_context_key
-    else:
-        normalized.pop("context_key", None)
-
-    terminal_context["execution_mode"] = "ssh"
-    terminal_context["connection_key"] = connection_key
-    if canonical_context_key:
-        terminal_context["context_key"] = canonical_context_key
-    else:
-        terminal_context.pop("context_key", None)
-    terminal_context["remote_target"] = terminal_context.get("remote_target") or remote_target
-    terminal_context["host_name"] = terminal_context.get("host_name") or host
-    normalized["terminal_context"] = terminal_context
-    normalized["remote_source_stale"] = bool(source_stale)
-    normalized["remote_source_age_seconds"] = int(max(0, source_age_seconds))
-    return normalized
-
-
-def _load_remote_otel_sessions_for_connection(
-    connection_key: str,
-    *,
-    sink_payload: Optional[Dict[str, Any]] = None,
-) -> List[Dict[str, Any]]:
-    """Load remote OTEL sessions from deterministic sink state."""
-    parsed = _parse_ssh_connection_key(connection_key)
-    if not parsed:
-        return []
-
-    normalized_key = str(parsed["connection_key"])
-    sink_payload = sink_payload if isinstance(sink_payload, dict) else _load_remote_otel_sink()
-    source = _match_remote_otel_sink_source(sink_payload, normalized_key)
-    if not source:
-        return []
-    if str(source.get("session_schema_version") or "").strip() != AI_SESSION_SCHEMA_VERSION:
-        return []
-
-    raw_sessions = source.get("sessions", [])
-    if not isinstance(raw_sessions, list):
-        return []
-
-    now_ts = time.time()
-    source_received = float(source.get("received_at", 0.0) or 0.0)
-    source_age = (
-        int(max(0.0, now_ts - source_received))
-        if source_received > 0
-        else int(REMOTE_OTEL_SOURCE_STALE_SECONDS + 1)
-    )
-    source_stale = source_received <= 0 or source_age > REMOTE_OTEL_SOURCE_STALE_SECONDS
-
-    host_name = str(source.get("host_name") or parsed["host"])
-    remote_target = str(source.get("remote_target") or f"{parsed['target']}:{parsed['port']}")
-
-    merged: List[Dict[str, Any]] = []
-    for item in raw_sessions:
-        if not isinstance(item, dict):
-            continue
-        normalized_item = _normalize_remote_otel_session(
-            item,
-            connection_key=normalized_key,
-            host=host_name,
-            remote_target=remote_target,
-            source_stale=source_stale,
-            source_age_seconds=source_age,
-        )
-        if not _session_tracking_contract_ok(normalized_item):
-            continue
-        merged.append(normalized_item)
-    return merged
-
-
-def _clickhouse_url() -> str:
-    """Return the configured ClickHouse HTTP endpoint (or empty if disabled)."""
-    return str(os.environ.get("I3PM_MONITORING_CLICKHOUSE_URL", "") or "").strip()
-
-
-def _clickhouse_credentials() -> tuple[str, str]:
-    user = str(os.environ.get("I3PM_MONITORING_CLICKHOUSE_USER", "default") or "default").strip()
-    password = str(os.environ.get("I3PM_MONITORING_CLICKHOUSE_PASSWORD", "") or "")
-    return user, password
-
-
-def _clickhouse_timeout() -> float:
-    raw = str(os.environ.get("I3PM_MONITORING_CLICKHOUSE_TIMEOUT", "2.5") or "2.5").strip()
-    try:
-        value = float(raw)
-    except ValueError:
-        return 2.5
-    return value if value > 0 else 2.5
-
-
-_CLICKHOUSE_SESSIONS_QUERY = """
-SELECT
-  ServiceName AS tool,
-  ResourceAttributes['host.name'] AS host_name,
-  coalesce(
-    SpanAttributes['session.id'],
-    SpanAttributes['conversation.id'],
-    SpanAttributes['thread_id']
-  ) AS native_session_id,
-  argMax(ResourceAttributes['i3pm.project_name'], Timestamp) AS project_name,
-  argMax(ResourceAttributes['i3pm.project_path'], Timestamp) AS project_path,
-  argMax(ResourceAttributes['terminal.tmux.session'], Timestamp) AS tmux_session,
-  argMax(ResourceAttributes['terminal.tmux.window'], Timestamp) AS tmux_window,
-  argMax(ResourceAttributes['terminal.tmux.pane'], Timestamp) AS tmux_pane,
-  argMax(coalesce(ResourceAttributes['i3pm.ai.connection_key'], ''), Timestamp) AS connection_key_hint,
-  argMax(coalesce(SpanAttributes['gen_ai.response.finish_reasons'], ''), Timestamp) AS latest_finish_reasons,
-  max(Timestamp) AS last_seen,
-  countIf(has(SpanAttributes, 'turn.number')) AS turn_spans,
-  count() AS span_count
-FROM otel.otel_traces
-WHERE Timestamp > now() - INTERVAL 10 MINUTE
-  AND ServiceName IN ('claude-code','codex','antigravity-cli','gemini-cli')
-GROUP BY tool, host_name, native_session_id
-HAVING native_session_id != ''
-   AND tmux_session != ''
-   AND tmux_pane != ''
-ORDER BY last_seen DESC
-FORMAT JSONEachRow
-"""
-
-
-def _row_to_session(row: Dict[str, Any], now_ts: float) -> Dict[str, Any]:
-    host_name = str(row.get("host_name") or "").strip()
-    native_id = str(row.get("native_session_id") or "").strip()
-    tool = str(row.get("tool") or "").strip()
-    project = str(row.get("project_name") or "").strip() or str(row.get("project_path") or "").strip()
-    explicit_conn = str(row.get("connection_key_hint") or "").strip()
-    connection_key = explicit_conn or f"vpittamp@{host_name}:22"
-    # ClickHouse returns Timestamp as "YYYY-MM-DD HH:MM:SS.ffffff" UTC.
-    last_seen_str = str(row.get("last_seen") or "")
-    try:
-        last_seen_dt = datetime.strptime(last_seen_str.split(".")[0], "%Y-%m-%d %H:%M:%S")
-        from datetime import timezone as _tz
-        last_seen_unix = last_seen_dt.replace(tzinfo=_tz.utc).timestamp()
-    except (ValueError, IndexError):
-        last_seen_unix = now_ts
-    age = now_ts - last_seen_unix
-    # State machine:
-    # - turn-complete signal (gen_ai end_turn without tool_use, or any turn.number) → completed
-    # - else aged out > 20s → completed
-    # - else → working
-    fr = str(row.get("latest_finish_reasons") or "").lower()
-    is_turn_complete = (
-        int(row.get("turn_spans") or 0) > 0
-        or ("end_turn" in fr and "tool_use" not in fr and "tool_call" not in fr)
-    )
-    if is_turn_complete or age > 20:
-        state = "completed"
-    else:
-        state = "working"
-    tmux_session = str(row.get("tmux_session") or "")
-    tmux_window = str(row.get("tmux_window") or "")
-    tmux_pane = str(row.get("tmux_pane") or "")
-    terminal_context = {
-        "tmux_session": tmux_session,
-        "tmux_window": tmux_window,
-        "tmux_pane": tmux_pane,
-        "terminal_anchor_id": "",
-        "host_name": host_name,
-        "connection_key": connection_key,
-        "execution_mode": "ssh",
-        "remote_target": connection_key,
-    }
-    return {
-        "tool": tool,
-        "host_name": host_name,
-        "native_session_id": native_id,
-        "session_id": native_id,
-        "project_name": project,
-        "project": project,
-        "connection_key": connection_key,
-        "execution_mode": "ssh",
-        "remote_target": connection_key,
-        "terminal_context": terminal_context,
-        "tmux_session": tmux_session,
-        "tmux_window": tmux_window,
-        "tmux_pane": tmux_pane,
-        "state": state,
-        "focusable": True,
-        "last_seen_unix": last_seen_unix,
-        "updated_at": datetime.fromtimestamp(last_seen_unix).isoformat() + "+00:00",
-    }
-
-
-def _fetch_remote_sessions_from_aggregator() -> Optional[Dict[str, Any]]:
-    """Fetch remote sessions by querying ClickHouse directly.
-
-    Replaces the previous K8s session-aggregator service with a direct SQL
-    query against the same ClickHouse instance that the OTEL collector
-    already writes every span to. This eliminates the bespoke aggregator
-    deployment and the coupling to the collector's exporter pipeline.
-
-    Returns a payload shape compatible with the legacy sink path:
-    ``{"sources": {connection_key: {host_name, sessions: [...]}}}``.
-
-    Filters out the local host's sessions (they're already in the local
-    sessions.json). Returns None when the URL is unset or the query fails.
-    """
-    base_url = _clickhouse_url()
-    if not base_url:
-        return None
-    user, password = _clickhouse_credentials()
-    timeout = _clickhouse_timeout()
-    import socket
-    local_host = socket.gethostname().split(".", 1)[0]
-    now_ts = time.time()
-
-    # Cache the response briefly to avoid hammering ClickHouse on every
-    # broadcast tick. TTL chosen to match the legacy aggregator's 4s.
-    cache_key = (base_url, local_host)
-    cached_url = AGGREGATOR_CACHE.get("url")
-    fetched_at = float(AGGREGATOR_CACHE.get("fetched_at") or 0.0)
-    if cached_url == cache_key and (now_ts - fetched_at) < AGGREGATOR_CACHE_TTL_SECONDS:
-        cached_payload = AGGREGATOR_CACHE.get("payload")
-        if isinstance(cached_payload, dict):
-            return dict(cached_payload)
-
-    import base64
-    import ssl
-    import urllib.error
-    import urllib.request
-
-    auth_header = "Basic " + base64.b64encode(f"{user}:{password}".encode("utf-8")).decode("ascii")
-    req = urllib.request.Request(
-        base_url,
-        data=_CLICKHOUSE_SESSIONS_QUERY.encode("utf-8"),
-        headers={
-            "Authorization": auth_header,
-            "X-ClickHouse-Format": "JSONEachRow",
-            "Content-Type": "text/plain; charset=utf-8",
-        },
-        method="POST",
-    )
-    if base_url.startswith("https://") and base_url.split("/")[2].endswith(".ts.net"):
-        ssl_context = ssl._create_unverified_context()
-    else:
-        ssl_context = None
-    try:
-        with urllib.request.urlopen(req, timeout=timeout, context=ssl_context) as response:
-            if response.status != 200:
-                return None
-            raw = response.read()
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError):
-        return None
-
-    # Response is JSONEachRow: one JSON object per line.
-    sources_by_key: Dict[str, Dict[str, Any]] = {}
-    for line in raw.decode("utf-8", errors="replace").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            row = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        host = str(row.get("host_name") or "").strip().lower()
-        if not host or host == local_host:
-            continue  # Filter out own host (equivalent to legacy ?exclude_host).
-        session = _row_to_session(row, now_ts)
-        ck = session["connection_key"]
-        src = sources_by_key.get(ck)
-        if src is None:
-            src = {
-                "connection_key": ck,
-                "host_name": session["host_name"],
-                "remote_target": session["remote_target"],
-                "session_schema_version": AI_SESSION_SCHEMA_VERSION,
-                "received_at": now_ts,
-                "sessions": [],
-            }
-            sources_by_key[ck] = src
-        src["sessions"].append(session)
-
-    payload = {
-        "schema_version": "1",
-        "sources": sources_by_key,
-    }
-    AGGREGATOR_CACHE.update({
-        "url": cache_key,
-        "fetched_at": now_ts,
-        "payload": dict(payload),
-    })
-    return payload
-
-    AGGREGATOR_CACHE.update({
-        "url": url,
-        "fetched_at": now,
-        "payload": dict(payload),
-    })
-    return payload
-
-
-def _load_remote_otel_sessions_for_windows(
-    window_candidates: Optional[List[Dict[str, Any]]] = None,
-) -> List[Dict[str, Any]]:
-    """Fetch all remote OTEL sessions from the K8s session-aggregator.
-
-    Phase 4: this is now the sole source. The legacy on-disk sink fallback
-    was retired with the host-to-host push transport. If the aggregator is
-    unreachable or returns no sources, cross-host view degrades to empty.
-
-    ``window_candidates`` is retained for backwards compatibility only.
-    """
-    if not _remote_otel_merge_enabled():
-        return []
-
-    aggregator_payload = _fetch_remote_sessions_from_aggregator()
-    if not isinstance(aggregator_payload, dict):
-        return []
-    sources = aggregator_payload.get("sources", {})
-    if not isinstance(sources, dict) or not sources:
-        return []
-    sink_payload = aggregator_payload
-
-    connection_keys: List[str] = []
-    seen: set[str] = set()
-    for source_key, source in sources.items():
-        if not isinstance(source, dict):
-            continue
-        raw_connection = str(source.get("connection_key") or source_key or "").strip()
-        if not raw_connection:
-            continue
-        normalized_connection = _normalize_connection_key(raw_connection)
-        if normalized_connection in {"unknown", "global"} or normalized_connection.startswith("local@"):
-            continue
-        if normalized_connection in seen:
-            continue
-        seen.add(normalized_connection)
-        connection_keys.append(normalized_connection)
-
-    merged: List[Dict[str, Any]] = []
-    for connection_key in connection_keys:
-        merged.extend(
-            _load_remote_otel_sessions_for_connection(
-                connection_key,
-                sink_payload=sink_payload,
-            )
-        )
-
-    # Best-effort dedupe by native session identity and terminal location.
-    deduped: Dict[str, Dict[str, Any]] = {}
-    for session in merged:
-        terminal_context = session.get("terminal_context", {}) or {}
-        if not isinstance(terminal_context, dict):
-            terminal_context = {}
-        key_parts = [
-            str(session.get("tool") or ""),
-            str(session.get("native_session_id") or ""),
-            str(session.get("connection_key") or ""),
-            str(terminal_context.get("tmux_pane") or ""),
-            str(terminal_context.get("pty") or ""),
-            str(session.get("session_id") or ""),
-        ]
-        dedupe_key = "|".join(key_parts)
-        existing = deduped.get(dedupe_key)
-        if existing is None or str(session.get("updated_at") or "") >= str(existing.get("updated_at") or ""):
-            deduped[dedupe_key] = session
-
-    return list(deduped.values())
 
 
 def load_ai_session_mru() -> List[str]:
@@ -1026,19 +542,6 @@ def emit_ai_state_transition_notifications(active_sessions: List[Dict[str, Any]]
 
 def load_ai_monitor_metrics() -> Dict[str, Any]:
     """Load persisted AI focus metrics."""
-    remote_push_state = _load_remote_otel_push_state()
-    remote_push_health = str(remote_push_state.get("health") or "").strip() or "unknown"
-    remote_push_last_attempt = str(remote_push_state.get("last_attempt_at") or "").strip()
-    remote_push_last_success = str(remote_push_state.get("last_success_at") or "").strip()
-    remote_push_last_error = str(remote_push_state.get("last_error_at") or "").strip()
-    remote_push_last_error_summary = str(remote_push_state.get("last_error_summary") or "").strip()
-    remote_push_endpoint = str(remote_push_state.get("endpoint_url") or "").strip()
-    remote_push_source = str(remote_push_state.get("source_connection_key") or "").strip()
-    try:
-        remote_push_failures = int(remote_push_state.get("consecutive_failures", 0) or 0)
-    except (TypeError, ValueError):
-        remote_push_failures = 0
-
     default_metrics = {
         "focus_attempts": 0,
         "focus_success": 0,
@@ -1054,14 +557,14 @@ def load_ai_monitor_metrics() -> Dict[str, Any]:
         "stage_from_process": 0,
         "stage_from_review": 0,
         "stale_source_sessions": 0,
-        "remote_push_health": remote_push_health,
-        "remote_push_consecutive_failures": remote_push_failures,
-        "remote_push_last_attempt_at": remote_push_last_attempt,
-        "remote_push_last_success_at": remote_push_last_success,
-        "remote_push_last_error_at": remote_push_last_error,
-        "remote_push_last_error_summary": remote_push_last_error_summary,
-        "remote_push_endpoint": remote_push_endpoint,
-        "remote_push_source_connection_key": remote_push_source,
+        "remote_push_health": "retired",
+        "remote_push_consecutive_failures": 0,
+        "remote_push_last_attempt_at": "",
+        "remote_push_last_success_at": "",
+        "remote_push_last_error_at": "",
+        "remote_push_last_error_summary": "",
+        "remote_push_endpoint": "",
+        "remote_push_source_connection_key": "",
     }
     if not AI_MONITOR_METRICS_FILE.exists():
         return default_metrics
@@ -1087,14 +590,14 @@ def load_ai_monitor_metrics() -> Dict[str, Any]:
                 "stage_from_process": int(data.get("stage_from_process", 0) or 0),
                 "stage_from_review": int(data.get("stage_from_review", 0) or 0),
                 "stale_source_sessions": int(data.get("stale_source_sessions", 0) or 0),
-                "remote_push_health": remote_push_health,
-                "remote_push_consecutive_failures": remote_push_failures,
-                "remote_push_last_attempt_at": remote_push_last_attempt,
-                "remote_push_last_success_at": remote_push_last_success,
-                "remote_push_last_error_at": remote_push_last_error,
-                "remote_push_last_error_summary": remote_push_last_error_summary,
-                "remote_push_endpoint": remote_push_endpoint,
-                "remote_push_source_connection_key": remote_push_source,
+                "remote_push_health": "retired",
+                "remote_push_consecutive_failures": 0,
+                "remote_push_last_attempt_at": "",
+                "remote_push_last_success_at": "",
+                "remote_push_last_error_at": "",
+                "remote_push_last_error_summary": "",
+                "remote_push_endpoint": "",
+                "remote_push_source_connection_key": "",
             }
     except (json.JSONDecodeError, IOError, ValueError, TypeError):
         return default_metrics
@@ -1264,10 +767,6 @@ async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
     if AI_SESSION_REVIEW_FILE.parent.exists():
         if str(AI_SESSION_REVIEW_FILE.parent) not in watch_paths:
             watch_paths.append(str(AI_SESSION_REVIEW_FILE.parent))
-    if REMOTE_OTEL_PUSH_STATE_FILE.parent.exists():
-        if str(REMOTE_OTEL_PUSH_STATE_FILE.parent) not in watch_paths:
-            watch_paths.append(str(REMOTE_OTEL_PUSH_STATE_FILE.parent))
-
     try:
         # inotifywait in monitor mode (-m) outputs events as they happen
         # -e create,modify,delete watches for file changes
@@ -1320,8 +819,6 @@ async def read_inotify_events(
     review_tmp_filename = review_filename + ".tmp"
     seen_events_filename = AI_SESSION_SEEN_EVENTS_FILE.name
     seen_events_tmp_filename = seen_events_filename + ".tmp"
-    remote_otel_push_state_filename = REMOTE_OTEL_PUSH_STATE_FILE.name
-    remote_otel_push_state_tmp_filename = remote_otel_push_state_filename + ".tmp"
     badge_dir_path = str(BADGE_STATE_DIR)
 
     try:
@@ -1354,9 +851,7 @@ async def read_inotify_events(
             is_metrics_file = filename in (metrics_filename, metrics_tmp_filename)
             is_review_file = filename in (review_filename, review_tmp_filename)
             is_seen_events_file = filename in (seen_events_filename, seen_events_tmp_filename)
-            is_remote_otel_push_state_file = filename in (remote_otel_push_state_filename, remote_otel_push_state_tmp_filename)
-
-            if is_badge_dir or is_otel_file or is_mru_file or is_pin_file or is_metrics_file or is_review_file or is_seen_events_file or is_remote_otel_push_state_file:
+            if is_badge_dir or is_otel_file or is_mru_file or is_pin_file or is_metrics_file or is_review_file or is_seen_events_file:
                 logger.debug(f"Feature 107/135: inotify event: {watched_path} {event_type} {filename}")
                 on_badge_change.set()
             # Else: ignore unrelated files in XDG_RUNTIME_DIR (pulse, dbus, etc.)
@@ -6860,13 +6355,13 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
         else:
             # Feature 123/136: Load OTEL sessions only when daemon has no Herdr rows.
             # Herdr-backed daemon sessions are the UI authority for AI state.
+            # Remote OTEL fanout was retired; remote AI rows now come from the
+            # daemon/Herdr boundary only.
             otel_sessions = load_otel_sessions()
-            remote_otel_sessions = _load_remote_otel_sessions_for_windows(window_candidates)
             merged_otel_raw_sessions: List[Dict[str, Any]] = []
             for raw_session in otel_sessions.get("sessions", []):
                 if isinstance(raw_session, dict):
                     merged_otel_raw_sessions.append(dict(raw_session))
-            merged_otel_raw_sessions.extend(remote_otel_sessions)
             for raw_session in merged_otel_raw_sessions:
                 session = dict(raw_session)
                 terminal_context = session.get("terminal_context", {}) or {}

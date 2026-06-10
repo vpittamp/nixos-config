@@ -1311,101 +1311,6 @@ class TestQueryMonitoringData:
         assert scoped_projects
         assert scoped_projects[0]["execution_mode"] == "ssh"
 
-    def test_clickhouse_unset_returns_none(self, monkeypatch):
-        """When the ClickHouse URL env var is unset, the fetcher returns None."""
-        monkeypatch.delenv("I3PM_MONITORING_CLICKHOUSE_URL", raising=False)
-        monitoring_data.AGGREGATOR_CACHE.update({"fetched_at": 0.0, "url": "", "payload": {}})
-        assert monitoring_data._fetch_remote_sessions_from_aggregator() is None
-
-    def test_clickhouse_fetch_success_caches(self, monkeypatch):
-        """ClickHouse query returns sink-shaped payload and caches it."""
-        monkeypatch.setenv("I3PM_MONITORING_CLICKHOUSE_URL", "http://ch.test:8123/")
-        monkeypatch.setenv("I3PM_MONITORING_CLICKHOUSE_PASSWORD", "x")
-        monkeypatch.setattr("socket.gethostname", lambda: "thinkpad")
-        monitoring_data.AGGREGATOR_CACHE.update({"fetched_at": 0.0, "url": "", "payload": {}})
-
-        # JSONEachRow format: one JSON per line
-        rows = [
-            {
-                "tool": "codex",
-                "host_name": "ryzen",
-                "native_session_id": "sid-1",
-                "project_name": "PittampalliOrg/stacks:main",
-                "project_path": "/home/x/stacks",
-                "tmux_session": "tmsx",
-                "tmux_window": "0:bash",
-                "tmux_pane": "%5",
-                "connection_key_hint": "",
-                "latest_finish_reasons": "",
-                "last_seen": "2026-05-27 18:00:00.000000000",
-                "turn_spans": 0,
-                "span_count": 1,
-            }
-        ]
-        response_body = ("\n".join(json.dumps(r) for r in rows)).encode("utf-8")
-        response = MagicMock()
-        response.status = 200
-        response.read.return_value = response_body
-        response.__enter__ = MagicMock(return_value=response)
-        response.__exit__ = MagicMock(return_value=False)
-
-        import urllib.request as _urlreq
-        with patch.object(_urlreq, "urlopen", return_value=response) as mock_open:
-            result = monitoring_data._fetch_remote_sessions_from_aggregator()
-            assert result is not None
-            assert "vpittamp@ryzen:22" in result["sources"]
-            assert result["sources"]["vpittamp@ryzen:22"]["sessions"][0]["tmux_pane"] == "%5"
-            # Second call should hit the cache, not the network.
-            cached = monitoring_data._fetch_remote_sessions_from_aggregator()
-            assert cached is not None
-            assert mock_open.call_count == 1
-
-    def test_clickhouse_fetch_timeout_returns_none(self, monkeypatch):
-        """ClickHouse timeout returns None."""
-        monkeypatch.setenv("I3PM_MONITORING_CLICKHOUSE_URL", "http://ch.test:8123/")
-        monitoring_data.AGGREGATOR_CACHE.update({"fetched_at": 0.0, "url": "", "payload": {}})
-
-        import urllib.error as _urlerr
-        import urllib.request as _urlreq
-        with patch.object(_urlreq, "urlopen", side_effect=_urlerr.URLError("timeout")):
-            assert monitoring_data._fetch_remote_sessions_from_aggregator() is None
-
-    def test_clickhouse_fetch_filters_own_host(self, monkeypatch):
-        """Rows whose host_name matches the local hostname are excluded."""
-        monkeypatch.setenv("I3PM_MONITORING_CLICKHOUSE_URL", "http://ch.test:8123/")
-        monkeypatch.setattr("socket.gethostname", lambda: "thinkpad")
-        monitoring_data.AGGREGATOR_CACHE.update({"fetched_at": 0.0, "url": "", "payload": {}})
-
-        rows = [
-            {
-                "tool": "claude-code", "host_name": "thinkpad", "native_session_id": "x",
-                "project_name": "p", "project_path": "", "tmux_session": "s", "tmux_window": "0",
-                "tmux_pane": "%1", "connection_key_hint": "", "latest_finish_reasons": "",
-                "last_seen": "2026-05-27 18:00:00", "turn_spans": 0, "span_count": 1,
-            },
-            {
-                "tool": "codex", "host_name": "ryzen", "native_session_id": "y",
-                "project_name": "p", "project_path": "", "tmux_session": "s", "tmux_window": "0",
-                "tmux_pane": "%2", "connection_key_hint": "", "latest_finish_reasons": "",
-                "last_seen": "2026-05-27 18:00:00", "turn_spans": 0, "span_count": 1,
-            },
-        ]
-        response_body = ("\n".join(json.dumps(r) for r in rows)).encode("utf-8")
-        response = MagicMock()
-        response.status = 200
-        response.read.return_value = response_body
-        response.__enter__ = MagicMock(return_value=response)
-        response.__exit__ = MagicMock(return_value=False)
-
-        import urllib.request as _urlreq
-        with patch.object(_urlreq, "urlopen", return_value=response):
-            result = monitoring_data._fetch_remote_sessions_from_aggregator()
-            assert result is not None
-            hosts = [src["host_name"] for src in result["sources"].values()]
-            assert hosts == ["ryzen"]
-            assert "thinkpad" not in hosts
-
-
 @pytest.mark.asyncio
 class TestQueryTailscaleData:
     """Test Tailscale tab backend mode."""
@@ -2991,8 +2896,7 @@ class TestAiReviewLifecycle:
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
              patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=local_otel_payload) as mock_load_otel, \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
-             patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}), \
-             patch("i3_project_manager.cli.monitoring_data._load_remote_otel_sessions_for_windows", return_value=[]) as mock_remote_otel:
+             patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}):
             mock_instance = AsyncMock()
             mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
             MockClient.return_value = mock_instance
@@ -3000,7 +2904,6 @@ class TestAiReviewLifecycle:
             result = await query_monitoring_data()
 
         mock_load_otel.assert_not_called()
-        mock_remote_otel.assert_not_called()
         assert result["status"] == "ok"
         assert result["active_ai_sessions"]
         session = result["active_ai_sessions"][0]
@@ -3095,8 +2998,7 @@ class TestAiReviewLifecycle:
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
              patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value={"schema_version": "11", "sessions": []}) as mock_load_otel, \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
-             patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}), \
-             patch("i3_project_manager.cli.monitoring_data._load_remote_otel_sessions_for_windows", return_value=[]) as mock_remote_otel:
+             patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}):
             mock_instance = AsyncMock()
             mock_instance.get_runtime_snapshot.return_value = runtime_snapshot
             MockClient.return_value = mock_instance
@@ -3104,7 +3006,6 @@ class TestAiReviewLifecycle:
             result = await query_monitoring_data()
 
         mock_load_otel.assert_not_called()
-        mock_remote_otel.assert_not_called()
         assert result["status"] == "ok"
         assert [session["session_key"] for session in result["active_ai_sessions"]] == ["daemon-session-key"]
         assert result["current_ai_session_key"] == "daemon-session-key"
@@ -3178,8 +3079,7 @@ class TestAiReviewLifecycle:
              patch("i3_project_manager.cli.monitoring_data.load_ai_session_pins", return_value=[]), \
              patch("i3_project_manager.cli.monitoring_data.load_ai_session_mru", return_value=[]), \
              patch("i3_project_manager.cli.monitoring_data.load_ai_monitor_metrics", return_value={}), \
-             patch("i3_project_manager.cli.monitoring_data.emit_ai_state_transition_notifications"), \
-             patch("i3_project_manager.cli.monitoring_data._load_remote_otel_sessions_for_windows", return_value=[]):
+             patch("i3_project_manager.cli.monitoring_data.emit_ai_state_transition_notifications"):
             mock_instance = AsyncMock()
             mock_instance.get_runtime_snapshot.return_value = runtime_snapshot
             MockClient.return_value = mock_instance
@@ -3188,22 +3088,6 @@ class TestAiReviewLifecycle:
 
         assert result["status"] == "ok"
         assert [project["is_active"] for project in result["projects"]] == [True, False, False]
-
-    def test_normalize_remote_otel_session_canonicalizes_host_context_key(self):
-        normalized = monitoring_data._normalize_remote_otel_session(
-            {
-                "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
-                "terminal_context": {
-                    "context_key": "vpittamp/nixos-config:main::ssh::vpittamp@ryzen:22",
-                },
-            },
-            "vpittamp@ryzen:22",
-            "ryzen",
-            "vpittamp@ryzen:22",
-        )
-
-        assert normalized["context_key"] == "vpittamp/nixos-config:main::host::ryzen"
-        assert normalized["terminal_context"]["context_key"] == "vpittamp/nixos-config:main::host::ryzen"
 
     def test_merge_review_state_into_window_badges_adds_synthetic_badge(self):
         windows = [{
