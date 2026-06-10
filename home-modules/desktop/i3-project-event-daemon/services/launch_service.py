@@ -623,6 +623,128 @@ class LaunchService:
 
         return matched_candidates
 
+    def build_launch_open_response(
+        self,
+        *,
+        spec: Dict[str, Any],
+        launch_result: Dict[str, Any],
+        launch_strategy: Optional[str] = None,
+        reused_existing: bool = False,
+        window_id: int = 0,
+        include_spec_window_id: bool = False,
+    ) -> Dict[str, Any]:
+        """Shape the public response for ``launch.open``."""
+        spec_payload: Dict[str, Any] = {
+            "app_name": spec.get("app_name"),
+            "target_host": spec.get("target_host"),
+            "transport_kind": spec.get("transport_kind"),
+            "project_name": spec.get("project_name"),
+            "context_key": spec.get("context_key"),
+            "launch_strategy": launch_strategy if launch_strategy is not None else spec.get("launch_strategy"),
+            "terminal_anchor_id": spec.get("terminal_anchor_id"),
+            "preferred_workspace": spec.get("preferred_workspace"),
+            "tmux_session_name": spec.get("tmux_session_name"),
+            "terminal_role": spec.get("terminal_role"),
+            "reused_existing": reused_existing,
+        }
+        normalized_window_id = int(window_id or 0)
+        if include_spec_window_id:
+            spec_payload["window_id"] = normalized_window_id
+
+        launch_payload = dict(launch_result or {})
+        if reused_existing:
+            launch_payload.setdefault("success", True)
+            launch_payload["reused_existing"] = True
+            launch_payload["window_id"] = normalized_window_id
+
+        return {
+            "success": True,
+            "launch": launch_payload,
+            "spec": spec_payload,
+        }
+
+    def build_terminal_launch_config(
+        self,
+        *,
+        app: Any,
+        scoped_launch: bool,
+        project_name: str,
+        context_key: str,
+        connection_key: str,
+        launch_transport: str,
+        remote_profile: Optional[Dict[str, Any]],
+        scoped_terminal_mode: str,
+        scoped_terminal_command: List[str],
+        tmux_session_name: str,
+        terminal_role: str,
+        remote_session_name_override: str,
+    ) -> Dict[str, Any]:
+        """Build terminal-specific launch strategy and helper payload."""
+        launch_strategy = "direct"
+        terminal_launch: Optional[Dict[str, Any]] = None
+        normalized_tmux_session_name = str(tmux_session_name or "").strip()
+
+        if not (bool(getattr(app, "terminal", False)) and scoped_launch and project_name and context_key):
+            return {
+                "launch_strategy": launch_strategy,
+                "terminal_launch": terminal_launch,
+                "tmux_session_name": normalized_tmux_session_name,
+            }
+
+        remote_payload = {
+            "host": str(remote_profile.get("host", "")) if remote_profile else "",
+            "user": str(remote_profile.get("user", "")) if remote_profile else "",
+            "port": int(remote_profile.get("port", 22)) if remote_profile else 22,
+            "remote_dir": str(remote_profile.get("remote_dir", "")) if remote_profile else "",
+        }
+
+        if scoped_terminal_mode == "dedicated_scoped_window":
+            launch_strategy = (
+                "dedicated_remote_scoped_window"
+                if launch_transport == "remote_helper"
+                else "dedicated_local_scoped_window"
+            )
+            terminal_launch = {
+                "mode": "dedicated_scoped_window",
+                "terminal_role": terminal_role,
+                "helper_name": "project-command-launch.sh",
+                "helper_args": scoped_terminal_command,
+            }
+            if launch_transport == "remote_helper":
+                terminal_launch["remote"] = remote_payload
+        else:
+            if not normalized_tmux_session_name:
+                normalized_tmux_session_name = self.build_context_tmux_session_name(
+                    project_name=project_name or str(getattr(app, "name", "") or "").strip(),
+                    context_key=context_key or connection_key,
+                    terminal_role=terminal_role or "project-main",
+                )
+            launch_strategy = (
+                "managed_remote_terminal_command"
+                if launch_transport == "remote_helper" and scoped_terminal_command
+                else "managed_remote_terminal"
+                if launch_transport == "remote_helper"
+                else "managed_local_terminal_command"
+                if scoped_terminal_command
+                else "managed_local_terminal"
+            )
+            terminal_launch = {
+                "mode": "managed_project_terminal",
+                "tmux_session_name": normalized_tmux_session_name,
+                "terminal_role": terminal_role,
+                "remote_session_name": remote_session_name_override,
+                "helper_name": "project-terminal-launch.sh",
+                "helper_args": scoped_terminal_command,
+            }
+            if launch_transport == "remote_helper":
+                terminal_launch["remote"] = remote_payload
+
+        return {
+            "launch_strategy": launch_strategy,
+            "terminal_launch": terminal_launch,
+            "tmux_session_name": normalized_tmux_session_name,
+        }
+
     def write_remote_spec(
         self,
         *,

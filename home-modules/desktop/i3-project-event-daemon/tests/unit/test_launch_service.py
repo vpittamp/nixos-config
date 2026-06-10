@@ -223,6 +223,97 @@ def test_launch_identity_and_tmux_session_name_are_stable(tmp_path: Path) -> Non
     assert session_name_a.startswith("i3pm-pittampalliorg-nixos-c")
 
 
+def test_build_launch_open_response_shapes_reuse_contract(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+
+    result = service.build_launch_open_response(
+        spec={
+            "app_name": "code",
+            "target_host": "thinkpad",
+            "transport_kind": "local_process",
+            "project_name": "vpittamp/nixos-config:main",
+            "context_key": "ctx",
+            "terminal_anchor_id": "code-anchor",
+            "preferred_workspace": 2,
+            "tmux_session_name": "",
+            "terminal_role": "",
+        },
+        launch_result={"success": True},
+        launch_strategy="focus_existing_window",
+        reused_existing=True,
+        window_id=456,
+        include_spec_window_id=True,
+    )
+
+    assert result["success"] is True
+    assert result["launch"] == {
+        "success": True,
+        "reused_existing": True,
+        "window_id": 456,
+    }
+    assert result["spec"]["launch_strategy"] == "focus_existing_window"
+    assert result["spec"]["reused_existing"] is True
+    assert result["spec"]["window_id"] == 456
+
+
+def test_build_terminal_launch_config_shapes_managed_remote_command(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+
+    result = service.build_terminal_launch_config(
+        app=SimpleNamespace(name="lazygit", terminal=True),
+        scoped_launch=True,
+        project_name="vpittamp/nixos-config:main",
+        context_key="ctx",
+        connection_key="vpittamp@ryzen:22",
+        launch_transport="remote_helper",
+        remote_profile={
+            "host": "ryzen",
+            "user": "vpittamp",
+            "port": 22,
+            "remote_dir": "/home/vpittamp/repos/vpittamp/nixos-config/main",
+        },
+        scoped_terminal_mode="reuse_project_terminal",
+        scoped_terminal_command=["lazygit"],
+        tmux_session_name="",
+        terminal_role="project-main",
+        remote_session_name_override="",
+    )
+
+    assert result["launch_strategy"] == "managed_remote_terminal_command"
+    assert str(result["tmux_session_name"]).startswith("i3pm-vpittamp-nixos-config-ma-")
+    assert result["terminal_launch"]["mode"] == "managed_project_terminal"
+    assert result["terminal_launch"]["helper_args"] == ["lazygit"]
+    assert result["terminal_launch"]["remote"]["host"] == "ryzen"
+
+
+def test_build_terminal_launch_config_shapes_dedicated_scoped_window(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+
+    result = service.build_terminal_launch_config(
+        app=SimpleNamespace(name="yazi", terminal=True),
+        scoped_launch=True,
+        project_name="vpittamp/nixos-config:main",
+        context_key="ctx",
+        connection_key="local@thinkpad",
+        launch_transport="local_helper",
+        remote_profile=None,
+        scoped_terminal_mode="dedicated_scoped_window",
+        scoped_terminal_command=["yazi", "/repo"],
+        tmux_session_name="",
+        terminal_role="project-app:yazi",
+        remote_session_name_override="",
+    )
+
+    assert result["launch_strategy"] == "dedicated_local_scoped_window"
+    assert result["tmux_session_name"] == ""
+    assert result["terminal_launch"] == {
+        "mode": "dedicated_scoped_window",
+        "terminal_role": "project-app:yazi",
+        "helper_name": "project-command-launch.sh",
+        "helper_args": ["yazi", "/repo"],
+    }
+
+
 def test_launch_parameter_substitution_and_scoped_command_validation(tmp_path: Path) -> None:
     service = make_service(tmp_path)
 

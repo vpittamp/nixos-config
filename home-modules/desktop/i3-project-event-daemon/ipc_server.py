@@ -8293,58 +8293,23 @@ class IPCServer:
             connection_key=connection_key,
         )
         terminal_launch: Optional[Dict[str, Any]] = None
-        if bool(app.terminal) and scoped_launch and project_name and context_key:
-            if scoped_terminal_mode == "dedicated_scoped_window":
-                launch_strategy = (
-                    "dedicated_remote_scoped_window"
-                    if launch_transport == "remote_helper"
-                    else "dedicated_local_scoped_window"
-                )
-                terminal_launch = {
-                    "mode": "dedicated_scoped_window",
-                    "terminal_role": terminal_role,
-                    "helper_name": "project-command-launch.sh",
-                    "helper_args": scoped_terminal_command,
-                }
-                if launch_transport == "remote_helper":
-                    terminal_launch["remote"] = {
-                        "host": str(remote_profile.get("host", "")) if remote_profile else "",
-                        "user": str(remote_profile.get("user", "")) if remote_profile else "",
-                        "port": int(remote_profile.get("port", 22)) if remote_profile else 22,
-                        "remote_dir": str(remote_profile.get("remote_dir", "")) if remote_profile else "",
-                    }
-            else:
-                launch_strategy = (
-                    "managed_remote_terminal_command"
-                    if launch_transport == "remote_helper" and scoped_terminal_command
-                    else "managed_remote_terminal"
-                    if launch_transport == "remote_helper"
-                    else "managed_local_terminal_command"
-                    if scoped_terminal_command
-                    else "managed_local_terminal"
-                )
-                terminal_launch = {
-                    "mode": "managed_project_terminal",
-                    "tmux_session_name": (
-                        tmux_session_name
-                        or self._build_context_tmux_session_name(
-                            project_name=project_name or app.name,
-                            context_key=context_key or connection_key,
-                            terminal_role=terminal_role or "project-main",
-                        )
-                    ),
-                    "terminal_role": terminal_role,
-                    "remote_session_name": remote_session_name_override,
-                    "helper_name": "project-terminal-launch.sh",
-                    "helper_args": scoped_terminal_command,
-                }
-                if launch_transport == "remote_helper":
-                    terminal_launch["remote"] = {
-                        "host": str(remote_profile.get("host", "")) if remote_profile else "",
-                        "user": str(remote_profile.get("user", "")) if remote_profile else "",
-                        "port": int(remote_profile.get("port", 22)) if remote_profile else 22,
-                        "remote_dir": str(remote_profile.get("remote_dir", "")) if remote_profile else "",
-                    }
+        terminal_launch_config = self.launch_service.build_terminal_launch_config(
+            app=app,
+            scoped_launch=scoped_launch,
+            project_name=project_name,
+            context_key=context_key,
+            connection_key=connection_key,
+            launch_transport=launch_transport,
+            remote_profile=remote_profile,
+            scoped_terminal_mode=scoped_terminal_mode,
+            scoped_terminal_command=scoped_terminal_command,
+            tmux_session_name=tmux_session_name,
+            terminal_role=terminal_role,
+            remote_session_name_override=remote_session_name_override,
+        )
+        launch_strategy = str(terminal_launch_config.get("launch_strategy") or launch_strategy)
+        terminal_launch = terminal_launch_config.get("terminal_launch")
+        tmux_session_name = str(terminal_launch_config.get("tmux_session_name") or tmux_session_name)
 
         if dry_run:
             launch = {
@@ -11905,28 +11870,16 @@ FORMAT JSONEachRow
                 if bool(focus_result.get("success", False)):
                     reused_existing = True
                     reused_window_id = int(focus_result.get("window_id") or 0)
-                    return {
-                        "success": True,
-                        "launch": {
+                    return self.launch_service.build_launch_open_response(
+                        spec=spec,
+                        launch_result={
                             "success": True,
-                            "reused_existing": True,
-                            "window_id": reused_window_id,
                             "tmux_session_name": str(spec.get("tmux_session_name") or "").strip(),
                         },
-                        "spec": {
-                            "app_name": spec.get("app_name"),
-                            "target_host": spec.get("target_host"),
-                            "transport_kind": spec.get("transport_kind"),
-                            "project_name": spec.get("project_name"),
-                            "context_key": spec.get("context_key"),
-                            "launch_strategy": "focus_existing_terminal",
-                            "terminal_anchor_id": spec.get("terminal_anchor_id"),
-                            "preferred_workspace": spec.get("preferred_workspace"),
-                            "tmux_session_name": spec.get("tmux_session_name"),
-                            "terminal_role": spec.get("terminal_role"),
-                            "reused_existing": True,
-                        },
-                    }
+                        launch_strategy="focus_existing_terminal",
+                        reused_existing=True,
+                        window_id=reused_window_id,
+                    )
         elif terminal_mode == "dedicated_scoped_window":
             existing_window = await self._get_reusable_context_terminal_window(
                 project_name=str(spec.get("project_name") or "").strip(),
@@ -11940,27 +11893,13 @@ FORMAT JSONEachRow
                 if bool(focus_result.get("success", False)):
                     reused_existing = True
                     reused_window_id = int(focus_result.get("window_id") or 0)
-                    return {
-                        "success": True,
-                        "launch": {
-                            "success": True,
-                            "reused_existing": True,
-                            "window_id": reused_window_id,
-                        },
-                        "spec": {
-                            "app_name": spec.get("app_name"),
-                            "target_host": spec.get("target_host"),
-                            "transport_kind": spec.get("transport_kind"),
-                            "project_name": spec.get("project_name"),
-                            "context_key": spec.get("context_key"),
-                            "launch_strategy": "focus_existing_dedicated_terminal_window",
-                            "terminal_anchor_id": spec.get("terminal_anchor_id"),
-                            "preferred_workspace": spec.get("preferred_workspace"),
-                            "tmux_session_name": spec.get("tmux_session_name"),
-                            "terminal_role": spec.get("terminal_role"),
-                            "reused_existing": True,
-                        },
-                    }
+                    return self.launch_service.build_launch_open_response(
+                        spec=spec,
+                        launch_result={"success": True},
+                        launch_strategy="focus_existing_dedicated_terminal_window",
+                        reused_existing=True,
+                        window_id=reused_window_id,
+                    )
         elif not app.multi_instance and (not app.terminal or not terminal_mode):
             existing_window = await self._get_reusable_context_app_window(
                 app=app,
@@ -11979,49 +11918,24 @@ FORMAT JSONEachRow
                 if bool(focus_result.get("success", False)):
                     reused_existing = True
                     reused_window_id = int(focus_result.get("window_id") or 0)
-                    return {
-                        "success": True,
-                        "launch": {
-                            "success": True,
-                            "reused_existing": True,
-                            "window_id": reused_window_id,
-                        },
-                        "spec": {
-                            "app_name": spec.get("app_name"),
-                            "target_host": spec.get("target_host"),
-                            "transport_kind": spec.get("transport_kind"),
-                            "project_name": spec.get("project_name"),
-                            "context_key": spec.get("context_key"),
-                            "launch_strategy": "focus_existing_window",
-                            "terminal_anchor_id": spec.get("terminal_anchor_id"),
-                            "preferred_workspace": spec.get("preferred_workspace"),
-                            "tmux_session_name": spec.get("tmux_session_name"),
-                            "terminal_role": spec.get("terminal_role"),
-                            "reused_existing": True,
-                            "window_id": reused_window_id,
-                        },
-                    }
+                    return self.launch_service.build_launch_open_response(
+                        spec=spec,
+                        launch_result={"success": True},
+                        launch_strategy="focus_existing_window",
+                        reused_existing=True,
+                        window_id=reused_window_id,
+                        include_spec_window_id=True,
+                    )
 
         spec["launch"] = await self._register_launch_for_spec(spec)
         launch_result = self._execute_launch_spec(spec)
-        return {
-            "success": True,
-            "launch": launch_result,
-            "spec": {
-                "app_name": spec.get("app_name"),
-                "target_host": spec.get("target_host"),
-                "transport_kind": spec.get("transport_kind"),
-                "project_name": spec.get("project_name"),
-                "context_key": spec.get("context_key"),
-                "launch_strategy": spec.get("launch_strategy"),
-                "terminal_anchor_id": spec.get("terminal_anchor_id"),
-                "preferred_workspace": spec.get("preferred_workspace"),
-                "tmux_session_name": spec.get("tmux_session_name"),
-                "terminal_role": spec.get("terminal_role"),
-                "reused_existing": reused_existing,
-                "window_id": reused_window_id,
-            },
-        }
+        return self.launch_service.build_launch_open_response(
+            spec=spec,
+            launch_result=launch_result,
+            reused_existing=reused_existing,
+            window_id=reused_window_id,
+            include_spec_window_id=True,
+        )
 
     async def _get_launch_stats(self) -> Dict[str, Any]:
         """
