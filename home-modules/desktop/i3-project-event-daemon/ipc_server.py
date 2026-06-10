@@ -55,6 +55,7 @@ from .services.window_filter import (
 )
 from .services.registry_loader import RegistryLoader, RegistryApp
 from .services.agent_harness import CodexHarnessManager
+from .services.dashboard_model import validate_dashboard_payload
 from .services.focus_service import FocusService
 from .services.herdr_service import HerdrService
 from .models.window_command import CommandBatch
@@ -12490,102 +12491,10 @@ FORMAT JSONEachRow
 
     def _validate_dashboard_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Validate dashboard focus invariants before the payload leaves the daemon."""
-        issues: List[str] = []
-        warnings: List[str] = []
-        if str(payload.get("schema_version") or "").strip() != DASHBOARD_SCHEMA_VERSION:
-            issues.append("schema_version_mismatch")
-
-        focus_state = payload.get("focus_state")
-        if not isinstance(focus_state, dict):
-            focus_state = {}
-            issues.append("missing_focus_state")
-
-        current_key = str(
-            focus_state.get("current_session_key")
-            or focus_state.get("current_ai_session_key")
-            or payload.get("current_ai_session_key")
-            or ""
-        ).strip()
-        sessions = [
-            session for session in payload.get("active_ai_sessions", []) or []
-            if isinstance(session, dict)
-        ]
-        current_rows = [
-            session for session in sessions
-            if bool(session.get("is_current_window", False))
-        ]
-        matching_rows = [
-            session for session in sessions
-            if current_key and str(session.get("session_key") or "").strip() == current_key
-        ]
-        if current_key:
-            if len(matching_rows) != 1:
-                issues.append("current_session_key_not_unique")
-            if len(current_rows) != 1:
-                issues.append("current_session_row_not_unique")
-            elif str(current_rows[0].get("session_key") or "").strip() != current_key:
-                issues.append("current_session_row_mismatch")
-        elif current_rows:
-            issues.append("current_session_row_without_key")
-
-        window_rows: List[Dict[str, Any]] = []
-        for project in payload.get("projects", []) or []:
-            if not isinstance(project, dict):
-                continue
-            for window in project.get("windows", []) or []:
-                if isinstance(window, dict):
-                    window_rows.append(window)
-        focused_windows = [window for window in window_rows if bool(window.get("focused", False))]
-        if len(focused_windows) > 1:
-            warnings.append("duplicate_focused_windows")
-        focus_window_id = int(focus_state.get("current_window_id") or focus_state.get("focused_window_id") or 0)
-        current_window_rows = [
-            window for window in window_rows
-            if focus_window_id > 0
-            and (
-                bool(window.get("is_current_window", False))
-                or int(window.get("id") or window.get("window_id") or 0) == focus_window_id
-            )
-        ]
-        current_window_ids = {
-            int(window.get("id") or window.get("window_id") or 0)
-            for window in current_window_rows
-        }
-        if focus_window_id > 0 and current_window_rows and current_window_ids != {focus_window_id}:
-            issues.append("current_window_row_mismatch")
-        if focused_windows and focus_window_id > 0:
-            focused_row_id = int(focused_windows[0].get("id") or focused_windows[0].get("window_id") or 0)
-            if focused_row_id != focus_window_id:
-                warnings.append("focused_window_row_mismatch")
-
-        focused_workspaces = []
-        for output in payload.get("outputs", []) or []:
-            if not isinstance(output, dict):
-                continue
-            for workspace in output.get("workspaces", []) or []:
-                if isinstance(workspace, dict) and bool(workspace.get("focused", False)):
-                    focused_workspaces.append(workspace)
-        if len(focused_workspaces) > 1:
-            issues.append("duplicate_focused_workspaces")
-
-        remote_focused = [
-            session for session in sessions
-            if str(session.get("source") or "").strip() == "herdr"
-            and bool(session.get("focused", False))
-            and not bool(session.get("is_current_host", False))
-            and str(session.get("session_key") or "").strip()
-        ]
-        if remote_focused and current_key:
-            remote_keys = {str(session.get("session_key") or "").strip() for session in remote_focused}
-            if current_key not in remote_keys:
-                issues.append("remote_herdr_focus_mismatch")
-
-        return {
-            "ok": not issues,
-            "issues": issues,
-            "warnings": warnings,
-            "schema_version": DASHBOARD_SCHEMA_VERSION,
-        }
+        return validate_dashboard_payload(
+            payload,
+            schema_version=DASHBOARD_SCHEMA_VERSION,
+        )
 
     async def _dashboard_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return the daemon-owned dashboard payload consumed by QuickShell."""
