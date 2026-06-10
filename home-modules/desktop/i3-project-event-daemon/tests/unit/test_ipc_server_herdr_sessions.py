@@ -1024,7 +1024,7 @@ async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
         },
     }
     assert remote_row["close_target"] == {}
-    assert server._select_current_session_key(rows, focused_window_id=0) == "herdr:pane:local-pane"
+    assert server.focus_service.select_current_session_key(rows, focused_window_id=0) == "herdr:pane:local-pane"
 
 
 @pytest.mark.asyncio

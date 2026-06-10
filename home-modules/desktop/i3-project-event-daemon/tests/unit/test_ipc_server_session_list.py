@@ -335,7 +335,7 @@ def test_select_current_session_key_ignores_stale_override_when_focus_moves_wind
         },
     ]
 
-    current_session_key = server._select_current_session_key(
+    current_session_key = server.focus_service.select_current_session_key(
         sessions,
         focused_window_id=146,
     )
@@ -360,7 +360,7 @@ def test_select_current_session_key_clears_override_when_focus_moves_to_non_sess
         }
     ]
 
-    current_session_key = server._select_current_session_key(
+    current_session_key = server.focus_service.select_current_session_key(
         sessions,
         focused_window_id=32,
     )
@@ -386,7 +386,7 @@ def test_select_current_session_key_preserves_override_when_focused_window_still
         }
     ]
 
-    current_session_key = server._select_current_session_key(
+    current_session_key = server.focus_service.select_current_session_key(
         sessions,
         focused_window_id=29,
     )
@@ -416,7 +416,7 @@ def test_select_current_session_key_prefers_focused_herdr_override_over_local_fo
         },
     ]
 
-    current_session_key = server._select_current_session_key(
+    current_session_key = server.focus_service.select_current_session_key(
         sessions,
         focused_window_id=0,
     )
@@ -445,7 +445,7 @@ def test_select_current_session_key_ignores_unfocused_herdr_override(server):
         },
     ]
 
-    current_session_key = server._select_current_session_key(
+    current_session_key = server.focus_service.select_current_session_key(
         sessions,
         focused_window_id=0,
     )
@@ -519,11 +519,11 @@ async def test_session_list_preserves_explicit_stopped_phase(server, monkeypatch
             ),
             0,
         )
-        current_session_key = server._select_current_session_key(
+        current_session_key = server.focus_service.select_current_session_key(
             sessions,
             focused_window_id=focused_window_id,
         )
-        server._mark_current_session(sessions, current_session_key=current_session_key)
+        server.focus_service.mark_current_session(sessions, current_session_key=current_session_key)
         server._apply_session_attention_state(
             sessions,
             focused_window_id=focused_window_id,
@@ -590,11 +590,11 @@ async def test_session_list_preserves_claude_explicit_stopped_phase(server, monk
             ),
             0,
         )
-        current_session_key = server._select_current_session_key(
+        current_session_key = server.focus_service.select_current_session_key(
             sessions,
             focused_window_id=focused_window_id,
         )
-        server._mark_current_session(sessions, current_session_key=current_session_key)
+        server.focus_service.mark_current_session(sessions, current_session_key=current_session_key)
         server._apply_session_attention_state(
             sessions,
             focused_window_id=focused_window_id,
@@ -678,11 +678,11 @@ async def test_session_list_acknowledges_background_stopped_session_on_focus(ser
             ),
             0,
         )
-        current_session_key = server._select_current_session_key(
+        current_session_key = server.focus_service.select_current_session_key(
             sessions,
             focused_window_id=focused_window_id,
         )
-        server._mark_current_session(sessions, current_session_key=current_session_key)
+        server.focus_service.mark_current_session(sessions, current_session_key=current_session_key)
         server._apply_session_attention_state(
             sessions,
             focused_window_id=focused_window_id,
@@ -764,11 +764,11 @@ async def test_session_list_stopped_current_session_requires_leave_and_return_to
             ),
             0,
         )
-        current_session_key = server._select_current_session_key(
+        current_session_key = server.focus_service.select_current_session_key(
             sessions,
             focused_window_id=focused_window_id,
         )
-        server._mark_current_session(sessions, current_session_key=current_session_key)
+        server.focus_service.mark_current_session(sessions, current_session_key=current_session_key)
         server._apply_session_attention_state(
             sessions,
             focused_window_id=focused_window_id,
@@ -857,11 +857,11 @@ async def test_session_list_explicit_focus_acknowledgement_persists_until_new_st
             ),
             0,
         )
-        current_session_key = server._select_current_session_key(
+        current_session_key = server.focus_service.select_current_session_key(
             sessions,
             focused_window_id=focused_window_id,
         )
-        server._mark_current_session(sessions, current_session_key=current_session_key)
+        server.focus_service.mark_current_session(sessions, current_session_key=current_session_key)
         server._apply_session_attention_state(
             sessions,
             focused_window_id=focused_window_id,
@@ -945,11 +945,11 @@ async def test_session_list_user_input_acknowledgement_persists_until_new_bounda
             ),
             0,
         )
-        current_session_key = server._select_current_session_key(
+        current_session_key = server.focus_service.select_current_session_key(
             sessions,
             focused_window_id=focused_window_id,
         )
-        server._mark_current_session(sessions, current_session_key=current_session_key)
+        server.focus_service.mark_current_session(sessions, current_session_key=current_session_key)
         server._apply_session_attention_state(
             sessions,
             focused_window_id=focused_window_id,

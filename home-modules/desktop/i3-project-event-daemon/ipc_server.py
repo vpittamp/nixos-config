@@ -9553,42 +9553,6 @@ FORMAT JSONEachRow
             },
         }
 
-    def _current_session_override_key(
-        self,
-        sessions: List[Dict[str, Any]],
-        *,
-        focused_window_id: int = 0,
-    ) -> str:
-        """Return the daemon-owned current-session override if it still resolves."""
-        return self.focus_service.current_session_override_key(
-            sessions,
-            focused_window_id=focused_window_id,
-        )
-
-    def _window_matches_focus_override(
-        self,
-        *,
-        window_id: int,
-        connection_key: str,
-    ) -> bool:
-        """Return whether a window matches the last successful daemon-owned focus target."""
-        return self.focus_service.window_matches_focus_override(
-            window_id=window_id,
-            connection_key=connection_key,
-        )
-
-    def _select_current_session_key(
-        self,
-        sessions: List[Dict[str, Any]],
-        *,
-        focused_window_id: int,
-    ) -> str:
-        """Return the single session key that owns current focus in the dashboard."""
-        return self.focus_service.select_current_session_key(
-            sessions,
-            focused_window_id=focused_window_id,
-        )
-
     @staticmethod
     def _stale_bridge_close_reasons() -> set[str]:
         """Return stale bridge reasons that are safe to close automatically."""
@@ -9601,32 +9565,6 @@ FORMAT JSONEachRow
             "tmux_window_mismatch",
             "tmux_pane_mismatch",
         }
-
-    def _mark_current_session(
-        self,
-        sessions: List[Dict[str, Any]],
-        *,
-        current_session_key: str,
-    ) -> None:
-        """Normalize is_current_window so exactly one rendered session is current."""
-        self.focus_service.mark_current_session(
-            sessions,
-            current_session_key=current_session_key,
-        )
-
-    @staticmethod
-    def _session_matches_current(
-        session: Dict[str, Any],
-        *,
-        current_session_key: str,
-        focused_window_id: int,
-    ) -> bool:
-        """Return whether a session currently owns the visible interaction surface."""
-        return FocusService.session_matches_current(
-            session,
-            current_session_key=current_session_key,
-            focused_window_id=focused_window_id,
-        )
 
     @staticmethod
     def _stopped_boundary_key(session: Dict[str, Any]) -> str:
@@ -9755,7 +9693,7 @@ FORMAT JSONEachRow
             if not isinstance(session, dict):
                 continue
             session_key = str(session.get("session_key") or "").strip()
-            is_current = self._session_matches_current(
+            is_current = FocusService.session_matches_current(
                 session,
                 current_session_key=current_key,
                 focused_window_id=focused_window_id,
@@ -10768,7 +10706,7 @@ FORMAT JSONEachRow
                 bool(item.get("window_active", False)) or bool(item.get("pane_active", False))
                 for item in session_items
             )
-            matches_focus_override = self._window_matches_focus_override(
+            matches_focus_override = self.focus_service.window_matches_focus_override(
                 window_id=window_id,
                 connection_key=str(window.get("connection_key") or "").strip(),
             )
@@ -13873,11 +13811,11 @@ FORMAT JSONEachRow
             ),
             0,
         )
-        current_session_key = self._select_current_session_key(
+        current_session_key = self.focus_service.select_current_session_key(
             sessions,
             focused_window_id=focused_window_id,
         )
-        self._mark_current_session(
+        self.focus_service.mark_current_session(
             sessions,
             current_session_key=current_session_key,
         )
@@ -16054,7 +15992,7 @@ FORMAT JSONEachRow
             ),
             0,
         )
-        current_session_key = self._select_current_session_key(
+        current_session_key = self.focus_service.select_current_session_key(
             sessions,
             focused_window_id=focused_window_id,
         )
