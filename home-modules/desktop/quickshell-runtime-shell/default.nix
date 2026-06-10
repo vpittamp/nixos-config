@@ -114,13 +114,13 @@ EOF
 
     case "$1:$2" in
       dashboard:watch)
-        pattern='[i]3pm .*dashboard watch'
+        pattern='([d]eno .*main[.]ts dashboard watch|[i]3pm .*dashboard watch)'
         ;;
       agent:watch)
-        pattern='[i]3pm .*agent watch($| )'
+        pattern='([d]eno .*main[.]ts agent watch($| )|[i]3pm .*agent watch($| ))'
         ;;
       agent:desktop-watch)
-        pattern='[i]3pm .*agent desktop-watch'
+        pattern='([d]eno .*main[.]ts agent desktop-watch|[i]3pm .*agent desktop-watch)'
         ;;
       *)
         exec "$i3pm_bin" "$@"
