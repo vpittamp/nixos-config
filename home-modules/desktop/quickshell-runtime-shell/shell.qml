@@ -54,7 +54,6 @@ ShellRoot {
             active_context: {},
             active_terminal: {},
             active_ai_sessions: [],
-            active_ai_sessions_mru: [],
             current_ai_session_key: "",
             focus_state: {},
             display_layout: {},
@@ -744,8 +743,7 @@ ShellRoot {
     }
 
     function sessionMru() {
-        const mru = arrayOrEmpty(dashboard.active_ai_sessions_mru);
-        return mru.length ? mru : activeSessions();
+        return activeSessions();
     }
 
     function panelSessions() {
@@ -8031,7 +8029,6 @@ ShellRoot {
             active_context: {},
             active_terminal: {},
             active_ai_sessions: [],
-            active_ai_sessions_mru: [],
             current_ai_session_key: "",
             display_layout: {},
             outputs: [],
@@ -8041,7 +8038,6 @@ ShellRoot {
                 spaces: [],
             },
             scratchpad: {},
-            ai_monitor_metrics: {},
             state_health: {},
             total_windows: 0
         };

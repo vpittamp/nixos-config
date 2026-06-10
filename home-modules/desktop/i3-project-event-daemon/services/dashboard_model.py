@@ -345,19 +345,15 @@ def dashboard_changed_keys_for_event(event_type: str) -> List[str]:
         return [
             "focus_state",
             "active_ai_sessions",
-            "active_ai_sessions_mru",
             "current_ai_session_key",
             "worktrees",
-            "ai_monitor_metrics",
         ]
     if typed_event == "herdr.changed":
         return [
             "focus_state",
             "active_ai_sessions",
-            "active_ai_sessions_mru",
             "current_ai_session_key",
             "herdr",
-            "ai_monitor_metrics",
         ]
     if typed_event == "display.changed":
         return ["outputs", "active_outputs", "display_layout"]
@@ -480,29 +476,6 @@ def dashboard_event_payload_from_snapshot(
     return payload
 
 
-def build_ai_monitor_metrics(sessions: List[Dict[str, Any]]) -> Dict[str, int]:
-    """Summarize AI session state for dashboard consumers."""
-    normalized_sessions = [
-        session for session in sessions
-        if isinstance(session, dict)
-    ]
-
-    def count_status(status: str) -> int:
-        return sum(
-            1 for session in normalized_sessions
-            if str(session.get("agent_status") or "").strip().lower() == status
-        )
-
-    return {
-        "active_sessions": len(normalized_sessions),
-        "working_sessions": count_status("working"),
-        "attention_sessions": count_status("blocked"),
-        "done_sessions": count_status("done"),
-        "idle_sessions": count_status("idle"),
-        "unknown_sessions": count_status("unknown"),
-    }
-
-
 def build_herdr_dashboard_summary(
     herdr_snapshot: Dict[str, Any],
     *,
@@ -573,14 +546,12 @@ def build_dashboard_snapshot_payload(
         "worktrees": worktrees,
         "worktree_count": len(worktrees),
         "active_ai_sessions": sessions,
-        "active_ai_sessions_mru": sessions,
         "current_ai_session_key": current_session_key,
         "focus_state": focus_state,
         "herdr": build_herdr_dashboard_summary(
             herdr_snapshot,
             spaces=herdr_spaces,
         ),
-        "ai_monitor_metrics": build_ai_monitor_metrics(sessions),
     }
     dashboard_invariants = validate_dashboard_payload(
         payload,

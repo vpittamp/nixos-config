@@ -439,10 +439,8 @@ def test_dashboard_changed_keys_follow_typed_event_contract() -> None:
     assert dashboard_changed_keys_for_event("ai_session_herdr_changed") == [
         "focus_state",
         "active_ai_sessions",
-        "active_ai_sessions_mru",
         "current_ai_session_key",
         "herdr",
-        "ai_monitor_metrics",
     ]
     assert dashboard_changed_keys_for_event("dashboard_invalidated") == ["dashboard"]
 
@@ -569,7 +567,7 @@ def test_dashboard_event_payload_contains_common_metadata_and_changed_models_onl
     assert "active_ai_sessions" not in payload
 
 
-def test_build_dashboard_snapshot_payload_shapes_metrics_and_herdr_summary() -> None:
+def test_build_dashboard_snapshot_payload_shapes_herdr_summary() -> None:
     runtime_snapshot = {
         "active_project": "global",
         "active_context": {"qualified_name": "vpittamp/nixos-config:main"},
@@ -636,14 +634,6 @@ def test_build_dashboard_snapshot_payload_shapes_metrics_and_herdr_summary() -> 
     assert payload["worktree_count"] == 1
     assert payload["herdr"]["local_herdr_generation"] == 7
     assert payload["herdr"]["spaces"] == [{"id": "space-1", "pane_count": 1}]
-    assert payload["ai_monitor_metrics"] == {
-        "active_sessions": 2,
-        "working_sessions": 1,
-        "attention_sessions": 0,
-        "done_sessions": 1,
-        "idle_sessions": 0,
-        "unknown_sessions": 0,
-    }
 
 
 def test_build_dashboard_snapshot_payload_fails_fast_on_invariant_violation() -> None:

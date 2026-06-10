@@ -100,10 +100,8 @@ async def test_notify_state_change_handles_subscriber_set_mutation(server):
     assert params["changed_keys"] == [
         "focus_state",
         "active_ai_sessions",
-        "active_ai_sessions_mru",
         "current_ai_session_key",
         "worktrees",
-        "ai_monitor_metrics",
     ]
     assert params["payload"]["schema_version"] == "i3pm.dashboard.v2"
     server._dashboard_event_payload.assert_awaited_once_with(params["changed_keys"])
