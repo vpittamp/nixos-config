@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -194,3 +195,98 @@ def test_herdr_service_applies_remote_focus_cache():
     remote_sessions = service.snapshot_cache["remote_snapshots"][0]["sessions"]
     assert remote_sessions[0]["focused"] is False
     assert remote_sessions[1]["focused"] is True
+
+
+def test_herdr_service_loads_remote_targets_from_env(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    monkeypatch.setenv("USER", "vpittamp")
+    monkeypatch.setenv("I3PM_HERDR_REMOTE_TARGETS", json.dumps([
+        {"host": "Ryzen", "sshTarget": "ryzen"},
+        {"host": "ryzen", "ssh_target": "ryzen"},
+        {"ssh_target": "other-user@desktop:2200", "connectionKey": "custom@desktop:22"},
+        {"ssh_target": ""},
+        "invalid",
+    ]))
+
+    targets = service.load_remote_targets(
+        parse_remote_target=lambda value: (
+            value.split("@", 1)[0] if "@" in value else "",
+            value.rsplit("@", 1)[-1].split(":", 1)[0],
+            int(value.rsplit(":", 1)[-1]) if ":" in value else 22,
+        ),
+        normalize_connection_key=lambda value: value.strip().lower(),
+    )
+
+    assert targets == [
+        {
+            "host": "ryzen",
+            "ssh_target": "ryzen",
+            "connection_key": "vpittamp@ryzen:22",
+        },
+        {
+            "host": "desktop",
+            "ssh_target": "other-user@desktop:2200",
+            "connection_key": "custom@desktop:22",
+        },
+    ]
+    assert service.load_remote_targets(
+        parse_remote_target=lambda value: ("", value, 22),
+        normalize_connection_key=lambda value: value,
+    ) == targets
+
+
+def test_herdr_service_loads_remote_targets_from_file(tmp_path, monkeypatch):
+    target_file = tmp_path / "targets.json"
+    target_file.write_text(json.dumps([
+        {"ssh_target": "vpittamp@ryzen:2222"},
+    ]))
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    monkeypatch.delenv("I3PM_HERDR_REMOTE_TARGETS", raising=False)
+    monkeypatch.setenv("I3PM_HERDR_REMOTE_TARGETS_FILE", str(target_file))
+
+    targets = service.load_remote_targets(
+        parse_remote_target=lambda value: ("vpittamp", "ryzen", 2222),
+        normalize_connection_key=lambda value: value,
+    )
+
+    assert targets == [{
+        "host": "ryzen",
+        "ssh_target": "vpittamp@ryzen:2222",
+        "connection_key": "vpittamp@ryzen:2222",
+    }]
+
+
+def test_herdr_service_resolves_remote_action_target_from_params():
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    target = {
+        "host": "ryzen",
+        "ssh_target": "ryzen",
+        "connection_key": "vpittamp@ryzen:22",
+    }
+
+    assert service.resolve_remote_action_target(
+        {"host": "ryzen"},
+        targets=[target],
+        parse_remote_target=lambda value: ("vpittamp", value, 22),
+        normalize_connection_key=lambda value: value,
+    ) == target
+
+    assert service.resolve_remote_action_target(
+        {"ssh_target": "devbox"},
+        targets=[],
+        parse_remote_target=lambda value: ("", value, 22),
+        normalize_connection_key=lambda value: value,
+    ) == {
+        "host": "devbox",
+        "ssh_target": "devbox",
+        "connection_key": "vpittamp@devbox:22",
+    }

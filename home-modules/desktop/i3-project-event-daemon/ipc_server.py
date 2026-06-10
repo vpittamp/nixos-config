@@ -579,8 +579,6 @@ class IPCServer:
         self._session_items_cache_key: Optional[Tuple[Any, ...]] = None
         self._session_items_cache_rows: List[Dict[str, Any]] = []
         self._herdr_git_metadata_cache: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
-        self._herdr_remote_targets_cache: List[Dict[str, str]] = []
-        self._herdr_remote_targets_cache_signature: Tuple[Any, ...] = ("", False, 0, 0)
         self.herdr_service = HerdrService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
         )
@@ -9699,74 +9697,21 @@ FORMAT JSONEachRow
         return payload
 
     def _herdr_remote_targets_file(self) -> Path:
-        configured = str(os.environ.get("I3PM_HERDR_REMOTE_TARGETS_FILE") or "").strip()
-        if configured:
-            return Path(configured).expanduser()
-        return Path.home() / ".config/i3/herdr-remote-targets.json"
+        return self.herdr_service.remote_targets_file()
 
     def _herdr_connection_key_for_target(self, ssh_target: str, explicit: str = "") -> str:
-        explicit_key = str(explicit or "").strip()
-        if explicit_key:
-            return self._normalize_connection_key(explicit_key)
-        user, host, port = self._parse_remote_target(ssh_target)
-        if not host:
-            return "unknown"
-        user = user or os.environ.get("USER") or "vpittamp"
-        return self._normalize_connection_key(f"{user}@{host}:{port or 22}")
+        return self.herdr_service.connection_key_for_target(
+            ssh_target,
+            explicit,
+            parse_remote_target=self._parse_remote_target,
+            normalize_connection_key=self._normalize_connection_key,
+        )
 
     def _load_herdr_remote_targets(self) -> List[Dict[str, str]]:
-        path = self._herdr_remote_targets_file()
-        env_payload = str(os.environ.get("I3PM_HERDR_REMOTE_TARGETS") or "").strip()
-        signature = (env_payload, *self._file_signature(path))
-        if signature == self._herdr_remote_targets_cache_signature:
-            return [dict(item) for item in self._herdr_remote_targets_cache]
-
-        raw_targets: Any = []
-        if env_payload:
-            try:
-                parsed = json.loads(env_payload)
-                if isinstance(parsed, list):
-                    raw_targets = parsed
-            except json.JSONDecodeError:
-                logger.warning("Ignoring invalid I3PM_HERDR_REMOTE_TARGETS JSON")
-        elif path.exists():
-            try:
-                with path.open("r", encoding="utf-8") as handle:
-                    parsed = json.load(handle)
-                if isinstance(parsed, list):
-                    raw_targets = parsed
-            except (OSError, json.JSONDecodeError) as exc:
-                logger.warning("Ignoring invalid Herdr remote target config %s: %s", path, exc)
-
-        targets: List[Dict[str, str]] = []
-        seen: set[str] = set()
-        for item in raw_targets if isinstance(raw_targets, list) else []:
-            if not isinstance(item, dict):
-                continue
-            host = str(item.get("host") or "").strip().lower()
-            ssh_target = str(item.get("ssh_target") or item.get("sshTarget") or host).strip()
-            if not ssh_target:
-                continue
-            if not host:
-                _user, parsed_host, _port = self._parse_remote_target(ssh_target)
-                host = parsed_host.lower()
-            connection_key = self._herdr_connection_key_for_target(
-                ssh_target,
-                str(item.get("connection_key") or item.get("connectionKey") or ""),
-            )
-            dedupe_key = connection_key if connection_key != "unknown" else ssh_target.lower()
-            if dedupe_key in seen:
-                continue
-            seen.add(dedupe_key)
-            targets.append({
-                "host": host or ssh_target.lower(),
-                "ssh_target": ssh_target,
-                "connection_key": connection_key,
-            })
-
-        self._herdr_remote_targets_cache_signature = signature
-        self._herdr_remote_targets_cache = [dict(item) for item in targets]
-        return targets
+        return self.herdr_service.load_remote_targets(
+            parse_remote_target=self._parse_remote_target,
+            normalize_connection_key=self._normalize_connection_key,
+        )
 
     async def _run_herdr_ssh_json(
         self,
@@ -10545,30 +10490,12 @@ FORMAT JSONEachRow
         return {"success": bool(result.get("success", False)), "pane_id": pane_id, "herdr": result}
 
     def _resolve_herdr_remote_action_target(self, params: Dict[str, Any]) -> Dict[str, str]:
-        host = str(params.get("host") or params.get("herdr_host") or "").strip().lower()
-        ssh_target = str(params.get("ssh_target") or params.get("remote_target") or "").strip()
-        connection_key = self._normalize_connection_key(str(params.get("connection_key") or "").strip())
-
-        targets = self._load_herdr_remote_targets()
-        for target in targets:
-            target_host = str(target.get("host") or "").strip().lower()
-            target_ssh = str(target.get("ssh_target") or "").strip()
-            target_connection = self._normalize_connection_key(str(target.get("connection_key") or "").strip())
-            if ssh_target and target_ssh == ssh_target:
-                return dict(target)
-            if connection_key and target_connection == connection_key:
-                return dict(target)
-            if host and target_host == host:
-                return dict(target)
-
-        if ssh_target:
-            return {
-                "host": host or ssh_target.lower(),
-                "ssh_target": ssh_target,
-                "connection_key": connection_key or self._herdr_connection_key_for_target(ssh_target),
-            }
-
-        raise ValueError("ssh_target is required for remote Herdr pane focus")
+        return self.herdr_service.resolve_remote_action_target(
+            params,
+            targets=self._load_herdr_remote_targets(),
+            parse_remote_target=self._parse_remote_target,
+            normalize_connection_key=self._normalize_connection_key,
+        )
 
     def _apply_remote_herdr_focus_cache(
         self,

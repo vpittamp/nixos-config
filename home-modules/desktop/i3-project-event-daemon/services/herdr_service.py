@@ -8,7 +8,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,8 @@ class HerdrService:
         self.snapshot_cache_time: float = 0.0
         self.snapshot_cache_ttl: float = snapshot_cache_ttl
         self.remote_snapshot_cache_ttl: float = remote_snapshot_cache_ttl
+        self.remote_targets_cache: List[Dict[str, str]] = []
+        self.remote_targets_cache_signature: Tuple[Any, ...] = ("", False, 0, 0)
 
     @staticmethod
     def normalize_host_key(host: Any) -> str:
@@ -223,6 +225,139 @@ class HerdrService:
             "focused_session_key": focused_session_key,
             "connection_key": connection_key,
         }
+
+    def remote_targets_file(self) -> Path:
+        """Return the configured remote Herdr target file path."""
+        configured = str(os.environ.get("I3PM_HERDR_REMOTE_TARGETS_FILE") or "").strip()
+        if configured:
+            return Path(configured).expanduser()
+        return Path.home() / ".config/i3/herdr-remote-targets.json"
+
+    @staticmethod
+    def file_signature(path: Path) -> Tuple[bool, int, int]:
+        """Return a cheap file signature for remote target cache invalidation."""
+        try:
+            stat = path.stat()
+        except OSError:
+            return (False, 0, 0)
+        return (True, int(stat.st_mtime_ns), int(stat.st_size))
+
+    def connection_key_for_target(
+        self,
+        ssh_target: str,
+        explicit: str = "",
+        *,
+        parse_remote_target: Callable[[str], Tuple[str, str, int]],
+        normalize_connection_key: Callable[[str], str],
+    ) -> str:
+        """Return a normalized connection key for a remote Herdr target."""
+        explicit_key = str(explicit or "").strip()
+        if explicit_key:
+            return normalize_connection_key(explicit_key)
+        user, host, port = parse_remote_target(ssh_target)
+        if not host:
+            return "unknown"
+        user = user or os.environ.get("USER") or "vpittamp"
+        return normalize_connection_key(f"{user}@{host}:{port or 22}")
+
+    def load_remote_targets(
+        self,
+        *,
+        parse_remote_target: Callable[[str], Tuple[str, str, int]],
+        normalize_connection_key: Callable[[str], str],
+    ) -> List[Dict[str, str]]:
+        """Load and normalize configured remote Herdr targets."""
+        path = self.remote_targets_file()
+        env_payload = str(os.environ.get("I3PM_HERDR_REMOTE_TARGETS") or "").strip()
+        signature = (env_payload, *self.file_signature(path))
+        if signature == self.remote_targets_cache_signature:
+            return [dict(item) for item in self.remote_targets_cache]
+
+        raw_targets: Any = []
+        if env_payload:
+            try:
+                parsed = json.loads(env_payload)
+                if isinstance(parsed, list):
+                    raw_targets = parsed
+            except json.JSONDecodeError:
+                logger.warning("Ignoring invalid I3PM_HERDR_REMOTE_TARGETS JSON")
+        elif path.exists():
+            try:
+                with path.open("r", encoding="utf-8") as handle:
+                    parsed = json.load(handle)
+                if isinstance(parsed, list):
+                    raw_targets = parsed
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("Ignoring invalid Herdr remote target config %s: %s", path, exc)
+
+        targets: List[Dict[str, str]] = []
+        seen: set[str] = set()
+        for item in raw_targets if isinstance(raw_targets, list) else []:
+            if not isinstance(item, dict):
+                continue
+            host = str(item.get("host") or "").strip().lower()
+            ssh_target = str(item.get("ssh_target") or item.get("sshTarget") or host).strip()
+            if not ssh_target:
+                continue
+            if not host:
+                _user, parsed_host, _port = parse_remote_target(ssh_target)
+                host = parsed_host.lower()
+            connection_key = self.connection_key_for_target(
+                ssh_target,
+                str(item.get("connection_key") or item.get("connectionKey") or ""),
+                parse_remote_target=parse_remote_target,
+                normalize_connection_key=normalize_connection_key,
+            )
+            dedupe_key = connection_key if connection_key != "unknown" else ssh_target.lower()
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            targets.append({
+                "host": host or ssh_target.lower(),
+                "ssh_target": ssh_target,
+                "connection_key": connection_key,
+            })
+
+        self.remote_targets_cache_signature = signature
+        self.remote_targets_cache = [dict(item) for item in targets]
+        return [dict(item) for item in targets]
+
+    def resolve_remote_action_target(
+        self,
+        params: Dict[str, Any],
+        *,
+        targets: List[Dict[str, str]],
+        parse_remote_target: Callable[[str], Tuple[str, str, int]],
+        normalize_connection_key: Callable[[str], str],
+    ) -> Dict[str, str]:
+        """Resolve a remote Herdr action target from request params and config."""
+        host = str(params.get("host") or params.get("herdr_host") or "").strip().lower()
+        ssh_target = str(params.get("ssh_target") or params.get("remote_target") or "").strip()
+        connection_key = normalize_connection_key(str(params.get("connection_key") or "").strip())
+
+        for target in targets:
+            target_host = str(target.get("host") or "").strip().lower()
+            target_ssh = str(target.get("ssh_target") or "").strip()
+            target_connection = normalize_connection_key(str(target.get("connection_key") or "").strip())
+            if ssh_target and target_ssh == ssh_target:
+                return dict(target)
+            if connection_key and target_connection == connection_key:
+                return dict(target)
+            if host and target_host == host:
+                return dict(target)
+
+        if ssh_target:
+            return {
+                "host": host or ssh_target.lower(),
+                "ssh_target": ssh_target,
+                "connection_key": connection_key or self.connection_key_for_target(
+                    ssh_target,
+                    parse_remote_target=parse_remote_target,
+                    normalize_connection_key=normalize_connection_key,
+                ),
+            }
+
+        raise ValueError("ssh_target is required for remote Herdr pane focus")
 
     def socket_path(self) -> Path:
         """Return the local Herdr API socket path."""
