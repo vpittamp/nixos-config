@@ -8690,99 +8690,13 @@ class IPCServer:
             raise ValueError("session_key is required")
 
         sessions_result = await self._session_list({})
-        sessions = sessions_result.get("sessions", [])
-        session = next(
-            (
-                item for item in sessions
-                if isinstance(item, dict)
-                and str(item.get("session_key") or "").strip() == session_key
-            ),
-            None,
+        return await self.session_action_service.close_session(
+            session_key=session_key,
+            sessions=list(sessions_result.get("sessions", []) or []),
+            close_managed_window=self._close_managed_window,
+            clear_focus_if_session_matches=self.focus_service.clear_if_session_matches,
+            notify_state_change=self.notify_state_change,
         )
-        if not isinstance(session, dict):
-            return {
-                "success": False,
-                "session_key": session_key,
-                "reason": "session_not_found",
-                "close_mode": "",
-                "closed_window_id": 0,
-                "killed_tmux_pane": "",
-            }
-
-        terminal_context = session.get("terminal_context") or {}
-        if not isinstance(terminal_context, dict):
-            terminal_context = {}
-
-        tmux_session = str(session.get("tmux_session") or terminal_context.get("tmux_session") or "").strip()
-        tmux_window = str(session.get("tmux_window") or terminal_context.get("tmux_window") or "").strip()
-        tmux_pane = str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip()
-        tmux_socket = str(terminal_context.get("tmux_socket") or "").strip()
-        connection_hint = str(
-            (
-                session.get("source_connection_key")
-                if not bool(session.get("source_is_current_host", False))
-                else ""
-            )
-            or session.get("focus_connection_key")
-            or session.get("connection_key")
-            or terminal_context.get("remote_target")
-            or terminal_context.get("connection_key")
-            or ""
-        ).strip()
-        remote_target = str(terminal_context.get("remote_target") or connection_hint).strip()
-        target_is_current_host = self._connection_target_is_current_host(connection_hint)
-
-        if tmux_session and tmux_window and tmux_pane:
-            tmux_result = self.session_action_service.kill_tmux_pane(
-                execution_mode="local" if target_is_current_host else "ssh",
-                tmux_pane=tmux_pane,
-                remote_target=remote_target,
-                connection_key=connection_hint,
-                tmux_socket=tmux_socket,
-            )
-            success = bool(tmux_result.get("success", False))
-            if success:
-                self.focus_service.clear_if_session_matches(session_key)
-            if success:
-                await self.notify_state_change("ai_session_close")
-            return {
-                "success": success,
-                "session_key": session_key,
-                "reason": str(tmux_result.get("reason") or ("ok" if success else "tmux_close_failed")),
-                "close_mode": "local_tmux_pane" if target_is_current_host else "remote_tmux_pane",
-                "closed_window_id": 0,
-                "killed_tmux_pane": tmux_pane,
-                "tmux_session": tmux_session,
-                "tmux_window": tmux_window,
-                "connection_key": connection_hint,
-                "stderr": str(tmux_result.get("stderr") or "").strip(),
-            }
-
-        window_id = int(session.get("bridge_window_id") or session.get("window_id") or 0)
-        if window_id <= 0:
-            return {
-                "success": False,
-                "session_key": session_key,
-                "reason": "missing_close_target",
-                "close_mode": "",
-                "closed_window_id": 0,
-                "killed_tmux_pane": "",
-            }
-
-        closed = await self._close_managed_window(window_id)
-        if closed:
-            self.focus_service.clear_if_session_matches(session_key)
-        if closed:
-            await self.notify_state_change("ai_session_close")
-        return {
-            "success": bool(closed),
-            "session_key": session_key,
-            "reason": "ok" if closed else "window_close_failed",
-            "close_mode": "local_window_fallback",
-            "closed_window_id": window_id,
-            "killed_tmux_pane": "",
-            "connection_key": connection_hint,
-        }
 
     async def _session_preview(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Resolve preview metadata for a daemon-owned AI session."""

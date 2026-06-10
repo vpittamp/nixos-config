@@ -7,6 +7,9 @@ import importlib.util
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 
 PACKAGE_ROOT = Path(__file__).parent.parent.parent
@@ -138,3 +141,109 @@ def test_kill_tmux_pane_rejects_missing_remote_target():
         "stderr": "",
     }
     assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_close_session_kills_local_tmux_pane_and_notifies():
+    service, _calls = make_service(current_host=True)
+    service.kill_tmux_pane = MagicMock(return_value={"success": True, "reason": "ok", "stderr": ""})
+    close_managed_window = AsyncMock()
+    clear_focus = MagicMock()
+    notify_state_change = AsyncMock()
+
+    result = await service.close_session(
+        session_key="session-local-pane",
+        sessions=[{
+            "session_key": "session-local-pane",
+            "tmux_session": "i3pm-main",
+            "tmux_window": "1",
+            "tmux_pane": "%3",
+            "connection_key": "local@thinkpad",
+            "source_is_current_host": True,
+        }],
+        close_managed_window=close_managed_window,
+        clear_focus_if_session_matches=clear_focus,
+        notify_state_change=notify_state_change,
+    )
+
+    service.kill_tmux_pane.assert_called_once_with(
+        execution_mode="local",
+        tmux_pane="%3",
+        remote_target="local@thinkpad",
+        connection_key="local@thinkpad",
+        tmux_socket="",
+    )
+    close_managed_window.assert_not_awaited()
+    clear_focus.assert_called_once_with("session-local-pane")
+    notify_state_change.assert_awaited_once_with("ai_session_close")
+    assert result["success"] is True
+    assert result["close_mode"] == "local_tmux_pane"
+    assert result["killed_tmux_pane"] == "%3"
+
+
+@pytest.mark.asyncio
+async def test_close_session_uses_source_connection_for_remote_tmux_pane():
+    service, _calls = make_service(current_host=False)
+    service.kill_tmux_pane = MagicMock(return_value={"success": True, "reason": "ok", "stderr": ""})
+    notify_state_change = AsyncMock()
+
+    result = await service.close_session(
+        session_key="session-remote-pane",
+        sessions=[{
+            "session_key": "session-remote-pane",
+            "tmux_session": "i3pm-main",
+            "tmux_window": "2",
+            "tmux_pane": "%7",
+            "source_connection_key": "vpittamp@ryzen:22",
+            "source_is_current_host": False,
+            "terminal_context": {"remote_target": "vpittamp@ryzen:22"},
+        }],
+        close_managed_window=AsyncMock(),
+        clear_focus_if_session_matches=MagicMock(),
+        notify_state_change=notify_state_change,
+    )
+
+    service.kill_tmux_pane.assert_called_once_with(
+        execution_mode="ssh",
+        tmux_pane="%7",
+        remote_target="vpittamp@ryzen:22",
+        connection_key="vpittamp@ryzen:22",
+        tmux_socket="",
+    )
+    notify_state_change.assert_awaited_once_with("ai_session_close")
+    assert result["success"] is True
+    assert result["close_mode"] == "remote_tmux_pane"
+    assert result["connection_key"] == "vpittamp@ryzen:22"
+
+
+@pytest.mark.asyncio
+async def test_close_session_falls_back_to_managed_window_when_tmux_identity_missing():
+    service, _calls = make_service(current_host=True)
+    close_managed_window = AsyncMock(return_value=True)
+    clear_focus = MagicMock()
+    notify_state_change = AsyncMock()
+
+    result = await service.close_session(
+        session_key="session-window-only",
+        sessions=[{
+            "session_key": "session-window-only",
+            "window_id": 42,
+            "focus_connection_key": "local@thinkpad",
+        }],
+        close_managed_window=close_managed_window,
+        clear_focus_if_session_matches=clear_focus,
+        notify_state_change=notify_state_change,
+    )
+
+    close_managed_window.assert_awaited_once_with(42)
+    clear_focus.assert_called_once_with("session-window-only")
+    notify_state_change.assert_awaited_once_with("ai_session_close")
+    assert result == {
+        "success": True,
+        "session_key": "session-window-only",
+        "reason": "ok",
+        "close_mode": "local_window_fallback",
+        "closed_window_id": 42,
+        "killed_tmux_pane": "",
+        "connection_key": "local@thinkpad",
+    }
