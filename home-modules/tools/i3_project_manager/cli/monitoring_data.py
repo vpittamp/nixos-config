@@ -101,7 +101,6 @@ AI_SESSION_SCHEMA_VERSION = "11"
 AI_SESSION_STATE_DIR = RUNTIME_DIR / "i3pm" / "ai-sessions"
 AI_SESSION_MRU_FILE = AI_SESSION_STATE_DIR / "ai-session-mru.json"
 AI_SESSION_PIN_FILE = AI_SESSION_STATE_DIR / "ai-session-pins.json"
-AI_MONITOR_METRICS_FILE = AI_SESSION_STATE_DIR / "ai-monitor-metrics.json"
 AI_SESSION_REVIEW_FILE = AI_SESSION_STATE_DIR / "ai-session-review.json"
 AI_SESSION_SEEN_EVENTS_FILE = AI_SESSION_STATE_DIR / "ai-session-seen-events.jsonl"
 
@@ -292,8 +291,13 @@ def load_ai_session_pins() -> List[str]:
 
 
 def load_ai_monitor_metrics() -> Dict[str, Any]:
-    """Load persisted AI focus metrics."""
-    default_metrics = {
+    """Return inert AI metrics for legacy JSON consumers.
+
+    Herdr/daemon dashboard state is the active AI session authority. The
+    monitoring-data compatibility backend no longer reads or maintains the old
+    AI monitor metrics file.
+    """
+    return {
         "focus_attempts": 0,
         "focus_success": 0,
         "focus_fail": 0,
@@ -316,42 +320,19 @@ def load_ai_monitor_metrics() -> Dict[str, Any]:
         "remote_push_last_error_summary": "",
         "remote_push_endpoint": "",
         "remote_push_source_connection_key": "",
+        "disabled_reason": "herdr_dashboard_authority",
+        "active_sessions": 0,
+        "working_sessions": 0,
+        "attention_sessions": 0,
+        "done_sessions": 0,
+        "stale_sessions": 0,
+        "pinned_sessions": 0,
+        "window_project_source": 0,
+        "missing_project_source": 0,
+        "remote_relabel_prevented": 0,
+        "missing_context_sessions": 0,
+        "invalid_sessions": 0,
     }
-    if not AI_MONITOR_METRICS_FILE.exists():
-        return default_metrics
-    try:
-        with open(AI_MONITOR_METRICS_FILE, "r") as f:
-            data = json.load(f)
-            attempts = int(data.get("focus_attempts", 0) or 0)
-            success = int(data.get("focus_success", 0) or 0)
-            fail = int(data.get("focus_fail", 0) or 0)
-            rate = (success / attempts) if attempts > 0 else 0.0
-            return {
-                "focus_attempts": attempts,
-                "focus_success": success,
-                "focus_fail": fail,
-                "focus_success_rate": round(rate, 3),
-                "last_focus": data.get("last_focus", {}) if isinstance(data.get("last_focus", {}), dict) else {},
-                "review_pending_sessions": int(data.get("review_pending_sessions", 0) or 0),
-                "output_ready_sessions": int(data.get("output_ready_sessions", 0) or 0),
-                "stage_tool_running_sessions": int(data.get("stage_tool_running_sessions", 0) or 0),
-                "stage_streaming_sessions": int(data.get("stage_streaming_sessions", 0) or 0),
-                "stage_waiting_sessions": int(data.get("stage_waiting_sessions", 0) or 0),
-                "stage_from_native": int(data.get("stage_from_native", 0) or 0),
-                "stage_from_process": int(data.get("stage_from_process", 0) or 0),
-                "stage_from_review": int(data.get("stage_from_review", 0) or 0),
-                "stale_source_sessions": int(data.get("stale_source_sessions", 0) or 0),
-                "remote_push_health": "retired",
-                "remote_push_consecutive_failures": 0,
-                "remote_push_last_attempt_at": "",
-                "remote_push_last_success_at": "",
-                "remote_push_last_error_at": "",
-                "remote_push_last_error_summary": "",
-                "remote_push_endpoint": "",
-                "remote_push_source_connection_key": "",
-            }
-    except (json.JSONDecodeError, IOError, ValueError, TypeError):
-        return default_metrics
 
 
 def _atomic_write_json(path: Path, payload: Dict[str, Any]) -> None:
@@ -543,8 +524,6 @@ async def read_inotify_events(
     mru_tmp_filename = mru_filename + ".tmp"
     pin_filename = AI_SESSION_PIN_FILE.name
     pin_tmp_filename = pin_filename + ".tmp"
-    metrics_filename = AI_MONITOR_METRICS_FILE.name
-    metrics_tmp_filename = metrics_filename + ".tmp"
     review_filename = AI_SESSION_REVIEW_FILE.name
     review_tmp_filename = review_filename + ".tmp"
     seen_events_filename = AI_SESSION_SEEN_EVENTS_FILE.name
@@ -576,10 +555,9 @@ async def read_inotify_events(
             is_badge_dir = watched_path.rstrip("/") == badge_dir_path.rstrip("/")
             is_mru_file = filename in (mru_filename, mru_tmp_filename)
             is_pin_file = filename in (pin_filename, pin_tmp_filename)
-            is_metrics_file = filename in (metrics_filename, metrics_tmp_filename)
             is_review_file = filename in (review_filename, review_tmp_filename)
             is_seen_events_file = filename in (seen_events_filename, seen_events_tmp_filename)
-            if is_badge_dir or is_mru_file or is_pin_file or is_metrics_file or is_review_file or is_seen_events_file:
+            if is_badge_dir or is_mru_file or is_pin_file or is_review_file or is_seen_events_file:
                 logger.debug(f"Feature 107/135: inotify event: {watched_path} {event_type} {filename}")
                 on_badge_change.set()
             # Else: ignore unrelated files in shared runtime directories.
@@ -4505,22 +4483,8 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
 
         if not isinstance(tree_data, dict):
             raise RuntimeError("runtime.snapshot contract violation: payload must be an object")
-        sessions_raw = tree_data.get("sessions", [])
-        if not isinstance(sessions_raw, list):
-            raise RuntimeError("runtime.snapshot contract violation: sessions must be a list")
-        daemon_active_ai_sessions = [
-            dict(session)
-            for session in sessions_raw
-            if isinstance(session, dict)
-        ]
-        daemon_current_ai_session_key = str(tree_data.get("current_ai_session_key") or "").strip()
-
         outputs = tree_data.get("outputs", [])
-        otel_sessions_runtime = _empty_otel_sessions_runtime(
-            "daemon_herdr_sessions_present"
-            if daemon_active_ai_sessions
-            else "daemon_herdr_sessions_required"
-        )
+        otel_sessions_runtime = _empty_otel_sessions_runtime("herdr_dashboard_authority")
 
         # Transform daemon response to Eww schema
         monitors = [transform_monitor(output, badge_state) for output in outputs]
@@ -4561,7 +4525,6 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
         for project in projects:
             all_windows.extend(project.get("windows", []))
 
-        window_lookup: Dict[int, Dict[str, Any]] = {}
         focused_window_id: Optional[int] = None
         for window in all_windows:
             window_id = window.get("id")
@@ -4569,116 +4532,16 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
                 window_id_int = int(window_id)
             except (TypeError, ValueError):
                 continue
-            window_lookup[window_id_int] = window
             if bool(window.get("focused", False)):
                 focused_window_id = window_id_int
 
-        active_ai_sessions = daemon_active_ai_sessions
-        review_enriched_ai_sessions, _review_sessions = _apply_review_lifecycle(
-            active_ai_sessions,
-            window_lookup=window_lookup,
-            focused_window_id=focused_window_id,
-        )
-        review_enriched_ai_sessions.sort(
-            key=lambda session: (
-                _normalize_execution_mode(session.get("execution_mode"), "local"),
-                str(session.get("connection_key") or ""),
-                str(session.get("display_project") or session.get("project") or ""),
-                str(session.get("tmux_session") or ""),
-                _first_sort_number(session.get("tmux_window")),
-                _first_sort_number(session.get("tmux_pane"), _first_sort_number(session.get("pane_label"))),
-                str(session.get("pane_label") or ""),
-                str(session.get("tool") or ""),
-                str(session.get("session_key") or ""),
-            ),
-        )
-        pinned_session_keys = load_ai_session_pins()
-        pinned_session_set = {str(key) for key in pinned_session_keys if str(key)}
-        for session in review_enriched_ai_sessions:
-            key = str(session.get("session_key") or "")
-            session["pinned"] = key in pinned_session_set
-        active_ai_sessions = [
-            session
-            for session in review_enriched_ai_sessions
-            if _session_tracking_contract_ok(session) and _should_render_ai_session(session)
-        ]
+        # AI/session UI state is no longer shaped by this legacy Eww backend.
+        # Herdr-owned daemon dashboard rows are the only active session surface.
+        active_ai_sessions: List[Dict[str, Any]] = []
+        active_ai_sessions_mru: List[Dict[str, Any]] = []
         current_ai_session_key = ""
-        if daemon_current_ai_session_key and any(
-            str(session.get("session_key") or "").strip() == daemon_current_ai_session_key
-            for session in active_ai_sessions
-        ):
-            current_ai_session_key = daemon_current_ai_session_key
-            _set_current_window_marker(active_ai_sessions, current_ai_session_key)
-        else:
-            current_ai_session_key = _apply_current_window_marker(
-                active_ai_sessions,
-                focused_window_id,
-                previous_session_key=previous_current_ai_session_key,
-            )
-        _sort_active_ai_sessions_for_display(
-            active_ai_sessions,
-            focused_window_id=focused_window_id,
-            active_project_name=active_qualified_name,
-        )
-        active_ai_sessions = [
-            session
-            for session in active_ai_sessions
-            if _session_tracking_contract_ok(session) and _should_render_ai_session(session)
-        ]
-        active_ai_sessions = _apply_pinned_session_order(active_ai_sessions, pinned_session_keys)
-        _set_current_window_marker(active_ai_sessions, current_ai_session_key)
-        active_ai_sessions_mru = _apply_ai_session_mru_order(
-            active_ai_sessions,
-            load_ai_session_mru(),
-        )
-        active_ai_sessions_mru = _apply_pinned_session_order(active_ai_sessions_mru, pinned_session_keys)
-        _set_current_window_marker(active_ai_sessions_mru, current_ai_session_key)
         ai_metrics = load_ai_monitor_metrics()
         otel_diagnostics = otel_sessions_runtime.get("diagnostics", []) if isinstance(otel_sessions_runtime, dict) else []
-        ai_metrics.update({
-            "active_sessions": len(active_ai_sessions),
-            "working_sessions": sum(1 for s in active_ai_sessions if str(s.get("session_phase") or "").strip().lower() == "working"),
-            "attention_sessions": sum(1 for s in active_ai_sessions if str(s.get("session_phase") or "").strip().lower() == "needs_attention"),
-            "done_sessions": sum(1 for s in active_ai_sessions if str(s.get("session_phase") or "").strip().lower() == "done"),
-            "review_pending_sessions": sum(1 for s in active_ai_sessions if bool(s.get("output_unseen") or s.get("review_pending"))),
-            "stale_sessions": sum(1 for s in active_ai_sessions if bool(s.get("stale"))),
-            "pinned_sessions": sum(1 for s in active_ai_sessions if bool(s.get("pinned"))),
-            "output_ready_sessions": sum(1 for s in active_ai_sessions if bool(s.get("output_ready"))),
-            "stage_tool_running_sessions": sum(1 for s in active_ai_sessions if str(s.get("stage")) == "tool_running"),
-            "stage_streaming_sessions": sum(1 for s in active_ai_sessions if str(s.get("stage")) == "streaming"),
-            "stage_waiting_sessions": sum(1 for s in active_ai_sessions if str(s.get("stage")) == "waiting_input"),
-            "stage_from_native": sum(1 for s in active_ai_sessions if str(s.get("identity_source") or "") == "native"),
-            "stage_from_process": sum(1 for s in active_ai_sessions if str(s.get("identity_source") or "") in {"pid", "pane", "heuristic"}),
-            "stage_from_review": sum(1 for s in active_ai_sessions if str(s.get("identity_source") or "") == "review"),
-            "stale_source_sessions": sum(1 for s in active_ai_sessions if bool(s.get("remote_source_stale"))),
-            "window_project_source": sum(
-                1
-                for s in active_ai_sessions
-                if str(s.get("project_source") or "") == "window"
-            ),
-            "missing_project_source": sum(
-                1
-                for s in active_ai_sessions
-                if str(s.get("project_source") or "") == "unknown"
-            ),
-            "remote_relabel_prevented": sum(
-                1
-                for s in active_ai_sessions
-                if str(s.get("execution_mode") or "") == "ssh"
-                and str(s.get("window_project") or "").strip()
-                and str(s.get("display_project") or "").strip()
-                and str(s.get("window_project") or "").strip()
-                != str(s.get("display_project") or "").strip()
-            ),
-            "missing_context_sessions": sum(
-                1
-                for s in active_ai_sessions
-                if not str(s.get("context_key") or "").strip()
-                and not str(s.get("project_path") or "").strip()
-                and not str(s.get("session_project") or "").strip()
-            ),
-            "invalid_sessions": len(otel_diagnostics),
-        })
 
         # NOTE: Workspace pills removed from UI - workspaces list no longer needed
 

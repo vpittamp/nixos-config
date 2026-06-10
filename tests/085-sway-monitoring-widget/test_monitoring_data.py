@@ -34,7 +34,6 @@ def test_ai_session_state_files_use_i3pm_runtime_path():
     paths = [
         monitoring_data.AI_SESSION_MRU_FILE,
         monitoring_data.AI_SESSION_PIN_FILE,
-        monitoring_data.AI_MONITOR_METRICS_FILE,
         monitoring_data.AI_SESSION_REVIEW_FILE,
         monitoring_data.AI_SESSION_SEEN_EVENTS_FILE,
     ]
@@ -1369,7 +1368,7 @@ class TestAiReviewLifecycle:
         assert state["remote-review"]["seen_at"] == now_epoch
 
     @pytest.mark.asyncio
-    async def test_query_monitoring_data_preserves_explicit_window_id_when_project_matches_and_context_is_stale(self):
+    async def test_query_monitoring_data_suppresses_daemon_sessions_in_legacy_payload(self):
         mock_daemon_response = {
             "outputs": [
                 {
@@ -1486,15 +1485,19 @@ class TestAiReviewLifecycle:
             result = await query_monitoring_data()
 
         assert result["status"] == "ok"
-        assert result["active_ai_sessions"]
-        session = result["active_ai_sessions"][0]
-        assert session["window_id"] == 14
-        assert session["window_project"] == "PittampalliOrg/workflow-builder:main"
-        assert session["focus_project"] == "PittampalliOrg/workflow-builder:main"
-        assert result["otel_sessions"]["disabled_reason"] == "daemon_herdr_sessions_present"
+        assert result["active_ai_sessions"] == []
+        assert result["active_ai_sessions_mru"] == []
+        assert result["current_ai_session_key"] == ""
+        assert result["ai_monitor_metrics"]["disabled_reason"] == "herdr_dashboard_authority"
+        assert result["otel_sessions"]["disabled_reason"] == "herdr_dashboard_authority"
+        assert any(
+            window["id"] == 14
+            for project in result["projects"]
+            for window in project.get("windows", [])
+        )
 
     @pytest.mark.asyncio
-    async def test_query_monitoring_data_prefers_daemon_runtime_sessions_for_active_ai_panel(self):
+    async def test_query_monitoring_data_does_not_export_daemon_runtime_sessions_for_active_ai_panel(self):
         runtime_snapshot = {
             "active_context": {
                 "qualified_name": "vpittamp/nixos-config:main",
@@ -1586,10 +1589,12 @@ class TestAiReviewLifecycle:
             result = await query_monitoring_data()
 
         assert result["status"] == "ok"
-        assert [session["session_key"] for session in result["active_ai_sessions"]] == ["daemon-session-key"]
-        assert result["current_ai_session_key"] == "daemon-session-key"
-        assert result["active_ai_sessions"][0]["render_session_key"] == "daemon-session-key"
-        assert result["otel_sessions"]["disabled_reason"] == "daemon_herdr_sessions_present"
+        assert result["active_ai_sessions"] == []
+        assert result["active_ai_sessions_mru"] == []
+        assert result["current_ai_session_key"] == ""
+        assert result["ai_monitor_metrics"]["active_sessions"] == 0
+        assert result["ai_monitor_metrics"]["disabled_reason"] == "herdr_dashboard_authority"
+        assert result["otel_sessions"]["disabled_reason"] == "herdr_dashboard_authority"
 
     def test_active_worktree_identity_from_context_uses_runtime_snapshot_context(self):
         identity = monitoring_data._active_worktree_identity_from_context({
