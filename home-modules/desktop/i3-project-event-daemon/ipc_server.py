@@ -7524,26 +7524,6 @@ class IPCServer:
         uid = os.getuid()
         return str(self._runtime_dir() / f"tmux-{uid}" / "default")
 
-    def _ai_session_seen_events_file(self) -> Path:
-        """Return the daemon-owned AI review acknowledgement queue."""
-        return self._runtime_dir() / "i3pm" / "ai-sessions" / "ai-session-seen-events.jsonl"
-
-    def _record_ai_session_seen(self, session_key: str) -> None:
-        """Append an explicit session-seen acknowledgement for review retention."""
-        key = str(session_key or "").strip()
-        if not key:
-            return
-        path = self._ai_session_seen_events_file()
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, "a", encoding="utf-8") as handle:
-                handle.write(json.dumps({
-                    "session_key": key,
-                    "timestamp": int(time.time()),
-                }, separators=(",", ":")) + "\n")
-        except OSError as exc:
-            logger.debug("Failed to record AI session seen event for %s: %s", key, exc)
-
     def _load_json_file(self, path: Path) -> Dict[str, Any]:
         """Read a JSON object from disk, returning an empty object on failure."""
         try:
@@ -8074,7 +8054,6 @@ class IPCServer:
             session_key=session_key,
             sessions=list(sessions_result.get("sessions", []) or []),
             intent_epoch=int(params.get("__intent_epoch") or 0),
-            record_session_seen=self._record_ai_session_seen,
             acknowledge_stopped_session=self._acknowledge_stopped_session_notification,
             acknowledge_user_input_session=self._acknowledge_user_input_session_notification,
             focus_remote_session_attach=self._focus_remote_session_attach,
@@ -8098,7 +8077,6 @@ class IPCServer:
             session_key=session_key,
             sessions=list(sessions_result.get("sessions", []) or []),
             intent_epoch=int(params.get("__intent_epoch") or 0),
-            record_session_seen=self._record_ai_session_seen,
             acknowledge_stopped_session=self._acknowledge_stopped_session_notification,
             acknowledge_user_input_session=self._acknowledge_user_input_session_notification,
             focus_remote_session_attach=self._focus_remote_session_attach,

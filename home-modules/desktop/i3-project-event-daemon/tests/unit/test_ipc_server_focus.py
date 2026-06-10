@@ -79,14 +79,6 @@ def server():
     return IPCServer(DummyStateManager())
 
 
-def test_ai_session_seen_queue_is_daemon_owned(server, monkeypatch, tmp_path):
-    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
-
-    path = server._ai_session_seen_events_file()
-
-    assert path == tmp_path / "i3pm" / "ai-sessions" / "ai-session-seen-events.jsonl"
-    assert "eww-monitoring-panel" not in str(path)
-
 
 @pytest.mark.asyncio
 async def test_workspace_focus_waits_for_requested_workspace(server):
@@ -148,7 +140,6 @@ async def test_session_focus_remote_session_uses_exact_remote_bridge_path(server
         "conflict_state": "",
     }
     server._session_list = AsyncMock(return_value={"sessions": [remote_session]})
-    monkeypatch.setattr(server, "_record_ai_session_seen", lambda _session_key: None)
     server._focus_remote_session_attach = AsyncMock(return_value={
         "success": True,
         "focus_mode": "remote_bridge_bound",
@@ -187,7 +178,6 @@ async def test_session_focus_acknowledges_current_stopped_boundary_before_remote
         "is_current_window": False,
     }
     server._session_list = AsyncMock(return_value={"sessions": [dict(remote_session)]})
-    monkeypatch.setattr(server, "_record_ai_session_seen", lambda _session_key: None)
     server._focus_remote_session_attach = AsyncMock(return_value={
         "success": True,
         "focus_mode": "remote_bridge_bound",
@@ -230,7 +220,6 @@ async def test_session_focus_acknowledges_current_user_input_boundary_before_rem
         "is_current_window": False,
     }
     server._session_list = AsyncMock(return_value={"sessions": [dict(remote_session)]})
-    monkeypatch.setattr(server, "_record_ai_session_seen", lambda _session_key: None)
     server._focus_remote_session_attach = AsyncMock(return_value={
         "success": True,
         "focus_mode": "remote_bridge_bound",
@@ -263,7 +252,6 @@ async def test_session_focus_remote_session_aborts_when_superseded_by_newer_inte
         "conflict_state": "",
     }
     server._session_list = AsyncMock(return_value={"sessions": [remote_session]})
-    monkeypatch.setattr(server, "_record_ai_session_seen", lambda _session_key: None)
     server._user_intent_epoch = 2
     server._resolve_remote_attach_profile = lambda _session: (_ for _ in ()).throw(AssertionError("should not resolve attach profile"))
 
@@ -299,7 +287,6 @@ async def test_session_focus_local_requires_verified_current_session(server, mon
         "current_ai_session_key": "",
         "focused_window_id": 101,
     })
-    monkeypatch.setattr(server, "_record_ai_session_seen", lambda _session_key: None)
 
     result = await server._session_focus({"session_key": "session-local"})
 
@@ -326,7 +313,6 @@ async def test_session_focus_window_only_identity_sets_override_before_wait(serv
     }
     server._session_list = AsyncMock(return_value={"sessions": [dict(local_session)]})
     server._window_focus = AsyncMock(return_value={"success": True, "verification": {"success": True}})
-    monkeypatch.setattr(server, "_record_ai_session_seen", lambda _session_key: None)
 
     async def fake_wait(session_key, *, attempts=8, delay_s=0.2):
         assert session_key == "session-window-only"
@@ -376,7 +362,6 @@ async def test_session_focus_local_tmux_attachable_rebinds_managed_terminal(serv
         },
     }
     server._session_list = AsyncMock(return_value={"sessions": [dict(local_session)]})
-    monkeypatch.setattr(server, "_record_ai_session_seen", lambda _session_key: None)
     server._launch_open = AsyncMock(return_value={
         "success": True,
         "launch": {
@@ -848,7 +833,6 @@ async def test_session_focus_tmux_target_uses_tmux_verification(server, monkeypa
         "current_ai_session_key": "session-local-pane",
         "focused_window_id": 101,
     })
-    monkeypatch.setattr(server, "_record_ai_session_seen", lambda _session_key: None)
 
     result = await server._session_focus({"session_key": "session-local-pane"})
 
