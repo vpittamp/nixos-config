@@ -7692,53 +7692,6 @@ class IPCServer:
             "data": {"app_name": app_name, "reason": "app_not_found"}
         }))
 
-    def _build_launch_identity(
-        self,
-        *,
-        app_name: str,
-        project_name: str,
-        launcher_pid: int,
-        app_id_override: str = "",
-    ) -> Dict[str, str]:
-        return self.launch_service.build_launch_identity(
-            app_name=app_name,
-            project_name=project_name,
-            launcher_pid=launcher_pid,
-            app_id_override=app_id_override,
-        )
-
-    def _build_context_tmux_session_name(
-        self,
-        *,
-        project_name: str,
-        context_key: str,
-        terminal_role: str = "project-main",
-    ) -> str:
-        """Build a stable tmux session name for a project/context terminal."""
-        return self.launch_service.build_context_tmux_session_name(
-            project_name=project_name,
-            context_key=context_key,
-            terminal_role=terminal_role,
-        )
-
-    def _find_context_terminal_window(
-        self,
-        *,
-        project_name: str,
-        context_key: str,
-        execution_mode: str,
-        app_name: str = "",
-        terminal_role: str = "",
-    ) -> Optional[Any]:
-        """Return an existing canonical project terminal window for a context if present."""
-        return self.launch_service.find_context_terminal_window(
-            project_name=project_name,
-            context_key=context_key,
-            execution_mode=execution_mode,
-            app_name=app_name,
-            terminal_role=terminal_role,
-        )
-
     async def _find_live_sway_window(self, window_id: int) -> Optional[Any]:
         """Return a live Sway container by con_id/window_id, or None if missing."""
         target_window_id = int(window_id or 0)
@@ -7774,7 +7727,7 @@ class IPCServer:
         terminal_role: str = "",
     ) -> Optional[Any]:
         """Return a reusable terminal only if the tracked window still exists in Sway."""
-        candidate = self._find_context_terminal_window(
+        candidate = self.launch_service.find_context_terminal_window(
             project_name=project_name,
             context_key=context_key,
             execution_mode=execution_mode,
@@ -7909,82 +7862,6 @@ class IPCServer:
     ) -> Optional[Any]:
         """Disabled after deterministic remote-launch cutover."""
         return None
-
-    def _build_launch_env(
-        self,
-        *,
-        app_name: str,
-        scope: str,
-        preferred_workspace: Optional[int],
-        expected_class: str,
-        project_name: str,
-        project_dir: str,
-        local_project_dir: str,
-        project_display_name: str,
-        execution_mode: str,
-        target_host: str,
-        transport_kind: str,
-        connection_key: str,
-        context_key: str,
-        remote_profile: Optional[Dict[str, Any]],
-        launcher_pid: int,
-        launch_identity: Dict[str, str],
-        terminal_role: str = "",
-        tmux_session_name: str = "",
-        restore_mark: str = "",
-        remote_session_name: str = "",
-        worktree_branch: str = "",
-        worktree_account: str = "",
-        worktree_repo: str = "",
-    ) -> Dict[str, str]:
-        return self.launch_service.build_launch_env(
-            app_name=app_name,
-            scope=scope,
-            preferred_workspace=preferred_workspace,
-            expected_class=expected_class,
-            project_name=project_name,
-            project_dir=project_dir,
-            local_project_dir=local_project_dir,
-            project_display_name=project_display_name,
-            execution_mode=execution_mode,
-            target_host=target_host,
-            transport_kind=transport_kind,
-            connection_key=connection_key,
-            context_key=context_key,
-            remote_profile=remote_profile,
-            launcher_pid=launcher_pid,
-            launch_identity=launch_identity,
-            terminal_role=terminal_role,
-            tmux_session_name=tmux_session_name,
-            restore_mark=restore_mark,
-            remote_session_name=remote_session_name,
-            worktree_branch=worktree_branch,
-            worktree_account=worktree_account,
-            worktree_repo=worktree_repo,
-        )
-
-    async def _register_pending_launch(
-        self,
-        *,
-        app: RegistryApp,
-        project_name: str,
-        project_directory: str,
-        launcher_pid: int,
-        terminal_anchor_id: str,
-        preferred_workspace: Optional[int],
-    ) -> Dict[str, Any]:
-        return await self.launch_service.register_pending_launch(
-            app=app,
-            project_name=project_name,
-            project_directory=project_directory,
-            launcher_pid=launcher_pid,
-            terminal_anchor_id=terminal_anchor_id,
-            preferred_workspace=preferred_workspace,
-        )
-
-    async def _register_launch_for_spec(self, spec: Dict[str, Any]) -> Dict[str, Any]:
-        """Register a pending launch for a prepared spec."""
-        return await self.launch_service.register_launch_for_spec(spec)
 
     async def _prepare_launch(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Build a deterministic launch spec and register pending launch state."""
@@ -8201,7 +8078,7 @@ class IPCServer:
             preferred_workspace=app.preferred_workspace,
         )
 
-        launch_identity = self._build_launch_identity(
+        launch_identity = self.launch_service.build_launch_identity(
             app_name=app.name,
             project_name=project_name,
             launcher_pid=launcher_pid,
@@ -8222,7 +8099,7 @@ class IPCServer:
             str(arg)
             for arg in terminal_identity.get("scoped_terminal_command", [])
         ]
-        environment = self._build_launch_env(
+        environment = self.launch_service.build_launch_env(
             app_name=app.name,
             scope=app.scope,
             preferred_workspace=app.preferred_workspace,
@@ -8290,7 +8167,7 @@ class IPCServer:
                 "pending_count": self.state_manager.launch_registry.get_stats().total_pending,
             }
         else:
-            launch = await self._register_pending_launch(
+            launch = await self.launch_service.register_pending_launch(
                 app=app,
                 project_name=project_name,
                 project_directory=local_project_dir or str(Path.home()),
@@ -10575,9 +10452,9 @@ FORMAT JSONEachRow
                     reason="superseded_before_remote_launch",
                 )
             prior_launch_state = dict(launch_result)
-            spec["launch"] = await self._register_launch_for_spec(spec)
+            spec["launch"] = await self.launch_service.register_launch_for_spec(spec)
             launch_result = dict(prior_launch_state)
-            launch_result.update(self._execute_launch_spec(spec))
+            launch_result.update(self.launch_service.execute_launch_spec(spec))
             anchor_result = await self._wait_for_terminal_window(str(spec.get("terminal_anchor_id") or "").strip())
             local_window_id = int(anchor_result.get("window_id") or 0)
             if local_window_id <= 0:
@@ -11767,10 +11644,6 @@ FORMAT JSONEachRow
         """
         self.launch_service.reap_orphan_app_units(app_name, app_command)
 
-    def _execute_launch_spec(self, spec: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a daemon-prepared launch spec via systemd-run."""
-        return self.launch_service.execute_launch_spec(spec)
-
     async def _launch_open(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Prepare and execute an application launch entirely inside the daemon."""
         payload = dict(params or {})
@@ -11887,8 +11760,8 @@ FORMAT JSONEachRow
                         include_spec_window_id=True,
                     )
 
-        spec["launch"] = await self._register_launch_for_spec(spec)
-        launch_result = self._execute_launch_spec(spec)
+        spec["launch"] = await self.launch_service.register_launch_for_spec(spec)
+        launch_result = self.launch_service.execute_launch_spec(spec)
         return self.launch_service.build_launch_open_response(
             spec=spec,
             launch_result=launch_result,
@@ -14512,7 +14385,7 @@ FORMAT JSONEachRow
                 "terminal_role": str(getattr(existing_terminal, "terminal_role", "") or "project-main"),
                 "tmux_session_name": (
                     str(getattr(existing_terminal, "tmux_session_name", "") or "").strip()
-                    or self._build_context_tmux_session_name(
+                    or self.launch_service.build_context_tmux_session_name(
                         project_name=active_project_name,
                         context_key=active_context_key,
                         terminal_role="project-main",
@@ -14522,7 +14395,7 @@ FORMAT JSONEachRow
         elif active_project_name and active_context_key:
             active_terminal_summary.update({
                 "reusable": True,
-                "tmux_session_name": self._build_context_tmux_session_name(
+                "tmux_session_name": self.launch_service.build_context_tmux_session_name(
                     project_name=active_project_name,
                     context_key=active_context_key,
                     terminal_role="project-main",
@@ -16958,7 +16831,7 @@ FORMAT JSONEachRow
         project_directory = str(remote_profile.get("remote_dir") or "").strip()
         local_project_directory = ""
         session_name = f"{parsed.repo}_{parsed.branch}" if parsed.repo and parsed.branch else ""
-        launch_identity = self._build_launch_identity(
+        launch_identity = self.launch_service.build_launch_identity(
             app_name=app.name,
             project_name=project_name,
             launcher_pid=launcher_pid,
@@ -16976,7 +16849,7 @@ FORMAT JSONEachRow
         remote_terminal_role = self._remote_session_terminal_role(
             str(remote_context.get("context_key") or "").strip()
         )
-        environment = self._build_launch_env(
+        environment = self.launch_service.build_launch_env(
             app_name=app.name,
             scope=app.scope,
             preferred_workspace=app.preferred_workspace,

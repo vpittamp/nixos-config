@@ -949,8 +949,8 @@ async def test_focus_remote_session_attach_replaces_stale_bridge_before_relaunch
     ))
     server._close_managed_window = AsyncMock(return_value=True)
     server.state_manager.remove_window = AsyncMock()
-    server._register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
-    server._execute_launch_spec = lambda _spec: {"success": True}
+    server.launch_service.register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
+    server.launch_service.execute_launch_spec = lambda _spec: {"success": True}
     server._wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
     server._wait_for_launch_status = AsyncMock(return_value={"success": True, "launch_id": "launch-1", "status": "attaching_tmux", "reason": "ok"})
     server._window_focus = AsyncMock(return_value={
@@ -979,7 +979,7 @@ async def test_focus_remote_session_attach_replaces_stale_bridge_before_relaunch
     assert result["launch_status"]["status"] == "attaching_tmux"
     server._close_managed_window.assert_awaited_once_with(20)
     server.state_manager.remove_window.assert_awaited_once_with(20)
-    server._register_launch_for_spec.assert_awaited_once()
+    server.launch_service.register_launch_for_spec.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -1017,8 +1017,8 @@ async def test_focus_remote_session_attach_launches_new_exact_bridge_when_projec
         "execution_mode": "ssh",
     })
     server._get_reusable_context_terminal_window = AsyncMock(return_value=None)
-    server._register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
-    server._execute_launch_spec = lambda _spec: {"success": True}
+    server.launch_service.register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
+    server.launch_service.execute_launch_spec = lambda _spec: {"success": True}
     server._wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
     server._wait_for_launch_status = AsyncMock(return_value={"success": True, "launch_id": "launch-1", "status": "attaching_tmux", "reason": "ok"})
     server._window_focus = AsyncMock(return_value={
@@ -1086,8 +1086,8 @@ async def test_focus_remote_session_attach_focuses_local_bridge_without_project_
         "execution_mode": "ssh",
     })
     server._get_reusable_context_terminal_window = AsyncMock(return_value=None)
-    server._register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
-    server._execute_launch_spec = lambda _spec: {"success": True}
+    server.launch_service.register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
+    server.launch_service.execute_launch_spec = lambda _spec: {"success": True}
     server._wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
     server._wait_for_launch_status = AsyncMock(return_value={
         "success": True,
@@ -1250,8 +1250,8 @@ async def test_focus_remote_session_attach_relaunches_live_window_without_exact_
     server._get_reusable_context_terminal_window = AsyncMock(side_effect=AssertionError("unexpected lookup"))
     server._close_managed_window = AsyncMock(return_value=True)
     server.state_manager.remove_window = AsyncMock()
-    server._register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
-    server._execute_launch_spec = lambda _spec: {"success": True}
+    server.launch_service.register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
+    server.launch_service.execute_launch_spec = lambda _spec: {"success": True}
     server._wait_for_terminal_window = AsyncMock(return_value={"window_id": 44})
     server._wait_for_launch_status = AsyncMock(return_value={"success": True, "launch_id": "launch-1", "status": "attaching_tmux", "reason": "ok"})
     server._window_focus = AsyncMock(return_value={
@@ -1331,7 +1331,7 @@ async def test_find_context_terminal_window_recovers_context_from_process_env(se
         ),
     )
 
-    result = server._find_context_terminal_window(
+    result = server.launch_service.find_context_terminal_window(
         project_name="vpittamp/t3code:main",
         context_key="vpittamp/t3code:main::host::ryzen",
         execution_mode="ssh",

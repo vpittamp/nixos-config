@@ -262,7 +262,7 @@ async def test_register_launch_for_spec_persists_local_spec_and_status(server_lo
     server_local._runtime_dir = lambda: tmp_path
     spec = await server_local._prepare_launch({"app_name": "terminal", "register_launch": False})
 
-    registration = await server_local._register_launch_for_spec(spec)
+    registration = await server_local.launch_service.register_launch_for_spec(spec)
     launch_id = registration["launch_id"]
     spec_payload = json.loads(server_local._launch_spec_file(launch_id).read_text())
     status_payload = json.loads(server_local._launch_status_file(launch_id).read_text())
@@ -278,7 +278,7 @@ async def test_register_launch_for_spec_persists_local_spec_and_status(server_lo
 async def test_launch_status_reconciles_managed_session_to_waiting_and_running(server_local, tmp_path):
     server_local._runtime_dir = lambda: tmp_path
     spec = await server_local._prepare_launch({"app_name": "terminal", "register_launch": False})
-    registration = await server_local._register_launch_for_spec(spec)
+    registration = await server_local.launch_service.register_launch_for_spec(spec)
     launch_id = registration["launch_id"]
 
     server_local.launch_service.managed_tmux_session_probe = MagicMock(return_value={
@@ -322,7 +322,7 @@ async def test_launch_status_reconciles_managed_session_to_waiting_and_running(s
 async def test_mark_launch_window_closed_sets_reusable_headless(server_local, tmp_path):
     server_local._runtime_dir = lambda: tmp_path
     spec = await server_local._prepare_launch({"app_name": "terminal", "register_launch": False})
-    registration = await server_local._register_launch_for_spec(spec)
+    registration = await server_local.launch_service.register_launch_for_spec(spec)
     launch_id = registration["launch_id"]
 
     server_local.launch_service.managed_tmux_session_probe = MagicMock(return_value={
@@ -352,7 +352,7 @@ async def test_mark_launch_window_closed_sets_reusable_headless(server_local, tm
 async def test_mark_launch_window_bound_sets_running_for_non_terminal_launch(server_local, tmp_path):
     server_local._runtime_dir = lambda: tmp_path
     spec = await server_local._prepare_launch({"app_name": "code", "register_launch": False})
-    registration = await server_local._register_launch_for_spec(spec)
+    registration = await server_local.launch_service.register_launch_for_spec(spec)
     launch_id = registration["launch_id"]
 
     server_local._write_launch_status(
@@ -763,7 +763,7 @@ def test_execute_launch_spec_uses_project_command_helper_for_local_scoped_termin
 
     monkeypatch.setattr(ipc_server_module.subprocess, "run", fake_run)
 
-    result = server_local._execute_launch_spec(spec)
+    result = server_local.launch_service.execute_launch_spec(spec)
 
     assert result["success"] is True
     assert "--property=KillMode=process" not in captured["cmd"]
@@ -803,7 +803,7 @@ def test_execute_launch_spec_ssh_current_host_uses_local_terminal_helper(server_
 
     monkeypatch.setattr(ipc_server_module.subprocess, "run", fake_run)
 
-    result = server_ssh_current_host._execute_launch_spec(spec)
+    result = server_ssh_current_host.launch_service.execute_launch_spec(spec)
 
     assert result["success"] is True
     assert "--property=KillMode=process" in captured["cmd"]
@@ -844,7 +844,7 @@ def test_execute_launch_spec_dispatches_local_pwa_via_sway(server_local, monkeyp
 
     monkeypatch.setattr(ipc_server_module.subprocess, "run", fake_run)
 
-    result = server_local._execute_launch_spec(spec)
+    result = server_local.launch_service.execute_launch_spec(spec)
 
     assert result["success"] is True
     assert result["pid"] == 0
@@ -924,15 +924,15 @@ async def test_launch_open_reuses_existing_single_instance_gui_window(server_loc
     server_local._prepare_launch = AsyncMock(return_value=spec)
     server_local._get_reusable_context_app_window = AsyncMock(return_value=existing_window)
     server_local._window_focus = AsyncMock(return_value={"success": True, "window_id": 456})
-    server_local._register_launch_for_spec = AsyncMock()
-    server_local._execute_launch_spec = MagicMock()
+    server_local.launch_service.register_launch_for_spec = AsyncMock()
+    server_local.launch_service.execute_launch_spec = MagicMock()
 
     result = await server_local._launch_open({"app_name": "code"})
 
     server_local._get_reusable_context_app_window.assert_awaited_once()
     server_local._window_focus.assert_awaited_once()
-    server_local._register_launch_for_spec.assert_not_awaited()
-    server_local._execute_launch_spec.assert_not_called()
+    server_local.launch_service.register_launch_for_spec.assert_not_awaited()
+    server_local.launch_service.execute_launch_spec.assert_not_called()
     assert result["success"] is True
     assert result["launch"]["reused_existing"] is True
     assert result["launch"]["window_id"] == 456
@@ -964,15 +964,15 @@ async def test_launch_open_reuses_existing_single_instance_global_terminal_app(s
     server_local._prepare_launch = AsyncMock(return_value=spec)
     server_local._get_reusable_context_app_window = AsyncMock(return_value=existing_window)
     server_local._window_focus = AsyncMock(return_value={"success": True, "window_id": 789})
-    server_local._register_launch_for_spec = AsyncMock()
-    server_local._execute_launch_spec = MagicMock()
+    server_local.launch_service.register_launch_for_spec = AsyncMock()
+    server_local.launch_service.execute_launch_spec = MagicMock()
 
     result = await server_local._launch_open({"app_name": "herdr"})
 
     server_local._get_reusable_context_app_window.assert_awaited_once()
     server_local._window_focus.assert_awaited_once()
-    server_local._register_launch_for_spec.assert_not_awaited()
-    server_local._execute_launch_spec.assert_not_called()
+    server_local.launch_service.register_launch_for_spec.assert_not_awaited()
+    server_local.launch_service.execute_launch_spec.assert_not_called()
     assert result["success"] is True
     assert result["launch"]["reused_existing"] is True
     assert result["launch"]["window_id"] == 789
@@ -1005,8 +1005,8 @@ async def test_launch_open_focus_fast_uses_fast_focus_for_reused_global_window(s
     server_local._get_reusable_context_app_window = AsyncMock(return_value=existing_window)
     server_local._window_focus = AsyncMock(return_value={"success": True, "window_id": 789})
     server_local._window_focus_fast = AsyncMock(return_value={"success": True, "window_id": 789, "fast": True})
-    server_local._register_launch_for_spec = AsyncMock()
-    server_local._execute_launch_spec = MagicMock()
+    server_local.launch_service.register_launch_for_spec = AsyncMock()
+    server_local.launch_service.execute_launch_spec = MagicMock()
 
     result = await server_local._launch_open({"app_name": "herdr", "focus_fast": True})
 
@@ -1017,8 +1017,8 @@ async def test_launch_open_focus_fast_uses_fast_focus_for_reused_global_window(s
         "target_variant": "local",
         "connection_key": "local@thinkpad",
     })
-    server_local._register_launch_for_spec.assert_not_awaited()
-    server_local._execute_launch_spec.assert_not_called()
+    server_local.launch_service.register_launch_for_spec.assert_not_awaited()
+    server_local.launch_service.execute_launch_spec.assert_not_called()
     assert result["success"] is True
     assert result["launch"]["reused_existing"] is True
     assert result["launch"]["window_id"] == 789
@@ -1044,13 +1044,13 @@ async def test_launch_open_does_not_reuse_remote_bridge_when_context_mark_drifte
     }
     server_ssh._prepare_launch = AsyncMock(return_value=spec)
     server_ssh._get_reusable_context_terminal_window = AsyncMock(return_value=None)
-    server_ssh._register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
-    server_ssh._execute_launch_spec = MagicMock(return_value={"success": True, "launch_id": "launch-1"})
+    server_ssh.launch_service.register_launch_for_spec = AsyncMock(return_value={"launch_id": "launch-1"})
+    server_ssh.launch_service.execute_launch_spec = MagicMock(return_value={"success": True, "launch_id": "launch-1"})
 
     result = await server_ssh._launch_open({"app_name": "terminal"})
 
-    server_ssh._register_launch_for_spec.assert_awaited_once()
-    server_ssh._execute_launch_spec.assert_called_once_with(spec)
+    server_ssh.launch_service.register_launch_for_spec.assert_awaited_once()
+    server_ssh.launch_service.execute_launch_spec.assert_called_once_with(spec)
     assert result["success"] is True
     assert result["launch"]["success"] is True
     assert result["spec"]["launch_strategy"] is None
