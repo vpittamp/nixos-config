@@ -117,6 +117,8 @@ def test_local_window_and_workspace_clicks_use_fast_focus_with_optimistic_state(
     assert "property string optimisticFocusedWorkspaceName: \"\"" in text
     assert "method: \"window.focus_fast\"" in text
     assert "runDaemonSocketCall(\"workspace.focus_fast\", {workspace: workspaceName})" in text
+    assert "if (optimisticFocusedWindowId > 0) {\n            return windowId === optimisticFocusedWindowId;\n        }" in text
+    assert "if (optimistic) {\n            return workspaceName === optimistic;\n        }" in text
     assert "optimisticFocusedWindowId = windowId;" in text
     assert "optimisticFocusedWorkspaceName = workspaceName;" in text
     assert "root.windowIsFocused(windowData)" in runtime_panel_text

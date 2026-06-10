@@ -863,7 +863,10 @@ ShellRoot {
 
     function windowIsFocused(windowData) {
         const windowId = windowIdValue(windowData);
-        return (optimisticFocusedWindowId > 0 && windowId === optimisticFocusedWindowId) || boolOrFalse(windowData && windowData.focused);
+        if (optimisticFocusedWindowId > 0) {
+            return windowId === optimisticFocusedWindowId;
+        }
+        return boolOrFalse(windowData && windowData.focused);
     }
 
     function windowIsCurrentTarget(windowData) {
@@ -2072,7 +2075,10 @@ ShellRoot {
     function workspaceIsFocused(workspace) {
         const workspaceName = workspaceNameValue(workspace);
         const optimistic = stringOrEmpty(optimisticFocusedWorkspaceName);
-        return (optimistic && workspaceName === optimistic) || boolOrFalse(workspace && workspace.focused);
+        if (optimistic) {
+            return workspaceName === optimistic;
+        }
+        return boolOrFalse(workspace && workspace.focused);
     }
 
     function workspaceChipFill(workspace, hovered) {
