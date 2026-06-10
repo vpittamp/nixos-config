@@ -986,6 +986,93 @@ class HerdrService:
         )
         return snapshot
 
+    async def local_snapshot(
+        self,
+        *,
+        local_host: str,
+        normalize_connection_key: Callable[[str], str],
+        project_for_cwd: Callable[[str], Dict[str, str]],
+    ) -> Dict[str, Any]:
+        """Fetch and normalize the local Herdr host snapshot."""
+        self.clear_git_metadata_cache()
+        status_payload, agent_payload, pane_payload, workspace_payload, tab_payload, worktree_payload = await asyncio.gather(
+            self.run_json(["status", "--json"]),
+            self.run_json(["agent", "list"]),
+            self.run_json(["pane", "list"]),
+            self.run_json(["workspace", "list"]),
+            self.run_json(["tab", "list"]),
+            self.run_json(["worktree", "list"]),
+        )
+        host_key = self.normalize_host_key(local_host)
+        local_connection_key = normalize_connection_key(f"local@{host_key}")
+        generations = self.generations_snapshot()
+        payloads = [
+            status_payload,
+            agent_payload,
+            pane_payload,
+            workspace_payload,
+            tab_payload,
+            worktree_payload,
+        ]
+        snapshot = {
+            "success": bool(status_payload.get("success", False)),
+            "herdr_generation": generations["local_herdr_generation"],
+            "local_herdr_generation": generations["local_herdr_generation"],
+            "remote_herdr_generation": generations["remote_herdr_generation"],
+            "status": status_payload,
+            "agents": self.annotate_rows(
+                self.result_array(agent_payload, "agents"),
+                host=host_key,
+                execution_mode="local",
+                connection_key=local_connection_key,
+                normalize_connection_key=normalize_connection_key,
+            ),
+            "panes": self.annotate_rows(
+                self.result_array(pane_payload, "panes"),
+                host=host_key,
+                execution_mode="local",
+                connection_key=local_connection_key,
+                normalize_connection_key=normalize_connection_key,
+            ),
+            "workspaces": self.annotate_rows(
+                self.result_array(workspace_payload, "workspaces"),
+                host=host_key,
+                execution_mode="local",
+                connection_key=local_connection_key,
+                normalize_connection_key=normalize_connection_key,
+            ),
+            "tabs": self.annotate_rows(
+                self.result_array(tab_payload, "tabs"),
+                host=host_key,
+                execution_mode="local",
+                connection_key=local_connection_key,
+                normalize_connection_key=normalize_connection_key,
+            ),
+            "worktrees": self.annotate_rows(
+                self.worktree_result_array(worktree_payload),
+                host=host_key,
+                execution_mode="local",
+                connection_key=local_connection_key,
+                normalize_connection_key=normalize_connection_key,
+            ),
+            "errors": [
+                {
+                    "command": payload.get("command"),
+                    "error": payload.get("error") or payload.get("stderr") or payload.get("stdout"),
+                    "returncode": payload.get("returncode"),
+                }
+                for payload in payloads
+                if not bool(payload.get("success", False))
+            ],
+        }
+        snapshot["sessions"] = self.normalize_sessions(
+            snapshot,
+            local_host=host_key,
+            normalize_connection_key=normalize_connection_key,
+            project_for_cwd=project_for_cwd,
+        )
+        return snapshot
+
     @staticmethod
     def ssh_command_prefix(ssh_target: str) -> List[str]:
         """Return the deterministic SSH transport prefix for remote Herdr calls."""

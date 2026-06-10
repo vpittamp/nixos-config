@@ -887,7 +887,7 @@ async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
         "connection_key": "vpittamp@ryzen:22",
     }
 
-    async def fake_run_herdr_json(args):
+    async def fake_run_herdr_json(args, timeout=2.0):
         command = " ".join(args)
         if command == "status --json":
             return {"success": True, "result": {"ok": True}}
@@ -959,7 +959,7 @@ async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
         return {"success": True, "result": {key: []}}
 
     monkeypatch.setattr(server, "_load_herdr_remote_targets", lambda: [target])
-    monkeypatch.setattr(server, "_run_herdr_json", fake_run_herdr_json)
+    monkeypatch.setattr(server.herdr_service, "run_json", fake_run_herdr_json)
     monkeypatch.setattr(server.herdr_service, "run_ssh_json", fake_run_herdr_ssh_json)
 
     snapshot = await server._herdr_snapshot({"refresh": True})

@@ -623,6 +623,83 @@ async def test_herdr_service_builds_remote_snapshot(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_herdr_service_builds_local_snapshot(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    service.bump_local_generation()
+
+    payloads = {
+        ("status", "--json"): {"success": True, "result": {"protocol": 13}},
+        ("agent", "list"): {
+            "success": True,
+            "result": {
+                "agents": [{
+                    "pane_id": "pane-l",
+                    "workspace_id": "workspace-l",
+                    "agent": "codex",
+                    "agent_status": "blocked",
+                    "focused": True,
+                    "cwd": "/repo/local",
+                }],
+            },
+        },
+        ("pane", "list"): {
+            "success": True,
+            "result": {
+                "panes": [{
+                    "pane_id": "pane-l",
+                    "workspace_id": "workspace-l",
+                    "cwd": "/repo/local",
+                }],
+            },
+        },
+        ("workspace", "list"): {
+            "success": True,
+            "result": {"workspaces": [{"workspace_id": "workspace-l"}]},
+        },
+        ("tab", "list"): {"success": True, "result": {"tabs": []}},
+        ("worktree", "list"): {"success": True, "result": {"worktrees": []}},
+    }
+
+    async def fake_run_json(args, timeout=2.0):
+        payload = dict(payloads[tuple(args)])
+        payload["command"] = ["herdr", *args]
+        return payload
+
+    monkeypatch.setattr(service, "run_json", fake_run_json)
+    monkeypatch.setattr(
+        service,
+        "effective_cwd",
+        lambda row, *, ssh_target="": str(row.get("cwd") or ""),
+    )
+    monkeypatch.setattr(
+        service,
+        "git_space_metadata",
+        lambda path, *, ssh_target="", normalize_connection_key: {},
+    )
+
+    snapshot = await service.local_snapshot(
+        local_host="ThinkPad",
+        normalize_connection_key=lambda value: value.lower(),
+        project_for_cwd=lambda path: {"project_name": "global", "project_path": path},
+    )
+
+    assert snapshot["success"] is True
+    assert snapshot["herdr_generation"] == 1
+    assert snapshot["local_herdr_generation"] == 1
+    assert snapshot["agents"][0]["herdr_host"] == "thinkpad"
+    assert snapshot["agents"][0]["connection_key"] == "local@thinkpad"
+    assert snapshot["sessions"][0]["session_key"] == "herdr:pane:pane-l"
+    assert snapshot["sessions"][0]["focus_target"] == {
+        "method": "herdr.pane.focus",
+        "params": {"pane_id": "pane-l"},
+    }
+    assert snapshot["errors"] == []
+
+
+@pytest.mark.asyncio
 async def test_herdr_service_remote_snapshot_reports_status_failure(monkeypatch):
     service = HerdrService(
         notify_state_change=lambda event_type: asyncio.sleep(0),

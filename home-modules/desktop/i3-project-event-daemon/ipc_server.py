@@ -9829,65 +9829,11 @@ FORMAT JSONEachRow
             if cached_snapshot is not None:
                 return cached_snapshot
 
-        self.herdr_service.clear_git_metadata_cache()
-        status_payload, agent_payload, pane_payload, workspace_payload, tab_payload, worktree_payload = await asyncio.gather(
-            self._run_herdr_json(["status", "--json"]),
-            self._run_herdr_json(["agent", "list"]),
-            self._run_herdr_json(["pane", "list"]),
-            self._run_herdr_json(["workspace", "list"]),
-            self._run_herdr_json(["tab", "list"]),
-            self._run_herdr_json(["worktree", "list"]),
+        snapshot = await self.herdr_service.local_snapshot(
+            local_host=self._local_host_alias(),
+            normalize_connection_key=self._normalize_connection_key,
+            project_for_cwd=self._herdr_project_for_cwd,
         )
-        local_host = self._local_host_alias()
-        local_connection_key = self._normalize_connection_key(f"local@{local_host}")
-        herdr_generations = self.herdr_service.generations_snapshot()
-        snapshot = {
-            "success": bool(status_payload.get("success", False)),
-            "herdr_generation": herdr_generations["local_herdr_generation"],
-            "local_herdr_generation": herdr_generations["local_herdr_generation"],
-            "remote_herdr_generation": herdr_generations["remote_herdr_generation"],
-            "status": status_payload,
-            "agents": self._annotate_herdr_rows(
-                self._herdr_result_array(agent_payload, "agents"),
-                host=local_host,
-                execution_mode="local",
-                connection_key=local_connection_key,
-            ),
-            "panes": self._annotate_herdr_rows(
-                self._herdr_result_array(pane_payload, "panes"),
-                host=local_host,
-                execution_mode="local",
-                connection_key=local_connection_key,
-            ),
-            "workspaces": self._annotate_herdr_rows(
-                self._herdr_result_array(workspace_payload, "workspaces"),
-                host=local_host,
-                execution_mode="local",
-                connection_key=local_connection_key,
-            ),
-            "tabs": self._annotate_herdr_rows(
-                self._herdr_result_array(tab_payload, "tabs"),
-                host=local_host,
-                execution_mode="local",
-                connection_key=local_connection_key,
-            ),
-            "worktrees": self._annotate_herdr_rows(
-                self._herdr_worktree_result_array(worktree_payload),
-                host=local_host,
-                execution_mode="local",
-                connection_key=local_connection_key,
-            ),
-            "errors": [
-                {
-                    "command": payload.get("command"),
-                    "error": payload.get("error") or payload.get("stderr") or payload.get("stdout"),
-                    "returncode": payload.get("returncode"),
-                }
-                for payload in [status_payload, agent_payload, pane_payload, workspace_payload, tab_payload, worktree_payload]
-                if not bool(payload.get("success", False))
-            ],
-        }
-        snapshot["sessions"] = self._normalize_herdr_sessions(snapshot)
 
         remote_snapshots = await asyncio.gather(
             *(self._herdr_remote_snapshot(target) for target in remote_targets),
