@@ -54,17 +54,10 @@ from .services.window_filter import (
 from .services.registry_loader import RegistryLoader, RegistryApp
 from .services.assistant_desktop_service import AssistantDesktopService
 from .services.dashboard_model import (
-    DASHBOARD_EVENT_SCHEMA_VERSION,
-    DASHBOARD_SCHEMA_VERSION,
-    advance_dashboard_event_state,
     build_dashboard_projects as build_dashboard_project_cards,
-    build_dashboard_snapshot_payload,
     build_dashboard_worktree_rows,
-    dashboard_event_payload_from_snapshot,
-    dashboard_event_notification,
-    dashboard_invalidated_payload,
-    validate_dashboard_payload,
 )
+from .services.dashboard_service import DashboardService
 from .services.dashboard_git_service import DashboardGitService
 from .services.display_service import DisplayService
 from .services.focus_service import FocusService
@@ -526,12 +519,6 @@ class IPCServer:
         self._window_tree_cache_time: float = 0.0
         self._window_tree_cache_ttl: float = 15.0  # Max cache age in seconds (fallback if invalidation missed)
 
-        # Feature 123: Clients subscribed to state change events (for monitoring panel)
-        self.state_change_subscribers: set[asyncio.StreamWriter] = set()
-        self._snapshot_version = 0
-        self._session_generation = 0
-        self._display_generation = 0
-        self._focus_generation = 0
         self._worktree_cache: Optional[List[Dict[str, Any]]] = None
         self._worktree_cache_time: float = 0.0
         self._worktree_cache_ttl: float = 10.0
@@ -608,6 +595,26 @@ class IPCServer:
             normalize_connection_key=self._normalize_connection_key,
             local_host=lambda: self._local_host_alias(),
         )
+        self.dashboard_service = DashboardService(
+            runtime_loader=lambda *args, **kwargs: self._load_reconciled_session_runtime(*args, **kwargs),
+            display_snapshot=lambda: self.display_service.snapshot(),
+            build_projects=lambda runtime_snapshot, sessions: self._build_dashboard_projects(
+                runtime_snapshot,
+                sessions,
+            ),
+            build_worktrees=lambda runtime_snapshot: self._build_dashboard_worktrees(runtime_snapshot),
+            build_focus_state=lambda *args, **kwargs: self.focus_service.build_focus_state_payload(
+                *args,
+                **kwargs,
+            ),
+            build_herdr_spaces=lambda herdr_snapshot, sessions: self.herdr_service.build_spaces(
+                herdr_snapshot,
+                sessions,
+            ),
+            list_launches=lambda **kwargs: self.launch_service.list_statuses(**kwargs),
+            invalidate_worktree_cache=self.invalidate_worktree_cache,
+        )
+        self.state_change_subscribers = self.dashboard_service.subscribers
         self.session_preview_service = SessionPreviewService()
         self.assistant_desktop_service = AssistantDesktopService(
             registry_loader=self.registry_loader,
@@ -628,6 +635,22 @@ class IPCServer:
         self._malformed_json_last_peer: str = ""
         self._malformed_json_last_error: str = ""
         self._malformed_json_by_peer: Dict[str, int] = {}
+
+    @property
+    def _snapshot_version(self) -> int:
+        return int(self.dashboard_service.snapshot_version)
+
+    @property
+    def _session_generation(self) -> int:
+        return int(self.dashboard_service.session_generation)
+
+    @property
+    def _display_generation(self) -> int:
+        return int(self.dashboard_service.display_generation)
+
+    @property
+    def _focus_generation(self) -> int:
+        return int(self.dashboard_service.focus_generation)
 
     @classmethod
     async def from_systemd_socket(
@@ -3375,12 +3398,7 @@ class IPCServer:
 
     async def _dashboard_event_payload(self, changed_keys: List[str]) -> Dict[str, Any]:
         """Build a partial dashboard payload for a typed state-change event."""
-        snapshot = await self._dashboard_snapshot({"skip_git_hydration": True})
-        return dashboard_event_payload_from_snapshot(
-            snapshot,
-            changed_keys,
-            schema_version=DASHBOARD_SCHEMA_VERSION,
-        )
+        return await self.dashboard_service.event_payload(changed_keys)
 
     async def notify_state_change(self, event_type: str = "dashboard_invalidated") -> None:
         """Notify subscribed clients with a typed dashboard event.
@@ -3392,69 +3410,7 @@ class IPCServer:
         Args:
             event_type: Type of state change event (for debugging)
         """
-        event_state = advance_dashboard_event_state(
-            event_type=event_type,
-            snapshot_version=self._snapshot_version,
-            session_generation=self._session_generation,
-            display_generation=self._display_generation,
-            focus_generation=self._focus_generation,
-        )
-        self._snapshot_version = int(event_state.get("snapshot_version") or 0)
-        self._session_generation = int(event_state.get("session_generation") or 0)
-        self._display_generation = int(event_state.get("display_generation") or 0)
-        self._focus_generation = int(event_state.get("focus_generation") or 0)
-        normalized_type = str(event_state.get("type") or "dashboard_invalidated")
-        changed_keys = list(event_state.get("changed_keys", []) or [])
-        if bool(event_state.get("invalidate_worktree_cache", False)):
-            self.invalidate_worktree_cache()
-
-        if not self.state_change_subscribers:
-            return
-
-        event_payload: Dict[str, Any] = {}
-        try:
-            event_payload = await self._dashboard_event_payload(changed_keys)
-        except Exception as exc:
-            logger.warning("Failed to build dashboard event payload for %s: %s", normalized_type, exc)
-            event_state = dict(event_state)
-            event_state["event_type"] = "dashboard.invalidated"
-            changed_keys = ["dashboard"]
-            event_state["changed_keys"] = changed_keys
-            event_payload = dashboard_invalidated_payload(
-                error=exc,
-                snapshot_version=self._snapshot_version,
-                session_generation=self._session_generation,
-                display_generation=self._display_generation,
-                focus_generation=self._focus_generation,
-                schema_version=DASHBOARD_SCHEMA_VERSION,
-            )
-
-        notification = json.dumps(dashboard_event_notification(
-            state=event_state,
-            payload=event_payload,
-            timestamp=time.time(),
-            event_schema_version=DASHBOARD_EVENT_SCHEMA_VERSION,
-        ))
-
-        dead_clients = set()
-        subscribers = list(self.state_change_subscribers)
-        for writer in subscribers:
-            try:
-                writer.write((notification + "\n").encode())
-                await asyncio.wait_for(writer.drain(), timeout=0.25)
-            except asyncio.TimeoutError:
-                logger.warning("[Feature 123] Timed out notifying state change subscriber")
-                dead_clients.add(writer)
-            except (ConnectionResetError, BrokenPipeError, ConnectionError):
-                dead_clients.add(writer)
-            except Exception as e:
-                logger.warning(f"[Feature 123] Error notifying subscriber: {e}")
-                dead_clients.add(writer)
-
-        # Remove dead clients
-        self.state_change_subscribers -= dead_clients
-        if dead_clients:
-            logger.debug(f"[Feature 123] Removed {len(dead_clients)} dead state change subscribers")
+        await self.dashboard_service.notify_state_change(event_type)
 
     async def _subscribe_state_changes(self, params: Dict[str, Any], writer: asyncio.StreamWriter) -> Dict[str, Any]:
         """Subscribe to state change notifications (Feature 123).
@@ -3472,13 +3428,7 @@ class IPCServer:
         Returns:
             dict with subscription status
         """
-        self.state_change_subscribers.add(writer)
-        subscriber_count = len(self.state_change_subscribers)
-        logger.info(f"[Feature 123] Client subscribed to state changes (total: {subscriber_count})")
-        return {
-            "subscribed": True,
-            "subscriber_count": subscriber_count,
-        }
+        return self.dashboard_service.subscribe(writer)
 
     async def _get_window_tree(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get hierarchical window state tree (Feature 025: T016).
@@ -7590,63 +7540,11 @@ class IPCServer:
 
     async def _dashboard_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return the daemon-owned dashboard payload consumed by QuickShell."""
-        runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
-            params or {},
-            close_windows=True,
-        )
-        display_snapshot = await self.display_service.snapshot()
-        herdr_snapshot = runtime_snapshot.get("herdr", {})
-        if not isinstance(herdr_snapshot, dict):
-            herdr_snapshot = {}
-
-        projects = self._build_dashboard_projects(runtime_snapshot, sessions)
-        worktrees = list(runtime_snapshot.get("dashboard_worktrees", []) or [])
-        if not worktrees:
-            worktrees = await self._build_dashboard_worktrees(runtime_snapshot)
-        focus_state = self.focus_service.build_focus_state_payload(
-            runtime_snapshot,
-            sessions,
-            generation=int(self._focus_generation or self._snapshot_version or 0),
-        )
-        return build_dashboard_snapshot_payload(
-            runtime_snapshot=runtime_snapshot,
-            display_snapshot=display_snapshot,
-            projects=projects,
-            worktrees=worktrees,
-            sessions=sessions,
-            focus_state=focus_state,
-            herdr_spaces=self.herdr_service.build_spaces(
-                herdr_snapshot,
-                sessions,
-            ),
-            launches=self.launch_service.list_statuses(limit=12),
-            snapshot_version=self._snapshot_version,
-            session_generation=self._session_generation,
-            display_generation=self._display_generation,
-            focus_generation=self._focus_generation,
-            timestamp=int(time.time()),
-            schema_version=DASHBOARD_SCHEMA_VERSION,
-        )
+        return await self.dashboard_service.snapshot(params or {})
 
     async def _dashboard_validate(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return dashboard invariant status without requiring clients to know the rules."""
-        payload = await self._dashboard_snapshot(params or {})
-        invariants = payload.get("dashboard_invariants")
-        if not isinstance(invariants, dict):
-            invariants = validate_dashboard_payload(
-                payload,
-                schema_version=DASHBOARD_SCHEMA_VERSION,
-            )
-        return {
-            "success": bool(invariants.get("ok", False)),
-            "schema_version": str(payload.get("schema_version") or ""),
-            "snapshot_version": int(payload.get("snapshot_version") or 0),
-            "session_generation": int(payload.get("session_generation") or 0),
-            "display_generation": int(payload.get("display_generation") or 0),
-            "focus_generation": int(payload.get("focus_generation") or 0),
-            "issues": list(invariants.get("issues", []) or []),
-            "warnings": list(invariants.get("warnings", []) or []),
-        }
+        return await self.dashboard_service.validate(params or {})
 
     async def _launch_open(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Prepare and execute an application launch entirely inside the daemon."""
