@@ -763,6 +763,90 @@ async def test_herdr_service_builds_local_snapshot(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_herdr_service_combined_snapshot_merges_and_caches_remote_rows(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+        remote_snapshot_cache_ttl=10.0,
+    )
+    remote_target = {
+        "host": "ryzen",
+        "ssh_target": "ryzen",
+        "connection_key": "vpittamp@ryzen:22",
+    }
+
+    async def fake_local_snapshot(**_kwargs):
+        return {
+            "success": True,
+            "herdr_generation": 1,
+            "local_herdr_generation": 1,
+            "remote_herdr_generation": {},
+            "status": {"success": True},
+            "agents": [],
+            "panes": [],
+            "workspaces": [],
+            "tabs": [],
+            "worktrees": [],
+            "sessions": [{
+                "session_key": "herdr:pane:local",
+                "focused": False,
+                "is_current_host": True,
+                "herdr_host": "thinkpad",
+            }],
+            "errors": [],
+        }
+
+    async def fake_remote_snapshot(target, **_kwargs):
+        assert target == remote_target
+        return {
+            "success": True,
+            "remote": True,
+            "host": "ryzen",
+            "agents": [{"pane_id": "remote"}],
+            "panes": [{"pane_id": "remote"}],
+            "workspaces": [],
+            "tabs": [],
+            "worktrees": [],
+            "sessions": [{
+                "session_key": "herdr:ryzen:pane:remote",
+                "focused": True,
+                "is_current_host": False,
+                "herdr_host": "ryzen",
+            }],
+            "errors": [],
+        }
+
+    monkeypatch.setattr(service, "local_snapshot", fake_local_snapshot)
+    monkeypatch.setattr(service, "remote_snapshot", fake_remote_snapshot)
+
+    snapshot = await service.snapshot(
+        {"refresh": True},
+        remote_targets=[remote_target],
+        local_host="thinkpad",
+        normalize_connection_key=lambda value: value,
+        project_for_cwd=lambda path: {"project_name": "global", "project_path": path},
+    )
+    cached = await service.snapshot(
+        {},
+        remote_targets=[remote_target],
+        local_host="thinkpad",
+        normalize_connection_key=lambda value: value,
+        project_for_cwd=lambda path: {"project_name": "global", "project_path": path},
+    )
+
+    assert [row["session_key"] for row in snapshot["sessions"]] == [
+        "herdr:ryzen:pane:remote",
+        "herdr:pane:local",
+    ]
+    assert snapshot["agents"] == [{"pane_id": "remote"}]
+    assert snapshot["remote_targets"] == [remote_target]
+    assert snapshot["remote_snapshots"][0]["host"] == "ryzen"
+    assert snapshot["remote_errors"] == []
+    assert cached == snapshot
+    assert cached is not service.snapshot_cache
+
+
+@pytest.mark.asyncio
 async def test_herdr_service_remote_snapshot_reports_status_failure(monkeypatch):
     service = HerdrService(
         notify_state_change=lambda event_type: asyncio.sleep(0),
@@ -917,3 +1001,113 @@ async def test_herdr_service_reports_remote_transport_errors(monkeypatch):
         "error": "ssh_not_found",
         "command": ["ssh", "ryzen", "herdr", "agent", "list"],
     }
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_local_pane_actions_own_generations_and_cache(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    calls = []
+
+    async def fake_run_json(args, timeout=2.0):
+        calls.append(args)
+        return {"success": True, "result": {"ok": True}}
+
+    monkeypatch.setattr(service, "run_json", fake_run_json)
+    service.store_snapshot({"sessions": [{"pane_id": "stale"}]}, now=100.0)
+
+    focus_result = await service.pane_focus({"pane_id": "pane-a"})
+    service.store_snapshot({"sessions": [{"pane_id": "stale"}]}, now=101.0)
+    close_result = await service.pane_close({"pane_id": "pane-a"})
+    workspace_result = await service.workspace_focus({"workspace_id": "ws-a"})
+    tab_result = await service.tab_focus({"tab_id": "tab-a"})
+
+    assert calls == [
+        ["agent", "focus", "pane-a"],
+        ["pane", "close", "pane-a"],
+        ["workspace", "focus", "ws-a"],
+        ["tab", "focus", "tab-a"],
+    ]
+    assert focus_result["success"] is True
+    assert close_result["success"] is True
+    assert workspace_result["workspace_id"] == "ws-a"
+    assert tab_result["tab_id"] == "tab-a"
+    assert service.local_herdr_generation == 4
+    assert service.snapshot_cache == {}
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_remote_pane_focus_owns_transport_cache_and_launch(monkeypatch):
+    notifications = []
+    service = HerdrService(
+        notify_state_change=lambda event_type: notifications.append(event_type) or asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    target = {
+        "host": "ryzen",
+        "ssh_target": "ryzen",
+        "connection_key": "vpittamp@ryzen:22",
+    }
+    service.snapshot_cache = {
+        "sessions": [
+            {
+                "session_key": "herdr:ryzen:pane:remote-a",
+                "herdr_host": "ryzen",
+                "pane_id": "remote-a",
+                "focused": True,
+                "connection_key": "vpittamp@ryzen:22",
+            },
+            {
+                "session_key": "herdr:ryzen:pane:remote-b",
+                "herdr_host": "ryzen",
+                "pane_id": "remote-b",
+                "focused": False,
+                "connection_key": "vpittamp@ryzen:22",
+            },
+        ],
+    }
+    ssh_calls = []
+    launch_calls = []
+    focus_overrides = []
+
+    async def fake_run_ssh_json(remote_target, args, timeout=2.5):
+        ssh_calls.append((remote_target, args))
+        return {"success": True, "result": {"focused": True}}
+
+    async def fake_launch_open(params):
+        launch_calls.append(params)
+        return {"success": True, "launch": {"reused_existing": True}}
+
+    monkeypatch.setattr(service, "run_ssh_json", fake_run_ssh_json)
+
+    result = await service.remote_pane_focus(
+        {
+            "pane_id": "remote-b",
+            "host": "ryzen",
+            "__intent_epoch": 9,
+        },
+        targets=[target],
+        parse_remote_target=lambda value: ("", value, 22),
+        normalize_connection_key=lambda value: value,
+        launch_open=fake_launch_open,
+        set_focus_overrides=lambda **kwargs: focus_overrides.append(kwargs),
+    )
+
+    assert ssh_calls == [(target, ["agent", "focus", "remote-b"])]
+    assert launch_calls == [{
+        "app_name": "herdr",
+        "__intent_epoch": 9,
+        "focus_fast": True,
+    }]
+    assert focus_overrides == [{
+        "session_key": "herdr:ryzen:pane:remote-b",
+        "window_id": 0,
+        "connection_key": "vpittamp@ryzen:22",
+    }]
+    assert notifications == ["ai_session_herdr_changed"]
+    assert service.remote_generation_for("ryzen") == 1
+    assert result["success"] is True
+    assert service.snapshot_cache["sessions"][0]["focused"] is False
+    assert service.snapshot_cache["sessions"][1]["focused"] is True

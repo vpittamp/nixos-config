@@ -1,4 +1,4 @@
-"""Herdr service boundary for local event subscription and cache invalidation."""
+"""Herdr service boundary for Herdr snapshots, actions, and event subscriptions."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import time
 from pathlib import Path, PurePath
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
@@ -1072,6 +1073,205 @@ class HerdrService:
             project_for_cwd=project_for_cwd,
         )
         return snapshot
+
+    async def snapshot(
+        self,
+        params: Optional[Dict[str, Any]] = None,
+        *,
+        remote_targets: List[Dict[str, str]],
+        local_host: str,
+        normalize_connection_key: Callable[[str], str],
+        project_for_cwd: Callable[[str], Dict[str, str]],
+    ) -> Dict[str, Any]:
+        """Return local Herdr state merged with configured remote hosts."""
+        params = params or {}
+        use_cache = not bool(params.get("refresh", False))
+        now = time.time()
+        if use_cache:
+            cached_snapshot = self.cached_snapshot(
+                now=now,
+                has_remote_targets=bool(remote_targets),
+            )
+            if cached_snapshot is not None:
+                return cached_snapshot
+
+        snapshot = await self.local_snapshot(
+            local_host=local_host,
+            normalize_connection_key=normalize_connection_key,
+            project_for_cwd=project_for_cwd,
+        )
+
+        remote_snapshots = await asyncio.gather(
+            *(
+                self.remote_snapshot(
+                    target,
+                    local_host=local_host,
+                    normalize_connection_key=normalize_connection_key,
+                    project_for_cwd=project_for_cwd,
+                )
+                for target in remote_targets
+            ),
+            return_exceptions=True,
+        )
+
+        normalized_remote_snapshots: List[Dict[str, Any]] = []
+        for index, remote_snapshot in enumerate(remote_snapshots):
+            target = remote_targets[index]
+            if isinstance(remote_snapshot, Exception):
+                error_entry = {
+                    "remote": True,
+                    "host": str(target.get("host") or "").strip(),
+                    "ssh_target": str(target.get("ssh_target") or "").strip(),
+                    "connection_key": str(target.get("connection_key") or "").strip(),
+                    "command": ["ssh", str(target.get("ssh_target") or "").strip(), "herdr"],
+                    "error": str(remote_snapshot),
+                    "returncode": None,
+                }
+                snapshot["errors"].append(error_entry)
+                normalized_remote_snapshots.append({
+                    "success": False,
+                    "remote": True,
+                    "host": error_entry["host"],
+                    "ssh_target": error_entry["ssh_target"],
+                    "connection_key": error_entry["connection_key"],
+                    "herdr_generation": self.remote_generation_for(error_entry["host"]),
+                    "errors": [error_entry],
+                    "sessions": [],
+                })
+                continue
+            if not isinstance(remote_snapshot, dict):
+                continue
+            normalized_remote_snapshots.append(remote_snapshot)
+            snapshot["agents"].extend(remote_snapshot.get("agents", []) or [])
+            snapshot["panes"].extend(remote_snapshot.get("panes", []) or [])
+            snapshot["workspaces"].extend(remote_snapshot.get("workspaces", []) or [])
+            snapshot["tabs"].extend(remote_snapshot.get("tabs", []) or [])
+            snapshot["worktrees"].extend(remote_snapshot.get("worktrees", []) or [])
+            snapshot["sessions"].extend([
+                session for session in remote_snapshot.get("sessions", []) or []
+                if isinstance(session, dict)
+            ])
+            snapshot["errors"].extend(remote_snapshot.get("errors", []) or [])
+
+        snapshot["remote_targets"] = remote_targets
+        snapshot["remote_snapshots"] = normalized_remote_snapshots
+        snapshot["remote_herdr_generation"] = self.remote_generations_snapshot()
+        snapshot["remote_errors"] = [
+            error for error in snapshot.get("errors", [])
+            if isinstance(error, dict) and bool(error.get("remote", False))
+        ]
+        snapshot["sessions"].sort(key=lambda item: (
+            not bool(item.get("focused", False)),
+            0 if bool(item.get("is_current_host", False)) else 1,
+            str(item.get("herdr_host") or ""),
+            str(item.get("project_name") or ""),
+            str(item.get("agent") or ""),
+            str(item.get("pane_id") or ""),
+        ))
+        return self.store_snapshot(snapshot, now=now)
+
+    async def pane_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Focus a local Herdr pane and invalidate local Herdr state."""
+        pane_id = str(params.get("pane_id") or "").strip()
+        if not pane_id:
+            raise ValueError("pane_id is required")
+        result = await self.run_json(["agent", "focus", pane_id])
+        if bool(result.get("success", False)):
+            self.bump_local_generation()
+            self.invalidate_snapshot_cache()
+        return {"success": bool(result.get("success", False)), "pane_id": pane_id, "herdr": result}
+
+    async def pane_close(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Close a local Herdr pane and invalidate local Herdr state."""
+        pane_id = str(params.get("pane_id") or "").strip()
+        if not pane_id:
+            raise ValueError("pane_id is required")
+        result = await self.run_json(["pane", "close", pane_id])
+        if bool(result.get("success", False)):
+            self.bump_local_generation()
+        self.invalidate_snapshot_cache()
+        return {"success": bool(result.get("success", False)), "pane_id": pane_id, "herdr": result}
+
+    async def workspace_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Focus a local Herdr workspace and invalidate local Herdr state."""
+        workspace_id = str(params.get("workspace_id") or "").strip()
+        if not workspace_id:
+            raise ValueError("workspace_id is required")
+        result = await self.run_json(["workspace", "focus", workspace_id])
+        if bool(result.get("success", False)):
+            self.bump_local_generation()
+            self.invalidate_snapshot_cache()
+        return {
+            "success": bool(result.get("success", False)),
+            "workspace_id": workspace_id,
+            "herdr": result,
+        }
+
+    async def tab_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Focus a local Herdr tab and invalidate local Herdr state."""
+        tab_id = str(params.get("tab_id") or "").strip()
+        if not tab_id:
+            raise ValueError("tab_id is required")
+        result = await self.run_json(["tab", "focus", tab_id])
+        if bool(result.get("success", False)):
+            self.bump_local_generation()
+            self.invalidate_snapshot_cache()
+        return {"success": bool(result.get("success", False)), "tab_id": tab_id, "herdr": result}
+
+    async def remote_pane_focus(
+        self,
+        params: Dict[str, Any],
+        *,
+        targets: List[Dict[str, str]],
+        parse_remote_target: Callable[[str], Tuple[str, str, int]],
+        normalize_connection_key: Callable[[str], str],
+        launch_open: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
+        set_focus_overrides: Callable[..., None],
+    ) -> Dict[str, Any]:
+        """Focus a remote Herdr pane and reuse the configured local Herdr app."""
+        pane_id = str(params.get("pane_id") or "").strip()
+        if not pane_id:
+            raise ValueError("pane_id is required")
+
+        target = self.resolve_remote_action_target(
+            params,
+            targets=targets,
+            parse_remote_target=parse_remote_target,
+            normalize_connection_key=normalize_connection_key,
+        )
+        focus_result = await self.run_ssh_json(target, ["agent", "focus", pane_id])
+        if bool(focus_result.get("success", False)):
+            self.bump_remote_generation(target.get("host"))
+            cache_result = self.apply_remote_focus_cache(
+                target=target,
+                pane_id=pane_id,
+                normalize_connection_key=normalize_connection_key,
+                now=time.time(),
+            )
+            focused_session_key = str(cache_result.get("focused_session_key") or "").strip()
+            if focused_session_key:
+                set_focus_overrides(
+                    session_key=focused_session_key,
+                    window_id=0,
+                    connection_key=str(cache_result.get("connection_key") or "").strip(),
+                )
+
+        launch_result = await launch_open({
+            "app_name": str(params.get("app_name") or "herdr").strip() or "herdr",
+            "__intent_epoch": int(params.get("__intent_epoch") or 0),
+            "focus_fast": True,
+        })
+        await self._notify_state_change("ai_session_herdr_changed")
+
+        return {
+            "success": bool(focus_result.get("success", False)) and bool(launch_result.get("success", False)),
+            "pane_id": pane_id,
+            "host": str(target.get("host") or "").strip(),
+            "ssh_target": str(target.get("ssh_target") or "").strip(),
+            "connection_key": str(target.get("connection_key") or "").strip(),
+            "herdr": focus_result,
+            "launch": launch_result,
+        }
 
     def build_spaces(
         self,

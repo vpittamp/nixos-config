@@ -1029,11 +1029,11 @@ async def test_herdr_remote_unreachable_reports_error_without_rows(server, monke
 async def test_herdr_pane_actions_call_herdr_with_pane_id(server, monkeypatch):
     calls = []
 
-    async def fake_run_herdr_json(args):
+    async def fake_run_herdr_json(args, timeout=2.0):
         calls.append(args)
         return {"success": True, "result": {"ok": True}}
 
-    monkeypatch.setattr(server, "_run_herdr_json", fake_run_herdr_json)
+    monkeypatch.setattr(server.herdr_service, "run_json", fake_run_herdr_json)
 
     server._herdr_snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
     focus_result = await server._herdr_pane_focus({"pane_id": "w123-1"})
@@ -1061,12 +1061,12 @@ async def test_herdr_remote_pane_focus_switches_pane_then_reuses_herdr_app(serve
     }
     calls = []
 
-    async def fake_run_herdr_ssh_json(remote_target, args):
+    async def fake_run_herdr_ssh_json(remote_target, args, timeout=2.5):
         calls.append((remote_target, args))
         return {"success": True, "result": {"focused": True}}
 
     monkeypatch.setattr(server, "_load_herdr_remote_targets", lambda: [target])
-    monkeypatch.setattr(server, "_run_herdr_ssh_json", fake_run_herdr_ssh_json)
+    monkeypatch.setattr(server.herdr_service, "run_ssh_json", fake_run_herdr_ssh_json)
     server.notify_state_change = AsyncMock(return_value=None)
     server._launch_open = AsyncMock(return_value={
         "success": True,
