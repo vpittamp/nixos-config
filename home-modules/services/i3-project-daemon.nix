@@ -75,21 +75,34 @@ let
     # Notify user about daemon lifecycle events
     # Usage: i3pm-daemon-notify <started|stopped|failed>
     EVENT="''${1:-unknown}"
+    RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}"
+    STATE_DIR="$RUNTIME_DIR/i3-project-daemon"
+    FAILURE_MARKER="$STATE_DIR/last-failed-stop"
+    ${pkgs.coreutils}/bin/mkdir -p "$STATE_DIR"
+
     case "$EVENT" in
       started)
-        # Only notify on restart (not first boot) — check if this is a restart
-        INVOCATIONS=$(${pkgs.systemd}/bin/systemctl --user show i3-project-daemon.service -p NRestarts --value 2>/dev/null || echo "0")
-        if [ "$INVOCATIONS" -gt 0 ]; then
+        if [ -s "$FAILURE_MARKER" ]; then
+          MESSAGE=$(${pkgs.coreutils}/bin/cat "$FAILURE_MARKER" 2>/dev/null || true)
+          ${pkgs.coreutils}/bin/rm -f "$FAILURE_MARKER"
           ${pkgs.libnotify}/bin/notify-send -i "dialog-warning" -u normal --transient \
             "i3pm daemon restarted" \
-            "Restart #$INVOCATIONS — daemon recovered automatically"
+            "Recovered after failure: ''${MESSAGE:-unknown}"
         fi
         ;;
       failed)
         RESULT="''${SERVICE_RESULT:-unknown}"
+        EXIT_CODE="''${EXIT_CODE:-unknown}"
+        EXIT_STATUS="''${EXIT_STATUS:-unknown}"
+        if [ "$RESULT" = "success" ]; then
+          ${pkgs.coreutils}/bin/rm -f "$FAILURE_MARKER"
+          exit 0
+        fi
+        MESSAGE="Exit reason: $RESULT, code: $EXIT_CODE, status: $EXIT_STATUS"
+        printf '%s\n' "$MESSAGE" > "$FAILURE_MARKER"
         ${pkgs.libnotify}/bin/notify-send -i "dialog-error" -u critical \
           "i3pm daemon failed" \
-          "Exit reason: $RESULT. Restarting..."
+          "$MESSAGE. Restarting..."
         ;;
     esac
   '';
