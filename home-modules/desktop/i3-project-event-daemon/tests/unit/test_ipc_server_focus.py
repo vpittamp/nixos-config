@@ -1658,6 +1658,7 @@ def test_dashboard_invariants_accept_single_daemon_current_row(server):
 
     assert result["ok"] is True
     assert result["issues"] == []
+    assert result["warnings"] == []
 
 
 def test_dashboard_invariants_reject_duplicate_current_rows(server):
@@ -1680,6 +1681,49 @@ def test_dashboard_invariants_reject_duplicate_current_rows(server):
 
     assert result["ok"] is False
     assert "current_session_row_not_unique" in result["issues"]
+
+
+def test_dashboard_invariants_warn_on_transient_window_focus_rows(server):
+    payload = {
+        "schema_version": "i3pm.dashboard.v2",
+        "focus_state": {
+            "current_session_key": "session-current",
+            "current_window_id": 101,
+            "current_workspace_name": "2",
+        },
+        "current_ai_session_key": "session-current",
+        "active_ai_sessions": [
+            {
+                "session_key": "session-current",
+                "is_current_window": True,
+                "source": "herdr",
+                "focused": True,
+                "is_current_host": True,
+            },
+        ],
+        "projects": [
+            {
+                "windows": [
+                    {"id": 202, "focused": True, "is_current_window": False},
+                    {"id": 101, "focused": True, "is_current_window": True},
+                ],
+            },
+        ],
+        "outputs": [
+            {
+                "workspaces": [
+                    {"name": "2", "focused": True},
+                ],
+            },
+        ],
+    }
+
+    result = server._validate_dashboard_payload(payload)
+
+    assert result["ok"] is True
+    assert result["issues"] == []
+    assert "duplicate_focused_windows" in result["warnings"]
+    assert "focused_window_row_mismatch" in result["warnings"]
 
 
 def test_dashboard_invariants_reject_remote_herdr_focus_mismatch(server):

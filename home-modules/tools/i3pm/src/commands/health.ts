@@ -93,6 +93,7 @@ interface DashboardHealth {
   display_generation: number;
   focus_generation: number;
   issues: string[];
+  warnings: string[];
 }
 
 interface HealthReport {
@@ -571,9 +572,13 @@ async function loadDashboardHealth(): Promise<DashboardHealth | null> {
       display_generation?: number;
       focus_generation?: number;
       issues?: unknown[];
+      warnings?: unknown[];
     }>("dashboard.validate", {});
     const issues = Array.isArray(result.issues)
       ? result.issues.map((issue) => String(issue)).filter(Boolean)
+      : [];
+    const warnings = Array.isArray(result.warnings)
+      ? result.warnings.map((warning) => String(warning)).filter(Boolean)
       : [];
     const schemaVersion = String(result.schema_version || "");
     if (schemaVersion !== "i3pm.dashboard.v2") {
@@ -588,6 +593,7 @@ async function loadDashboardHealth(): Promise<DashboardHealth | null> {
       display_generation: Number(result.display_generation || 0),
       focus_generation: Number(result.focus_generation || 0),
       issues,
+      warnings,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -600,6 +606,7 @@ async function loadDashboardHealth(): Promise<DashboardHealth | null> {
       display_generation: 0,
       focus_generation: 0,
       issues: [message || "dashboard.validate failed"],
+      warnings: [],
     };
   } finally {
     client.disconnect();
@@ -763,6 +770,9 @@ function printReport(report: HealthReport): void {
         )
       }`,
     );
+    if (report.dashboard.warnings.length > 0) {
+      console.log(`    warnings ${yellow(report.dashboard.warnings.join(", "))}`);
+    }
   } else {
     console.log(`  dashboard ${red("unavailable")}`);
   }

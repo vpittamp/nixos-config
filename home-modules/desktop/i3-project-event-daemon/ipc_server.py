@@ -12771,6 +12771,7 @@ FORMAT JSONEachRow
             active_context,
             project_name=active_project_name,
         )
+        focused_window_id = int(runtime_snapshot.get("focused_window_id") or 0)
         grouped: Dict[str, Dict[str, Any]] = {}
         for window in list(runtime_snapshot.get("tracked_windows", []) or []):
             if not isinstance(window, dict):
@@ -12886,6 +12887,7 @@ FORMAT JSONEachRow
                 "workspace": str(window.get("workspace") or "").strip(),
                 "output": str(window.get("output") or "").strip(),
                 "focused": derived_focused,
+                "is_current_window": focused_window_id > 0 and window_id == focused_window_id,
                 "visible": derived_visible,
                 "hidden": derived_hidden,
                 "floating": bool(window.get("floating", False)),
@@ -13676,6 +13678,7 @@ FORMAT JSONEachRow
     def _validate_dashboard_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Validate dashboard focus invariants before the payload leaves the daemon."""
         issues: List[str] = []
+        warnings: List[str] = []
         if str(payload.get("schema_version") or "").strip() != DASHBOARD_SCHEMA_VERSION:
             issues.append("schema_version_mismatch")
 
@@ -13721,12 +13724,26 @@ FORMAT JSONEachRow
                     window_rows.append(window)
         focused_windows = [window for window in window_rows if bool(window.get("focused", False))]
         if len(focused_windows) > 1:
-            issues.append("duplicate_focused_windows")
+            warnings.append("duplicate_focused_windows")
         focus_window_id = int(focus_state.get("current_window_id") or focus_state.get("focused_window_id") or 0)
+        current_window_rows = [
+            window for window in window_rows
+            if focus_window_id > 0
+            and (
+                bool(window.get("is_current_window", False))
+                or int(window.get("id") or window.get("window_id") or 0) == focus_window_id
+            )
+        ]
+        current_window_ids = {
+            int(window.get("id") or window.get("window_id") or 0)
+            for window in current_window_rows
+        }
+        if focus_window_id > 0 and current_window_rows and current_window_ids != {focus_window_id}:
+            issues.append("current_window_row_mismatch")
         if focused_windows and focus_window_id > 0:
             focused_row_id = int(focused_windows[0].get("id") or focused_windows[0].get("window_id") or 0)
             if focused_row_id != focus_window_id:
-                issues.append("focused_window_row_mismatch")
+                warnings.append("focused_window_row_mismatch")
 
         focused_workspaces = []
         for output in payload.get("outputs", []) or []:
@@ -13753,6 +13770,7 @@ FORMAT JSONEachRow
         return {
             "ok": not issues,
             "issues": issues,
+            "warnings": warnings,
             "schema_version": DASHBOARD_SCHEMA_VERSION,
         }
 
@@ -13858,6 +13876,7 @@ FORMAT JSONEachRow
             "display_generation": int(payload.get("display_generation") or 0),
             "focus_generation": int(payload.get("focus_generation") or 0),
             "issues": list(invariants.get("issues", []) or []),
+            "warnings": list(invariants.get("warnings", []) or []),
         }
 
     def _build_remote_terminal_helper_script(self, spec: Dict[str, Any]) -> Path:
