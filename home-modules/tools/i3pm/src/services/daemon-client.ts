@@ -378,6 +378,7 @@ export class DaemonClient {
     snapshot_version?: number;
     session_generation?: number;
     display_generation?: number;
+    focus_generation?: number;
   }> {
     if (!this.conn) {
       throw new DaemonError("Not connected to daemon");
@@ -409,6 +410,7 @@ export class DaemonClient {
             snapshot_version: params.snapshot_version === undefined ? undefined : Number(params.snapshot_version),
             session_generation: params.session_generation === undefined ? undefined : Number(params.session_generation),
             display_generation: params.display_generation === undefined ? undefined : Number(params.display_generation),
+            focus_generation: params.focus_generation === undefined ? undefined : Number(params.focus_generation),
           };
         } catch {
           // Ignore malformed notification lines and continue consuming the stream.

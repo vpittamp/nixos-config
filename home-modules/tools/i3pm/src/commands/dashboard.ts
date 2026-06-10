@@ -7,7 +7,9 @@ interface CommandOptions {
 }
 
 function showHelp(): void {
-  console.log(`i3pm dashboard <snapshot|watch> [--json]`);
+  console.log(`i3pm dashboard <snapshot|watch> [--json]
+
+watch emits one initial snapshot, then refetches only after daemon invalidation events.`);
 }
 
 async function fetchSnapshot(client: DaemonClient): Promise<unknown> {
@@ -38,13 +40,12 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
   }
 
   if (subcommand === "watch") {
-    const intervalMs = Math.max(1500, Number(parsed.interval || 5000));
     let lastPayload = "";
+    let lastSeenGeneration = -1;
 
     while (true) {
       const snapshotClient = new DaemonClient();
       const subscriptionClient = new DaemonClient();
-      let heartbeat: number | undefined;
       let snapshotInFlight = false;
       let snapshotQueued = false;
 
@@ -68,6 +69,13 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
               continue;
             }
 
+            if (snapshot && typeof snapshot === "object") {
+              const generation = Number((snapshot as { snapshot_version?: unknown }).snapshot_version ?? -1);
+              if (Number.isFinite(generation)) {
+                lastSeenGeneration = Math.max(lastSeenGeneration, generation);
+              }
+            }
+
             if (encoded !== lastPayload) {
               console.log(encoded);
               lastPayload = encoded;
@@ -83,22 +91,17 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
         await subscriptionClient.connect();
         await emitSnapshot();
 
-        heartbeat = setInterval(() => {
-          void emitSnapshot().catch(() => {
-            // Allow the outer loop to recover on the next stream failure.
-          });
-        }, intervalMs);
-
-        for await (const _event of subscriptionClient.subscribeToStateChanges()) {
+        for await (const event of subscriptionClient.subscribeToStateChanges()) {
+          const generation = Number(event.snapshot_version ?? -1);
+          if (Number.isFinite(generation) && generation >= 0 && generation <= lastSeenGeneration) {
+            continue;
+          }
           await emitSnapshot();
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`[i3pm dashboard watch] reconnecting after error: ${message}`);
       } finally {
-        if (heartbeat !== undefined) {
-          clearInterval(heartbeat);
-        }
         subscriptionClient.disconnect();
         snapshotClient.disconnect();
       }
