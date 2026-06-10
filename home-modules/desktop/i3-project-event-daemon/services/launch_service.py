@@ -191,6 +191,184 @@ class LaunchService:
                 break
         return items
 
+    def build_launch_identity(
+        self,
+        *,
+        app_name: str,
+        project_name: str,
+        launcher_pid: int,
+        app_id_override: str = "",
+    ) -> Dict[str, str]:
+        """Build deterministic launch identity fields shared by launch specs and helpers."""
+        anchor = str(app_id_override or "").strip()
+        if not anchor:
+            anchor = f"{app_name}-{project_name or 'global'}-{launcher_pid}-{int(time.time())}"
+        return {
+            "app_instance_id": anchor,
+            "terminal_anchor_id": anchor,
+        }
+
+    def build_context_tmux_session_name(
+        self,
+        *,
+        project_name: str,
+        context_key: str,
+        terminal_role: str = "project-main",
+    ) -> str:
+        """Build a stable tmux session name for a project/context terminal."""
+        slug = re.sub(r"[^a-z0-9_-]+", "-", str(project_name or "project").strip().lower())
+        slug = re.sub(r"-{2,}", "-", slug).strip("-") or "project"
+        seed = f"{terminal_role}::{project_name}::{context_key or 'global'}"
+        digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:8]
+        return f"i3pm-{slug[:24]}-{digest}"
+
+    def extract_scoped_terminal_command(
+        self,
+        *,
+        app_name: str,
+        prepared_args: List[str],
+    ) -> List[str]:
+        """Extract the command executed inside Ghostty for scoped terminal apps."""
+        args = [str(arg) for arg in prepared_args]
+        if len(args) >= 2 and args[0] == "-e":
+            return args[1:]
+
+        raise RuntimeError(json.dumps({
+            "code": -32004,
+            "message": (
+                f"Scoped terminal app '{app_name}' must use Ghostty '-e <command>' parameters "
+                "for project-aware launches"
+            ),
+            "data": {
+                "app_name": app_name,
+                "parameters": args,
+            },
+        }))
+
+    def substitute_launch_parameter(
+        self,
+        value: str,
+        *,
+        project_name: str,
+        project_dir: str,
+        session_name: str,
+        project_display_name: str,
+        project_icon: str,
+        preferred_workspace: Optional[int],
+    ) -> str:
+        """Expand supported launch parameter placeholders."""
+        rendered = str(value)
+        replacements = {
+            "$PROJECT_DIR": project_dir,
+            "$PROJECT_NAME": project_name,
+            "$SESSION_NAME": session_name,
+            "$HOME": str(Path.home()),
+            "$PROJECT_DISPLAY_NAME": project_display_name,
+            "$PROJECT_ICON": project_icon,
+            "$WORKSPACE": str(preferred_workspace or ""),
+        }
+        for needle, replacement in replacements.items():
+            rendered = rendered.replace(needle, replacement)
+        if "$PROJECT_" in rendered or "$SESSION_NAME" in rendered or "$WORKSPACE" in rendered:
+            raise RuntimeError(json.dumps({
+                "code": -32004,
+                "message": f"Unresolved launch parameter '{value}'",
+                "data": {"parameter": value},
+            }))
+        return rendered
+
+    def build_launch_env(
+        self,
+        *,
+        app_name: str,
+        scope: str,
+        preferred_workspace: Optional[int],
+        expected_class: str,
+        project_name: str,
+        project_dir: str,
+        local_project_dir: str,
+        project_display_name: str,
+        execution_mode: str,
+        target_host: str,
+        transport_kind: str,
+        connection_key: str,
+        context_key: str,
+        remote_profile: Optional[Dict[str, Any]],
+        launcher_pid: int,
+        launch_identity: Dict[str, str],
+        terminal_role: str = "",
+        tmux_session_name: str = "",
+        restore_mark: str = "",
+        remote_session_name: str = "",
+        worktree_branch: str = "",
+        worktree_account: str = "",
+        worktree_repo: str = "",
+    ) -> Dict[str, str]:
+        """Build the environment passed to daemon-managed launches."""
+        env = {
+            "I3PM_APP_ID": launch_identity["app_instance_id"],
+            "I3PM_TERMINAL_ANCHOR_ID": launch_identity["terminal_anchor_id"],
+            "I3PM_TERMINAL_ROLE": terminal_role,
+            "I3PM_TMUX_SESSION_NAME": tmux_session_name,
+            "I3PM_APP_NAME": app_name,
+            "I3PM_PROJECT_NAME": project_name,
+            "I3PM_PROJECT_DIR": project_dir,
+            "I3PM_LOCAL_PROJECT_DIR": local_project_dir,
+            "I3PM_PROJECT_DISPLAY_NAME": project_display_name,
+            "I3PM_PROJECT_ICON": "",
+            "I3PM_SCOPE": scope,
+            "I3PM_ACTIVE": "true" if project_name else "false",
+            "I3PM_LAUNCH_TIME": str(int(time.time())),
+            "I3PM_LAUNCHER_PID": str(launcher_pid),
+            "I3PM_TARGET_WORKSPACE": str(preferred_workspace or ""),
+            "I3PM_EXPECTED_CLASS": expected_class,
+            "I3PM_TARGET_HOST": target_host,
+            "I3PM_TRANSPORT_KIND": transport_kind,
+            "I3PM_EXECUTION_MODE": execution_mode,
+            "I3PM_CONTEXT_VARIANT": execution_mode,
+            "I3PM_CONNECTION_KEY": connection_key,
+            "I3PM_CONTEXT_KEY": context_key,
+            "I3PM_REMOTE_ENABLED": "true" if execution_mode == "ssh" else "false",
+            "I3PM_REMOTE_HOST": "",
+            "I3PM_REMOTE_USER": "",
+            "I3PM_REMOTE_PORT": "",
+            "I3PM_REMOTE_DIR": "",
+            "I3PM_REMOTE_SESSION_NAME": remote_session_name,
+            "I3PM_LOCAL_HOST_ALIAS": self._local_host_alias(),
+            "I3PM_WORKTREE_BRANCH": worktree_branch,
+            "I3PM_WORKTREE_ACCOUNT": worktree_account,
+            "I3PM_WORKTREE_REPO": worktree_repo,
+        }
+        if worktree_branch:
+            env["I3PM_IS_WORKTREE"] = "true"
+            env["I3PM_FULL_BRANCH_NAME"] = worktree_branch
+            env["I3PM_GIT_BRANCH"] = worktree_branch
+        if tmux_session_name:
+            canonical_tmux_socket = self._canonical_tmux_socket()
+            env["I3PM_TMUX_SOCKET"] = canonical_tmux_socket
+            env["I3PM_TMUX_SERVER_KEY"] = canonical_tmux_socket
+        if restore_mark:
+            env["I3PM_RESTORE_MARK"] = restore_mark
+        if remote_profile and execution_mode == "ssh":
+            env["I3PM_REMOTE_HOST"] = str(remote_profile.get("host", ""))
+            env["I3PM_REMOTE_USER"] = str(remote_profile.get("user", ""))
+            env["I3PM_REMOTE_PORT"] = str(remote_profile.get("port", 22))
+            env["I3PM_REMOTE_DIR"] = str(remote_profile.get("remote_dir", ""))
+
+        for key in (
+            "DBUS_SESSION_BUS_ADDRESS",
+            "DISPLAY",
+            "SWAYSOCK",
+            "WAYLAND_DISPLAY",
+            "XDG_CURRENT_DESKTOP",
+            "XDG_RUNTIME_DIR",
+            "XDG_SESSION_TYPE",
+        ):
+            value = str(os.environ.get(key, "") or "").strip()
+            if value:
+                env[key] = value
+        return env
+
     def write_remote_spec(
         self,
         *,

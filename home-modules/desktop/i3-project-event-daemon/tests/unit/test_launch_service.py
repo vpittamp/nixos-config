@@ -161,6 +161,115 @@ def test_write_local_spec_persists_spec_and_initial_status(tmp_path: Path) -> No
     assert status["target_host"] == "thinkpad"
 
 
+def test_launch_identity_and_tmux_session_name_are_stable(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+
+    identity = service.build_launch_identity(
+        app_name="terminal",
+        project_name="repo/main",
+        launcher_pid=123,
+        app_id_override="anchor-explicit",
+    )
+    session_name_a = service.build_context_tmux_session_name(
+        project_name="PittampalliOrg/nixos-config:main",
+        context_key="ctx-main",
+        terminal_role="project-main",
+    )
+    session_name_b = service.build_context_tmux_session_name(
+        project_name="PittampalliOrg/nixos-config:main",
+        context_key="ctx-main",
+        terminal_role="project-main",
+    )
+
+    assert identity == {
+        "app_instance_id": "anchor-explicit",
+        "terminal_anchor_id": "anchor-explicit",
+    }
+    assert session_name_a == session_name_b
+    assert session_name_a.startswith("i3pm-pittampalliorg-nixos-c")
+
+
+def test_launch_parameter_substitution_and_scoped_command_validation(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+
+    rendered = service.substitute_launch_parameter(
+        "$PROJECT_DIR $SESSION_NAME $WORKSPACE",
+        project_name="repo/main",
+        project_dir="/repo/main",
+        session_name="main",
+        project_display_name="main",
+        project_icon="",
+        preferred_workspace=7,
+    )
+
+    assert rendered == "/repo/main main 7"
+    assert service.extract_scoped_terminal_command(
+        app_name="lazygit",
+        prepared_args=["-e", "lazygit", "/repo/main"],
+    ) == ["lazygit", "/repo/main"]
+    with pytest.raises(RuntimeError, match="Unresolved launch parameter"):
+        service.substitute_launch_parameter(
+            "$PROJECT_UNKNOWN",
+            project_name="repo/main",
+            project_dir="/repo/main",
+            session_name="main",
+            project_display_name="main",
+            project_icon="",
+            preferred_workspace=7,
+        )
+    with pytest.raises(RuntimeError, match="must use Ghostty"):
+        service.extract_scoped_terminal_command(
+            app_name="lazygit",
+            prepared_args=["--bad"],
+        )
+
+
+def test_build_launch_env_includes_remote_tmux_and_worktree_metadata(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+
+    env = service.build_launch_env(
+        app_name="terminal",
+        scope="scoped",
+        preferred_workspace=3,
+        expected_class="com.mitchellh.ghostty",
+        project_name="repo/main",
+        project_dir="/srv/repo/main",
+        local_project_dir="/repo/main",
+        project_display_name="main",
+        execution_mode="ssh",
+        target_host="ryzen",
+        transport_kind="ssh",
+        connection_key="vpittamp@ryzen:22",
+        context_key="repo/main::ssh::vpittamp@ryzen:22",
+        remote_profile={
+            "host": "ryzen",
+            "user": "vpittamp",
+            "port": 22,
+            "remote_dir": "/srv/repo/main",
+        },
+        launcher_pid=123,
+        launch_identity={
+            "app_instance_id": "launch-1",
+            "terminal_anchor_id": "anchor-1",
+        },
+        terminal_role="project-main",
+        tmux_session_name="i3pm-main",
+        restore_mark="mark-1",
+        remote_session_name="remote-main",
+        worktree_branch="main",
+        worktree_account="PittampalliOrg",
+        worktree_repo="nixos-config",
+    )
+
+    assert env["I3PM_APP_ID"] == "launch-1"
+    assert env["I3PM_REMOTE_ENABLED"] == "true"
+    assert env["I3PM_REMOTE_HOST"] == "ryzen"
+    assert env["I3PM_REMOTE_DIR"] == "/srv/repo/main"
+    assert env["I3PM_TMUX_SOCKET"] == "/run/user/1000/tmux-1000/default"
+    assert env["I3PM_RESTORE_MARK"] == "mark-1"
+    assert env["I3PM_IS_WORKTREE"] == "true"
+
+
 def test_write_remote_spec_persists_remote_payload(tmp_path: Path) -> None:
     service = make_service(tmp_path)
     spec_path = service.write_remote_spec(
