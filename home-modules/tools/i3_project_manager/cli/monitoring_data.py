@@ -101,7 +101,7 @@ AI_SESSION_NOTIFY_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.
 AI_USER_INPUT_NOTIFICATION_DELAY_SECONDS = 1.0
 AI_MONITOR_METRICS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-monitor-metrics.json"
 AI_SESSION_REVIEW_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-review.json"
-AI_SESSION_SEEN_EVENTS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "eww-monitoring-panel" / "ai-session-seen-events.jsonl"
+AI_SESSION_SEEN_EVENTS_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "i3pm" / "ai-session-seen-events.jsonl"
 REPO_ROOT = Path(__file__).resolve().parents[4]
 AI_FINISHED_NOTIFICATION_SCRIPT = REPO_ROOT / "scripts" / "ai-finished-notification.sh"
 

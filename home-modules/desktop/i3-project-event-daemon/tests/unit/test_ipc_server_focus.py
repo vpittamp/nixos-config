@@ -79,6 +79,15 @@ def server():
     return IPCServer(DummyStateManager())
 
 
+def test_ai_session_seen_queue_is_daemon_owned(server, monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+
+    path = server._ai_session_seen_events_file()
+
+    assert path == tmp_path / "i3pm" / "ai-session-seen-events.jsonl"
+    assert "eww-monitoring-panel" not in str(path)
+
+
 @pytest.mark.asyncio
 async def test_workspace_focus_waits_for_requested_workspace(server):
     command_mock = AsyncMock(return_value=[SimpleNamespace(success=True, error="")])

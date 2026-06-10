@@ -7902,8 +7902,8 @@ class IPCServer:
         return str(self._runtime_dir() / f"tmux-{uid}" / "default")
 
     def _ai_session_seen_events_file(self) -> Path:
-        """Return the review acknowledgement queue consumed by monitoring_data."""
-        return self._runtime_dir() / "eww-monitoring-panel" / "ai-session-seen-events.jsonl"
+        """Return the daemon-owned AI review acknowledgement queue."""
+        return self._runtime_dir() / "i3pm" / "ai-session-seen-events.jsonl"
 
     def _record_ai_session_seen(self, session_key: str) -> None:
         """Append an explicit session-seen acknowledgement for review retention."""

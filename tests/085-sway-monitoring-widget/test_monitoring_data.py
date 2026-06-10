@@ -30,6 +30,14 @@ from i3_project_manager.cli.monitoring_data import (
 )
 
 
+def test_ai_session_seen_queue_uses_i3pm_runtime_path():
+    path = monitoring_data.AI_SESSION_SEEN_EVENTS_FILE
+
+    assert path.parent.name == "i3pm"
+    assert path.name == "ai-session-seen-events.jsonl"
+    assert "eww-monitoring-panel" not in str(path)
+
+
 def make_daemon_runtime_session(raw_session: dict, *, session_key: str | None = None, **overrides) -> dict:
     session = copy.deepcopy(raw_session)
     terminal_context = dict(session.get("terminal_context") or {})
