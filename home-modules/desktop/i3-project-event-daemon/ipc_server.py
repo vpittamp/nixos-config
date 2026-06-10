@@ -1096,9 +1096,11 @@ class IPCServer:
             elif method == "launch.status":
                 result = await self.launch_service.launch_status(params.get("launch_id", ""))
             elif method == "get_launch_stats":
-                result = await self._get_launch_stats()
+                result = self.launch_service.launch_stats()
             elif method == "get_pending_launches":
-                result = await self._get_pending_launches(params)
+                result = await self.launch_service.pending_launches(
+                    include_matched=bool(params.get("include_matched", False))
+                )
             elif method == "get_terminal_anchor":
                 result = await self.launch_service.terminal_anchor(params.get("terminal_anchor_id", ""))
             elif method == "window.focus":
@@ -11010,71 +11012,6 @@ FORMAT JSONEachRow
             include_spec_window_id=True,
         )
 
-    async def _get_launch_stats(self) -> Dict[str, Any]:
-        """
-        Get launch registry statistics for diagnostics.
-
-        Feature 041 - T011
-
-        Returns:
-            LaunchRegistryStats with current state and historical counters
-        """
-        start_time = time.perf_counter()
-
-        stats = self.launch_service.launch_stats()
-
-        duration_ms = (time.perf_counter() - start_time) * 1000
-
-        await self._log_ipc_event(
-            event_type="get_launch_stats",
-            duration_ms=duration_ms
-        )
-
-        return stats
-
-    async def _get_pending_launches(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Get list of pending launches for debugging.
-
-        Feature 041 - T012
-
-        Args:
-            params: {
-                "include_matched": bool (optional, default=False)
-            }
-
-        Returns:
-            {
-                "launches": [
-                    {
-                        "launch_id": str,
-                        "app_name": str,
-                        "project_name": str,
-                        "expected_class": str,
-                        "workspace_number": int,
-                        "matched": bool,
-                        "age": float,
-                        "timestamp": float
-                    }
-                ]
-            }
-        """
-        start_time = time.perf_counter()
-
-        include_matched = params.get("include_matched", False)
-
-        result = await self.launch_service.pending_launches(include_matched=include_matched)
-
-        duration_ms = (time.perf_counter() - start_time) * 1000
-
-        await self._log_ipc_event(
-            event_type="get_pending_launches",
-            duration_ms=duration_ms,
-            params={"include_matched": include_matched}
-        )
-
-        return result
-
     # ======================
     # Feature 058: Project Management JSON-RPC Handlers (T030-T033)
     # Feature 101: DEPRECATED - These methods work with legacy project JSON files
@@ -13650,7 +13587,7 @@ FORMAT JSONEachRow
             },
             "scratchpad": scratchpad_summary,
             "active_terminal": active_terminal_summary,
-            "launch_stats": await self._get_launch_stats(),
+            "launch_stats": self.launch_service.launch_stats(),
         }
         herdr_snapshot = await self.herdr_service.snapshot({})
         sessions = [
@@ -16814,7 +16751,7 @@ FORMAT JSONEachRow
             except Exception as e:
                 logger.warning("worktree.diagnose scratchpad status failed for %s: %s", full_qualified_name, e)
 
-        launch_stats = await self._get_launch_stats()
+        launch_stats = self.launch_service.launch_stats()
         pending_launches = []
         if hasattr(self.state_manager, "launch_registry"):
             pending_launches = await self.state_manager.launch_registry.get_pending_launches(include_matched=True)
