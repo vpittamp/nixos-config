@@ -544,6 +544,129 @@ def test_herdr_service_normalizes_local_and_remote_sessions(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_herdr_service_builds_remote_snapshot(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    target = {
+        "host": "ryzen",
+        "ssh_target": "ryzen",
+        "connection_key": "VPITTAMP@RYZEN:22",
+    }
+
+    payloads = {
+        ("status", "--json"): {"success": True, "result": {"protocol": 13}},
+        ("agent", "list"): {
+            "success": True,
+            "result": {
+                "agents": [{
+                    "pane_id": "pane-r",
+                    "workspace_id": "workspace-r",
+                    "agent": "codex",
+                    "agent_status": "NeedsInput",
+                    "focused": True,
+                }],
+            },
+        },
+        ("pane", "list"): {
+            "success": True,
+            "result": {
+                "panes": [{
+                    "pane_id": "pane-r",
+                    "workspace_id": "workspace-r",
+                    "cwd": "/repo/remote",
+                }],
+            },
+        },
+        ("workspace", "list"): {
+            "success": True,
+            "result": {"workspaces": [{"workspace_id": "workspace-r", "focused": True}]},
+        },
+        ("tab", "list"): {"success": True, "result": {"tabs": []}},
+        ("worktree", "list"): {"success": True, "result": {"worktrees": []}},
+    }
+
+    async def fake_run_ssh_json(_target, args, timeout=2.5):
+        payload = dict(payloads[tuple(args)])
+        payload["command"] = ["ssh", "ryzen", "herdr", *args]
+        return payload
+
+    monkeypatch.setattr(service, "run_ssh_json", fake_run_ssh_json)
+    monkeypatch.setattr(
+        service,
+        "effective_cwd",
+        lambda row, *, ssh_target="": str(row.get("cwd") or ""),
+    )
+    monkeypatch.setattr(
+        service,
+        "git_space_metadata",
+        lambda path, *, ssh_target="", normalize_connection_key: {},
+    )
+
+    snapshot = await service.remote_snapshot(
+        target,
+        local_host="thinkpad",
+        normalize_connection_key=lambda value: value.lower(),
+        project_for_cwd=lambda path: {"project_name": "global", "project_path": path},
+    )
+
+    assert snapshot["success"] is True
+    assert snapshot["remote"] is True
+    assert snapshot["herdr_generation"] == 1
+    assert snapshot["agents"][0]["herdr_host"] == "ryzen"
+    assert snapshot["agents"][0]["connection_key"] == "vpittamp@ryzen:22"
+    assert snapshot["sessions"][0]["session_key"] == "herdr:ryzen:pane:pane-r"
+    assert snapshot["sessions"][0]["agent_status"] == "NeedsInput"
+    assert snapshot["sessions"][0]["focus_target"]["method"] == "herdr.remote.pane.focus"
+    assert snapshot["errors"] == []
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_remote_snapshot_reports_status_failure(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+
+    async def fake_run_ssh_json(_target, args, timeout=2.5):
+        if args == ["status", "--json"]:
+            return {
+                "success": False,
+                "error": "timeout",
+                "command": ["ssh", "ryzen", "herdr", *args],
+                "returncode": None,
+            }
+        return {"success": True, "result": {}, "command": ["ssh", "ryzen", "herdr", *args]}
+
+    monkeypatch.setattr(service, "run_ssh_json", fake_run_ssh_json)
+
+    snapshot = await service.remote_snapshot(
+        {
+            "host": "ryzen",
+            "ssh_target": "ryzen",
+            "connection_key": "vpittamp@ryzen:22",
+        },
+        local_host="thinkpad",
+        normalize_connection_key=lambda value: value,
+        project_for_cwd=lambda path: {"project_name": "global", "project_path": path},
+    )
+
+    assert snapshot["success"] is False
+    assert snapshot["herdr_generation"] == 0
+    assert snapshot["sessions"] == []
+    assert snapshot["errors"] == [{
+        "remote": True,
+        "host": "ryzen",
+        "ssh_target": "ryzen",
+        "connection_key": "vpittamp@ryzen:22",
+        "command": ["ssh", "ryzen", "herdr", "status", "--json"],
+        "error": "timeout",
+        "returncode": None,
+    }]
+
+
+@pytest.mark.asyncio
 async def test_herdr_service_runs_local_json_command(monkeypatch):
     service = HerdrService(
         notify_state_change=lambda event_type: asyncio.sleep(0),

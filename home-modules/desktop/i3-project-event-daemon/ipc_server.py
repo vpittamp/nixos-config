@@ -9808,102 +9808,12 @@ FORMAT JSONEachRow
 
     async def _herdr_remote_snapshot(self, target: Dict[str, str]) -> Dict[str, Any]:
         """Return one remote Herdr host snapshot fetched through read-only SSH commands."""
-        self.herdr_service.clear_git_metadata_cache()
-        # Keep remote collection sequential. Some hosts reject bursts of parallel
-        # SSH startups, and this path is dashboard polling rather than latency-critical.
-        status_payload = await self._run_herdr_ssh_json(target, ["status", "--json"])
-        agent_payload = await self._run_herdr_ssh_json(target, ["agent", "list"])
-        pane_payload = await self._run_herdr_ssh_json(target, ["pane", "list"])
-        workspace_payload = await self._run_herdr_ssh_json(target, ["workspace", "list"])
-        tab_payload = await self._run_herdr_ssh_json(target, ["tab", "list"])
-        worktree_payload = await self._run_herdr_ssh_json(target, ["worktree", "list"])
-        payloads = [status_payload, agent_payload, pane_payload, workspace_payload, tab_payload, worktree_payload]
-        host = str(target.get("host") or "").strip()
-        ssh_target = str(target.get("ssh_target") or "").strip()
-        connection_key = str(target.get("connection_key") or "").strip()
-        errors = [
-            {
-                "remote": True,
-                "host": host,
-                "ssh_target": ssh_target,
-                "connection_key": connection_key,
-                "command": payload.get("command"),
-                "error": payload.get("error") or payload.get("stderr") or payload.get("stdout"),
-                "returncode": payload.get("returncode"),
-            }
-            for payload in payloads
-            if not bool(payload.get("success", False))
-        ]
-        if not bool(status_payload.get("success", False)):
-            return {
-                "success": False,
-                "remote": True,
-                "host": host,
-                "ssh_target": ssh_target,
-                "connection_key": connection_key,
-                "herdr_generation": self.herdr_service.remote_generation_for(host),
-                "status": status_payload,
-                "agents": [],
-                "panes": [],
-                "workspaces": [],
-                "tabs": [],
-                "worktrees": [],
-                "sessions": [],
-                "errors": errors,
-            }
-
-        snapshot = {
-            "success": True,
-            "remote": True,
-            "host": host,
-            "ssh_target": ssh_target,
-            "connection_key": connection_key,
-            "herdr_generation": self.herdr_service.bump_remote_generation(host),
-            "status": status_payload,
-            "agents": self._annotate_herdr_rows(
-                self._herdr_result_array(agent_payload, "agents"),
-                host=host,
-                execution_mode="ssh",
-                connection_key=connection_key,
-                ssh_target=ssh_target,
-                is_remote=True,
-            ),
-            "panes": self._annotate_herdr_rows(
-                self._herdr_result_array(pane_payload, "panes"),
-                host=host,
-                execution_mode="ssh",
-                connection_key=connection_key,
-                ssh_target=ssh_target,
-                is_remote=True,
-            ),
-            "workspaces": self._annotate_herdr_rows(
-                self._herdr_result_array(workspace_payload, "workspaces"),
-                host=host,
-                execution_mode="ssh",
-                connection_key=connection_key,
-                ssh_target=ssh_target,
-                is_remote=True,
-            ),
-            "tabs": self._annotate_herdr_rows(
-                self._herdr_result_array(tab_payload, "tabs"),
-                host=host,
-                execution_mode="ssh",
-                connection_key=connection_key,
-                ssh_target=ssh_target,
-                is_remote=True,
-            ),
-            "worktrees": self._annotate_herdr_rows(
-                self._herdr_worktree_result_array(worktree_payload),
-                host=host,
-                execution_mode="ssh",
-                connection_key=connection_key,
-                ssh_target=ssh_target,
-                is_remote=True,
-            ),
-            "errors": errors,
-        }
-        snapshot["sessions"] = self._normalize_herdr_sessions(snapshot, remote_target=target)
-        return snapshot
+        return await self.herdr_service.remote_snapshot(
+            target,
+            local_host=self._local_host_alias(),
+            normalize_connection_key=self._normalize_connection_key,
+            project_for_cwd=self._herdr_project_for_cwd,
+        )
 
     async def _herdr_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return Herdr-native local and configured remote state."""

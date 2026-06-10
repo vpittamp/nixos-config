@@ -922,7 +922,7 @@ async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
         key = args[0] + "s"
         return {"success": True, "result": {key: []}}
 
-    async def fake_run_herdr_ssh_json(remote_target, args):
+    async def fake_run_herdr_ssh_json(remote_target, args, timeout=2.5):
         assert remote_target == target
         command = " ".join(args)
         if command == "status --json":
@@ -960,7 +960,7 @@ async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
 
     monkeypatch.setattr(server, "_load_herdr_remote_targets", lambda: [target])
     monkeypatch.setattr(server, "_run_herdr_json", fake_run_herdr_json)
-    monkeypatch.setattr(server, "_run_herdr_ssh_json", fake_run_herdr_ssh_json)
+    monkeypatch.setattr(server.herdr_service, "run_ssh_json", fake_run_herdr_ssh_json)
 
     snapshot = await server._herdr_snapshot({"refresh": True})
     rows = snapshot["sessions"]
@@ -1004,7 +1004,7 @@ async def test_herdr_remote_unreachable_reports_error_without_rows(server, monke
         "connection_key": "vpittamp@ryzen:22",
     }
 
-    async def fake_run_herdr_ssh_json(_remote_target, args):
+    async def fake_run_herdr_ssh_json(_remote_target, args, timeout=2.5):
         return {
             "success": False,
             "error": "timeout",
@@ -1013,7 +1013,7 @@ async def test_herdr_remote_unreachable_reports_error_without_rows(server, monke
             "returncode": None,
         }
 
-    monkeypatch.setattr(server, "_run_herdr_ssh_json", fake_run_herdr_ssh_json)
+    monkeypatch.setattr(server.herdr_service, "run_ssh_json", fake_run_herdr_ssh_json)
 
     snapshot = await server._herdr_remote_snapshot(target)
 
