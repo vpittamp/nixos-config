@@ -470,20 +470,20 @@ def test_antigravity_short_tool_id_uses_gemini_visual_family():
     assert 'readonly property string geminiIcon: "${../../../assets/icons/gemini.png}"' in config_text
 
 
-def test_agent_action_toasts_bypass_general_toast_suppression_only_for_i3pm_agent():
-    """Action-required agent notifications get a narrow toast allowance when general toasts are disabled."""
+def test_legacy_agent_action_toast_path_is_removed():
+    """QuickShell should not keep a special toast lane for the retired i3pm-agent notifier."""
     shell_text = SHELL_QML.read_text()
     nix_text = QUICKSHELL_DEFAULT_NIX.read_text()
     toast_text = NOTIFICATION_TOAST_QML.read_text()
+    monitoring_data_text = I3PM_MONITORING_DATA_PY.read_text()
 
-    assert "notificationAgentActionToastMaxPerOutput" in nix_text
-    assert "agentActionToastMaxPerOutput = lib.mkOption" in nix_text
-    assert "function notificationIsAgentAction(item)" in shell_text
-    assert "appName === \"i3pm-agent\" || desktopEntry === \"i3pm-agent\"" in shell_text
-    assert "const regularItems = toastLimit > 0 ? candidates.filter(item => !notificationIsAgentAction(item)).slice(0, toastLimit) : [];" in shell_text
-    assert "const agentActionItems = agentActionToastLimit > 0 ? candidates.filter(item => notificationIsAgentAction(item)).slice(0, agentActionToastLimit) : [];" in shell_text
-    assert "readonly property bool agentAction: rootObject.notificationIsAgentAction(itemData)" in toast_text
-    assert "radius: agentAction ? 8 : 20" in toast_text
+    assert "notificationAgentActionToastMaxPerOutput" not in nix_text
+    assert "agentActionToastMaxPerOutput" not in nix_text
+    assert "function notificationIsAgentAction(item)" not in shell_text
+    assert "i3pm-agent" not in shell_text
+    assert "agentAction" not in toast_text
+    assert "emit_ai_state_transition_notifications" not in monitoring_data_text
+    assert "AI_SESSION_NOTIFY_FILE" not in monitoring_data_text
 
 
 def test_session_sort_orders_by_host_bucket_before_numeric_pane_slot():

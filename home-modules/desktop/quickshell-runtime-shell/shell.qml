@@ -1454,12 +1454,6 @@ ShellRoot {
         return arrayOrEmpty(item && item.actions).length > 0;
     }
 
-    function notificationIsAgentAction(item) {
-        const appName = stringOrEmpty(item && item.app_name).toLowerCase();
-        const desktopEntry = stringOrEmpty(item && item.desktop_entry).toLowerCase();
-        return appName === "i3pm-agent" || desktopEntry === "i3pm-agent";
-    }
-
     function notificationPrimaryAction(item) {
         const actions = arrayOrEmpty(item && item.actions);
         return actions.length > 0 ? actions[0] : null;
@@ -1516,9 +1510,6 @@ ShellRoot {
     }
 
     function notificationAccentColor(item) {
-        if (notificationIsAgentAction(item)) {
-            return colors.amber;
-        }
         if (notificationIsCritical(item)) {
             return colors.red;
         }
@@ -1532,9 +1523,6 @@ ShellRoot {
     }
 
     function notificationAvatarFill(item) {
-        if (notificationIsAgentAction(item)) {
-            return colors.cardAlt;
-        }
         if (notificationIsCritical(item)) {
             return colors.redBg;
         }
@@ -1620,11 +1608,8 @@ ShellRoot {
 
     function toastItemsForOutput(outputName) {
         const toastLimit = Math.max(0, Number(shellConfig.notificationToastMaxPerOutput || 0));
-        const agentActionToastLimit = Math.max(0, Number(shellConfig.notificationAgentActionToastMaxPerOutput || 0));
         const candidates = notificationFeed.filter(item => !notificationClosed(item) && boolOrFalse(item.toast_visible) && stringOrEmpty(item.output_name) === stringOrEmpty(outputName));
-        const regularItems = toastLimit > 0 ? candidates.filter(item => !notificationIsAgentAction(item)).slice(0, toastLimit) : [];
-        const agentActionItems = agentActionToastLimit > 0 ? candidates.filter(item => notificationIsAgentAction(item)).slice(0, agentActionToastLimit) : [];
-        return agentActionItems.concat(regularItems).slice(0, agentActionToastLimit + toastLimit);
+        return toastLimit > 0 ? candidates.slice(0, toastLimit) : [];
     }
 
     function refreshNotificationState() {

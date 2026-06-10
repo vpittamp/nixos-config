@@ -18,7 +18,6 @@ Rectangle {
     signal detailRequested(int notificationId)
 
     readonly property bool critical: rootObject.notificationIsCritical(itemData)
-    readonly property bool agentAction: rootObject.notificationIsAgentAction(itemData)
     readonly property color accentColor: rootObject.notificationAccentColor(itemData)
     readonly property string imageSource: rootObject.notificationResolvedImage(itemData)
     readonly property var primaryAction: rootObject.notificationPrimaryAction(itemData)
@@ -26,10 +25,10 @@ Rectangle {
 
     width: preferredWidth
     implicitWidth: preferredWidth
-    implicitHeight: toastColumn.implicitHeight + (agentAction ? 14 : 20)
-    radius: agentAction ? 8 : 20
-    color: Qt.rgba(0.055, 0.074, 0.11, critical ? 0.94 : (agentAction ? 0.9 : 0.88))
-    border.color: agentAction ? Qt.rgba(1, 1, 1, 0.12) : Qt.tint(accentColor, Qt.rgba(1, 1, 1, critical ? 0.22 : 0.1))
+    implicitHeight: toastColumn.implicitHeight + 20
+    radius: 20
+    color: Qt.rgba(0.055, 0.074, 0.11, critical ? 0.94 : 0.88)
+    border.color: Qt.tint(accentColor, Qt.rgba(1, 1, 1, critical ? 0.22 : 0.1))
     border.width: 1
 
     Rectangle {
@@ -45,29 +44,28 @@ Rectangle {
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.bottom: parent.bottom
-        width: agentAction ? 4 : 5
-        radius: agentAction ? 2 : 3
+        width: 5
+        radius: 3
         color: accentColor
-        opacity: critical ? 1 : (agentAction ? 0.92 : 0.78)
+        opacity: critical ? 1 : 0.78
     }
 
     ColumnLayout {
         id: toastColumn
         anchors.fill: parent
-        anchors.leftMargin: agentAction ? 14 : 18
-        anchors.rightMargin: agentAction ? 14 : 18
-        anchors.topMargin: agentAction ? 10 : 14
-        anchors.bottomMargin: agentAction ? 10 : 14
-        spacing: agentAction ? 7 : 10
+        anchors.leftMargin: 18
+        anchors.rightMargin: 18
+        anchors.topMargin: 14
+        anchors.bottomMargin: 14
+        spacing: 10
 
         RowLayout {
             Layout.fillWidth: true
             spacing: 10
 
             Rectangle {
-                visible: !agentAction
-                Layout.preferredWidth: visible ? 42 : 0
-                Layout.preferredHeight: visible ? 42 : 0
+                Layout.preferredWidth: 42
+                Layout.preferredHeight: 42
                 radius: 14
                 color: rootObject.notificationAvatarFill(itemData)
                 border.color: Qt.rgba(1, 1, 1, 0.08)
@@ -160,7 +158,7 @@ Rectangle {
                 font.pixelSize: 11
                 lineHeight: 1.1
                 wrapMode: Text.Wrap
-                maximumLineCount: agentAction ? 3 : (imageSource !== "" ? 4 : 6)
+                maximumLineCount: imageSource !== "" ? 4 : 6
                 elide: Text.ElideRight
                 textFormat: rootObject.notificationBodyFormat()
             }

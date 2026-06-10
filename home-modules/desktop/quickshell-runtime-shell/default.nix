@@ -48,7 +48,6 @@ QtObject {
   readonly property string notificationBackend: "${cfg.notifications.backend}"
   readonly property int notificationHistoryLimit: ${toString cfg.notifications.historyLimit}
   readonly property int notificationToastMaxPerOutput: ${toString cfg.notifications.toastMaxPerOutput}
-  readonly property int notificationAgentActionToastMaxPerOutput: ${toString cfg.notifications.agentActionToastMaxPerOutput}
   readonly property int notificationDefaultTimeoutMs: ${toString cfg.notifications.defaultTimeoutMs}
   readonly property int notificationCriticalTimeoutMs: ${toString cfg.notifications.criticalTimeoutMs}
   readonly property bool notificationImagesEnabled: ${if cfg.notifications.enableImages then "true" else "false"}
@@ -2524,12 +2523,6 @@ in
         type = lib.types.int;
         default = 4;
         description = "Maximum number of visible notification toasts per output. Set to 0 to disable overlay toasts.";
-      };
-
-      agentActionToastMaxPerOutput = lib.mkOption {
-        type = lib.types.int;
-        default = 0;
-        description = "Maximum number of visible AI action-required toasts per output, independent of the general toast limit.";
       };
 
       defaultTimeoutMs = lib.mkOption {
