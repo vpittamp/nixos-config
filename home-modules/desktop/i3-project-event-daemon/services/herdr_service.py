@@ -648,6 +648,223 @@ class HerdrService:
         return annotated
 
     @staticmethod
+    def session_key(row: Dict[str, Any], host: str = "") -> str:
+        """Build the stable dashboard session key for a Herdr row."""
+        prefix = "herdr"
+        normalized_host = re.sub(r"[^a-z0-9._:-]+", "-", str(host or "").strip().lower()).strip("-")
+        if normalized_host:
+            prefix = f"{prefix}:{normalized_host}"
+        pane_id = str(row.get("pane_id") or "").strip()
+        if pane_id:
+            return f"{prefix}:pane:{pane_id}"
+        terminal_id = str(row.get("terminal_id") or "").strip()
+        if terminal_id:
+            return f"{prefix}:terminal:{terminal_id}"
+        tab_id = str(row.get("tab_id") or "").strip()
+        if tab_id:
+            return f"{prefix}:tab:{tab_id}"
+        workspace_id = str(row.get("workspace_id") or "").strip()
+        if workspace_id:
+            return f"{prefix}:workspace:{workspace_id}"
+        return f"{prefix}:unknown"
+
+    def normalize_session_row(
+        self,
+        row: Dict[str, Any],
+        *,
+        remote_target: Optional[Dict[str, str]] = None,
+        local_host: str,
+        normalize_connection_key: Callable[[str], str],
+        project_for_cwd: Callable[[str], Dict[str, str]],
+    ) -> Dict[str, Any]:
+        """Normalize one Herdr pane or agent row into the dashboard session model."""
+        pane_id = str(row.get("pane_id") or "").strip()
+        tab_id = str(row.get("tab_id") or "").strip()
+        workspace_id = str(row.get("workspace_id") or "").strip()
+        terminal_id = str(row.get("terminal_id") or "").strip()
+        cwd = str(row.get("cwd") or "").strip()
+        foreground_cwd = str(row.get("foreground_cwd") or "").strip()
+        agent = str(row.get("agent") or "").strip()
+        is_remote = isinstance(remote_target, dict)
+        host_key = self.normalize_host_key(
+            remote_target.get("host") if is_remote and remote_target else local_host
+        )
+        ssh_target = str(remote_target.get("ssh_target") or "").strip() if is_remote and remote_target else ""
+        effective_cwd = self.effective_cwd(row, ssh_target=ssh_target)
+        project = project_for_cwd(effective_cwd)
+        git_metadata = self.git_space_metadata(
+            effective_cwd,
+            ssh_target=ssh_target,
+            normalize_connection_key=normalize_connection_key,
+        )
+        project_name = str(project.get("project_name") or "global").strip() or "global"
+        connection_key = (
+            str(remote_target.get("connection_key") or "").strip()
+            if is_remote and remote_target
+            else normalize_connection_key(f"local@{self.normalize_host_key(local_host)}")
+        )
+        agent_status = self.normalize_agent_status(
+            row.get("agent_status"),
+            preserve_raw=is_remote,
+        )
+        display_agent = self.normalize_text_field(row.get("display_agent"))
+        custom_status = self.normalize_text_field(row.get("custom_status"))
+        state_labels = self.normalize_state_labels(row.get("state_labels"))
+        session_key = self.session_key(row, host_key if is_remote else "")
+
+        normalized = dict(row)
+        normalized.update({
+            "schema": "herdr.ai_session.v1",
+            "source": "herdr",
+            "herdr_session": session_key,
+            "session_key": session_key,
+            "render_session_key": session_key,
+            "agent": agent,
+            "tool": agent,
+            "display_tool": agent or "herdr",
+            "display_agent": display_agent,
+            "custom_status": custom_status,
+            "state_labels": state_labels,
+            "agent_status": agent_status,
+            "focused": bool(row.get("focused", False)),
+            "is_current_window": bool(row.get("focused", False)),
+            "window_active": bool(row.get("focused", False)),
+            "pane_active": bool(row.get("focused", False)),
+            "workspace_id": workspace_id,
+            "tab_id": tab_id,
+            "pane_id": pane_id,
+            "terminal_id": terminal_id,
+            "cwd": cwd,
+            "foreground_cwd": foreground_cwd,
+            "working_dir": effective_cwd,
+            "project_name": project_name,
+            "project": project_name,
+            "project_path": str(project.get("project_path") or "").strip(),
+            "project_label": project_name.rsplit("/", 1)[-1] if project_name != "global" else "global",
+            "repo_key": str(git_metadata.get("repo_key") or "").strip(),
+            "repo_name": str(git_metadata.get("repo_name") or "").strip(),
+            "repo_root": str(git_metadata.get("repo_root") or "").strip(),
+            "checkout_path": str(git_metadata.get("checkout_path") or "").strip(),
+            "is_linked_worktree": bool(git_metadata.get("is_linked_worktree", False)),
+            "branch_label": str(git_metadata.get("branch_label") or "").strip(),
+            "execution_mode": "ssh" if is_remote else "local",
+            "connection_key": normalize_connection_key(connection_key),
+            "host_name": host_key,
+            "herdr_host": host_key,
+            "ssh_target": ssh_target,
+            "remote_target": ssh_target,
+            "target_host": host_key,
+            "is_remote_herdr": bool(is_remote),
+            "is_current_host": not bool(is_remote),
+            "focus_mode": "remote_herdr_attach" if is_remote else "herdr_pane",
+            "availability_state": "remote_herdr_attachable" if is_remote else "local_window",
+            "pane_label": pane_id,
+            "pane_title": agent or pane_id,
+            "focus_target": {
+                "method": "herdr.remote.pane.focus",
+                "params": {
+                    "pane_id": pane_id,
+                    "host": host_key,
+                    "ssh_target": ssh_target,
+                    "connection_key": normalize_connection_key(connection_key),
+                    "app_name": "herdr",
+                },
+            } if is_remote else ({
+                "method": "herdr.pane.focus",
+                "params": {"pane_id": pane_id},
+            } if pane_id else {}),
+            "close_target": {} if is_remote else ({
+                "method": "herdr.pane.close",
+                "params": {"pane_id": pane_id},
+            } if pane_id else {}),
+            "workspace_focus_target": {
+                "method": "herdr.workspace.focus",
+                "params": {"workspace_id": workspace_id},
+            } if workspace_id and not is_remote else {},
+            "tab_focus_target": {
+                "method": "herdr.tab.focus",
+                "params": {"tab_id": tab_id},
+            } if tab_id and not is_remote else {},
+        })
+        return normalized
+
+    def normalize_sessions(
+        self,
+        snapshot: Dict[str, Any],
+        *,
+        remote_target: Optional[Dict[str, str]] = None,
+        local_host: str,
+        normalize_connection_key: Callable[[str], str],
+        project_for_cwd: Callable[[str], Dict[str, str]],
+    ) -> List[Dict[str, Any]]:
+        """Normalize Herdr agents and panes into dashboard session rows."""
+        panes_by_id = {
+            str(item.get("pane_id") or "").strip(): dict(item)
+            for item in snapshot.get("panes", [])
+            if isinstance(item, dict) and str(item.get("pane_id") or "").strip()
+        }
+        agents = [
+            item for item in snapshot.get("agents", [])
+            if isinstance(item, dict)
+        ]
+        rows: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+        for agent in agents:
+            pane_id = str(agent.get("pane_id") or "").strip()
+            merged = dict(panes_by_id.get(pane_id, {}))
+            merged.update(agent)
+            session = self.normalize_session_row(
+                merged,
+                remote_target=remote_target,
+                local_host=local_host,
+                normalize_connection_key=normalize_connection_key,
+                project_for_cwd=project_for_cwd,
+            )
+            key = str(session.get("session_key") or "").strip()
+            if key and key not in seen:
+                seen.add(key)
+                rows.append(session)
+
+        for pane_id, pane in panes_by_id.items():
+            if pane_id in seen:
+                continue
+            if not str(pane.get("agent") or "").strip():
+                continue
+            session = self.normalize_session_row(
+                pane,
+                remote_target=remote_target,
+                local_host=local_host,
+                normalize_connection_key=normalize_connection_key,
+                project_for_cwd=project_for_cwd,
+            )
+            key = str(session.get("session_key") or "").strip()
+            if key and key not in seen:
+                seen.add(key)
+                rows.append(session)
+
+        focused_hosts: set[str] = set()
+        for session in rows:
+            host_key = str(session.get("herdr_host") or session.get("host_name") or "").strip().lower()
+            if not bool(session.get("focused", False)):
+                continue
+            if host_key in focused_hosts:
+                session["focused"] = False
+                session["is_current_window"] = False
+                session["window_active"] = False
+                session["pane_active"] = False
+                continue
+            focused_hosts.add(host_key)
+
+        rows.sort(key=lambda item: (
+            not bool(item.get("focused", False)),
+            str(item.get("herdr_host") or ""),
+            str(item.get("project_name") or ""),
+            str(item.get("agent") or ""),
+            str(item.get("pane_id") or ""),
+        ))
+        return rows
+
+    @staticmethod
     def ssh_command_prefix(ssh_target: str) -> List[str]:
         """Return the deterministic SSH transport prefix for remote Herdr calls."""
         return [

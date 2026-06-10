@@ -447,6 +447,102 @@ def test_herdr_service_git_space_metadata_is_cached(monkeypatch):
     assert [call[1] for call in calls].count(("rev-parse", "--show-toplevel")) == 1
 
 
+def test_herdr_service_normalizes_local_and_remote_sessions(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    monkeypatch.setattr(
+        service,
+        "effective_cwd",
+        lambda row, *, ssh_target="": str(row.get("foreground_cwd") or row.get("cwd") or ""),
+    )
+    monkeypatch.setattr(
+        service,
+        "git_space_metadata",
+        lambda path, *, ssh_target="", normalize_connection_key: {
+            "repo_key": "PittampalliOrg/workflow-builder",
+            "repo_name": "workflow-builder",
+            "repo_root": "/repo",
+            "checkout_path": path,
+            "branch_label": "feature/service",
+        } if path else {},
+    )
+
+    def project_for_cwd(path):
+        return {
+            "project_name": "PittampalliOrg/workflow-builder:main" if path else "global",
+            "project_path": path,
+        }
+
+    local_rows = service.normalize_sessions(
+        {
+            "agents": [{
+                "pane_id": "pane-a",
+                "agent": "codex",
+                "agent_status": "NeedsInput",
+                "focused": True,
+            }],
+            "panes": [{
+                "pane_id": "pane-a",
+                "workspace_id": "workspace-a",
+                "tab_id": "tab-a",
+                "cwd": "/repo/main",
+                "foreground_cwd": "/repo/main",
+            }, {
+                "pane_id": "plain",
+                "workspace_id": "workspace-a",
+            }],
+        },
+        local_host="thinkpad",
+        normalize_connection_key=lambda value: value.lower(),
+        project_for_cwd=project_for_cwd,
+    )
+
+    assert len(local_rows) == 1
+    assert local_rows[0]["session_key"] == "herdr:pane:pane-a"
+    assert local_rows[0]["agent_status"] == "unknown"
+    assert local_rows[0]["focus_target"] == {
+        "method": "herdr.pane.focus",
+        "params": {"pane_id": "pane-a"},
+    }
+    assert local_rows[0]["repo_key"] == "PittampalliOrg/workflow-builder"
+
+    remote_row = service.normalize_session_row(
+        {
+            "pane_id": "pane-r",
+            "workspace_id": "workspace-r",
+            "agent": "claude",
+            "agent_status": "NeedsInput",
+            "focused": True,
+            "cwd": "/repo/remote",
+        },
+        remote_target={
+            "host": "Ryzen",
+            "ssh_target": "ryzen",
+            "connection_key": "VPITTAMP@RYZEN:22",
+        },
+        local_host="thinkpad",
+        normalize_connection_key=lambda value: value.lower(),
+        project_for_cwd=project_for_cwd,
+    )
+
+    assert remote_row["session_key"] == "herdr:ryzen:pane:pane-r"
+    assert remote_row["agent_status"] == "NeedsInput"
+    assert remote_row["execution_mode"] == "ssh"
+    assert remote_row["is_current_host"] is False
+    assert remote_row["focus_target"] == {
+        "method": "herdr.remote.pane.focus",
+        "params": {
+            "pane_id": "pane-r",
+            "host": "ryzen",
+            "ssh_target": "ryzen",
+            "connection_key": "vpittamp@ryzen:22",
+            "app_name": "herdr",
+        },
+    }
+
+
 @pytest.mark.asyncio
 async def test_herdr_service_runs_local_json_command(monkeypatch):
     service = HerdrService(
