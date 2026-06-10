@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 import os
@@ -36,14 +37,16 @@ class HerdrService:
         self,
         *,
         notify_state_change: Callable[[str], Awaitable[None]],
-        invalidate_snapshot_cache: Callable[[], None],
+        invalidate_snapshot_cache: Optional[Callable[[], None]] = None,
         socket_env_var: str = "I3PM_HERDR_SOCKET",
         subscription_initial_backoff: float = 0.5,
         subscription_max_backoff: float = 30.0,
         notify_delay: float = 0.05,
+        snapshot_cache_ttl: float = 0.5,
+        remote_snapshot_cache_ttl: float = 10.0,
     ) -> None:
         self._notify_state_change = notify_state_change
-        self._invalidate_snapshot_cache = invalidate_snapshot_cache
+        self._external_invalidate_snapshot_cache = invalidate_snapshot_cache
         self._socket_env_var = socket_env_var
         self.subscription_initial_backoff = subscription_initial_backoff
         self.subscription_max_backoff = subscription_max_backoff
@@ -52,6 +55,10 @@ class HerdrService:
         self.notify_task: Optional[asyncio.Task] = None
         self.local_herdr_generation: int = 0
         self.remote_herdr_generation: Dict[str, int] = {}
+        self.snapshot_cache: Dict[str, Any] = {}
+        self.snapshot_cache_time: float = 0.0
+        self.snapshot_cache_ttl: float = snapshot_cache_ttl
+        self.remote_snapshot_cache_ttl: float = remote_snapshot_cache_ttl
 
     @staticmethod
     def normalize_host_key(host: Any) -> str:
@@ -92,6 +99,42 @@ class HerdrService:
             "local_herdr_generation": int(self.local_herdr_generation),
             "remote_herdr_generation": self.remote_generations_snapshot(),
         }
+
+    def cache_ttl(self, *, has_remote_targets: bool) -> float:
+        """Return the active Herdr snapshot cache TTL."""
+        if has_remote_targets:
+            return float(self.remote_snapshot_cache_ttl)
+        return float(self.snapshot_cache_ttl)
+
+    def cached_snapshot(
+        self,
+        *,
+        now: float,
+        has_remote_targets: bool,
+    ) -> Optional[Dict[str, Any]]:
+        """Return a copy of a valid cached Herdr snapshot."""
+        if not self.snapshot_cache:
+            return None
+        if now - self.snapshot_cache_time > self.cache_ttl(has_remote_targets=has_remote_targets):
+            return None
+        return copy.deepcopy(self.snapshot_cache)
+
+    def store_snapshot(self, snapshot: Dict[str, Any], *, now: float) -> Dict[str, Any]:
+        """Store and return a defensive copy of a Herdr snapshot."""
+        self.snapshot_cache = copy.deepcopy(snapshot)
+        self.snapshot_cache_time = float(now)
+        return copy.deepcopy(self.snapshot_cache)
+
+    def touch_snapshot_cache(self, *, now: float) -> None:
+        """Refresh the cache timestamp after in-place cache reconciliation."""
+        self.snapshot_cache_time = float(now)
+
+    def invalidate_snapshot_cache(self) -> None:
+        """Clear cached Herdr snapshots so the next read fetches fresh state."""
+        self.snapshot_cache = {}
+        self.snapshot_cache_time = 0.0
+        if self._external_invalidate_snapshot_cache is not None:
+            self._external_invalidate_snapshot_cache()
 
     def socket_path(self) -> Path:
         """Return the local Herdr API socket path."""
@@ -205,7 +248,7 @@ class HerdrService:
         if not isinstance(event, dict):
             return
         self.bump_local_generation()
-        self._invalidate_snapshot_cache()
+        self.invalidate_snapshot_cache()
         self.schedule_state_change_notification()
 
     def schedule_state_change_notification(self) -> None:

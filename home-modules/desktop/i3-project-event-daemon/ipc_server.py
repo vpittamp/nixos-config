@@ -578,16 +578,11 @@ class IPCServer:
         self._launch_reconcile_tasks: Dict[str, asyncio.Task] = {}
         self._session_items_cache_key: Optional[Tuple[Any, ...]] = None
         self._session_items_cache_rows: List[Dict[str, Any]] = []
-        self._herdr_snapshot_cache: Dict[str, Any] = {}
-        self._herdr_snapshot_cache_time: float = 0.0
-        self._herdr_snapshot_cache_ttl: float = 0.5
-        self._herdr_remote_snapshot_cache_ttl: float = 10.0
         self._herdr_git_metadata_cache: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
         self._herdr_remote_targets_cache: List[Dict[str, str]] = []
         self._herdr_remote_targets_cache_signature: Tuple[Any, ...] = ("", False, 0, 0)
         self.herdr_service = HerdrService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
-            invalidate_snapshot_cache=self.invalidate_herdr_snapshot_cache,
         )
         self._malformed_json_count: int = 0
         self._deferred_filter_task: Optional[asyncio.Task] = None
@@ -813,10 +808,41 @@ class IPCServer:
         """Coalesce bursts of local Herdr socket events into one dashboard update."""
         self.herdr_service.schedule_state_change_notification()
 
+    @property
+    def _herdr_snapshot_cache(self) -> Dict[str, Any]:
+        return self.herdr_service.snapshot_cache
+
+    @_herdr_snapshot_cache.setter
+    def _herdr_snapshot_cache(self, value: Dict[str, Any]) -> None:
+        self.herdr_service.snapshot_cache = value if isinstance(value, dict) else {}
+
+    @property
+    def _herdr_snapshot_cache_time(self) -> float:
+        return self.herdr_service.snapshot_cache_time
+
+    @_herdr_snapshot_cache_time.setter
+    def _herdr_snapshot_cache_time(self, value: float) -> None:
+        self.herdr_service.snapshot_cache_time = float(value)
+
+    @property
+    def _herdr_snapshot_cache_ttl(self) -> float:
+        return self.herdr_service.snapshot_cache_ttl
+
+    @_herdr_snapshot_cache_ttl.setter
+    def _herdr_snapshot_cache_ttl(self, value: float) -> None:
+        self.herdr_service.snapshot_cache_ttl = float(value)
+
+    @property
+    def _herdr_remote_snapshot_cache_ttl(self) -> float:
+        return self.herdr_service.remote_snapshot_cache_ttl
+
+    @_herdr_remote_snapshot_cache_ttl.setter
+    def _herdr_remote_snapshot_cache_ttl(self, value: float) -> None:
+        self.herdr_service.remote_snapshot_cache_ttl = float(value)
+
     def invalidate_herdr_snapshot_cache(self) -> None:
         """Clear cached Herdr snapshots so the next dashboard read is fresh."""
-        self._herdr_snapshot_cache = {}
-        self._herdr_snapshot_cache_time = 0.0
+        self.herdr_service.invalidate_snapshot_cache()
 
     async def _handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -10370,17 +10396,13 @@ FORMAT JSONEachRow
         use_cache = not bool(params.get("refresh", False))
         now = time.time()
         remote_targets = self._load_herdr_remote_targets()
-        cache_ttl = (
-            self._herdr_remote_snapshot_cache_ttl
-            if remote_targets
-            else self._herdr_snapshot_cache_ttl
-        )
-        if (
-            use_cache
-            and self._herdr_snapshot_cache
-            and now - self._herdr_snapshot_cache_time <= cache_ttl
-        ):
-            return copy.deepcopy(self._herdr_snapshot_cache)
+        if use_cache:
+            cached_snapshot = self.herdr_service.cached_snapshot(
+                now=now,
+                has_remote_targets=bool(remote_targets),
+            )
+            if cached_snapshot is not None:
+                return cached_snapshot
 
         self._herdr_git_metadata_cache.clear()
         status_payload, agent_payload, pane_payload, workspace_payload, tab_payload, worktree_payload = await asyncio.gather(
@@ -10500,9 +10522,7 @@ FORMAT JSONEachRow
             str(item.get("agent") or ""),
             str(item.get("pane_id") or ""),
         ))
-        self._herdr_snapshot_cache = copy.deepcopy(snapshot)
-        self._herdr_snapshot_cache_time = now
-        return snapshot
+        return self.herdr_service.store_snapshot(snapshot, now=now)
 
     async def _herdr_pane_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
         pane_id = str(params.get("pane_id") or "").strip()
@@ -10619,7 +10639,7 @@ FORMAT JSONEachRow
                 window_id=0,
                 connection_key=connection_key,
             )
-        self._herdr_snapshot_cache_time = time.time()
+        self.herdr_service.touch_snapshot_cache(now=time.time())
 
     async def _herdr_remote_pane_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
         pane_id = str(params.get("pane_id") or "").strip()

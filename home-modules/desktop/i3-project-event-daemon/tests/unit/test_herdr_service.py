@@ -88,3 +88,45 @@ def test_herdr_service_tracks_remote_generations_by_host():
         "local_herdr_generation": 0,
         "remote_herdr_generation": {"ryzen": 2},
     }
+
+
+def test_herdr_service_owns_snapshot_cache_with_local_and_remote_ttls():
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+        snapshot_cache_ttl=1.0,
+        remote_snapshot_cache_ttl=10.0,
+    )
+    snapshot = {"sessions": [{"pane_id": "a"}]}
+
+    returned = service.store_snapshot(snapshot, now=100.0)
+    returned["sessions"][0]["pane_id"] = "mutated"
+    snapshot["sessions"][0]["pane_id"] = "source-mutated"
+
+    local_cached = service.cached_snapshot(now=100.5, has_remote_targets=False)
+    remote_cached = service.cached_snapshot(now=105.0, has_remote_targets=True)
+
+    assert local_cached == {"sessions": [{"pane_id": "a"}]}
+    assert remote_cached == {"sessions": [{"pane_id": "a"}]}
+    assert service.cached_snapshot(now=101.1, has_remote_targets=False) is None
+    assert service.cached_snapshot(now=110.1, has_remote_targets=True) is None
+
+
+def test_herdr_service_invalidates_snapshot_cache():
+    invalidations = 0
+
+    def external_invalidate():
+        nonlocal invalidations
+        invalidations += 1
+
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=external_invalidate,
+    )
+    service.store_snapshot({"sessions": []}, now=100.0)
+
+    service.invalidate_snapshot_cache()
+
+    assert service.snapshot_cache == {}
+    assert service.snapshot_cache_time == 0.0
+    assert invalidations == 1
