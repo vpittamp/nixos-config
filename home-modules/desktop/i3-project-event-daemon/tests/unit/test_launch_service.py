@@ -481,6 +481,105 @@ def test_find_context_terminal_window_matches_role_and_prefers_visible_workspace
     assert result is visible
 
 
+def test_find_context_app_window_candidates_filters_scope_mode_and_class(tmp_path: Path) -> None:
+    older = SimpleNamespace(
+        window_id=20,
+        execution_mode="local",
+        project="repo/main",
+        window_class="code",
+        window_instance="code",
+        created=10,
+    )
+    newer_wrong_project = SimpleNamespace(
+        window_id=21,
+        execution_mode="local",
+        project="repo/other",
+        window_class="code",
+        window_instance="code",
+        created=30,
+    )
+    newer = SimpleNamespace(
+        window_id=22,
+        execution_mode="local",
+        project="repo/main",
+        window_class="code",
+        window_instance="code",
+        created=20,
+    )
+    wrong_mode = SimpleNamespace(
+        window_id=23,
+        execution_mode="ssh",
+        project="repo/main",
+        window_class="code",
+        window_instance="code",
+        created=40,
+    )
+    service = LaunchService(
+        runtime_dir=lambda: tmp_path,
+        load_json_file=load_json_file,
+        normalize_target_host=lambda value: str(value or "").strip().lower(),
+        parse_context_target_host=parse_context_target_host,
+        transport_kind_for_target_host=lambda _value: "local_process",
+        local_host_alias=lambda: "thinkpad",
+        window_map_items=lambda: [
+            (20, older),
+            (21, newer_wrong_project),
+            (22, newer),
+            (23, wrong_mode),
+        ],
+    )
+    app = SimpleNamespace(
+        name="code",
+        scope="scoped",
+        terminal=False,
+        expected_class="code",
+        pwa_match_domains=[],
+    )
+
+    result = service.find_context_app_window_candidates(
+        app=app,
+        project_name="repo/main",
+        execution_mode="local",
+    )
+
+    assert result == [newer, older]
+
+
+def test_find_context_app_window_candidates_allows_global_app_any_project(tmp_path: Path) -> None:
+    global_window = SimpleNamespace(
+        window_id=24,
+        execution_mode="local",
+        project="repo/other",
+        window_class="headlamp",
+        window_instance="headlamp",
+        created=10,
+    )
+    service = LaunchService(
+        runtime_dir=lambda: tmp_path,
+        load_json_file=load_json_file,
+        normalize_target_host=lambda value: str(value or "").strip().lower(),
+        parse_context_target_host=parse_context_target_host,
+        transport_kind_for_target_host=lambda _value: "local_process",
+        local_host_alias=lambda: "thinkpad",
+        window_map_items=lambda: [(24, global_window)],
+    )
+    app = SimpleNamespace(
+        name="headlamp",
+        scope="global",
+        terminal=False,
+        expected_class="headlamp",
+        pwa_match_domains=[],
+    )
+
+    result = service.find_context_app_window_candidates(
+        app=app,
+        project_name="repo/main",
+        execution_mode="local",
+    )
+
+    assert result == [global_window]
+
+
 @pytest.mark.asyncio
 async def test_launch_stats_and_pending_launches_use_registry_boundary(tmp_path: Path) -> None:
     registry = DummyLaunchRegistry()

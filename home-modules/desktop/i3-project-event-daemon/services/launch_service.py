@@ -562,6 +562,67 @@ class LaunchService:
         )
         return candidates[0]
 
+    def find_context_app_window_candidates(
+        self,
+        *,
+        app: Any,
+        project_name: str,
+        execution_mode: str,
+    ) -> List[Any]:
+        """Return tracked app windows that are eligible for single-instance reuse."""
+        if self._window_map_items is None:
+            return []
+
+        from .window_identifier import match_pwa_instance, match_window_class
+
+        target_project = str(project_name or "").strip()
+        target_execution_mode = str(execution_mode or "local").strip() or "local"
+
+        candidates = sorted(
+            [window for _window_id, window in self._window_map_items()],
+            key=lambda window: getattr(window, "last_focus", None) or getattr(window, "created", None),
+            reverse=True,
+        )
+        matched_candidates: List[Any] = []
+
+        for candidate in candidates:
+            candidate_window_id = int(getattr(candidate, "window_id", 0) or 0)
+            if candidate_window_id <= 0:
+                continue
+
+            candidate_execution_mode = str(getattr(candidate, "execution_mode", "") or "local").strip() or "local"
+            if candidate_execution_mode != target_execution_mode:
+                continue
+
+            candidate_project = str(getattr(candidate, "project", "") or "").strip()
+            if app.scope != "global" and candidate_project != target_project:
+                continue
+
+            if bool(app.terminal):
+                app_identifier = str(getattr(candidate, "app_identifier", "") or "").strip()
+                if app_identifier != app.name:
+                    continue
+
+            actual_class = str(getattr(candidate, "window_class", "") or "")
+            actual_instance = str(getattr(candidate, "window_instance", "") or "")
+            if app.pwa_match_domains and match_pwa_instance(
+                app.expected_class,
+                actual_class,
+                actual_instance,
+                pwa_domains=list(app.pwa_match_domains or []),
+            ):
+                matched = True
+            else:
+                matched, _ = match_window_class(
+                    app.expected_class,
+                    actual_class,
+                    actual_instance,
+                )
+            if matched:
+                matched_candidates.append(candidate)
+
+        return matched_candidates
+
     def write_remote_spec(
         self,
         *,
