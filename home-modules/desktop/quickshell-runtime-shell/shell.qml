@@ -6518,11 +6518,11 @@ ShellRoot {
         if (optimistic) {
             return sessionMatchesKey(session, optimistic);
         }
-        if (boolOrFalse(session && session.focused) && boolOrFalse(session && session.is_current_host)) {
-            return true;
-        }
         const current = currentSessionKey();
-        return sessionMatchesKey(session, current);
+        if (current) {
+            return sessionMatchesKey(session, current);
+        }
+        return boolOrFalse(session && session.focused) && boolOrFalse(session && session.is_current_host);
     }
 
     function sessionHasConflict(session) {

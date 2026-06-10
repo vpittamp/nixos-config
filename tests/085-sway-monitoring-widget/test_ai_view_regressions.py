@@ -52,13 +52,13 @@ def test_session_badge_symbol_and_attention_hooks_cover_blocked_herdr_status():
     assert "return phase === \"needs_attention\" || phase === \"blocked\";" in text
 
 
-def test_current_session_highlight_uses_local_herdr_focus():
-    """Current row highlighting should trust local Herdr focus before old session-key heuristics."""
+def test_current_session_highlight_uses_single_dashboard_current_key():
+    """Current row highlighting should not independently promote stale raw Herdr focus."""
     text = SHELL_QML.read_text()
     assert "function sessionIsCurrent(session)" in text
-    focused_index = text.index("if (boolOrFalse(session && session.focused) && boolOrFalse(session && session.is_current_host))")
-    key_index = text.index("return sessionMatchesKey(session, current);")
-    assert focused_index < key_index
+    current_index = text.index("if (current) {\n            return sessionMatchesKey(session, current);\n        }")
+    focused_index = text.index("return boolOrFalse(session && session.focused) && boolOrFalse(session && session.is_current_host);")
+    assert current_index < focused_index
 
 
 def test_session_rows_use_optimistic_focus_for_immediate_highlight():

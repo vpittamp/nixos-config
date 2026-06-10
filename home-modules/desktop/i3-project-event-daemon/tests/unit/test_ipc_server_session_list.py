@@ -395,6 +395,64 @@ def test_select_current_session_key_preserves_override_when_focused_window_still
     assert server._focus_session_override_key == "session-remote"
 
 
+def test_select_current_session_key_prefers_focused_herdr_override_over_local_focus(server):
+    server._set_focus_overrides(
+        session_key="herdr:ryzen:pane:w1-1",
+        window_id=0,
+        connection_key="vpittamp@ryzen:22",
+    )
+    sessions = [
+        {
+            "session_key": "herdr:thinkpad:pane:w0-1",
+            "source": "herdr",
+            "focused": True,
+            "is_current_host": True,
+        },
+        {
+            "session_key": "herdr:ryzen:pane:w1-1",
+            "source": "herdr",
+            "focused": True,
+            "is_current_host": False,
+        },
+    ]
+
+    current_session_key = server._select_current_session_key(
+        sessions,
+        focused_window_id=0,
+    )
+
+    assert current_session_key == "herdr:ryzen:pane:w1-1"
+
+
+def test_select_current_session_key_ignores_unfocused_herdr_override(server):
+    server._set_focus_overrides(
+        session_key="herdr:ryzen:pane:w1-1",
+        window_id=0,
+        connection_key="vpittamp@ryzen:22",
+    )
+    sessions = [
+        {
+            "session_key": "herdr:thinkpad:pane:w0-1",
+            "source": "herdr",
+            "focused": True,
+            "is_current_host": True,
+        },
+        {
+            "session_key": "herdr:ryzen:pane:w1-1",
+            "source": "herdr",
+            "focused": False,
+            "is_current_host": False,
+        },
+    ]
+
+    current_session_key = server._select_current_session_key(
+        sessions,
+        focused_window_id=0,
+    )
+
+    assert current_session_key == "herdr:thinkpad:pane:w0-1"
+
+
 @pytest.mark.asyncio
 async def test_session_list_preserves_turn_owner_and_activity_substate(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()

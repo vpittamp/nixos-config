@@ -11490,6 +11490,26 @@ FORMAT JSONEachRow
         focused_window_id: int,
     ) -> str:
         """Return the single session key that owns current focus in the dashboard."""
+        override_key = self._current_session_override_key(
+            sessions,
+            focused_window_id=focused_window_id,
+        )
+        if override_key:
+            override_session = next(
+                (
+                    session for session in sessions
+                    if isinstance(session, dict)
+                    and str(session.get("session_key") or "").strip() == override_key
+                ),
+                None,
+            )
+            if (
+                isinstance(override_session, dict)
+                and str(override_session.get("source") or "").strip() == "herdr"
+                and bool(override_session.get("focused", False))
+            ):
+                return override_key
+
         local_herdr_focused = next(
             (
                 str(session.get("session_key") or "").strip()
@@ -11518,11 +11538,6 @@ FORMAT JSONEachRow
         )
         if remote_herdr_focused:
             return remote_herdr_focused
-
-        override_key = self._current_session_override_key(
-            sessions,
-            focused_window_id=focused_window_id,
-        )
 
         if focused_window_id > 0:
             window_sessions = [
