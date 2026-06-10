@@ -4292,14 +4292,6 @@ class IPCServer:
             "timestamp": int(time.time()),
         }
 
-    def _dashboard_event_type_for_state_change(self, event_type: str) -> str:
-        """Map legacy daemon invalidations to the typed dashboard event contract."""
-        return dashboard_event_type_for_state_change(event_type)
-
-    def _dashboard_changed_keys_for_event(self, event_type: str) -> List[str]:
-        """Return coarse model keys affected by a typed dashboard event."""
-        return dashboard_changed_keys_for_event(event_type)
-
     async def _dashboard_event_payload(self, changed_keys: List[str]) -> Dict[str, Any]:
         """Build a partial dashboard payload for a typed state-change event."""
         snapshot = await self._dashboard_snapshot({"skip_git_hydration": True})
@@ -4321,8 +4313,8 @@ class IPCServer:
         """
         self._snapshot_version += 1
         normalized_type = str(event_type or "state_changed")
-        typed_event_type = self._dashboard_event_type_for_state_change(normalized_type)
-        changed_keys = self._dashboard_changed_keys_for_event(normalized_type)
+        typed_event_type = dashboard_event_type_for_state_change(normalized_type)
+        changed_keys = dashboard_changed_keys_for_event(normalized_type)
         if typed_event_type in {"session.changed", "herdr.changed"}:
             self._session_generation += 1
         if (
@@ -9804,25 +9796,17 @@ FORMAT JSONEachRow
             sessions = [session for session in sessions_raw if isinstance(session, dict)]
         return runtime_snapshot, sessions, cleanup
 
-    def _build_focus_state_payload(
-        self,
-        runtime_snapshot: Dict[str, Any],
-        sessions: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        """Build the daemon-owned focus view model consumed by dashboard clients."""
-        return self.focus_service.build_focus_state_payload(
-            runtime_snapshot,
-            sessions,
-            generation=int(self._focus_generation or self._snapshot_version or 0),
-        )
-
     async def _focus_state(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return canonical focus state for acceptance checks and UI confirmation."""
         runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
             params or {},
             close_windows=True,
         )
-        return self._build_focus_state_payload(runtime_snapshot, sessions)
+        return self.focus_service.build_focus_state_payload(
+            runtime_snapshot,
+            sessions,
+            generation=int(self._focus_generation or self._snapshot_version or 0),
+        )
 
     async def _session_list(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return daemon-owned Herdr AI session data."""
@@ -10906,7 +10890,11 @@ FORMAT JSONEachRow
         worktrees = list(runtime_snapshot.get("dashboard_worktrees", []) or [])
         if not worktrees:
             worktrees = await self._build_dashboard_worktrees(runtime_snapshot)
-        focus_state = self._build_focus_state_payload(runtime_snapshot, sessions)
+        focus_state = self.focus_service.build_focus_state_payload(
+            runtime_snapshot,
+            sessions,
+            generation=int(self._focus_generation or self._snapshot_version or 0),
+        )
         payload = {
             "status": "ok",
             "schema_version": DASHBOARD_SCHEMA_VERSION,
