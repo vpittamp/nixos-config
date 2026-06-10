@@ -50,6 +50,48 @@ class HerdrService:
         self.notify_delay = notify_delay
         self.subscription_task: Optional[asyncio.Task] = None
         self.notify_task: Optional[asyncio.Task] = None
+        self.local_herdr_generation: int = 0
+        self.remote_herdr_generation: Dict[str, int] = {}
+
+    @staticmethod
+    def normalize_host_key(host: Any) -> str:
+        """Normalize a Herdr host key for generation tracking."""
+        return str(host or "").strip().lower()
+
+    def bump_local_generation(self) -> int:
+        """Advance and return the local Herdr generation."""
+        self.local_herdr_generation += 1
+        return self.local_herdr_generation
+
+    def bump_remote_generation(self, host: Any) -> int:
+        """Advance and return a remote Herdr host generation."""
+        host_key = self.normalize_host_key(host)
+        if not host_key:
+            return 0
+        generation = int(self.remote_herdr_generation.get(host_key, 0)) + 1
+        self.remote_herdr_generation[host_key] = generation
+        return generation
+
+    def remote_generation_for(self, host: Any) -> int:
+        """Return the current generation for a remote Herdr host."""
+        host_key = self.normalize_host_key(host)
+        if not host_key:
+            return 0
+        return int(self.remote_herdr_generation.get(host_key, 0))
+
+    def remote_generations_snapshot(self) -> Dict[str, int]:
+        """Return a copy of remote Herdr host generations."""
+        return {
+            str(host): int(generation)
+            for host, generation in self.remote_herdr_generation.items()
+        }
+
+    def generations_snapshot(self) -> Dict[str, Any]:
+        """Return local and remote Herdr generation counters."""
+        return {
+            "local_herdr_generation": int(self.local_herdr_generation),
+            "remote_herdr_generation": self.remote_generations_snapshot(),
+        }
 
     def socket_path(self) -> Path:
         """Return the local Herdr API socket path."""
@@ -162,6 +204,7 @@ class HerdrService:
         """Invalidate Herdr-derived dashboard state after a local Herdr event."""
         if not isinstance(event, dict):
             return
+        self.bump_local_generation()
         self._invalidate_snapshot_cache()
         self.schedule_state_change_notification()
 

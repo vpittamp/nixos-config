@@ -51,6 +51,7 @@ async def test_herdr_service_invalidates_and_coalesces_notifications():
     await asyncio.sleep(0.03)
 
     assert invalidations == 3
+    assert service.local_herdr_generation == 3
     assert notifications == ["ai_session_herdr_changed"]
 
 
@@ -71,3 +72,19 @@ def test_herdr_service_subscription_payload_covers_local_agent_events():
     assert subscriptions == set(HERDR_EVENT_SUBSCRIPTION_TYPES)
     assert "workspace.updated" in subscriptions
     assert "pane.agent_detected" in subscriptions
+
+
+def test_herdr_service_tracks_remote_generations_by_host():
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+
+    assert service.remote_generation_for("ryzen") == 0
+    assert service.bump_remote_generation("Ryzen") == 1
+    assert service.bump_remote_generation("ryzen") == 2
+
+    assert service.generations_snapshot() == {
+        "local_herdr_generation": 0,
+        "remote_herdr_generation": {"ryzen": 2},
+    }

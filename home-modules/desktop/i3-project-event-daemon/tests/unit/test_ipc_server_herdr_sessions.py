@@ -518,6 +518,9 @@ async def test_dashboard_snapshot_includes_herdr_spaces(server, monkeypatch):
     runtime_snapshot = {
         "current_ai_session_key": "herdr:pane:local-pane",
         "herdr": {
+            "herdr_generation": 7,
+            "local_herdr_generation": 7,
+            "remote_herdr_generation": {"ryzen": 3},
             "status": {"success": True},
             "workspaces": [{
                 "workspace_id": "local-ws",
@@ -558,6 +561,9 @@ async def test_dashboard_snapshot_includes_herdr_spaces(server, monkeypatch):
 
     assert dashboard["active_ai_sessions"] == sessions
     assert dashboard["current_ai_session_key"] == "herdr:pane:local-pane"
+    assert dashboard["herdr"]["herdr_generation"] == 7
+    assert dashboard["herdr"]["local_herdr_generation"] == 7
+    assert dashboard["herdr"]["remote_herdr_generation"] == {"ryzen": 3}
     assert dashboard["herdr"]["spaces"] == [{
         "space_key": f"herdr:{local_host}:workspace:local-ws",
         "host_key": local_host,
@@ -959,6 +965,9 @@ async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
     snapshot = await server._herdr_snapshot({"refresh": True})
     rows = snapshot["sessions"]
 
+    assert snapshot["local_herdr_generation"] == 0
+    assert snapshot["remote_herdr_generation"] == {"ryzen": 1}
+    assert snapshot["remote_snapshots"][0]["herdr_generation"] == 1
     assert [row["session_key"] for row in rows] == [
         "herdr:pane:local-pane",
         "herdr:ryzen:pane:remote-pane",
@@ -1026,7 +1035,9 @@ async def test_herdr_pane_actions_call_herdr_with_pane_id(server, monkeypatch):
 
     monkeypatch.setattr(server, "_run_herdr_json", fake_run_herdr_json)
 
+    server._herdr_snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
     focus_result = await server._herdr_pane_focus({"pane_id": "w123-1"})
+    server._herdr_snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
     close_result = await server._herdr_pane_close({"pane_id": "w123-1"})
 
     assert calls == [
@@ -1037,6 +1048,8 @@ async def test_herdr_pane_actions_call_herdr_with_pane_id(server, monkeypatch):
     assert focus_result["pane_id"] == "w123-1"
     assert close_result["success"] is True
     assert close_result["pane_id"] == "w123-1"
+    assert server.herdr_service.local_herdr_generation == 2
+    assert server._herdr_snapshot_cache == {}
 
 
 @pytest.mark.asyncio
@@ -1079,6 +1092,7 @@ async def test_herdr_remote_pane_focus_switches_pane_then_reuses_herdr_app(serve
         "focus_fast": True,
     })
     server.notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
+    assert server.herdr_service.remote_generation_for("ryzen") == 1
     assert result["success"] is True
     assert result["launch"]["launch"]["reused_existing"] is True
 

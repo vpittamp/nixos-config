@@ -10300,6 +10300,7 @@ FORMAT JSONEachRow
                 "host": host,
                 "ssh_target": ssh_target,
                 "connection_key": connection_key,
+                "herdr_generation": self.herdr_service.remote_generation_for(host),
                 "status": status_payload,
                 "agents": [],
                 "panes": [],
@@ -10316,6 +10317,7 @@ FORMAT JSONEachRow
             "host": host,
             "ssh_target": ssh_target,
             "connection_key": connection_key,
+            "herdr_generation": self.herdr_service.bump_remote_generation(host),
             "status": status_payload,
             "agents": self._annotate_herdr_rows(
                 self._herdr_result_array(agent_payload, "agents"),
@@ -10391,8 +10393,12 @@ FORMAT JSONEachRow
         )
         local_host = self._local_host_alias()
         local_connection_key = self._normalize_connection_key(f"local@{local_host}")
+        herdr_generations = self.herdr_service.generations_snapshot()
         snapshot = {
             "success": bool(status_payload.get("success", False)),
+            "herdr_generation": herdr_generations["local_herdr_generation"],
+            "local_herdr_generation": herdr_generations["local_herdr_generation"],
+            "remote_herdr_generation": herdr_generations["remote_herdr_generation"],
             "status": status_payload,
             "agents": self._annotate_herdr_rows(
                 self._herdr_result_array(agent_payload, "agents"),
@@ -10460,6 +10466,7 @@ FORMAT JSONEachRow
                     "host": error_entry["host"],
                     "ssh_target": error_entry["ssh_target"],
                     "connection_key": error_entry["connection_key"],
+                    "herdr_generation": self.herdr_service.remote_generation_for(error_entry["host"]),
                     "errors": [error_entry],
                     "sessions": [],
                 })
@@ -10480,6 +10487,7 @@ FORMAT JSONEachRow
 
         snapshot["remote_targets"] = remote_targets
         snapshot["remote_snapshots"] = normalized_remote_snapshots
+        snapshot["remote_herdr_generation"] = self.herdr_service.remote_generations_snapshot()
         snapshot["remote_errors"] = [
             error for error in snapshot.get("errors", [])
             if isinstance(error, dict) and bool(error.get("remote", False))
@@ -10501,6 +10509,9 @@ FORMAT JSONEachRow
         if not pane_id:
             raise ValueError("pane_id is required")
         result = await self._run_herdr_json(["agent", "focus", pane_id])
+        if bool(result.get("success", False)):
+            self.herdr_service.bump_local_generation()
+            self.invalidate_herdr_snapshot_cache()
         return {"success": bool(result.get("success", False)), "pane_id": pane_id, "herdr": result}
 
     async def _herdr_pane_close(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -10508,7 +10519,9 @@ FORMAT JSONEachRow
         if not pane_id:
             raise ValueError("pane_id is required")
         result = await self._run_herdr_json(["pane", "close", pane_id])
-        self._herdr_snapshot_cache = {}
+        if bool(result.get("success", False)):
+            self.herdr_service.bump_local_generation()
+        self.invalidate_herdr_snapshot_cache()
         return {"success": bool(result.get("success", False)), "pane_id": pane_id, "herdr": result}
 
     def _resolve_herdr_remote_action_target(self, params: Dict[str, Any]) -> Dict[str, str]:
@@ -10616,6 +10629,7 @@ FORMAT JSONEachRow
         target = self._resolve_herdr_remote_action_target(params)
         focus_result = await self._run_herdr_ssh_json(target, ["agent", "focus", pane_id])
         if bool(focus_result.get("success", False)):
+            self.herdr_service.bump_remote_generation(target.get("host"))
             self._apply_remote_herdr_focus_cache(target=target, pane_id=pane_id)
         launch_result = await self._launch_open({
             "app_name": str(params.get("app_name") or "herdr").strip() or "herdr",
@@ -10639,6 +10653,9 @@ FORMAT JSONEachRow
         if not workspace_id:
             raise ValueError("workspace_id is required")
         result = await self._run_herdr_json(["workspace", "focus", workspace_id])
+        if bool(result.get("success", False)):
+            self.herdr_service.bump_local_generation()
+            self.invalidate_herdr_snapshot_cache()
         return {"success": bool(result.get("success", False)), "workspace_id": workspace_id, "herdr": result}
 
     async def _herdr_tab_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -10646,6 +10663,9 @@ FORMAT JSONEachRow
         if not tab_id:
             raise ValueError("tab_id is required")
         result = await self._run_herdr_json(["tab", "focus", tab_id])
+        if bool(result.get("success", False)):
+            self.herdr_service.bump_local_generation()
+            self.invalidate_herdr_snapshot_cache()
         return {"success": bool(result.get("success", False)), "tab_id": tab_id, "herdr": result}
 
     def _build_window_focus_target(
@@ -13874,6 +13894,9 @@ FORMAT JSONEachRow
             "current_ai_session_key": current_session_key,
             "focus_state": focus_state,
             "herdr": {
+                "herdr_generation": int(herdr_snapshot.get("herdr_generation") or 0),
+                "local_herdr_generation": int(herdr_snapshot.get("local_herdr_generation") or 0),
+                "remote_herdr_generation": herdr_snapshot.get("remote_herdr_generation", {}),
                 "status": herdr_snapshot.get("status", {}),
                 "workspace_count": len(herdr_snapshot.get("workspaces", []) or []),
                 "tab_count": len(herdr_snapshot.get("tabs", []) or []),
