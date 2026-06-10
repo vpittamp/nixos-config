@@ -969,6 +969,29 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             "matched": False,
         }
 
+    async def wait_for_terminal_window(
+        self,
+        terminal_anchor_id: str,
+        *,
+        attempts: int = 30,
+        delay_s: float = 0.2,
+    ) -> Dict[str, Any]:
+        """Poll launch/window tracking until a terminal anchor resolves to a window."""
+        anchor = str(terminal_anchor_id or "").strip()
+        result: Dict[str, Any] = {
+            "matched": False,
+            "window_id": 0,
+            "terminal_anchor_id": anchor,
+        }
+        for attempt in range(max(int(attempts), 1)):
+            result = await self.terminal_anchor(anchor)
+            window_id = int(result.get("window_id") or 0)
+            if bool(result.get("matched", False)) and window_id > 0:
+                return result
+            if attempt + 1 < max(int(attempts), 1):
+                await asyncio.sleep(delay_s)
+        return result
+
     def resolve_terminal_helper(self, helper_name: str) -> Path:
         """Resolve installed terminal helpers, with a repo fallback for local development."""
         helper_dir = os.environ.get("I3PM_TERMINAL_HELPER_DIR", "").strip()

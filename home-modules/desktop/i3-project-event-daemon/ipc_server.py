@@ -17503,19 +17503,11 @@ FORMAT JSONEachRow
         delay_s: float = 0.2,
     ) -> Dict[str, Any]:
         """Poll daemon tracking until a launched terminal anchor resolves to a window."""
-        result: Dict[str, Any] = {
-            "matched": False,
-            "window_id": 0,
-            "terminal_anchor_id": str(terminal_anchor_id or "").strip(),
-        }
-        for attempt in range(max(int(attempts), 1)):
-            result = await self._get_terminal_anchor({"terminal_anchor_id": terminal_anchor_id})
-            window_id = int(result.get("window_id") or 0)
-            if bool(result.get("matched", False)) and window_id > 0:
-                return result
-            if attempt + 1 < max(int(attempts), 1):
-                await asyncio.sleep(delay_s)
-        return result
+        return await self.launch_service.wait_for_terminal_window(
+            terminal_anchor_id,
+            attempts=attempts,
+            delay_s=delay_s,
+        )
 
     def _connection_target_is_current_host(self, connection_key: str) -> bool:
         """Return whether an SSH connection target resolves back to this host."""

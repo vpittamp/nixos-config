@@ -547,3 +547,37 @@ async def test_terminal_anchor_resolves_pending_launch_binding(tmp_path: Path) -
     assert result["binding"] == "pending"
     assert result["launch_id"] == "launch-pending"
     assert result["workspace"] == 2
+
+
+@pytest.mark.asyncio
+async def test_wait_for_terminal_window_returns_bound_anchor(tmp_path: Path) -> None:
+    calls = 0
+
+    async def fake_anchor(_params: Dict[str, Any]) -> Dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {
+            "terminal_anchor_id": "anchor-window",
+            "matched": calls >= 3,
+            "window_id": 77 if calls >= 3 else 0,
+        }
+
+    service = LaunchService(
+        runtime_dir=lambda: tmp_path,
+        load_json_file=load_json_file,
+        normalize_target_host=lambda value: str(value or "").strip().lower(),
+        parse_context_target_host=parse_context_target_host,
+        transport_kind_for_target_host=lambda _value: "local_process",
+        local_host_alias=lambda: "thinkpad",
+        get_terminal_anchor=fake_anchor,
+    )
+
+    result = await service.wait_for_terminal_window(
+        "anchor-window",
+        attempts=4,
+        delay_s=0,
+    )
+
+    assert result["matched"] is True
+    assert result["window_id"] == 77
+    assert calls == 3
