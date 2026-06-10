@@ -11,6 +11,7 @@ interface SessionPreviewInfo {
   session_key: string;
   preview_mode: string;
   preview_reason: string;
+  message?: string;
   lines: number;
   is_live: boolean;
   is_remote: boolean;
@@ -48,7 +49,7 @@ interface SessionPreviewInfo {
 function showHelp(): void {
   console.log(`i3pm session <list|focus|close|preview|cleanup|doctor> [session_key] [--json]
 
-  i3pm session preview <session_key> [--follow] [--lines <n>] [--jsonl] [--legacy-tmux-preview]
+  i3pm session preview <session_key> [--follow] [--lines <n>] [--jsonl]
   i3pm session close <session_key> [--json]
   i3pm session cleanup [--json]
   i3pm session doctor [--json]`);
@@ -112,123 +113,34 @@ function buildPreviewFrame(
   };
 }
 
-function normalizeLines(text: string, limit: number): string[] {
-  const normalized = text.replace(/\r\n?/g, "\n");
-  const trimmed = normalized.endsWith("\n") ? normalized.slice(0, -1) : normalized;
-  if (!trimmed) {
-    return [];
-  }
-  const lines = trimmed.split("\n");
-  return lines.slice(Math.max(0, lines.length - limit));
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
-async function* readLines(stream: ReadableStream<Uint8Array>): AsyncGenerator<string> {
-  const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
-  let buffer = "";
-
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) {
-        break;
-      }
-
-      buffer += value;
-      const parts = buffer.split("\n");
-      buffer = parts.pop() ?? "";
-      for (const line of parts) {
-        yield line;
-      }
-    }
-
-    if (buffer.length > 0) {
-      yield buffer;
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-async function capturePaneContent(info: SessionPreviewInfo): Promise<string> {
-  if (!info.tmux_pane) {
-    return "";
-  }
-
-  let result: Deno.CommandOutput;
-  if (info.preview_mode === "ssh_stream") {
-    const destination = info.remote_user
-      ? `${info.remote_user}@${info.remote_host}`
-      : info.remote_host;
-    const tmuxCmd = info.tmux_socket
-      ? `tmux -S ${shellQuote(info.tmux_socket)}`
-      : "tmux";
-    const remoteScript = `${tmuxCmd} capture-pane -p -J -S -${info.lines} -t ${shellQuote(info.tmux_pane)}`;
-    result = await new Deno.Command("ssh", {
-      args: [
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "ConnectTimeout=2",
-        "-p",
-        String(info.remote_port || 22),
-        destination,
-        `bash -lc ${shellQuote(remoteScript)}`,
-      ],
-      stdout: "piped",
-      stderr: "piped",
-    }).output();
-  } else {
-    result = await new Deno.Command("tmux", {
-      args: ["capture-pane", "-p", "-J", "-S", `-${info.lines}`, "-t", info.tmux_pane],
-      stdout: "piped",
-      stderr: "piped",
-    }).output();
-  }
-
-  if (!result.success) {
-    const error = new TextDecoder().decode(result.stderr).trim();
-    throw new Error(error || `tmux capture-pane failed for ${info.tmux_pane}`);
-  }
-
-  return normalizeLines(new TextDecoder().decode(result.stdout), info.lines).join("\n");
-}
-
-async function emitSnapshot(info: SessionPreviewInfo): Promise<void> {
-  const content = await capturePaneContent(info);
-  emitPreviewFrame(buildPreviewFrame(info, {
-    kind: "snapshot",
-    status: "live",
-    content,
-    isLive: true,
-  }));
-}
-
 function previewFallbackMessage(info: SessionPreviewInfo): string {
+  const daemonMessage = String(info.message || "").trim();
+  if (daemonMessage) {
+    return daemonMessage;
+  }
+  if (info.preview_reason === "herdr_focus_only") {
+    return "Focus this Herdr pane to inspect live output.";
+  }
+  if (info.preview_reason === "herdr_focus_required") {
+    return "Live tmux preview has been retired. Focus the corresponding Herdr pane for live inspection.";
+  }
   if (info.preview_reason === "missing_tmux_identity") {
     return "This session has no tmux pane identity, so there is nothing stable to preview.";
   }
   if (info.preview_reason === "stale_remote_source") {
     return "The remote session source is stale, so live preview is temporarily unavailable.";
   }
-  if (info.preview_reason === "legacy_tmux_preview_disabled") {
-    return "Live tmux preview is disabled for this session. Focus the Herdr pane for live inspection, or pass --legacy-tmux-preview for the old tmux preview path.";
-  }
   return "Preview is unavailable for this session.";
 }
 
 async function runPreview(client: DaemonClient, subArgs: string[]): Promise<number> {
   const parsed = parseArgs(subArgs, {
-    boolean: ["help", "json", "follow", "jsonl", "legacy-tmux-preview"],
+    boolean: ["help", "json", "follow", "jsonl"],
     string: ["lines"],
     alias: { h: "help" },
   });
 
   const sessionKey = String(parsed._[0] || "");
-  const follow = Boolean(parsed.follow);
   const jsonl = Boolean(parsed.jsonl);
   const lineCount = Math.max(20, Math.min(200, Number(parsed.lines || 100) || 100));
 
@@ -240,173 +152,19 @@ async function runPreview(client: DaemonClient, subArgs: string[]): Promise<numb
   const info = await client.request<SessionPreviewInfo>("session.preview", {
     session_key: sessionKey,
     lines: lineCount,
-    allow_legacy_tmux_preview: Boolean(parsed["legacy-tmux-preview"]),
   });
 
-  if (parsed.json && !follow && !jsonl) {
+  if (parsed.json && !parsed.follow && !jsonl) {
     console.log(JSON.stringify(info, null, 2));
     return 0;
   }
 
-  if (info.preview_mode !== "local_stream" && info.preview_mode !== "ssh_stream") {
-    emitPreviewFrame(buildPreviewFrame(info, {
-      kind: "status",
-      status: "fallback",
-      message: previewFallbackMessage(info),
-      isLive: false,
-    }));
-    return 0;
-  }
-
-  try {
-    await emitSnapshot(info);
-  } catch (error) {
-    emitPreviewFrame(buildPreviewFrame(info, {
-      kind: "error",
-      status: "error",
-      message: error instanceof Error ? error.message : String(error),
-      isLive: false,
-    }));
-    return 1;
-  }
-
-  if (!follow) {
-    return 0;
-  }
-
-  if (info.preview_mode === "ssh_stream") {
-    let lastContent = "";
-    while (true) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      try {
-        const content = await capturePaneContent(info);
-        if (content === lastContent) {
-          continue;
-        }
-        lastContent = content;
-        emitPreviewFrame(buildPreviewFrame(info, {
-          kind: "snapshot",
-          status: "live",
-          content,
-          isLive: true,
-        }));
-      } catch (error) {
-        emitPreviewFrame(buildPreviewFrame(info, {
-          kind: "error",
-          status: "error",
-          message: error instanceof Error ? error.message : String(error),
-          isLive: false,
-        }));
-        return 1;
-      }
-    }
-  }
-
-  const child = new Deno.Command("tmux", {
-    args: [
-      "-C",
-      "attach-session",
-      "-t",
-      info.tmux_session,
-      "-f",
-      "read-only,ignore-size,pause-after=1",
-    ],
-    stdin: "piped",
-    stdout: "piped",
-    stderr: "piped",
-  }).spawn();
-
-  let pendingSnapshot: number | null = null;
-
-  const scheduleSnapshot = () => {
-    if (pendingSnapshot !== null) {
-      return;
-    }
-    pendingSnapshot = setTimeout(async () => {
-      pendingSnapshot = null;
-      try {
-        await emitSnapshot(info);
-      } catch (error) {
-        emitPreviewFrame(buildPreviewFrame(info, {
-          kind: "error",
-          status: "error",
-          message: error instanceof Error ? error.message : String(error),
-          isLive: false,
-        }));
-      }
-    }, 90);
-  };
-
-  const handleControlLine = (line: string) => {
-    if (!line) {
-      return;
-    }
-    if (
-      line.startsWith(`%output ${info.tmux_pane} `) ||
-      line.startsWith(`%extended-output ${info.tmux_pane} `)
-    ) {
-      scheduleSnapshot();
-      return;
-    }
-    if (line.startsWith("%exit")) {
-      emitPreviewFrame(buildPreviewFrame(info, {
-        kind: "status",
-        status: "closed",
-        message: "Pane preview ended.",
-        isLive: false,
-      }));
-    }
-  };
-
-  const stdoutTask = (async () => {
-    if (!child.stdout) {
-      return;
-    }
-    for await (const line of readLines(child.stdout)) {
-      handleControlLine(line);
-    }
-  })();
-
-  const stderrTask = (async () => {
-    if (!child.stderr) {
-      return;
-    }
-    for await (const line of readLines(child.stderr)) {
-      const message = line.trim();
-      if (!message) {
-        continue;
-      }
-      emitPreviewFrame(buildPreviewFrame(info, {
-        kind: "error",
-        status: "error",
-        message,
-        isLive: false,
-      }));
-    }
-  })();
-
-  try {
-    const [, , status] = await Promise.all([stdoutTask, stderrTask, child.status]);
-    if (!status.success) {
-      emitPreviewFrame(buildPreviewFrame(info, {
-        kind: "error",
-        status: "error",
-        message: "tmux control-mode preview exited unexpectedly.",
-        isLive: false,
-      }));
-      return 1;
-    }
-  } finally {
-    if (pendingSnapshot !== null) {
-      clearTimeout(pendingSnapshot);
-    }
-    try {
-      child.kill("SIGTERM");
-    } catch {
-      // Ignore cleanup failures for already-exited control clients.
-    }
-  }
-
+  emitPreviewFrame(buildPreviewFrame(info, {
+    kind: "status",
+    status: info.preview_mode === "focus_only" ? "focus_required" : "unavailable",
+    message: previewFallbackMessage(info),
+    isLive: false,
+  }));
   return 0;
 }
 

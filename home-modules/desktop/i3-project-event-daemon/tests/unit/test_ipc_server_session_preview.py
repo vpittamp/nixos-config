@@ -95,19 +95,16 @@ def make_session(**overrides):
 
 
 @pytest.mark.asyncio
-async def test_session_preview_returns_live_local_stream_for_current_host_tmux_session(server):
+async def test_session_preview_returns_focus_required_for_current_host_tmux_session(server):
     server._session_list = AsyncMock(return_value={"sessions": [make_session()]})
 
-    result = await server._session_preview({
-        "session_key": "session-local",
-        "lines": 120,
-        "allow_legacy_tmux_preview": True,
-    })
+    result = await server._session_preview({"session_key": "session-local", "lines": 120})
 
     assert result["success"] is True
-    assert result["preview_mode"] == "local_stream"
-    assert result["preview_reason"] == "ok"
-    assert result["is_live"] is True
+    assert result["preview_mode"] == "focus_only"
+    assert result["preview_reason"] == "herdr_focus_required"
+    assert result["message"] == "Live tmux preview has been retired. Focus the corresponding Herdr pane for live inspection."
+    assert result["is_live"] is False
     assert result["is_remote"] is False
     assert result["lines"] == 120
     assert result["tmux_pane"] == "%17"
@@ -116,19 +113,22 @@ async def test_session_preview_returns_live_local_stream_for_current_host_tmux_s
 
 
 @pytest.mark.asyncio
-async def test_session_preview_disables_tmux_streams_by_default(server):
+async def test_session_preview_has_no_legacy_tmux_preview_escape_hatch(server):
     server._session_list = AsyncMock(return_value={"sessions": [make_session()]})
 
-    result = await server._session_preview({"session_key": "session-local", "lines": 120})
+    result = await server._session_preview({
+        "session_key": "session-local",
+        "lines": 120,
+    })
 
-    assert result["preview_mode"] == "unavailable"
-    assert result["preview_reason"] == "legacy_tmux_preview_disabled"
+    assert result["preview_mode"] == "focus_only"
+    assert result["preview_reason"] == "herdr_focus_required"
     assert result["is_live"] is False
     assert result["tmux_pane"] == "%17"
 
 
 @pytest.mark.asyncio
-async def test_session_preview_returns_ssh_stream_for_remote_session(server, monkeypatch):
+async def test_session_preview_returns_focus_required_for_remote_tmux_session(server, monkeypatch):
     remote_session = make_session(
         session_key="session-remote",
         project_name="vpittamp/nixos-config:main",
@@ -151,25 +151,20 @@ async def test_session_preview_returns_ssh_stream_for_remote_session(server, mon
         tmux_pane="%21",
     )
     server._session_list = AsyncMock(return_value={"sessions": [remote_session]})
-    monkeypatch.setattr(server, "_resolve_remote_attach_profile", lambda _session: {
-        "remote_user": "vpittamp",
-        "remote_host": "ryzen",
-        "remote_port": 22,
-    })
+    resolve_attach_profile = AsyncMock(return_value={})
+    monkeypatch.setattr(server, "_resolve_remote_attach_profile", resolve_attach_profile)
 
-    result = await server._session_preview({
-        "session_key": "session-remote",
-        "allow_legacy_tmux_preview": True,
-    })
+    result = await server._session_preview({"session_key": "session-remote"})
 
-    assert result["preview_mode"] == "ssh_stream"
-    assert result["preview_reason"] == "remote_host"
-    assert result["is_live"] is True
+    assert result["preview_mode"] == "focus_only"
+    assert result["preview_reason"] == "herdr_focus_required"
+    assert result["is_live"] is False
     assert result["is_remote"] is True
-    assert result["remote_host"] == "ryzen"
-    assert result["remote_user"] == "vpittamp"
+    assert result["remote_host"] == ""
+    assert result["remote_user"] == ""
     assert result["tmux_socket"] == "/tmp/tmux-1000/default"
     assert result["availability_state"] == "remote_bridge_attachable"
+    resolve_attach_profile.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -242,26 +237,18 @@ async def test_session_preview_prefers_remote_source_connection_for_bound_remote
     )
     server._session_list = AsyncMock(return_value={"sessions": [remote_session]})
 
-    def resolve_attach_profile(session):
-        assert session["source_connection_key"] == "vpittamp@thinkpad:22"
-        return {
-            "remote_user": "vpittamp",
-            "remote_host": "thinkpad",
-            "remote_port": 22,
-        }
-
+    resolve_attach_profile = AsyncMock(return_value={})
     monkeypatch.setattr(server, "_resolve_remote_attach_profile", resolve_attach_profile)
 
-    result = await server._session_preview({
-        "session_key": "session-remote-bound",
-        "allow_legacy_tmux_preview": True,
-    })
+    result = await server._session_preview({"session_key": "session-remote-bound"})
 
-    assert result["preview_mode"] == "ssh_stream"
-    assert result["remote_host"] == "thinkpad"
-    assert result["remote_user"] == "vpittamp"
+    assert result["preview_mode"] == "focus_only"
+    assert result["preview_reason"] == "herdr_focus_required"
+    assert result["remote_host"] == ""
+    assert result["remote_user"] == ""
     assert result["bridge_state"] == "attached"
     assert result["bridge_window_id"] == 52
+    resolve_attach_profile.assert_not_called()
 
 
 @pytest.mark.asyncio

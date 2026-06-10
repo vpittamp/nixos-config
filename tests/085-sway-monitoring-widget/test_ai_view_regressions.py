@@ -248,9 +248,11 @@ def test_launcher_preview_for_herdr_sessions_is_focus_only():
     assert "return;" in text
     assert "function sessionPreviewStatusText()" in text
     assert "root.sessionPreviewStatusText()" in launcher_text
-    assert '"legacy-tmux-preview"' in session_command_text
-    assert "allow_legacy_tmux_preview: Boolean(parsed[\"legacy-tmux-preview\"])" in session_command_text
-    assert "legacy_tmux_preview_disabled" in session_command_text
+    assert '"legacy-tmux-preview"' not in session_command_text
+    assert "allow_legacy_tmux_preview" not in session_command_text
+    assert "legacy_tmux_preview_disabled" not in session_command_text
+    assert '"local_stream"' not in session_command_text
+    assert '"ssh_stream"' not in session_command_text
 
 
 def test_herdr_space_groups_collapse_state_defaults_expanded():

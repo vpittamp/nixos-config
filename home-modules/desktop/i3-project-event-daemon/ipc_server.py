@@ -10328,71 +10328,43 @@ FORMAT JSONEachRow
         availability_state = str(session.get("availability_state") or "").strip()
         focusability_reason = str(session.get("focusability_reason") or "").strip()
         source_is_current_host = bool(session.get("source_is_current_host", False))
-        allow_legacy_tmux_preview = bool(params.get("allow_legacy_tmux_preview", False))
         is_herdr_session = (
             str(session.get("source") or "").strip() == "herdr"
             or bool(str(session.get("pane_id") or "").strip())
         )
         has_tmux_identity = bool(tmux_session and tmux_pane)
-        remote_user = ""
-        remote_host = ""
-        remote_port = 22
-        if (
-            not is_herdr_session
-            and has_tmux_identity
-            and focus_mode in {"remote_bridge_bound", "remote_bridge_attachable"}
-        ):
-            try:
-                attach_profile = self._resolve_remote_attach_profile(session)
-                remote_user = str(attach_profile.get("remote_user") or "").strip()
-                remote_host = str(attach_profile.get("remote_host") or "").strip()
-                remote_port = int(attach_profile.get("remote_port", 22) or 22)
-            except RuntimeError:
-                remote_user = ""
-                remote_host = str(session.get("host_name") or "").strip()
-                remote_port = 22
 
         preview_mode = "unavailable"
         preview_reason = "missing_tmux_identity"
+        message = ""
         is_live = False
         is_remote = not source_is_current_host
 
         if is_herdr_session:
             preview_mode = "focus_only"
             preview_reason = "herdr_focus_only"
+            message = "Focus this Herdr pane to inspect live output."
             is_live = False
             is_remote = bool(session.get("is_remote_herdr", False)) or not source_is_current_host
         elif availability_state == "stale_source":
             preview_mode = "unavailable"
             preview_reason = "stale_remote_source"
+            message = "The remote session source is stale; refresh Herdr state before inspecting it."
             is_live = False
             is_remote = not source_is_current_host
-        elif has_tmux_identity and not allow_legacy_tmux_preview:
-            preview_mode = "unavailable"
-            preview_reason = "legacy_tmux_preview_disabled"
+        elif has_tmux_identity:
+            preview_mode = "focus_only"
+            preview_reason = "herdr_focus_required"
+            message = "Live tmux preview has been retired. Focus the corresponding Herdr pane for live inspection."
             is_live = False
             is_remote = not source_is_current_host
-        elif has_tmux_identity and focus_mode in {"remote_bridge_bound", "remote_bridge_attachable"}:
-            preview_mode = "ssh_stream"
-            preview_reason = "remote_host"
-            is_live = True
-            is_remote = True
-        elif has_tmux_identity and source_is_current_host and execution_mode == "local":
-            preview_mode = "local_stream"
-            preview_reason = "ok"
-            is_live = True
-            is_remote = False
 
         return {
             "success": True,
             "session_key": session_key,
             "preview_mode": preview_mode,
             "preview_reason": preview_reason,
-            "message": (
-                "Focus this Herdr pane to inspect live output."
-                if is_herdr_session
-                else ""
-            ),
+            "message": message,
             "lines": lines,
             "is_live": is_live,
             "is_remote": is_remote,
@@ -10414,9 +10386,9 @@ FORMAT JSONEachRow
             "tmux_session": tmux_session,
             "tmux_window": tmux_window,
             "tmux_pane": tmux_pane,
-            "remote_user": remote_user,
-            "remote_host": remote_host,
-            "remote_port": remote_port,
+            "remote_user": "",
+            "remote_host": "",
+            "remote_port": 22,
             "surface_key": str(session.get("surface_key") or "").strip(),
             "session_phase": str(session.get("session_phase") or "").strip(),
             "session_phase_label": str(session.get("session_phase_label") or "").strip(),
