@@ -1,6 +1,6 @@
 ---
 name: skaffold-dev-loop
-description: Manage PittampalliOrg Skaffold dev loops for the workflow-builder microservices system on ryzen. Use for starting/exiting `skaffold dev` inner-loop HMR sessions, troubleshooting Argo pause/resume (the LOCAL ryzen ArgoCD selfHeal, since ryzen reconciles its own apps), SKAFFOLD_DEFAULT_REPO/ghcr.io registry issues, dev kustomize overlay drift, outer-loop commit-pin to main, Knative fn-system exclusion, and choosing between Skaffold, hub Promoter PR merge, and GitHub/GHCR image delivery.
+description: Manage PittampalliOrg Skaffold dev loops for the workflow-builder microservices system on ryzen. Use for starting/exiting `skaffold dev` inner-loop HMR sessions, troubleshooting Argo pause/resume (the LOCAL ryzen ArgoCD selfHeal, since ryzen reconciles its own apps), SKAFFOLD_DEFAULT_REPO/ghcr.io registry issues, dev kustomize overlay drift, outer-loop commit-pin to main, Knative fn-system exclusion, the reconciler-owned piece-mcp-server piece-runtime Knative services (replacing deleted fn-activepieces), and choosing between Skaffold, hub Promoter PR merge, and GitHub/GHCR image delivery.
 ---
 
 # Skaffold Dev Loop
@@ -18,20 +18,19 @@ There are two loops:
 
 Skaffold does **not** replace the GitOps manifest path. For non-image manifest changes destined for dev/staging/hub (ConfigMaps, env vars, resource limits), commit to `main` on PittampalliOrg/stacks, then **merge the GitOps Promoter PR** (`env/hub-next → env/hub` or `env/spokes-dev-next → env/spokes-dev`) so those clusters pick up the change. Ryzen itself reconciles `overlays/ryzen` @ `main` directly (no Promoter PR needed for ryzen). See the `gitops` skill for the full promotion flow.
 
-The Skaffold module set covers 6 of the 7 services in the system:
+The Skaffold module set covers 5 of the 6 services in the system:
 
 | Module | Type | Local→Container | Sync paths (dev) |
 |---|---|---|---|
 | `workflow-builder` | SvelteKit BFF (Node 22) | 3002 → 3000 | `src/**`, `lib/**`, `static/**`, `drizzle/**`, `scripts/**.{ts,js,mjs}`, `vite.config.ts`, … |
 | `workflow-orchestrator` | Python/FastAPI Dapr workflow | 3013 → 8080 | `services/workflow-orchestrator/**/*.py`, `*.toml`, `*.yaml` |
 | `function-router` | Node Express | 3014 → 8080 | `services/function-router/src/**`, `config/**`, `tsconfig.json` |
-| `fn-activepieces` | Node Express | 3016 → 8080 | `services/fn-activepieces/src/**` (inactive on current ryzen by default) |
 | `mcp-gateway` | Node Express | 3018 → 8080 | `services/mcp-gateway/src/**` |
 | `swebench-coordinator` | Python/FastAPI | 3019 → 8080 | `services/swebench-coordinator/src/**.py`, `pyproject.toml` |
 
 **`fn-system` is excluded** — it runs as a Knative Service (`ksvc fn-system`, scale-to-0). Inner-loop file-sync into a transient Knative pod is impractical. Treat the existing Argo-managed fn-system as a stable dependency.
 
-**`fn-activepieces` is inactive by default** — the Skaffold config remains in tree for recovery/parity work, but the current ryzen cluster may not expose a matching regular Argo Application/Deployment. Default `ALL` runs skip it. Use `SKAFFOLD_ALLOW_INACTIVE=1 bash scripts/skaffold-dev.sh fn-activepieces` only when deliberately restoring or testing that path.
+**The ActivePieces piece-runtime is NOT a Skaffold module.** `fn-activepieces` was deleted; AP pieces now run on per-piece `ap-<piece>-service` Knative Services (one converged `piece-mcp-server` image parameterized by `PIECE_NAME`, serving `/execute` + `/mcp` + `/options` + `/health`), provisioned by the reconciler-owned `activepieces-mcps` app — not Skaffold-iterable. Deliver piece-runtime changes via an image rebuild + metadata re-sync (see the `gitops` skill), not the inner/outer Skaffold loops.
 
 ## When to use this skill
 
@@ -68,12 +67,12 @@ Edits to a sync'd path (e.g. `src/**/*.svelte`) tar into the pod in ~1s; Vite HM
 ```bash
 pnpm deploy:skaffold                                # workflow-builder
 pnpm deploy:skaffold:orchestrator                   # workflow-orchestrator
-bash scripts/skaffold-deploy.sh fn-activepieces     # any single service
+bash scripts/skaffold-deploy.sh function-router     # any single service
 bash scripts/skaffold-deploy.sh workflow-builder workflow-orchestrator  # batch
 ```
 
 `scripts/skaffold-deploy.sh`:
-1. **No-pin-target guard**: rejects any service lacking `workloads/<svc>/manifests/kustomization.yaml` (e.g. `fn-system`, `fn-activepieces`) before building — they're pinned outside the Skaffold outer loop.
+1. **No-pin-target guard**: rejects any service lacking `workloads/<svc>/manifests/kustomization.yaml` (e.g. `fn-system`) before building — they're pinned outside the Skaffold outer loop.
 2. Runs `skaffold build -m <svc> --push --file-output build.json` (cache-aware) → `ghcr.io/pittampalliorg/<svc>:git-<sha>`
 3. Parses `<repo>:<tag>@sha256:<digest>` from `build.json`
 4. Invokes `skaffold/hooks/commit-pin.sh <svc>` unconditionally with that ref

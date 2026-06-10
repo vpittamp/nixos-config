@@ -73,10 +73,9 @@ pnpm dev:skaffold:all                            # active modules
 # Arbitrary subset:
 bash scripts/skaffold-dev.sh function-router
 bash scripts/skaffold-dev.sh workflow-builder workflow-orchestrator mcp-gateway
-
-# Inactive module, only when deliberately restoring/testing that path:
-SKAFFOLD_ALLOW_INACTIVE=1 bash scripts/skaffold-dev.sh fn-activepieces
 ```
+
+> The ActivePieces piece-runtime (`ap-<piece>-service`) is NOT a Skaffold module — those per-piece Knative services are reconciler-owned (`activepieces-mcps`), delivered via image rebuild + metadata re-sync, not the Skaffold inner/outer loop. (`fn-activepieces` was deleted.)
 
 Steady-state for a single-module session: pod 2/2 Ready in ~3 min (Dapr sidecar dominates), then "Watching for changes..." and port-forward live (e.g. `http://localhost:3002` for workflow-builder).
 
@@ -125,7 +124,7 @@ The local render (instead of relying on a webhook to ryzen) is required because 
 ```bash
 pnpm deploy:skaffold                                  # workflow-builder
 pnpm deploy:skaffold:orchestrator                     # workflow-orchestrator
-bash scripts/skaffold-deploy.sh fn-activepieces       # any single service
+bash scripts/skaffold-deploy.sh function-router       # any single service
 bash scripts/skaffold-deploy.sh workflow-builder workflow-orchestrator  # batch
 ```
 
@@ -232,14 +231,13 @@ docker login -u PittampalliOrg ghcr.io
 
 - **workflow-builder**: SvelteKit's `.svelte-kit/tsconfig.json` doesn't exist on first start — `[WARNING] Cannot find base config file` is benign; vanishes after the first route hit.
 - **workflow-orchestrator**: uvicorn `--reload` watches `/app`; py edits trigger restart. Dapr's scheduler-disconnected logs at startup are normal — placement reconnects within seconds.
-- **fn-activepieces**: currently inactive by default on ryzen. The prod Deployment file is a multi-doc YAML (Deployment + Service). The dev overlay's `resources:` references the file; both kinds render but only the Deployment is patched.
 - **swebench-coordinator**: build context is the repo root (Dockerfile uses `services/swebench-coordinator/...` paths). Same .dockerignore exclusions as workflow-orchestrator.
 - **Node services + pnpm v10 build gotcha**: a Node service whose Dockerfile uses UNPINNED `npm install -g pnpm` gets pnpm v10, which FAILS the prod build at `RUN pnpm build` with `ERR_PNPM_IGNORED_BUILDS` (esbuild/protobufjs build scripts blocked behind an approval gate). FIX: pin `pnpm@9` (like mcp-gateway); do NOT rely on `--ignore-scripts` (leaves esbuild's binary missing for the build stage). This kind of prod-build break can hide indefinitely because the hub per-service trigger only fires on a `services/<svc>/` change — the image just stays frozen at the last good build (function-router was stuck at a May-21 image for this reason; fixed wfb PR #42).
 
 ## When Skaffold is NOT the right path
 
 - **`fn-system` (Knative)** — treat the cluster's Argo-managed pod as an external dependency. Skaffold sync into a transient Knative revision is impractical. `scripts/sandbox-dev.sh` is the experimental sandbox-based alternative for Knative-style workloads.
-- **`fn-activepieces`** — currently inactive on ryzen; the Skaffold module is wired but excluded from default `ALL` sessions. Set `SKAFFOLD_ALLOW_INACTIVE=1` to opt in deliberately.
+- **ActivePieces piece-runtime (`ap-<piece>-service`)** — reconciler-owned per-piece Knative services (`activepieces-mcps`), not a Skaffold module. Deliver changes via an image rebuild (`piece-mcp-server`) + metadata re-sync, not Skaffold. (`fn-activepieces` was deleted.)
 - **Services not in the Skaffold module set** — add them to `skaffold/<svc>.skaffold.yaml` and the root `requires:` list rather than using a side-channel inner-loop.
 
 

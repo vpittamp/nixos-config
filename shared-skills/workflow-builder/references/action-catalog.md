@@ -14,9 +14,9 @@ The orchestrator dispatches based on the slug *prefix*. Source: `services/workfl
 | `browser/*` | openshell-agent-runtime | Dapr invoke → function-router | `browser/profile`, `browser/clone`, `browser/command`, `browser/capture-flow`, `browser/validate` |
 | `openshell/*` | openshell-agent-runtime | Dapr invoke → function-router | OpenShell runtime helper routes |
 | `code/*` | code-runtime | Dapr invoke → function-router | `code/typescript-function`, `code/python-function` |
-| `*` (default fall-through) | fn-activepieces | Dapr invoke → function-router (credential broker + AP piece executor) | `@activepieces/piece-slack/send_message`, etc. |
+| `*` (default fall-through) | per-piece `ap-<piece>-service` (piece-runtime) | Dapr invoke → function-router (`function-registry` `_default` `{type: activepieces}` computes `ap-<piece>-service`) → piece-runtime `POST /execute` | `github/create-issue`, `slack/send-message`, etc. |
 
-`function-router` is the credential broker + Knative proxy for everything **except** `durable/run`. It does NOT decrypt credentials itself — it HTTP-GETs the BFF/ActivePieces `…/decrypt` endpoint for plaintext and audits each fetch in `credential_access_logs`. AES-256-CBC decryption lives in the BFF (`src/lib/server/security/encryption.ts`). Slug routing inside function-router is governed by the `function-registry` ConfigMap in stacks (`packages/components/workloads/function-router/manifests/ConfigMap-function-registry.yaml`) — that's authoritative.
+`function-router` is the credential-reference forwarder + Knative proxy for everything **except** `durable/run`. For AP routes it computes the per-piece `ap-<piece>-service` (one converged `piece-mcp-server` image parameterized by `PIECE_NAME`) and **forwards only `X-Connection-External-Id`** (writing the `credential_access_logs` audit, source `reference_forwarded`); the piece-runtime self-resolves plaintext by GETting the BFF `/api/internal/connections/<id>/decrypt`. function-router never holds plaintext, and AES-256-CBC decryption lives ONLY in the BFF (`src/lib/server/security/encryption.ts`). Slug routing inside function-router is governed by the `function-registry` ConfigMap in stacks (`packages/components/workloads/function-router/manifests/ConfigMap-function-registry.yaml`) — that's authoritative. (`fn-activepieces` was deleted — its app-scoped `ap_<piece>_<action>` activities were never deployed.)
 
 ## Rejected legacy slugs
 
@@ -29,7 +29,7 @@ The orchestrator's `_REMOVED_AGENT_ACTION_TYPES` set raises `Removed SW 1.0 agen
 - `dapr-swe/run`
 - `durable/plan`
 
-Legacy `mastra/*` and `agent/*` slugs are **not** in that set — they do NOT raise the "Removed" error. They fall through to the default `fn-activepieces` route and fail there as an unknown action (a different, less obvious error). Don't use them. (The repo's CLAUDE.md still lists `mastra/*`/`agent/*` as "rejected"; the `_REMOVED_AGENT_ACTION_TYPES` code in `sw_workflow.py` is authoritative.)
+Legacy `mastra/*` and `agent/*` slugs are **not** in that set — they do NOT raise the "Removed" error. They fall through to the default route (function-router → `function-registry` `_default` `{type: activepieces}`, which computes a per-piece `ap-<piece>-service`) and fail there as an unknown piece/action (a different, less obvious error). Don't use them. (The repo's CLAUDE.md still lists `mastra/*`/`agent/*` as "rejected"; the `_REMOVED_AGENT_ACTION_TYPES` code in `sw_workflow.py` is authoritative.)
 
 Every agent execution today goes through `durable/run` with `with.agentRef`. There is no other agent dispatch path.
 
@@ -39,38 +39,39 @@ Use the action-catalog API rather than guessing. Source: `src/lib/server/action-
 
 | Endpoint | Returns |
 | --- | --- |
-| `GET /api/action-catalog` | `ActionCatalogSnapshot` — every action in every backing service (workflow-orchestrator, fn-activepieces, fn-system) flattened into one list. Each item has `id`, `name`, `displayName`, `description`, `pieceName`, `actionName`, `kind` (`sw-function` / `dapr-activity` / `dapr-workflow`), `visibility` (`public-callable` / `inspect-only`), `inputSchema`, `outputSchema`, and a suggested `taskConfig` (drop-in `with` block). |
+| `GET /api/action-catalog` | `ActionCatalogSnapshot` — every action flattened into one list: orchestrator + fn-system introspection plus DB-backed AP piece actions (from `piece_metadata`). Each item has `id`, `name`, `displayName`, `description`, `pieceName`, `actionName`, `kind` (`sw-function` / `dapr-activity` / `dapr-workflow`), `visibility` (`public-callable` / `inspect-only`), `inputSchema`, `outputSchema`, and a suggested `taskConfig` (drop-in `with` block). |
 | `GET /api/action-catalog/[actionId]` | `ActionCatalogDetail` — full schema + auth info for a single action. |
 
-The orchestrator also exposes the raw introspection endpoints these pull from:
+The orchestrator/services also expose the raw introspection endpoints the catalog pulls from:
 
 - `workflow-orchestrator:8080/api/metadata/actions` and `/api/v2/runtime/introspect`
-- `fn-activepieces:8080/api/metadata/actions` and `/api/runtime/introspect`
 - `fn-system:8080/api/metadata/actions` and `/api/runtime/introspect`
+
+The AP slice of the catalog is **DB-backed from `piece_metadata`** (there is no `fn-activepieces` introspection endpoint anymore — that service was deleted).
 
 When the user asks "what action does X?", call `/api/action-catalog?q=<keyword>` first, copy the suggested `taskConfig`, and adapt it. Don't infer from memory.
 
 ## Activepieces piece slugs
 
-AP pieces use the slug shape `@activepieces/piece-<name>/<action>`, e.g. `@activepieces/piece-slack/send_message`. The 42 installed AP pieces are listed in `src/lib/server/integrations/activepieces/installed-pieces.ts`. Adding a new piece requires:
+AP pieces use the slug shape `<piece>/<action>`, e.g. `github/create-issue`, `slack/send-message`. function-router routes the slug's `<piece>` prefix to the converged per-piece **piece-runtime** Knative Service `ap-<piece>-service` (one `piece-mcp-server` image parameterized by `PIECE_NAME`), where it runs as a deterministic Dapr activity (`POST /execute`). The all-catalog reconciler (`activepieces-mcps`) provisions ~47 `ap-<piece>-service` from enabled `mcp_connection` rows + pinned pieces, so **new pieces are automatic — no manual per-piece add**. To add/build a NEW piece into the piece-runtime image (vs just enabling an already-bundled one):
 
-1. Add to `installed-pieces.ts`.
-2. Add npm dep to `services/fn-activepieces/package.json`.
-3. Add to `services/fn-activepieces/src/piece-registry.ts`.
-4. Rebuild `fn-activepieces`.
+1. Add the npm dep to `services/piece-mcp-server/`.
+2. Register it in `services/piece-mcp-server/`'s `piece-registry`.
+3. Rebuild the `piece-mcp-server` image.
+4. Re-sync piece metadata (the catalog is DB-backed from `piece_metadata`).
 
-If the user's piece isn't in the list, that's why their slug doesn't work.
+(`fn-activepieces` was deleted — the old `installed-pieces.ts` + `services/fn-activepieces/**` edit steps are obsolete.)
 
 ## Activepieces credentials
 
-AP actions need an `app_connection`. The user creates connections via `/connections` in the UI; they're AES-256-CBC encrypted at rest in the `app_connections` table. At execution time function-router **brokers** the plaintext — it GETs the BFF internal `…/connections/<id>/decrypt` API (or ActivePieces' own decrypt endpoint), where the BFF performs the actual AES-256-CBC decryption — then passes plaintext to fn-activepieces. The orchestrator never sees plaintext, and function-router never decrypts locally. Auth types: `OAUTH2`, `SECRET_TEXT`, `BASIC_AUTH`, `CUSTOM_AUTH`.
+AP actions need an `app_connection`. The user creates connections via `/connections` in the UI; they're AES-256-CBC encrypted at rest in the `app_connections` table. Credentials use **reference-forwarding**: at execution time function-router forwards only `X-Connection-External-Id` (writing the `credential_access_logs` audit, source `reference_forwarded`) — it does NOT fetch or hold plaintext. The per-piece **piece-runtime** (`ap-<piece>-service`) self-resolves the plaintext by GETting the BFF `/api/internal/connections/<id>/decrypt`, where the BFF performs the actual AES-256-CBC decryption (the BFF is the SOLE decryptor). The same reference-forwarding path applies to AP **MCP tools** as well as deterministic activities. The orchestrator never sees plaintext. Auth types: `OAUTH2`, `SECRET_TEXT`, `BASIC_AUTH`, `CUSTOM_AUTH`.
 
 For the spec, reference connections by `connectionId` in `with.auth`:
 
 ```json
 {
   "send_msg": {
-    "call": "@activepieces/piece-slack/send_message",
+    "call": "slack/send-message",
     "with": {
       "auth": { "connectionId": "${ .connections.slack_main }" },
       "channel": "#alerts",
@@ -88,10 +89,10 @@ Do not confuse AP action slugs with piece MCP servers:
 
 | Path | Use when | Auth path |
 | --- | --- | --- |
-| `@activepieces/piece-<name>/<action>` task slug | The workflow spec should call one specific AP action as a task | function-router brokers `app_connection` (GETs the BFF/AP `…/decrypt` API for plaintext; the BFF decrypts) and calls fn-activepieces |
-| `mcp_connection` + piece MCP server | The agent should see a piece's actions as tools during `durable/run` | agent sends `X-Connection-External-Id` to `piece-mcp-server`, which decrypts via workflow-builder |
+| `<piece>/<action>` task slug | The workflow spec should call one specific AP action as a task | function-router forwards `X-Connection-External-Id` (audit `reference_forwarded`) to the per-piece `ap-<piece>-service` `POST /execute`, which self-resolves plaintext via the BFF `/decrypt` |
+| `mcp_connection` + piece MCP tools | The agent should see a piece's actions as tools during `durable/run` | agent sends `X-Connection-External-Id` to the same `ap-<piece>-service` `/mcp`, which self-resolves via the BFF `/decrypt` |
 
-For agent tool use, prefer the MCP path and read `references/mcp-connections.md`. For deterministic workflow steps, prefer an explicit AP action slug.
+Both paths hit the SAME converged piece-runtime (`ap-<piece>-service`, the `piece-mcp-server` image) — `/execute` for deterministic activities, `/mcp` for agent tools. For agent tool use, prefer the MCP path and read `references/mcp-connections.md`. For deterministic workflow steps, prefer an explicit AP action slug.
 
 ## Per-task patterns to know
 
