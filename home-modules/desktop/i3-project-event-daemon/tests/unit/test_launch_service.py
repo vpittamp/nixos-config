@@ -443,3 +443,47 @@ async def test_reconcile_launch_runtime_status_marks_bound_window_running(tmp_pa
     assert result["reason"] == "window_bound"
     assert result["anchor_bound"] is True
     assert result["tmux_session_healthy"] is True
+
+
+@pytest.mark.asyncio
+async def test_wait_for_launch_status_requires_anchor_when_requested(tmp_path: Path) -> None:
+    anchor_calls = 0
+
+    async def fake_anchor(_params: Dict[str, Any]) -> Dict[str, Any]:
+        nonlocal anchor_calls
+        anchor_calls += 1
+        return {
+            "matched": anchor_calls >= 2,
+            "window_id": 42 if anchor_calls >= 2 else 0,
+        }
+
+    service = LaunchService(
+        runtime_dir=lambda: tmp_path,
+        load_json_file=load_json_file,
+        normalize_target_host=lambda value: str(value or "").strip().lower(),
+        parse_context_target_host=parse_context_target_host,
+        transport_kind_for_target_host=lambda _value: "local_process",
+        local_host_alias=lambda: "thinkpad",
+        get_terminal_anchor=fake_anchor,
+    )
+    service.write_status(
+        launch_id="launch-wait",
+        status="running",
+        reason="window_bound",
+        spec={
+            "terminal_anchor_id": "anchor-wait",
+            "launch_kind": "open_project_terminal",
+        },
+    )
+
+    result = await service.wait_for_launch_status(
+        "launch-wait",
+        terminal_anchor_id="anchor-wait",
+        attempts=3,
+        delay_s=0,
+    )
+
+    assert result["success"] is True
+    assert result["reason"] == "ok"
+    assert result["anchor_bound"] is True
+    assert anchor_calls == 2

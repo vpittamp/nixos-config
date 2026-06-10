@@ -859,6 +859,69 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             self.schedule_launch_reconcile(launch_id, anchor_bound=False, attempts=20, delay_s=0.2)
         return result
 
+    async def launch_status(self, launch_id: str) -> Dict[str, Any]:
+        """Return deterministic launch status for a registered launch id."""
+        launch_key = str(launch_id or "").strip()
+        if not launch_key:
+            raise ValueError("launch_id is required")
+        status = await self.reconcile_launch_runtime_status(launch_key)
+        if not status:
+            status = self.read_status(launch_key)
+        if not status:
+            return {
+                "success": False,
+                "launch_id": launch_key,
+                "status": "unknown",
+                "reason": "launch_not_found",
+            }
+        status["success"] = str(status.get("status") or "").strip() not in {"failed", "unknown"}
+        return status
+
+    async def wait_for_launch_status(
+        self,
+        launch_id: str,
+        *,
+        terminal_anchor_id: str = "",
+        attempts: int = 50,
+        delay_s: float = 0.2,
+    ) -> Dict[str, Any]:
+        """Poll persisted launch status until a deterministic terminal state is reached."""
+        launch_key = str(launch_id or "").strip()
+        current: Dict[str, Any] = {
+            "success": False,
+            "launch_id": launch_key,
+            "status": "unknown",
+            "reason": "launch_not_found",
+        }
+        anchor_bound = False
+        for attempt in range(max(int(attempts), 1)):
+            current = await self.launch_status(launch_key)
+            if terminal_anchor_id and not anchor_bound and self._get_terminal_anchor is not None:
+                anchor_result = await self._get_terminal_anchor({"terminal_anchor_id": terminal_anchor_id})
+                anchor_bound = bool(anchor_result.get("matched", False) and int(anchor_result.get("window_id") or 0) > 0)
+            status_value = str(current.get("status") or "").strip()
+            if status_value == "failed":
+                current["success"] = False
+                current["reason"] = str(current.get("error_code") or "launch_failed")
+                current["anchor_bound"] = anchor_bound
+                return current
+            if status_value in {"running", "attaching_tmux"} and (not terminal_anchor_id or anchor_bound):
+                current["success"] = True
+                current["reason"] = "ok"
+                current["anchor_bound"] = anchor_bound
+                return current
+            if status_value == "reusable_headless":
+                current["success"] = True
+                current["reason"] = str(current.get("reason") or "headless_reusable")
+                current["anchor_bound"] = anchor_bound
+                return current
+            if attempt + 1 < max(int(attempts), 1):
+                await asyncio.sleep(delay_s)
+        current["success"] = False
+        current["reason"] = "launch_status_timeout"
+        current["anchor_bound"] = anchor_bound
+        return current
+
     def resolve_terminal_helper(self, helper_name: str) -> Path:
         """Resolve installed terminal helpers, with a repo fallback for local development."""
         helper_dir = os.environ.get("I3PM_TERMINAL_HELPER_DIR", "").strip()

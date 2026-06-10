@@ -17509,18 +17509,7 @@ FORMAT JSONEachRow
         launch_id = str(params.get("launch_id") or "").strip()
         if not launch_id:
             raise ValueError("launch_id is required")
-        status = await self._reconcile_launch_runtime_status(launch_id)
-        if not status:
-            status = self._read_launch_status(launch_id)
-        if not status:
-            return {
-                "success": False,
-                "launch_id": launch_id,
-                "status": "unknown",
-                "reason": "launch_not_found",
-            }
-        status["success"] = str(status.get("status") or "").strip() not in {"failed", "unknown"}
-        return status
+        return await self.launch_service.launch_status(launch_id)
 
     async def _wait_for_launch_status(
         self,
@@ -17531,40 +17520,12 @@ FORMAT JSONEachRow
         delay_s: float = 0.2,
     ) -> Dict[str, Any]:
         """Poll persisted launch status until a deterministic terminal state is reached."""
-        current: Dict[str, Any] = {
-            "success": False,
-            "launch_id": str(launch_id or "").strip(),
-            "status": "unknown",
-            "reason": "launch_not_found",
-        }
-        anchor_bound = False
-        for attempt in range(max(int(attempts), 1)):
-            current = await self._launch_status({"launch_id": launch_id})
-            if terminal_anchor_id and not anchor_bound:
-                anchor_result = await self._get_terminal_anchor({"terminal_anchor_id": terminal_anchor_id})
-                anchor_bound = bool(anchor_result.get("matched", False) and int(anchor_result.get("window_id") or 0) > 0)
-            status_value = str(current.get("status") or "").strip()
-            if status_value == "failed":
-                current["success"] = False
-                current["reason"] = str(current.get("error_code") or "launch_failed")
-                current["anchor_bound"] = anchor_bound
-                return current
-            if status_value in {"running", "attaching_tmux"} and (not terminal_anchor_id or anchor_bound):
-                current["success"] = True
-                current["reason"] = "ok"
-                current["anchor_bound"] = anchor_bound
-                return current
-            if status_value == "reusable_headless":
-                current["success"] = True
-                current["reason"] = str(current.get("reason") or "headless_reusable")
-                current["anchor_bound"] = anchor_bound
-                return current
-            if attempt + 1 < max(int(attempts), 1):
-                await asyncio.sleep(delay_s)
-        current["success"] = False
-        current["reason"] = "launch_status_timeout"
-        current["anchor_bound"] = anchor_bound
-        return current
+        return await self.launch_service.wait_for_launch_status(
+            launch_id,
+            terminal_anchor_id=terminal_anchor_id,
+            attempts=attempts,
+            delay_s=delay_s,
+        )
 
     async def _wait_for_terminal_window(
         self,
