@@ -237,8 +237,6 @@ class SessionActionService:
         session_key: str,
         sessions: List[Dict[str, Any]],
         intent_epoch: int,
-        acknowledge_stopped_session: Callable[[Dict[str, Any]], Any],
-        acknowledge_user_input_session: Callable[[Dict[str, Any]], Any],
         focus_remote_session_attach: Callable[..., Awaitable[Dict[str, Any]]],
         focus_local_session_attach: Callable[..., Awaitable[Dict[str, Any]]],
         window_focus: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
@@ -261,9 +259,6 @@ class SessionActionService:
         )
         if not isinstance(session, dict):
             raise RuntimeError(f"Unknown session_key: {normalized_key}")
-
-        acknowledge_stopped_session(session)
-        acknowledge_user_input_session(session)
 
         window_id = int(session.get("window_id") or 0)
         focus_mode = str(session.get("focus_mode") or "").strip() or "unavailable"
@@ -745,8 +740,6 @@ class SessionActionService:
         session_key: str,
         sessions: List[Dict[str, Any]],
         intent_epoch: int,
-        acknowledge_stopped_session: Callable[[Dict[str, Any]], Any],
-        acknowledge_user_input_session: Callable[[Dict[str, Any]], Any],
         focus_remote_session_attach: Callable[..., Awaitable[Dict[str, Any]]],
     ) -> Dict[str, Any]:
         """Spawn a local SSH terminal that attaches to a daemon-known remote session."""
@@ -770,9 +763,6 @@ class SessionActionService:
             raise RuntimeError(
                 f"Session {normalized_key} is not remote (execution_mode={execution_mode!r})"
             )
-
-        acknowledge_stopped_session(session)
-        acknowledge_user_input_session(session)
 
         return await focus_remote_session_attach(
             session_key=normalized_key,

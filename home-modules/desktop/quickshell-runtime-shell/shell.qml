@@ -5722,10 +5722,6 @@ ShellRoot {
         if (phase.length > 0) {
             return phase;
         }
-        const terminalState = stringOrEmpty(session && session.terminal_state).toLowerCase();
-        if (boolOrFalse(session && session.llm_stopped) || terminalState === "explicit_complete") {
-            return "stopped";
-        }
         if (boolOrFalse(session && session.output_unseen) || boolOrFalse(session && session.review_pending) || boolOrFalse(session && session.needs_user_action)) {
             return "needs_attention";
         }
@@ -5856,7 +5852,7 @@ ShellRoot {
     }
 
     function sessionUserInputPending(session) {
-        return boolOrFalse(session && session.user_input_notification_pending);
+        return false;
     }
 
     function sessionIdleRowOpacity(session) {
@@ -6093,13 +6089,6 @@ ShellRoot {
             return "user";
         }
         const explicitOwner = stringOrEmpty(session && session.turn_owner).toLowerCase();
-        if (
-            explicitOwner === "blocked"
-            && stringOrEmpty(session && session.notification_boundary_type).toLowerCase() === "user_input_required"
-            && !sessionUserInputPending(session)
-        ) {
-            return "user";
-        }
         if (["llm", "user", "blocked", "unknown"].indexOf(explicitOwner) >= 0) {
             return explicitOwner;
         }

@@ -388,10 +388,8 @@ async def test_focus_remote_session_attach_returns_stale_result_before_launch():
 
 
 @pytest.mark.asyncio
-async def test_spawn_remote_attach_acknowledges_and_routes_remote_session():
+async def test_spawn_remote_attach_routes_remote_session():
     service, _calls = make_service()
-    acknowledge_stopped = MagicMock()
-    acknowledge_user_input = MagicMock()
     focus_remote = AsyncMock(return_value={
         "success": True,
         "session_key": "session-remote-pane",
@@ -406,12 +404,8 @@ async def test_spawn_remote_attach_acknowledges_and_routes_remote_session():
         session_key="session-remote-pane",
         sessions=[session],
         intent_epoch=9,
-        acknowledge_stopped_session=acknowledge_stopped,
-        acknowledge_user_input_session=acknowledge_user_input,
         focus_remote_session_attach=focus_remote,
     )
-    acknowledge_stopped.assert_called_once_with(session)
-    acknowledge_user_input.assert_called_once_with(session)
     focus_remote.assert_awaited_once_with(
         session_key="session-remote-pane",
         session=session,
@@ -432,22 +426,18 @@ async def test_spawn_remote_attach_rejects_local_session():
                 "execution_mode": "local",
             }],
             intent_epoch=0,
-            acknowledge_stopped_session=MagicMock(),
-            acknowledge_user_input_session=MagicMock(),
             focus_remote_session_attach=AsyncMock(),
         )
 
 
 @pytest.mark.asyncio
-async def test_focus_session_routes_remote_attach_and_acknowledges_boundaries():
+async def test_focus_session_routes_remote_attach():
     service, _calls = make_service()
     session = {
         "session_key": "session-remote",
         "window_id": 0,
         "focus_mode": "remote_bridge_attachable",
     }
-    acknowledge_stopped = MagicMock()
-    acknowledge_user_input = MagicMock()
     focus_remote = AsyncMock(return_value={
         "success": True,
         "focus_mode": "remote_bridge_bound",
@@ -458,8 +448,6 @@ async def test_focus_session_routes_remote_attach_and_acknowledges_boundaries():
         session_key="session-remote",
         sessions=[session],
         intent_epoch=7,
-        acknowledge_stopped_session=acknowledge_stopped,
-        acknowledge_user_input_session=acknowledge_user_input,
         focus_remote_session_attach=focus_remote,
         focus_local_session_attach=AsyncMock(),
         window_focus=AsyncMock(),
@@ -467,8 +455,6 @@ async def test_focus_session_routes_remote_attach_and_acknowledges_boundaries():
         focus_state=AsyncMock(),
         set_focus_overrides=MagicMock(),
     )
-    acknowledge_stopped.assert_called_once_with(session)
-    acknowledge_user_input.assert_called_once_with(session)
     focus_remote.assert_awaited_once_with(
         session_key="session-remote",
         session=session,
@@ -510,8 +496,6 @@ async def test_focus_session_local_tmux_uses_tmux_verification_without_wait():
             "terminal_context": {},
         }],
         intent_epoch=0,
-        acknowledge_stopped_session=MagicMock(),
-        acknowledge_user_input_session=MagicMock(),
         focus_remote_session_attach=AsyncMock(),
         focus_local_session_attach=AsyncMock(),
         window_focus=AsyncMock(return_value={"success": True}),
@@ -573,8 +557,6 @@ async def test_focus_session_window_only_sets_override_before_waiting():
             "terminal_context": {},
         }],
         intent_epoch=0,
-        acknowledge_stopped_session=MagicMock(),
-        acknowledge_user_input_session=MagicMock(),
         focus_remote_session_attach=AsyncMock(),
         focus_local_session_attach=AsyncMock(),
         window_focus=AsyncMock(return_value={"success": True}),

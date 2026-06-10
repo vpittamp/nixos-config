@@ -63,7 +63,6 @@ from .services.focus_service import FocusService
 from .services.herdr_service import HerdrService
 from .services.launch_service import LaunchService
 from .services.session_action_service import SessionActionService
-from .services.session_attention_service import SessionAttentionService
 from .services.session_runtime_service import SessionRuntimeService
 from .services.worktree_profile_service import WorktreeProfileService
 from .models.window_command import CommandBatch
@@ -532,7 +531,6 @@ class IPCServer:
             normalize_connection_key=lambda value: self._normalize_connection_key(value),
             schema_version=FOCUS_STATE_SCHEMA_VERSION,
         )
-        self.session_attention_service = SessionAttentionService()
         self.dashboard_git_service = DashboardGitService(
             ttl_current=self._git_snapshot_ttl_current,
             ttl_visible=self._git_snapshot_ttl_visible,
@@ -668,14 +666,6 @@ class IPCServer:
     @property
     def _focus_generation(self) -> int:
         return int(self.dashboard_service.focus_generation)
-
-    @property
-    def _stopped_session_notifications(self) -> Dict[str, Dict[str, Any]]:
-        return self.session_attention_service.stopped_notifications
-
-    @property
-    def _user_input_session_notifications(self) -> Dict[str, Dict[str, Any]]:
-        return self.session_attention_service.user_input_notifications
 
     @classmethod
     async def from_systemd_socket(
@@ -6810,54 +6800,6 @@ class IPCServer:
         """Return stale bridge reasons that are safe to close automatically."""
         return set(SessionRuntimeService.stale_bridge_close_reasons())
 
-    @staticmethod
-    def _stopped_boundary_key(session: Dict[str, Any]) -> str:
-        """Return a stable token for the current explicit-stop boundary."""
-        return SessionAttentionService.stopped_boundary_key(session)
-
-    @staticmethod
-    def _session_has_explicit_stop(session: Dict[str, Any]) -> bool:
-        """Return whether a session is on an explicit provider stop boundary."""
-        return SessionAttentionService.session_has_explicit_stop(session)
-
-    @staticmethod
-    def _session_has_user_input_boundary(session: Dict[str, Any]) -> bool:
-        """Return whether a session is on a retained user-input-required boundary."""
-        return SessionAttentionService.session_has_user_input_boundary(session)
-
-    @staticmethod
-    def _user_input_boundary_key(session: Dict[str, Any]) -> str:
-        """Return a stable token for the current user-input-required boundary."""
-        return SessionAttentionService.user_input_boundary_key(session)
-
-    def _acknowledge_stopped_session_notification(
-        self,
-        session: Dict[str, Any],
-    ) -> bool:
-        """Persist acknowledgement for the current explicit-stop boundary."""
-        return self.session_attention_service.acknowledge_stopped_session_notification(session)
-
-    def _acknowledge_user_input_session_notification(
-        self,
-        session: Dict[str, Any],
-    ) -> bool:
-        """Persist acknowledgement for the current user-input-required boundary."""
-        return self.session_attention_service.acknowledge_user_input_session_notification(session)
-
-    def _apply_session_attention_state(
-        self,
-        sessions: List[Dict[str, Any]],
-        *,
-        focused_window_id: int,
-        current_session_key: str,
-    ) -> None:
-        """Promote completed background sessions into a retained needs-attention state."""
-        self.session_attention_service.apply_session_attention_state(
-            sessions,
-            focused_window_id=focused_window_id,
-            current_session_key=current_session_key,
-        )
-
     def _load_session_items(
         self,
         runtime_snapshot: Dict[str, Any],
@@ -6982,8 +6924,6 @@ class IPCServer:
             session_key=session_key,
             sessions=list(sessions_result.get("sessions", []) or []),
             intent_epoch=int(params.get("__intent_epoch") or 0),
-            acknowledge_stopped_session=self._acknowledge_stopped_session_notification,
-            acknowledge_user_input_session=self._acknowledge_user_input_session_notification,
             focus_remote_session_attach=self._focus_remote_session_attach,
             focus_local_session_attach=self._focus_local_session_attach,
             window_focus=self._window_focus,
@@ -7005,8 +6945,6 @@ class IPCServer:
             session_key=session_key,
             sessions=list(sessions_result.get("sessions", []) or []),
             intent_epoch=int(params.get("__intent_epoch") or 0),
-            acknowledge_stopped_session=self._acknowledge_stopped_session_notification,
-            acknowledge_user_input_session=self._acknowledge_user_input_session_notification,
             focus_remote_session_attach=self._focus_remote_session_attach,
         )
 

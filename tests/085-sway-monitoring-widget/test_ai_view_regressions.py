@@ -22,6 +22,8 @@ I3PM_HERDR_PROXY_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "c
 I3PM_SESSION_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "session.ts"
 I3PM_MAIN_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "main.ts"
 I3PM_DAEMON_CLIENT_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "services" / "daemon-client.ts"
+IPC_SERVER_PY = REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon" / "ipc_server.py"
+DAEMON_SERVICES_DIR = REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon" / "services"
 I3PM_MONITORING_DATA_PY = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "monitoring_data.py"
 I3PM_CLI_README = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "README.md"
 AI_SESSION_SYSTEM_DOC = REPO_ROOT / "docs" / "AI_SESSION_SYSTEM.md"
@@ -35,6 +37,28 @@ def test_session_phase_prefers_raw_herdr_agent_status():
     legacy_index = text.index("const phase = stringOrEmpty(session && session.session_phase).toLowerCase();")
     assert herdr_index < legacy_index
     assert "return herdrStatusState(rawHerdrStatus);" in text
+
+
+def test_ai_session_status_does_not_use_notification_boundary_adapters():
+    """Notification-derived status fields should not drive the AI session UI."""
+    shell_text = SHELL_QML.read_text()
+    daemon_text = IPC_SERVER_PY.read_text()
+    service_text = "\n".join(path.read_text() for path in DAEMON_SERVICES_DIR.glob("*.py"))
+
+    retired_fields = [
+        "notification_boundary_type",
+        "user_input_notification_pending",
+        "stopped_notification_pending",
+        "llm_stopped",
+        "explicit_complete",
+    ]
+    for field in retired_fields:
+        assert field not in shell_text
+
+    assert "SessionAttentionService" not in daemon_text
+    assert "session_attention_service" not in daemon_text
+    for field in retired_fields[:3]:
+        assert field not in service_text
 
 
 def test_session_display_eligibility_accepts_herdr_panes_without_tmux_identity():
