@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
 
 from ..config import atomic_write_json
 from ..worktree_utils import canonicalize_context_key
@@ -43,6 +43,8 @@ class LaunchService:
         which: Optional[Callable[[str], Optional[str]]] = None,
         schedule_launch_reconcile: Optional[Callable[..., None]] = None,
         get_terminal_anchor: Optional[Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]] = None,
+        window_map_items: Optional[Callable[[], Iterable[Tuple[int, Any]]]] = None,
+        get_pending_launch_by_terminal_anchor: Optional[Callable[[str], Awaitable[Any]]] = None,
     ) -> None:
         self._runtime_dir = runtime_dir
         self._load_json_file = load_json_file
@@ -59,6 +61,8 @@ class LaunchService:
         self._which = which or shutil.which
         self._schedule_launch_reconcile_callback = schedule_launch_reconcile
         self._get_terminal_anchor = get_terminal_anchor
+        self._window_map_items = window_map_items
+        self._get_pending_launch_by_terminal_anchor = get_pending_launch_by_terminal_anchor
         self._launch_reconcile_tasks: Dict[str, asyncio.Task] = {}
 
     @staticmethod
@@ -624,13 +628,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         if str(spec.get("launch_transport") or "").strip() == "remote_helper":
             return status
         if anchor_bound is None:
-            if self._get_terminal_anchor is None:
-                anchor_bound = False
-            else:
-                anchor_result = await self._get_terminal_anchor({
-                    "terminal_anchor_id": str(spec.get("terminal_anchor_id") or "").strip(),
-                })
-                anchor_bound = bool(anchor_result.get("matched", False) and int(anchor_result.get("window_id") or 0) > 0)
+            anchor_result = await self.terminal_anchor(str(spec.get("terminal_anchor_id") or "").strip())
+            anchor_bound = bool(anchor_result.get("matched", False) and int(anchor_result.get("window_id") or 0) > 0)
         probe = self.managed_tmux_session_probe(spec)
         current_status = str(status.get("status") or "").strip() or "queued"
         transitional_states = {"queued", "starting_terminal", "session_validating", "waiting_window"}
@@ -896,8 +895,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         anchor_bound = False
         for attempt in range(max(int(attempts), 1)):
             current = await self.launch_status(launch_key)
-            if terminal_anchor_id and not anchor_bound and self._get_terminal_anchor is not None:
-                anchor_result = await self._get_terminal_anchor({"terminal_anchor_id": terminal_anchor_id})
+            if terminal_anchor_id and not anchor_bound:
+                anchor_result = await self.terminal_anchor(terminal_anchor_id)
                 anchor_bound = bool(anchor_result.get("matched", False) and int(anchor_result.get("window_id") or 0) > 0)
             status_value = str(current.get("status") or "").strip()
             if status_value == "failed":
@@ -921,6 +920,54 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         current["reason"] = "launch_status_timeout"
         current["anchor_bound"] = anchor_bound
         return current
+
+    async def terminal_anchor(self, terminal_anchor_id: str) -> Dict[str, Any]:
+        """Resolve canonical terminal anchor state from daemon-owned launch/window tracking."""
+        anchor = str(terminal_anchor_id or "").strip()
+        if not anchor:
+            raise ValueError("'terminal_anchor_id' is required")
+
+        if self._get_terminal_anchor is not None:
+            return await self._get_terminal_anchor({"terminal_anchor_id": anchor})
+
+        if self._window_map_items is not None:
+            for window_id, window_info in self._window_map_items():
+                if str(getattr(window_info, "terminal_anchor_id", "") or "").strip() != anchor:
+                    continue
+
+                return {
+                    "terminal_anchor_id": anchor,
+                    "window_id": window_id,
+                    "project_name": getattr(window_info, "project", None),
+                    "app_name": getattr(window_info, "app_identifier", None),
+                    "workspace": getattr(window_info, "workspace", None),
+                    "terminal_role": getattr(window_info, "terminal_role", ""),
+                    "tmux_session_name": getattr(window_info, "tmux_session_name", ""),
+                    "matched": True,
+                    "binding": "window_map",
+                }
+
+        pending_launch = None
+        if self._get_pending_launch_by_terminal_anchor is not None:
+            pending_launch = await self._get_pending_launch_by_terminal_anchor(anchor)
+        if pending_launch:
+            return {
+                "launch_id": str(getattr(pending_launch, "launch_id", "") or "").strip(),
+                "terminal_anchor_id": anchor,
+                "window_id": None,
+                "project_name": pending_launch.project_name,
+                "app_name": pending_launch.app_name,
+                "workspace": pending_launch.workspace_number,
+                "matched": False,
+                "binding": "pending",
+            }
+
+        return {
+            "terminal_anchor_id": anchor,
+            "window_id": None,
+            "error": "not_found",
+            "matched": False,
+        }
 
     def resolve_terminal_helper(self, helper_name: str) -> Path:
         """Resolve installed terminal helpers, with a repo fallback for local development."""

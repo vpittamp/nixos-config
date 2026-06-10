@@ -304,10 +304,14 @@ async def test_launch_status_reconciles_managed_session_to_waiting_and_running(s
     assert waiting["status"] == "waiting_window"
     assert waiting["reason"] == "waiting_window"
 
-    server_local._get_terminal_anchor = AsyncMock(return_value={
-        "matched": True,
-        "window_id": 12,
-    })
+    server_local.state_manager.state.window_map[12] = SimpleNamespace(
+        terminal_anchor_id=spec["terminal_anchor_id"],
+        project=spec["project_name"],
+        app_identifier="terminal",
+        workspace="1",
+        terminal_role=spec["terminal_role"],
+        tmux_session_name=spec["tmux_session_name"],
+    )
     running = await server_local._launch_status({"launch_id": launch_id})
 
     assert running["status"] == "running"

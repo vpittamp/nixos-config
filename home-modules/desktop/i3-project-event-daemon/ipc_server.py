@@ -602,7 +602,12 @@ class IPCServer:
             run_command=lambda *args, **kwargs: subprocess.run(*args, **kwargs),
             repo_root=lambda: self._repo_root(),
             which=lambda command: shutil.which(command),
-            get_terminal_anchor=lambda params: self._get_terminal_anchor(params),
+            window_map_items=lambda: list(self.state_manager.state.window_map.items()),
+            get_pending_launch_by_terminal_anchor=(
+                lambda terminal_anchor_id: self.state_manager.launch_registry.get_by_terminal_anchor(
+                    terminal_anchor_id
+                )
+            ),
         )
         self.herdr_service = HerdrService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
@@ -12325,44 +12330,7 @@ FORMAT JSONEachRow
         terminal_anchor_id = str(params.get("terminal_anchor_id") or "").strip()
         if not terminal_anchor_id:
             raise ValueError("'terminal_anchor_id' is required")
-
-        for window_id, window_info in self.state_manager.state.window_map.items():
-            if str(getattr(window_info, "terminal_anchor_id", "") or "").strip() != terminal_anchor_id:
-                continue
-
-            return {
-                "terminal_anchor_id": terminal_anchor_id,
-                "window_id": window_id,
-                "project_name": getattr(window_info, "project", None),
-                "app_name": getattr(window_info, "app_identifier", None),
-                "workspace": getattr(window_info, "workspace", None),
-                "terminal_role": getattr(window_info, "terminal_role", ""),
-                "tmux_session_name": getattr(window_info, "tmux_session_name", ""),
-                "matched": True,
-                "binding": "window_map",
-            }
-
-        pending_launch = await self.state_manager.launch_registry.get_by_terminal_anchor(
-            terminal_anchor_id
-        )
-        if pending_launch:
-            return {
-                "launch_id": str(getattr(pending_launch, "launch_id", "") or "").strip(),
-                "terminal_anchor_id": terminal_anchor_id,
-                "window_id": None,
-                "project_name": pending_launch.project_name,
-                "app_name": pending_launch.app_name,
-                "workspace": pending_launch.workspace_number,
-                "matched": False,
-                "binding": "pending",
-            }
-
-        return {
-            "terminal_anchor_id": terminal_anchor_id,
-            "window_id": None,
-            "error": "not_found",
-            "matched": False,
-        }
+        return await self.launch_service.terminal_anchor(terminal_anchor_id)
 
     # ======================
     # Feature 058: Project Management JSON-RPC Handlers (T030-T033)

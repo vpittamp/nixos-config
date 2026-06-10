@@ -8,6 +8,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 import pytest
@@ -487,3 +488,62 @@ async def test_wait_for_launch_status_requires_anchor_when_requested(tmp_path: P
     assert result["reason"] == "ok"
     assert result["anchor_bound"] is True
     assert anchor_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_terminal_anchor_resolves_window_map_binding(tmp_path: Path) -> None:
+    service = LaunchService(
+        runtime_dir=lambda: tmp_path,
+        load_json_file=load_json_file,
+        normalize_target_host=lambda value: str(value or "").strip().lower(),
+        parse_context_target_host=parse_context_target_host,
+        transport_kind_for_target_host=lambda _value: "local_process",
+        local_host_alias=lambda: "thinkpad",
+        window_map_items=lambda: [(
+            101,
+            SimpleNamespace(
+                terminal_anchor_id="anchor-live",
+                project="repo/main",
+                app_identifier="terminal",
+                workspace="1",
+                terminal_role="project-main",
+                tmux_session_name="i3pm-main",
+            ),
+        )],
+    )
+
+    result = await service.terminal_anchor("anchor-live")
+
+    assert result["matched"] is True
+    assert result["binding"] == "window_map"
+    assert result["window_id"] == 101
+    assert result["terminal_role"] == "project-main"
+
+
+@pytest.mark.asyncio
+async def test_terminal_anchor_resolves_pending_launch_binding(tmp_path: Path) -> None:
+    async def fake_pending(_anchor: str) -> Any:
+        return SimpleNamespace(
+            launch_id="launch-pending",
+            project_name="repo/main",
+            app_name="terminal",
+            workspace_number=2,
+        )
+
+    service = LaunchService(
+        runtime_dir=lambda: tmp_path,
+        load_json_file=load_json_file,
+        normalize_target_host=lambda value: str(value or "").strip().lower(),
+        parse_context_target_host=parse_context_target_host,
+        transport_kind_for_target_host=lambda _value: "local_process",
+        local_host_alias=lambda: "thinkpad",
+        window_map_items=lambda: [],
+        get_pending_launch_by_terminal_anchor=fake_pending,
+    )
+
+    result = await service.terminal_anchor("anchor-pending")
+
+    assert result["matched"] is False
+    assert result["binding"] == "pending"
+    assert result["launch_id"] == "launch-pending"
+    assert result["workspace"] == 2
