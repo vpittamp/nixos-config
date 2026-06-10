@@ -991,7 +991,13 @@ async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
     monkeypatch.setattr(server.herdr_service, "run_json", fake_run_herdr_json)
     monkeypatch.setattr(server.herdr_service, "run_proxy_json", fake_run_herdr_proxy_json)
 
-    snapshot = await server._herdr_snapshot({"refresh": True})
+    snapshot = await server.herdr_service.snapshot(
+        {"refresh": True},
+        remote_targets=server.herdr_service.load_remote_targets(),
+        local_host=server._local_host_alias(),
+        normalize_connection_key=server._normalize_connection_key,
+        project_for_cwd=server.herdr_service.project_for_cwd,
+    )
     rows = snapshot["sessions"]
 
     assert snapshot["local_herdr_generation"] == 0

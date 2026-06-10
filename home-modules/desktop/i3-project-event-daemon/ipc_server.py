@@ -949,7 +949,13 @@ class IPCServer:
             elif method == "dashboard.validate":
                 result = await self._dashboard_validate(params)
             elif method == "herdr.snapshot":
-                result = await self._herdr_snapshot(params)
+                result = await self.herdr_service.snapshot(
+                    params,
+                    remote_targets=self.herdr_service.load_remote_targets(),
+                    local_host=self._local_host_alias(),
+                    normalize_connection_key=self._normalize_connection_key,
+                    project_for_cwd=self.herdr_service.project_for_cwd,
+                )
             elif method == "herdr.proxy.snapshot":
                 result = await self.herdr_service.proxy_snapshot(
                     params,
@@ -8608,16 +8614,6 @@ FORMAT JSONEachRow
             },
         }
 
-    async def _herdr_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Return Herdr-native local and configured remote state."""
-        return await self.herdr_service.snapshot(
-            params or {},
-            remote_targets=self.herdr_service.load_remote_targets(),
-            local_host=self._local_host_alias(),
-            normalize_connection_key=self._normalize_connection_key,
-            project_for_cwd=self.herdr_service.project_for_cwd,
-        )
-
     def _build_window_focus_target(
         self,
         *,
@@ -9832,10 +9828,16 @@ FORMAT JSONEachRow
                     existing_window = SimpleNamespace(window_id=session_window_id)
 
         if existing_window is None:
-            existing_window, reused_terminal_role = await self._get_reusable_remote_attach_window(
-                spec=spec,
-                session=session,
+            remote_terminal_role = str(spec.get("terminal_role") or "").strip()
+            existing_window = await self._get_reusable_context_terminal_window(
+                project_name=project_name,
+                context_key=str(spec.get("context_key") or "").strip(),
+                execution_mode="ssh",
+                app_name="terminal",
+                terminal_role=remote_terminal_role,
             )
+            if existing_window is not None:
+                reused_terminal_role = remote_terminal_role
 
         launch_result: Dict[str, Any] = {
             "success": True,
@@ -13740,7 +13742,13 @@ FORMAT JSONEachRow
             "active_terminal": active_terminal_summary,
             "launch_stats": await self._get_launch_stats(),
         }
-        herdr_snapshot = await self._herdr_snapshot({})
+        herdr_snapshot = await self.herdr_service.snapshot(
+            {},
+            remote_targets=self.herdr_service.load_remote_targets(),
+            local_host=self._local_host_alias(),
+            normalize_connection_key=self._normalize_connection_key,
+            project_for_cwd=self.herdr_service.project_for_cwd,
+        )
         sessions = [
             session for session in herdr_snapshot.get("sessions", [])
             if isinstance(session, dict)
@@ -16103,29 +16111,6 @@ FORMAT JSONEachRow
         }
         context.update(identity)
         return context
-
-    async def _get_reusable_remote_attach_window(
-        self,
-        *,
-        spec: Dict[str, Any],
-        session: Dict[str, Any],
-    ) -> Tuple[Optional[Any], str]:
-        """Return the best reusable local terminal for a remote session attach."""
-        project_name = str(spec.get("project_name") or "").strip()
-        context_key = str(spec.get("context_key") or "").strip()
-        remote_terminal_role = str(spec.get("terminal_role") or "").strip()
-        tmux_session_name = str(spec.get("tmux_session_name") or "").strip()
-
-        existing_window = await self._get_reusable_context_terminal_window(
-            project_name=project_name,
-            context_key=context_key,
-            execution_mode="ssh",
-            app_name="terminal",
-            terminal_role=remote_terminal_role,
-        )
-        if existing_window is not None:
-            return existing_window, remote_terminal_role
-        return None, ""
 
     def _connection_target_is_current_host(self, connection_key: str) -> bool:
         """Return whether an SSH connection target resolves back to this host."""
