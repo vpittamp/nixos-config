@@ -209,6 +209,35 @@ async def test_session_preview_keeps_herdr_sessions_focus_only_even_with_tmux_me
 
 
 @pytest.mark.asyncio
+async def test_session_preview_treats_current_host_herdr_session_as_local(server):
+    herdr_session = make_session(
+        session_key="herdr:pane:pane-local",
+        source="herdr",
+        pane_id="pane-local",
+        is_remote_herdr=False,
+        project_name="vpittamp/nixos-config:main",
+        host_name="ryzen",
+        connection_key="local@ryzen",
+        execution_mode="local",
+        focus_mode="herdr_pane",
+        availability_state="local_window",
+        is_current_host=True,
+        source_is_current_host=None,
+        tmux_session="",
+        tmux_window="",
+        tmux_pane="",
+        terminal_context={"execution_mode": "local"},
+    )
+    server._session_list = AsyncMock(return_value={"sessions": [herdr_session]})
+
+    result = await server._session_preview({"session_key": "herdr:pane:pane-local"})
+
+    assert result["preview_mode"] == "focus_only"
+    assert result["preview_reason"] == "herdr_focus_only"
+    assert result["is_remote"] is False
+
+
+@pytest.mark.asyncio
 async def test_session_preview_prefers_remote_source_connection_for_bound_remote_session(server, monkeypatch):
     remote_session = make_session(
         session_key="session-remote-bound",

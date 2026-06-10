@@ -10327,7 +10327,10 @@ FORMAT JSONEachRow
         focus_mode = str(session.get("focus_mode") or "").strip() or "unavailable"
         availability_state = str(session.get("availability_state") or "").strip()
         focusability_reason = str(session.get("focusability_reason") or "").strip()
-        source_is_current_host = bool(session.get("source_is_current_host", False))
+        raw_source_is_current_host = session.get("source_is_current_host")
+        if raw_source_is_current_host is None:
+            raw_source_is_current_host = session.get("is_current_host", False)
+        source_is_current_host = bool(raw_source_is_current_host)
         is_herdr_session = (
             str(session.get("source") or "").strip() == "herdr"
             or bool(str(session.get("pane_id") or "").strip())
