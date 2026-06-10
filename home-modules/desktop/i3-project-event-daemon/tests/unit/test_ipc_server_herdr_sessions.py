@@ -69,7 +69,7 @@ def normalize_herdr_sessions(server, snapshot, *, remote_target=None):
         remote_target=remote_target,
         local_host=server._local_host_alias(),
         normalize_connection_key=server._normalize_connection_key,
-        project_for_cwd=server._herdr_project_for_cwd,
+        project_for_cwd=server.herdr_service.project_for_cwd,
     )
 
 
@@ -1050,7 +1050,7 @@ async def test_herdr_remote_unreachable_reports_error_without_rows(server, monke
         target,
         local_host=server._local_host_alias(),
         normalize_connection_key=server._normalize_connection_key,
-        project_for_cwd=server._herdr_project_for_cwd,
+        project_for_cwd=server.herdr_service.project_for_cwd,
     )
 
     assert snapshot["success"] is False

@@ -50,6 +50,7 @@ class HerdrService:
         snapshot_cache_ttl: float = 0.5,
         remote_snapshot_cache_ttl: float = 10.0,
         normalize_project_path: Optional[Callable[[Optional[str]], Optional[str]]] = None,
+        resolve_worktree_for_path: Optional[Callable[[Optional[str]], Optional[Dict[str, str]]]] = None,
     ) -> None:
         self._notify_state_change = notify_state_change
         self._external_invalidate_snapshot_cache = invalidate_snapshot_cache
@@ -70,6 +71,7 @@ class HerdrService:
         self.remote_targets_cache_signature: Tuple[Any, ...] = ("", False, 0, 0)
         self.git_metadata_cache: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
         self._normalize_project_path = normalize_project_path or self._default_normalize_project_path
+        self._resolve_worktree_for_path = resolve_worktree_for_path
 
     @staticmethod
     def _default_normalize_project_path(value: Optional[str]) -> Optional[str]:
@@ -82,6 +84,22 @@ class HerdrService:
     def normalize_host_key(host: Any) -> str:
         """Normalize a Herdr host key for generation tracking."""
         return str(host or "").strip().lower()
+
+    def project_for_cwd(self, cwd: str) -> Dict[str, str]:
+        """Resolve a Herdr CWD into the project identity used by session rows."""
+        discovered: Optional[Dict[str, str]] = None
+        if self._resolve_worktree_for_path is not None:
+            discovered = self._resolve_worktree_for_path(cwd)
+        if discovered:
+            return {
+                "project_name": str(discovered.get("qualified_name") or "").strip(),
+                "project_path": str(discovered.get("path") or "").strip(),
+            }
+        normalized = self._normalize_project_path(cwd) or str(cwd or "").strip()
+        return {
+            "project_name": "global",
+            "project_path": normalized,
+        }
 
     def bump_local_generation(self) -> int:
         """Advance and return the local Herdr generation."""

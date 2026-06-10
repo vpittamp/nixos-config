@@ -613,6 +613,7 @@ class IPCServer:
         self.herdr_service = HerdrService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
             normalize_project_path=normalize_project_path,
+            resolve_worktree_for_path=resolve_discovered_worktree,
         )
         self._malformed_json_count: int = 0
         self._deferred_filter_task: Optional[asyncio.Task] = None
@@ -8603,19 +8604,6 @@ FORMAT JSONEachRow
             normalize_connection_key=self._normalize_connection_key,
         )
 
-    def _herdr_project_for_cwd(self, cwd: str) -> Dict[str, str]:
-        discovered = resolve_discovered_worktree(cwd)
-        if discovered:
-            return {
-                "project_name": str(discovered.get("qualified_name") or "").strip(),
-                "project_path": str(discovered.get("path") or "").strip(),
-            }
-        normalized = normalize_project_path(cwd) or str(cwd or "").strip()
-        return {
-            "project_name": "global",
-            "project_path": normalized,
-        }
-
     async def _herdr_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return Herdr-native local and configured remote state."""
         return await self.herdr_service.snapshot(
@@ -8623,7 +8611,7 @@ FORMAT JSONEachRow
             remote_targets=self._load_herdr_remote_targets(),
             local_host=self._local_host_alias(),
             normalize_connection_key=self._normalize_connection_key,
-            project_for_cwd=self._herdr_project_for_cwd,
+            project_for_cwd=self.herdr_service.project_for_cwd,
         )
 
     async def _herdr_proxy_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -8632,7 +8620,7 @@ FORMAT JSONEachRow
             params or {},
             local_host=self._local_host_alias(),
             normalize_connection_key=self._normalize_connection_key,
-            project_for_cwd=self._herdr_project_for_cwd,
+            project_for_cwd=self.herdr_service.project_for_cwd,
         )
 
     async def _herdr_proxy_pane_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:

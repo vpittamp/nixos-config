@@ -92,6 +92,32 @@ def test_herdr_service_tracks_remote_generations_by_host():
     }
 
 
+def test_herdr_service_resolves_project_for_cwd_with_worktree_fallback():
+    def resolve_worktree(path):
+        if path == "/repo/main":
+            return {
+                "qualified_name": "vpittamp/nixos-config:main",
+                "path": "/repo/main",
+            }
+        return None
+
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+        normalize_project_path=lambda path: str(path or "").rstrip("/") or None,
+        resolve_worktree_for_path=resolve_worktree,
+    )
+
+    assert service.project_for_cwd("/repo/main") == {
+        "project_name": "vpittamp/nixos-config:main",
+        "project_path": "/repo/main",
+    }
+    assert service.project_for_cwd("/tmp/work/") == {
+        "project_name": "global",
+        "project_path": "/tmp/work",
+    }
+
+
 @pytest.mark.asyncio
 async def test_herdr_service_remote_proxy_event_advances_remote_generation():
     notifications = []
