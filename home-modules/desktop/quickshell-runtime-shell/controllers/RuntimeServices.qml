@@ -410,7 +410,7 @@ Item {
 
     Process {
         id: dashboardWatcher
-        command: [runtimeConfig.i3pmBin, "dashboard", "watch", "--interval", String(runtimeConfig.dashboardHeartbeatMs)]
+        command: [runtimeConfig.i3pmBin, "dashboard", "watch"]
         running: true
         stdout: SplitParser {
             splitMarker: "\n"

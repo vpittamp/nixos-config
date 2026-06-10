@@ -9,7 +9,8 @@ interface CommandOptions {
 function showHelp(): void {
   console.log(`i3pm dashboard <snapshot|watch|events> [--json]
 
-watch emits one initial snapshot, then refetches only after daemon invalidation events.
+watch emits one initial snapshot, then typed dashboard delta events.
+watch refetches a snapshot only after daemon invalidation or missed generation.
 events streams typed dashboard event envelopes as JSON Lines.
 
 Options:
@@ -164,7 +165,7 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
 
           currentSnapshot = applyDashboardEvent(currentSnapshot, event);
           lastSeenGeneration = generation;
-          const encoded = JSON.stringify(currentSnapshot);
+          const encoded = JSON.stringify(event);
           if (encoded !== lastPayload) {
             console.log(encoded);
             lastPayload = encoded;

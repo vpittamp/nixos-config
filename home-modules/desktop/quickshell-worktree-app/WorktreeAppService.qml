@@ -37,11 +37,62 @@ Item {
         }
     }
 
-    function applyDashboard(payload) {
+    function dashboardGeneration(state) {
+        if (!state || typeof state !== "object")
+            return -1;
+        const generation = Number(state.snapshot_version || state.generation || -1);
+        return Number.isFinite(generation) ? generation : -1;
+    }
+
+    function applyDashboardSnapshot(payload) {
         if (!payload || typeof payload !== "object")
             return;
 
         dashboard = payload;
+        selectDashboardWorktree(payload);
+    }
+
+    function applyDashboardEvent(event) {
+        if (!event || typeof event !== "object")
+            return;
+
+        const eventGeneration = dashboardGeneration(event);
+        const currentGeneration = dashboardGeneration(dashboard);
+        if (eventGeneration >= 0 && currentGeneration >= 0 && eventGeneration <= currentGeneration)
+            return;
+
+        const changedKeys = arrayOrEmpty(event.changed_keys).map(key => stringOrEmpty(key));
+        const payload = event.payload && typeof event.payload === "object" ? event.payload : null;
+        if (!payload || stringOrEmpty(event.event_type || event.type) === "dashboard.invalidated" || changedKeys.indexOf("dashboard") !== -1) {
+            requestSnapshot();
+            return;
+        }
+        if (eventGeneration >= 0 && currentGeneration >= 0 && eventGeneration > currentGeneration + 1) {
+            requestSnapshot();
+            return;
+        }
+
+        const next = Object.assign({}, dashboard, payload, {
+            snapshot_version: eventGeneration >= 0 ? eventGeneration : (payload.snapshot_version || dashboard.snapshot_version || 0),
+            session_generation: event.session_generation !== undefined ? event.session_generation : (payload.session_generation || dashboard.session_generation || 0),
+            display_generation: event.display_generation !== undefined ? event.display_generation : (payload.display_generation || dashboard.display_generation || 0),
+            focus_generation: event.focus_generation !== undefined ? event.focus_generation : (payload.focus_generation || dashboard.focus_generation || 0),
+        });
+        dashboard = next;
+        selectDashboardWorktree(next);
+    }
+
+    function applyDashboard(payload) {
+        if (!payload || typeof payload !== "object")
+            return;
+        if (payload.event_type !== undefined) {
+            applyDashboardEvent(payload);
+        } else {
+            applyDashboardSnapshot(payload);
+        }
+    }
+
+    function selectDashboardWorktree(payload) {
         const worktrees = arrayOrEmpty(payload.worktrees);
         if (!worktrees.length) {
             selectedQualifiedName = "";
@@ -64,7 +115,7 @@ Item {
     function ensureWatcher() {
         if (dashboardWatchProcess.running)
             return;
-        dashboardWatchProcess.command = [appConfig.i3pmBin, "dashboard", "watch", "--json", "--interval", String(appConfig.dashboardHeartbeatMs)];
+        dashboardWatchProcess.command = [appConfig.i3pmBin, "dashboard", "watch"];
         dashboardWatchProcess.running = true;
         watcherStarted = true;
     }
