@@ -12073,14 +12073,7 @@ FORMAT JSONEachRow
         """
         start_time = time.perf_counter()
 
-        if not hasattr(self.state_manager, 'launch_registry'):
-            raise RuntimeError(json.dumps({
-                "code": -32005,
-                "message": "Launch registry not initialized in daemon state",
-                "data": {"reason": "registry_not_initialized"}
-            }))
-
-        stats = self.state_manager.launch_registry.get_stats()
+        stats = self.launch_service.launch_stats()
 
         duration_ms = (time.perf_counter() - start_time) * 1000
 
@@ -12089,17 +12082,7 @@ FORMAT JSONEachRow
             duration_ms=duration_ms
         )
 
-        # Convert Pydantic model to dict
-        return {
-            "total_pending": stats.total_pending,
-            "unmatched_pending": stats.unmatched_pending,
-            "total_notifications": stats.total_notifications,
-            "total_matched": stats.total_matched,
-            "total_expired": stats.total_expired,
-            "total_failed_correlation": stats.total_failed_correlation,
-            "match_rate": stats.match_rate,
-            "expiration_rate": stats.expiration_rate
-        }
+        return stats
 
     async def _get_pending_launches(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -12132,16 +12115,7 @@ FORMAT JSONEachRow
 
         include_matched = params.get("include_matched", False)
 
-        if not hasattr(self.state_manager, 'launch_registry'):
-            raise RuntimeError(json.dumps({
-                "code": -32005,
-                "message": "Launch registry not initialized in daemon state",
-                "data": {"reason": "registry_not_initialized"}
-            }))
-
-        launches = await self.state_manager.launch_registry.get_pending_launches(
-            include_matched=include_matched
-        )
+        result = await self.launch_service.pending_launches(include_matched=include_matched)
 
         duration_ms = (time.perf_counter() - start_time) * 1000
 
@@ -12151,7 +12125,7 @@ FORMAT JSONEachRow
             params={"include_matched": include_matched}
         )
 
-        return {"launches": launches}
+        return result
 
     async def _get_terminal_anchor(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Resolve canonical terminal anchor state from daemon-owned window tracking."""

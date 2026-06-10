@@ -71,6 +71,19 @@ class DummyLaunchRegistry:
                 return launch
         return None
 
+    async def get_pending_launches(self, *, include_matched: bool = False) -> List[Dict[str, Any]]:
+        launches = []
+        for launch_id, launch in self._launches.items():
+            if bool(getattr(launch, "matched", False)) and not include_matched:
+                continue
+            launches.append({
+                "launch_id": launch_id,
+                "app_name": getattr(launch, "app_name", ""),
+                "project_name": getattr(launch, "project_name", ""),
+                "matched": bool(getattr(launch, "matched", False)),
+            })
+        return launches
+
 
 def make_service(
     tmp_path: Path,
@@ -466,6 +479,39 @@ def test_find_context_terminal_window_matches_role_and_prefers_visible_workspace
     )
 
     assert result is visible
+
+
+@pytest.mark.asyncio
+async def test_launch_stats_and_pending_launches_use_registry_boundary(tmp_path: Path) -> None:
+    registry = DummyLaunchRegistry()
+    service = make_service(tmp_path, launch_registry=registry)
+    app = SimpleNamespace(
+        name="terminal",
+        expected_class="com.mitchellh.ghostty",
+        pwa_match_domains=[],
+    )
+    await service.register_pending_launch(
+        app=app,
+        project_name="repo/main",
+        project_directory="/repo/main",
+        launcher_pid=123,
+        terminal_anchor_id="anchor-main",
+        preferred_workspace=1,
+    )
+
+    stats = service.launch_stats()
+    pending = await service.pending_launches()
+
+    assert stats["total_pending"] == 1
+    assert stats["total_matched"] == 0
+    assert pending == {
+        "launches": [{
+            "launch_id": "launch-1",
+            "app_name": "terminal",
+            "project_name": "repo/main",
+            "matched": False,
+        }]
+    }
 
 
 def test_build_remote_helper_script_for_remote_attach_without_remote_dir(tmp_path: Path) -> None:

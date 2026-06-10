@@ -461,6 +461,26 @@ class LaunchService:
                 self.write_local_spec(spec=spec, launch_kind=launch_kind)
         return registration
 
+    def launch_stats(self) -> Dict[str, Any]:
+        """Return launch registry statistics as a JSON-serializable payload."""
+        stats = self._registry().get_stats()
+        return {
+            "total_pending": getattr(stats, "total_pending", 0),
+            "unmatched_pending": getattr(stats, "unmatched_pending", 0),
+            "total_notifications": getattr(stats, "total_notifications", 0),
+            "total_matched": getattr(stats, "total_matched", 0),
+            "total_expired": getattr(stats, "total_expired", 0),
+            "total_failed_correlation": getattr(stats, "total_failed_correlation", 0),
+            "match_rate": getattr(stats, "match_rate", 0),
+            "expiration_rate": getattr(stats, "expiration_rate", 0),
+        }
+
+    async def pending_launches(self, *, include_matched: bool = False) -> Dict[str, Any]:
+        """Return pending launches for diagnostics."""
+        registry = self._registry()
+        launches = await registry.get_pending_launches(include_matched=include_matched)
+        return {"launches": launches}
+
     def find_context_terminal_window(
         self,
         *,
