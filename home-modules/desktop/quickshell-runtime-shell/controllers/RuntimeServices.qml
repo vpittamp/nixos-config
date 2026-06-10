@@ -402,7 +402,7 @@ Item {
 
     Process {
         id: dashboardWatcher
-        command: [runtimeConfig.i3pmBin, "dashboard", "watch"]
+        command: [runtimeConfig.i3pmWatchBin, "dashboard", "watch"]
         running: true
         stdout: SplitParser {
             splitMarker: "\n"

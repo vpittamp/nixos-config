@@ -27,6 +27,7 @@ ShellRoot {
         id: assistantService
         shellConfigName: shellConfig.configName
         i3pmBin: shellConfig.i3pmBin
+        i3pmWatchBin: shellConfig.i3pmWatchBin
         contextLabel: root.worktreePickerSummaryTitle()
         contextDetails: root.activeContextSummaryLabel()
     }

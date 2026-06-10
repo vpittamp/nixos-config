@@ -10,6 +10,7 @@ Item {
     property string contextLabel: ""
     property string contextDetails: ""
     property string i3pmBin: ""
+    property string i3pmWatchBin: i3pmBin
 
     property var snapshot: ({
             active_session_key: "",
@@ -115,7 +116,7 @@ Item {
 
     Process {
         id: watcher
-        command: [root.i3pmBin, "agent", "watch"]
+        command: [root.i3pmWatchBin, "agent", "watch"]
         running: true
         stdout: SplitParser {
             splitMarker: "\n"
@@ -137,7 +138,7 @@ Item {
 
     Process {
         id: desktopWatcher
-        command: [root.i3pmBin, "agent", "desktop-watch"]
+        command: [root.i3pmWatchBin, "agent", "desktop-watch"]
         running: true
         stdout: SplitParser {
             splitMarker: "\n"

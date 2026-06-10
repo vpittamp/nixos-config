@@ -57,6 +57,7 @@ QtObject {
   readonly property bool notificationMarkupEnabled: ${if cfg.notifications.enableMarkup then "true" else "false"}
   readonly property string hostName: "${hostName}"
   readonly property string i3pmBin: "${config.home.profileDirectory}/bin/i3pm"
+  readonly property string i3pmWatchBin: "${quickshellI3pmWatchScript}/bin/quickshell-i3pm-watch"
   readonly property string notificationMonitorBin: "${notificationMonitorScript}/bin/quickshell-notification-monitor"
   readonly property string networkStatusBin: "${networkStatusScript}/bin/quickshell-network-status"
   readonly property string systemStatsBin: "${systemStatsScript}/bin/quickshell-system-stats"
@@ -102,6 +103,39 @@ EOF
 
 
   quickshellBin = lib.getExe pkgs.quickshell;
+
+  quickshellI3pmWatchScript = pkgs.writeShellScriptBin "quickshell-i3pm-watch" ''
+    set -euo pipefail
+
+    i3pm_bin="${config.home.profileDirectory}/bin/i3pm"
+    if [ "$#" -lt 2 ]; then
+      exec "$i3pm_bin" "$@"
+    fi
+
+    case "$1:$2" in
+      dashboard:watch)
+        pattern='[i]3pm .*dashboard watch'
+        ;;
+      agent:watch)
+        pattern='[i]3pm .*agent watch($| )'
+        ;;
+      agent:desktop-watch)
+        pattern='[i]3pm .*agent desktop-watch'
+        ;;
+      *)
+        exec "$i3pm_bin" "$@"
+        ;;
+    esac
+
+    uid="$(${pkgs.coreutils}/bin/id -u)"
+    for pid in $(${pkgs.procps}/bin/pgrep -u "$uid" -f "$pattern" 2>/dev/null || true); do
+      if [ "$pid" != "$$" ]; then
+        kill "$pid" 2>/dev/null || true
+      fi
+    done
+    ${pkgs.coreutils}/bin/sleep 0.1
+    exec "$i3pm_bin" "$@"
+  '';
 
   notificationMonitorScript = pkgs.writeShellScriptBin "quickshell-notification-monitor" ''
     set -euo pipefail
