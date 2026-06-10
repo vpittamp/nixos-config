@@ -131,6 +131,22 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     assert "fallback_method === \"window.focus\"" in window_command_text
 
 
+def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
+    """Dashboard updates should flow through snapshot/event reducers, not direct raw replacement."""
+    text = SHELL_QML.read_text()
+    assert "function applySnapshot(snapshot)" in text
+    assert "function applyEvent(event)" in text
+    assert "function resetDashboard(status, errorMessage)" in text
+    assert "function afterDashboardApplied()" in text
+    assert "const eventGeneration = dashboardGeneration(event);" in text
+    assert "if (eventGeneration >= 0 && currentGeneration >= 0 && eventGeneration <= currentGeneration)" in text
+    assert "eventType === \"dashboard.invalidated\"" in text
+    assert "changedKeys.indexOf(\"dashboard\") !== -1" in text
+    assert "Object.assign({}, dashboard, payload" in text
+    assert "applyEvent(parsed);" in text
+    assert "applySnapshot(parsed);" in text
+
+
 def test_side_panel_sessions_close_by_explicit_herdr_target():
     """Session rows should call Herdr close targets when provided."""
     text = SHELL_QML.read_text()

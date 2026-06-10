@@ -8188,6 +8188,86 @@ ShellRoot {
         }
     }
 
+    function dashboardGeneration(state) {
+        if (!state || typeof state !== "object") {
+            return -1;
+        }
+        const generation = Number(state.snapshot_version || state.generation || -1);
+        return Number.isFinite(generation) ? generation : -1;
+    }
+
+    function afterDashboardApplied() {
+        syncDisplayApplyStateFromDashboard();
+        pruneSessionClosePending();
+        const current = currentSessionKey();
+        if (current) {
+            selectedSessionKey = current;
+        }
+        if (launcherVisible && (launcherMode === "projects" || launcherMode === "sessions" || launcherMode === "windows")) {
+            restartLauncherQuery();
+        }
+    }
+
+    function applySnapshot(snapshot) {
+        if (!snapshot || typeof snapshot !== "object") {
+            return;
+        }
+        dashboard = snapshot;
+        afterDashboardApplied();
+    }
+
+    function dashboardEventPayload(event) {
+        if (!event || typeof event !== "object") {
+            return null;
+        }
+        const payload = event.payload || {};
+        return payload && typeof payload === "object" && !Array.isArray(payload) ? payload : null;
+    }
+
+    function dashboardEventChangedKeys(event) {
+        if (!event || typeof event !== "object") {
+            return [];
+        }
+        return arrayOrEmpty(event.changed_keys).map(key => stringOrEmpty(key)).filter(key => key.length > 0);
+    }
+
+    function applyEvent(event) {
+        if (!event || typeof event !== "object") {
+            return;
+        }
+
+        const eventType = stringOrEmpty(event.event_type || event.type);
+        const changedKeys = dashboardEventChangedKeys(event);
+        const eventGeneration = dashboardGeneration(event);
+        const currentGeneration = dashboardGeneration(dashboard);
+        if (eventGeneration >= 0 && currentGeneration >= 0 && eventGeneration <= currentGeneration) {
+            return;
+        }
+
+        const payload = dashboardEventPayload(event);
+        if (
+            eventType === "dashboard.invalidated"
+            || changedKeys.indexOf("dashboard") !== -1
+            || !payload
+        ) {
+            resetDashboard("reconnecting", eventType || "dashboard invalidated");
+            return;
+        }
+
+        if (eventGeneration >= 0 && currentGeneration >= 0 && eventGeneration > currentGeneration + 1) {
+            resetDashboard("reconnecting", "dashboard event generation gap");
+            return;
+        }
+
+        dashboard = Object.assign({}, dashboard, payload, {
+            snapshot_version: eventGeneration >= 0 ? eventGeneration : (payload.snapshot_version || dashboard.snapshot_version || 0),
+            session_generation: event.session_generation !== undefined ? event.session_generation : (payload.session_generation || dashboard.session_generation || 0),
+            display_generation: event.display_generation !== undefined ? event.display_generation : (payload.display_generation || dashboard.display_generation || 0),
+            focus_generation: event.focus_generation !== undefined ? event.focus_generation : (payload.focus_generation || dashboard.focus_generation || 0),
+        });
+        afterDashboardApplied();
+    }
+
     function handleDashboardWatchError(payload) {
         const message = stringOrEmpty(payload).trim();
         if (!message) {
@@ -8226,15 +8306,11 @@ ShellRoot {
         }
 
         try {
-            dashboard = JSON.parse(raw);
-            syncDisplayApplyStateFromDashboard();
-            pruneSessionClosePending();
-            const current = currentSessionKey();
-            if (current) {
-                selectedSessionKey = current;
-            }
-            if (launcherVisible && (launcherMode === "projects" || launcherMode === "sessions" || launcherMode === "windows")) {
-                restartLauncherQuery();
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.event_type !== undefined) {
+                applyEvent(parsed);
+            } else {
+                applySnapshot(parsed);
             }
         } catch (error) {
             console.warn("Failed to parse dashboard payload", error, raw);
