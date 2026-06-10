@@ -7743,71 +7743,13 @@ class IPCServer:
         terminal_role: str = "",
     ) -> Optional[Any]:
         """Return an existing canonical project terminal window for a context if present."""
-        target_project = str(project_name or "").strip()
-        target_context = str(context_key or "").strip()
-        target_mode = str(execution_mode or "local").strip() or "local"
-        target_app = str(app_name or "").strip()
-        target_role = str(terminal_role or "").strip()
-
-        if not (target_project and target_context):
-            return None
-
-        candidates: List[Any] = []
-        for window_info in self.state_manager.state.window_map.values():
-            tracked_project = str(getattr(window_info, "project", "") or "").strip()
-            tracked_context = str(getattr(window_info, "context_key", "") or "").strip()
-            tracked_mode = str(getattr(window_info, "execution_mode", "") or "local").strip() or "local"
-            role = str(getattr(window_info, "terminal_role", "") or "").strip()
-            app_identifier = str(getattr(window_info, "app_identifier", "") or "").strip()
-            tracked_tmux_session = str(getattr(window_info, "tmux_session_name", "") or "").strip()
-
-            if not tracked_project or not tracked_context or not role or not tracked_tmux_session:
-                pid = int(getattr(window_info, "pid", 0) or 0)
-                if pid > 0:
-                    env = read_process_environ_with_fallback(pid)
-                    parsed_env = parse_window_environment(env) if env else None
-                    if parsed_env is not None:
-                        tracked_project = tracked_project or str(parsed_env.project_name or "").strip()
-                        tracked_context = tracked_context or str(parsed_env.context_key or "").strip()
-                        role = role or str(parsed_env.terminal_role or "").strip()
-                        app_identifier = app_identifier or str(parsed_env.app_name or "").strip()
-                        tracked_tmux_session = tracked_tmux_session or str(parsed_env.tmux_session_name or "").strip()
-                    tracked_mode = (
-                        str(env.get("I3PM_CONTEXT_VARIANT") or "").strip()
-                        or tracked_mode
-                    )
-
-            if tracked_project != target_project:
-                continue
-            if tracked_context != target_context:
-                continue
-            if tracked_mode != target_mode:
-                continue
-
-            if target_role:
-                if role != target_role:
-                    continue
-            elif role:
-                if role != "project-main":
-                    continue
-            elif target_app:
-                if app_identifier != target_app:
-                    continue
-            elif app_identifier != "terminal":
-                continue
-
-            candidates.append(window_info)
-
-        if not candidates:
-            return None
-
-        candidates.sort(
-            key=lambda item: (
-                0 if str(getattr(item, "workspace", "") or "").strip() else 1,
-                int(getattr(item, "window_id", 0) or 0),
-            )
+        return self.launch_service.find_context_terminal_window(
+            project_name=project_name,
+            context_key=context_key,
+            execution_mode=execution_mode,
+            app_name=app_name,
+            terminal_role=terminal_role,
         )
-        return candidates[0]
 
     async def _find_live_sway_window(self, window_id: int) -> Optional[Any]:
         """Return a live Sway container by con_id/window_id, or None if missing."""

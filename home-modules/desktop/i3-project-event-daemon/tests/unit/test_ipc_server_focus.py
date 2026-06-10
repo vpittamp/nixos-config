@@ -32,6 +32,7 @@ if "i3_project_daemon" not in sys.modules:
 
 
 ipc_server_module = importlib.import_module("i3_project_daemon.ipc_server")
+window_filter_module = importlib.import_module("i3_project_daemon.services.window_filter")
 
 IPCServer = ipc_server_module.IPCServer
 
@@ -1306,7 +1307,7 @@ async def test_find_context_terminal_window_recovers_context_from_process_env(se
     )
     server.state_manager.state.window_map[44] = window
     monkeypatch.setattr(
-        ipc_server_module,
+        window_filter_module,
         "read_process_environ_with_fallback",
         lambda pid: {
             "I3PM_PROJECT_NAME": "vpittamp/t3code:main",
@@ -1319,7 +1320,7 @@ async def test_find_context_terminal_window_recovers_context_from_process_env(se
         },
     )
     monkeypatch.setattr(
-        ipc_server_module,
+        window_filter_module,
         "parse_window_environment",
         lambda _env: SimpleNamespace(
             project_name="vpittamp/t3code:main",

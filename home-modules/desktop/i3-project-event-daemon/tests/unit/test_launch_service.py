@@ -416,6 +416,58 @@ async def test_register_launch_for_spec_persists_remote_spec(tmp_path: Path) -> 
     assert service.read_status("launch-1")["transport_kind"] == "ssh"
 
 
+def test_find_context_terminal_window_matches_role_and_prefers_visible_workspace(tmp_path: Path) -> None:
+    hidden = SimpleNamespace(
+        window_id=10,
+        project="repo/main",
+        context_key="repo/main::local::local@thinkpad",
+        execution_mode="local",
+        terminal_role="project-main",
+        app_identifier="terminal",
+        tmux_session_name="i3pm-main",
+        workspace="",
+    )
+    visible = SimpleNamespace(
+        window_id=11,
+        project="repo/main",
+        context_key="repo/main::local::local@thinkpad",
+        execution_mode="local",
+        terminal_role="project-main",
+        app_identifier="terminal",
+        tmux_session_name="i3pm-main",
+        workspace="1",
+    )
+    other_role = SimpleNamespace(
+        window_id=12,
+        project="repo/main",
+        context_key="repo/main::local::local@thinkpad",
+        execution_mode="local",
+        terminal_role="project-app:lazygit",
+        app_identifier="lazygit",
+        tmux_session_name="i3pm-main",
+        workspace="1",
+    )
+    service = LaunchService(
+        runtime_dir=lambda: tmp_path,
+        load_json_file=load_json_file,
+        normalize_target_host=lambda value: str(value or "").strip().lower(),
+        parse_context_target_host=parse_context_target_host,
+        transport_kind_for_target_host=lambda _value: "local_process",
+        local_host_alias=lambda: "thinkpad",
+        window_map_items=lambda: [(10, hidden), (11, visible), (12, other_role)],
+    )
+
+    result = service.find_context_terminal_window(
+        project_name="repo/main",
+        context_key="repo/main::local::local@thinkpad",
+        execution_mode="local",
+        app_name="terminal",
+        terminal_role="project-main",
+    )
+
+    assert result is visible
+
+
 def test_build_remote_helper_script_for_remote_attach_without_remote_dir(tmp_path: Path) -> None:
     service = make_service(tmp_path, transport="remote_helper")
     helper_path = service.build_remote_terminal_helper_script({
