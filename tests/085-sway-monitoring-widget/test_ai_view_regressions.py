@@ -312,6 +312,7 @@ def test_launcher_preview_for_herdr_sessions_is_focus_only():
     runtime_services_text = RUNTIME_SERVICES_QML.read_text()
     session_command_text = I3PM_SESSION_TS.read_text()
     main_command_text = I3PM_MAIN_TS.read_text()
+    daemon_text = (REPO_ROOT / "home-modules/desktop/i3-project-event-daemon/ipc_server.py").read_text()
     assert "const herdrSession = stringOrEmpty(entry.source) === \"herdr\" || stringOrEmpty(entry.pane_id);" in text
     assert 'preview_mode: "focus_only"' in text
     assert 'preview_reason: herdrSession ? "herdr_focus_only" : "herdr_focus_required"' in text
@@ -326,7 +327,11 @@ def test_launcher_preview_for_herdr_sessions_is_focus_only():
     assert '"session", "preview", sessionKey, "--follow"' not in text
     assert '"session", "preview", "", "--follow"' not in runtime_services_text
     assert "--follow" not in session_command_text
+    assert "session preview <session_key>" not in session_command_text
+    assert "session preview <session_key>" not in main_command_text
     assert "session preview <session_key> --follow" not in main_command_text
+    assert '"session.preview"' not in daemon_text
+    assert "_session_preview" not in daemon_text
     assert 'message: "Loading live pane preview..."' not in text
     assert "sessionPreviewFollowChipVisible" not in text
     assert "sessionPreviewAutoFollow" not in text

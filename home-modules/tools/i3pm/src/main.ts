@@ -72,7 +72,7 @@ EXAMPLES:
   i3pm context current                 Show active runtime context
   i3pm launch open terminal           Launch an app through the daemon
   i3pm session focus <session_key>    Focus an AI session
-  i3pm session preview <session_key> --jsonl
+  i3pm herdr-proxy focus <pane_id> --json
   i3pm herdr-proxy snapshot --json    Emit local Herdr proxy snapshot
   i3pm window focus <window_id>       Focus a managed window
   i3pm workspace focus 2              Focus a workspace

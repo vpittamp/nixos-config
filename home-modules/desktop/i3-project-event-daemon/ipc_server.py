@@ -64,7 +64,6 @@ from .services.herdr_service import HerdrService
 from .services.launch_service import LaunchService
 from .services.session_action_service import SessionActionService
 from .services.session_attention_service import SessionAttentionService
-from .services.session_preview_service import SessionPreviewService
 from .services.session_runtime_service import SessionRuntimeService
 from .services.worktree_profile_service import WorktreeProfileService
 from .models.window_command import CommandBatch
@@ -634,7 +633,6 @@ class IPCServer:
             invalidate_worktree_cache=self.invalidate_worktree_cache,
         )
         self.state_change_subscribers = self.dashboard_service.subscribers
-        self.session_preview_service = SessionPreviewService()
         self.assistant_desktop_service = AssistantDesktopService(
             registry_loader=self.registry_loader,
             desktop_revision=lambda: int(self._snapshot_version),
@@ -1158,8 +1156,6 @@ class IPCServer:
                 result = await self._session_close(params)
             elif method == "focus.state":
                 result = await self._focus_state(params)
-            elif method == "session.preview":
-                result = await self._session_preview(params)
             elif method == "session.cleanup":
                 result = await self._session_cleanup(params)
             elif method == "session.doctor":
@@ -7027,14 +7023,6 @@ class IPCServer:
             close_managed_window=self._close_managed_window,
             clear_focus_if_session_matches=self.focus_service.clear_if_session_matches,
             notify_state_change=self.notify_state_change,
-        )
-
-    async def _session_preview(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Resolve preview metadata for a daemon-owned AI session."""
-        sessions_result = await self._session_list({})
-        return self.session_preview_service.build_preview(
-            params=params,
-            sessions=sessions_result.get("sessions", []),
         )
 
     def _build_dashboard_projects(
