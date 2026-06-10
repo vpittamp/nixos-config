@@ -261,6 +261,133 @@ async def test_focus_local_session_attach_returns_stale_result_before_launch():
 
 
 @pytest.mark.asyncio
+async def test_focus_remote_session_attach_reuses_matching_bridge_and_sets_override():
+    service, _calls = make_service()
+    set_focus_overrides = MagicMock()
+    prepare_spec = MagicMock(return_value={
+        "project_name": "PittampalliOrg/workflow-builder:main",
+        "connection_key": "vpittamp@ryzen:22",
+        "context_key": "PittampalliOrg/workflow-builder:main::host::ryzen",
+        "terminal_role": "remote-session:abc123",
+        "execution_mode": "ssh",
+    })
+    get_reusable = AsyncMock(return_value=SimpleNamespace(
+        window_id=20,
+        terminal_role="remote-session:abc123",
+        remote_surface_key="surface-remote-pane",
+        remote_session_key="session-remote-pane",
+    ))
+    wait_for_launch_status = AsyncMock(side_effect=AssertionError("should not wait"))
+
+    result = await service.focus_remote_session_attach(
+        session_key="session-remote-pane",
+        session={
+            "session_key": "session-remote-pane",
+            "surface_key": "surface-remote-pane",
+            "host_name": "ryzen",
+            "tmux_pane": "%11",
+        },
+        intent_epoch=3,
+        user_intent_is_current=lambda epoch: epoch == 3,
+        stale_intent_result=MagicMock(),
+        resolve_remote_attach_profile=MagicMock(return_value={"remote_host": "ryzen"}),
+        prepare_remote_session_attach_spec=prepare_spec,
+        find_live_sway_window=AsyncMock(return_value=None),
+        state_window_for_id=MagicMock(),
+        get_reusable_context_terminal_window=get_reusable,
+        remote_bridge_window_mismatch_reason=MagicMock(return_value=""),
+        close_managed_window=AsyncMock(),
+        remove_window=AsyncMock(),
+        invalidate_window_tree_cache=MagicMock(),
+        register_launch_for_spec=AsyncMock(),
+        execute_launch_spec=MagicMock(),
+        wait_for_terminal_window=AsyncMock(),
+        wait_for_launch_status=wait_for_launch_status,
+        window_focus=AsyncMock(return_value={"success": True}),
+        focus_state=AsyncMock(return_value={
+            "current_ai_session_key": "session-remote-pane",
+            "focused_window_id": 20,
+        }),
+        set_focus_overrides=set_focus_overrides,
+    )
+
+    prepare_spec.assert_called_once()
+    get_reusable.assert_awaited_once_with(
+        project_name="PittampalliOrg/workflow-builder:main",
+        context_key="PittampalliOrg/workflow-builder:main::host::ryzen",
+        execution_mode="ssh",
+        app_name="terminal",
+        terminal_role="remote-session:abc123",
+    )
+    wait_for_launch_status.assert_not_awaited()
+    set_focus_overrides.assert_called_once_with(
+        session_key="session-remote-pane",
+        window_id=20,
+        connection_key="vpittamp@ryzen:22",
+    )
+    assert result["success"] is True
+    assert result["focus_mode"] == "remote_bridge_bound"
+    assert result["launch"]["reused_existing"] is True
+    assert result["launch_status"]["status"] == "reused_existing"
+    assert result["verification"]["verification_source"] == "remote_launcher"
+
+
+@pytest.mark.asyncio
+async def test_focus_remote_session_attach_returns_stale_result_before_launch():
+    service, _calls = make_service()
+    current_checks = [True, False]
+    stale_intent_result = MagicMock(return_value={
+        "success": False,
+        "reason": "superseded_before_remote_launch",
+    })
+    register_launch = AsyncMock()
+
+    result = await service.focus_remote_session_attach(
+        session_key="session-remote-pane",
+        session={
+            "session_key": "session-remote-pane",
+            "project_name": "PittampalliOrg/workflow-builder:main",
+        },
+        intent_epoch=4,
+        user_intent_is_current=lambda _epoch: current_checks.pop(0),
+        stale_intent_result=stale_intent_result,
+        resolve_remote_attach_profile=MagicMock(return_value={"remote_host": "ryzen"}),
+        prepare_remote_session_attach_spec=MagicMock(return_value={
+            "project_name": "PittampalliOrg/workflow-builder:main",
+            "connection_key": "vpittamp@ryzen:22",
+            "context_key": "PittampalliOrg/workflow-builder:main::host::ryzen",
+            "terminal_role": "remote-session:abc123",
+            "execution_mode": "ssh",
+        }),
+        find_live_sway_window=AsyncMock(return_value=None),
+        state_window_for_id=MagicMock(),
+        get_reusable_context_terminal_window=AsyncMock(return_value=None),
+        remote_bridge_window_mismatch_reason=MagicMock(),
+        close_managed_window=AsyncMock(),
+        remove_window=AsyncMock(),
+        invalidate_window_tree_cache=MagicMock(),
+        register_launch_for_spec=register_launch,
+        execute_launch_spec=MagicMock(),
+        wait_for_terminal_window=AsyncMock(),
+        wait_for_launch_status=AsyncMock(),
+        window_focus=AsyncMock(),
+        focus_state=AsyncMock(),
+        set_focus_overrides=MagicMock(),
+    )
+
+    stale_intent_result.assert_called_once_with(
+        session_key="session-remote-pane",
+        project_name="PittampalliOrg/workflow-builder:main",
+        reason="superseded_before_remote_launch",
+    )
+    register_launch.assert_not_awaited()
+    assert result == {
+        "success": False,
+        "reason": "superseded_before_remote_launch",
+    }
+
+
+@pytest.mark.asyncio
 async def test_focus_session_routes_remote_attach_and_acknowledges_boundaries():
     service, _calls = make_service()
     session = {

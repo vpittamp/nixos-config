@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+from types import SimpleNamespace
 from typing import Any, Awaitable, Callable, Dict, List, Tuple
 
 
@@ -535,6 +536,208 @@ class SessionActionService:
             "focused_window_id_after": int(focus_state_after.get("focused_window_id") or 0),
             "focus_state_after": focus_state_after,
             "tmux": tmux_result,
+            "verification": verification,
+        }
+
+    async def focus_remote_session_attach(
+        self,
+        *,
+        session_key: str,
+        session: Dict[str, Any],
+        intent_epoch: int,
+        user_intent_is_current: Callable[[int], bool],
+        stale_intent_result: Callable[..., Dict[str, Any]],
+        resolve_remote_attach_profile: Callable[[Dict[str, Any]], Dict[str, Any]],
+        prepare_remote_session_attach_spec: Callable[..., Dict[str, Any]],
+        find_live_sway_window: Callable[[int], Awaitable[Any]],
+        state_window_for_id: Callable[[int], Any],
+        get_reusable_context_terminal_window: Callable[..., Awaitable[Any]],
+        remote_bridge_window_mismatch_reason: Callable[[Any, Dict[str, Any]], str],
+        close_managed_window: Callable[[int], Awaitable[Any]],
+        remove_window: Callable[[int], Awaitable[Any]],
+        invalidate_window_tree_cache: Callable[[], Any],
+        register_launch_for_spec: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
+        execute_launch_spec: Callable[[Dict[str, Any]], Dict[str, Any]],
+        wait_for_terminal_window: Callable[[str], Awaitable[Dict[str, Any]]],
+        wait_for_launch_status: Callable[..., Awaitable[Dict[str, Any]]],
+        window_focus: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
+        focus_state: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
+        set_focus_overrides: Callable[..., Any],
+    ) -> Dict[str, Any]:
+        """Attach a remote tmux-backed session into a deterministic local SSH terminal."""
+        normalized_key = str(session_key or "").strip()
+        project_name = str(session.get("project_name") or session.get("project") or "").strip()
+        if not user_intent_is_current(int(intent_epoch or 0)):
+            return stale_intent_result(
+                session_key=normalized_key,
+                project_name=project_name,
+                reason="superseded_before_remote_attach",
+            )
+
+        attach_profile = resolve_remote_attach_profile(session)
+        spec = prepare_remote_session_attach_spec(
+            session,
+            attach_profile=attach_profile,
+        )
+        project_name = str(spec.get("project_name") or "").strip()
+        connection_key = str(spec.get("connection_key") or "").strip()
+        focus_target_host = str(session.get("host_name") or "").strip()
+        session_window_id = int(session.get("window_id") or session.get("bridge_window_id") or 0)
+
+        existing_window = None
+        reused_terminal_role = ""
+        if session_window_id > 0:
+            live_window = await find_live_sway_window(session_window_id)
+            if live_window is not None:
+                existing_window = state_window_for_id(session_window_id)
+                if existing_window is not None:
+                    reused_terminal_role = str(getattr(existing_window, "terminal_role", "") or "").strip()
+                else:
+                    existing_window = SimpleNamespace(window_id=session_window_id)
+
+        if existing_window is None:
+            remote_terminal_role = str(spec.get("terminal_role") or "").strip()
+            existing_window = await get_reusable_context_terminal_window(
+                project_name=project_name,
+                context_key=str(spec.get("context_key") or "").strip(),
+                execution_mode="ssh",
+                app_name="terminal",
+                terminal_role=remote_terminal_role,
+            )
+            if existing_window is not None:
+                reused_terminal_role = remote_terminal_role
+
+        launch_result: Dict[str, Any] = {
+            "success": True,
+            "reused_existing": existing_window is not None,
+        }
+        if reused_terminal_role:
+            launch_result["reused_terminal_role"] = reused_terminal_role
+        local_window_id = int(getattr(existing_window, "window_id", 0) or 0) if existing_window is not None else 0
+
+        if existing_window is not None:
+            stale_bridge_reason = remote_bridge_window_mismatch_reason(
+                existing_window,
+                session,
+            )
+            if stale_bridge_reason:
+                await close_managed_window(local_window_id)
+                await remove_window(local_window_id)
+                invalidate_window_tree_cache()
+                existing_window = None
+                local_window_id = 0
+                launch_result = {
+                    "success": True,
+                    "reused_existing": False,
+                    "replaced_stale_bridge": True,
+                    "stale_bridge_reason": stale_bridge_reason,
+                }
+
+        if existing_window is None:
+            if not user_intent_is_current(int(intent_epoch or 0)):
+                return stale_intent_result(
+                    session_key=normalized_key,
+                    project_name=project_name,
+                    reason="superseded_before_remote_launch",
+                )
+            prior_launch_state = dict(launch_result)
+            spec["launch"] = await register_launch_for_spec(spec)
+            launch_result = dict(prior_launch_state)
+            launch_result.update(execute_launch_spec(spec))
+            anchor_result = await wait_for_terminal_window(
+                str(spec.get("terminal_anchor_id") or "").strip()
+            )
+            local_window_id = int(anchor_result.get("window_id") or 0)
+            if local_window_id <= 0:
+                raise RuntimeError(
+                    f"Remote session bridge for {normalized_key} did not bind to a local window"
+                )
+
+        if not user_intent_is_current(int(intent_epoch or 0)):
+            return stale_intent_result(
+                session_key=normalized_key,
+                project_name=project_name,
+                reason="superseded_before_remote_focus",
+            )
+        focus_result = await window_focus({
+            "window_id": local_window_id,
+            "project_name": project_name,
+            "target_variant": str(spec.get("execution_mode") or "").strip().lower(),
+            "connection_key": connection_key,
+        })
+
+        terminal_context = session.get("terminal_context") or {}
+        if not isinstance(terminal_context, dict):
+            terminal_context = {}
+        launch_metadata = spec.get("launch") or {}
+        launch_id = str(launch_metadata.get("launch_id") or "").strip()
+        tmux_select_result: Dict[str, Any] = {
+            "success": True,
+            "reason": "not_required",
+        }
+        tmux_result: Dict[str, Any] = {
+            "success": True,
+            "reason": "not_required",
+        }
+        launch_status: Dict[str, Any] = {
+            "success": True,
+            "launch_id": launch_id,
+            "status": "reused_existing" if existing_window is not None else "not_applicable",
+            "reason": "reused_existing" if existing_window is not None else "not_applicable",
+        }
+        if existing_window is None and launch_id:
+            launch_status = await wait_for_launch_status(
+                launch_id,
+                terminal_anchor_id=str(spec.get("terminal_anchor_id") or "").strip(),
+            )
+        overall_success = (
+            bool(launch_result.get("success", False))
+            and bool(focus_result.get("success", False))
+            and bool(launch_status.get("success", False))
+        )
+        verification: Dict[str, Any] = {
+            "success": False,
+            "reason": "focus_failed",
+            "session_key": normalized_key,
+            "current_session_key": "",
+        }
+        if overall_success:
+            verification = {
+                "success": True,
+                "reason": str(launch_status.get("reason") or "ok"),
+                "session_key": normalized_key,
+                "current_session_key": normalized_key,
+                "verification_source": "remote_launcher",
+                "active_tmux_pane": str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip(),
+                "tmux_pane": str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip(),
+            }
+            set_focus_overrides(
+                session_key=normalized_key,
+                window_id=local_window_id,
+                connection_key=connection_key,
+            )
+        focus_state_after = await focus_state({})
+        focus_result = dict(focus_result)
+        focus_result["current_ai_session_key_after"] = str(focus_state_after.get("current_ai_session_key") or "").strip()
+        focus_result["focused_window_id_after"] = int(focus_state_after.get("focused_window_id") or 0)
+        focus_result["focus_state_after"] = focus_state_after
+
+        return {
+            "success": overall_success,
+            "session_key": normalized_key,
+            "window_id": local_window_id,
+            "surface_key": str(session.get("surface_key") or "").strip(),
+            "conflict_state": str(session.get("conflict_state") or "").strip(),
+            "focus_mode": "remote_bridge_bound",
+            "focus_target_host": focus_target_host,
+            "focus": focus_result,
+            "launch": launch_result,
+            "current_ai_session_key_after": str(focus_state_after.get("current_ai_session_key") or "").strip(),
+            "focused_window_id_after": int(focus_state_after.get("focused_window_id") or 0),
+            "focus_state_after": focus_state_after,
+            "tmux_select": tmux_select_result,
+            "tmux": tmux_result,
+            "launch_status": launch_status,
             "verification": verification,
         }
 

@@ -22,7 +22,6 @@ import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
@@ -8187,179 +8186,29 @@ class IPCServer:
         intent_epoch: int = 0,
     ) -> Dict[str, Any]:
         """Attach a remote tmux-backed session into a deterministic local SSH terminal."""
-        project_name = str(session.get("project_name") or session.get("project") or "").strip()
-        if not self._user_intent_is_current(intent_epoch):
-            return self._stale_intent_result(
-                session_key=session_key,
-                project_name=project_name,
-                reason="superseded_before_remote_attach",
-            )
-        attach_profile = self._resolve_remote_attach_profile(session)
-        spec = self.launch_service.prepare_remote_session_attach_spec(
-            session,
-            attach_profile=attach_profile,
+        return await self.session_action_service.focus_remote_session_attach(
+            session_key=session_key,
+            session=session,
+            intent_epoch=intent_epoch,
+            user_intent_is_current=self._user_intent_is_current,
+            stale_intent_result=self._stale_intent_result,
+            resolve_remote_attach_profile=self._resolve_remote_attach_profile,
+            prepare_remote_session_attach_spec=self.launch_service.prepare_remote_session_attach_spec,
+            find_live_sway_window=self._find_live_sway_window,
+            state_window_for_id=lambda window_id: self.state_manager.state.window_map.get(window_id),
+            get_reusable_context_terminal_window=self.launch_service.get_reusable_context_terminal_window,
+            remote_bridge_window_mismatch_reason=self.herdr_service.remote_bridge_window_mismatch_reason,
+            close_managed_window=self._close_managed_window,
+            remove_window=self.state_manager.remove_window,
+            invalidate_window_tree_cache=self.invalidate_window_tree_cache,
+            register_launch_for_spec=self.launch_service.register_launch_for_spec,
+            execute_launch_spec=self.launch_service.execute_launch_spec,
+            wait_for_terminal_window=self.launch_service.wait_for_terminal_window,
+            wait_for_launch_status=self.launch_service.wait_for_launch_status,
+            window_focus=self._window_focus,
+            focus_state=self._focus_state,
+            set_focus_overrides=self._set_focus_overrides,
         )
-        project_name = str(spec.get("project_name") or "").strip()
-        connection_key = str(spec.get("connection_key") or "").strip()
-        focus_target_host = str(session.get("host_name") or "").strip()
-        session_window_id = int(session.get("window_id") or session.get("bridge_window_id") or 0)
-
-        existing_window = None
-        reused_terminal_role = ""
-        if session_window_id > 0:
-            live_window = await self._find_live_sway_window(session_window_id)
-            if live_window is not None:
-                existing_window = self.state_manager.state.window_map.get(session_window_id)
-                if existing_window is not None:
-                    reused_terminal_role = str(getattr(existing_window, "terminal_role", "") or "").strip()
-                else:
-                    existing_window = SimpleNamespace(window_id=session_window_id)
-
-        if existing_window is None:
-            remote_terminal_role = str(spec.get("terminal_role") or "").strip()
-            existing_window = await self.launch_service.get_reusable_context_terminal_window(
-                project_name=project_name,
-                context_key=str(spec.get("context_key") or "").strip(),
-                execution_mode="ssh",
-                app_name="terminal",
-                terminal_role=remote_terminal_role,
-            )
-            if existing_window is not None:
-                reused_terminal_role = remote_terminal_role
-
-        launch_result: Dict[str, Any] = {
-            "success": True,
-            "reused_existing": existing_window is not None,
-        }
-        if reused_terminal_role:
-            launch_result["reused_terminal_role"] = reused_terminal_role
-        local_window_id = int(getattr(existing_window, "window_id", 0) or 0) if existing_window is not None else 0
-
-        if existing_window is not None:
-            stale_bridge_reason = self.herdr_service.remote_bridge_window_mismatch_reason(
-                existing_window,
-                session,
-            )
-            if stale_bridge_reason:
-                await self._close_managed_window(local_window_id)
-                await self.state_manager.remove_window(local_window_id)
-                self.invalidate_window_tree_cache()
-                existing_window = None
-                local_window_id = 0
-                launch_result = {
-                    "success": True,
-                    "reused_existing": False,
-                    "replaced_stale_bridge": True,
-                    "stale_bridge_reason": stale_bridge_reason,
-                }
-
-        if existing_window is None:
-            if not self._user_intent_is_current(intent_epoch):
-                return self._stale_intent_result(
-                    session_key=session_key,
-                    project_name=project_name,
-                    reason="superseded_before_remote_launch",
-                )
-            prior_launch_state = dict(launch_result)
-            spec["launch"] = await self.launch_service.register_launch_for_spec(spec)
-            launch_result = dict(prior_launch_state)
-            launch_result.update(self.launch_service.execute_launch_spec(spec))
-            anchor_result = await self.launch_service.wait_for_terminal_window(
-                str(spec.get("terminal_anchor_id") or "").strip()
-            )
-            local_window_id = int(anchor_result.get("window_id") or 0)
-            if local_window_id <= 0:
-                raise RuntimeError(
-                    f"Remote session bridge for {session_key} did not bind to a local window"
-                )
-
-        if not self._user_intent_is_current(intent_epoch):
-            return self._stale_intent_result(
-                session_key=session_key,
-                project_name=project_name,
-                reason="superseded_before_remote_focus",
-            )
-        focus_result = await self._window_focus({
-            "window_id": local_window_id,
-            "project_name": project_name,
-            "target_variant": str(spec.get("execution_mode") or "").strip().lower(),
-            "connection_key": connection_key,
-        })
-
-        terminal_context = session.get("terminal_context") or {}
-        if not isinstance(terminal_context, dict):
-            terminal_context = {}
-        launch_metadata = spec.get("launch") or {}
-        launch_id = str(launch_metadata.get("launch_id") or "").strip()
-        tmux_select_result: Dict[str, Any] = {
-            "success": True,
-            "reason": "not_required",
-        }
-        tmux_result: Dict[str, Any] = {
-            "success": True,
-            "reason": "not_required",
-        }
-        launch_status: Dict[str, Any] = {
-            "success": True,
-            "launch_id": launch_id,
-            "status": "reused_existing" if existing_window is not None else "not_applicable",
-            "reason": "reused_existing" if existing_window is not None else "not_applicable",
-        }
-        if existing_window is None and launch_id:
-            launch_status = await self.launch_service.wait_for_launch_status(
-                launch_id,
-                terminal_anchor_id=str(spec.get("terminal_anchor_id") or "").strip(),
-            )
-        overall_success = (
-            bool(launch_result.get("success", False))
-            and bool(focus_result.get("success", False))
-            and bool(launch_status.get("success", False))
-        )
-        verification: Dict[str, Any] = {
-            "success": False,
-            "reason": "focus_failed",
-            "session_key": session_key,
-            "current_session_key": "",
-        }
-        if overall_success:
-            verification = {
-                "success": True,
-                "reason": str(launch_status.get("reason") or "ok"),
-                "session_key": session_key,
-                "current_session_key": session_key,
-                "verification_source": "remote_launcher",
-                "active_tmux_pane": str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip(),
-                "tmux_pane": str(session.get("tmux_pane") or terminal_context.get("tmux_pane") or "").strip(),
-            }
-            self._set_focus_overrides(
-                session_key=session_key,
-                window_id=local_window_id,
-                connection_key=connection_key,
-            )
-        focus_state_after = await self._focus_state({})
-        focus_result = dict(focus_result)
-        focus_result["current_ai_session_key_after"] = str(focus_state_after.get("current_ai_session_key") or "").strip()
-        focus_result["focused_window_id_after"] = int(focus_state_after.get("focused_window_id") or 0)
-        focus_result["focus_state_after"] = focus_state_after
-
-        return {
-            "success": overall_success,
-            "session_key": session_key,
-            "window_id": local_window_id,
-            "surface_key": str(session.get("surface_key") or "").strip(),
-            "conflict_state": str(session.get("conflict_state") or "").strip(),
-            "focus_mode": "remote_bridge_bound",
-            "focus_target_host": focus_target_host,
-            "focus": focus_result,
-            "launch": launch_result,
-            "current_ai_session_key_after": str(focus_state_after.get("current_ai_session_key") or "").strip(),
-            "focused_window_id_after": int(focus_state_after.get("focused_window_id") or 0),
-            "focus_state_after": focus_state_after,
-            "tmux_select": tmux_select_result,
-            "tmux": tmux_result,
-            "launch_status": launch_status,
-            "verification": verification,
-        }
 
     async def _focus_local_session_attach(
         self,
