@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import pytest
+
 
 PACKAGE_ROOT = Path(__file__).parent.parent.parent
 
@@ -336,3 +338,108 @@ def test_execute_launch_spec_local_pwa_uses_sway_exec(tmp_path: Path) -> None:
     assert commands[0][:2] == ["swaymsg", "--quiet"]
     assert "exec env I3PM_CONTEXT_KEY=ctx /usr/bin/launch-pwa-by-name 01JCYF9K4Q9V6X8YJ1MNSPT0D7" in commands[0][2]
     assert service.read_status("launch-pwa")["status"] == "waiting_window"
+
+
+def test_managed_tmux_session_probe_accepts_matching_metadata(tmp_path: Path) -> None:
+    def fake_run(cmd: List[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if cmd[-3:] == ["has-session", "-t", "i3pm-main"]:
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        if cmd[-1] == "@i3pm_managed":
+            return subprocess.CompletedProcess(cmd, 0, "1\n", "")
+        if cmd[-1] == "@i3pm_context_key":
+            return subprocess.CompletedProcess(cmd, 0, "repo/main::local::local@thinkpad\n", "")
+        if cmd[-1] == "@i3pm_terminal_role":
+            return subprocess.CompletedProcess(cmd, 0, "project-main\n", "")
+        if cmd[-1] == "@i3pm_tmux_server_key":
+            return subprocess.CompletedProcess(cmd, 0, "/run/user/1000/tmux-1000/default\n", "")
+        if cmd[-1] == "@i3pm_schema_version":
+            return subprocess.CompletedProcess(cmd, 0, "1\n", "")
+        return subprocess.CompletedProcess(cmd, 1, "", "unexpected command")
+
+    service = LaunchService(
+        runtime_dir=lambda: tmp_path,
+        load_json_file=load_json_file,
+        normalize_target_host=lambda value: str(value or "").strip().lower(),
+        parse_context_target_host=parse_context_target_host,
+        transport_kind_for_target_host=lambda _value: "local_process",
+        local_host_alias=lambda: "thinkpad",
+        canonical_tmux_socket=lambda: "/run/user/1000/tmux-1000/default",
+        run_command=fake_run,
+    )
+
+    result = service.managed_tmux_session_probe({
+        "tmux_session_name": "i3pm-main",
+        "context_key": "repo/main::local::local@thinkpad",
+        "terminal_role": "project-main",
+        "environment": {
+            "I3PM_TMUX_SOCKET": "/run/user/1000/tmux-1000/default",
+        },
+    })
+
+    assert result["exists"] is True
+    assert result["healthy"] is True
+    assert result["reason"] == "healthy"
+    assert result["metadata"]["terminal_role"] == "project-main"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_launch_runtime_status_marks_bound_window_running(tmp_path: Path) -> None:
+    def fake_run(cmd: List[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if cmd[-3:] == ["has-session", "-t", "i3pm-main"]:
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        option_values = {
+            "@i3pm_managed": "1",
+            "@i3pm_context_key": "repo/main::local::local@thinkpad",
+            "@i3pm_terminal_role": "project-main",
+            "@i3pm_tmux_server_key": "/run/user/1000/tmux-1000/default",
+            "@i3pm_schema_version": "1",
+        }
+        if cmd[-1] in option_values:
+            return subprocess.CompletedProcess(cmd, 0, f"{option_values[cmd[-1]]}\n", "")
+        return subprocess.CompletedProcess(cmd, 1, "", "unexpected command")
+
+    async def fake_anchor(_params: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "matched": True,
+            "window_id": 88,
+        }
+
+    service = LaunchService(
+        runtime_dir=lambda: tmp_path,
+        load_json_file=load_json_file,
+        normalize_target_host=lambda value: str(value or "").strip().lower(),
+        parse_context_target_host=parse_context_target_host,
+        transport_kind_for_target_host=lambda _value: "local_process",
+        local_host_alias=lambda: "thinkpad",
+        canonical_tmux_socket=lambda: "/run/user/1000/tmux-1000/default",
+        run_command=fake_run,
+        get_terminal_anchor=fake_anchor,
+    )
+    service.write_local_spec(
+        spec={
+            "launch": {"launch_id": "launch-main"},
+            "project_name": "repo/main",
+            "target_host": "thinkpad",
+            "transport_kind": "local_process",
+            "connection_key": "local@thinkpad",
+            "project_directory": "/repo/main",
+            "local_project_directory": "/repo/main",
+            "terminal_anchor_id": "anchor-main",
+            "tmux_session_name": "i3pm-main",
+            "terminal_role": "project-main",
+            "context_key": "repo/main::local::local@thinkpad",
+            "terminal_launch": {"mode": "managed_project_terminal"},
+            "environment": {
+                "I3PM_TMUX_SOCKET": "/run/user/1000/tmux-1000/default",
+            },
+            "launch_transport": "local_helper",
+        },
+        launch_kind="open_project_terminal",
+    )
+
+    result = await service.reconcile_launch_runtime_status("launch-main")
+
+    assert result["status"] == "running"
+    assert result["reason"] == "window_bound"
+    assert result["anchor_bound"] is True
+    assert result["tmux_session_healthy"] is True

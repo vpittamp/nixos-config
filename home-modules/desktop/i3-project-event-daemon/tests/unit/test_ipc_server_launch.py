@@ -281,7 +281,7 @@ async def test_launch_status_reconciles_managed_session_to_waiting_and_running(s
     registration = await server_local._register_launch_for_spec(spec)
     launch_id = registration["launch_id"]
 
-    server_local._managed_tmux_session_probe = MagicMock(return_value={
+    server_local.launch_service.managed_tmux_session_probe = MagicMock(return_value={
         "exists": True,
         "healthy": True,
         "reason": "healthy",
@@ -321,7 +321,7 @@ async def test_mark_launch_window_closed_sets_reusable_headless(server_local, tm
     registration = await server_local._register_launch_for_spec(spec)
     launch_id = registration["launch_id"]
 
-    server_local._managed_tmux_session_probe = MagicMock(return_value={
+    server_local.launch_service.managed_tmux_session_probe = MagicMock(return_value={
         "exists": True,
         "healthy": True,
         "reason": "healthy",

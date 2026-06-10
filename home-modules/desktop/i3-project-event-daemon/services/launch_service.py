@@ -776,6 +776,25 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             name=f"launch-reconcile:{launch_key}",
         )
 
+    async def stop_reconcile_tasks(self, *, timeout: float = 2.0) -> bool:
+        """Cancel service-owned reconcile tasks during daemon shutdown."""
+        tasks = list(self._launch_reconcile_tasks.values())
+        for task in tasks:
+            task.cancel()
+        if not tasks:
+            return True
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=max(float(timeout), 0.1),
+            )
+            return True
+        except asyncio.TimeoutError:
+            logger.warning("Timed out waiting for launch reconcile tasks to stop; continuing shutdown")
+            return False
+        finally:
+            self._launch_reconcile_tasks.clear()
+
     async def mark_launch_window_bound(
         self,
         *,
@@ -1160,8 +1179,8 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     spec=spec,
                     reason="session_validating",
                 )
-                if launch_transport == "local_helper" and self._schedule_launch_reconcile is not None:
-                    self._schedule_launch_reconcile(launch_id, anchor_bound=None, attempts=30, delay_s=0.2)
+                if launch_transport == "local_helper":
+                    self.schedule_launch_reconcile(launch_id, anchor_bound=None, attempts=30, delay_s=0.2)
             else:
                 self.write_status(
                     launch_id=launch_id,
