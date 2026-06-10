@@ -28,8 +28,10 @@ if "i3_project_daemon" not in sys.modules:
 
 
 ipc_server_module = importlib.import_module("i3_project_daemon.ipc_server")
+session_preview_service_module = importlib.import_module("i3_project_daemon.services.session_preview_service")
 
 IPCServer = ipc_server_module.IPCServer
+SessionPreviewService = session_preview_service_module.SessionPreviewService
 
 
 class DummyLaunchRegistry:
@@ -56,6 +58,11 @@ class DummyStateManager:
 @pytest.fixture
 def server():
     return IPCServer(DummyStateManager())
+
+
+@pytest.fixture
+def preview_service():
+    return SessionPreviewService()
 
 
 def make_session(**overrides):
@@ -92,6 +99,55 @@ def make_session(**overrides):
     }
     session.update(overrides)
     return session
+
+
+def test_session_preview_service_shapes_herdr_focus_only_payload(preview_service):
+    result = preview_service.build_preview(
+        params={"session_key": "herdr:pane:pane-local", "lines": "500"},
+        sessions=[
+            make_session(
+                session_key="herdr:pane:pane-local",
+                source="herdr",
+                pane_id="pane-local",
+                is_remote_herdr=False,
+                tmux_session="",
+                tmux_window="",
+                tmux_pane="",
+                terminal_context={"execution_mode": "local"},
+            )
+        ],
+    )
+
+    assert result["success"] is True
+    assert result["preview_mode"] == "focus_only"
+    assert result["preview_reason"] == "herdr_focus_only"
+    assert result["message"] == "Focus this Herdr pane to inspect live output."
+    assert result["lines"] == 200
+    assert result["is_live"] is False
+    assert result["is_remote"] is False
+    assert result["execution_mode"] == "local"
+
+
+def test_session_preview_service_retired_tmux_preview_is_focus_only(preview_service):
+    result = preview_service.build_preview(
+        params={"session_key": "session-local", "lines": "abc"},
+        sessions=[make_session()],
+    )
+
+    assert result["preview_mode"] == "focus_only"
+    assert result["preview_reason"] == "herdr_focus_required"
+    assert result["message"] == "Live tmux preview has been retired. Focus the corresponding Herdr pane for live inspection."
+    assert result["lines"] == 100
+    assert result["tmux_session"] == "nixos-config/main"
+    assert result["tmux_pane"] == "%17"
+
+
+def test_session_preview_service_rejects_missing_or_unknown_session_key(preview_service):
+    with pytest.raises(ValueError, match="session_key is required"):
+        preview_service.build_preview(params={}, sessions=[make_session()])
+
+    with pytest.raises(RuntimeError, match="Unknown session_key: missing"):
+        preview_service.build_preview(params={"session_key": "missing"}, sessions=[make_session()])
 
 
 @pytest.mark.asyncio
