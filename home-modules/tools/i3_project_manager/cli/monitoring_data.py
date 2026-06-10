@@ -6825,9 +6825,18 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
         # Close connection (stateless pattern per research.md Decision 4)
         await client.close()
 
-        # Feature 123/136: Load OTEL sessions BEFORE transforms to build lookup dict
-        # Feature 136: Changed to List to support multiple AI sessions per window
-        otel_sessions = load_otel_sessions()
+        if not isinstance(tree_data, dict):
+            raise RuntimeError("runtime.snapshot contract violation: payload must be an object")
+        sessions_raw = tree_data.get("sessions", [])
+        if not isinstance(sessions_raw, list):
+            raise RuntimeError("runtime.snapshot contract violation: sessions must be a list")
+        daemon_active_ai_sessions = [
+            dict(session)
+            for session in sessions_raw
+            if isinstance(session, dict)
+        ]
+        daemon_current_ai_session_key = str(tree_data.get("current_ai_session_key") or "").strip()
+
         outputs = tree_data.get("outputs", [])
         window_candidates = _collect_output_window_candidates(outputs)
         window_candidates_by_id: Dict[int, Dict[str, Any]] = {}
@@ -6835,87 +6844,102 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             cid = _safe_int(candidate.get("id"), 0)
             if cid > 0:
                 window_candidates_by_id[cid] = candidate
-        remote_otel_sessions = _load_remote_otel_sessions_for_windows(window_candidates)
-        merged_otel_raw_sessions: List[Dict[str, Any]] = []
-        for raw_session in otel_sessions.get("sessions", []):
-            if isinstance(raw_session, dict):
-                merged_otel_raw_sessions.append(dict(raw_session))
-        merged_otel_raw_sessions.extend(remote_otel_sessions)
-        resolved_otel_sessions: List[Dict[str, Any]] = []
-        for raw_session in merged_otel_raw_sessions:
-            session = dict(raw_session)
-            terminal_context = session.get("terminal_context", {}) or {}
-            if not isinstance(terminal_context, dict):
-                terminal_context = {}
-            terminal_context = dict(terminal_context)
-            session["terminal_context"] = terminal_context
-
-            window_id_raw = session.get("window_id", terminal_context.get("window_id"))
-            window_id_int = _safe_int(window_id_raw, 0)
-            if window_id_int != 0:
-                existing_candidate = window_candidates_by_id.get(window_id_int, {})
-                if isinstance(existing_candidate, dict) and existing_candidate:
-                    if _window_matches_session_binding(existing_candidate, session):
-                        session["window_id"] = window_id_int
-                        terminal_context["window_id"] = window_id_int
-                    else:
-                        logger.warning(
-                            "Dropping stale OTEL window binding during anchor cutover: session=%s window_id=%s",
-                            str(session.get("native_session_id") or session.get("session_id") or ""),
-                            window_id_int,
-                        )
-                        session.pop("window_id", None)
-                        terminal_context.pop("window_id", None)
-                        window_id_int = 0
-            if window_id_int == 0:
-                resolved_window_id = _resolve_otel_session_window_id(
-                    session,
-                    outputs,
-                    window_candidates=window_candidates,
-                )
-                if resolved_window_id is not None:
-                    session["window_id"] = resolved_window_id
-                    terminal_context["window_id"] = resolved_window_id
-            resolved_otel_sessions.append(session)
-
-        otel_sessions_runtime = dict(otel_sessions)
-        otel_sessions_runtime["sessions"] = resolved_otel_sessions
-        otel_sessions_runtime["has_working"] = any(
-            str(session.get("state") or "").strip().lower() == "working"
-            for session in resolved_otel_sessions
-        )
-
         otel_sessions_by_window: Dict[int, List[Dict[str, Any]]] = {}
-        per_window_seen: Dict[int, Dict[str, Dict[str, Any]]] = {}
-        for session in resolved_otel_sessions:
-            identity_confidence = str(session.get("identity_confidence") or "").strip().lower()
-            native_session_id = str(session.get("native_session_id") or "").strip()
-            if not native_session_id or identity_confidence != "native":
-                continue
+        resolved_otel_sessions: List[Dict[str, Any]] = []
+        if daemon_active_ai_sessions:
+            otel_sessions_runtime: Dict[str, Any] = {
+                "schema_version": AI_SESSION_SCHEMA_VERSION,
+                "sessions": [],
+                "has_working": False,
+                "timestamp": 0,
+                "updated_at": "",
+                "sessions_by_window": {},
+                "diagnostics": [],
+                "disabled_reason": "daemon_herdr_sessions_present",
+            }
+        else:
+            # Feature 123/136: Load OTEL sessions only when daemon has no Herdr rows.
+            # Herdr-backed daemon sessions are the UI authority for AI state.
+            otel_sessions = load_otel_sessions()
+            remote_otel_sessions = _load_remote_otel_sessions_for_windows(window_candidates)
+            merged_otel_raw_sessions: List[Dict[str, Any]] = []
+            for raw_session in otel_sessions.get("sessions", []):
+                if isinstance(raw_session, dict):
+                    merged_otel_raw_sessions.append(dict(raw_session))
+            merged_otel_raw_sessions.extend(remote_otel_sessions)
+            for raw_session in merged_otel_raw_sessions:
+                session = dict(raw_session)
+                terminal_context = session.get("terminal_context", {}) or {}
+                if not isinstance(terminal_context, dict):
+                    terminal_context = {}
+                terminal_context = dict(terminal_context)
+                session["terminal_context"] = terminal_context
 
-            terminal_context = session.get("terminal_context", {}) or {}
-            window_id = session.get("window_id", terminal_context.get("window_id"))
-            if window_id is None:
-                continue
-            try:
-                window_id_int = int(window_id)
-            except (TypeError, ValueError):
-                continue
+                window_id_raw = session.get("window_id", terminal_context.get("window_id"))
+                window_id_int = _safe_int(window_id_raw, 0)
+                if window_id_int != 0:
+                    existing_candidate = window_candidates_by_id.get(window_id_int, {})
+                    if isinstance(existing_candidate, dict) and existing_candidate:
+                        if _window_matches_session_binding(existing_candidate, session):
+                            session["window_id"] = window_id_int
+                            terminal_context["window_id"] = window_id_int
+                        else:
+                            logger.warning(
+                                "Dropping stale OTEL window binding during anchor cutover: session=%s window_id=%s",
+                                str(session.get("native_session_id") or session.get("session_id") or ""),
+                                window_id_int,
+                            )
+                            session.pop("window_id", None)
+                            terminal_context.pop("window_id", None)
+                            window_id_int = 0
+                if window_id_int == 0:
+                    resolved_window_id = _resolve_otel_session_window_id(
+                        session,
+                        outputs,
+                        window_candidates=window_candidates,
+                    )
+                    if resolved_window_id is not None:
+                        session["window_id"] = resolved_window_id
+                        terminal_context["window_id"] = resolved_window_id
+                resolved_otel_sessions.append(session)
 
-            window_candidate = window_candidates_by_id.get(window_id_int, {})
-            if not isinstance(window_candidate, dict):
-                continue
-            if not _window_matches_session_binding(window_candidate, session):
-                continue
+            otel_sessions_runtime = dict(otel_sessions)
+            otel_sessions_runtime["sessions"] = resolved_otel_sessions
+            otel_sessions_runtime["has_working"] = any(
+                str(session.get("state") or "").strip().lower() == "working"
+                for session in resolved_otel_sessions
+            )
 
-            window_seen = per_window_seen.setdefault(window_id_int, {})
-            dedupe_key = _otel_badge_merge_key(session)
-            existing = window_seen.get(dedupe_key)
-            if existing is None or _otel_badge_score(session) > _otel_badge_score(existing):
-                window_seen[dedupe_key] = session
+            per_window_seen: Dict[int, Dict[str, Dict[str, Any]]] = {}
+            for session in resolved_otel_sessions:
+                identity_confidence = str(session.get("identity_confidence") or "").strip().lower()
+                native_session_id = str(session.get("native_session_id") or "").strip()
+                if not native_session_id or identity_confidence != "native":
+                    continue
 
-        for window_id, seen in per_window_seen.items():
-            otel_sessions_by_window[window_id] = list(seen.values())
+                terminal_context = session.get("terminal_context", {}) or {}
+                window_id = session.get("window_id", terminal_context.get("window_id"))
+                if window_id is None:
+                    continue
+                try:
+                    window_id_int = int(window_id)
+                except (TypeError, ValueError):
+                    continue
+
+                window_candidate = window_candidates_by_id.get(window_id_int, {})
+                if not isinstance(window_candidate, dict):
+                    continue
+                if not _window_matches_session_binding(window_candidate, session):
+                    continue
+
+                window_seen = per_window_seen.setdefault(window_id_int, {})
+                dedupe_key = _otel_badge_merge_key(session)
+                existing = window_seen.get(dedupe_key)
+                if existing is None or _otel_badge_score(session) > _otel_badge_score(existing):
+                    window_seen[dedupe_key] = session
+
+            for window_id, seen in per_window_seen.items():
+                otel_sessions_by_window[window_id] = list(seen.values())
 
         # Transform daemon response to Eww schema
         monitors = [transform_monitor(output, badge_state, otel_sessions_by_window) for output in outputs]
@@ -6967,19 +6991,6 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             window_lookup[window_id_int] = window
             if bool(window.get("focused", False)):
                 focused_window_id = window_id_int
-
-        if not isinstance(tree_data, dict):
-            raise RuntimeError("runtime.snapshot contract violation: payload must be an object")
-        sessions_raw = tree_data.get("sessions", [])
-        if not isinstance(sessions_raw, list):
-            raise RuntimeError("runtime.snapshot contract violation: sessions must be a list")
-
-        daemon_active_ai_sessions = [
-            dict(session)
-            for session in sessions_raw
-            if isinstance(session, dict)
-        ]
-        daemon_current_ai_session_key = str(tree_data.get("current_ai_session_key") or "").strip()
 
         active_ai_sessions = daemon_active_ai_sessions
         review_enriched_ai_sessions, _review_sessions = _apply_review_lifecycle(
@@ -7143,7 +7154,9 @@ async def query_monitoring_data(previous_current_ai_session_key: str = "") -> Di
             "error": None,
             # Feature 095 Enhancement: Animated spinner frame
             "spinner_frame": get_spinner_frame(),
-            "has_working_badge": has_working_badge or otel_sessions_runtime.get("has_working", False),
+            "has_working_badge": has_working_badge if daemon_active_ai_sessions else (
+                has_working_badge or otel_sessions_runtime.get("has_working", False)
+            ),
             # Feature 117 Enhancement: Pre-computed list for Active AI Sessions bar
             "ai_sessions": ai_sessions,
             # Feature 138: Canonical active AI sessions rail + keyboard switching

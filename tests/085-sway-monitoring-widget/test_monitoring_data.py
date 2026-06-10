@@ -2989,22 +2989,25 @@ class TestAiReviewLifecycle:
         }
 
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
-             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=local_otel_payload), \
+             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value=local_otel_payload) as mock_load_otel, \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
              patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}), \
-             patch("i3_project_manager.cli.monitoring_data._load_remote_otel_sessions_for_windows", return_value=[]):
+             patch("i3_project_manager.cli.monitoring_data._load_remote_otel_sessions_for_windows", return_value=[]) as mock_remote_otel:
             mock_instance = AsyncMock()
             mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
             MockClient.return_value = mock_instance
 
             result = await query_monitoring_data()
 
+        mock_load_otel.assert_not_called()
+        mock_remote_otel.assert_not_called()
         assert result["status"] == "ok"
         assert result["active_ai_sessions"]
         session = result["active_ai_sessions"][0]
         assert session["window_id"] == 14
         assert session["window_project"] == "PittampalliOrg/workflow-builder:main"
         assert session["focus_project"] == "PittampalliOrg/workflow-builder:main"
+        assert result["otel_sessions"]["disabled_reason"] == "daemon_herdr_sessions_present"
 
     @pytest.mark.asyncio
     async def test_query_monitoring_data_prefers_daemon_runtime_sessions_for_active_ai_panel(self):
@@ -3090,20 +3093,23 @@ class TestAiReviewLifecycle:
         }
 
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
-             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value={"schema_version": "11", "sessions": []}), \
+             patch("i3_project_manager.cli.monitoring_data.load_otel_sessions", return_value={"schema_version": "11", "sessions": []}) as mock_load_otel, \
              patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
              patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}), \
-             patch("i3_project_manager.cli.monitoring_data._load_remote_otel_sessions_for_windows", return_value=[]):
+             patch("i3_project_manager.cli.monitoring_data._load_remote_otel_sessions_for_windows", return_value=[]) as mock_remote_otel:
             mock_instance = AsyncMock()
             mock_instance.get_runtime_snapshot.return_value = runtime_snapshot
             MockClient.return_value = mock_instance
 
             result = await query_monitoring_data()
 
+        mock_load_otel.assert_not_called()
+        mock_remote_otel.assert_not_called()
         assert result["status"] == "ok"
         assert [session["session_key"] for session in result["active_ai_sessions"]] == ["daemon-session-key"]
         assert result["current_ai_session_key"] == "daemon-session-key"
         assert result["active_ai_sessions"][0]["render_session_key"] == "daemon-session-key"
+        assert result["otel_sessions"]["disabled_reason"] == "daemon_herdr_sessions_present"
 
     def test_active_worktree_identity_from_context_uses_runtime_snapshot_context(self):
         identity = monitoring_data._active_worktree_identity_from_context({
