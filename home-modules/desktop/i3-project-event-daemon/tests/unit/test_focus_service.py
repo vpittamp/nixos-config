@@ -110,9 +110,57 @@ def test_mark_current_session_produces_single_current_row() -> None:
     assert [session["is_current_window"] for session in sessions] == [False, True]
 
 
+def test_clear_if_session_matches_clears_focus_overrides() -> None:
+    service = make_service()
+    service.set_focus_overrides(
+        session_key="session-a",
+        window_id=77,
+        connection_key="LOCAL@THINKPAD",
+    )
+
+    assert service.clear_if_session_matches("session-b") is False
+    assert service.override_payload() == {
+        "session_key": "session-a",
+        "window_id": 77,
+        "connection_key": "local@thinkpad",
+    }
+
+    assert service.clear_if_session_matches("session-a") is True
+    assert service.override_payload() == {
+        "session_key": "",
+        "window_id": 0,
+        "connection_key": "",
+    }
+
+
+def test_prune_invalid_overrides_reports_cleared_state() -> None:
+    service = make_service()
+    service.set_focus_overrides(
+        session_key="session-old",
+        window_id=404,
+        connection_key="local@thinkpad",
+    )
+
+    result = service.prune_invalid_overrides(
+        live_session_keys=["session-new"],
+        live_window_ids=[101, 202],
+        stale_window_ids=[404],
+    )
+
+    assert result == {
+        "cleared_session_override": True,
+        "cleared_window_override": True,
+    }
+    assert service.override_payload() == {
+        "session_key": "",
+        "window_id": 0,
+        "connection_key": "",
+    }
+
+
 def test_build_focus_state_payload_uses_daemon_focus_fields() -> None:
     service = make_service()
-    service.pending_intent_id = "intent-7"
+    service.set_pending_intent("intent-7")
     runtime_snapshot = {
         "active_context": {"connection_key": "local@thinkpad"},
         "current_ai_session_key": "session-current",

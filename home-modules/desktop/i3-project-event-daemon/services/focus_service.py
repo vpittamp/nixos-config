@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, Iterable, List
 
 
 FOCUS_STATE_SCHEMA_VERSION = "i3pm.focus_state.v1"
@@ -63,6 +63,66 @@ class FocusService:
     def clear_session_override(self) -> None:
         """Clear only the session override while preserving explicit window focus."""
         self.session_override_key = ""
+
+    def clear_if_session_matches(self, session_key: str) -> bool:
+        """Clear all focus overrides when the current session override was closed."""
+        target_key = str(session_key or "").strip()
+        if target_key and str(self.session_override_key or "").strip() == target_key:
+            self.clear_focus_overrides()
+            return True
+        return False
+
+    def prune_invalid_overrides(
+        self,
+        *,
+        live_session_keys: Iterable[str],
+        live_window_ids: Iterable[int],
+        stale_window_ids: Iterable[int],
+    ) -> Dict[str, bool]:
+        """Drop focus overrides that no longer resolve to live daemon state."""
+        normalized_session_keys = {
+            str(session_key or "").strip()
+            for session_key in live_session_keys
+            if str(session_key or "").strip()
+        }
+        normalized_live_window_ids = {
+            int(window_id or 0)
+            for window_id in live_window_ids
+            if int(window_id or 0) > 0
+        }
+        normalized_stale_window_ids = {
+            int(window_id or 0)
+            for window_id in stale_window_ids
+            if int(window_id or 0) > 0
+        }
+
+        cleared_session_override = False
+        session_override_key = str(self.session_override_key or "").strip()
+        if session_override_key and session_override_key not in normalized_session_keys:
+            self.session_override_key = ""
+            cleared_session_override = True
+
+        cleared_window_override = False
+        override_window_id = int(self.window_override.get("window_id") or 0)
+        if override_window_id > 0 and (
+            override_window_id not in normalized_live_window_ids
+            or override_window_id in normalized_stale_window_ids
+        ):
+            self.set_window_override(window_id=0, connection_key="")
+            cleared_window_override = True
+
+        return {
+            "cleared_session_override": cleared_session_override,
+            "cleared_window_override": cleared_window_override,
+        }
+
+    def override_payload(self) -> Dict[str, Any]:
+        """Return diagnostic focus override state without exposing mutable internals."""
+        return {
+            "session_key": str(self.session_override_key or "").strip(),
+            "window_id": int(self.window_override.get("window_id") or 0),
+            "connection_key": str(self.window_override.get("connection_key") or "").strip(),
+        }
 
     def current_session_override_key(
         self,

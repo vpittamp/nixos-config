@@ -7580,15 +7580,6 @@ class IPCServer:
 
         return find_window(tree)
 
-    async def _get_reusable_remote_project_bridge_window(
-        self,
-        *,
-        project_name: str,
-        connection_key: str,
-    ) -> Optional[Any]:
-        """Disabled after deterministic remote-launch cutover."""
-        return None
-
     async def _prepare_launch(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Build a deterministic launch spec and register pending launch state."""
         app_name = str(params.get("app_name") or "").strip()
@@ -10274,8 +10265,8 @@ FORMAT JSONEachRow
                 tmux_socket=tmux_socket,
             )
             success = bool(tmux_result.get("success", False))
-            if success and str(self.focus_service.session_override_key or "").strip() == session_key:
-                self._set_focus_overrides(session_key="", window_id=0, connection_key="")
+            if success:
+                self.focus_service.clear_if_session_matches(session_key)
             if success:
                 await self.notify_state_change("ai_session_close")
             return {
@@ -10303,8 +10294,8 @@ FORMAT JSONEachRow
             }
 
         closed = await self._close_managed_window(window_id)
-        if closed and str(self.focus_service.session_override_key or "").strip() == session_key:
-            self._set_focus_overrides(session_key="", window_id=0, connection_key="")
+        if closed:
+            self.focus_service.clear_if_session_matches(session_key)
         if closed:
             await self.notify_state_change("ai_session_close")
         return {
@@ -15726,19 +15717,11 @@ FORMAT JSONEachRow
         }
         stale_window_ids = {int(item.get("window_id") or 0) for item in stale_bridges if int(item.get("window_id") or 0) > 0}
 
-        cleared_session_override = False
-        session_override_key = str(self.focus_service.session_override_key or "").strip()
-        if session_override_key and session_override_key not in live_session_keys:
-            self.focus_service.session_override_key = ""
-            cleared_session_override = True
-
-        cleared_window_override = False
-        override_window_id = int(self.focus_service.window_override.get("window_id") or 0)
-        if override_window_id > 0 and (
-            override_window_id not in live_window_ids or override_window_id in stale_window_ids
-        ):
-            self.focus_service.set_window_override(window_id=0, connection_key="")
-            cleared_window_override = True
+        focus_cleanup = self.focus_service.prune_invalid_overrides(
+            live_session_keys=live_session_keys,
+            live_window_ids=live_window_ids,
+            stale_window_ids=stale_window_ids,
+        )
 
         cleaned_windows: List[Dict[str, Any]] = []
         close_reasons = self._stale_bridge_close_reasons()
@@ -15765,8 +15748,8 @@ FORMAT JSONEachRow
             "stale_bridges": stale_bridges,
             "cleaned_window_count": len(cleaned_windows),
             "cleaned_windows": cleaned_windows,
-            "cleared_session_override": cleared_session_override,
-            "cleared_window_override": cleared_window_override,
+            "cleared_session_override": bool(focus_cleanup.get("cleared_session_override", False)),
+            "cleared_window_override": bool(focus_cleanup.get("cleared_window_override", False)),
         }
 
     async def _session_doctor(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -15835,11 +15818,7 @@ FORMAT JSONEachRow
             "success": True,
             "current_ai_session_key": current_session_key,
             "focused_window_id": focused_window_id,
-            "focus_override": {
-                "session_key": str(self.focus_service.session_override_key or "").strip(),
-                "window_id": int(self.focus_service.window_override.get("window_id") or 0),
-                "connection_key": str(self.focus_service.window_override.get("connection_key") or "").strip(),
-            },
+            "focus_override": self.focus_service.override_payload(),
             "session_count": len(sessions),
             "bridge_window_count": len(bridge_windows),
             "stale_bridge_count": int(cleanup.get("stale_bridge_count") or 0),
