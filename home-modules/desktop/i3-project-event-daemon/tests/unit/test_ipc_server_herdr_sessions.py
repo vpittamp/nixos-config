@@ -1058,9 +1058,9 @@ async def test_herdr_pane_actions_call_herdr_with_pane_id(server, monkeypatch):
     monkeypatch.setattr(server.herdr_service, "run_json", fake_run_herdr_json)
 
     server.herdr_service.snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
-    focus_result = await server._herdr_pane_focus({"pane_id": "w123-1"})
+    focus_result = await server.herdr_service.pane_focus({"pane_id": "w123-1"})
     server.herdr_service.snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
-    close_result = await server._herdr_pane_close({"pane_id": "w123-1"})
+    close_result = await server.herdr_service.pane_close({"pane_id": "w123-1"})
 
     assert calls == [
         ["agent", "focus", "w123-1"],

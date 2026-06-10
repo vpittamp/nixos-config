@@ -982,15 +982,15 @@ class IPCServer:
             elif method == "herdr.proxy.pane.focus":
                 result = await self._herdr_proxy_pane_focus(params)
             elif method == "herdr.pane.focus":
-                result = await self._herdr_pane_focus(params)
+                result = await self.herdr_service.pane_focus(params)
             elif method == "herdr.pane.close":
-                result = await self._herdr_pane_close(params)
+                result = await self.herdr_service.pane_close(params)
             elif method == "herdr.remote.pane.focus":
                 result = await self._herdr_remote_pane_focus(params)
             elif method == "herdr.workspace.focus":
-                result = await self._herdr_workspace_focus(params)
+                result = await self.herdr_service.workspace_focus(params)
             elif method == "herdr.tab.focus":
-                result = await self._herdr_tab_focus(params)
+                result = await self.herdr_service.tab_focus(params)
             elif method == "display.snapshot":
                 result = await self.display_service.snapshot(**self._display_service_context())
             elif method == "display.apply":
@@ -8684,12 +8684,6 @@ FORMAT JSONEachRow
         result["proxy_host"] = self._local_host_alias()
         return result
 
-    async def _herdr_pane_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        return await self.herdr_service.pane_focus(params)
-
-    async def _herdr_pane_close(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        return await self.herdr_service.pane_close(params)
-
     def _apply_remote_herdr_focus_cache(
         self,
         *,
@@ -8720,12 +8714,6 @@ FORMAT JSONEachRow
             launch_open=self._launch_open,
             set_focus_overrides=self._set_focus_overrides,
         )
-
-    async def _herdr_workspace_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        return await self.herdr_service.workspace_focus(params)
-
-    async def _herdr_tab_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        return await self.herdr_service.tab_focus(params)
 
     def _build_window_focus_target(
         self,
