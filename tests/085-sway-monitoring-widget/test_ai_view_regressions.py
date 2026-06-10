@@ -8,6 +8,7 @@ SHELL_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" 
 SESSION_ROW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "SessionRow.qml"
 LAUNCHER_WINDOW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "LauncherWindow.qml"
 RUNTIME_PANEL_WINDOW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "RuntimePanelWindow.qml"
+RUNTIME_SERVICES_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "controllers" / "RuntimeServices.qml"
 QUICKSHELL_DEFAULT_NIX = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "default.nix"
 NOTIFICATION_TOAST_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "NotificationToast.qml"
 WORKTREE_APP_SERVICE_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-worktree-app" / "WorktreeAppService.qml"
@@ -16,6 +17,7 @@ I3PM_WINDOW_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "comman
 I3PM_DASHBOARD_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "dashboard.ts"
 I3PM_HERDR_PROXY_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "herdr-proxy.ts"
 I3PM_SESSION_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "session.ts"
+I3PM_MAIN_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "main.ts"
 
 
 def test_session_phase_prefers_raw_herdr_agent_status():
@@ -243,11 +245,23 @@ def test_launcher_preview_for_herdr_sessions_is_focus_only():
     text = SHELL_QML.read_text()
     launcher_text = LAUNCHER_WINDOW_QML.read_text()
     session_command_text = I3PM_SESSION_TS.read_text()
+    main_command_text = I3PM_MAIN_TS.read_text()
     assert "if (stringOrEmpty(entry.source) === \"herdr\" || stringOrEmpty(entry.pane_id))" in text
     assert "message: \"Focus this Herdr pane to inspect live output.\"" in text
     assert "return;" in text
     assert "function sessionPreviewStatusText()" in text
     assert "root.sessionPreviewStatusText()" in launcher_text
+    assert '"session", "preview", sessionKey, "--jsonl", "--lines", "100"' in text
+    assert '"session", "preview", "", "--jsonl", "--lines", "100"' in RUNTIME_SERVICES_QML.read_text()
+    assert '"session", "preview", sessionKey, "--follow"' not in text
+    assert '"session", "preview", "", "--follow"' not in RUNTIME_SERVICES_QML.read_text()
+    assert "--follow" not in session_command_text
+    assert "session preview <session_key> --follow" not in main_command_text
+    assert 'message: "Loading live pane preview..."' not in text
+    assert "sessionPreviewFollowChipVisible" not in text
+    assert "sessionPreviewAutoFollow" not in text
+    assert "sessionPreviewFollowTimer" not in text
+    assert "sessionPreviewFollowChipVisible" not in launcher_text
     assert '"legacy-tmux-preview"' not in session_command_text
     assert "allow_legacy_tmux_preview" not in session_command_text
     assert "legacy_tmux_preview_disabled" not in session_command_text

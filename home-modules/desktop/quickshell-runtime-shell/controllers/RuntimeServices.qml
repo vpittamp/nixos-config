@@ -23,7 +23,6 @@ Item {
     property alias launcherSessionSwitcherOpenTimerRef: launcherSessionSwitcherOpenTimer
     property alias launcherWindowSwitcherOpenTimerRef: launcherWindowSwitcherOpenTimer
     property alias sessionPreviewDebounceRef: sessionPreviewDebounce
-    property alias sessionPreviewFollowTimerRef: sessionPreviewFollowTimer
     property alias settingsFocusTimerRef: settingsFocusTimer
     property alias settingsCommandQueryDebounceRef: settingsCommandQueryDebounce
     property alias sessionClosePendingPruneTimerRef: sessionClosePendingPruneTimer
@@ -382,13 +381,6 @@ Item {
     }
 
     Timer {
-        id: sessionPreviewFollowTimer
-        interval: 16
-        repeat: false
-        onTriggered: shellRoot.sessionPreviewScrollToBottom()
-    }
-
-    Timer {
         id: settingsFocusTimer
         interval: 40
         repeat: false
@@ -701,7 +693,7 @@ Item {
 
     Process {
         id: sessionPreviewProcess
-        command: [runtimeConfig.i3pmBin, "session", "preview", "", "--follow", "--jsonl", "--lines", "100"]
+        command: [runtimeConfig.i3pmBin, "session", "preview", "", "--jsonl", "--lines", "100"]
         running: false
         stdout: SplitParser {
             splitMarker: "\n"

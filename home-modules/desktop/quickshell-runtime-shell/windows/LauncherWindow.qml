@@ -1161,32 +1161,6 @@ PanelWindow {
                                         Layout.fillWidth: true
                                     }
 
-                                    Rectangle {
-                                        visible: root.sessionPreviewFollowChipVisible()
-                                        height: 20
-                                        radius: 6
-                                        color: root.sessionPreviewFollowChipBackground()
-                                        border.color: root.sessionPreviewFollowChipColor()
-                                        border.width: 1
-                                        Layout.preferredWidth: previewFollowText.implicitWidth + 14
-
-                                        Text {
-                                            id: previewFollowText
-                                            anchors.centerIn: parent
-                                            text: root.sessionPreviewFollowChipText()
-                                            color: root.sessionPreviewFollowChipColor()
-                                            font.pixelSize: 8
-                                            font.weight: Font.DemiBold
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            enabled: root.sessionPreviewFollowChipVisible() && (!root.sessionPreviewAutoFollow || root.sessionPreviewHasUnseenOutput)
-                                            hoverEnabled: enabled
-                                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                            onClicked: root.resumeSessionPreviewFollow()
-                                        }
-                                    }
                                 }
 
                                 Rectangle {
@@ -1206,17 +1180,6 @@ PanelWindow {
                                         contentHeight: Math.max(height, sessionPreviewText.paintedHeight + 4)
                                         boundsBehavior: Flickable.StopAtBounds
                                         interactive: contentHeight > height
-                                        onContentYChanged: {
-                                            if (root.sessionPreviewProgrammaticScroll) {
-                                                return;
-                                            }
-                                            const nearEnd = contentY >= Math.max(0, contentHeight - height - 24);
-                                            root.sessionPreviewAutoFollow = nearEnd || contentHeight <= height + 4;
-                                            if (root.sessionPreviewAutoFollow) {
-                                                root.sessionPreviewHasUnseenOutput = false;
-                                            }
-                                        }
-
                                         ScrollBar.vertical: ScrollBar {
                                             policy: ScrollBar.AsNeeded
                                         }

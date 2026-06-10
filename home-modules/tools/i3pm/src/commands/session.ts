@@ -49,7 +49,7 @@ interface SessionPreviewInfo {
 function showHelp(): void {
   console.log(`i3pm session <list|focus|close|preview|cleanup|doctor> [session_key] [--json]
 
-  i3pm session preview <session_key> [--follow] [--lines <n>] [--jsonl]
+  i3pm session preview <session_key> [--lines <n>] [--jsonl]
   i3pm session close <session_key> [--json]
   i3pm session cleanup [--json]
   i3pm session doctor [--json]`);
@@ -135,7 +135,7 @@ function previewFallbackMessage(info: SessionPreviewInfo): string {
 
 async function runPreview(client: DaemonClient, subArgs: string[]): Promise<number> {
   const parsed = parseArgs(subArgs, {
-    boolean: ["help", "json", "follow", "jsonl"],
+    boolean: ["help", "json", "jsonl"],
     string: ["lines"],
     alias: { h: "help" },
   });
@@ -154,7 +154,7 @@ async function runPreview(client: DaemonClient, subArgs: string[]): Promise<numb
     lines: lineCount,
   });
 
-  if (parsed.json && !parsed.follow && !jsonl) {
+  if (parsed.json && !jsonl) {
     console.log(JSON.stringify(info, null, 2));
     return 0;
   }

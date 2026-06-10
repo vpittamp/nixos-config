@@ -42,7 +42,6 @@ ShellRoot {
     readonly property var launcherSessionSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherSessionSwitcherOpenTimerRef : null
     readonly property var launcherWindowSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherWindowSwitcherOpenTimerRef : null
     readonly property var sessionPreviewDebounce: runtimeServices ? runtimeServices.sessionPreviewDebounceRef : null
-    readonly property var sessionPreviewFollowTimer: runtimeServices ? runtimeServices.sessionPreviewFollowTimerRef : null
     readonly property var settingsFocusTimer: runtimeServices ? runtimeServices.settingsFocusTimerRef : null
     readonly property var settingsCommandQueryDebounce: runtimeServices ? runtimeServices.settingsCommandQueryDebounceRef : null
     readonly property var snippetEditorProcess: runtimeServices ? runtimeServices.snippetEditorProcessRef : null
@@ -245,9 +244,6 @@ ShellRoot {
     property string lidInhibitActionMode: ""
     property string sessionPreviewTargetKey: ""
     property bool sessionPreviewStopExpected: false
-    property bool sessionPreviewAutoFollow: true
-    property bool sessionPreviewHasUnseenOutput: false
-    property bool sessionPreviewProgrammaticScroll: false
     property var sessionPreview: ({
             status: "idle",
             kind: "status",
@@ -3824,8 +3820,6 @@ ShellRoot {
 
     function clearSessionPreview() {
         sessionPreviewTargetKey = "";
-        sessionPreviewAutoFollow = true;
-        sessionPreviewHasUnseenOutput = false;
         sessionPreview = emptySessionPreview();
         if (sessionPreviewProcess.running) {
             sessionPreviewStopExpected = true;
@@ -3840,17 +3834,8 @@ ShellRoot {
         }
 
         try {
-            const previous = Object.assign({}, sessionPreview);
             const next = Object.assign(emptySessionPreview(), JSON.parse(raw));
-            const contentChanged = stringOrEmpty(previous.content) !== stringOrEmpty(next.content) || stringOrEmpty(previous.updated_at) !== stringOrEmpty(next.updated_at) || stringOrEmpty(previous.status) !== stringOrEmpty(next.status) || stringOrEmpty(previous.kind) !== stringOrEmpty(next.kind);
             sessionPreview = next;
-            if (contentChanged && stringOrEmpty(next.status) === "live") {
-                if (sessionPreviewAutoFollow) {
-                    sessionPreviewFollowTimer.restart();
-                } else {
-                    sessionPreviewHasUnseenOutput = true;
-                }
-            }
         } catch (error) {
             console.warn("session.preview.parse:", raw, error);
         }
@@ -3871,8 +3856,6 @@ ShellRoot {
 
         if (stringOrEmpty(entry.source) === "herdr" || stringOrEmpty(entry.pane_id)) {
             sessionPreviewTargetKey = sessionKey;
-            sessionPreviewAutoFollow = true;
-            sessionPreviewHasUnseenOutput = false;
             if (sessionPreviewProcess.running) {
                 sessionPreviewStopExpected = true;
                 sessionPreviewProcess.running = false;
@@ -3898,24 +3881,22 @@ ShellRoot {
         }
 
         sessionPreviewTargetKey = sessionKey;
-        sessionPreviewAutoFollow = true;
-        sessionPreviewHasUnseenOutput = false;
         sessionPreview = Object.assign(emptySessionPreview(), {
-            status: "loading",
+            status: "focus_required",
             kind: "status",
             session_key: sessionKey,
             tool: toolLabel(entry),
             project_name: stringOrEmpty(entry.project_name || entry.project),
             host_name: stringOrEmpty(entry.host_name),
             pane_label: sessionPaneLabel(entry),
-            message: "Loading live pane preview..."
+            message: "Focus this Herdr pane to inspect live output."
         });
 
         if (sessionPreviewProcess.running) {
             sessionPreviewStopExpected = true;
             sessionPreviewProcess.running = false;
         }
-        sessionPreviewProcess.command = [shellConfig.i3pmBin, "session", "preview", sessionKey, "--follow", "--jsonl", "--lines", "100"];
+        sessionPreviewProcess.command = [shellConfig.i3pmBin, "session", "preview", sessionKey, "--jsonl", "--lines", "100"];
         sessionPreviewProcess.running = true;
     }
 
@@ -3936,7 +3917,7 @@ ShellRoot {
             return;
         }
 
-        if (sessionPreviewTargetKey === sessionKey && !sessionPreviewProcess.running && stringOrEmpty(sessionPreview.status) === "live") {
+        if (sessionPreviewTargetKey === sessionKey && !sessionPreviewProcess.running && stringOrEmpty(sessionPreview.status) !== "loading") {
             return;
         }
 
@@ -4063,6 +4044,9 @@ ShellRoot {
         if (stringOrEmpty(sessionPreview.status) === "loading") {
             return "Loading";
         }
+        if (stringOrEmpty(sessionPreview.status) === "focus_required") {
+            return "Focus";
+        }
         if (boolOrFalse(sessionPreview.is_live)) {
             return "Live";
         }
@@ -4081,47 +4065,6 @@ ShellRoot {
             return titleCaseWord(herdrStatus);
         }
         return stringOrEmpty(sessionPreview.session_phase_label || sessionPreview.session_phase);
-    }
-
-    function sessionPreviewFollowChipVisible() {
-        return stringOrEmpty(sessionPreview.status) === "live" && boolOrFalse(sessionPreview.is_live);
-    }
-
-    function sessionPreviewFollowChipText() {
-        if (sessionPreviewHasUnseenOutput) {
-            return "New output";
-        }
-        return sessionPreviewAutoFollow ? "Following" : "Paused";
-    }
-
-    function sessionPreviewFollowChipColor() {
-        if (sessionPreviewHasUnseenOutput) {
-            return colors.orange;
-        }
-        return sessionPreviewAutoFollow ? colors.accent : colors.blue;
-    }
-
-    function sessionPreviewFollowChipBackground() {
-        if (sessionPreviewHasUnseenOutput) {
-            return colors.orangeBg;
-        }
-        return sessionPreviewAutoFollow ? colors.accentBg : colors.blueBg;
-    }
-
-    function sessionPreviewScrollToBottom() {
-        if (!sessionPreviewFlick) {
-            return;
-        }
-        sessionPreviewProgrammaticScroll = true;
-        sessionPreviewFlick.contentY = Math.max(0, sessionPreviewFlick.contentHeight - sessionPreviewFlick.height);
-        sessionPreviewProgrammaticScroll = false;
-        sessionPreviewHasUnseenOutput = false;
-    }
-
-    function resumeSessionPreviewFollow() {
-        sessionPreviewAutoFollow = true;
-        sessionPreviewHasUnseenOutput = false;
-        sessionPreviewFollowTimer.restart();
     }
 
     function sessionLauncherEntry(session) {
