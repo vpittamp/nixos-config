@@ -1109,7 +1109,7 @@ class IPCServer:
             elif method == "launch.open":
                 result = await self._launch_open(params)
             elif method == "launch.status":
-                result = await self._launch_status(params)
+                result = await self.launch_service.launch_status(params.get("launch_id", ""))
             elif method == "get_launch_stats":
                 result = await self._get_launch_stats()
             elif method == "get_pending_launches":
@@ -16359,13 +16359,6 @@ FORMAT JSONEachRow
         if existing_window is not None:
             return existing_window, remote_terminal_role
         return None, ""
-
-    async def _launch_status(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Return deterministic launch status for a registered launch id."""
-        launch_id = str(params.get("launch_id") or "").strip()
-        if not launch_id:
-            raise ValueError("launch_id is required")
-        return await self.launch_service.launch_status(launch_id)
 
     def _connection_target_is_current_host(self, connection_key: str) -> bool:
         """Return whether an SSH connection target resolves back to this host."""

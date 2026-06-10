@@ -299,7 +299,7 @@ async def test_launch_status_reconciles_managed_session_to_waiting_and_running(s
         reason="session_validating",
     )
 
-    waiting = await server_local._launch_status({"launch_id": launch_id})
+    waiting = await server_local.launch_service.launch_status(launch_id)
 
     assert waiting["status"] == "waiting_window"
     assert waiting["reason"] == "waiting_window"
@@ -312,7 +312,7 @@ async def test_launch_status_reconciles_managed_session_to_waiting_and_running(s
         terminal_role=spec["terminal_role"],
         tmux_session_name=spec["tmux_session_name"],
     )
-    running = await server_local._launch_status({"launch_id": launch_id})
+    running = await server_local.launch_service.launch_status(launch_id)
 
     assert running["status"] == "running"
     assert running["reason"] == "window_bound"
