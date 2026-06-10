@@ -61,6 +61,7 @@ from .services.dashboard_model import (
     advance_dashboard_event_state,
     build_dashboard_projects as build_dashboard_project_cards,
     build_dashboard_snapshot_payload,
+    build_dashboard_worktree_rows,
     dashboard_event_payload_from_snapshot,
     dashboard_event_notification,
     dashboard_invalidated_payload,
@@ -8841,87 +8842,14 @@ class IPCServer:
         repo_result = await self._repo_list({})
         repositories = list(repo_result.get("repositories", []) or [])
         usage_map = self._load_validated_project_usage_map()
-
-        window_counts: Dict[str, Dict[str, int]] = {}
-        for window in self._flatten_runtime_windows(runtime_snapshot):
-            if not isinstance(window, dict):
-                continue
-            project_name = self._canonical_discovered_project_name(
-                window.get("project"),
-                project_path=window.get("project_path"),
-            )
-            if not project_name:
-                continue
-
-            counts = window_counts.setdefault(project_name, {
-                "scoped_window_count": 0,
-                "visible_window_count": 0,
-            })
-            counts["scoped_window_count"] += 1
-            if not bool(window.get("hidden", False)):
-                counts["visible_window_count"] += 1
-
-        worktrees: List[Dict[str, Any]] = []
-        for repo in repositories:
-            if not isinstance(repo, dict):
-                continue
-            account = str(repo.get("account") or "").strip()
-            repo_name = str(repo.get("name") or "").strip()
-            display_name = f"{account}/{repo_name}" if account and repo_name else repo_name or account
-
-            for worktree in list(repo.get("worktrees", []) or []):
-                if not isinstance(worktree, dict):
-                    continue
-                branch = str(worktree.get("branch") or "").strip()
-                qualified_name = f"{account}/{repo_name}:{branch}" if account and repo_name and branch else branch or display_name
-                staged = int(worktree.get("staged_count") or 0)
-                modified = int(worktree.get("modified_count") or 0)
-                untracked = int(worktree.get("untracked_count") or 0)
-                dirty_count = staged + modified + untracked
-                usage_entry = usage_map.get(qualified_name, {}) if isinstance(usage_map, dict) else {}
-                counts = window_counts.get(qualified_name, {})
-                host_profile = self._get_worktree_host_profile(qualified_name)
-                host_profile_available = bool(host_profile)
-                worktrees.append({
-                    "qualified_name": qualified_name,
-                    "repo_display": display_name,
-                    "repo_name": repo_name,
-                    "account": account,
-                    "branch": branch,
-                    "path": str(worktree.get("path") or ""),
-                    "is_main": bool(worktree.get("is_main", False)),
-                    "is_clean": bool(worktree.get("is_clean", False)),
-                    "is_stale": bool(worktree.get("is_stale", False)),
-                    "has_conflicts": bool(worktree.get("has_conflicts", False)),
-                    "ahead": int(worktree.get("ahead") or 0),
-                    "behind": int(worktree.get("behind") or 0),
-                    "staged_count": staged,
-                    "modified_count": modified,
-                    "untracked_count": untracked,
-                    "dirty_count": dirty_count,
-                    "is_active": qualified_name == active_qualified,
-                    "active_target_host": active_target_host if qualified_name == active_qualified else "",
-                    "host_profile_available": host_profile_available,
-                    "host_profile_host": str(host_profile.get("host") or "").strip() if isinstance(host_profile, dict) else "",
-                    "visible_window_count": int(counts.get("visible_window_count", 0) or 0),
-                    "scoped_window_count": int(counts.get("scoped_window_count", 0) or 0),
-                    "last_used_at": int(usage_entry.get("last_used_at", 0) or 0),
-                    "use_count": int(usage_entry.get("use_count", 0) or 0),
-                    "last_commit_message": str(worktree.get("last_commit_message") or ""),
-                })
-
-        worktrees.sort(
-            key=lambda item: (
-                0 if bool(item.get("is_active", False)) else 1,
-                -int(item.get("visible_window_count", 0) or 0),
-                -int(item.get("scoped_window_count", 0) or 0),
-                -int(item.get("last_used_at", 0) or 0),
-                -int(item.get("use_count", 0) or 0),
-                0 if not bool(item.get("is_clean", False)) else 1,
-                str(item.get("repo_display") or "").casefold(),
-                str(item.get("branch") or "").casefold(),
-                str(item.get("qualified_name") or "").casefold(),
-            ),
+        worktrees = build_dashboard_worktree_rows(
+            runtime_snapshot=runtime_snapshot,
+            repositories=repositories,
+            usage_map=usage_map,
+            runtime_windows=self._flatten_runtime_windows(runtime_snapshot),
+            active_target_host=active_target_host,
+            canonical_project_name=self._canonical_discovered_project_name,
+            get_worktree_host_profile=self._get_worktree_host_profile,
         )
         self._worktree_cache = [dict(item) for item in worktrees]
         self._worktree_cache_time = now
