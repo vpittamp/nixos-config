@@ -1726,6 +1726,51 @@ def test_dashboard_invariants_warn_on_transient_window_focus_rows(server):
     assert "focused_window_row_mismatch" in result["warnings"]
 
 
+def test_dashboard_projects_use_authoritative_focused_window_id(server):
+    runtime_snapshot = {
+        "focused_window_id": 101,
+        "active_context": {
+            "qualified_name": "global",
+            "target_host": "thinkpad",
+        },
+        "tracked_windows": [
+            {
+                "window_id": 202,
+                "title": "stale focused",
+                "app_name": "ghostty",
+                "project": "global",
+                "workspace": "33",
+                "output": "eDP-1",
+                "focused": True,
+                "visible": True,
+                "connection_key": "local@thinkpad",
+            },
+            {
+                "window_id": 101,
+                "title": "actual focused",
+                "app_name": "chrome",
+                "project": "global",
+                "workspace": "131",
+                "output": "eDP-1",
+                "focused": True,
+                "visible": True,
+                "connection_key": "local@thinkpad",
+            },
+        ],
+    }
+
+    projects = server._build_dashboard_projects(runtime_snapshot, [])
+    windows = projects[0]["windows"]
+
+    assert [
+        {"id": window["id"], "focused": window["focused"], "is_current_window": window["is_current_window"]}
+        for window in windows
+    ] == [
+        {"id": 202, "focused": False, "is_current_window": False},
+        {"id": 101, "focused": True, "is_current_window": True},
+    ]
+
+
 def test_dashboard_invariants_reject_remote_herdr_focus_mismatch(server):
     payload = {
         "schema_version": "i3pm.dashboard.v2",

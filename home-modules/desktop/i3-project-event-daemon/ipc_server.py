@@ -12245,7 +12245,7 @@ FORMAT JSONEachRow
                 window_id=window_id,
                 connection_key=str(window.get("connection_key") or "").strip(),
             )
-            derived_focused = bool(window.get("focused", False)) or has_current_session or matches_focus_override
+            derived_focused = focused_window_id > 0 and window_id == focused_window_id
             derived_visible = bool(window.get("visible", False)) or has_active_session or matches_focus_override
             derived_hidden = bool(hidden and not derived_visible)
 
