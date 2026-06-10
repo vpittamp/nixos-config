@@ -64,6 +64,7 @@ from .services.focus_service import FocusService
 from .services.herdr_service import HerdrService
 from .services.launch_service import LaunchService
 from .services.session_action_service import SessionActionService
+from .services.session_attention_service import SessionAttentionService
 from .services.session_preview_service import SessionPreviewService
 from .models.window_command import CommandBatch
 
@@ -531,13 +532,12 @@ class IPCServer:
         self._git_snapshot_ttl_background: float = 20.0
         self._git_snapshot_failure_ttl: float = 30.0
         self._active_runtime_context: Optional[Dict[str, Any]] = None
-        self._stopped_session_notifications: Dict[str, Dict[str, Any]] = {}
-        self._user_input_session_notifications: Dict[str, Dict[str, Any]] = {}
         self._user_intent_epoch: int = 0
         self.focus_service = FocusService(
             normalize_connection_key=lambda value: self._normalize_connection_key(value),
             schema_version=FOCUS_STATE_SCHEMA_VERSION,
         )
+        self.session_attention_service = SessionAttentionService()
         self.dashboard_git_service = DashboardGitService(
             ttl_current=self._git_snapshot_ttl_current,
             ttl_visible=self._git_snapshot_ttl_visible,
@@ -651,6 +651,14 @@ class IPCServer:
     @property
     def _focus_generation(self) -> int:
         return int(self.dashboard_service.focus_generation)
+
+    @property
+    def _stopped_session_notifications(self) -> Dict[str, Dict[str, Any]]:
+        return self.session_attention_service.stopped_notifications
+
+    @property
+    def _user_input_session_notifications(self) -> Dict[str, Dict[str, Any]]:
+        return self.session_attention_service.user_input_notifications
 
     @classmethod
     async def from_systemd_socket(
@@ -7076,114 +7084,36 @@ class IPCServer:
     @staticmethod
     def _stopped_boundary_key(session: Dict[str, Any]) -> str:
         """Return a stable token for the current explicit-stop boundary."""
-        terminal_state_at = str(session.get("terminal_state_at") or "").strip()
-        if terminal_state_at:
-            return terminal_state_at
-        updated_at = str(session.get("updated_at") or "").strip()
-        if updated_at:
-            return updated_at
-        state_seq = int(session.get("state_seq") or 0)
-        if state_seq > 0:
-            return f"state-seq:{state_seq}"
-        return str(session.get("session_phase") or "").strip()
+        return SessionAttentionService.stopped_boundary_key(session)
 
     @staticmethod
     def _session_has_explicit_stop(session: Dict[str, Any]) -> bool:
         """Return whether a session is on an explicit provider stop boundary."""
-        return bool(session.get("llm_stopped", False)) or (
-            str(session.get("terminal_state") or "").strip().lower() == "explicit_complete"
-        )
+        return SessionAttentionService.session_has_explicit_stop(session)
 
     @staticmethod
     def _session_has_user_input_boundary(session: Dict[str, Any]) -> bool:
         """Return whether a session is on a retained user-input-required boundary."""
-        tool = str(session.get("tool") or "").strip().lower()
-        if tool not in {"codex", "claude-code", "antigravity", "antigravity-cli", "gemini", "gemini-cli"}:
-            return False
-        if str(session.get("notification_boundary_type") or "").strip().lower() != "user_input_required":
-            return False
-        reason = str(
-            session.get("notification_boundary_reason")
-            or session.get("user_action_reason")
-            or ""
-        ).strip().lower()
-        return reason in {"elicitation", "permission", "auth", "rate_limit", "max_tokens", "error"}
+        return SessionAttentionService.session_has_user_input_boundary(session)
 
     @staticmethod
     def _user_input_boundary_key(session: Dict[str, Any]) -> str:
         """Return a stable token for the current user-input-required boundary."""
-        boundary_at = str(session.get("notification_boundary_at") or "").strip()
-        if boundary_at:
-            return boundary_at
-        updated_at = str(session.get("updated_at") or "").strip()
-        if updated_at:
-            return updated_at
-        state_seq = int(session.get("state_seq") or 0)
-        if state_seq > 0:
-            return f"state-seq:{state_seq}"
-        return str(session.get("session_phase") or "").strip()
+        return SessionAttentionService.user_input_boundary_key(session)
 
     def _acknowledge_stopped_session_notification(
         self,
         session: Dict[str, Any],
     ) -> bool:
         """Persist acknowledgement for the current explicit-stop boundary."""
-        session_key = str(session.get("session_key") or "").strip()
-        if not session_key or not self._session_has_explicit_stop(session):
-            return False
-
-        boundary_key = self._stopped_boundary_key(session)
-        notification_state = self._stopped_session_notifications.get(session_key)
-        if (
-            not isinstance(notification_state, dict)
-            or str(notification_state.get("boundary_key") or "") != boundary_key
-        ):
-            notification_state = {
-                "boundary_key": boundary_key,
-                "started_current": bool(session.get("is_current_window", False)),
-                "left_since_boundary": True,
-                "acknowledged": True,
-            }
-        else:
-            notification_state["acknowledged"] = True
-
-        self._stopped_session_notifications[session_key] = notification_state
-        session["stopped_notification_pending"] = False
-        session["session_phase"] = "done"
-        session["session_phase_label"] = "Done"
-        return True
+        return self.session_attention_service.acknowledge_stopped_session_notification(session)
 
     def _acknowledge_user_input_session_notification(
         self,
         session: Dict[str, Any],
     ) -> bool:
         """Persist acknowledgement for the current user-input-required boundary."""
-        session_key = str(session.get("session_key") or "").strip()
-        if not session_key or not self._session_has_user_input_boundary(session):
-            return False
-
-        boundary_key = self._user_input_boundary_key(session)
-        notification_state = self._user_input_session_notifications.get(session_key)
-        if (
-            not isinstance(notification_state, dict)
-            or str(notification_state.get("boundary_key") or "") != boundary_key
-        ):
-            notification_state = {
-                "boundary_key": boundary_key,
-                "acknowledged": True,
-            }
-        else:
-            notification_state["acknowledged"] = True
-
-        self._user_input_session_notifications[session_key] = notification_state
-        session["user_input_notification_pending"] = False
-        if bool(session.get("process_running", False)):
-            session["session_phase"] = "idle"
-            session["session_phase_label"] = "Idle"
-        else:
-            session["session_phase"] = "inactive"
-            session["session_phase_label"] = "Inactive"
-        return True
+        return self.session_attention_service.acknowledge_user_input_session_notification(session)
 
     def _apply_session_attention_state(
         self,
@@ -7193,100 +7123,11 @@ class IPCServer:
         current_session_key: str,
     ) -> None:
         """Promote completed background sessions into a retained needs-attention state."""
-        current_key = str(current_session_key or "").strip()
-        active_stopped_keys: set[str] = set()
-        active_user_input_keys: set[str] = set()
-        for session in sessions:
-            if not isinstance(session, dict):
-                continue
-            session_key = str(session.get("session_key") or "").strip()
-            is_current = FocusService.session_matches_current(
-                session,
-                current_session_key=current_key,
-                focused_window_id=focused_window_id,
-            )
-            explicit_stopped = self._session_has_explicit_stop(session)
-            if explicit_stopped and session_key:
-                active_stopped_keys.add(session_key)
-                boundary_key = self._stopped_boundary_key(session)
-                notification_state = self._stopped_session_notifications.get(session_key)
-                if (
-                    not isinstance(notification_state, dict)
-                    or str(notification_state.get("boundary_key") or "") != boundary_key
-                ):
-                    notification_state = {
-                        "boundary_key": boundary_key,
-                        "started_current": is_current,
-                        "left_since_boundary": not is_current,
-                        "acknowledged": False,
-                    }
-                else:
-                    if not is_current:
-                        notification_state["left_since_boundary"] = True
-                    elif not bool(notification_state.get("acknowledged", False)) and (
-                        not bool(notification_state.get("started_current", False))
-                        or bool(notification_state.get("left_since_boundary", False))
-                    ):
-                        notification_state["acknowledged"] = True
-
-                self._stopped_session_notifications[session_key] = notification_state
-                stopped_notification_pending = not bool(notification_state.get("acknowledged", False))
-                session["stopped_notification_pending"] = stopped_notification_pending
-                if stopped_notification_pending:
-                    session["session_phase"] = "stopped"
-                    session["session_phase_label"] = "Stopped"
-                else:
-                    session["session_phase"] = "done"
-                    session["session_phase_label"] = "Done"
-                continue
-
-            if self._session_has_user_input_boundary(session) and session_key:
-                active_user_input_keys.add(session_key)
-                boundary_key = self._user_input_boundary_key(session)
-                notification_state = self._user_input_session_notifications.get(session_key)
-                if (
-                    not isinstance(notification_state, dict)
-                    or str(notification_state.get("boundary_key") or "") != boundary_key
-                ):
-                    notification_state = {
-                        "boundary_key": boundary_key,
-                        "acknowledged": is_current,
-                    }
-                elif is_current:
-                    notification_state["acknowledged"] = True
-
-                self._user_input_session_notifications[session_key] = notification_state
-                user_input_notification_pending = not bool(notification_state.get("acknowledged", False))
-                session["user_input_notification_pending"] = user_input_notification_pending
-                if user_input_notification_pending:
-                    session["session_phase"] = "needs_attention"
-                    session["session_phase_label"] = "Needs attention"
-                elif bool(session.get("process_running", False)):
-                    session["session_phase"] = "idle"
-                    session["session_phase_label"] = "Idle"
-                else:
-                    session["session_phase"] = "inactive"
-                    session["session_phase_label"] = "Inactive"
-                continue
-
-            session["user_input_notification_pending"] = False
-            session["stopped_notification_pending"] = False
-            phase = str(session.get("session_phase") or "").strip().lower()
-            if phase != "done":
-                continue
-            if is_current:
-                session["session_phase"] = "done"
-                session["session_phase_label"] = "Done"
-            else:
-                session["session_phase"] = "needs_attention"
-                session["session_phase_label"] = "Needs attention"
-
-        for session_key in list(self._stopped_session_notifications.keys()):
-            if session_key not in active_stopped_keys:
-                self._stopped_session_notifications.pop(session_key, None)
-        for session_key in list(self._user_input_session_notifications.keys()):
-            if session_key not in active_user_input_keys:
-                self._user_input_session_notifications.pop(session_key, None)
+        self.session_attention_service.apply_session_attention_state(
+            sessions,
+            focused_window_id=focused_window_id,
+            current_session_key=current_session_key,
+        )
 
     def _load_session_items(
         self,
