@@ -1058,9 +1058,9 @@ async def test_remote_local_session_uses_exact_remote_bridge_focus_mode(server, 
     assert session["focusability_reason"] == "exact_remote_tmux_attachable"
 
 
-@pytest.mark.asyncio
-async def test_local_unbound_session_uses_canonical_worktree_identity_and_attachable_focus(server, monkeypatch):
-    raw_session = make_runtime_session({
+def test_load_session_items_preserves_herdr_service_identity_and_focus_metadata(server):
+    runtime_snapshot = make_runtime_snapshot()
+    runtime_snapshot["sessions"] = [make_runtime_session({
         "session_key": "session-local-headless",
         "render_session_key": "session-local-headless",
         "surface_key": "surface-local-headless",
@@ -1096,34 +1096,18 @@ async def test_local_unbound_session_uses_canonical_worktree_identity_and_attach
         "tmux_session": "i3pm-workflow-builder-headless",
         "tmux_window": "0:main",
         "tmux_pane": "%9",
-    })
-    monkeypatch.setattr(server, "_local_host_alias", lambda: "thinkpad")
-    monkeypatch.setattr(
-        ipc_server_module,
-        "resolve_discovered_worktree",
-        lambda path_value: {
-            "qualified_name": "PittampalliOrg/workflow-builder:codex-shared-workspace-capabilities-20260323",
-            "repo_qualified_name": "PittampalliOrg/workflow-builder",
-            "branch": "codex-shared-workspace-capabilities-20260323",
-            "path": "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main",
-        } if str(path_value or "") == "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main" else None,
-    )
+    })]
 
-    result = server._normalize_session_items(
-        [raw_session],
-        source_connection_key="local@thinkpad",
-        source_host_name="thinkpad",
-        tracked_windows=[],
-    )
+    result = server._load_session_items(runtime_snapshot)
 
     assert len(result) == 1
     session = result[0]
-    assert session["project_name"] == "PittampalliOrg/workflow-builder:codex-shared-workspace-capabilities-20260323"
-    assert session["raw_project_name"] == "PittampalliOrg/workflow-builder:main"
-    assert session["project_identity_source"] == "project_path"
-    assert session["focus_mode"] == "local_tmux_attachable"
-    assert session["availability_state"] == "local_tmux_attachable"
-    assert session["focusability_reason"] == "exact_local_tmux_attachable"
+    assert session["session_key"] == "session-local-headless"
+    assert session["project_name"] == "PittampalliOrg/workflow-builder:main"
+    assert session["project_path"] == "/home/vpittamp/repos/PittampalliOrg/workflow-builder/main"
+    assert session["focus_mode"] == "unavailable"
+    assert session["availability_state"] == "unavailable"
+    assert session["terminal_context"]["tmux_pane"] == "%9"
 
 
 @pytest.mark.asyncio
@@ -1384,22 +1368,10 @@ async def test_session_cleanup_closes_stale_remote_bridge_windows(server, monkey
             "hidden": True,
         }
     ]
-    local_payload = {"sessions": []}
-    remote_payload = {"sources": {}}
-
     async def fake_runtime_snapshot(_params):
         return runtime_snapshot
 
-    def fake_load_json_file(path):
-        path_str = str(path)
-        if path_str.endswith("otel-ai-sessions.json"):
-            return local_payload
-        if path_str.endswith("remote-otel-sink.json"):
-            return remote_payload
-        return {}
-
     monkeypatch.setattr(server, "_runtime_snapshot", fake_runtime_snapshot)
-    monkeypatch.setattr(server, "_load_json_file", fake_load_json_file)
     monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
     monkeypatch.setattr(server, "_local_host_alias", lambda: "ryzen")
     server._close_managed_window = AsyncMock(return_value=True)
