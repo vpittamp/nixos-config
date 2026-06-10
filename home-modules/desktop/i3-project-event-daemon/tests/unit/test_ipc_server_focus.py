@@ -1453,7 +1453,10 @@ async def test_focus_state_reports_current_session_and_window(server, monkeypatc
     result = await server._focus_state({})
 
     assert result["success"] is True
+    assert result["schema_version"] == "i3pm.focus_state.v1"
+    assert result["current_session_key"] == "session-current"
     assert result["current_ai_session_key"] == "session-current"
+    assert result["current_window_id"] == 101
     assert result["focused_window_id"] == 101
     assert result["active_session"]["tmux_pane"] == "%1"
 
@@ -1606,3 +1609,108 @@ async def test_focus_state_prefers_focused_local_window_over_stale_override(serv
 
     assert result["current_ai_session_key"] == "session-local-current"
     assert result["active_session"]["host_name"] == "thinkpad"
+
+
+def test_dashboard_invariants_accept_single_daemon_current_row(server):
+    payload = {
+        "schema_version": "i3pm.dashboard.v2",
+        "focus_state": {
+            "current_session_key": "session-current",
+            "current_window_id": 101,
+            "current_workspace_name": "1",
+        },
+        "current_ai_session_key": "session-current",
+        "active_ai_sessions": [
+            {
+                "session_key": "session-current",
+                "is_current_window": True,
+                "source": "herdr",
+                "focused": True,
+                "is_current_host": True,
+            },
+            {
+                "session_key": "session-background",
+                "is_current_window": False,
+                "source": "herdr",
+                "focused": False,
+                "is_current_host": True,
+            },
+        ],
+        "projects": [
+            {
+                "windows": [
+                    {"id": 101, "focused": True},
+                    {"id": 202, "focused": False},
+                ],
+            },
+        ],
+        "outputs": [
+            {
+                "workspaces": [
+                    {"name": "1", "focused": True},
+                    {"name": "2", "focused": False},
+                ],
+            },
+        ],
+    }
+
+    result = server._validate_dashboard_payload(payload)
+
+    assert result["ok"] is True
+    assert result["issues"] == []
+
+
+def test_dashboard_invariants_reject_duplicate_current_rows(server):
+    payload = {
+        "schema_version": "i3pm.dashboard.v2",
+        "focus_state": {
+            "current_session_key": "session-current",
+            "current_window_id": 101,
+        },
+        "current_ai_session_key": "session-current",
+        "active_ai_sessions": [
+            {"session_key": "session-current", "is_current_window": True},
+            {"session_key": "session-other", "is_current_window": True},
+        ],
+        "projects": [{"windows": [{"id": 101, "focused": True}]}],
+        "outputs": [],
+    }
+
+    result = server._validate_dashboard_payload(payload)
+
+    assert result["ok"] is False
+    assert "current_session_row_not_unique" in result["issues"]
+
+
+def test_dashboard_invariants_reject_remote_herdr_focus_mismatch(server):
+    payload = {
+        "schema_version": "i3pm.dashboard.v2",
+        "focus_state": {
+            "current_session_key": "session-local",
+            "current_window_id": 101,
+        },
+        "current_ai_session_key": "session-local",
+        "active_ai_sessions": [
+            {
+                "session_key": "session-local",
+                "is_current_window": True,
+                "source": "herdr",
+                "focused": False,
+                "is_current_host": True,
+            },
+            {
+                "session_key": "session-remote",
+                "is_current_window": False,
+                "source": "herdr",
+                "focused": True,
+                "is_current_host": False,
+            },
+        ],
+        "projects": [{"windows": [{"id": 101, "focused": True}]}],
+        "outputs": [],
+    }
+
+    result = server._validate_dashboard_payload(payload)
+
+    assert result["ok"] is False
+    assert "remote_herdr_focus_mismatch" in result["issues"]

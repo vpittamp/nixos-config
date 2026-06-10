@@ -1529,109 +1529,37 @@ async def test_session_doctor_reports_bridge_diagnostics(server, monkeypatch):
 
 def test_load_session_items_refreshes_current_host_tmux_focus_state(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
-    local_payload = {
-        "schema_version": "11",
-        "sessions": [
-            {
-                "tool": "codex",
-                "project_name": "vpittamp/nixos-config:main",
-                "project": "vpittamp/nixos-config:main",
-                "display_project": "vpittamp/nixos-config:main",
-                "surface_kind": "tmux-pane",
-                "pane_label": "0:main %0",
-                "updated_at": "2026-03-14T15:00:00Z",
-                "stage": "thinking",
-                "stage_rank": 50,
-                "stage_label": "Thinking",
-                "session_phase": "working",
-                "session_phase_label": "Working",
-                "turn_owner": "llm",
-                "turn_owner_label": "LLM",
-                "identity_phase": "canonical",
-                "native_session_id": "native-main",
-                "session_id": "session-main",
-                "context_fingerprint": "f-main",
-                "activity_substate": "thinking",
-                "activity_substate_label": "Thinking",
-                "pending_tools": 0,
-                "process_running": True,
-                "terminal_context": {
-                    "window_id": 101,
-                    "terminal_anchor_id": "terminal-anchor",
-                    "execution_mode": "local",
-                    "connection_key": "local@thinkpad",
-                    "context_key": "vpittamp/nixos-config:main::host::thinkpad",
-                    "host_name": "thinkpad",
-                    "pane_active": True,
-                    "window_active": False,
-                    "tmux_session": "i3pm-vpittamp-nixos-config-main",
-                    "tmux_window": "0:main",
-                    "tmux_pane": "%0",
-                },
-            },
-            {
-                "tool": "codex",
-                "project_name": "vpittamp/nixos-config:main",
-                "project": "vpittamp/nixos-config:main",
-                "display_project": "vpittamp/nixos-config:main",
-                "surface_kind": "tmux-pane",
-                "pane_label": "1:codex-raw %1",
-                "updated_at": "2026-03-14T15:00:01Z",
-                "stage": "thinking",
-                "stage_rank": 50,
-                "stage_label": "Thinking",
-                "session_phase": "working",
-                "session_phase_label": "Working",
-                "turn_owner": "llm",
-                "turn_owner_label": "LLM",
-                "identity_phase": "canonical",
-                "native_session_id": "native-raw",
-                "session_id": "session-raw",
-                "context_fingerprint": "f-raw",
-                "activity_substate": "thinking",
-                "activity_substate_label": "Thinking",
-                "pending_tools": 0,
-                "process_running": True,
-                "terminal_context": {
-                    "window_id": 101,
-                    "terminal_anchor_id": "terminal-anchor",
-                    "execution_mode": "local",
-                    "connection_key": "local@thinkpad",
-                    "context_key": "vpittamp/nixos-config:main::host::thinkpad",
-                    "host_name": "thinkpad",
-                    "pane_active": True,
-                    "window_active": False,
-                    "tmux_session": "i3pm-vpittamp-nixos-config-main",
-                    "tmux_window": "1:codex-raw",
-                    "tmux_pane": "%1",
-                },
-            },
-        ]
-    }
-
-    def fake_load_json_file(path):
-        path_str = str(path)
-        if path_str.endswith("otel-ai-sessions.json"):
-            return local_payload
-        if path_str.endswith("remote-otel-sink.json"):
-            return {"sources": {}}
-        return {}
-
-    def fake_tmux_focus(_tmux_sessions):
-        return {
-            ("", "i3pm-vpittamp-nixos-config-main", "0:main", "%0"): {
-                "pane_active": False,
-                "window_active": False,
-            },
-            ("", "i3pm-vpittamp-nixos-config-main", "1:codex-raw", "%1"): {
-                "pane_active": True,
+    runtime_snapshot["sessions"] = [
+        make_runtime_session({
+            "session_key": "session-main",
+            "surface_kind": "tmux-pane",
+            "tmux_window": "0:main",
+            "tmux_pane": "%0",
+            "window_active": True,
+            "pane_active": False,
+            "terminal_context": {
+                "tmux_window": "0:main",
+                "tmux_pane": "%0",
                 "window_active": True,
+                "pane_active": False,
             },
-        }
-
-    monkeypatch.setattr(server, "_load_json_file", fake_load_json_file)
-    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
-    monkeypatch.setattr(server, "_load_live_tmux_focus_state", fake_tmux_focus)
+        }),
+        make_runtime_session({
+            "session_key": "session-raw",
+            "surface_kind": "tmux-pane",
+            "pane_label": "1:codex-raw %1",
+            "tmux_window": "1:codex-raw",
+            "tmux_pane": "%1",
+            "window_active": True,
+            "pane_active": True,
+            "terminal_context": {
+                "tmux_window": "1:codex-raw",
+                "tmux_pane": "%1",
+                "window_active": True,
+                "pane_active": True,
+            },
+        }),
+    ]
 
     sessions = server._load_session_items(runtime_snapshot)
 
@@ -1647,79 +1575,29 @@ def test_load_session_items_refreshes_current_host_tmux_focus_state(server, monk
 
 def test_load_session_items_reuses_cache_when_inputs_are_unchanged(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
-    local_payload = {
-        "schema_version": "11",
-        "sessions": [make_local_payload()["sessions"][0]],
-    }
-    load_calls: list[str] = []
-    normalize_calls: list[str] = []
-
-    def fake_load_json_file(path):
-        path_str = str(path)
-        load_calls.append(path_str)
-        if path_str.endswith("otel-ai-sessions.json"):
-            return local_payload
-        if path_str.endswith("remote-otel-sink.json"):
-            return {"sources": {}}
-        return {}
-
-    original_normalize = server._normalize_session_items
-
-    def fake_normalize_session_items(*args, **kwargs):
-        normalize_calls.append("normalize")
-        return original_normalize(*args, **kwargs)
-
-    monkeypatch.setattr(server, "_load_json_file", fake_load_json_file)
-    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
-    monkeypatch.setattr(server, "_load_live_tmux_focus_state", lambda _tmux_sessions: {})
-    monkeypatch.setattr(server, "_normalize_session_items", fake_normalize_session_items)
+    runtime_snapshot["sessions"] = [make_runtime_session()]
 
     first = server._load_session_items(runtime_snapshot)
     second = server._load_session_items(runtime_snapshot)
 
     assert len(first) == len(second) == 1
-    assert normalize_calls == ["normalize"]
-    assert len(load_calls) == 2
+    assert first == second
+    assert first is not second
+    assert first[0] is not runtime_snapshot["sessions"][0]
 
 
 def test_load_session_items_prefers_canonical_identity_on_same_tmux_surface(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
-    local_payload = {
-        "schema_version": "11",
-        "sessions": [
-            {
-                **make_local_payload()["sessions"][0],
-                "surface_kind": "tmux-pane",
-                "identity_phase": "provisional",
-                "canonicalization_blocker": "missing_native_session_id",
-                "native_session_id": "native-1",
-                "session_id": "codex:pid:12345",
-                "context_fingerprint": "",
-            },
-            {
-                **make_local_payload()["sessions"][0],
-                "surface_kind": "tmux-pane",
-                "identity_phase": "canonical",
-                "canonicalization_blocker": "",
-                "native_session_id": "native-1",
-                "session_id": "codex:native-1:abc123def456",
-                "context_fingerprint": "abc123def456",
-                "updated_at": "2026-03-14T15:00:02Z",
-            },
-        ],
-    }
-
-    def fake_load_json_file(path):
-        path_str = str(path)
-        if path_str.endswith("otel-ai-sessions.json"):
-            return local_payload
-        if path_str.endswith("remote-otel-sink.json"):
-            return {"sources": {}}
-        return {}
-
-    monkeypatch.setattr(server, "_load_json_file", fake_load_json_file)
-    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
-    monkeypatch.setattr(server, "_load_live_tmux_focus_state", lambda _tmux_sessions: {})
+    runtime_snapshot["sessions"] = [
+        make_runtime_session({
+            "surface_kind": "tmux-pane",
+            "identity_phase": "canonical",
+            "canonicalization_blocker": "",
+            "native_session_id": "native-1",
+            "session_id": "codex:native-1:abc123def456",
+            "context_fingerprint": "abc123def456",
+        }),
+    ]
 
     sessions = server._load_session_items(runtime_snapshot)
 

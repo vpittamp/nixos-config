@@ -47,6 +47,7 @@ COMMANDS:
   workspace        Daemon-owned workspace focus commands
   dashboard        Dashboard snapshot and watch commands
   health           Runtime health and convergence checks
+  perf             Runtime latency smoke checks
   display          Display layout snapshot/apply/cycle commands
   run              Smart application launcher with run-raise-hide (Feature 051)
   scratchpad       Project-scoped scratchpad terminal management
@@ -77,6 +78,7 @@ EXAMPLES:
   i3pm workspace focus 2              Focus a workspace
   i3pm dashboard snapshot             Show dashboard state
   i3pm health                         Validate local runtime convergence
+  i3pm perf smoke --json              Validate focus/dashboard latency budgets
   i3pm display snapshot               Show display layout state
   i3pm worktree list                   List all worktrees
   i3pm worktree suggest-name "improve launcher refresh"  Suggest a new branch name
@@ -220,6 +222,17 @@ async function main(): Promise<void> {
       {
         const { healthCommand } = await import("./commands/health.ts");
         const exitCode = await healthCommand(commandArgs, {
+          verbose: args.verbose,
+          debug: args.debug,
+        });
+        Deno.exit(exitCode);
+      }
+      break;
+
+    case "perf":
+      {
+        const { perfCommand } = await import("./commands/perf.ts");
+        const exitCode = await perfCommand(commandArgs, {
           verbose: args.verbose,
           debug: args.debug,
         });

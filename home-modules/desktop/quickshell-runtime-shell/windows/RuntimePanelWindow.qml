@@ -727,7 +727,7 @@ PanelWindow {
                                 colorsObject: colors
                                 session: modelData
                                 selected: root.sessionMatchesKey(modelData, root.selectedSessionKey)
-                                currentOverride: root.sessionMatchesKey(modelData, root.optimisticCurrentSessionKey)
+                                currentOverride: root.sessionIsCurrent(modelData)
                                 interactive: true
                                 compact: true
                                 showHostToken: false

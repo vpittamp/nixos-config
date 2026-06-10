@@ -92,6 +92,8 @@ HERDR_EVENT_SUBSCRIPTION_TYPES = (
     "pane.exited",
     "pane.agent_detected",
 )
+DASHBOARD_SCHEMA_VERSION = "i3pm.dashboard.v2"
+FOCUS_STATE_SCHEMA_VERSION = "i3pm.focus_state.v1"
 
 _DISCOVERED_WORKTREE_CACHE: Dict[str, Any] = {
     "file_path": "",
@@ -565,6 +567,7 @@ class IPCServer:
         self._snapshot_version = 0
         self._session_generation = 0
         self._display_generation = 0
+        self._focus_generation = 0
         self._worktree_cache: Optional[List[Dict[str, Any]]] = None
         self._worktree_cache_time: float = 0.0
         self._worktree_cache_ttl: float = 10.0
@@ -582,6 +585,7 @@ class IPCServer:
             "window_id": 0,
             "connection_key": "",
         }
+        self._focus_pending_intent_id: str = ""
         self._stopped_session_notifications: Dict[str, Dict[str, Any]] = {}
         self._user_input_session_notifications: Dict[str, Dict[str, Any]] = {}
         self._user_intent_epoch: int = 0
@@ -1013,6 +1017,9 @@ class IPCServer:
             "session.focus",
             "session.spawn_remote_attach",
             "window.focus",
+            "window.focus_fast",
+            "workspace.focus",
+            "workspace.focus_fast",
             "worktree.switch",
             "worktree.clear",
         }
@@ -1038,6 +1045,8 @@ class IPCServer:
                 result = await self._runtime_snapshot(params)
             elif method == "dashboard.snapshot":
                 result = await self._dashboard_snapshot(params)
+            elif method == "dashboard.validate":
+                result = await self._dashboard_validate(params)
             elif method == "herdr.snapshot":
                 result = await self._herdr_snapshot(params)
             elif method == "herdr.pane.focus":
@@ -4398,6 +4407,13 @@ class IPCServer:
         if normalized_type.startswith("ai_session"):
             self._session_generation += 1
         if (
+            normalized_type.startswith("focus")
+            or normalized_type.startswith("window")
+            or normalized_type.startswith("workspace")
+            or normalized_type.startswith("ai_session")
+        ):
+            self._focus_generation += 1
+        if (
             normalized_type.startswith("display")
             or normalized_type.startswith("output")
             or normalized_type.startswith("profile")
@@ -4418,6 +4434,7 @@ class IPCServer:
                 "snapshot_version": self._snapshot_version,
                 "session_generation": self._session_generation,
                 "display_generation": self._display_generation,
+                "focus_generation": self._focus_generation,
             }
         })
 
@@ -11378,11 +11395,13 @@ FORMAT JSONEachRow
             "window_id": int(window_id or 0),
             "connection_key": self._normalize_connection_key(str(connection_key or "").strip()),
         }
+        self._focus_pending_intent_id = ""
 
     def _clear_focus_overrides(self) -> None:
         """Clear both session and window focus overrides."""
         self._focus_session_override_key = ""
         self._focus_window_override = {"window_id": 0, "connection_key": ""}
+        self._focus_pending_intent_id = ""
 
     def _clear_session_focus_override(self) -> None:
         """Clear the session override while keeping any explicit window target."""
@@ -11396,6 +11415,19 @@ FORMAT JSONEachRow
     ) -> int:
         """Record a new top-level user intent so stale async work can be ignored."""
         self._user_intent_epoch += 1
+        intent_id = f"intent-{self._user_intent_epoch}"
+        if str(method or "").strip() in {
+            "herdr.pane.focus",
+            "herdr.remote.pane.focus",
+            "herdr.workspace.focus",
+            "herdr.tab.focus",
+            "session.focus",
+            "window.focus",
+            "window.focus_fast",
+            "workspace.focus",
+            "workspace.focus_fast",
+        }:
+            self._focus_pending_intent_id = intent_id
         payload = params or {}
         logger.info(
             "User intent epoch=%s method=%s project=%s variant=%s connection=%s session=%s app=%s",
@@ -11893,12 +11925,12 @@ FORMAT JSONEachRow
             sessions = [session for session in sessions_raw if isinstance(session, dict)]
         return runtime_snapshot, sessions, cleanup
 
-    async def _focus_state(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Return canonical focus state for acceptance checks and UI confirmation."""
-        runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
-            params or {},
-            close_windows=True,
-        )
+    def _build_focus_state_payload(
+        self,
+        runtime_snapshot: Dict[str, Any],
+        sessions: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Build the daemon-owned focus view model consumed by dashboard clients."""
         focused_window_id = int(runtime_snapshot.get("focused_window_id") or 0)
         current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
         active_session = next(
@@ -11912,10 +11944,40 @@ FORMAT JSONEachRow
         if not isinstance(active_session, dict):
             active_session = {}
         active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
+        current_workspace_name = ""
+        for output in runtime_snapshot.get("outputs", []) or []:
+            if not isinstance(output, dict):
+                continue
+            output_current = str(output.get("current_workspace") or "").strip()
+            for workspace in output.get("workspaces", []) or []:
+                if not isinstance(workspace, dict):
+                    continue
+                name = str(workspace.get("name") or "").strip()
+                if bool(workspace.get("focused", False)) or (output_current and name == output_current):
+                    current_workspace_name = name or output_current
+                    break
+            if current_workspace_name:
+                break
         return {
             "success": True,
+            "schema_version": FOCUS_STATE_SCHEMA_VERSION,
+            "generation": int(self._focus_generation or self._snapshot_version or 0),
+            "current_session_key": current_session_key,
             "current_ai_session_key": current_session_key,
+            "current_window_id": focused_window_id,
             "focused_window_id": focused_window_id,
+            "current_workspace_name": current_workspace_name,
+            "current_herdr_pane_id": str(
+                active_session.get("pane_id")
+                or active_session.get("tmux_pane")
+                or ""
+            ).strip(),
+            "current_herdr_host": str(
+                active_session.get("host_name")
+                or active_session.get("herdr_host")
+                or ""
+            ).strip(),
+            "pending_intent_id": str(self._focus_pending_intent_id or "").strip(),
             "active_context": active_context if isinstance(active_context, dict) else {},
             "active_session": {
                 "session_key": str(active_session.get("session_key") or "").strip(),
@@ -11938,6 +12000,14 @@ FORMAT JSONEachRow
                 "tmux_pane": str(active_session.get("tmux_pane") or "").strip(),
             },
         }
+
+    async def _focus_state(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Return canonical focus state for acceptance checks and UI confirmation."""
+        runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
+            params or {},
+            close_windows=True,
+        )
+        return self._build_focus_state_payload(runtime_snapshot, sessions)
 
     async def _session_list(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return daemon-owned Herdr AI session data."""
@@ -13568,6 +13638,89 @@ FORMAT JSONEachRow
             str(item.get("workspace_id") or ""),
         ))
 
+    def _validate_dashboard_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate dashboard focus invariants before the payload leaves the daemon."""
+        issues: List[str] = []
+        if str(payload.get("schema_version") or "").strip() != DASHBOARD_SCHEMA_VERSION:
+            issues.append("schema_version_mismatch")
+
+        focus_state = payload.get("focus_state")
+        if not isinstance(focus_state, dict):
+            focus_state = {}
+            issues.append("missing_focus_state")
+
+        current_key = str(
+            focus_state.get("current_session_key")
+            or focus_state.get("current_ai_session_key")
+            or payload.get("current_ai_session_key")
+            or ""
+        ).strip()
+        sessions = [
+            session for session in payload.get("active_ai_sessions", []) or []
+            if isinstance(session, dict)
+        ]
+        current_rows = [
+            session for session in sessions
+            if bool(session.get("is_current_window", False))
+        ]
+        matching_rows = [
+            session for session in sessions
+            if current_key and str(session.get("session_key") or "").strip() == current_key
+        ]
+        if current_key:
+            if len(matching_rows) != 1:
+                issues.append("current_session_key_not_unique")
+            if len(current_rows) != 1:
+                issues.append("current_session_row_not_unique")
+            elif str(current_rows[0].get("session_key") or "").strip() != current_key:
+                issues.append("current_session_row_mismatch")
+        elif current_rows:
+            issues.append("current_session_row_without_key")
+
+        window_rows: List[Dict[str, Any]] = []
+        for project in payload.get("projects", []) or []:
+            if not isinstance(project, dict):
+                continue
+            for window in project.get("windows", []) or []:
+                if isinstance(window, dict):
+                    window_rows.append(window)
+        focused_windows = [window for window in window_rows if bool(window.get("focused", False))]
+        if len(focused_windows) > 1:
+            issues.append("duplicate_focused_windows")
+        focus_window_id = int(focus_state.get("current_window_id") or focus_state.get("focused_window_id") or 0)
+        if focused_windows and focus_window_id > 0:
+            focused_row_id = int(focused_windows[0].get("id") or focused_windows[0].get("window_id") or 0)
+            if focused_row_id != focus_window_id:
+                issues.append("focused_window_row_mismatch")
+
+        focused_workspaces = []
+        for output in payload.get("outputs", []) or []:
+            if not isinstance(output, dict):
+                continue
+            for workspace in output.get("workspaces", []) or []:
+                if isinstance(workspace, dict) and bool(workspace.get("focused", False)):
+                    focused_workspaces.append(workspace)
+        if len(focused_workspaces) > 1:
+            issues.append("duplicate_focused_workspaces")
+
+        remote_focused = [
+            session for session in sessions
+            if str(session.get("source") or "").strip() == "herdr"
+            and bool(session.get("focused", False))
+            and not bool(session.get("is_current_host", False))
+            and str(session.get("session_key") or "").strip()
+        ]
+        if remote_focused and current_key:
+            remote_keys = {str(session.get("session_key") or "").strip() for session in remote_focused}
+            if current_key not in remote_keys:
+                issues.append("remote_herdr_focus_mismatch")
+
+        return {
+            "ok": not issues,
+            "issues": issues,
+            "schema_version": DASHBOARD_SCHEMA_VERSION,
+        }
+
     async def _dashboard_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return the daemon-owned dashboard payload consumed by QuickShell."""
         runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
@@ -13584,12 +13737,15 @@ FORMAT JSONEachRow
         worktrees = list(runtime_snapshot.get("dashboard_worktrees", []) or [])
         if not worktrees:
             worktrees = await self._build_dashboard_worktrees(runtime_snapshot)
-        return {
+        focus_state = self._build_focus_state_payload(runtime_snapshot, sessions)
+        payload = {
             "status": "ok",
+            "schema_version": DASHBOARD_SCHEMA_VERSION,
             "timestamp": int(time.time()),
             "snapshot_version": self._snapshot_version,
             "session_generation": self._session_generation,
             "display_generation": self._display_generation,
+            "focus_generation": self._focus_generation,
             "active_project": runtime_snapshot.get("active_project"),
             "active_context": runtime_snapshot.get("active_context", {}),
             "active_terminal": runtime_snapshot.get("active_terminal", {}),
@@ -13610,6 +13766,7 @@ FORMAT JSONEachRow
             "active_ai_sessions": sessions,
             "active_ai_sessions_mru": sessions,
             "current_ai_session_key": current_session_key,
+            "focus_state": focus_state,
             "herdr": {
                 "status": herdr_snapshot.get("status", {}),
                 "workspace_count": len(herdr_snapshot.get("workspaces", []) or []),
@@ -13642,6 +13799,30 @@ FORMAT JSONEachRow
                     if str(session.get("agent_status") or "").strip().lower() == "unknown"
                 ),
             },
+        }
+        dashboard_invariants = self._validate_dashboard_payload(payload)
+        payload["dashboard_invariants"] = dashboard_invariants
+        if not bool(dashboard_invariants.get("ok", False)):
+            raise RuntimeError(
+                "dashboard.snapshot invariant violation: "
+                + ",".join(str(issue) for issue in dashboard_invariants.get("issues", []) or [])
+            )
+        return payload
+
+    async def _dashboard_validate(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Return dashboard invariant status without requiring clients to know the rules."""
+        payload = await self._dashboard_snapshot(params or {})
+        invariants = payload.get("dashboard_invariants")
+        if not isinstance(invariants, dict):
+            invariants = self._validate_dashboard_payload(payload)
+        return {
+            "success": bool(invariants.get("ok", False)),
+            "schema_version": str(payload.get("schema_version") or ""),
+            "snapshot_version": int(payload.get("snapshot_version") or 0),
+            "session_generation": int(payload.get("session_generation") or 0),
+            "display_generation": int(payload.get("display_generation") or 0),
+            "focus_generation": int(payload.get("focus_generation") or 0),
+            "issues": list(invariants.get("issues", []) or []),
         }
 
     def _build_remote_terminal_helper_script(self, spec: Dict[str, Any]) -> Path:
@@ -21413,6 +21594,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 "fallback_method": "workspace.focus",
             }
 
+        self._focus_pending_intent_id = ""
         await self.notify_state_change("focus_changed")
         return {"success": True, "workspace": workspace_ref, "fast": True}
 
@@ -21434,6 +21616,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         if not self._sway_command_succeeded(result):
             return {"success": False, "workspace": workspace_ref, "error": f"command_failed:{command}"}
         await self._send_tick_barrier(f"i3pm:workspace-focus:{workspace_ref}")
+        self._focus_pending_intent_id = ""
 
         focused_workspace = await self._get_focused_workspace_name()
         if focused_workspace != workspace_ref:
@@ -21446,6 +21629,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                     "error": f"focus_verification_failed:{workspace_ref}",
                 }
 
+        await self.notify_state_change("focus_changed")
         return {"success": True, "workspace": workspace_ref}
 
     async def _get_focused_workspace_name(self) -> str:

@@ -41,9 +41,6 @@ ShellRoot {
     readonly property var launcherQueryDebounce: runtimeServices ? runtimeServices.launcherQueryDebounceRef : null
     readonly property var launcherSessionSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherSessionSwitcherOpenTimerRef : null
     readonly property var launcherWindowSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherWindowSwitcherOpenTimerRef : null
-    readonly property var optimisticSessionFocusTimer: runtimeServices ? runtimeServices.optimisticSessionFocusTimerRef : null
-    readonly property var optimisticWindowFocusTimer: runtimeServices ? runtimeServices.optimisticWindowFocusTimerRef : null
-    readonly property var optimisticWorkspaceFocusTimer: runtimeServices ? runtimeServices.optimisticWorkspaceFocusTimerRef : null
     readonly property var sessionPreviewDebounce: runtimeServices ? runtimeServices.sessionPreviewDebounceRef : null
     readonly property var sessionPreviewFollowTimer: runtimeServices ? runtimeServices.sessionPreviewFollowTimerRef : null
     readonly property var settingsFocusTimer: runtimeServices ? runtimeServices.settingsFocusTimerRef : null
@@ -68,6 +65,7 @@ ShellRoot {
             active_ai_sessions: [],
             active_ai_sessions_mru: [],
             current_ai_session_key: "",
+            focus_state: {},
             display_layout: {},
             outputs: [],
             projects: [],
@@ -214,9 +212,6 @@ ShellRoot {
     property var collapsedHerdrSpaceGroups: ({})
     property string lastFocusedSessionKey: ""
     property string selectedSessionKey: ""
-    property string optimisticCurrentSessionKey: ""
-    property int optimisticFocusedWindowId: 0
-    property string optimisticFocusedWorkspaceName: ""
     property var sessionClosePendingMap: ({})
     property string sessionCloseProcessTargetKey: ""
     property string sessionCloseProcessStdout: ""
@@ -861,12 +856,14 @@ ShellRoot {
         return Number(windowData && (windowData.id || windowData.window_id) || 0);
     }
 
+    function dashboardFocusState() {
+        return dashboard && typeof dashboard.focus_state === "object" ? dashboard.focus_state : {};
+    }
+
     function windowIsFocused(windowData) {
         const windowId = windowIdValue(windowData);
-        if (optimisticFocusedWindowId > 0) {
-            return windowId === optimisticFocusedWindowId;
-        }
-        return boolOrFalse(windowData && windowData.focused);
+        const currentWindowId = Number(dashboardFocusState().current_window_id || dashboardFocusState().focused_window_id || 0);
+        return windowId > 0 && currentWindowId > 0 && windowId === currentWindowId;
     }
 
     function windowIsCurrentTarget(windowData) {
@@ -2074,11 +2071,8 @@ ShellRoot {
 
     function workspaceIsFocused(workspace) {
         const workspaceName = workspaceNameValue(workspace);
-        const optimistic = stringOrEmpty(optimisticFocusedWorkspaceName);
-        if (optimistic) {
-            return workspaceName === optimistic;
-        }
-        return boolOrFalse(workspace && workspace.focused);
+        const currentWorkspace = stringOrEmpty(dashboardFocusState().current_workspace_name);
+        return workspaceName !== "" && currentWorkspace !== "" && workspaceName === currentWorkspace;
     }
 
     function workspaceChipFill(workspace, hovered) {
@@ -5406,11 +5400,11 @@ ShellRoot {
     }
 
     function currentSessionKey() {
-        const optimistic = stringOrEmpty(optimisticCurrentSessionKey);
-        if (optimistic) {
-            return optimistic;
-        }
-        return stringOrEmpty(dashboard.current_ai_session_key);
+        return stringOrEmpty(
+            dashboardFocusState().current_session_key
+            || dashboardFocusState().current_ai_session_key
+            || dashboard.current_ai_session_key
+        );
     }
 
     function sessionMatchesKey(session, key) {
@@ -6514,15 +6508,11 @@ ShellRoot {
     }
 
     function sessionIsCurrent(session) {
-        const optimistic = stringOrEmpty(optimisticCurrentSessionKey);
-        if (optimistic) {
-            return sessionMatchesKey(session, optimistic);
-        }
         const current = currentSessionKey();
         if (current) {
             return sessionMatchesKey(session, current);
         }
-        return boolOrFalse(session && session.focused) && boolOrFalse(session && session.is_current_host);
+        return false;
     }
 
     function sessionHasConflict(session) {
@@ -7568,14 +7558,7 @@ ShellRoot {
         }
 
         const target = sessionFocusTarget(sessionData || resolvedSessionKey);
-        const optimistic = sessionData ? sessionIdentityKey(sessionData) : resolvedSessionKey;
-        if (optimistic) {
-            optimisticCurrentSessionKey = optimistic;
-            selectedSessionKey = optimistic;
-            if (optimisticSessionFocusTimer) {
-                optimisticSessionFocusTimer.restart();
-            }
-        }
+        selectedSessionKey = sessionData ? sessionIdentityKey(sessionData) : resolvedSessionKey;
         runFocusTarget(target);
     }
 
@@ -7914,13 +7897,6 @@ ShellRoot {
             return;
         }
 
-        const windowId = windowIdValue(windowData);
-        if (windowId > 0 && stringOrEmpty(target.method) === "window.focus_fast") {
-            optimisticFocusedWindowId = windowId;
-            if (optimisticWindowFocusTimer) {
-                optimisticWindowFocusTimer.restart();
-            }
-        }
         runFocusTarget(target);
     }
 
@@ -8066,11 +8042,6 @@ ShellRoot {
         const workspaceName = workspaceNameValue(workspace);
         if (!workspaceName) {
             return;
-        }
-
-        optimisticFocusedWorkspaceName = workspaceName;
-        if (optimisticWorkspaceFocusTimer) {
-            optimisticWorkspaceFocusTimer.restart();
         }
 
         if (typeof workspace.activate === "function") {
@@ -8258,59 +8229,8 @@ ShellRoot {
             dashboard = JSON.parse(raw);
             syncDisplayApplyStateFromDashboard();
             pruneSessionClosePending();
-            const current = stringOrEmpty(dashboard.current_ai_session_key);
-            const optimistic = stringOrEmpty(optimisticCurrentSessionKey);
-            if (optimistic) {
-                const focusedSession = activeSessions().find(function(session) {
-                    return boolOrFalse(session && session.focused) && boolOrFalse(session && session.is_current_host);
-                });
-                const focusedKey = focusedSession ? sessionIdentityKey(focusedSession) : "";
-                if (current === optimistic || focusedKey === optimistic) {
-                    optimisticCurrentSessionKey = "";
-                    if (optimisticSessionFocusTimer) {
-                        optimisticSessionFocusTimer.stop();
-                    }
-                }
-            }
-            if (optimisticFocusedWindowId > 0) {
-                const focusedWindow = dashboardWindows().find(function(windowData) {
-                    return boolOrFalse(windowData && windowData.focused);
-                });
-                const focusedWindowId = windowIdValue(focusedWindow);
-                if (focusedWindowId === optimisticFocusedWindowId) {
-                    optimisticFocusedWindowId = 0;
-                    if (optimisticWindowFocusTimer) {
-                        optimisticWindowFocusTimer.stop();
-                    }
-                }
-            }
-            if (optimisticFocusedWorkspaceName) {
-                const outputs = arrayOrEmpty(dashboard.outputs);
-                let focusedWorkspaceName = "";
-                for (let i = 0; i < outputs.length; i += 1) {
-                    const output = outputs[i] || {};
-                    const currentWorkspace = stringOrEmpty(output.current_workspace);
-                    const workspaces = arrayOrEmpty(output.workspaces);
-                    for (let j = 0; j < workspaces.length; j += 1) {
-                        const workspace = workspaces[j] || {};
-                        const name = stringOrEmpty(workspace.name);
-                        if (boolOrFalse(workspace.focused) || (currentWorkspace && name === currentWorkspace)) {
-                            focusedWorkspaceName = name;
-                            break;
-                        }
-                    }
-                    if (focusedWorkspaceName) {
-                        break;
-                    }
-                }
-                if (focusedWorkspaceName === optimisticFocusedWorkspaceName) {
-                    optimisticFocusedWorkspaceName = "";
-                    if (optimisticWorkspaceFocusTimer) {
-                        optimisticWorkspaceFocusTimer.stop();
-                    }
-                }
-            }
-            if (current && !optimistic) {
+            const current = currentSessionKey();
+            if (current) {
                 selectedSessionKey = current;
             }
             if (launcherVisible && (launcherMode === "projects" || launcherMode === "sessions" || launcherMode === "windows")) {

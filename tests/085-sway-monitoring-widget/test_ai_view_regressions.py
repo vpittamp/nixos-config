@@ -53,16 +53,19 @@ def test_session_badge_symbol_and_attention_hooks_cover_blocked_herdr_status():
 
 
 def test_current_session_highlight_uses_single_dashboard_current_key():
-    """Current row highlighting should not independently promote stale raw Herdr focus."""
+    """Current row highlighting should use the daemon focus_state key only."""
     text = SHELL_QML.read_text()
     assert "function sessionIsCurrent(session)" in text
+    assert "function currentSessionKey()" in text
+    assert "dashboardFocusState().current_session_key" in text
     current_index = text.index("if (current) {\n            return sessionMatchesKey(session, current);\n        }")
-    focused_index = text.index("return boolOrFalse(session && session.focused) && boolOrFalse(session && session.is_current_host);")
-    assert current_index < focused_index
+    false_index = text.index("return false;", current_index)
+    assert current_index < false_index
+    assert "return boolOrFalse(session && session.focused) && boolOrFalse(session && session.is_current_host);" not in text
 
 
-def test_session_rows_use_optimistic_focus_for_immediate_highlight():
-    """Clicking a Herdr row should update row visuals before the next dashboard snapshot."""
+def test_session_rows_use_daemon_focus_state_for_current_highlight():
+    """Session rows should render current state from daemon focus_state, not local optimism."""
     text = SHELL_QML.read_text()
     panel_text = RUNTIME_PANEL_WINDOW_QML.read_text()
     launcher_text = LAUNCHER_WINDOW_QML.read_text()
@@ -71,11 +74,13 @@ def test_session_rows_use_optimistic_focus_for_immediate_highlight():
     assert "property bool currentOverride: false" in row_text
     assert "readonly property bool isCurrent: currentOverride || rootObject.sessionIsCurrent(session)" in row_text
     assert "function sessionMatchesKey(session, key)" in text
-    assert "return sessionMatchesKey(session, optimistic);" in text
+    assert "optimisticCurrentSessionKey" not in text
+    assert "optimisticCurrentSessionKey" not in panel_text
+    assert "optimisticCurrentSessionKey" not in launcher_text
     assert "selected: root.sessionMatchesKey(modelData, root.selectedSessionKey)" in panel_text
-    assert "currentOverride: root.sessionMatchesKey(modelData, root.optimisticCurrentSessionKey)" in panel_text
-    assert "currentOverride: root.sessionMatchesKey(entry, root.optimisticCurrentSessionKey)" in launcher_text
-    assert "if (current && !optimistic)" in text
+    assert "currentOverride: root.sessionIsCurrent(modelData)" in panel_text
+    assert "currentOverride: root.sessionIsCurrent(entry)" in launcher_text
+    assert "const current = currentSessionKey();" in text
 
 
 def test_launcher_session_search_indexes_herdr_fields():
@@ -106,21 +111,20 @@ def test_session_rows_focus_by_explicit_herdr_target():
     assert "runDaemonAction(normalizedTarget.method, normalizedTarget.params);" in text
 
 
-def test_local_window_and_workspace_clicks_use_fast_focus_with_optimistic_state():
-    """Click-driven local window/workspace focus should avoid fork-per-click daemon calls."""
+def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_state():
+    """Click-driven local window/workspace focus should use fast daemon calls and daemon focus_state."""
     text = SHELL_QML.read_text()
     runtime_panel_text = RUNTIME_PANEL_WINDOW_QML.read_text()
     bottom_bar_text = (REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "BottomBarWindow.qml").read_text()
     window_command_text = I3PM_WINDOW_TS.read_text()
 
-    assert "property int optimisticFocusedWindowId: 0" in text
-    assert "property string optimisticFocusedWorkspaceName: \"\"" in text
+    assert "optimisticFocusedWindowId" not in text
+    assert "optimisticFocusedWorkspaceName" not in text
+    assert "function dashboardFocusState()" in text
+    assert "dashboardFocusState().current_window_id" in text
+    assert "dashboardFocusState().current_workspace_name" in text
     assert "method: \"window.focus_fast\"" in text
     assert "runDaemonSocketCall(\"workspace.focus_fast\", {workspace: workspaceName})" in text
-    assert "if (optimisticFocusedWindowId > 0) {\n            return windowId === optimisticFocusedWindowId;\n        }" in text
-    assert "if (optimistic) {\n            return workspaceName === optimistic;\n        }" in text
-    assert "optimisticFocusedWindowId = windowId;" in text
-    assert "optimisticFocusedWorkspaceName = workspaceName;" in text
     assert "root.windowIsFocused(windowData)" in runtime_panel_text
     assert "root.workspaceIsFocused(workspace)" in bottom_bar_text
     assert "client.request(\"window.focus_fast\", params)" in window_command_text

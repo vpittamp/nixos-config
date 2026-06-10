@@ -22,9 +22,6 @@ Item {
     property alias launcherQueryDebounceRef: launcherQueryDebounce
     property alias launcherSessionSwitcherOpenTimerRef: launcherSessionSwitcherOpenTimer
     property alias launcherWindowSwitcherOpenTimerRef: launcherWindowSwitcherOpenTimer
-    property alias optimisticSessionFocusTimerRef: optimisticSessionFocusTimer
-    property alias optimisticWindowFocusTimerRef: optimisticWindowFocusTimer
-    property alias optimisticWorkspaceFocusTimerRef: optimisticWorkspaceFocusTimer
     property alias sessionPreviewDebounceRef: sessionPreviewDebounce
     property alias sessionPreviewFollowTimerRef: sessionPreviewFollowTimer
     property alias settingsFocusTimerRef: settingsFocusTimer
@@ -343,27 +340,6 @@ Item {
         interval: 0
         repeat: false
         onTriggered: shellRoot.finalizeLauncherWindowSwitcherOpen()
-    }
-
-    Timer {
-        id: optimisticSessionFocusTimer
-        interval: 2200
-        repeat: false
-        onTriggered: shellRoot.optimisticCurrentSessionKey = ""
-    }
-
-    Timer {
-        id: optimisticWindowFocusTimer
-        interval: 1600
-        repeat: false
-        onTriggered: shellRoot.optimisticFocusedWindowId = 0
-    }
-
-    Timer {
-        id: optimisticWorkspaceFocusTimer
-        interval: 1600
-        repeat: false
-        onTriggered: shellRoot.optimisticFocusedWorkspaceName = ""
     }
 
     Timer {

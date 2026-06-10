@@ -1,5 +1,6 @@
 import { parseArgs } from "@std/cli/parse-args";
 import { bold, cyan, dim, green, red, yellow } from "jsr:@std/fmt/colors";
+import { DaemonClient } from "../services/daemon-client.ts";
 import { getSocketPath } from "../utils/socket.ts";
 
 interface CommandOptions {
@@ -83,6 +84,17 @@ interface McpBrowserHealth {
   stale_candidates: McpBrowserCandidate[];
 }
 
+interface DashboardHealth {
+  healthy: boolean;
+  reachable: boolean;
+  schema_version: string;
+  snapshot_version: number;
+  session_generation: number;
+  display_generation: number;
+  focus_generation: number;
+  issues: string[];
+}
+
 interface HealthReport {
   timestamp: string;
   overall_status: "ok" | "warn" | "fail";
@@ -101,6 +113,7 @@ interface HealthReport {
     shell_qml: PathCheck;
     service_unit: PathCheck;
   };
+  dashboard: DashboardHealth | null;
   herdr: HerdrHealth | null;
   herdr_remotes: HerdrRemoteHealth[];
   mcp_browser_runtime: McpBrowserHealth | null;
@@ -547,6 +560,52 @@ function formatUnitStatus(unit: UnitStatus): string {
   return `${unit.name} ${state} ${dim(`${unit.sub_state || "unknown"} / ${unit.result || "n/a"}`)}`;
 }
 
+async function loadDashboardHealth(): Promise<DashboardHealth | null> {
+  const client = new DaemonClient();
+  try {
+    const result = await client.request<{
+      success?: boolean;
+      schema_version?: string;
+      snapshot_version?: number;
+      session_generation?: number;
+      display_generation?: number;
+      focus_generation?: number;
+      issues?: unknown[];
+    }>("dashboard.validate", {});
+    const issues = Array.isArray(result.issues)
+      ? result.issues.map((issue) => String(issue)).filter(Boolean)
+      : [];
+    const schemaVersion = String(result.schema_version || "");
+    if (schemaVersion !== "i3pm.dashboard.v2") {
+      issues.push(`schema_version:${schemaVersion || "missing"}`);
+    }
+    return {
+      healthy: result.success === true && issues.length === 0,
+      reachable: true,
+      schema_version: schemaVersion,
+      snapshot_version: Number(result.snapshot_version || 0),
+      session_generation: Number(result.session_generation || 0),
+      display_generation: Number(result.display_generation || 0),
+      focus_generation: Number(result.focus_generation || 0),
+      issues,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      healthy: false,
+      reachable: false,
+      schema_version: "",
+      snapshot_version: 0,
+      session_generation: 0,
+      display_generation: 0,
+      focus_generation: 0,
+      issues: [message || "dashboard.validate failed"],
+    };
+  } finally {
+    client.disconnect();
+  }
+}
+
 async function collectHealthReport(): Promise<HealthReport> {
   const coreUnits = await Promise.all([
     loadUnitStatus("i3-project-daemon.service", "user"),
@@ -583,6 +642,7 @@ async function collectHealthReport(): Promise<HealthReport> {
   const shellServiceCheck = makePathCheck(currentShellService, expectedShellService);
   const daemonSocketPath = getSocketPath();
   const daemonSocketExists = await Deno.stat(daemonSocketPath).then(() => true).catch(() => false);
+  const dashboard = daemonSocketExists ? await loadDashboardHealth() : null;
   const herdr = await loadHerdrHealth();
   const herdrRemotes = await loadHerdrRemoteHealth();
   const mcpBrowserRuntime = await loadMcpBrowserHealth();
@@ -600,6 +660,11 @@ async function collectHealthReport(): Promise<HealthReport> {
   }
   if (!daemonSocketExists) {
     coreIssues.push(`daemon socket missing at ${daemonSocketPath}`);
+  }
+  if (!dashboard) {
+    coreIssues.push("dashboard health unavailable");
+  } else if (!dashboard.healthy) {
+    coreIssues.push(...dashboard.issues.map((issue) => `dashboard: ${issue}`));
   }
   if (currentShellQml && expectedShellQml && !shellQmlCheck.matches) {
     coreIssues.push("quickshell QML path does not match current Home Manager generation");
@@ -650,6 +715,7 @@ async function collectHealthReport(): Promise<HealthReport> {
       shell_qml: shellQmlCheck,
       service_unit: shellServiceCheck,
     },
+    dashboard,
     herdr,
     herdr_remotes: herdrRemotes,
     mcp_browser_runtime: mcpBrowserRuntime,
@@ -687,6 +753,19 @@ function printReport(report: HealthReport): void {
       report.quickshell.service_unit.matches ? green("matched") : red("mismatch")
     } ${dim(report.quickshell.service_unit.current_path || "(missing)")}`,
   );
+  if (report.dashboard) {
+    console.log(
+      `  dashboard ${
+        report.dashboard.healthy ? green("matched") : red("invalid")
+      } ${
+        dim(
+          `${report.dashboard.schema_version || "missing"} snapshot ${report.dashboard.snapshot_version} focus ${report.dashboard.focus_generation}`,
+        )
+      }`,
+    );
+  } else {
+    console.log(`  dashboard ${red("unavailable")}`);
+  }
   console.log("");
 
   if (report.herdr) {
