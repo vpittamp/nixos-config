@@ -8244,24 +8244,20 @@ class IPCServer:
             app_id_override=str(params.get("app_id_override") or "").strip(),
         )
         scoped_terminal_mode = str(getattr(app, "scoped_terminal_mode", "") or "").strip()
-        terminal_role = ""
-        tmux_session_name = ""
-        scoped_terminal_command: List[str] = []
-        if scoped_launch and bool(app.terminal) and app.name != "terminal":
-            scoped_terminal_command = self._extract_scoped_terminal_command(
-                app_name=app.name,
-                prepared_args=prepared_args,
-            )
-        if bool(app.terminal) and scoped_launch and project_name and context_key:
-            if scoped_terminal_mode == "dedicated_scoped_window":
-                terminal_role = f"project-app:{app.name}"
-            else:
-                terminal_role = "project-main"
-                tmux_session_name = self._build_context_tmux_session_name(
-                    project_name=project_name,
-                    context_key=context_key,
-                    terminal_role=terminal_role,
-                )
+        terminal_identity = self.launch_service.build_terminal_identity(
+            app=app,
+            scoped_launch=scoped_launch,
+            project_name=project_name,
+            context_key=context_key,
+            scoped_terminal_mode=scoped_terminal_mode,
+            prepared_args=prepared_args,
+        )
+        terminal_role = str(terminal_identity.get("terminal_role") or "")
+        tmux_session_name = str(terminal_identity.get("tmux_session_name") or "")
+        scoped_terminal_command = [
+            str(arg)
+            for arg in terminal_identity.get("scoped_terminal_command", [])
+        ]
         environment = self._build_launch_env(
             app_name=app.name,
             scope=app.scope,

@@ -314,6 +314,42 @@ def test_build_terminal_launch_config_shapes_dedicated_scoped_window(tmp_path: P
     }
 
 
+def test_build_terminal_identity_shapes_project_terminal(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+
+    result = service.build_terminal_identity(
+        app=SimpleNamespace(name="terminal", terminal=True),
+        scoped_launch=True,
+        project_name="vpittamp/nixos-config:main",
+        context_key="ctx",
+        scoped_terminal_mode="reuse_project_terminal",
+        prepared_args=["-e", "bash"],
+    )
+
+    assert result["terminal_role"] == "project-main"
+    assert str(result["tmux_session_name"]).startswith("i3pm-vpittamp-nixos-config-ma-")
+    assert result["scoped_terminal_command"] == []
+
+
+def test_build_terminal_identity_shapes_dedicated_scoped_app(tmp_path: Path) -> None:
+    service = make_service(tmp_path)
+
+    result = service.build_terminal_identity(
+        app=SimpleNamespace(name="yazi", terminal=True),
+        scoped_launch=True,
+        project_name="vpittamp/nixos-config:main",
+        context_key="ctx",
+        scoped_terminal_mode="dedicated_scoped_window",
+        prepared_args=["-e", "yazi", "/repo"],
+    )
+
+    assert result == {
+        "terminal_role": "project-app:yazi",
+        "tmux_session_name": "",
+        "scoped_terminal_command": ["yazi", "/repo"],
+    }
+
+
 def test_launch_parameter_substitution_and_scoped_command_validation(tmp_path: Path) -> None:
     service = make_service(tmp_path)
 

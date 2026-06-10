@@ -745,6 +745,46 @@ class LaunchService:
             "tmux_session_name": normalized_tmux_session_name,
         }
 
+    def build_terminal_identity(
+        self,
+        *,
+        app: Any,
+        scoped_launch: bool,
+        project_name: str,
+        context_key: str,
+        scoped_terminal_mode: str,
+        prepared_args: List[str],
+    ) -> Dict[str, Any]:
+        """Build terminal role, tmux session, and scoped command metadata."""
+        app_name = str(getattr(app, "name", "") or "").strip()
+        app_is_terminal = bool(getattr(app, "terminal", False))
+        terminal_role = ""
+        tmux_session_name = ""
+        scoped_terminal_command: List[str] = []
+
+        if scoped_launch and app_is_terminal and app_name != "terminal":
+            scoped_terminal_command = self.extract_scoped_terminal_command(
+                app_name=app_name,
+                prepared_args=prepared_args,
+            )
+
+        if app_is_terminal and scoped_launch and project_name and context_key:
+            if scoped_terminal_mode == "dedicated_scoped_window":
+                terminal_role = f"project-app:{app_name}"
+            else:
+                terminal_role = "project-main"
+                tmux_session_name = self.build_context_tmux_session_name(
+                    project_name=project_name,
+                    context_key=context_key,
+                    terminal_role=terminal_role,
+                )
+
+        return {
+            "terminal_role": terminal_role,
+            "tmux_session_name": tmux_session_name,
+            "scoped_terminal_command": scoped_terminal_command,
+        }
+
     def write_remote_spec(
         self,
         *,
