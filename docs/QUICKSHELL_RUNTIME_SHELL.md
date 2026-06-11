@@ -8,6 +8,7 @@ This document describes the current QuickShell-based runtime shell that replaces
 
 For the AI session tracking and lifecycle model itself, see:
 - `docs/AI_SESSION_SYSTEM.md`
+- `docs/I3PM_HERDR_MIGRATION.md`
 
 The goals of the QuickShell runtime shell are:
 - render one native top bar and one native bottom bar per active monitor
@@ -121,12 +122,12 @@ Important declarative note:
 Current shell process model:
 - QuickShell runs one long-lived `Process`
 - that process executes:
-  - `i3pm dashboard watch --interval 5000`
+  - `i3pm dashboard watch`
 
 Current CLI/daemon model:
 - `i3pm dashboard watch` performs an initial snapshot fetch
 - then subscribes to typed daemon dashboard events such as `focus.changed`, `window.changed`, and `dashboard.invalidated`
-- then applies delta payloads, refetching only after missed generations, invalidation, or parse failure
+- then applies delta payloads, refetching only after missed generations, invalidation, parse failure, or watcher reconnect
 - the dashboard payload includes a shell-oriented `worktrees` list with:
   - `qualified_name`
   - `remote_available`
@@ -138,7 +139,7 @@ Current CLI/daemon model:
 
 This replaced the earlier fixed polling loop:
 - old behavior: `i3pm dashboard watch --interval 750`
-- new behavior: event-driven invalidation with 5s fallback heartbeat
+- new behavior: initial snapshot plus typed daemon delta events
 
 ### 4. Display flow
 
@@ -221,7 +222,7 @@ The daemon now sources AI session state from Herdr:
 - `herdr workspace list`
 - `herdr tab list`
 
-QuickShell gets Herdr rows through `dashboard.snapshot.active_ai_sessions`; the daemon owns the row content and current focus state.
+QuickShell gets Herdr rows through `dashboard.snapshot.active_ai_sessions`; the daemon owns the row content and `focus_state`.
 
 ### Herdr Pane Model
 
@@ -259,6 +260,7 @@ The daemon also now tracks:
 - `snapshot_version`
 - `session_generation`
 - `display_generation`
+- `focus_generation`
 
 These are included in both invalidation notifications and dashboard payloads.
 
