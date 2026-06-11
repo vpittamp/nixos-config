@@ -611,7 +611,12 @@ def test_i3pm_herdr_proxy_exposes_snapshot_focus_and_event_stream():
     assert '"herdr.proxy.snapshot"' in text
     assert '"herdr.proxy.pane.focus"' in text
     assert "client.subscribeToStateChanges()" in text
+    assert "buildHerdrProxyEvent(event)" in text
     assert 'schema_version: "i3pm.herdr_proxy.event.v1"' in text
+    assert '"active_ai_sessions"' in text
+    assert '"focus_state"' in text
+    assert '"herdr"' in text
+    assert "payload," in text
     assert 'eventType === "herdr.changed"' in text
     assert 'changedKeys.includes("herdr")' in text
     assert "i3pm herdr-proxy events --jsonl" in main_cli_text
