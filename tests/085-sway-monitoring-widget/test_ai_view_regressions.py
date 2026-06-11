@@ -16,6 +16,7 @@ WORKTREE_APP_SERVICE_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-
 WORKTREE_APP_SHELL_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-worktree-app" / "shell.qml"
 WORKTREE_APP_DEFAULT_NIX = REPO_ROOT / "home-modules" / "desktop" / "quickshell-worktree-app" / "default.nix"
 HERDR_NIX = REPO_ROOT / "home-modules" / "terminal" / "herdr.nix"
+TMUX_NIX = REPO_ROOT / "home-modules" / "terminal" / "tmux.nix"
 CLAUDE_CODE_NIX = REPO_ROOT / "home-modules" / "ai-assistants" / "claude-code.nix"
 CODEX_NIX = REPO_ROOT / "home-modules" / "ai-assistants" / "codex.nix"
 COPILOT_CLI_NIX = REPO_ROOT / "home-modules" / "ai-assistants" / "copilot-cli.nix"
@@ -622,6 +623,13 @@ def test_launcher_preview_for_herdr_sessions_is_focus_only():
     assert "legacy_tmux_preview_disabled" not in session_command_text
     assert '"local_stream"' not in session_command_text
     assert '"ssh_stream"' not in session_command_text
+
+
+def test_tmux_does_not_expose_retired_ai_session_overview_popup():
+    """Tmux should not expose the retired AI-session pane mirror UI."""
+    text = TMUX_NIX.read_text()
+    assert "ai-tmux-view-action" not in text
+    assert "Active AI sessions overview popup" not in text
 
 
 def test_herdr_space_groups_collapse_state_defaults_expanded():
