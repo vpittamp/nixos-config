@@ -4,21 +4,28 @@ let
   gitSigningPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIYPmr7VOVazmcseVIUsqiXIcPBwzownP4ejkOuNg+o7";
 in
 {
-  # Git credential OAuth - disabled in favor of 1Password integration
+  # GitHub/GitLab transport should not depend on an unlocked 1Password SSH
+  # agent. Commit signing can still use 1Password explicitly with `git commit -S`.
   programs.git-credential-oauth = {
-    enable = false;  # We use 1Password git-credential-op instead
+    enable = false;
   };
+
+  home.packages = [
+    pkgs.gh
+    pkgs.git-credential-oauth
+  ];
 
   # Git configuration
   # Note: Using new `settings` option format (home-manager 24.11+)
   programs.git = {
     enable = true;
 
-    # SSH signing configuration with 1Password
-    # All commits will be signed with SSH key from 1Password
+    # 1Password-backed SSH signing is intentionally opt-in. Requiring it for
+    # every commit makes non-interactive repo maintenance fail when 1Password is
+    # locked or unable to display an authorization prompt.
     signing = {
       key = gitSigningPublicKey;
-      signByDefault = true;  # Sign all commits by default for verification
+      signByDefault = false;
     };
 
     # New settings format (replaces userName, userEmail, aliases, extraConfig)
@@ -39,6 +46,7 @@ in
         lg = "log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit";
         last = "log -1 HEAD";
         unstage = "reset HEAD --";
+        cs = "commit -S";
       };
 
       init.defaultBranch = "main";
@@ -49,6 +57,26 @@ in
       color.ui = true;
       push.autoSetupRemote = true;
       pull.rebase = false;
+      commit.gpgsign = false;
+      tag.gpgsign = false;
+
+      credential = {
+        "https://github.com" = {
+          helper = "!gh auth git-credential";
+        };
+        "https://gitlab.com" = {
+          helper = "oauth";
+        };
+      };
+
+      url = {
+        "https://github.com/" = {
+          insteadOf = [
+            "git@github.com:"
+            "ssh://git@github.com/"
+          ];
+        };
+      };
 
       # SSH signing configuration
       gpg = {
@@ -59,12 +87,8 @@ in
         };
       };
 
-      # Credential helpers - disabled for SSH-only authentication
-      # We use SSH keys via 1Password SSH agent instead of HTTPS credential helpers
-      # If you need HTTPS authentication, consider using git-credential-oauth
-      # credential = {
-      #   helper = "${pkgs.git-credential-oauth}/bin/git-credential-oauth";
-      # };
+      # SSH signing configuration. This is only used when a commit/tag is
+      # explicitly signed with -S.
     };
   };
   

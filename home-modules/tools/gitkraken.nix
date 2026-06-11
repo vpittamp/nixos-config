@@ -135,16 +135,5 @@ lib.mkIf pkgs.stdenv.hostPlatform.isx86_64 {
     ];
   };
 
-  # Configure git-credential-oauth for the main git config as well
-  # This ensures GitHub OAuth works both in GitKraken and CLI git
-  programs.git.settings = {
-    credential = {
-      "https://github.com" = {
-        helper = "oauth";
-      };
-      "https://gitlab.com" = {
-        helper = "oauth";
-      };
-    };
-  };
+  # CLI Git credential transport is configured centrally in git.nix.
 }
