@@ -73,10 +73,7 @@ class DashboardService:
 
     async def snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return the daemon-owned dashboard payload consumed by QuickShell."""
-        runtime_snapshot, sessions, _cleanup = await self._runtime_loader(
-            params or {},
-            close_windows=True,
-        )
+        runtime_snapshot, sessions, _cleanup = await self._runtime_loader(params or {})
         display_snapshot = await self._display_snapshot()
         herdr_snapshot = runtime_snapshot.get("herdr", {})
         if not isinstance(herdr_snapshot, dict):

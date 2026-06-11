@@ -27,6 +27,9 @@ I3PM_MAIN_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "main.ts"
 I3PM_DAEMON_CLIENT_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "services" / "daemon-client.ts"
 IPC_SERVER_PY = REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon" / "ipc_server.py"
 DAEMON_SERVICES_DIR = REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon" / "services"
+HERDR_SERVICE_PY = DAEMON_SERVICES_DIR / "herdr_service.py"
+LAUNCH_SERVICE_PY = DAEMON_SERVICES_DIR / "launch_service.py"
+SESSION_RUNTIME_SERVICE_PY = DAEMON_SERVICES_DIR / "session_runtime_service.py"
 I3PM_MONITORING_DATA_PY = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "monitoring_data.py"
 I3PM_CLI_README = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "README.md"
 AI_SESSION_SYSTEM_DOC = REPO_ROOT / "docs" / "AI_SESSION_SYSTEM.md"
@@ -200,6 +203,46 @@ def test_session_rows_focus_by_explicit_herdr_target():
     assert "Socket {" in services_text
     assert "daemonActionSocket.write(JSON.stringify(request) + \"\\n\");" in services_text
     assert "runDaemonAction(normalizedTarget.method, normalizedTarget.params);" in text
+
+
+def test_retired_session_bridge_cleanup_surface_stays_removed():
+    """Herdr sessions should not revive the old tmux bridge cleanup/doctor path."""
+    daemon_text = IPC_SERVER_PY.read_text()
+    herdr_service_text = HERDR_SERVICE_PY.read_text()
+    launch_service_text = LAUNCH_SERVICE_PY.read_text()
+    session_cli_text = I3PM_SESSION_TS.read_text()
+
+    assert not SESSION_RUNTIME_SERVICE_PY.exists()
+    for retired in [
+        "SessionRuntimeService",
+        "session_runtime_service",
+        '"session.cleanup"',
+        '"session.doctor"',
+        "_session_cleanup",
+        "_session_doctor",
+        "_reconcile_session_runtime_state",
+        "_load_session_items",
+    ]:
+        assert retired not in daemon_text
+
+    for retired in [
+        "stale_remote_bridge_windows",
+        "bridge_diagnostics",
+        "remote_bridge_window_mismatch_reason",
+    ]:
+        assert retired not in herdr_service_text
+
+    for retired in [
+        "build_remote_session_attach_spec",
+        "prepare_remote_session_attach_spec",
+        "remote_session_terminal_role",
+    ]:
+        assert retired not in launch_service_text
+
+    assert "session.cleanup" not in session_cli_text
+    assert "session.doctor" not in session_cli_text
+    assert "cleanup" not in session_cli_text
+    assert "doctor" not in session_cli_text
 
 
 def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_state():

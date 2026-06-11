@@ -7,11 +7,9 @@ interface CommandOptions {
 }
 
 function showHelp(): void {
-  console.log(`i3pm session <list|cleanup|doctor> [--json]
+  console.log(`i3pm session <list> [--json]
 
-  i3pm session list [--json]
-  i3pm session cleanup [--json]
-  i3pm session doctor [--json]`);
+  i3pm session list [--json]`);
 }
 
 export async function sessionCommand(args: string[], _flags: CommandOptions): Promise<number> {
@@ -29,16 +27,6 @@ export async function sessionCommand(args: string[], _flags: CommandOptions): Pr
   try {
     if (subcommand === "list") {
       const result = await client.request("session.list", {});
-      console.log(parsed.json ? JSON.stringify(result, null, 2) : JSON.stringify(result, null, 2));
-      return 0;
-    }
-    if (subcommand === "cleanup") {
-      const result = await client.request("session.cleanup", {});
-      console.log(parsed.json ? JSON.stringify(result, null, 2) : JSON.stringify(result, null, 2));
-      return 0;
-    }
-    if (subcommand === "doctor") {
-      const result = await client.request("session.doctor", {});
       console.log(parsed.json ? JSON.stringify(result, null, 2) : JSON.stringify(result, null, 2));
       return 0;
     }

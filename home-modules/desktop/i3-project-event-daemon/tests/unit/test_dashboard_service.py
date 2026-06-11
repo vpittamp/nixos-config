@@ -71,8 +71,7 @@ def _runtime_snapshot() -> dict:
 def _service(*, invalidations: list[str] | None = None) -> DashboardService:
     invalidations = invalidations if invalidations is not None else []
 
-    async def runtime_loader(params, *, close_windows: bool):
-        assert close_windows is True
+    async def runtime_loader(params):
         assert isinstance(params, dict)
         return _runtime_snapshot(), [], {}
 

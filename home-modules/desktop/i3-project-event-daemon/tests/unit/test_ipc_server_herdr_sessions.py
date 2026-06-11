@@ -579,8 +579,7 @@ async def test_dashboard_snapshot_includes_herdr_spaces(server, monkeypatch):
         "dashboard_worktrees": [{"kind": "global"}],
     }
 
-    async def fake_runtime(_params, close_windows=True):
-        assert close_windows is True
+    async def fake_runtime(_params):
         return runtime_snapshot, sessions, {}
 
     monkeypatch.setattr(server, "_load_reconciled_session_runtime", fake_runtime)

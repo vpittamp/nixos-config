@@ -360,42 +360,6 @@ async def test_prepare_launch_rejects_non_terminal_ssh(server_ssh):
     assert payload["data"]["ssh_policy"] == "terminal_only"
 
 
-@pytest.mark.asyncio
-async def test_build_remote_session_attach_spec_overrides_bridge_context_env(server_ssh):
-    session = {
-        "session_key": "codex|session-remote",
-        "surface_key": "surface-remote",
-        "project_name": QUALIFIED_NAME,
-        "tmux_session": "i3pm-vpittamp-nixos-config-ma-6e1abb85",
-        "tmux_window": "0:main",
-        "tmux_pane": "%0",
-        "terminal_context": {
-            "tmux_socket": "/run/user/1000/tmux-1000/default",
-            "tmux_server_key": "/run/user/1000/tmux-1000/default",
-            "tmux_session": "i3pm-vpittamp-nixos-config-ma-6e1abb85",
-            "tmux_window": "0:main",
-            "tmux_pane": "%0",
-        },
-    }
-    attach_profile = {
-        "connection_key": "vpittamp@thinkpad:22",
-        "context_key": f"{QUALIFIED_NAME}::ssh::vpittamp@thinkpad:22",
-        "remote_user": "vpittamp",
-        "remote_host": "thinkpad",
-        "remote_port": 22,
-        "remote_dir": "",
-    }
-
-    spec = await server_ssh._build_remote_session_attach_spec(session, attach_profile=attach_profile)
-
-    assert spec["connection_key"] == "local@thinkpad"
-    assert spec["context_key"] == f"{QUALIFIED_NAME}::host::thinkpad"
-    assert spec["environment"]["I3PM_CONNECTION_KEY"] == "vpittamp@thinkpad:22"
-    assert spec["environment"]["I3PM_CONTEXT_KEY"] == f"{QUALIFIED_NAME}::host::thinkpad"
-    assert spec["environment"]["I3PM_REMOTE_HOST"] == "thinkpad"
-    assert spec["environment"]["I3PM_REMOTE_USER"] == "vpittamp"
-
-
 def test_build_remote_helper_script_for_scoped_terminal_command(server_ssh):
     spec = {
         "execution_mode": "ssh",

@@ -62,7 +62,6 @@ from .services.display_service import DisplayService
 from .services.focus_service import FocusService
 from .services.herdr_service import HerdrService
 from .services.launch_service import LaunchService
-from .services.session_runtime_service import SessionRuntimeService
 from .services.worktree_profile_service import WorktreeProfileService
 from .models.window_command import CommandBatch
 
@@ -574,11 +573,6 @@ class IPCServer:
             ),
             launch_registry=lambda: self.state_manager.launch_registry,
             require_registry_app=lambda app_name: self._require_registry_app(app_name),
-            resolve_remote_attach_profile=lambda session: self._resolve_remote_attach_profile(session),
-            build_remote_attach_runtime_context=lambda attach_profile: self._build_remote_attach_runtime_context(
-                attach_profile
-            ),
-            remote_session_terminal_role=lambda context_key: self._remote_session_terminal_role(context_key),
             find_live_window=lambda window_id: self._find_live_sway_window(window_id),
             remove_window=lambda window_id: self.state_manager.remove_window(window_id),
             invalidate_window_tree_cache=lambda: self.invalidate_window_tree_cache(),
@@ -590,16 +584,6 @@ class IPCServer:
             parse_remote_target=self._parse_remote_target,
             normalize_connection_key=self._normalize_connection_key,
             local_host=lambda: self._local_host_alias(),
-        )
-        self.session_runtime_service = SessionRuntimeService(
-            stale_remote_bridge_windows=lambda runtime_snapshot, sessions: self.herdr_service.stale_remote_bridge_windows(
-                runtime_snapshot,
-                sessions,
-            ),
-            prune_invalid_overrides=lambda **kwargs: self.focus_service.prune_invalid_overrides(**kwargs),
-            close_managed_window=lambda window_id: self._close_managed_window(window_id),
-            remove_window=lambda window_id: self._remove_window_from_state(window_id),
-            invalidate_window_tree_cache=self.invalidate_window_tree_cache,
         )
         self.dashboard_service = DashboardService(
             runtime_loader=lambda *args, **kwargs: self._load_reconciled_session_runtime(*args, **kwargs),
@@ -1126,10 +1110,6 @@ class IPCServer:
                 result = await self._session_list(params)
             elif method == "focus.state":
                 result = await self._focus_state(params)
-            elif method == "session.cleanup":
-                result = await self._session_cleanup(params)
-            elif method == "session.doctor":
-                result = await self._session_doctor(params)
             elif method == "session.exit":
                 result = await self._session_exit(params)
             elif method == "assistant.desktop.snapshot":
@@ -6766,48 +6746,22 @@ class IPCServer:
             },
         }
 
-    @staticmethod
-    def _stale_bridge_close_reasons() -> set[str]:
-        """Return stale bridge reasons that are safe to close automatically."""
-        return set(SessionRuntimeService.stale_bridge_close_reasons())
-
-    def _load_session_items(
-        self,
-        runtime_snapshot: Dict[str, Any],
-    ) -> List[Dict[str, Any]]:
-        """Return Herdr-native AI session items for an existing runtime snapshot."""
-        return self.session_runtime_service.load_session_items(runtime_snapshot)
-
     async def _load_reconciled_session_runtime(
         self,
         params: Optional[Dict[str, Any]] = None,
-        *,
-        close_windows: bool,
     ) -> Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
-        """Load runtime + sessions and reconcile stale remote bridge state."""
+        """Load runtime + Herdr-native session rows."""
         runtime_snapshot = await self._runtime_snapshot(params or {})
         sessions_raw = runtime_snapshot.get("sessions", [])
         if not isinstance(sessions_raw, list):
             raise RuntimeError("runtime.snapshot contract violation: sessions must be a list")
         sessions = [session for session in sessions_raw if isinstance(session, dict)]
-        cleanup = await self._reconcile_session_runtime_state(
-            runtime_snapshot,
-            sessions,
-            close_windows=close_windows,
-        )
-        if int(cleanup.get("cleaned_window_count") or 0) > 0:
-            runtime_snapshot = await self._runtime_snapshot(params or {})
-            sessions_raw = runtime_snapshot.get("sessions", [])
-            if not isinstance(sessions_raw, list):
-                raise RuntimeError("runtime.snapshot contract violation: sessions must be a list")
-            sessions = [session for session in sessions_raw if isinstance(session, dict)]
-        return runtime_snapshot, sessions, cleanup
+        return runtime_snapshot, sessions, {}
 
     async def _focus_state(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return canonical focus state for acceptance checks and UI confirmation."""
         runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
             params or {},
-            close_windows=True,
         )
         return self.focus_service.build_focus_state_payload(
             runtime_snapshot,
@@ -6819,7 +6773,6 @@ class IPCServer:
         """Return daemon-owned Herdr AI session data."""
         runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
             params or {},
-            close_windows=True,
         )
         focused_window_id = int(runtime_snapshot.get("focused_window_id") or 0)
         current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
@@ -11082,179 +11035,6 @@ class IPCServer:
 
         normalized_connection = self._normalize_connection_key(connection_key)
         return normalized_connection == self._normalize_connection_key(f"local@{local_host}")
-
-    def _remote_session_terminal_role(self, context_key: str) -> str:
-        """Return the deterministic local terminal role for a remote AI session bridge."""
-        raw = str(context_key or "").strip() or "remote-session"
-        digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
-        return f"remote-session:{digest}"
-
-    async def _close_managed_window(self, window_id: int) -> bool:
-        """Close a managed Sway window by container id."""
-        target = int(window_id or 0)
-        if target <= 0:
-            return False
-        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
-            return False
-        result = await self._sway_ipc_command(f"[con_id={target}] kill")
-        return any(bool(item.get("success", False)) for item in (result or []))
-
-    async def _remove_window_from_state(self, window_id: int) -> None:
-        """Remove a window from daemon state when the state manager supports it."""
-        if hasattr(self.state_manager, "remove_window"):
-            await self.state_manager.remove_window(int(window_id or 0))
-
-    async def _reconcile_session_runtime_state(
-        self,
-        runtime_snapshot: Dict[str, Any],
-        sessions: List[Dict[str, Any]],
-        *,
-        close_windows: bool,
-    ) -> Dict[str, Any]:
-        """Prune stale bridge windows and clear overrides that no longer resolve."""
-        return await self.session_runtime_service.reconcile_runtime_state(
-            runtime_snapshot,
-            sessions,
-            close_windows=close_windows,
-        )
-
-    async def _session_doctor(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Return an operator-facing AI session diagnostic snapshot."""
-        runtime_snapshot, sessions, cleanup = await self._load_reconciled_session_runtime(
-            params,
-            close_windows=False,
-        )
-        focused_window_id = next(
-            (
-                int(window.get("id") or 0)
-                for window in self._flatten_runtime_windows(runtime_snapshot)
-                if isinstance(window, dict) and bool(window.get("focused", False))
-            ),
-            0,
-        )
-        current_session_key = self.focus_service.select_current_session_key(
-            sessions,
-            focused_window_id=focused_window_id,
-        )
-        bridge_windows = self.herdr_service.bridge_diagnostics(runtime_snapshot, sessions)
-
-        return {
-            "success": True,
-            "current_ai_session_key": current_session_key,
-            "focused_window_id": focused_window_id,
-            "focus_override": self.focus_service.override_payload(),
-            "session_count": len(sessions),
-            "bridge_window_count": len(bridge_windows),
-            "stale_bridge_count": int(cleanup.get("stale_bridge_count") or 0),
-            "stale_bridges": cleanup.get("stale_bridges", []),
-            "bridge_windows": bridge_windows,
-            "sessions": sessions,
-        }
-
-    async def _session_cleanup(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Clean up stale remote bridge windows and focus overrides."""
-        runtime_snapshot = await self._runtime_snapshot({})
-        sessions = list(runtime_snapshot.get("sessions", []) or [])
-        close_windows = bool(params.get("close_windows", True))
-        cleanup = await self._reconcile_session_runtime_state(
-            runtime_snapshot,
-            sessions,
-            close_windows=close_windows,
-        )
-        refreshed_runtime = await self._runtime_snapshot({})
-        refreshed_sessions = list(refreshed_runtime.get("sessions", []) or [])
-        return {
-            "success": True,
-            "cleaned_up": int(cleanup.get("cleaned_window_count") or 0),
-            "remaining_sessions": len(refreshed_sessions),
-            "stale_bridge_count": int(cleanup.get("stale_bridge_count") or 0),
-            "stale_bridges": cleanup.get("stale_bridges", []),
-            "windows_cleaned": cleanup.get("cleaned_windows", []),
-            "cleared_session_override": bool(cleanup.get("cleared_session_override", False)),
-            "cleared_window_override": bool(cleanup.get("cleared_window_override", False)),
-        }
-
-    def _resolve_remote_attach_profile(self, session: Dict[str, Any]) -> Dict[str, Any]:
-        """Return the local SSH profile used to attach to a remote session."""
-        project_name = str(session.get("project_name") or session.get("project") or "").strip()
-        if not project_name:
-            raise RuntimeError("Remote session is missing project metadata")
-
-        configured_profile = self._get_project_remote_profile(project_name)
-        if not isinstance(configured_profile, dict):
-            configured_profile = {}
-
-        source_is_current_host = bool(session.get("source_is_current_host", False))
-        connection_hint = str(
-            (
-                session.get("source_connection_key")
-                if not source_is_current_host
-                else ""
-            )
-            or session.get("focus_connection_key")
-            or session.get("connection_key")
-            or ""
-        ).strip()
-        hinted_user, hinted_host, hinted_port = self._parse_remote_target("", connection_hint)
-        remote_host = hinted_host or str(session.get("host_name") or "").strip()
-        remote_user = hinted_user or str(configured_profile.get("user") or os.environ.get("USER") or "vpittamp").strip()
-        remote_port = hinted_port if hinted_host else int(configured_profile.get("port", 22) or 22)
-        remote_dir = ""
-        configured_host = str(configured_profile.get("host") or "").strip()
-        if configured_host and configured_host == remote_host:
-            remote_dir = str(configured_profile.get("remote_dir") or "").strip()
-        if not remote_dir:
-            remote_dir = str(session.get("project_path") or "").strip()
-        if not remote_host:
-            raise RuntimeError(f"Remote session '{project_name}' has no SSH host metadata")
-
-        remote_profile = {
-            "enabled": True,
-            "host": remote_host,
-            "user": remote_user,
-            "port": remote_port,
-            "remote_dir": remote_dir,
-        }
-        identity = self._build_worktree_context_identity(project_name, remote_profile)
-        return {
-            "project_name": project_name,
-            "remote_profile": remote_profile,
-            "connection_key": identity["connection_key"],
-            "context_key": identity["context_key"],
-            "remote_user": remote_user,
-            "remote_host": remote_host,
-            "remote_port": remote_port,
-            "remote_dir": remote_dir,
-        }
-
-    def _build_remote_attach_runtime_context(self, attach_profile: Dict[str, Any]) -> Dict[str, Any]:
-        """Build remote attach context from session metadata without local worktree resolution."""
-        project_name = str(attach_profile.get("project_name") or "").strip()
-        if not project_name:
-            raise RuntimeError("Remote attach context is missing project_name")
-        parsed = parse_qualified_name(project_name)
-        remote_profile = dict(attach_profile.get("remote_profile") or {})
-        if not remote_profile:
-            remote_profile = {
-                "enabled": True,
-                "host": str(attach_profile.get("remote_host") or "").strip(),
-                "user": str(attach_profile.get("remote_user") or "").strip(),
-                "port": int(attach_profile.get("remote_port", 22) or 22),
-                "remote_dir": str(attach_profile.get("remote_dir") or "").strip(),
-            }
-        identity = self._build_worktree_context_identity(project_name, remote_profile)
-        context = {
-            "qualified_name": project_name,
-            "repo_qualified_name": parsed.repo_qualified_name,
-            "branch": parsed.branch,
-            "directory": str(remote_profile.get("remote_dir") or "").strip(),
-            "local_directory": "",
-            "account": parsed.account,
-            "repo_name": parsed.repo,
-            "remote": remote_profile,
-        }
-        context.update(identity)
-        return context
 
     def _connection_target_is_current_host(self, connection_key: str) -> bool:
         """Return whether an SSH connection target resolves back to this host."""
