@@ -138,6 +138,7 @@ async def test_daemon_version_exposes_runtime_contract_marker():
     assert "snapshot_version" in result["contract"]["required_dashboard_fields"]
     assert "current_ai_session_key" in result["contract"]["retired_dashboard_fields"]
     assert "daemon-owned-focus-state" in result["features"]
+    assert "formal-focus-intents" in result["features"]
     assert "herdr-native-ai-sessions" in result["features"]
 
 

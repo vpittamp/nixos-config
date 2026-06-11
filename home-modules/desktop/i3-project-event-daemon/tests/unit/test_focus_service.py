@@ -160,7 +160,13 @@ def test_prune_invalid_overrides_reports_cleared_state() -> None:
 
 def test_build_focus_state_payload_uses_daemon_focus_fields() -> None:
     service = make_service()
-    service.set_pending_intent("intent-7")
+    service.begin_focus_intent(
+        intent_id="intent-7",
+        kind="window_focus",
+        target_key="101",
+        created_at=123.5,
+        generation=7,
+    )
     runtime_snapshot = {
         "active_context": {"connection_key": "local@thinkpad"},
         "current_ai_session_key": "session-current",
@@ -201,4 +207,58 @@ def test_build_focus_state_payload_uses_daemon_focus_fields() -> None:
     assert result["current_herdr_pane_id"] == "pane-1"
     assert result["current_herdr_host"] == "thinkpad"
     assert result["pending_intent_id"] == "intent-7"
+    assert result["focus_intent"] == {
+        "intent_id": "intent-7",
+        "kind": "window_focus",
+        "target_key": "101",
+        "state": "pending",
+        "created_at": 123.5,
+        "generation": 7,
+        "reason": "",
+    }
     assert result["active_session"]["agent"] == "codex"
+
+
+def test_focus_intent_transitions_pending_to_confirmed() -> None:
+    service = make_service()
+    service.begin_focus_intent(
+        intent_id="intent-8",
+        kind="workspace_focus",
+        target_key="2",
+        created_at=200.0,
+        generation=8,
+    )
+
+    result = service.finish_focus_intent(
+        intent_id="intent-8",
+        state="confirmed",
+        reason="ok",
+    )
+
+    assert service.pending_intent_id == ""
+    assert result["state"] == "confirmed"
+    assert result["intent_id"] == "intent-8"
+    assert result["kind"] == "workspace_focus"
+    assert result["target_key"] == "2"
+    assert result["reason"] == "ok"
+
+
+def test_focus_intent_transitions_pending_to_failed() -> None:
+    service = make_service()
+    service.begin_focus_intent(
+        intent_id="intent-9",
+        kind="herdr_pane_focus",
+        target_key="ryzen:pane-1",
+        created_at=300.0,
+        generation=9,
+    )
+
+    result = service.finish_focus_intent(
+        intent_id="intent-9",
+        state="failed",
+        reason="remote_transport_failed",
+    )
+
+    assert service.pending_intent_id == ""
+    assert result["state"] == "failed"
+    assert result["reason"] == "remote_transport_failed"

@@ -20,7 +20,7 @@ import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 try:
     from xdg.DesktopEntry import DesktopEntry
@@ -1323,11 +1323,21 @@ class IPCServer:
                     "id": request_id,
                 }
 
+            focus_intent = self._finalize_focus_intent_for_result(
+                method=str(method or ""),
+                params=params,
+                result=result,
+            )
+            if isinstance(result, dict) and focus_intent:
+                result["focus_intent"] = focus_intent
+                if str(focus_intent.get("state") or "") == "failed":
+                    await self.notify_state_change("focus_changed")
             return {"jsonrpc": "2.0", "result": result, "id": request_id}
 
         except KeyError as e:
             # Missing required parameter
             logger.warning(f"Missing required parameter in {method}: {e}")
+            await self._fail_focus_intent_for_exception(str(method or ""), params, str(e))
             return self._error_response(
                 request_id,
                 INVALID_PARAMS,
@@ -1338,6 +1348,7 @@ class IPCServer:
         except FileNotFoundError as e:
             # Layout or project file not found
             logger.warning(f"File not found in {method}: {e}")
+            await self._fail_focus_intent_for_exception(str(method or ""), params, str(e))
             error_code = LAYOUT_NOT_FOUND if "layout" in str(e).lower() else PROJECT_NOT_FOUND
             return self._error_response(
                 request_id,
@@ -1349,6 +1360,7 @@ class IPCServer:
         except ValueError as e:
             # Pydantic validation error or invalid parameters
             logger.warning(f"Validation error in {method}: {e}")
+            await self._fail_focus_intent_for_exception(str(method or ""), params, str(e))
             return self._error_response(
                 request_id,
                 VALIDATION_ERROR,
@@ -1359,6 +1371,7 @@ class IPCServer:
         except OSError as e:
             # File I/O error
             logger.error(f"File I/O error in {method}: {e}")
+            await self._fail_focus_intent_for_exception(str(method or ""), params, str(e))
             return self._error_response(
                 request_id,
                 FILE_IO_ERROR,
@@ -1370,6 +1383,7 @@ class IPCServer:
             # Unexpected error - check if it's i3 IPC related
             error_type = type(e).__name__
             logger.error(f"Error handling request {method}: {error_type}: {e}")
+            await self._fail_focus_intent_for_exception(str(method or ""), params, str(e))
 
             structured_error = None
             try:
@@ -2205,6 +2219,7 @@ class IPCServer:
                     "window-focus-tracking",
                     "terminal-cwd-tracking",
                     "daemon-owned-focus-state",
+                    "formal-focus-intents",
                     "dashboard-delta-events",
                     "herdr-native-ai-sessions",
                 ]
@@ -6651,18 +6666,19 @@ class IPCServer:
         """Record a new top-level user intent so stale async work can be ignored."""
         self._user_intent_epoch += 1
         intent_id = f"intent-{self._user_intent_epoch}"
-        if str(method or "").strip() in {
-            "herdr.pane.focus",
-            "herdr.remote.pane.focus",
-            "herdr.workspace.focus",
-            "herdr.tab.focus",
-            "window.focus",
-            "window.focus_fast",
-            "workspace.focus",
-            "workspace.focus_fast",
-        }:
-            self.focus_service.set_pending_intent(intent_id)
         payload = params or {}
+        if str(method or "").strip() in self._focus_intent_methods():
+            intent_kind, target_key = self._focus_intent_kind_and_target(
+                method=str(method or "").strip(),
+                params=payload,
+            )
+            self.focus_service.begin_focus_intent(
+                intent_id=intent_id,
+                kind=intent_kind,
+                target_key=target_key,
+                created_at=time.time(),
+                generation=self._user_intent_epoch,
+            )
         logger.info(
             "User intent epoch=%s method=%s project=%s variant=%s connection=%s session=%s app=%s",
             self._user_intent_epoch,
@@ -6674,6 +6690,95 @@ class IPCServer:
             str(payload.get("app_name") or "").strip(),
         )
         return self._user_intent_epoch
+
+    @staticmethod
+    def _focus_intent_methods() -> Set[str]:
+        """Return JSON-RPC methods that participate in focus intent state."""
+        return {
+            "herdr.pane.focus",
+            "herdr.remote.pane.focus",
+            "herdr.workspace.focus",
+            "window.focus",
+            "window.focus_fast",
+            "workspace.focus",
+            "workspace.focus_fast",
+        }
+
+    def _focus_intent_kind_and_target(
+        self,
+        *,
+        method: str,
+        params: Dict[str, Any],
+    ) -> Tuple[str, str]:
+        """Map a click-driven focus method to the formal focus intent contract."""
+        normalized_method = str(method or "").strip()
+        if normalized_method in {"window.focus", "window.focus_fast"}:
+            return ("window_focus", str(int(params.get("window_id") or 0)))
+        if normalized_method in {"workspace.focus", "workspace.focus_fast"}:
+            return ("workspace_focus", str(params.get("workspace") or "").strip())
+        if normalized_method in {"herdr.pane.focus", "herdr.remote.pane.focus"}:
+            host = str(params.get("host") or params.get("ssh_target") or "").strip()
+            pane_id = str(params.get("pane_id") or "").strip()
+            return ("herdr_pane_focus", f"{host}:{pane_id}" if host else pane_id)
+        if normalized_method == "herdr.workspace.focus":
+            return ("herdr_workspace_focus", str(params.get("workspace_id") or "").strip())
+        return ("", "")
+
+    def _finalize_focus_intent_for_result(
+        self,
+        *,
+        method: str,
+        params: Dict[str, Any],
+        result: Any,
+    ) -> Dict[str, Any]:
+        """Confirm or fail the focus intent associated with a handled request."""
+        normalized_method = str(method or "").strip()
+        if normalized_method not in self._focus_intent_methods():
+            return {}
+        intent_id = f"intent-{int(params.get('__intent_epoch') or 0)}"
+        if not intent_id.endswith("-0"):
+            success = True
+            reason = "ok"
+            if isinstance(result, dict):
+                success = bool(result.get("success", True))
+                verification = result.get("verification")
+                verification_reason = (
+                    str(verification.get("reason") or "").strip()
+                    if isinstance(verification, dict)
+                    else ""
+                )
+                reason = str(
+                    result.get("reason")
+                    or result.get("error")
+                    or verification_reason
+                    or ""
+                ).strip() or ("ok" if success else "failed")
+            return self.focus_service.finish_focus_intent(
+                intent_id=intent_id,
+                state="confirmed" if success else "failed",
+                reason=reason,
+            )
+        return {}
+
+    async def _fail_focus_intent_for_exception(
+        self,
+        method: str,
+        params: Dict[str, Any],
+        reason: str,
+    ) -> None:
+        """Mark an active focus intent failed when request handling raises."""
+        if str(method or "").strip() not in self._focus_intent_methods():
+            return
+        intent_epoch = int(params.get("__intent_epoch") or 0)
+        if intent_epoch <= 0:
+            return
+        focus_intent = self.focus_service.finish_focus_intent(
+            intent_id=f"intent-{intent_epoch}",
+            state="failed",
+            reason=str(reason or "exception").strip(),
+        )
+        if focus_intent:
+            await self.notify_state_change("focus_changed")
 
     def _user_intent_is_current(self, intent_epoch: int) -> bool:
         """Return whether an async action still matches the latest explicit user intent."""

@@ -926,6 +926,7 @@ async function loadDaemonContractHealth(): Promise<DaemonContractHealth | null> 
     for (
       const feature of [
         "daemon-owned-focus-state",
+        "formal-focus-intents",
         "dashboard-delta-events",
         "herdr-native-ai-sessions",
       ]

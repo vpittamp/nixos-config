@@ -22,6 +22,7 @@ class FocusService:
         self.session_override_key: str = ""
         self.window_override: Dict[str, Any] = {"window_id": 0, "connection_key": ""}
         self.pending_intent_id: str = ""
+        self.focus_intent: Dict[str, Any] = {}
 
     def set_focus_overrides(
         self,
@@ -52,7 +53,89 @@ class FocusService:
 
     def set_pending_intent(self, intent_id: str) -> None:
         """Persist the daemon-owned pending focus intent identifier."""
-        self.pending_intent_id = str(intent_id or "").strip()
+        normalized_intent_id = str(intent_id or "").strip()
+        self.pending_intent_id = normalized_intent_id
+        if normalized_intent_id:
+            self.focus_intent = {
+                "intent_id": normalized_intent_id,
+                "kind": "",
+                "target_key": "",
+                "state": "pending",
+                "created_at": 0.0,
+                "generation": 0,
+            }
+
+    def begin_focus_intent(
+        self,
+        *,
+        intent_id: str,
+        kind: str,
+        target_key: str,
+        created_at: float,
+        generation: int,
+    ) -> Dict[str, Any]:
+        """Record a daemon-owned focus intent in pending state."""
+        normalized_intent_id = str(intent_id or "").strip()
+        if not normalized_intent_id:
+            self.pending_intent_id = ""
+            self.focus_intent = {}
+            return {}
+        self.pending_intent_id = normalized_intent_id
+        self.focus_intent = {
+            "intent_id": normalized_intent_id,
+            "kind": str(kind or "").strip(),
+            "target_key": str(target_key or "").strip(),
+            "state": "pending",
+            "created_at": float(created_at or 0.0),
+            "generation": int(generation or 0),
+        }
+        return self.focus_intent_payload()
+
+    def finish_focus_intent(
+        self,
+        *,
+        intent_id: str,
+        state: str,
+        reason: str = "",
+    ) -> Dict[str, Any]:
+        """Transition the active focus intent to confirmed or failed."""
+        normalized_intent_id = str(intent_id or "").strip()
+        if not normalized_intent_id:
+            return self.focus_intent_payload()
+        current_intent_id = str(self.focus_intent.get("intent_id") or "").strip()
+        if current_intent_id and current_intent_id != normalized_intent_id:
+            return self.focus_intent_payload()
+        if not current_intent_id:
+            self.focus_intent = {
+                "intent_id": normalized_intent_id,
+                "kind": "",
+                "target_key": "",
+                "state": "pending",
+                "created_at": 0.0,
+                "generation": 0,
+            }
+        resolved_state = str(state or "").strip()
+        if resolved_state not in {"confirmed", "failed"}:
+            resolved_state = "failed"
+        self.focus_intent["state"] = resolved_state
+        self.focus_intent["reason"] = str(reason or "").strip()
+        if str(self.pending_intent_id or "").strip() == normalized_intent_id:
+            self.pending_intent_id = ""
+        return self.focus_intent_payload()
+
+    def focus_intent_payload(self) -> Dict[str, Any]:
+        """Return the current focus intent without exposing mutable internals."""
+        if not self.focus_intent:
+            return {}
+        return {
+            "intent_id": str(self.focus_intent.get("intent_id") or "").strip(),
+            "kind": str(self.focus_intent.get("kind") or "").strip(),
+            "target_key": str(self.focus_intent.get("target_key") or "").strip(),
+            "state": str(self.focus_intent.get("state") or "").strip(),
+            "created_at": float(self.focus_intent.get("created_at") or 0.0),
+            "generation": int(self.focus_intent.get("generation") or 0),
+            "reason": str(self.focus_intent.get("reason") or "").strip(),
+        }
 
     def clear_focus_overrides(self) -> None:
         """Clear session/window overrides and any pending focus intent."""
@@ -351,6 +434,7 @@ class FocusService:
                 or ""
             ).strip(),
             "pending_intent_id": str(self.pending_intent_id or "").strip(),
+            "focus_intent": self.focus_intent_payload(),
             "active_context": active_context if isinstance(active_context, dict) else {},
             "active_session": {
                 "session_key": str(active_session.get("session_key") or "").strip(),

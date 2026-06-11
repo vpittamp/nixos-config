@@ -128,6 +128,46 @@ async def test_workspace_focus_fast_skips_verification_and_notifies(server):
     server.notify_state_change.assert_awaited_once_with("focus_changed")
 
 
+def test_focus_intent_is_formalized_for_window_focus(server):
+    epoch = server._advance_user_intent_epoch(
+        method="window.focus_fast",
+        params={"window_id": 101},
+    )
+
+    focus_intent = server.focus_service.focus_intent_payload()
+
+    assert epoch == 1
+    assert focus_intent["intent_id"] == "intent-1"
+    assert focus_intent["kind"] == "window_focus"
+    assert focus_intent["target_key"] == "101"
+    assert focus_intent["state"] == "pending"
+
+
+def test_focus_intent_finalization_marks_failed_result(server):
+    params = {"__intent_epoch": server._advance_user_intent_epoch(
+        method="workspace.focus_fast",
+        params={"workspace": "9"},
+    )}
+    result = {
+        "success": False,
+        "workspace": "9",
+        "error": "command_failed:workspace number 9",
+    }
+
+    focus_intent = server._finalize_focus_intent_for_result(
+        method="workspace.focus_fast",
+        params=params,
+        result=result,
+    )
+
+    assert focus_intent["intent_id"] == "intent-1"
+    assert focus_intent["kind"] == "workspace_focus"
+    assert focus_intent["target_key"] == "9"
+    assert focus_intent["state"] == "failed"
+    assert focus_intent["reason"] == "command_failed:workspace number 9"
+    assert server.focus_service.pending_intent_id == ""
+
+
 @pytest.mark.asyncio
 async def test_focus_window_remote_handoff_does_not_require_local_sway(server, monkeypatch):
     server._connection_target_is_current_host = lambda _connection_key: False
