@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+AGENTS_MD = REPO_ROOT / "AGENTS.md"
 SHELL_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "shell.qml"
 SESSION_ROW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "SessionRow.qml"
 LAUNCHER_WINDOW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "LauncherWindow.qml"
@@ -611,11 +612,16 @@ def test_panel_toggle_uses_quickshell_named_runtime_command():
 
 
 def test_legacy_monitoring_docs_do_not_claim_ai_or_ui_authority():
+    agents_text = AGENTS_MD.read_text()
     monitoring_data_text = I3PM_MONITORING_DATA_PY.read_text()
     cli_readme_text = I3PM_CLI_README.read_text()
     ai_session_doc_text = AI_SESSION_SYSTEM_DOC.read_text()
     herdr_migration_text = I3PM_HERDR_MIGRATION_DOC.read_text()
 
+    assert "Managed AI sessions are Herdr pane-first." in agents_text
+    assert "Managed AI sessions are pane-first when tmux pane identity is available" not in agents_text
+    assert "Added OTEL/session runtime file watchers" not in agents_text
+    assert "tmux pane/window/session identity is terminal launch infrastructure only" in agents_text
     assert "Legacy monitoring data compatibility backend" in monitoring_data_text
     assert "It is no longer the active QuickShell runtime state authority." in monitoring_data_text
     assert "outputs JSON for Eww consumption" not in monitoring_data_text

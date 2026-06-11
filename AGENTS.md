@@ -1,6 +1,6 @@
 # Window Management System Summary (Sway + i3pm)
 
-Last updated: 2026-03-13
+Last updated: 2026-06-11
 
 ## Objective
 
@@ -39,8 +39,9 @@ Provide reliable project-scoped window management on Sway with:
 - `active-worktree.json` is persistence, not the primary runtime authority; the daemon's in-memory active context is authoritative during runtime.
 - Scratchpad terminals are keyed by `context_key`, not only project name.
   - This allows independent local and SSH scratchpad terminals for the same worktree.
-- Managed AI sessions are pane-first when tmux pane identity is available.
-  - One tracked AI surface per tmux pane is the intended model.
+- Managed AI sessions are Herdr pane-first.
+  - One tracked AI surface per Herdr pane is the intended model.
+  - tmux pane/window/session identity is terminal launch infrastructure only, not AI-session UI authority.
 
 ## Project/Worktree Switching Flow
 
@@ -135,7 +136,7 @@ Implications:
   - `display.snapshot`
   - `display.apply`
   - `display.cycle`
-- Added OTEL/session runtime file watchers so AI session UI updates are not tied only to sway window events
+- Replaced OTEL/tmux-derived AI session UI state with Herdr-native daemon rows and Herdr proxy events
 - Documented a deployment pitfall on `ryzen`:
   - system generation and Home Manager generation can diverge operationally
   - always verify activated generations before assuming a QML/runtime bug
