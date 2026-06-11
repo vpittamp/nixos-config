@@ -342,6 +342,46 @@ async def test_handle_profile_change_uses_hybrid_profiles_without_hostname_gate(
     assert "output HEADLESS-1 enable mode 1920x1200 position 1536 0 scale 1.0" in commands
 
 
+def test_hybrid_profile_accepts_generated_ipad_profile_name():
+    profile = HybridMonitorProfile(**{
+        "name": "local+ipad",
+        "description": "ThinkPad panel plus iPad Pro 12.9 (2048x1536 @1.5x)",
+        "outputs": [
+            {
+                "name": "eDP-1",
+                "type": "physical",
+                "enabled": True,
+                "position": {"x": 1365, "y": 0, "width": 1920, "height": 1200},
+                "scale": 1.25,
+            },
+            {
+                "name": "HEADLESS-1",
+                "type": "virtual",
+                "enabled": True,
+                "position": {"x": 0, "y": 0, "width": 2048, "height": 1536},
+                "scale": 1.5,
+                "vnc_port": 5900,
+            },
+            {
+                "name": "HEADLESS-2",
+                "type": "virtual",
+                "enabled": False,
+                "position": {"x": 0, "y": 0, "width": 1920, "height": 1200},
+                "scale": 1.0,
+                "vnc_port": 5901,
+            },
+        ],
+        "workspace_assignments": [
+            {"output": "eDP-1", "workspaces": [1, 2, 6, 7, 8, 9]},
+            {"output": "HEADLESS-1", "workspaces": [3, 4, 5]},
+        ],
+    })
+
+    assert profile.name == "local+ipad"
+    assert profile.get_enabled_outputs() == ["eDP-1", "HEADLESS-1"]
+    assert profile.get_virtual_outputs() == ["HEADLESS-1"]
+
+
 @pytest.mark.asyncio
 async def test_hybrid_reassign_preserves_workspaces_on_enabled_outputs():
     service = MonitorProfileService()

@@ -342,7 +342,7 @@ class HybridMonitorProfile(BaseModel):
     Stored in ~/.config/sway/monitor-profiles/{name}.json
     """
 
-    name: str = Field(..., pattern=r"^(local-only|local\+[12]vnc)$",
+    name: str = Field(..., pattern=r"^(local-only|local\+[12]vnc|local\+ipad)$",
                       description="Profile identifier")
     description: str = Field("", max_length=200,
                             description="Human-readable description")
