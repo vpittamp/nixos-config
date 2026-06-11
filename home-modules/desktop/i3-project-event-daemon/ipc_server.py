@@ -582,6 +582,8 @@ class IPCServer:
             ),
             ipc_stats_provider=lambda: self._get_ipc_stats(),
             event_buffer_provider=lambda: self.event_buffer,
+            log_ipc_event=lambda **kwargs: self._log_ipc_event(**kwargs),
+            registry_path=APP_REGISTRY_PATH,
             startup_recovery_provider=lambda: getattr(self, "startup_recovery_result", None),
             reconnection_manager_provider=lambda: getattr(self, "i3_reconnection_manager", None),
         )
@@ -1057,13 +1059,13 @@ class IPCServer:
 
             # Feature 030: Production readiness methods (T016)
             elif method == "daemon.status":
-                result = await self._daemon_status()
+                result = await self.daemon_status_service.status_rpc()
             elif method == "daemon.events":
-                result = await self._daemon_events(params)
+                result = await self.daemon_status_service.events_rpc(params)
             elif method == "daemon.diagnose":
-                result = await self._daemon_diagnose(params)
+                result = await self.daemon_status_service.diagnose_rpc(params)
             elif method == "daemon.apps":
-                result = await self._daemon_apps(params)
+                result = await self.daemon_status_service.apps_rpc(params)
             elif method == "layout.save":
                 result = await self._layout_save(params)
             elif method == "layout.restore":
@@ -3763,249 +3765,6 @@ class IPCServer:
 
         extract(container)
         return windows
-
-    # ========================================================================
-    # Feature 030: Production Readiness Methods (T016)
-    # ========================================================================
-
-    async def _daemon_status(self) -> Dict[str, Any]:
-        """
-        Get comprehensive daemon health and status
-
-        Implements daemon.status JSON-RPC method from daemon-ipc.json
-
-        Feature 030 (T029): Includes recovery status and i3 reconnection stats
-        """
-        start_time = time.perf_counter()
-
-        try:
-            return await self.daemon_status_service.daemon_status()
-
-        finally:
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            await self._log_ipc_event(
-                event_type="query::daemon_status",
-                duration_ms=duration_ms,
-            )
-
-    async def _daemon_events(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Query recent events from circular buffer with filtering
-
-        Implements daemon.events JSON-RPC method from daemon-ipc.json
-
-        Args:
-            params: Query parameters
-                - source: Filter by event source (i3, systemd, proc, all)
-                - event_type: Filter by event type
-                - limit: Maximum events to return (default: 20, max: 500)
-                - since: ISO timestamp to filter events after
-                - correlate: Include correlation analysis
-        """
-        start_time = time.perf_counter()
-
-        try:
-            if not self.event_buffer:
-                return {
-                    "events": [],
-                    "total_events": 0,
-                    "buffer_size": 0,
-                }
-
-            # Extract parameters
-            source_filter = params.get("source", "all")
-            event_type_filter = params.get("event_type")
-            limit = min(params.get("limit", 20), 500)
-            since_str = params.get("since")
-            include_correlation = params.get("correlate", False)
-
-            # Parse since timestamp
-            since_dt = None
-            if since_str:
-                try:
-                    since_dt = datetime.fromisoformat(since_str.replace('Z', '+00:00'))
-                except ValueError:
-                    logger.warning(f"Invalid 'since' timestamp: {since_str}")
-
-            # Get events from buffer
-            all_events = self.event_buffer.get_events(limit=limit)
-
-            # Apply filters
-            filtered_events = []
-            for event in all_events:
-                # Filter by source
-                if source_filter != "all" and event.source != source_filter:
-                    continue
-
-                # Filter by event type
-                if event_type_filter and event.event_type != event_type_filter:
-                    continue
-
-                # Filter by timestamp
-                if since_dt and event.timestamp < since_dt:
-                    continue
-
-                filtered_events.append(event)
-
-            # Convert to response format
-            events_data = []
-            for event in filtered_events:
-                event_dict = {
-                    "event_id": str(event.event_id),
-                    "source": event.source,
-                    "event_type": event.event_type,
-                    "timestamp": event.timestamp.isoformat(),
-                    "data": event.to_dict(),  # Include all event data
-                }
-
-                # Add correlation if requested
-                if include_correlation and event.correlation_id:
-                    event_dict["correlation_id"] = str(event.correlation_id)
-                    event_dict["confidence_score"] = event.confidence_score
-
-                events_data.append(event_dict)
-
-            result = {
-                "events": events_data,
-                "total_events": len(self.event_buffer.buffer),
-                "buffer_size": self.event_buffer.max_size,
-            }
-
-            return result
-
-        finally:
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            await self._log_ipc_event(
-                event_type="query::daemon_events",
-                result_count=len(result.get("events", [])),
-                params=params,
-                duration_ms=duration_ms,
-            )
-
-    async def _daemon_diagnose(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Generate comprehensive diagnostic snapshot
-
-        Implements daemon.diagnose JSON-RPC method from daemon-ipc.json
-
-        Args:
-            params: Diagnostic options
-                - include_events: Include recent event history (default: true)
-                - include_i3_tree: Include complete i3 window tree (default: true)
-                - include_config: Include current configuration (default: true)
-        """
-        from .monitoring.diagnostics import generate_diagnostic_snapshot
-
-        start_time = time.perf_counter()
-
-        try:
-            # Extract parameters
-            include_events = params.get("include_events", True)
-            include_i3_tree = params.get("include_i3_tree", True)
-            include_config = params.get("include_config", True)
-
-            # Generate snapshot
-            snapshot = await generate_diagnostic_snapshot(
-                include_i3_tree=include_i3_tree,
-                include_events=include_events,
-                event_limit=100,
-                sanitize=True,
-            )
-
-            # Get daemon status
-            daemon_status = await self._daemon_status()
-
-            # Build diagnostic result
-            result = {
-                "timestamp": snapshot.timestamp,
-                "daemon_status": daemon_status,
-            }
-
-            if include_events:
-                result["events"] = snapshot.recent_events
-
-            if include_i3_tree:
-                result["i3_tree"] = snapshot.i3_tree
-                result["i3_outputs"] = snapshot.i3_outputs
-                result["i3_workspaces"] = snapshot.i3_workspaces
-
-            if include_config:
-                result["projects"] = snapshot.projects
-                result["classification_rules"] = snapshot.classification_rules
-
-            return result
-
-        finally:
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            await self._log_ipc_event(
-                event_type="query::daemon_diagnose",
-                params=params,
-                duration_ms=duration_ms,
-            )
-
-    async def _daemon_apps(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Get applications currently loaded in daemon's memory
-
-        This method reads the application registry file that the daemon loaded
-        at startup, providing visibility into what apps the daemon knows about.
-
-        Implements daemon.apps JSON-RPC method
-
-        Returns:
-            Dict containing:
-                - applications: List of application entries
-                - version: Registry version
-                - count: Number of applications
-                - registry_path: Path to registry file
-        """
-        start_time = time.perf_counter()
-
-        try:
-            registry_path = Path.home() / ".config" / "i3" / "application-registry.json"
-
-            if not registry_path.exists():
-                raise RuntimeError(json.dumps({
-                    "code": -32001,
-                    "message": "Application registry not found",
-                    "data": {"reason": "registry_file_not_found", "path": str(registry_path)}
-                }))
-
-            with open(registry_path, "r") as f:
-                registry = json.load(f)
-
-            applications = registry.get("applications", [])
-            version = registry.get("version", "unknown")
-
-            # Filter by name if requested
-            name_filter = params.get("name")
-            if name_filter:
-                applications = [app for app in applications if app.get("name") == name_filter]
-
-            # Filter by scope if requested
-            scope_filter = params.get("scope")
-            if scope_filter:
-                applications = [app for app in applications if app.get("scope") == scope_filter]
-
-            # Filter by workspace if requested
-            workspace_filter = params.get("workspace")
-            if workspace_filter:
-                applications = [app for app in applications if app.get("preferred_workspace") == workspace_filter]
-
-            return {
-                "applications": applications,
-                "version": version,
-                "count": len(applications),
-                "registry_path": str(registry_path),
-            }
-
-        finally:
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            await self._log_ipc_event(
-                event_type="query::daemon_apps",
-                params=params,
-                duration_ms=duration_ms,
-            )
 
     async def _layout_save(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import json
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -55,9 +56,50 @@ class _StateManager:
 class _EventBuffer:
     def __init__(self, events):
         self.events = events
+        self.buffer = events
+        self.max_size = 500
 
     def get_recent(self, limit=20):
         return self.events[:limit]
+
+    def get_events(self, limit=20):
+        return self.events[:limit]
+
+
+class _Event:
+    def __init__(
+        self,
+        *,
+        event_id: str,
+        source: str,
+        event_type: str,
+        timestamp: datetime,
+        data: dict,
+        correlation_id: str | None = None,
+        confidence_score: float | None = None,
+    ) -> None:
+        self.event_id = event_id
+        self.source = source
+        self.event_type = event_type
+        self.timestamp = timestamp
+        self.data = data
+        self.correlation_id = correlation_id
+        self.confidence_score = confidence_score
+
+    def to_dict(self):
+        return self.data
+
+
+def _new_service(**overrides):
+    params = {
+        "state_manager": _StateManager(),
+        "event_buffer": None,
+        "i3_connection_provider": lambda: None,
+        "socket_path_provider": lambda: "/tmp/i3pm.sock",
+        "ipc_stats_provider": lambda: {},
+    }
+    params.update(overrides)
+    return DaemonStatusService(**params)
 
 
 @pytest.mark.asyncio
@@ -225,3 +267,146 @@ async def test_daemon_status_includes_recovery_and_reconnection(monkeypatch) -> 
         "recovery_timestamp": "2026-01-01T12:00:00",
     }
     assert status["i3_reconnection"] == {"is_connected": True, "reconnection_count": 2}
+
+
+@pytest.mark.asyncio
+async def test_status_rpc_logs_query_event(monkeypatch) -> None:
+    health_metrics = SimpleNamespace(
+        uptime_seconds=88,
+        memory_rss_mb=123.4,
+        total_events_processed=12,
+        total_errors=2,
+        last_event_time=1_767_225_600,
+        i3_connected=True,
+        update_resource_usage=lambda: None,
+    )
+    monkeypatch.setattr(health_module, "get_health_metrics", lambda: health_metrics)
+    logged = []
+
+    async def log_ipc_event(**kwargs):
+        logged.append(kwargs)
+
+    service = _new_service(
+        log_ipc_event=log_ipc_event,
+        i3_connection_provider=lambda: SimpleNamespace(is_connected=True),
+    )
+
+    status = await service.status_rpc()
+
+    assert status["running"] is True
+    assert logged
+    assert logged[0]["event_type"] == "query::daemon_status"
+    assert logged[0]["duration_ms"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_events_rpc_filters_late_bound_buffer_and_logs_query() -> None:
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    older = datetime(2026, 1, 1, 11, 59, 0, tzinfo=timezone.utc)
+    buffer_slot = {
+        "value": _EventBuffer(
+            [
+                _Event(
+                    event_id="event-1",
+                    source="i3",
+                    event_type="window::focus",
+                    timestamp=now,
+                    data={"container_id": 42},
+                    correlation_id="corr-1",
+                    confidence_score=0.75,
+                ),
+                _Event(
+                    event_id="event-2",
+                    source="i3",
+                    event_type="workspace::focus",
+                    timestamp=now,
+                    data={"workspace": "2"},
+                ),
+                _Event(
+                    event_id="event-3",
+                    source="systemd",
+                    event_type="window::focus",
+                    timestamp=older,
+                    data={"unit": "ignored"},
+                ),
+            ]
+        )
+    }
+    logged = []
+
+    async def log_ipc_event(**kwargs):
+        logged.append(kwargs)
+
+    service = _new_service(
+        event_buffer_provider=lambda: buffer_slot["value"],
+        log_ipc_event=log_ipc_event,
+    )
+
+    result = await service.events_rpc(
+        {
+            "source": "i3",
+            "event_type": "window::focus",
+            "since": "2026-01-01T12:00:00Z",
+            "correlate": True,
+            "limit": 10,
+        }
+    )
+
+    assert result["total_events"] == 3
+    assert result["buffer_size"] == 500
+    assert result["events"] == [
+        {
+            "event_id": "event-1",
+            "source": "i3",
+            "event_type": "window::focus",
+            "timestamp": "2026-01-01T12:00:00+00:00",
+            "data": {"container_id": 42},
+            "correlation_id": "corr-1",
+            "confidence_score": 0.75,
+        }
+    ]
+    assert logged
+    assert logged[0]["event_type"] == "query::daemon_events"
+    assert logged[0]["result_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_apps_rpc_reads_registry_filters_and_logs_query(tmp_path) -> None:
+    registry_path = tmp_path / "application-registry.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "2026.06",
+                "applications": [
+                    {
+                        "name": "Herdr",
+                        "scope": "global",
+                        "preferred_workspace": "33",
+                    },
+                    {
+                        "name": "Browser",
+                        "scope": "project",
+                        "preferred_workspace": "2",
+                    },
+                ],
+            }
+        )
+    )
+    logged = []
+
+    async def log_ipc_event(**kwargs):
+        logged.append(kwargs)
+
+    service = _new_service(
+        registry_path=registry_path,
+        log_ipc_event=log_ipc_event,
+    )
+
+    result = await service.apps_rpc({"scope": "global", "workspace": "33"})
+
+    assert result["version"] == "2026.06"
+    assert result["count"] == 1
+    assert result["registry_path"] == str(registry_path)
+    assert result["applications"][0]["name"] == "Herdr"
+    assert logged
+    assert logged[0]["event_type"] == "query::daemon_apps"

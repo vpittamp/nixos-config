@@ -2,17 +2,27 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import time
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional
+from pathlib import Path
+from typing import Any, Awaitable, Callable, Dict, Optional
 
+
+logger = logging.getLogger(__name__)
 
 SocketPathProvider = Callable[[], str]
 IpcStatsProvider = Callable[[], Dict[str, Any]]
 StartupRecoveryProvider = Callable[[], Optional[Any]]
 ReconnectionManagerProvider = Callable[[], Optional[Any]]
 EventBufferProvider = Callable[[], Optional[Any]]
+LogIpcEvent = Callable[..., Awaitable[None]]
+
+
+async def _noop_log_ipc_event(**_kwargs: Any) -> None:
+    return None
 
 
 class DaemonStatusService:
@@ -27,6 +37,8 @@ class DaemonStatusService:
         socket_path_provider: SocketPathProvider,
         ipc_stats_provider: IpcStatsProvider,
         event_buffer_provider: Optional[EventBufferProvider] = None,
+        log_ipc_event: LogIpcEvent = _noop_log_ipc_event,
+        registry_path: Optional[Path] = None,
         startup_recovery_provider: StartupRecoveryProvider = lambda: None,
         reconnection_manager_provider: ReconnectionManagerProvider = lambda: None,
         status_version: str = "1.0.0",
@@ -38,6 +50,11 @@ class DaemonStatusService:
         self.i3_connection_provider = i3_connection_provider
         self.socket_path_provider = socket_path_provider
         self.ipc_stats_provider = ipc_stats_provider
+        self.log_ipc_event = log_ipc_event
+        self.registry_path = (
+            registry_path
+            or Path.home() / ".config" / "i3" / "application-registry.json"
+        )
         self.startup_recovery_provider = startup_recovery_provider
         self.reconnection_manager_provider = reconnection_manager_provider
         self.status_version = status_version
@@ -111,6 +128,187 @@ class DaemonStatusService:
             }
 
         return result
+
+    async def status_rpc(self) -> Dict[str, Any]:
+        """Return daemon.status payload and record the IPC query event."""
+        start_time = time.perf_counter()
+        try:
+            return await self.daemon_status()
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self.log_ipc_event(
+                event_type="query::daemon_status",
+                duration_ms=duration_ms,
+            )
+
+    async def events_rpc(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return daemon.events payload with filtering."""
+        start_time = time.perf_counter()
+        result: Dict[str, Any] = {
+            "events": [],
+            "total_events": 0,
+            "buffer_size": 0,
+        }
+
+        try:
+            event_buffer = self.event_buffer_provider()
+            if not event_buffer:
+                return result
+
+            source_filter = params.get("source", "all")
+            event_type_filter = params.get("event_type")
+            limit = min(params.get("limit", 20), 500)
+            since_str = params.get("since")
+            include_correlation = params.get("correlate", False)
+
+            since_dt = None
+            if since_str:
+                try:
+                    since_dt = datetime.fromisoformat(since_str.replace("Z", "+00:00"))
+                except ValueError:
+                    logger.warning("Invalid 'since' timestamp: %s", since_str)
+
+            all_events = event_buffer.get_events(limit=limit)
+
+            filtered_events = []
+            for event in all_events:
+                if source_filter != "all" and event.source != source_filter:
+                    continue
+                if event_type_filter and event.event_type != event_type_filter:
+                    continue
+                if since_dt and event.timestamp < since_dt:
+                    continue
+                filtered_events.append(event)
+
+            events_data = []
+            for event in filtered_events:
+                event_dict = {
+                    "event_id": str(event.event_id),
+                    "source": event.source,
+                    "event_type": event.event_type,
+                    "timestamp": event.timestamp.isoformat(),
+                    "data": event.to_dict(),
+                }
+
+                correlation_id = getattr(event, "correlation_id", None)
+                if include_correlation and correlation_id:
+                    event_dict["correlation_id"] = str(correlation_id)
+                    event_dict["confidence_score"] = getattr(event, "confidence_score", None)
+
+                events_data.append(event_dict)
+
+            result = {
+                "events": events_data,
+                "total_events": len(event_buffer.buffer),
+                "buffer_size": event_buffer.max_size,
+            }
+
+            return result
+
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self.log_ipc_event(
+                event_type="query::daemon_events",
+                result_count=len(result.get("events", [])),
+                params=params,
+                duration_ms=duration_ms,
+            )
+
+    async def diagnose_rpc(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate comprehensive daemon diagnostic snapshot."""
+        from ..monitoring.diagnostics import generate_diagnostic_snapshot
+
+        start_time = time.perf_counter()
+
+        try:
+            include_events = params.get("include_events", True)
+            include_i3_tree = params.get("include_i3_tree", True)
+            include_config = params.get("include_config", True)
+
+            snapshot = await generate_diagnostic_snapshot(
+                include_i3_tree=include_i3_tree,
+                include_events=include_events,
+                event_limit=100,
+                sanitize=True,
+            )
+
+            result = {
+                "timestamp": snapshot.timestamp,
+                "daemon_status": await self.status_rpc(),
+            }
+
+            if include_events:
+                result["events"] = snapshot.recent_events
+
+            if include_i3_tree:
+                result["i3_tree"] = snapshot.i3_tree
+                result["i3_outputs"] = snapshot.i3_outputs
+                result["i3_workspaces"] = snapshot.i3_workspaces
+
+            if include_config:
+                result["projects"] = snapshot.projects
+                result["classification_rules"] = snapshot.classification_rules
+
+            return result
+
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self.log_ipc_event(
+                event_type="query::daemon_diagnose",
+                params=params,
+                duration_ms=duration_ms,
+            )
+
+    async def apps_rpc(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return applications currently loaded in the generated registry."""
+        start_time = time.perf_counter()
+
+        try:
+            if not self.registry_path.exists():
+                raise RuntimeError(json.dumps({
+                    "code": -32001,
+                    "message": "Application registry not found",
+                    "data": {
+                        "reason": "registry_file_not_found",
+                        "path": str(self.registry_path),
+                    },
+                }))
+
+            with self.registry_path.open("r", encoding="utf-8") as registry_file:
+                registry = json.load(registry_file)
+
+            applications = registry.get("applications", [])
+            version = registry.get("version", "unknown")
+
+            name_filter = params.get("name")
+            if name_filter:
+                applications = [app for app in applications if app.get("name") == name_filter]
+
+            scope_filter = params.get("scope")
+            if scope_filter:
+                applications = [app for app in applications if app.get("scope") == scope_filter]
+
+            workspace_filter = params.get("workspace")
+            if workspace_filter:
+                applications = [
+                    app for app in applications
+                    if app.get("preferred_workspace") == workspace_filter
+                ]
+
+            return {
+                "applications": applications,
+                "version": version,
+                "count": len(applications),
+                "registry_path": str(self.registry_path),
+            }
+
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self.log_ipc_event(
+                event_type="query::daemon_apps",
+                params=params,
+                duration_ms=duration_ms,
+            )
 
     def health_check(self) -> Dict[str, Any]:
         """Return diagnostic daemon health for the legacy health_check RPC."""
