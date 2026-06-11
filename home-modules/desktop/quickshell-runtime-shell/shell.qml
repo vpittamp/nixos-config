@@ -1107,7 +1107,7 @@ ShellRoot {
                     num: Number(workspace?.number || 0),
                     name: name,
                     focused: focused,
-                    active: boolOrFalse(workspace?.visible) || focused,
+                    active: focused,
                     urgent: boolOrFalse(workspace?.urgent),
                     output: target
                 });
@@ -4624,12 +4624,14 @@ ShellRoot {
                 return;
             }
 
+            const groupFocused = windows.some(windowData => windowIsFocused(windowData));
+
             items.push({
                 kind: "section",
                 title: sectionTitle,
                 project: stringOrEmpty(projectGroup.project),
                 execution_mode: stringOrEmpty(projectGroup.execution_mode),
-                focused: !!projectGroup.focused,
+                focused: groupFocused,
                 window_count: Number(projectGroup.window_count || windows.length),
                 visible_window_count: Number(projectGroup.visible_window_count || 0),
                 hidden_window_count: Number(projectGroup.hidden_window_count || 0),
