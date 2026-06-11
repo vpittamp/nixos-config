@@ -109,7 +109,7 @@ async def test_notify_state_change_handles_subscriber_set_mutation(server):
 
 
 @pytest.mark.asyncio
-async def test_assistant_desktop_snapshot_filters_windows_but_keeps_herdr_sessions(server):
+async def test_assistant_desktop_snapshot_filters_windows_but_keeps_only_herdr_sessions(server):
     runtime_snapshot = {
         "active_context": {
             "qualified_name": "vpittamp/nixos-config:main",
@@ -157,12 +157,15 @@ async def test_assistant_desktop_snapshot_filters_windows_but_keeps_herdr_sessio
                 "session_key": "herdr:remote:pane-1",
                 "source": "herdr",
                 "pane_id": "pane-1",
+                "agent_status": "Running",
                 "title": "Remote Herdr",
                 "preview": "not project scoped",
                 "session_phase": "working",
+                "herdr_host": "ryzen",
                 "context_key": "other::local::local@host",
             },
         ],
+        "current_ai_session_key": "codex:1",
         "focused_window_id": 11,
         "scratchpad": {"available": True, "context_key": "vpittamp/nixos-config:main::local::local@host"},
         "active_terminal": {},
@@ -177,9 +180,14 @@ async def test_assistant_desktop_snapshot_filters_windows_but_keeps_herdr_sessio
     assert result["visible_window_count"] == 1
     assert result["focused_window"]["window_id"] == 11
     assert [session["session_key"] for session in result["sessions"]] == [
-        "codex:1",
         "herdr:remote:pane-1",
     ]
+    assert result["sessions"][0]["source"] == "herdr"
+    assert result["sessions"][0]["pane_id"] == "pane-1"
+    assert result["sessions"][0]["agent_status"] == "Running"
+    assert result["sessions"][0]["herdr_host"] == "ryzen"
+    assert "session_phase" not in result["sessions"][0]
+    assert result["current_ai_session_key"] == ""
 
 
 @pytest.mark.asyncio

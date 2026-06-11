@@ -371,29 +371,29 @@ class AssistantDesktopService:
                 or bool(str(session.get("pane_id") or "").strip())
                 or bool(session.get("is_remote_herdr", False))
             )
-            session_context = session.get("context") if isinstance(session.get("context"), dict) else {}
-            session_context_key = str(
-                session_context.get("context_key")
-                or session.get("context_key")
-                or ""
-            ).strip()
-            if (
-                not is_herdr_session
-                and active_context_key
-                and session_context_key
-                and session_context_key != active_context_key
-            ):
+            if not is_herdr_session:
                 continue
             relevant_sessions.append(
                 {
                     "session_key": str(session.get("session_key") or ""),
+                    "source": "herdr",
+                    "pane_id": str(session.get("pane_id") or "").strip(),
+                    "agent_status": str(session.get("agent_status") or session.get("status") or "").strip(),
                     "title": str(session.get("title") or ""),
                     "preview": str(session.get("preview") or ""),
-                    "session_phase": str(session.get("session_phase") or ""),
+                    "herdr_host": str(session.get("herdr_host") or session.get("host_name") or "").strip(),
                     "needs_attention": bool(session.get("needs_attention", False)),
                     "is_current": bool(session.get("is_current", False)),
                 }
             )
+        relevant_session_keys = {
+            str(session.get("session_key") or "").strip()
+            for session in relevant_sessions
+            if str(session.get("session_key") or "").strip()
+        }
+        current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
+        if current_session_key not in relevant_session_keys:
+            current_session_key = ""
 
         processes = self.processes(process_limit) if include_processes else []
         workspace_summary = self.workspace_summary(runtime_snapshot, focused_window)
@@ -419,7 +419,7 @@ class AssistantDesktopService:
             "scratchpad": runtime_snapshot.get("scratchpad", {}),
             "active_terminal": runtime_snapshot.get("active_terminal", {}),
             "sessions": relevant_sessions,
-            "current_ai_session_key": str(runtime_snapshot.get("current_ai_session_key") or ""),
+            "current_ai_session_key": current_session_key,
             "runtime": runtime_summary,
             "top_processes": processes,
         }
