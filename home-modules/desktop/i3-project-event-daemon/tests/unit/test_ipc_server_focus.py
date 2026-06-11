@@ -714,17 +714,19 @@ async def test_focus_state_prefers_focused_local_window_over_stale_override(serv
 def test_dashboard_invariants_accept_single_daemon_current_row(server):
     payload = {
         "schema_version": "i3pm.dashboard.v2",
+        "generation": 1,
+        "snapshot_version": 1,
         "focus_state": {
             "current_session_key": "session-current",
             "current_window_id": 101,
             "current_workspace_name": "1",
         },
-        "current_ai_session_key": "session-current",
         "active_ai_sessions": [
             {
                 "session_key": "session-current",
                 "is_current_window": True,
                 "source": "herdr",
+                "pane_id": "pane-current",
                 "focused": True,
                 "is_current_host": True,
             },
@@ -732,6 +734,7 @@ def test_dashboard_invariants_accept_single_daemon_current_row(server):
                 "session_key": "session-background",
                 "is_current_window": False,
                 "source": "herdr",
+                "pane_id": "pane-background",
                 "focused": False,
                 "is_current_host": True,
             },
@@ -764,14 +767,25 @@ def test_dashboard_invariants_accept_single_daemon_current_row(server):
 def test_dashboard_invariants_reject_duplicate_current_rows(server):
     payload = {
         "schema_version": "i3pm.dashboard.v2",
+        "generation": 1,
+        "snapshot_version": 1,
         "focus_state": {
             "current_session_key": "session-current",
             "current_window_id": 101,
         },
-        "current_ai_session_key": "session-current",
         "active_ai_sessions": [
-            {"session_key": "session-current", "is_current_window": True},
-            {"session_key": "session-other", "is_current_window": True},
+            {
+                "session_key": "session-current",
+                "is_current_window": True,
+                "source": "herdr",
+                "pane_id": "pane-current",
+            },
+            {
+                "session_key": "session-other",
+                "is_current_window": True,
+                "source": "herdr",
+                "pane_id": "pane-other",
+            },
         ],
         "projects": [{"windows": [{"id": 101, "focused": True}]}],
         "outputs": [],
@@ -786,17 +800,19 @@ def test_dashboard_invariants_reject_duplicate_current_rows(server):
 def test_dashboard_invariants_warn_on_transient_window_focus_rows(server):
     payload = {
         "schema_version": "i3pm.dashboard.v2",
+        "generation": 1,
+        "snapshot_version": 1,
         "focus_state": {
             "current_session_key": "session-current",
             "current_window_id": 101,
             "current_workspace_name": "2",
         },
-        "current_ai_session_key": "session-current",
         "active_ai_sessions": [
             {
                 "session_key": "session-current",
                 "is_current_window": True,
                 "source": "herdr",
+                "pane_id": "pane-current",
                 "focused": True,
                 "is_current_host": True,
             },

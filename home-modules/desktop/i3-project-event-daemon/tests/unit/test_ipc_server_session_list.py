@@ -571,6 +571,8 @@ async def test_dashboard_snapshot_marks_remote_window_focused_from_current_sessi
             "window_active": True,
             "pane_active": True,
             "is_current_window": True,
+            "source": "herdr",
+            "pane_id": "remote-pane-1",
             "project_name": "PittampalliOrg/stacks:main",
             "execution_mode": "ssh",
             "connection_key": "vpittamp@ryzen:22",
@@ -630,7 +632,8 @@ async def test_dashboard_snapshot_marks_remote_window_focused_from_current_sessi
     result = await server._dashboard_snapshot({})
 
     assert result["active_project"] == "vpittamp/nixos-config:main"
-    assert result["current_ai_session_key"] == "session-remote-current"
+    assert "current_ai_session_key" not in result
+    assert result["focus_state"]["current_session_key"] == "session-remote-current"
     window = result["projects"][0]["windows"][0]
     assert window["focused"] is True
     assert window["visible"] is True

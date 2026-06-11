@@ -548,6 +548,16 @@ def validate_dashboard_payload(
         session for session in payload.get("active_ai_sessions", []) or []
         if isinstance(session, dict)
     ]
+    for session in sessions:
+        session_key = str(session.get("session_key") or "").strip()
+        if not session_key:
+            continue
+        if str(session.get("source") or "").strip() != "herdr":
+            issues.append("non_herdr_ai_session_row")
+            break
+        if not str(session.get("pane_id") or "").strip():
+            issues.append("herdr_session_without_pane_id")
+            break
     current_rows = [
         session for session in sessions
         if bool(session.get("is_current_window", False))
