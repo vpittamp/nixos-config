@@ -172,6 +172,29 @@ def test_focus_intent_finalization_marks_failed_result(server):
 
 
 @pytest.mark.asyncio
+async def test_focus_request_publishes_pending_and_final_focus_events(server):
+    server.notify_state_change = AsyncMock(return_value=None)
+    server._workspace_focus_fast = AsyncMock(
+        return_value={"success": True, "workspace": "9", "fast": True}
+    )
+
+    response = await server._handle_request(
+        {
+            "jsonrpc": "2.0",
+            "method": "workspace.focus_fast",
+            "params": {"workspace": "9"},
+            "id": 1,
+        },
+        Mock(),
+    )
+
+    assert response["result"]["focus_intent"]["state"] == "confirmed"
+    assert response["result"]["focus_intent"]["target_key"] == "9"
+    assert server.notify_state_change.await_count == 2
+    server.notify_state_change.assert_any_await("focus_changed")
+
+
+@pytest.mark.asyncio
 async def test_focus_window_remote_handoff_does_not_require_local_sway(server, monkeypatch):
     server.focus_service._connection_target_is_current_host = lambda _connection_key: False
     server.focus_service._remote_daemon_request = AsyncMock(return_value={

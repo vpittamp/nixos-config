@@ -520,6 +520,10 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     assert "function dashboardFocusState()" in text
     assert "dashboardFocusState().current_window_id" in text
     assert "dashboardFocusState().current_workspace_name" in text
+    assert "function handleDaemonActionResponse(payload)" in text
+    daemon_action_response_body = text.split("function handleDaemonActionResponse(payload)", 1)[1].split("function parseDashboard", 1)[0]
+    assert "result.focus_intent" in daemon_action_response_body
+    assert "pending_intent_id: intentState === \"pending\" ? stringOrEmpty(focusIntent.intent_id) : \"\"" in daemon_action_response_body
     window_focus_body = text.split("function windowIsFocused(windowData)", 1)[1].split("function windowIsCurrentTarget", 1)[0]
     assert "dashboardFocusState().focused_window_id" not in window_focus_body
     assert 'pendingFocusIntentMatches("window_focus", String(windowId))' in window_focus_body

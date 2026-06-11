@@ -122,7 +122,6 @@ class FocusService:
                 "fallback_method": "workspace.focus",
             }
 
-        self.set_pending_intent("")
         if self._notify_state_change:
             await self._notify_state_change("focus_changed")
         return {"success": True, "workspace": workspace_ref, "fast": True}
@@ -142,8 +141,6 @@ class FocusService:
 
         if self._send_tick_barrier:
             await self._send_tick_barrier(f"i3pm:workspace-focus:{workspace_ref}")
-        self.set_pending_intent("")
-
         focused_workspace = await self.focused_workspace_name()
         if focused_workspace != workspace_ref:
             matched = await self.wait_for_workspace_focus(workspace_ref, timeout_s=0.5)

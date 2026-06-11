@@ -959,6 +959,8 @@ class IPCServer:
                 method=method,
                 params=params,
             )
+            if method in self.focus_service.focus_intent_methods():
+                await self.notify_state_change("focus_changed")
 
         try:
             # Dispatch to handler method
@@ -1368,8 +1370,7 @@ class IPCServer:
             )
             if isinstance(result, dict) and focus_intent:
                 result["focus_intent"] = focus_intent
-                if str(focus_intent.get("state") or "") == "failed":
-                    await self.notify_state_change("focus_changed")
+                await self.notify_state_change("focus_changed")
             return {"jsonrpc": "2.0", "result": result, "id": request_id}
 
         except KeyError as e:

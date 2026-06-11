@@ -7763,6 +7763,19 @@ ShellRoot {
             const response = JSON.parse(raw);
             if (response && response.error) {
                 console.warn("daemon.action:", stringOrEmpty(response.error.message || response.error));
+                return;
+            }
+            const result = response && typeof response.result === "object" ? response.result : null;
+            const focusIntent = result && typeof result.focus_intent === "object" ? result.focus_intent : null;
+            if (focusIntent) {
+                const currentFocus = dashboard && typeof dashboard.focus_state === "object" ? dashboard.focus_state : {};
+                const intentState = stringOrEmpty(focusIntent.state);
+                dashboard = Object.assign({}, dashboard, {
+                    focus_state: Object.assign({}, currentFocus, {
+                        pending_intent_id: intentState === "pending" ? stringOrEmpty(focusIntent.intent_id) : "",
+                        focus_intent: focusIntent,
+                    }),
+                });
             }
         } catch (error) {
             console.warn("daemon.action: invalid response", error);

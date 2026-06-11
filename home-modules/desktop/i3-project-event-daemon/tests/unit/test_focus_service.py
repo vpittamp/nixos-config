@@ -408,6 +408,24 @@ async def test_focus_workspace_fast_notifies_without_verification() -> None:
 
 
 @pytest.mark.asyncio
+async def test_focus_workspace_fast_keeps_pending_intent_until_finalized() -> None:
+    service = make_action_service()
+    service.begin_user_focus_intent(
+        intent_id="intent-7",
+        method="workspace.focus_fast",
+        params={"workspace": "3"},
+        created_at=700.0,
+        generation=7,
+    )
+
+    result = await service.focus_workspace_fast({"workspace": "3"})
+
+    assert result["success"] is True
+    assert service.pending_intent_id == "intent-7"
+    assert service.focus_intent_payload()["state"] == "pending"
+
+
+@pytest.mark.asyncio
 async def test_focus_workspace_waits_for_confirmed_workspace() -> None:
     notify_state_change = AsyncMock(return_value=None)
     send_tick_barrier = AsyncMock(return_value=None)
