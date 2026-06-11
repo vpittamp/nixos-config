@@ -1622,7 +1622,12 @@ class HerdrService:
         pane_id = str(params.get("pane_id") or "").strip()
         if not pane_id:
             raise ValueError("pane_id is required")
-        result = await self.run_json(["agent", "focus", pane_id])
+        result = await self.run_socket_json(
+            method="agent.focus",
+            params={"target": pane_id},
+        )
+        if bool(result.get("transport_error", False)):
+            result = await self.run_json(["agent", "focus", pane_id])
         if bool(result.get("success", False)):
             self.bump_local_generation()
             self.invalidate_snapshot_cache()
@@ -1633,7 +1638,12 @@ class HerdrService:
         pane_id = str(params.get("pane_id") or "").strip()
         if not pane_id:
             raise ValueError("pane_id is required")
-        result = await self.run_json(["pane", "close", pane_id])
+        result = await self.run_socket_json(
+            method="pane.close",
+            params={"pane_id": pane_id},
+        )
+        if bool(result.get("transport_error", False)):
+            result = await self.run_json(["pane", "close", pane_id])
         if bool(result.get("success", False)):
             self.bump_local_generation()
         self.invalidate_snapshot_cache()
@@ -1644,7 +1654,12 @@ class HerdrService:
         workspace_id = str(params.get("workspace_id") or "").strip()
         if not workspace_id:
             raise ValueError("workspace_id is required")
-        result = await self.run_json(["workspace", "focus", workspace_id])
+        result = await self.run_socket_json(
+            method="workspace.focus",
+            params={"workspace_id": workspace_id},
+        )
+        if bool(result.get("transport_error", False)):
+            result = await self.run_json(["workspace", "focus", workspace_id])
         if bool(result.get("success", False)):
             self.bump_local_generation()
             self.invalidate_snapshot_cache()
@@ -1659,7 +1674,12 @@ class HerdrService:
         tab_id = str(params.get("tab_id") or "").strip()
         if not tab_id:
             raise ValueError("tab_id is required")
-        result = await self.run_json(["tab", "focus", tab_id])
+        result = await self.run_socket_json(
+            method="tab.focus",
+            params={"tab_id": tab_id},
+        )
+        if bool(result.get("transport_error", False)):
+            result = await self.run_json(["tab", "focus", tab_id])
         if bool(result.get("success", False)):
             self.bump_local_generation()
             self.invalidate_snapshot_cache()
@@ -2244,6 +2264,70 @@ class HerdrService:
             }
 
         return self._json_payload_from_completed_process(result, command=command)
+
+    async def run_socket_json(
+        self,
+        *,
+        method: str,
+        params: Optional[Dict[str, Any]] = None,
+        timeout: float = 0.5,
+    ) -> Dict[str, Any]:
+        """Call the local Herdr API socket without spawning the Herdr CLI."""
+        socket_path = self.socket_path()
+        request_id = f"i3pm-{method}-{time.monotonic_ns()}"
+        request = {
+            "id": request_id,
+            "method": method,
+            "params": params or {},
+        }
+        if not socket_path.exists():
+            return {
+                "success": False,
+                "transport_error": True,
+                "error": "herdr_socket_not_found",
+                "socket_path": str(socket_path),
+                "method": method,
+            }
+
+        writer: Optional[asyncio.StreamWriter] = None
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_unix_connection(str(socket_path)),
+                timeout=timeout,
+            )
+            await self.write_json_line(writer, request)
+            response = await self.read_json_line(reader, timeout=timeout)
+        except Exception as exc:
+            return {
+                "success": False,
+                "transport_error": True,
+                "error": type(exc).__name__,
+                "message": str(exc),
+                "socket_path": str(socket_path),
+                "method": method,
+            }
+        finally:
+            if writer is not None:
+                writer.close()
+                await self._close_writer(writer)
+
+        error = response.get("error") if isinstance(response, dict) else None
+        if isinstance(error, dict):
+            return {
+                "success": False,
+                "socket": True,
+                "error": str(error.get("code") or "herdr_error"),
+                "message": str(error.get("message") or ""),
+                "method": method,
+                "response": response,
+            }
+        return {
+            "success": True,
+            "socket": True,
+            "method": method,
+            "result": response.get("result") if isinstance(response, dict) else None,
+            "response": response,
+        }
 
     async def run_proxy_json(
         self,

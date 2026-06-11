@@ -51,7 +51,6 @@ Item {
         }
         if (!daemonActionSocket.connected) {
             daemonActionSocket.connected = true;
-            return false;
         }
 
         daemonActionRequestId += 1;

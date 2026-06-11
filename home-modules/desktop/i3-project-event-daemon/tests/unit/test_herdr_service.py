@@ -1445,13 +1445,13 @@ async def test_herdr_service_local_pane_actions_own_generations_and_cache(monkey
         notify_state_change=lambda event_type: asyncio.sleep(0),
         invalidate_snapshot_cache=lambda: None,
     )
-    calls = []
+    socket_calls = []
 
-    async def fake_run_json(args, timeout=2.0):
-        calls.append(args)
-        return {"success": True, "result": {"ok": True}}
+    async def fake_run_socket_json(*, method, params=None, timeout=0.5):
+        socket_calls.append((method, params))
+        return {"success": True, "socket": True, "result": {"ok": True}}
 
-    monkeypatch.setattr(service, "run_json", fake_run_json)
+    monkeypatch.setattr(service, "run_socket_json", fake_run_socket_json)
     service.store_snapshot({"sessions": [{"pane_id": "stale"}]}, now=100.0)
 
     focus_result = await service.pane_focus({"pane_id": "pane-a"})
@@ -1460,11 +1460,11 @@ async def test_herdr_service_local_pane_actions_own_generations_and_cache(monkey
     workspace_result = await service.workspace_focus({"workspace_id": "ws-a"})
     tab_result = await service.tab_focus({"tab_id": "tab-a"})
 
-    assert calls == [
-        ["agent", "focus", "pane-a"],
-        ["pane", "close", "pane-a"],
-        ["workspace", "focus", "ws-a"],
-        ["tab", "focus", "tab-a"],
+    assert socket_calls == [
+        ("agent.focus", {"target": "pane-a"}),
+        ("pane.close", {"pane_id": "pane-a"}),
+        ("workspace.focus", {"workspace_id": "ws-a"}),
+        ("tab.focus", {"tab_id": "tab-a"}),
     ]
     assert focus_result["success"] is True
     assert close_result["success"] is True
@@ -1472,6 +1472,31 @@ async def test_herdr_service_local_pane_actions_own_generations_and_cache(monkey
     assert tab_result["tab_id"] == "tab-a"
     assert service.local_herdr_generation == 4
     assert service.snapshot_cache == {}
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_local_focus_falls_back_to_cli_when_socket_unavailable(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    cli_calls = []
+
+    async def fake_run_socket_json(*, method, params=None, timeout=0.5):
+        return {"success": False, "transport_error": True, "error": "socket_unavailable"}
+
+    async def fake_run_json(args, timeout=2.0):
+        cli_calls.append(args)
+        return {"success": True, "result": {"ok": True}}
+
+    monkeypatch.setattr(service, "run_socket_json", fake_run_socket_json)
+    monkeypatch.setattr(service, "run_json", fake_run_json)
+
+    result = await service.pane_focus({"pane_id": "pane-a"})
+
+    assert cli_calls == [["agent", "focus", "pane-a"]]
+    assert result["success"] is True
+    assert service.local_herdr_generation == 1
 
 
 @pytest.mark.asyncio

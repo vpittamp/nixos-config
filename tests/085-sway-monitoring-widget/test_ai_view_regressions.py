@@ -41,6 +41,7 @@ SESSION_RUNTIME_SERVICE_PY = DAEMON_SERVICES_DIR / "session_runtime_service.py"
 DAEMON_STATUS_SERVICE_PY = DAEMON_SERVICES_DIR / "daemon_status_service.py"
 EVENT_QUERY_SERVICE_PY = DAEMON_SERVICES_DIR / "event_query_service.py"
 LAYOUT_SERVICE_PY = DAEMON_SERVICES_DIR / "layout_service.py"
+MONITOR_STATE_SERVICE_PY = DAEMON_SERVICES_DIR / "monitor_state_service.py"
 PROJECT_REMOTE_LAUNCH_PY = REPO_ROOT / "scripts" / "project-remote-launch.py"
 I3PM_MONITORING_DATA_PY = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "monitoring_data.py"
 I3PM_CLI_README = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "README.md"
@@ -286,6 +287,7 @@ def test_daemon_rpc_behavior_lives_in_services_not_ipc_wrappers():
     daemon_status_text = DAEMON_STATUS_SERVICE_PY.read_text()
     event_query_text = EVENT_QUERY_SERVICE_PY.read_text()
     layout_text = LAYOUT_SERVICE_PY.read_text()
+    monitor_state_text = MONITOR_STATE_SERVICE_PY.read_text()
 
     for retired in [
         "async def _window_focus_fast",
@@ -331,6 +333,13 @@ def test_daemon_rpc_behavior_lives_in_services_not_ipc_wrappers():
         "async def _layout_list",
         "async def _layout_delete",
         "async def _layout_info",
+        "async def _get_monitor_config",
+        "async def _validate_monitor_config",
+        "async def _reload_monitor_config",
+        "async def _reassign_workspaces",
+        "async def _get_monitors",
+        "async def _get_workspaces",
+        "async def _get_system_state",
     ]:
         assert retired not in ipc_text
 
@@ -355,6 +364,13 @@ def test_daemon_rpc_behavior_lives_in_services_not_ipc_wrappers():
     assert "layout_service.list(params)" in ipc_text
     assert "layout_service.delete(params)" in ipc_text
     assert "layout_service.info(params)" in ipc_text
+    assert "monitor_state_service.get_monitor_config()" in ipc_text
+    assert "monitor_state_service.validate_monitor_config(params)" in ipc_text
+    assert "monitor_state_service.reload_monitor_config()" in ipc_text
+    assert "monitor_state_service.reassign_workspaces(params)" in ipc_text
+    assert "monitor_state_service.get_monitors()" in ipc_text
+    assert "monitor_state_service.get_workspaces()" in ipc_text
+    assert "monitor_state_service.get_system_state()" in ipc_text
     assert "diagnostic_service.window_identity(params)" in ipc_text
     assert "diagnostic_service.window_environment(params)" in ipc_text
     assert "diagnostic_service.workspace_rule(params)" in ipc_text
@@ -386,6 +402,9 @@ def test_daemon_rpc_behavior_lives_in_services_not_ipc_wrappers():
     assert "class LayoutService" in layout_text
     assert "async def save" in layout_text
     assert "async def restore" in layout_text
+    assert "class MonitorStateService" in monitor_state_text
+    assert "async def get_monitor_config" in monitor_state_text
+    assert "async def get_system_state" in monitor_state_text
 
 
 def test_daemon_session_rows_strip_legacy_tmux_identity_fields():
@@ -445,6 +464,8 @@ def test_session_rows_use_daemon_focus_state_for_current_highlight():
     assert "function sessionMatchesKey(session, key)" in text
     assert "function pendingFocusIntent()" in text
     assert "function pendingFocusIntentMatches(kind, targetKey)" in text
+    assert "property var localFocusIntent: null" in text
+    assert "function beginLocalFocusIntent(method, params)" in text
     assert "function sessionPendingFocusTargetKey(session)" in text
     assert 'pendingFocusIntentMatches("herdr_pane_focus", pendingSessionTarget)' in text
     assert "optimisticCurrentSessionKey" not in text
@@ -637,8 +658,12 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     assert "dashboardFocusState().current_window_id" in text
     assert "dashboardFocusState().current_workspace_name" in text
     assert "function handleDaemonActionResponse(payload)" in text
+    assert "function focusIntentKindAndTarget(method, params)" in text
+    assert "beginLocalFocusIntent(\"workspace.focus_fast\", {workspace: workspaceName})" in text
+    assert "beginLocalFocusIntent(normalizedTarget.method, normalizedTarget.params)" in text
     daemon_action_response_body = text.split("function handleDaemonActionResponse(payload)", 1)[1].split("function parseDashboard", 1)[0]
     assert "result.focus_intent" in daemon_action_response_body
+    assert "localFocusIntent = null;" in daemon_action_response_body
     assert "pending_intent_id: intentState === \"pending\" ? stringOrEmpty(focusIntent.intent_id) : \"\"" in daemon_action_response_body
     window_focus_body = text.split("function windowIsFocused(windowData)", 1)[1].split("function windowIsCurrentTarget", 1)[0]
     assert "dashboardFocusState().focused_window_id" not in window_focus_body
@@ -660,6 +685,15 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     assert "root.workspaceIsFocused(workspace)" in bottom_bar_text
     assert "client.request(\"window.focus_fast\", params)" in window_command_text
     assert "fallback_method === \"window.focus\"" in window_command_text
+
+
+def test_quickshell_action_socket_does_not_force_first_click_cli_fallback():
+    """The persistent action socket should attempt the write after reconnecting."""
+    runtime_services_text = (REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "controllers" / "RuntimeServices.qml").read_text()
+    send_body = runtime_services_text.split("function sendDaemonAction(method, params)", 1)[1].split("Connections {", 1)[0]
+
+    assert "daemonActionSocket.connected = true;" in send_body
+    assert "return false;" not in send_body.split("daemonActionSocket.connected = true;", 1)[1].split("daemonActionRequestId += 1;", 1)[0]
 
 
 def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():

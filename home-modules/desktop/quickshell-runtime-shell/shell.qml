@@ -199,6 +199,7 @@ ShellRoot {
     property var collapsedHerdrSpaceGroups: ({})
     property string lastFocusedSessionKey: ""
     property string selectedSessionKey: ""
+    property var localFocusIntent: null
     property var sessionClosePendingMap: ({})
     property string displayApplyTarget: ""
     property string displayApplyStdout: ""
@@ -831,17 +832,17 @@ ShellRoot {
     function pendingFocusIntent() {
         const focusState = dashboardFocusState();
         const intent = focusState && typeof focusState.focus_intent === "object" ? focusState.focus_intent : null;
-        if (!intent) {
-            return null;
-        }
         const pendingIntentId = stringOrEmpty(focusState.pending_intent_id);
-        if (!pendingIntentId || pendingIntentId !== stringOrEmpty(intent.intent_id)) {
-            return null;
+        if (intent
+                && pendingIntentId
+                && pendingIntentId === stringOrEmpty(intent.intent_id)
+                && stringOrEmpty(intent.state) === "pending") {
+            return intent;
         }
-        if (stringOrEmpty(intent.state) !== "pending") {
-            return null;
+        if (localFocusIntent && stringOrEmpty(localFocusIntent.state) === "pending") {
+            return localFocusIntent;
         }
-        return intent;
+        return null;
     }
 
     function pendingFocusIntentMatches(kind, targetKey) {
@@ -851,6 +852,78 @@ ShellRoot {
             && stringOrEmpty(intent.kind) === stringOrEmpty(kind)
             && normalizedTargetKey !== ""
             && stringOrEmpty(intent.target_key) === normalizedTargetKey;
+    }
+
+    function focusIntentKindAndTarget(method, params) {
+        const normalizedMethod = stringOrEmpty(method);
+        const payload = params && typeof params === "object" ? params : {};
+        if (normalizedMethod === "window.focus" || normalizedMethod === "window.focus_fast") {
+            const windowId = Number(payload.window_id || 0);
+            return windowId > 0 ? {kind: "window_focus", target_key: String(windowId)} : null;
+        }
+        if (normalizedMethod === "workspace.focus" || normalizedMethod === "workspace.focus_fast") {
+            const workspace = stringOrEmpty(payload.workspace);
+            return workspace ? {kind: "workspace_focus", target_key: workspace} : null;
+        }
+        if (normalizedMethod === "herdr.pane.focus" || normalizedMethod === "herdr.remote.pane.focus") {
+            const paneId = stringOrEmpty(payload.pane_id);
+            if (!paneId) {
+                return null;
+            }
+            const host = stringOrEmpty(payload.host || payload.ssh_target);
+            return {kind: "herdr_pane_focus", target_key: host ? host + ":" + paneId : paneId};
+        }
+        if (normalizedMethod === "herdr.workspace.focus") {
+            const workspaceId = stringOrEmpty(payload.workspace_id);
+            return workspaceId ? {kind: "herdr_workspace_focus", target_key: workspaceId} : null;
+        }
+        return null;
+    }
+
+    function beginLocalFocusIntent(method, params) {
+        const intentTarget = focusIntentKindAndTarget(method, params);
+        if (!intentTarget) {
+            return;
+        }
+        localFocusIntent = {
+            intent_id: "local-" + Date.now(),
+            kind: intentTarget.kind,
+            target_key: intentTarget.target_key,
+            state: "pending",
+            created_at: Date.now() / 1000,
+            generation: dashboardGeneration(dashboard),
+        };
+    }
+
+    function localFocusIntentMatches(intent) {
+        return !!localFocusIntent
+            && !!intent
+            && stringOrEmpty(localFocusIntent.kind) === stringOrEmpty(intent.kind)
+            && stringOrEmpty(localFocusIntent.target_key) === stringOrEmpty(intent.target_key);
+    }
+
+    function clearLocalFocusIntentIfSettled() {
+        if (!localFocusIntent) {
+            return;
+        }
+        const kind = stringOrEmpty(localFocusIntent.kind);
+        const targetKey = stringOrEmpty(localFocusIntent.target_key);
+        const focusState = dashboardFocusState();
+        if (kind === "workspace_focus" && targetKey === stringOrEmpty(focusState.current_workspace_name)) {
+            localFocusIntent = null;
+            return;
+        }
+        if (kind === "window_focus" && targetKey === String(Number(focusState.current_window_id || 0))) {
+            localFocusIntent = null;
+            return;
+        }
+        if (kind === "herdr_pane_focus") {
+            const paneId = stringOrEmpty(focusState.current_herdr_pane_id);
+            const host = stringOrEmpty(focusState.current_herdr_host);
+            if (targetKey === paneId || (host && targetKey === host + ":" + paneId)) {
+                localFocusIntent = null;
+            }
+        }
     }
 
     function sessionPendingFocusTargetKey(session) {
@@ -7331,6 +7404,7 @@ ShellRoot {
             return;
         }
 
+        beginLocalFocusIntent(normalizedTarget.method, normalizedTarget.params);
         runDaemonAction(normalizedTarget.method, normalizedTarget.params);
     }
 
@@ -7525,6 +7599,7 @@ ShellRoot {
             return;
         }
 
+        beginLocalFocusIntent("workspace.focus_fast", {workspace: workspaceName});
         if (!runDaemonSocketCall("workspace.focus_fast", {workspace: workspaceName})) {
             runDetached([shellConfig.i3pmBin, "workspace", "focus", workspaceName]);
         }
@@ -7676,6 +7751,7 @@ ShellRoot {
         if (current) {
             selectedSessionKey = current;
         }
+        clearLocalFocusIntentIfSettled();
         if (launcherVisible && (launcherMode === "projects" || launcherMode === "sessions" || launcherMode === "windows")) {
             restartLauncherQuery();
         }
@@ -7763,11 +7839,15 @@ ShellRoot {
             const response = JSON.parse(raw);
             if (response && response.error) {
                 console.warn("daemon.action:", stringOrEmpty(response.error.message || response.error));
+                localFocusIntent = null;
                 return;
             }
             const result = response && typeof response.result === "object" ? response.result : null;
             const focusIntent = result && typeof result.focus_intent === "object" ? result.focus_intent : null;
             if (focusIntent) {
+                if (localFocusIntentMatches(focusIntent) && stringOrEmpty(focusIntent.state) !== "pending") {
+                    localFocusIntent = null;
+                }
                 const currentFocus = dashboard && typeof dashboard.focus_state === "object" ? dashboard.focus_state : {};
                 const intentState = stringOrEmpty(focusIntent.state);
                 dashboard = Object.assign({}, dashboard, {
@@ -7776,6 +7856,7 @@ ShellRoot {
                         focus_intent: focusIntent,
                     }),
                 });
+                clearLocalFocusIntentIfSettled();
             }
         } catch (error) {
             console.warn("daemon.action: invalid response", error);
