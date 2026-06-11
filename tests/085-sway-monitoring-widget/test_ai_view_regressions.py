@@ -302,6 +302,10 @@ def test_session_rows_use_daemon_focus_state_for_current_highlight():
     assert "property bool currentOverride: false" in row_text
     assert "readonly property bool isCurrent: currentOverride || rootObject.sessionIsCurrent(session)" in row_text
     assert "function sessionMatchesKey(session, key)" in text
+    assert "function pendingFocusIntent()" in text
+    assert "function pendingFocusIntentMatches(kind, targetKey)" in text
+    assert "function sessionPendingFocusTargetKey(session)" in text
+    assert 'pendingFocusIntentMatches("herdr_pane_focus", pendingSessionTarget)' in text
     assert "optimisticCurrentSessionKey" not in text
     assert "optimisticCurrentSessionKey" not in panel_text
     assert "optimisticCurrentSessionKey" not in launcher_text
@@ -493,9 +497,12 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     assert "dashboardFocusState().current_workspace_name" in text
     window_focus_body = text.split("function windowIsFocused(windowData)", 1)[1].split("function windowIsCurrentTarget", 1)[0]
     assert "dashboardFocusState().focused_window_id" not in window_focus_body
+    assert 'pendingFocusIntentMatches("window_focus", String(windowId))' in window_focus_body
     focus_command_body = text.split("if (windowFastFocusEligible(windowData))", 1)[1].split("if (explicitTarget)", 1)[0]
     assert "windowData.current_ai_session_key" not in focus_command_body
     assert "const focused = workspaceIsFocused(name);" in text
+    workspace_focus_body = text.split("function workspaceIsFocused(workspace)", 1)[1].split("function workspaceChipFill", 1)[0]
+    assert 'pendingFocusIntentMatches("workspace_focus", workspaceName)' in workspace_focus_body
     assert "focused: boolOrFalse(workspace?.focused)" not in text
     assert "output.current_workspace" not in text
     assert "focused: windowIsFocused(windowData)" in text
@@ -560,6 +567,9 @@ def test_worktree_app_uses_daemon_focus_state_and_no_heartbeat_config():
     assert "function windowIsFocused(windowData)" in shell_text
     window_focus_body = shell_text.split("function windowIsFocused(windowData)", 1)[1].split("function shortProject", 1)[0]
     assert "dashboardFocusState().focused_window_id" not in window_focus_body
+    assert "function pendingFocusIntent()" in shell_text
+    assert "function pendingFocusIntentMatches(kind, targetKey)" in shell_text
+    assert 'pendingFocusIntentMatches("window_focus", String(windowId))' in window_focus_body
     assert "windows.find(windowData => windowIsFocused(windowData))" in shell_text
     assert "windowData.focused" not in shell_text
     assert 'dashboardWatchProcess.command = [appConfig.i3pmBin, "dashboard", "watch"];' in service_text

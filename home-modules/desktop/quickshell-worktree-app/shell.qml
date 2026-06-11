@@ -83,8 +83,32 @@ ShellRoot {
         return appService.dashboard && typeof appService.dashboard.focus_state === "object" ? appService.dashboard.focus_state : {};
     }
 
+    function pendingFocusIntent() {
+        const focusState = dashboardFocusState();
+        const intent = focusState && typeof focusState.focus_intent === "object" ? focusState.focus_intent : null;
+        if (!intent)
+            return null;
+        const pendingIntentId = stringOrEmpty(focusState.pending_intent_id);
+        if (!pendingIntentId || pendingIntentId !== stringOrEmpty(intent.intent_id))
+            return null;
+        if (stringOrEmpty(intent.state) !== "pending")
+            return null;
+        return intent;
+    }
+
+    function pendingFocusIntentMatches(kind, targetKey) {
+        const intent = pendingFocusIntent();
+        const normalizedTargetKey = stringOrEmpty(targetKey);
+        return !!intent
+            && stringOrEmpty(intent.kind) === stringOrEmpty(kind)
+            && normalizedTargetKey !== ""
+            && stringOrEmpty(intent.target_key) === normalizedTargetKey;
+    }
+
     function windowIsFocused(windowData) {
         const windowId = windowIdValue(windowData);
+        if (pendingFocusIntentMatches("window_focus", String(windowId)))
+            return true;
         const currentWindowId = Number(dashboardFocusState().current_window_id || 0);
         return windowId > 0 && currentWindowId > 0 && windowId === currentWindowId;
     }

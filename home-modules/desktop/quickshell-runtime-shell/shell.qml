@@ -828,8 +828,54 @@ ShellRoot {
         return dashboard && typeof dashboard.focus_state === "object" ? dashboard.focus_state : {};
     }
 
+    function pendingFocusIntent() {
+        const focusState = dashboardFocusState();
+        const intent = focusState && typeof focusState.focus_intent === "object" ? focusState.focus_intent : null;
+        if (!intent) {
+            return null;
+        }
+        const pendingIntentId = stringOrEmpty(focusState.pending_intent_id);
+        if (!pendingIntentId || pendingIntentId !== stringOrEmpty(intent.intent_id)) {
+            return null;
+        }
+        if (stringOrEmpty(intent.state) !== "pending") {
+            return null;
+        }
+        return intent;
+    }
+
+    function pendingFocusIntentMatches(kind, targetKey) {
+        const intent = pendingFocusIntent();
+        const normalizedTargetKey = stringOrEmpty(targetKey);
+        return !!intent
+            && stringOrEmpty(intent.kind) === stringOrEmpty(kind)
+            && normalizedTargetKey !== ""
+            && stringOrEmpty(intent.target_key) === normalizedTargetKey;
+    }
+
+    function sessionPendingFocusTargetKey(session) {
+        const paneId = stringOrEmpty(session && session.pane_id);
+        if (!paneId) {
+            return "";
+        }
+
+        const intent = pendingFocusIntent();
+        const targetKey = stringOrEmpty(intent && intent.target_key);
+        if (targetKey.indexOf(":") < 0) {
+            return paneId;
+        }
+
+        const focusTarget = session && typeof session.focus_target === "object" ? session.focus_target : {};
+        const params = focusTarget && typeof focusTarget.params === "object" ? focusTarget.params : {};
+        const host = stringOrEmpty(params.host || params.ssh_target || session.host_name || session.target_host);
+        return host ? host + ":" + paneId : "";
+    }
+
     function windowIsFocused(windowData) {
         const windowId = windowIdValue(windowData);
+        if (pendingFocusIntentMatches("window_focus", String(windowId))) {
+            return true;
+        }
         const currentWindowId = Number(dashboardFocusState().current_window_id || 0);
         return windowId > 0 && currentWindowId > 0 && windowId === currentWindowId;
     }
@@ -1991,6 +2037,9 @@ ShellRoot {
 
     function workspaceIsFocused(workspace) {
         const workspaceName = workspaceNameValue(workspace);
+        if (pendingFocusIntentMatches("workspace_focus", workspaceName)) {
+            return true;
+        }
         const currentWorkspace = stringOrEmpty(dashboardFocusState().current_workspace_name);
         return workspaceName !== "" && currentWorkspace !== "" && workspaceName === currentWorkspace;
     }
@@ -6019,6 +6068,10 @@ ShellRoot {
     }
 
     function sessionIsCurrent(session) {
+        const pendingSessionTarget = sessionPendingFocusTargetKey(session);
+        if (pendingFocusIntentMatches("herdr_pane_focus", pendingSessionTarget)) {
+            return true;
+        }
         const current = currentSessionKey();
         if (current) {
             return sessionMatchesKey(session, current);
