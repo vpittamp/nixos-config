@@ -394,7 +394,7 @@ class FocusService:
     ) -> Dict[str, Any]:
         """Build the daemon-owned focus view model consumed by dashboard clients."""
         focused_window_id = int(runtime_snapshot.get("focused_window_id") or 0)
-        current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
+        current_session_key = str(runtime_snapshot.get("current_session_key") or "").strip()
         active_session = next(
             (
                 session for session in sessions

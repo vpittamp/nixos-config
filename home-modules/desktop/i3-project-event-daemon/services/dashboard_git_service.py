@@ -344,7 +344,7 @@ class DashboardGitService:
                     "attribution": "exact_worktree",
                 })
 
-        current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
+        current_session_key = str(runtime_snapshot.get("current_session_key") or "").strip()
         current_session = next(
             (
                 session for session in sessions

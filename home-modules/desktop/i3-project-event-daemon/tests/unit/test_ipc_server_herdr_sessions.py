@@ -545,7 +545,7 @@ async def test_dashboard_snapshot_includes_herdr_spaces(server, monkeypatch):
         "workspace_id": "local-ws",
     }]
     runtime_snapshot = {
-        "current_ai_session_key": "herdr:pane:local-pane",
+        "current_session_key": "herdr:pane:local-pane",
         "herdr": {
             "herdr_generation": 7,
             "local_herdr_generation": 7,

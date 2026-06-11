@@ -169,7 +169,7 @@ def test_build_focus_state_payload_uses_daemon_focus_fields() -> None:
     )
     runtime_snapshot = {
         "active_context": {"connection_key": "local@thinkpad"},
-        "current_ai_session_key": "session-current",
+        "current_session_key": "session-current",
         "focused_window_id": 101,
         "outputs": [
             {
@@ -223,7 +223,7 @@ def test_build_focus_state_payload_prefers_focused_workspace_over_output_current
     service = make_service()
     runtime_snapshot = {
         "active_context": {"connection_key": "local@thinkpad"},
-        "current_ai_session_key": "",
+        "current_session_key": "",
         "focused_window_id": 0,
         "outputs": [
             {

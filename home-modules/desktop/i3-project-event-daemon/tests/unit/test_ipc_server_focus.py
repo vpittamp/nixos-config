@@ -178,7 +178,7 @@ async def test_focus_window_remote_handoff_does_not_require_local_sway(server, m
         "result": {
             "success": True,
             "verification": {"success": True, "reason": "ok"},
-            "current_ai_session_key_after": "session-remote",
+            "current_session_key_after": "session-remote",
             "focused_window_id_after": 175,
             "focus_state_after": {
                 "current_session_key": "session-remote",
@@ -560,7 +560,7 @@ async def test_focus_state_reports_current_session_and_window(server, monkeypatc
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
         },
-        "current_ai_session_key": "session-current",
+        "current_session_key": "session-current",
         "focused_window_id": 101,
         "outputs": [],
         "tracked_windows": [
@@ -607,7 +607,7 @@ async def test_focus_state_clears_verified_remote_override_without_local_ai_focu
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
         },
-        "current_ai_session_key": "",
+        "current_session_key": "",
         "focused_window_id": 404,
         "outputs": [],
         "tracked_windows": [
@@ -666,7 +666,7 @@ async def test_focus_state_does_not_float_to_remote_session_without_verified_ove
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
         },
-        "current_ai_session_key": "",
+        "current_session_key": "",
         "focused_window_id": 404,
         "outputs": [],
         "tracked_windows": [
@@ -708,7 +708,7 @@ async def test_focus_state_prefers_focused_local_window_over_stale_override(serv
             "execution_mode": "local",
             "connection_key": "local@thinkpad",
         },
-        "current_ai_session_key": "session-local-current",
+        "current_session_key": "session-local-current",
         "focused_window_id": 101,
         "outputs": [],
         "tracked_windows": [
@@ -934,7 +934,7 @@ def test_dashboard_invariants_reject_remote_herdr_focus_mismatch(server):
             "current_session_key": "session-local",
             "current_window_id": 101,
         },
-        "current_ai_session_key": "session-local",
+        "current_session_key": "session-local",
         "active_ai_sessions": [
             {
                 "session_key": "session-local",

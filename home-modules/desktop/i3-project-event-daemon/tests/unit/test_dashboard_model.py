@@ -782,7 +782,7 @@ def test_build_dashboard_snapshot_payload_shapes_herdr_summary() -> None:
         "state_health": {"ok": True},
         "launch_stats": {"pending": 0},
         "scratchpad": {"visible": False},
-        "current_ai_session_key": "session-current",
+        "current_session_key": "session-current",
         "herdr": {
             "herdr_generation": 11,
             "local_herdr_generation": 7,
@@ -848,7 +848,7 @@ def test_build_dashboard_snapshot_payload_shapes_herdr_summary() -> None:
 def test_build_dashboard_snapshot_payload_fails_fast_on_invariant_violation() -> None:
     with pytest.raises(RuntimeError, match="current_session_key_not_unique"):
         build_dashboard_snapshot_payload(
-            runtime_snapshot={"current_ai_session_key": "session-missing"},
+            runtime_snapshot={"current_session_key": "session-missing"},
             display_snapshot={},
             projects=[],
             worktrees=[],

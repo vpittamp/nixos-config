@@ -53,7 +53,7 @@ def _runtime_snapshot() -> dict:
         "state_health": {},
         "launch_stats": {},
         "scratchpad": {},
-        "current_ai_session_key": "",
+        "current_session_key": "",
         "herdr": {
             "herdr_generation": 0,
             "local_herdr_generation": 0,

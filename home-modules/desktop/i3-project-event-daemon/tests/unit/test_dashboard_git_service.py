@@ -142,7 +142,7 @@ async def test_hydrate_runtime_git_state_enriches_sessions_and_worktrees() -> No
         "active_context": {
             "qualified_name": "vpittamp/nixos-config:main",
         },
-        "current_ai_session_key": "session-1",
+        "current_session_key": "session-1",
     }
     sessions = [
         {

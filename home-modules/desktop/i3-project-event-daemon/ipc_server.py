@@ -6805,7 +6805,7 @@ class IPCServer:
             "reason": str(reason or "superseded_by_newer_user_intent"),
             "session_key": str(session_key or "").strip(),
             "project_name": str(project_name or "").strip(),
-            "current_ai_session_key_after": "",
+            "current_session_key_after": "",
             "focused_window_id_after": 0,
             "focus_state_after": {},
             "verification": {
@@ -6853,7 +6853,7 @@ class IPCServer:
             params or {},
         )
         focused_window_id = int(runtime_snapshot.get("focused_window_id") or 0)
-        current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
+        current_session_key = str(runtime_snapshot.get("current_session_key") or "").strip()
         return {
             "sessions": sessions,
             "total": len(sessions),
@@ -8981,13 +8981,13 @@ class IPCServer:
                     if isinstance(remote_result, dict) and isinstance(remote_result.get("verification"), dict)
                     else {}
                 )
-                current_ai_session_key_after = (
-                    str(remote_result.get("current_ai_session_key_after") or "").strip()
+                current_session_key_after = (
+                    str(remote_result.get("current_session_key_after") or "").strip()
                     if isinstance(remote_result, dict)
                     else ""
                 )
-                if not current_ai_session_key_after:
-                    current_ai_session_key_after = str(remote_focus_state_after.get("current_session_key") or "").strip()
+                if not current_session_key_after:
+                    current_session_key_after = str(remote_focus_state_after.get("current_session_key") or "").strip()
                 focused_window_id_after = (
                     int(remote_result.get("focused_window_id_after") or 0)
                     if isinstance(remote_result, dict)
@@ -9000,7 +9000,7 @@ class IPCServer:
 
                 if remote_success:
                     self._set_focus_overrides(
-                        session_key=current_ai_session_key_after,
+                        session_key=current_session_key_after,
                         window_id=int(window_id),
                         connection_key=str(connection_key or "").strip(),
                     )
@@ -9014,7 +9014,7 @@ class IPCServer:
                     "switched_context": False,
                     "remote_handoff": remote_handoff,
                     "focus_target_host": remote_host,
-                    "current_ai_session_key_after": current_ai_session_key_after,
+                    "current_session_key_after": current_session_key_after,
                     "focused_window_id_after": focused_window_id_after,
                     "focus_state_after": remote_focus_state_after,
                     "verification": (
@@ -9095,7 +9095,7 @@ class IPCServer:
                         "target_variant": str(target_variant or "").strip(),
                         "connection_key": str(connection_key or "").strip(),
                         "switched_context": bool(switch_result.get("switched", False)),
-                        "current_ai_session_key_after": str(focus_state_after.get("current_session_key") or "").strip(),
+                        "current_session_key_after": str(focus_state_after.get("current_session_key") or "").strip(),
                         "focused_window_id_after": int(focus_state_after.get("current_window_id") or 0),
                         "focus_state_after": focus_state_after,
                         "verification": verification,
@@ -9116,7 +9116,7 @@ class IPCServer:
             "connection_key": str(connection_key or "").strip(),
             "switched_context": bool(switch_result.get("switched", False)),
             "error": last_error or "focus_failed",
-            "current_ai_session_key_after": str(focus_state_after.get("current_session_key") or "").strip(),
+            "current_session_key_after": str(focus_state_after.get("current_session_key") or "").strip(),
             "focused_window_id_after": int(focus_state_after.get("current_window_id") or 0),
             "focus_state_after": focus_state_after,
             "verification": verification,
@@ -9434,7 +9434,7 @@ class IPCServer:
         if not bool(params.get("skip_git_hydration", False)):
             await self._hydrate_runtime_git_state(runtime_snapshot, sessions)
         runtime_snapshot["sessions"] = sessions
-        runtime_snapshot["current_ai_session_key"] = current_session_key
+        runtime_snapshot["current_session_key"] = current_session_key
         runtime_snapshot["herdr"] = herdr_snapshot
         runtime_snapshot["focused_window_id"] = focused_window_id
         return runtime_snapshot

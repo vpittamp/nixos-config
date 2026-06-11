@@ -303,6 +303,33 @@ def test_session_rows_use_daemon_focus_state_for_current_highlight():
     assert "current_ai_session_key: \"\"" not in text
 
 
+def test_daemon_runtime_uses_current_session_key_not_retired_ai_alias():
+    """Runtime snapshots should not keep the retired AI-specific current-session alias alive."""
+    daemon_text = (REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon" / "ipc_server.py").read_text()
+    focus_service_text = (
+        REPO_ROOT
+        / "home-modules"
+        / "desktop"
+        / "i3-project-event-daemon"
+        / "services"
+        / "focus_service.py"
+    ).read_text()
+    dashboard_git_text = (
+        REPO_ROOT
+        / "home-modules"
+        / "desktop"
+        / "i3-project-event-daemon"
+        / "services"
+        / "dashboard_git_service.py"
+    ).read_text()
+
+    active_runtime_text = "\n".join([daemon_text, focus_service_text, dashboard_git_text])
+    assert 'runtime_snapshot["current_session_key"] = current_session_key' in daemon_text
+    assert 'runtime_snapshot["current_ai_session_key"]' not in active_runtime_text
+    assert 'runtime_snapshot.get("current_ai_session_key")' not in active_runtime_text
+    assert '"current_ai_session_key_after"' not in daemon_text
+
+
 def test_launcher_session_search_indexes_herdr_fields():
     """Launcher session search should include Herdr-native status and identity terms."""
     text = SHELL_QML.read_text()

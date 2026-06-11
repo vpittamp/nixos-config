@@ -88,7 +88,7 @@ def make_runtime_snapshot():
             }
         ],
         "sessions": [],
-        "current_ai_session_key": "",
+        "current_session_key": "",
         "focused_window_id": 101,
     }
 
@@ -450,7 +450,7 @@ async def test_session_list_strips_retired_lifecycle_fields(server, monkeypatch)
     runtime_snapshot = make_runtime_snapshot()
     session = make_runtime_session()
     runtime_snapshot["sessions"] = [session]
-    runtime_snapshot["current_ai_session_key"] = session["session_key"]
+    runtime_snapshot["current_session_key"] = session["session_key"]
 
     async def fake_runtime_snapshot(_params):
         return runtime_snapshot
@@ -540,7 +540,7 @@ async def test_remote_herdr_session_uses_focus_only_attach_mode(server, monkeypa
         },
     })
     runtime_snapshot["sessions"] = [session]
-    runtime_snapshot["current_ai_session_key"] = ""
+    runtime_snapshot["current_session_key"] = ""
 
     async def fake_runtime_snapshot(_params):
         return runtime_snapshot
@@ -621,7 +621,7 @@ async def test_dashboard_snapshot_marks_remote_window_focused_from_current_sessi
         "scratchpad": {},
         "active_terminal": {},
         "sessions": sessions,
-        "current_ai_session_key": "session-remote-current",
+        "current_session_key": "session-remote-current",
         "focused_window_id": 175,
     }
 
@@ -659,7 +659,7 @@ async def test_dashboard_snapshot_preserves_runtime_active_project(server):
         "scratchpad": {},
         "active_terminal": {},
         "sessions": [],
-        "current_ai_session_key": "",
+        "current_session_key": "",
         "focused_window_id": 0,
     }
 

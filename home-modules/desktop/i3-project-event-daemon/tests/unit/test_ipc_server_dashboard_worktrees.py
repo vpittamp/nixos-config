@@ -324,7 +324,7 @@ async def test_hydrate_runtime_git_state_reuses_single_live_snapshot_for_shared_
             "qualified_name": "vpittamp/nixos-config:main",
             "execution_mode": "local",
         },
-        "current_ai_session_key": "session-1",
+        "current_session_key": "session-1",
     }
     sessions = [
         {
