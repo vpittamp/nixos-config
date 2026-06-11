@@ -16,6 +16,21 @@ in
     text = ''
       Include ~/.ssh/devspace_config
 
+      # Desktop host administration must not depend on an unlocked
+      # 1Password GUI. This key is local-only; only the public key is
+      # declared in NixOS authorized_keys.
+      Host ryzen thinkpad
+        HostName %h.tail286401.ts.net
+        User vpittamp
+        IdentityAgent none
+        IdentityFile ~/.ssh/nixos_desktop_ops_ed25519
+        IdentitiesOnly yes
+        ForwardAgent no
+        StrictHostKeyChecking accept-new
+        ControlMaster auto
+        ControlPersist 10m
+        ControlPath ~/.ssh/controlmasters/%C
+
       Match exec "test -n \"$SSH_AUTH_SOCK\""
         IdentityAgent $SSH_AUTH_SOCK
 
@@ -38,19 +53,6 @@ in
       Host *.hetzner.cloud
         User root
         ForwardAgent yes
-
-      # Tailscale hosts - generic pattern
-      # Multiplex connections: i3pm/herdr poll these hosts with many concurrent
-      # one-shot ssh calls; without a shared master they overrun sshd MaxStartups
-      # (10:30:100) and get "kex_exchange_identification: Connection reset".
-      Host ryzen thinkpad
-        HostName %h.tail286401.ts.net
-        User vpittamp
-        ForwardAgent yes
-        StrictHostKeyChecking accept-new
-        ControlMaster auto
-        ControlPersist 10m
-        ControlPath ~/.ssh/controlmasters/%C
 
       Host nixos-* *.tail*.ts.net
         User vpittamp
