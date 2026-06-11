@@ -39,6 +39,7 @@ DIAGNOSTIC_SERVICE_PY = DAEMON_SERVICES_DIR / "diagnostic_service.py"
 TRACE_SERVICE_PY = DAEMON_SERVICES_DIR / "trace_service.py"
 SESSION_RUNTIME_SERVICE_PY = DAEMON_SERVICES_DIR / "session_runtime_service.py"
 DAEMON_STATUS_SERVICE_PY = DAEMON_SERVICES_DIR / "daemon_status_service.py"
+EVENT_QUERY_SERVICE_PY = DAEMON_SERVICES_DIR / "event_query_service.py"
 PROJECT_REMOTE_LAUNCH_PY = REPO_ROOT / "scripts" / "project-remote-launch.py"
 I3PM_MONITORING_DATA_PY = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "monitoring_data.py"
 I3PM_CLI_README = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "README.md"
@@ -282,6 +283,7 @@ def test_daemon_rpc_behavior_lives_in_services_not_ipc_wrappers():
     diagnostic_text = DIAGNOSTIC_SERVICE_PY.read_text()
     trace_text = TRACE_SERVICE_PY.read_text()
     daemon_status_text = DAEMON_STATUS_SERVICE_PY.read_text()
+    event_query_text = EVENT_QUERY_SERVICE_PY.read_text()
 
     for retired in [
         "async def _window_focus_fast",
@@ -320,6 +322,8 @@ def test_daemon_rpc_behavior_lives_in_services_not_ipc_wrappers():
         "async def _daemon_events",
         "async def _daemon_diagnose",
         "async def _daemon_apps",
+        "async def _get_events",
+        "def _convert_events_to_dict",
     ]:
         assert retired not in ipc_text
 
@@ -338,6 +342,7 @@ def test_daemon_rpc_behavior_lives_in_services_not_ipc_wrappers():
     assert "daemon_status_service.events_rpc(params)" in ipc_text
     assert "daemon_status_service.diagnose_rpc(params)" in ipc_text
     assert "daemon_status_service.apps_rpc(params)" in ipc_text
+    assert "event_query_service.get_events(params)" in ipc_text
     assert "diagnostic_service.window_identity(params)" in ipc_text
     assert "diagnostic_service.window_environment(params)" in ipc_text
     assert "diagnostic_service.workspace_rule(params)" in ipc_text
@@ -364,6 +369,8 @@ def test_daemon_rpc_behavior_lives_in_services_not_ipc_wrappers():
     assert "async def events_rpc" in daemon_status_text
     assert "async def diagnose_rpc" in daemon_status_text
     assert "async def apps_rpc" in daemon_status_text
+    assert "class EventQueryService" in event_query_text
+    assert "def convert_events_to_dict" in event_query_text
 
 
 def test_daemon_session_rows_strip_legacy_tmux_identity_fields():

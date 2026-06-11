@@ -63,6 +63,7 @@ from .services.dashboard_worktree_service import DashboardWorktreeService
 from .services.daemon_status_service import DaemonStatusService
 from .services.diagnostic_service import DiagnosticService
 from .services.display_service import DisplayService
+from .services.event_query_service import EventQueryService
 from .services.focus_service import FocusService
 from .services.herdr_service import HerdrService
 from .services.launch_service import LaunchService
@@ -587,6 +588,10 @@ class IPCServer:
             startup_recovery_provider=lambda: getattr(self, "startup_recovery_result", None),
             reconnection_manager_provider=lambda: getattr(self, "i3_reconnection_manager", None),
         )
+        self.event_query_service = EventQueryService(
+            event_buffer_provider=lambda: self.event_buffer,
+            log_ipc_event=lambda **kwargs: self._log_ipc_event(**kwargs),
+        )
         self.diagnostic_service = DiagnosticService(
             state_manager=self.state_manager,
             event_buffer=self.event_buffer,
@@ -1038,7 +1043,7 @@ class IPCServer:
             elif method == "get_events":
                 # Return events array (not dict with stats) for CLI
                 # Unified event system: Return full event data with source field
-                events_result = await self._get_events(params)
+                events_result = await self.event_query_service.get_events(params)
                 result = events_result.get("events", [])
             elif method == "list_monitors":
                 result = await self._list_monitors()
@@ -2268,165 +2273,6 @@ class IPCServer:
                 error=error_msg,
             )
 
-    async def _get_events(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Return recent events for diagnostics (Feature 017).
-
-        Feature 029: T017 - Extended to support systemd and proc event sources.
-
-        Args:
-            params: Query parameters:
-                - limit: Maximum events to return (default 100)
-                - event_type: Filter by event type
-                - source: Filter by source ("i3", "ipc", "daemon", "systemd", "proc", "all")
-                - since_id: Return events since this event_id
-                - since: Time specification for systemd queries (e.g., "1 hour ago")
-
-        Returns:
-            Dictionary with events list and buffer stats
-        """
-        start_time = time.perf_counter()
-        error_msg = None
-
-        try:
-            limit = params.get("limit", 100)
-            event_type = params.get("event_type")
-            source = params.get("source")
-            since_id = params.get("since_id")
-
-            # Feature 029: Handle systemd/proc/all sources with unified stream
-            if source in ("systemd", "proc", "all"):
-                # Unified event stream: merge events from multiple sources
-                all_events = []
-
-                # Get buffer events (i3, ipc, daemon, proc)
-                # Note: proc events are in event_buffer, not separate storage
-                if source in ("all", "proc") or (self.event_buffer and source not in ("systemd",)):
-                    if self.event_buffer:
-                        buffer_events = self.event_buffer.get_events(
-                            limit=limit,
-                            event_type=event_type,
-                            source=source if source != "all" else None,
-                            since_id=since_id
-                        )
-                        all_events.extend(buffer_events)
-
-                # Get systemd events if requested
-                # Feature 029: Run in thread pool to avoid blocking watchdog
-                if source in ("systemd", "all"):
-                    since = params.get("since", "1 hour ago")
-                    systemd_events = await asyncio.to_thread(
-                        systemd_query.query_systemd_journal_sync,
-                        since=since,
-                        limit=limit
-                    )
-                    all_events.extend(systemd_events)
-
-                # Sort all events by timestamp (chronological order)
-                all_events.sort(key=lambda e: e.timestamp)
-
-                # Apply limit after merge
-                all_events = all_events[-limit:]
-
-                # Convert to dict
-                events_data = self._convert_events_to_dict(all_events)
-
-                return {
-                    "events": events_data,
-                    "stats": self.event_buffer.get_stats() if self.event_buffer else {
-                        "total_events": len(events_data),
-                        "buffer_size": 0,
-                        "max_size": 0
-                    }
-                }
-
-            # Original behavior for i3/ipc/daemon sources
-            if not self.event_buffer:
-                return {"events": [], "stats": {"total_events": 0, "buffer_size": 0, "max_size": 0}}
-
-            # Get events from buffer
-            events = self.event_buffer.get_events(limit=limit, event_type=event_type, source=source, since_id=since_id)
-
-            # Convert EventEntry objects to dict
-            events_data = self._convert_events_to_dict(events)
-
-            return {
-                "events": events_data,
-                "stats": self.event_buffer.get_stats()
-            }
-        except Exception as e:
-            error_msg = str(e)
-            raise
-        finally:
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            await self._log_ipc_event(
-                event_type="query::events",
-                params={"limit": params.get("limit"), "event_type": params.get("event_type")},
-                result_count=len(events) if 'events' in locals() else 0,
-                duration_ms=duration_ms,
-                error=error_msg,
-            )
-
-    def _convert_events_to_dict(self, events: list) -> list:
-        """Convert EventEntry objects to dictionary format for JSON serialization.
-
-        Feature 029: Helper method to handle all event types (i3, ipc, daemon, systemd, proc).
-
-        Args:
-            events: List of EventEntry objects
-
-        Returns:
-            List of event dictionaries with all relevant fields
-        """
-        events_data = []
-        for e in events:
-            event_dict = {
-                "event_id": e.event_id,
-                "event_type": e.event_type,
-                "timestamp": e.timestamp.isoformat(),
-                "source": e.source,
-                "processing_duration_ms": e.processing_duration_ms,
-            }
-
-            # Add i3/window fields if present
-            if e.window_id is not None:
-                event_dict["window_id"] = e.window_id
-            if e.window_class:
-                event_dict["window_class"] = e.window_class
-            if e.workspace_name:
-                event_dict["workspace_name"] = e.workspace_name
-            if e.project_name:
-                event_dict["project_name"] = e.project_name
-            if e.tick_payload:
-                event_dict["tick_payload"] = e.tick_payload
-            if e.error:
-                event_dict["error"] = e.error
-
-            # Feature 029: Add systemd fields if present
-            if e.systemd_unit:
-                event_dict["systemd_unit"] = e.systemd_unit
-            if e.systemd_message:
-                event_dict["systemd_message"] = e.systemd_message
-            if e.systemd_pid is not None:
-                event_dict["systemd_pid"] = e.systemd_pid
-            if e.journal_cursor:
-                event_dict["journal_cursor"] = e.journal_cursor
-
-            # Feature 029: Add process fields if present (for future US2 implementation)
-            if e.process_pid is not None:
-                event_dict["process_pid"] = e.process_pid
-            if e.process_name:
-                event_dict["process_name"] = e.process_name
-            if e.process_cmdline:
-                event_dict["process_cmdline"] = e.process_cmdline
-            if e.process_parent_pid is not None:
-                event_dict["process_parent_pid"] = e.process_parent_pid
-            if e.process_start_time is not None:
-                event_dict["process_start_time"] = int(e.process_start_time.timestamp() * 1000)
-
-            events_data.append(event_dict)
-
-        return events_data
-
     async def _list_monitors(self) -> Dict[str, Any]:
         """List all connected monitor clients (Feature 017).
 
@@ -2622,7 +2468,7 @@ class IPCServer:
         # Optional components
         events_data = {"events": [], "stats": {}}
         if include_events:
-            events_data = await self._get_events({"limit": event_limit})
+            events_data = await self.event_query_service.get_events({"limit": event_limit})
 
         monitors_data = {"monitors": [], "total_clients": 0, "subscribed_clients": 0}
         if include_monitors:
