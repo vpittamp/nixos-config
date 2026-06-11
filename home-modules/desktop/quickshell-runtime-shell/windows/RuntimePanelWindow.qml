@@ -63,10 +63,23 @@ PanelWindow {
         return count;
     }
 
+    function runtimeVisibleHerdrSpaces() {
+        const visibleSpaces = [];
+        for (let i = 0; i < runtimeHerdrSpaces.length; i += 1) {
+            const space = runtimeHerdrSpaces[i];
+            const groupKey = root.herdrSpaceGroupKey(space);
+            if (!root.boolOrFalse(space && space.is_linked_worktree) || !root.herdrSpaceGroupCollapsed(groupKey) || root.herdrSpaceIsFocused(space)) {
+                visibleSpaces.push(space);
+            }
+        }
+        return visibleSpaces;
+    }
+
     function runtimePanelSessionSummary() {
         const bits = [];
-        if (runtimeHerdrSpaces.length > 0) {
-            bits.push(String(runtimeHerdrSpaces.length) + (runtimeHerdrSpaces.length === 1 ? " space" : " spaces"));
+        const visibleSpaces = runtimeVisibleHerdrSpaces();
+        if (visibleSpaces.length > 0) {
+            bits.push(String(visibleSpaces.length) + (visibleSpaces.length === 1 ? " space" : " spaces"));
         }
         if (runtimeSessions.length > 0) {
             bits.push(String(runtimeSessions.length) + (runtimeSessions.length === 1 ? " agent" : " agents"));
@@ -109,6 +122,18 @@ PanelWindow {
         }
 
         return section === "sessions" ? hasSessions : !hasSessions && hasWindows;
+    }
+
+    function runtimePanelLocalCollapsed(section) {
+        const hasSessions = runtimePanelHasSessions();
+        const hasWindows = runtimePanelHasWindows();
+        if (section === "sessions" && !hasSessions) {
+            return false;
+        }
+        if (section === "windows" && !hasWindows) {
+            return false;
+        }
+        return !runtimePanelLocalExpanded(section);
     }
 
     function runtimePanelLocalPreferredHeight(section) {
@@ -497,7 +522,7 @@ PanelWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        visible: root.runtimePanelSectionCollapsed("sessions")
+                        visible: panelWindow.runtimePanelLocalCollapsed("sessions")
                         text: "spaces and agents"
                         color: colors.subtle
                         font.pixelSize: 9
@@ -541,7 +566,7 @@ PanelWindow {
                                 Text {
                                     id: spacesCountText
                                     anchors.centerIn: parent
-                                    text: String(root.visibleHerdrSpaces().length)
+                                    text: String(panelWindow.runtimeVisibleHerdrSpaces().length)
                                     color: colors.muted
                                     font.pixelSize: 8
                                     font.weight: Font.DemiBold
@@ -558,7 +583,7 @@ PanelWindow {
 
                         ScriptModel {
                             id: herdrSpacesModel
-                            values: root.visibleHerdrSpaces()
+                            values: panelWindow.runtimeVisibleHerdrSpaces()
                             objectProp: "modelData"
                         }
 
@@ -801,7 +826,7 @@ PanelWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        visible: panelWindow.runtimePanelHasWindows() && root.runtimePanelSectionCollapsed("windows")
+                        visible: panelWindow.runtimePanelLocalCollapsed("windows")
                         text: "Window groups stay available here while Herdr Monitor takes the full panel."
                         color: colors.subtle
                         font.pixelSize: 9

@@ -727,6 +727,11 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     assert 'count: root.runtimePanelSectionCount("windows")' not in runtime_panel_text
     assert "count: panelWindow.runtimePanelWindowCount()" in runtime_panel_text
     assert "function runtimePanelWindowSummary()" in runtime_panel_text
+    assert "function runtimePanelLocalCollapsed(section)" in runtime_panel_text
+    assert 'visible: root.runtimePanelSectionCollapsed("sessions")' not in runtime_panel_text
+    assert 'visible: panelWindow.runtimePanelLocalCollapsed("sessions")' in runtime_panel_text
+    assert 'visible: panelWindow.runtimePanelHasWindows() && root.runtimePanelSectionCollapsed("windows")' not in runtime_panel_text
+    assert 'visible: panelWindow.runtimePanelLocalCollapsed("windows")' in runtime_panel_text
     assert "readonly property int agentCount: root.panelSessions().length" not in runtime_panel_text
     assert "text: String(root.panelSessions().length)" not in runtime_panel_text
     assert "values: root.panelSessions()" not in runtime_panel_text
@@ -1166,8 +1171,11 @@ def test_herdr_space_rows_use_visible_group_model_and_lowercase_copy():
     panel_text = RUNTIME_PANEL_WINDOW_QML.read_text()
     assert 'text: "spaces"' in panel_text
     assert 'text: "agents"' in panel_text
-    assert "text: String(root.visibleHerdrSpaces().length)" in panel_text
-    assert "values: root.visibleHerdrSpaces()" in panel_text
+    assert "function runtimeVisibleHerdrSpaces()" in panel_text
+    assert "text: String(panelWindow.runtimeVisibleHerdrSpaces().length)" in panel_text
+    assert "values: panelWindow.runtimeVisibleHerdrSpaces()" in panel_text
+    assert "text: String(root.visibleHerdrSpaces().length)" not in panel_text
+    assert "values: root.visibleHerdrSpaces()" not in panel_text
 
 
 def test_runtime_panel_section_header_is_reusable_tracked_component():
