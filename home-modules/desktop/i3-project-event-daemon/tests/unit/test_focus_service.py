@@ -6,6 +6,10 @@ import importlib
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
 
 
 PACKAGE_ROOT = Path(__file__).parent.parent.parent
@@ -38,6 +42,25 @@ def normalize_connection_key(value: str) -> str:
 
 def make_service() -> FocusService:
     return FocusService(normalize_connection_key=normalize_connection_key)
+
+
+def make_action_service(
+    *,
+    sway_available=True,
+    command_result=None,
+    workspaces=None,
+    notify_state_change=None,
+    send_tick_barrier=None,
+) -> FocusService:
+    return FocusService(
+        normalize_connection_key=normalize_connection_key,
+        sway_available=lambda: sway_available,
+        run_sway_command=AsyncMock(return_value=command_result if command_result is not None else [SimpleNamespace(success=True)]),
+        sway_command_succeeded=lambda result: all(bool(getattr(item, "success", False)) for item in result),
+        get_sway_workspaces=AsyncMock(return_value=workspaces if workspaces is not None else []),
+        send_tick_barrier=send_tick_barrier or AsyncMock(return_value=None),
+        notify_state_change=notify_state_change or AsyncMock(return_value=None),
+    )
 
 
 def test_select_current_session_key_clears_stale_window_override() -> None:
@@ -246,6 +269,68 @@ def test_build_focus_state_payload_prefers_focused_workspace_over_output_current
     result = service.build_focus_state_payload(runtime_snapshot, [], generation=5)
 
     assert result["current_workspace_name"] == "2"
+
+
+@pytest.mark.asyncio
+async def test_focus_workspace_fast_notifies_without_verification() -> None:
+    notify_state_change = AsyncMock(return_value=None)
+    send_tick_barrier = AsyncMock(return_value=None)
+    service = make_action_service(
+        notify_state_change=notify_state_change,
+        send_tick_barrier=send_tick_barrier,
+    )
+
+    result = await service.focus_workspace_fast({"workspace": "3"})
+
+    assert result == {"success": True, "workspace": "3", "fast": True}
+    service._run_sway_command.assert_awaited_once_with("workspace number 3")
+    send_tick_barrier.assert_not_awaited()
+    notify_state_change.assert_awaited_once_with("focus_changed")
+
+
+@pytest.mark.asyncio
+async def test_focus_workspace_waits_for_confirmed_workspace() -> None:
+    notify_state_change = AsyncMock(return_value=None)
+    send_tick_barrier = AsyncMock(return_value=None)
+    get_workspaces = AsyncMock(
+        side_effect=[
+            [SimpleNamespace(name="1", focused=True), SimpleNamespace(name="3", focused=False)],
+            [SimpleNamespace(name="1", focused=False), SimpleNamespace(name="3", focused=True)],
+        ]
+    )
+    service = make_action_service(
+        notify_state_change=notify_state_change,
+        send_tick_barrier=send_tick_barrier,
+    )
+    service._get_sway_workspaces = get_workspaces
+
+    result = await service.focus_workspace({"workspace": "3"})
+
+    assert result == {"success": True, "workspace": "3"}
+    service._run_sway_command.assert_awaited_once_with("workspace number 3")
+    send_tick_barrier.assert_awaited_once_with("i3pm:workspace-focus:3")
+    notify_state_change.assert_awaited_once_with("focus_changed")
+
+
+@pytest.mark.asyncio
+async def test_focus_workspace_returns_failure_when_command_fails() -> None:
+    service = make_action_service(command_result=[SimpleNamespace(success=False)])
+
+    result = await service.focus_workspace({"workspace": "3"})
+
+    assert result == {
+        "success": False,
+        "workspace": "3",
+        "error": "command_failed:workspace number 3",
+    }
+
+
+@pytest.mark.asyncio
+async def test_focus_workspace_requires_sway_connection() -> None:
+    service = make_action_service(sway_available=False)
+
+    with pytest.raises(RuntimeError, match="Sway connection is unavailable"):
+        await service.focus_workspace_fast({"workspace": "3"})
 
 
 def test_focus_intent_transitions_pending_to_confirmed() -> None:

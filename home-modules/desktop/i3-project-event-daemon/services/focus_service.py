@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Iterable, List
+import asyncio
+import time
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional
 
 
 FOCUS_STATE_SCHEMA_VERSION = "i3pm.focus_state.v2"
@@ -16,13 +18,127 @@ class FocusService:
         *,
         normalize_connection_key: Callable[[str], str],
         schema_version: str = FOCUS_STATE_SCHEMA_VERSION,
+        sway_available: Optional[Callable[[], bool]] = None,
+        run_sway_command: Optional[Callable[[str], Awaitable[Any]]] = None,
+        sway_command_succeeded: Optional[Callable[[Any], bool]] = None,
+        get_sway_workspaces: Optional[Callable[[], Awaitable[Any]]] = None,
+        send_tick_barrier: Optional[Callable[[str], Awaitable[None]]] = None,
+        notify_state_change: Optional[Callable[[str], Awaitable[None]]] = None,
     ) -> None:
         self._normalize_connection_key = normalize_connection_key
         self.schema_version = schema_version
+        self._sway_available = sway_available
+        self._run_sway_command = run_sway_command
+        self._sway_command_succeeded = sway_command_succeeded
+        self._get_sway_workspaces = get_sway_workspaces
+        self._send_tick_barrier = send_tick_barrier
+        self._notify_state_change = notify_state_change
         self.session_override_key: str = ""
         self.window_override: Dict[str, Any] = {"window_id": 0, "connection_key": ""}
         self.pending_intent_id: str = ""
         self.focus_intent: Dict[str, Any] = {}
+
+    def _workspace_focus_ready(self) -> bool:
+        return bool(
+            self._sway_available
+            and self._sway_available()
+            and self._run_sway_command
+            and self._sway_command_succeeded
+        )
+
+    @staticmethod
+    def _workspace_ref(params: Dict[str, Any]) -> str:
+        workspace = params.get("workspace")
+        if workspace is None:
+            raise ValueError("workspace is required")
+        workspace_ref = str(workspace).strip()
+        if not workspace_ref:
+            raise ValueError("workspace must not be empty")
+        return workspace_ref
+
+    async def focus_workspace_fast(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Low-latency workspace focus path for click-driven UI actions."""
+        if not self._workspace_focus_ready():
+            raise RuntimeError("Sway connection is unavailable")
+
+        workspace_ref = self._workspace_ref(params)
+        command = f"workspace number {workspace_ref}"
+        assert self._run_sway_command is not None
+        assert self._sway_command_succeeded is not None
+        result = await self._run_sway_command(command)
+        if not self._sway_command_succeeded(result):
+            return {
+                "success": False,
+                "workspace": workspace_ref,
+                "error": f"command_failed:{command}",
+                "fallback_method": "workspace.focus",
+            }
+
+        self.set_pending_intent("")
+        if self._notify_state_change:
+            await self._notify_state_change("focus_changed")
+        return {"success": True, "workspace": workspace_ref, "fast": True}
+
+    async def focus_workspace(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Focus a workspace through the daemon-owned Sway connection."""
+        if not self._workspace_focus_ready():
+            raise RuntimeError("Sway connection is unavailable")
+
+        workspace_ref = self._workspace_ref(params)
+        command = f"workspace number {workspace_ref}"
+        assert self._run_sway_command is not None
+        assert self._sway_command_succeeded is not None
+        result = await self._run_sway_command(command)
+        if not self._sway_command_succeeded(result):
+            return {"success": False, "workspace": workspace_ref, "error": f"command_failed:{command}"}
+
+        if self._send_tick_barrier:
+            await self._send_tick_barrier(f"i3pm:workspace-focus:{workspace_ref}")
+        self.set_pending_intent("")
+
+        focused_workspace = await self.focused_workspace_name()
+        if focused_workspace != workspace_ref:
+            matched = await self.wait_for_workspace_focus(workspace_ref, timeout_s=0.5)
+            if not matched:
+                return {
+                    "success": False,
+                    "workspace": workspace_ref,
+                    "focused_workspace": focused_workspace,
+                    "error": f"focus_verification_failed:{workspace_ref}",
+                }
+
+        if self._notify_state_change:
+            await self._notify_state_change("focus_changed")
+        return {"success": True, "workspace": workspace_ref}
+
+    async def focused_workspace_name(self) -> str:
+        """Return the currently focused workspace name, if available."""
+        if not self._sway_available or not self._sway_available() or not self._get_sway_workspaces:
+            return ""
+        try:
+            workspaces = await self._get_sway_workspaces()
+        except Exception:
+            return ""
+
+        for workspace in workspaces:
+            if bool(getattr(workspace, "focused", False)):
+                return str(getattr(workspace, "name", "") or "").strip()
+        return ""
+
+    async def wait_for_workspace_focus(self, workspace_ref: str, *, timeout_s: float) -> bool:
+        """Wait briefly for Sway to report the requested focused workspace."""
+        deadline = time.monotonic() + max(timeout_s, 0.0)
+        target = str(workspace_ref or "").strip()
+        if not target:
+            return False
+
+        while time.monotonic() < deadline:
+            focused = await self.focused_workspace_name()
+            if focused == target:
+                return True
+            await asyncio.sleep(0.02)
+
+        return await self.focused_workspace_name() == target
 
     def set_focus_overrides(
         self,
