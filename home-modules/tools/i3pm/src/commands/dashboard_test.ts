@@ -37,6 +37,7 @@ Deno.test("isDeltaEvent rejects dashboard-wide changed keys", () => {
 Deno.test("applyDashboardEvent merges partial payload and generations", () => {
   const snapshot = {
     schema_version: "i3pm.dashboard.v2",
+    generation: 10,
     snapshot_version: 10,
     session_generation: 20,
     display_generation: 30,
@@ -55,6 +56,7 @@ Deno.test("applyDashboardEvent merges partial payload and generations", () => {
     },
   });
 
+  assertEquals(next.generation, 11);
   assertEquals(next.snapshot_version, 11);
   assertEquals(next.session_generation, 21);
   assertEquals(next.display_generation, 30);

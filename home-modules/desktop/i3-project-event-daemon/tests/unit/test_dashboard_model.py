@@ -103,6 +103,8 @@ def _worktree(branch: str, **overrides):
 def test_validate_dashboard_payload_accepts_single_daemon_current_row() -> None:
     payload = {
         "schema_version": "i3pm.dashboard.v2",
+        "generation": 1,
+        "snapshot_version": 1,
         "focus_state": {
             "current_session_key": "session-current",
             "current_window_id": 101,
@@ -331,6 +333,8 @@ def test_build_dashboard_worktree_rows_exposes_remote_profile_metadata() -> None
 def test_validate_dashboard_payload_rejects_duplicate_current_rows() -> None:
     payload = {
         "schema_version": "i3pm.dashboard.v2",
+        "generation": 1,
+        "snapshot_version": 1,
         "focus_state": {
             "current_session_key": "session-current",
             "current_window_id": 101,
@@ -352,6 +356,8 @@ def test_validate_dashboard_payload_rejects_duplicate_current_rows() -> None:
 def test_validate_dashboard_payload_warns_on_transient_window_focus_rows() -> None:
     payload = {
         "schema_version": "i3pm.dashboard.v2",
+        "generation": 1,
+        "snapshot_version": 1,
         "focus_state": {
             "current_session_key": "session-current",
             "current_window_id": 101,
@@ -388,6 +394,8 @@ def test_validate_dashboard_payload_warns_on_transient_window_focus_rows() -> No
 def test_validate_dashboard_payload_rejects_remote_herdr_focus_mismatch() -> None:
     payload = {
         "schema_version": "i3pm.dashboard.v2",
+        "generation": 1,
+        "snapshot_version": 1,
         "focus_state": {
             "current_session_key": "session-local",
             "current_window_id": 101,
@@ -421,6 +429,8 @@ def test_validate_dashboard_payload_rejects_remote_herdr_focus_mismatch() -> Non
 def test_validate_dashboard_payload_rejects_retired_focus_aliases() -> None:
     payload = {
         "schema_version": "i3pm.dashboard.v2",
+        "generation": 1,
+        "snapshot_version": 1,
         "focus_state": {
             "current_session_key": "session-current",
             "current_ai_session_key": "session-current",
@@ -441,6 +451,45 @@ def test_validate_dashboard_payload_rejects_retired_focus_aliases() -> None:
     assert "retired_current_ai_session_key" in result["issues"]
     assert "retired_focus_current_ai_session_key" in result["issues"]
     assert "retired_focus_focused_window_id" in result["issues"]
+
+
+def test_validate_dashboard_payload_rejects_missing_generation() -> None:
+    payload = {
+        "schema_version": "i3pm.dashboard.v2",
+        "snapshot_version": 1,
+        "focus_state": {
+            "current_session_key": "",
+            "current_window_id": 0,
+        },
+        "active_ai_sessions": [],
+        "projects": [],
+        "outputs": [],
+    }
+
+    result = validate_dashboard_payload(payload)
+
+    assert result["ok"] is False
+    assert "missing_generation" in result["issues"]
+
+
+def test_validate_dashboard_payload_rejects_generation_mismatch() -> None:
+    payload = {
+        "schema_version": "i3pm.dashboard.v2",
+        "generation": 2,
+        "snapshot_version": 1,
+        "focus_state": {
+            "current_session_key": "",
+            "current_window_id": 0,
+        },
+        "active_ai_sessions": [],
+        "projects": [],
+        "outputs": [],
+    }
+
+    result = validate_dashboard_payload(payload)
+
+    assert result["ok"] is False
+    assert "generation_snapshot_version_mismatch" in result["issues"]
 
 
 def test_dashboard_event_type_maps_legacy_invalidations_to_typed_events() -> None:
@@ -550,6 +599,7 @@ def test_dashboard_invalidated_payload_preserves_generation_context() -> None:
     assert payload == {
         "status": "invalidated",
         "schema_version": "i3pm.dashboard.v2",
+        "generation": 11,
         "snapshot_version": 11,
         "session_generation": 21,
         "display_generation": 31,
@@ -563,6 +613,7 @@ def test_dashboard_event_payload_contains_common_metadata_and_changed_models_onl
         "status": "ok",
         "schema_version": "i3pm.dashboard.v2",
         "timestamp": 12345,
+        "generation": 7,
         "snapshot_version": 7,
         "session_generation": 3,
         "display_generation": 2,
@@ -581,6 +632,7 @@ def test_dashboard_event_payload_contains_common_metadata_and_changed_models_onl
 
     payload = dashboard_event_payload_from_snapshot(snapshot, ["focus_state", "projects"])
 
+    assert payload["generation"] == 7
     assert payload["snapshot_version"] == 7
     assert payload["focus_state"] == {"current_window_id": 101}
     assert payload["projects"] == [{"name": "demo"}]
@@ -650,6 +702,8 @@ def test_build_dashboard_snapshot_payload_shapes_herdr_summary() -> None:
     )
 
     assert payload["schema_version"] == "i3pm.dashboard.v2"
+    assert payload["generation"] == 12
+    assert payload["snapshot_version"] == 12
     assert "current_ai_session_key" not in payload
     assert payload["dashboard_invariants"]["ok"] is True
     assert payload["project_count"] == 1

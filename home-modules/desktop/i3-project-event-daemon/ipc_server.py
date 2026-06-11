@@ -2184,6 +2184,8 @@ class IPCServer:
                     "current_session_authority": "focus_state.current_session_key",
                     "required_dashboard_fields": [
                         "schema_version",
+                        "generation",
+                        "snapshot_version",
                         "focus_state",
                         "active_ai_sessions",
                         "dashboard_invariants",

@@ -127,6 +127,7 @@ class DashboardService:
             "success": bool(invariants.get("ok", False)),
             "schema_version": str(payload.get("schema_version") or ""),
             "focus_schema_version": focus_schema_version,
+            "generation": int(payload.get("generation") or 0),
             "snapshot_version": int(payload.get("snapshot_version") or 0),
             "session_generation": int(payload.get("session_generation") or 0),
             "display_generation": int(payload.get("display_generation") or 0),

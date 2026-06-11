@@ -59,6 +59,7 @@ export function applyDashboardEvent(
   };
   const generation = Number(event.generation ?? event.snapshot_version ?? -1);
   if (Number.isFinite(generation) && generation >= 0) {
+    next.generation = generation;
     next.snapshot_version = generation;
   }
   if (event.session_generation !== undefined) {

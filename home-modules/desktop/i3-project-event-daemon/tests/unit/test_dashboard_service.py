@@ -115,6 +115,7 @@ async def test_snapshot_uses_owned_generations() -> None:
     result = await service.snapshot({})
 
     assert result["schema_version"] == "i3pm.dashboard.v2"
+    assert result["generation"] == 9
     assert result["snapshot_version"] == 9
     assert result["session_generation"] == 4
     assert result["display_generation"] == 3
@@ -125,6 +126,7 @@ async def test_snapshot_uses_owned_generations() -> None:
     health = await service.validate({})
     assert health["schema_version"] == "i3pm.dashboard.v2"
     assert health["focus_schema_version"] == "i3pm.focus_state.v2"
+    assert health["generation"] == 9
 
 
 @pytest.mark.asyncio

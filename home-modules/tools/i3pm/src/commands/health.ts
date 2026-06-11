@@ -104,6 +104,7 @@ interface DashboardHealth {
   reachable: boolean;
   schema_version: string;
   focus_schema_version: string;
+  generation: number;
   snapshot_version: number;
   session_generation: number;
   display_generation: number;
@@ -120,6 +121,7 @@ interface DaemonContractHealth {
   dashboard_event_schema_version: string;
   focus_schema_version: string;
   current_session_authority: string;
+  required_dashboard_fields: string[];
   features: string[];
   retired_dashboard_fields: string[];
   issues: string[];
@@ -814,6 +816,7 @@ async function loadDashboardHealth(): Promise<DashboardHealth | null> {
       success?: boolean;
       schema_version?: string;
       focus_schema_version?: string;
+      generation?: number;
       snapshot_version?: number;
       session_generation?: number;
       display_generation?: number;
@@ -835,12 +838,27 @@ async function loadDashboardHealth(): Promise<DashboardHealth | null> {
     if (focusSchemaVersion !== EXPECTED_FOCUS_SCHEMA) {
       issues.push(`focus_schema_version:${focusSchemaVersion || "missing"}`);
     }
+    const generation = Number(result.generation);
+    const snapshotVersion = Number(result.snapshot_version);
+    if (!Number.isFinite(generation) || generation < 0) {
+      issues.push("generation:missing");
+    }
+    if (!Number.isFinite(snapshotVersion) || snapshotVersion < 0) {
+      issues.push("snapshot_version:missing");
+    }
+    if (
+      Number.isFinite(generation) && Number.isFinite(snapshotVersion) &&
+      generation !== snapshotVersion
+    ) {
+      issues.push(`generation_mismatch:${generation}:${snapshotVersion}`);
+    }
     return {
       healthy: result.success === true && issues.length === 0,
       reachable: true,
       schema_version: schemaVersion,
       focus_schema_version: focusSchemaVersion,
-      snapshot_version: Number(result.snapshot_version || 0),
+      generation: Number.isFinite(generation) ? generation : 0,
+      snapshot_version: Number.isFinite(snapshotVersion) ? snapshotVersion : 0,
       session_generation: Number(result.session_generation || 0),
       display_generation: Number(result.display_generation || 0),
       focus_generation: Number(result.focus_generation || 0),
@@ -854,6 +872,7 @@ async function loadDashboardHealth(): Promise<DashboardHealth | null> {
       reachable: false,
       schema_version: "",
       focus_schema_version: "",
+      generation: 0,
       snapshot_version: 0,
       session_generation: 0,
       display_generation: 0,
@@ -882,6 +901,9 @@ async function loadDaemonContractHealth(): Promise<DaemonContractHealth | null> 
     const features = asArray(result.features).map((feature) => String(feature || "")).filter(
       Boolean,
     );
+    const requiredDashboardFields = asArray(contract.required_dashboard_fields).map((field) =>
+      String(field || "")
+    ).filter(Boolean);
     const retiredDashboardFields = asArray(contract.retired_dashboard_fields).map((field) =>
       String(field || "")
     ).filter(Boolean);
@@ -901,20 +923,38 @@ async function loadDaemonContractHealth(): Promise<DaemonContractHealth | null> 
     if (currentSessionAuthority !== "focus_state.current_session_key") {
       issues.push(`current_session_authority:${currentSessionAuthority || "missing"}`);
     }
-    for (const feature of [
-      "daemon-owned-focus-state",
-      "dashboard-delta-events",
-      "herdr-native-ai-sessions",
-    ]) {
+    for (
+      const feature of [
+        "daemon-owned-focus-state",
+        "dashboard-delta-events",
+        "herdr-native-ai-sessions",
+      ]
+    ) {
       if (!features.includes(feature)) {
         issues.push(`missing_feature:${feature}`);
       }
     }
-    for (const retiredField of [
-      "current_ai_session_key",
-      "focus_state.current_ai_session_key",
-      "focus_state.focused_window_id",
-    ]) {
+    for (
+      const requiredField of [
+        "schema_version",
+        "generation",
+        "snapshot_version",
+        "focus_state",
+        "active_ai_sessions",
+        "dashboard_invariants",
+      ]
+    ) {
+      if (!requiredDashboardFields.includes(requiredField)) {
+        issues.push(`missing_required_dashboard_field_marker:${requiredField}`);
+      }
+    }
+    for (
+      const retiredField of [
+        "current_ai_session_key",
+        "focus_state.current_ai_session_key",
+        "focus_state.focused_window_id",
+      ]
+    ) {
       if (!retiredDashboardFields.includes(retiredField)) {
         issues.push(`missing_retired_field_marker:${retiredField}`);
       }
@@ -927,6 +967,7 @@ async function loadDaemonContractHealth(): Promise<DaemonContractHealth | null> 
       dashboard_event_schema_version: dashboardEventSchemaVersion,
       focus_schema_version: focusSchemaVersion,
       current_session_authority: currentSessionAuthority,
+      required_dashboard_fields: requiredDashboardFields,
       features,
       retired_dashboard_fields: retiredDashboardFields,
       issues,
@@ -941,6 +982,7 @@ async function loadDaemonContractHealth(): Promise<DaemonContractHealth | null> 
       dashboard_event_schema_version: "",
       focus_schema_version: "",
       current_session_authority: "",
+      required_dashboard_fields: [],
       features: [],
       retired_dashboard_fields: [],
       issues: [message || "daemon.version failed"],
@@ -1090,9 +1132,9 @@ function printReport(report: HealthReport): void {
   );
   if (report.daemon_contract) {
     console.log(
-      `  daemon contract ${
-        report.daemon_contract.healthy ? green("matched") : red("invalid")
-      } ${dim(report.daemon_contract.schema_version || "missing")} ${
+      `  daemon contract ${report.daemon_contract.healthy ? green("matched") : red("invalid")} ${
+        dim(report.daemon_contract.schema_version || "missing")
+      } ${
         dim(
           `dashboard ${report.daemon_contract.dashboard_schema_version || "missing"} focus ${
             report.daemon_contract.focus_schema_version || "missing"
@@ -1123,9 +1165,9 @@ function printReport(report: HealthReport): void {
     console.log(
       `  dashboard ${report.dashboard.healthy ? green("matched") : red("invalid")} ${
         dim(
-          `${
-            report.dashboard.schema_version || "missing"
-          } focus-state ${report.dashboard.focus_schema_version || "missing"} snapshot ${report.dashboard.snapshot_version} focus ${report.dashboard.focus_generation}`,
+          `${report.dashboard.schema_version || "missing"} focus-state ${
+            report.dashboard.focus_schema_version || "missing"
+          } generation ${report.dashboard.generation} focus ${report.dashboard.focus_generation}`,
         )
       }`,
     );

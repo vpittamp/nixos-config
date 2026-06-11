@@ -134,6 +134,8 @@ async def test_daemon_version_exposes_runtime_contract_marker():
     assert result["contract"]["dashboard_event_schema_version"] == "i3pm.dashboard.event.v1"
     assert result["contract"]["focus_schema_version"] == "i3pm.focus_state.v2"
     assert result["contract"]["current_session_authority"] == "focus_state.current_session_key"
+    assert "generation" in result["contract"]["required_dashboard_fields"]
+    assert "snapshot_version" in result["contract"]["required_dashboard_fields"]
     assert "current_ai_session_key" in result["contract"]["retired_dashboard_fields"]
     assert "daemon-owned-focus-state" in result["features"]
     assert "herdr-native-ai-sessions" in result["features"]

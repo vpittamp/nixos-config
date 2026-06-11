@@ -349,6 +349,7 @@ def dashboard_invalidated_payload(
     return {
         "status": "invalidated",
         "schema_version": schema_version,
+        "generation": snapshot_version,
         "snapshot_version": snapshot_version,
         "session_generation": session_generation,
         "display_generation": display_generation,
@@ -395,6 +396,7 @@ def dashboard_event_payload_from_snapshot(
         "status": snapshot.get("status", "ok"),
         "schema_version": snapshot.get("schema_version", schema_version),
         "timestamp": snapshot.get("timestamp"),
+        "generation": snapshot.get("generation", snapshot.get("snapshot_version")),
         "snapshot_version": snapshot.get("snapshot_version"),
         "session_generation": snapshot.get("session_generation"),
         "display_generation": snapshot.get("display_generation"),
@@ -459,6 +461,7 @@ def build_dashboard_snapshot_payload(
         "status": "ok",
         "schema_version": schema_version,
         "timestamp": timestamp,
+        "generation": snapshot_version,
         "snapshot_version": snapshot_version,
         "session_generation": session_generation,
         "display_generation": display_generation,
@@ -510,6 +513,20 @@ def validate_dashboard_payload(
     warnings: List[str] = []
     if str(payload.get("schema_version") or "").strip() != schema_version:
         issues.append("schema_version_mismatch")
+    generation_raw = payload.get("generation")
+    snapshot_version_raw = payload.get("snapshot_version")
+    try:
+        generation = int(generation_raw)
+    except (TypeError, ValueError):
+        generation = -1
+        issues.append("missing_generation")
+    try:
+        snapshot_version = int(snapshot_version_raw)
+    except (TypeError, ValueError):
+        snapshot_version = -1
+        issues.append("missing_snapshot_version")
+    if generation >= 0 and snapshot_version >= 0 and generation != snapshot_version:
+        issues.append("generation_snapshot_version_mismatch")
     if "current_ai_session_key" in payload:
         issues.append("retired_current_ai_session_key")
 
