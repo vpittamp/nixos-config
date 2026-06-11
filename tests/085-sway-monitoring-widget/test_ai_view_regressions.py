@@ -521,6 +521,7 @@ def test_legacy_monitoring_docs_do_not_claim_ai_or_ui_authority():
     assert "Legacy monitoring data compatibility backend" in monitoring_data_text
     assert "It is no longer the active QuickShell runtime state authority." in monitoring_data_text
     assert "outputs JSON for Eww consumption" not in monitoring_data_text
+    assert '"ai_sessions"' not in monitoring_data_text
     assert "eww-monitoring-panel" not in cli_readme_text
     assert "OTEL remains telemetry-only" in ai_session_doc_text
     assert "Eww monitoring panel state, defpolls, or `monitoring_data.py` as UI authority" in ai_session_doc_text

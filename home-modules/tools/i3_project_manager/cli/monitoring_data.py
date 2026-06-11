@@ -2091,7 +2091,6 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "error": None,
             "spinner_frame": get_spinner_frame(),
             "has_working_badge": False,
-            "ai_sessions": [],
         }
 
     except DaemonError as e:
@@ -2108,7 +2107,6 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "error": str(e),
             "spinner_frame": get_spinner_frame(),
             "has_working_badge": False,
-            "ai_sessions": [],
         }
 
     except Exception as e:
@@ -2125,7 +2123,6 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "error": f"Unexpected error: {type(e).__name__}: {e}",
             "spinner_frame": get_spinner_frame(),
             "has_working_badge": False,
-            "ai_sessions": [],
         }
 
 

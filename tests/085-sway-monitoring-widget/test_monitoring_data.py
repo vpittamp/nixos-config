@@ -415,6 +415,7 @@ class TestQueryMonitoringData:
             assert "timestamp" in result
             assert "active_ai_sessions" not in result
             assert "active_ai_sessions_mru" not in result
+            assert "ai_sessions" not in result
             assert "ai_monitor_metrics" not in result
 
     @pytest.mark.asyncio
@@ -433,6 +434,7 @@ class TestQueryMonitoringData:
             assert result["projects"] == []
             assert "active_ai_sessions" not in result
             assert "active_ai_sessions_mru" not in result
+            assert "ai_sessions" not in result
             assert "Socket not found" in result["error"]
             assert "timestamp" in result
 
@@ -768,6 +770,7 @@ class TestLegacyAiCompatibility:
         assert result["status"] == "ok"
         assert "active_ai_sessions" not in result
         assert "active_ai_sessions_mru" not in result
+        assert "ai_sessions" not in result
         assert "current_ai_session_key" not in result
         assert "ai_monitor_metrics" not in result
         assert "otel_sessions" not in result
@@ -864,6 +867,7 @@ class TestLegacyAiCompatibility:
         assert result["status"] == "ok"
         assert "active_ai_sessions" not in result
         assert "active_ai_sessions_mru" not in result
+        assert "ai_sessions" not in result
         assert "current_ai_session_key" not in result
         assert "ai_monitor_metrics" not in result
         assert "otel_sessions" not in result
