@@ -112,6 +112,19 @@ interface DashboardHealth {
   warnings: string[];
 }
 
+interface DaemonContractHealth {
+  healthy: boolean;
+  reachable: boolean;
+  schema_version: string;
+  dashboard_schema_version: string;
+  dashboard_event_schema_version: string;
+  focus_schema_version: string;
+  current_session_authority: string;
+  features: string[];
+  retired_dashboard_fields: string[];
+  issues: string[];
+}
+
 interface HealthReport {
   timestamp: string;
   overall_status: "ok" | "warn" | "fail";
@@ -126,6 +139,7 @@ interface HealthReport {
     path: string;
     exists: boolean;
   };
+  daemon_contract: DaemonContractHealth | null;
   quickshell: {
     shell_qml: PathCheck;
     service_unit: PathCheck;
@@ -137,6 +151,10 @@ interface HealthReport {
 }
 
 const OPTIONAL_USER_UNIT_PREFIXES = ["wayvnc@"];
+const EXPECTED_DAEMON_CONTRACT_SCHEMA = "i3pm.daemon.contract.v1";
+const EXPECTED_DASHBOARD_SCHEMA = "i3pm.dashboard.v2";
+const EXPECTED_DASHBOARD_EVENT_SCHEMA = "i3pm.dashboard.event.v1";
+const EXPECTED_FOCUS_SCHEMA = "i3pm.focus_state.v2";
 
 function showHelp(): void {
   console.log(`i3pm health [--json]
@@ -810,11 +828,11 @@ async function loadDashboardHealth(): Promise<DashboardHealth | null> {
       ? result.warnings.map((warning) => String(warning)).filter(Boolean)
       : [];
     const schemaVersion = String(result.schema_version || "");
-    if (schemaVersion !== "i3pm.dashboard.v2") {
+    if (schemaVersion !== EXPECTED_DASHBOARD_SCHEMA) {
       issues.push(`schema_version:${schemaVersion || "missing"}`);
     }
     const focusSchemaVersion = String(result.focus_schema_version || "");
-    if (focusSchemaVersion !== "i3pm.focus_state.v2") {
+    if (focusSchemaVersion !== EXPECTED_FOCUS_SCHEMA) {
       issues.push(`focus_schema_version:${focusSchemaVersion || "missing"}`);
     }
     return {
@@ -842,6 +860,90 @@ async function loadDashboardHealth(): Promise<DashboardHealth | null> {
       focus_generation: 0,
       issues: [message || "dashboard.validate failed"],
       warnings: [],
+    };
+  } finally {
+    client.disconnect();
+  }
+}
+
+async function loadDaemonContractHealth(): Promise<DaemonContractHealth | null> {
+  const client = new DaemonClient();
+  try {
+    const result = await client.request<{
+      contract?: unknown;
+      features?: unknown[];
+    }>("daemon.version", {});
+    const contract = asRecord(result.contract);
+    const schemaVersion = String(contract.schema_version || "");
+    const dashboardSchemaVersion = String(contract.dashboard_schema_version || "");
+    const dashboardEventSchemaVersion = String(contract.dashboard_event_schema_version || "");
+    const focusSchemaVersion = String(contract.focus_schema_version || "");
+    const currentSessionAuthority = String(contract.current_session_authority || "");
+    const features = asArray(result.features).map((feature) => String(feature || "")).filter(
+      Boolean,
+    );
+    const retiredDashboardFields = asArray(contract.retired_dashboard_fields).map((field) =>
+      String(field || "")
+    ).filter(Boolean);
+    const issues: string[] = [];
+    if (schemaVersion !== EXPECTED_DAEMON_CONTRACT_SCHEMA) {
+      issues.push(`daemon_contract_schema:${schemaVersion || "missing"}`);
+    }
+    if (dashboardSchemaVersion !== EXPECTED_DASHBOARD_SCHEMA) {
+      issues.push(`dashboard_schema:${dashboardSchemaVersion || "missing"}`);
+    }
+    if (dashboardEventSchemaVersion !== EXPECTED_DASHBOARD_EVENT_SCHEMA) {
+      issues.push(`dashboard_event_schema:${dashboardEventSchemaVersion || "missing"}`);
+    }
+    if (focusSchemaVersion !== EXPECTED_FOCUS_SCHEMA) {
+      issues.push(`focus_schema:${focusSchemaVersion || "missing"}`);
+    }
+    if (currentSessionAuthority !== "focus_state.current_session_key") {
+      issues.push(`current_session_authority:${currentSessionAuthority || "missing"}`);
+    }
+    for (const feature of [
+      "daemon-owned-focus-state",
+      "dashboard-delta-events",
+      "herdr-native-ai-sessions",
+    ]) {
+      if (!features.includes(feature)) {
+        issues.push(`missing_feature:${feature}`);
+      }
+    }
+    for (const retiredField of [
+      "current_ai_session_key",
+      "focus_state.current_ai_session_key",
+      "focus_state.focused_window_id",
+    ]) {
+      if (!retiredDashboardFields.includes(retiredField)) {
+        issues.push(`missing_retired_field_marker:${retiredField}`);
+      }
+    }
+    return {
+      healthy: issues.length === 0,
+      reachable: true,
+      schema_version: schemaVersion,
+      dashboard_schema_version: dashboardSchemaVersion,
+      dashboard_event_schema_version: dashboardEventSchemaVersion,
+      focus_schema_version: focusSchemaVersion,
+      current_session_authority: currentSessionAuthority,
+      features,
+      retired_dashboard_fields: retiredDashboardFields,
+      issues,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      healthy: false,
+      reachable: false,
+      schema_version: "",
+      dashboard_schema_version: "",
+      dashboard_event_schema_version: "",
+      focus_schema_version: "",
+      current_session_authority: "",
+      features: [],
+      retired_dashboard_fields: [],
+      issues: [message || "daemon.version failed"],
     };
   } finally {
     client.disconnect();
@@ -884,6 +986,7 @@ async function collectHealthReport(): Promise<HealthReport> {
   const shellServiceCheck = makePathCheck(currentShellService, expectedShellService);
   const daemonSocketPath = getSocketPath();
   const daemonSocketExists = await Deno.stat(daemonSocketPath).then(() => true).catch(() => false);
+  const daemonContract = daemonSocketExists ? await loadDaemonContractHealth() : null;
   const dashboard = daemonSocketExists ? await loadDashboardHealth() : null;
   const herdr = await loadHerdrHealth();
   const herdrRemotes = await loadHerdrRemoteHealth();
@@ -902,6 +1005,11 @@ async function collectHealthReport(): Promise<HealthReport> {
   }
   if (!daemonSocketExists) {
     coreIssues.push(`daemon socket missing at ${daemonSocketPath}`);
+  }
+  if (!daemonContract) {
+    coreIssues.push("daemon contract unavailable");
+  } else if (!daemonContract.healthy) {
+    coreIssues.push(...daemonContract.issues.map((issue) => `daemon contract: ${issue}`));
   }
   if (!dashboard) {
     coreIssues.push("dashboard health unavailable");
@@ -953,6 +1061,7 @@ async function collectHealthReport(): Promise<HealthReport> {
       path: daemonSocketPath,
       exists: daemonSocketExists,
     },
+    daemon_contract: daemonContract,
     quickshell: {
       shell_qml: shellQmlCheck,
       service_unit: shellServiceCheck,
@@ -979,6 +1088,21 @@ function printReport(report: HealthReport): void {
       dim(report.daemon_socket.path)
     }`,
   );
+  if (report.daemon_contract) {
+    console.log(
+      `  daemon contract ${
+        report.daemon_contract.healthy ? green("matched") : red("invalid")
+      } ${dim(report.daemon_contract.schema_version || "missing")} ${
+        dim(
+          `dashboard ${report.daemon_contract.dashboard_schema_version || "missing"} focus ${
+            report.daemon_contract.focus_schema_version || "missing"
+          }`,
+        )
+      }`,
+    );
+  } else {
+    console.log(`  daemon contract ${red("unavailable")}`);
+  }
   console.log("");
 
   console.log(bold("Convergence"));

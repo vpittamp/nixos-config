@@ -123,6 +123,23 @@ async def test_ipc_server_tracks_malformed_json_in_status():
 
 
 @pytest.mark.asyncio
+async def test_daemon_version_exposes_runtime_contract_marker():
+    state_manager = state_module.StateManager()
+    server = ipc_server_module.IPCServer(state_manager)
+
+    result = await server._daemon_version({})
+
+    assert result["contract"]["schema_version"] == "i3pm.daemon.contract.v1"
+    assert result["contract"]["dashboard_schema_version"] == "i3pm.dashboard.v2"
+    assert result["contract"]["dashboard_event_schema_version"] == "i3pm.dashboard.event.v1"
+    assert result["contract"]["focus_schema_version"] == "i3pm.focus_state.v2"
+    assert result["contract"]["current_session_authority"] == "focus_state.current_session_key"
+    assert "current_ai_session_key" in result["contract"]["retired_dashboard_fields"]
+    assert "daemon-owned-focus-state" in result["features"]
+    assert "herdr-native-ai-sessions" in result["features"]
+
+
+@pytest.mark.asyncio
 async def test_ipc_server_stop_does_not_block_on_slow_client_close():
     state_manager = state_module.StateManager()
     server = ipc_server_module.IPCServer(state_manager)

@@ -52,6 +52,8 @@ from .services.window_filter import (
 )
 from .services.registry_loader import RegistryLoader, RegistryApp
 from .services.dashboard_model import (
+    DASHBOARD_EVENT_SCHEMA_VERSION,
+    DASHBOARD_SCHEMA_VERSION,
     build_dashboard_projects as build_dashboard_project_cards,
 )
 from .services.dashboard_service import DashboardService
@@ -83,6 +85,7 @@ ICON_EXTENSIONS = (".svg", ".png", ".xpm")
 APP_REGISTRY_PATH = Path.home() / ".config/i3/application-registry.json"
 PWA_REGISTRY_PATH = Path.home() / ".config/i3/pwa-registry.json"
 CHROME_SCOPED_TMP_PREFIX = "/tmp/com.google.Chrome.scoped_dir."
+DAEMON_CONTRACT_SCHEMA_VERSION = "i3pm.daemon.contract.v1"
 FOCUS_STATE_SCHEMA_VERSION = "i3pm.focus_state.v2"
 
 _DISCOVERED_WORKTREE_CACHE: Dict[str, Any] = {
@@ -2173,6 +2176,24 @@ class IPCServer:
             result = {
                 "version": "1.0.0",
                 "api_version": "1.0.0",
+                "contract": {
+                    "schema_version": DAEMON_CONTRACT_SCHEMA_VERSION,
+                    "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
+                    "dashboard_event_schema_version": DASHBOARD_EVENT_SCHEMA_VERSION,
+                    "focus_schema_version": FOCUS_STATE_SCHEMA_VERSION,
+                    "current_session_authority": "focus_state.current_session_key",
+                    "required_dashboard_fields": [
+                        "schema_version",
+                        "focus_state",
+                        "active_ai_sessions",
+                        "dashboard_invariants",
+                    ],
+                    "retired_dashboard_fields": [
+                        "current_ai_session_key",
+                        "focus_state.current_ai_session_key",
+                        "focus_state.focused_window_id",
+                    ],
+                },
                 "features": [
                     "session-management",
                     "mark-based-correlation",
@@ -2180,7 +2201,10 @@ class IPCServer:
                     "auto-restore",
                     "workspace-focus-tracking",
                     "window-focus-tracking",
-                    "terminal-cwd-tracking"
+                    "terminal-cwd-tracking",
+                    "daemon-owned-focus-state",
+                    "dashboard-delta-events",
+                    "herdr-native-ai-sessions",
                 ]
             }
 
