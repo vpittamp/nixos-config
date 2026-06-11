@@ -43,6 +43,7 @@ COMMANDS:
   launch           Daemon-owned application launch commands
   session          AI session inspection commands
   herdr-proxy      Host-local Herdr proxy for remote dashboard aggregation
+  quickshell       QuickShell runtime preflight checks
   window           Daemon-owned window focus/action commands
   workspace        Daemon-owned workspace focus commands
   dashboard        Dashboard snapshot and watch commands
@@ -75,6 +76,7 @@ EXAMPLES:
   i3pm herdr-proxy focus <pane_id> --json
   i3pm herdr-proxy snapshot --json    Emit local Herdr proxy snapshot
   i3pm herdr-proxy events --jsonl     Stream typed Herdr proxy events
+  i3pm quickshell preflight --json    Check QuickShell source and loader state
   i3pm window focus <window_id>       Focus a managed window
   i3pm workspace focus 2              Focus a workspace
   i3pm dashboard snapshot             Show dashboard state
@@ -193,6 +195,14 @@ async function main(): Promise<void> {
           verbose: args.verbose,
           debug: args.debug,
         });
+        Deno.exit(exitCode);
+      }
+      break;
+
+    case "quickshell":
+      {
+        const { quickshellCommand } = await import("./commands/quickshell.ts");
+        const exitCode = await quickshellCommand(commandArgs);
         Deno.exit(exitCode);
       }
       break;

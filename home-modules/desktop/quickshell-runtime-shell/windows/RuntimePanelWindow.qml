@@ -14,6 +14,8 @@ PanelWindow {
     required property var colors
     readonly property QtObject root: shellRoot
     id: panelWindow
+    readonly property bool hasRuntimeSessions: root.panelSessions().length > 0 || root.herdrSpaces().length > 0
+    readonly property bool hasRuntimeWindows: root.panelProjects().length > 0
     screen: root.primaryScreen
     visible: root.panelVisible
     color: "transparent"
@@ -27,6 +29,47 @@ PanelWindow {
     WlrLayershell.namespace: "i3pm-runtime-panel"
     WlrLayershell.layer: root.dockedMode ? WlrLayer.Top : WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+
+    function runtimePanelLocalExpanded(section) {
+        if (section === "sessions" && !hasRuntimeSessions) {
+            return false;
+        }
+        if (section === "windows" && !hasRuntimeWindows) {
+            return false;
+        }
+
+        const requested = root.stringOrEmpty(root.runtimePanelExpandedSection);
+        if (requested === "balanced" && hasRuntimeSessions && hasRuntimeWindows) {
+            return true;
+        }
+        if (requested === section) {
+            return true;
+        }
+        if (requested === "sessions" || requested === "windows") {
+            return false;
+        }
+
+        return section === "sessions" ? hasRuntimeSessions : !hasRuntimeSessions && hasRuntimeWindows;
+    }
+
+    function runtimePanelLocalPreferredHeight(section) {
+        if (section === "sessions" && !hasRuntimeSessions) {
+            return 0;
+        }
+        if (section === "windows" && !hasRuntimeWindows) {
+            return 0;
+        }
+
+        const requested = root.stringOrEmpty(root.runtimePanelExpandedSection);
+        const balanced = requested === "balanced" && hasRuntimeSessions && hasRuntimeWindows;
+        if (balanced) {
+            return section === "sessions" ? 320 : 220;
+        }
+        if (runtimePanelLocalExpanded(section)) {
+            return section === "sessions" ? 360 : 320;
+        }
+        return 60;
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -364,16 +407,14 @@ PanelWindow {
 
             Rectangle {
                 id: sessionsSection
-                readonly property bool expanded: root.runtimePanelSectionExpanded("sessions")
-                readonly property bool hasContent: root.panelSessions().length > 0 || root.herdrSpaces().length > 0
-                visible: hasContent
+                visible: panelWindow.hasRuntimeSessions
                 Layout.fillWidth: true
-                Layout.fillHeight: expanded
-                Layout.minimumHeight: expanded ? 180 : 60
-                Layout.preferredHeight: root.runtimePanelSectionPreferredHeight("sessions")
+                Layout.fillHeight: panelWindow.runtimePanelLocalExpanded("sessions")
+                Layout.minimumHeight: panelWindow.runtimePanelLocalExpanded("sessions") ? 180 : 60
+                Layout.preferredHeight: panelWindow.runtimePanelLocalPreferredHeight("sessions")
                 radius: 12
-                color: expanded ? colors.panel : colors.cardAlt
-                border.color: expanded ? colors.lineSoft : colors.border
+                color: panelWindow.runtimePanelLocalExpanded("sessions") ? colors.panel : colors.cardAlt
+                border.color: panelWindow.runtimePanelLocalExpanded("sessions") ? colors.lineSoft : colors.border
                 border.width: 1
 
                 ColumnLayout {
@@ -389,7 +430,7 @@ PanelWindow {
                         title: "Herdr Monitor"
                         summary: root.runtimePanelSectionSummary("sessions")
                         count: root.runtimePanelSectionCount("sessions")
-                        expanded: sessionsSection.expanded
+                        expanded: panelWindow.runtimePanelLocalExpanded("sessions")
                         onClicked: root.toggleRuntimePanelSection("sessions")
                     }
 
@@ -411,10 +452,10 @@ PanelWindow {
                         readonly property int rowSpacing: 6
                         readonly property int chipHeight: 18
                         readonly property real spacesMaxFraction: agentCount <= 0 ? 0.86 : (agentCount <= 2 ? 0.68 : 0.52)
-                        readonly property int spacesMaxHeight: Math.max(150, Math.floor(root.runtimePanelSectionPreferredHeight("sessions") * spacesMaxFraction))
+                        readonly property int spacesMaxHeight: Math.max(150, Math.floor(panelWindow.runtimePanelLocalPreferredHeight("sessions") * spacesMaxFraction))
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        visible: sessionsSection.expanded
+                        visible: panelWindow.runtimePanelLocalExpanded("sessions")
                         spacing: 10
 
                         RowLayout {
@@ -658,16 +699,14 @@ PanelWindow {
 
             Rectangle {
                 id: windowsSection
-                readonly property bool expanded: root.runtimePanelSectionExpanded("windows")
-                readonly property bool hasProjects: root.panelProjects().length > 0
-                visible: hasProjects || root.panelSessions().length === 0
+                visible: panelWindow.hasRuntimeWindows || !panelWindow.hasRuntimeSessions
                 Layout.fillWidth: true
-                Layout.fillHeight: expanded
-                Layout.minimumHeight: expanded ? 180 : 60
-                Layout.preferredHeight: hasProjects ? root.runtimePanelSectionPreferredHeight("windows") : 72
+                Layout.fillHeight: panelWindow.runtimePanelLocalExpanded("windows")
+                Layout.minimumHeight: panelWindow.runtimePanelLocalExpanded("windows") ? 180 : 60
+                Layout.preferredHeight: panelWindow.hasRuntimeWindows ? panelWindow.runtimePanelLocalPreferredHeight("windows") : 72
                 radius: 12
-                color: expanded ? colors.panel : colors.cardAlt
-                border.color: expanded ? colors.blueMuted : colors.border
+                color: panelWindow.runtimePanelLocalExpanded("windows") ? colors.panel : colors.cardAlt
+                border.color: panelWindow.runtimePanelLocalExpanded("windows") ? colors.blueMuted : colors.border
                 border.width: 1
 
                 ColumnLayout {
@@ -681,10 +720,10 @@ PanelWindow {
                     WindowComponents.RuntimePanelSectionHeader {
                         colorsObject: colors
                         title: "Windows"
-                        summary: windowsSection.hasProjects ? root.runtimePanelSectionSummary("windows") : "No tracked project windows"
+                        summary: panelWindow.hasRuntimeWindows ? root.runtimePanelSectionSummary("windows") : "No tracked project windows"
                         count: root.runtimePanelSectionCount("windows")
-                        expanded: windowsSection.expanded
-                        clickable: windowsSection.hasProjects
+                        expanded: panelWindow.runtimePanelLocalExpanded("windows")
+                        clickable: panelWindow.hasRuntimeWindows
                         expandedBorder: colors.blueMuted
                         onClicked: root.toggleRuntimePanelSection("windows")
                     }
@@ -701,7 +740,7 @@ PanelWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        visible: windowsSection.hasProjects && root.runtimePanelSectionCollapsed("windows")
+                        visible: panelWindow.hasRuntimeWindows && root.runtimePanelSectionCollapsed("windows")
                         text: "Window groups stay available here while Herdr Monitor takes the full panel."
                         color: colors.subtle
                         font.pixelSize: 9
@@ -724,7 +763,7 @@ PanelWindow {
                         boundsBehavior: Flickable.StopAtBounds
                         model: windowProjectsModel
                         cacheBuffer: 1200
-                        visible: windowsSection.hasProjects && windowsSection.expanded
+                        visible: panelWindow.hasRuntimeWindows && panelWindow.runtimePanelLocalExpanded("windows")
 
                         delegate: Rectangle {
                             required property var modelData

@@ -32,6 +32,7 @@ let
         "$out/share/i3pm/src/commands/display.ts" \
         "$out/share/i3pm/src/commands/health.ts" \
         "$out/share/i3pm/src/commands/launch.ts" \
+        "$out/share/i3pm/src/commands/quickshell.ts" \
         "$out/share/i3pm/src/commands/session.ts" \
         "$out/share/i3pm/src/commands/workspace.ts" \
         "$out/share/i3pm/src/commands/window.ts" \

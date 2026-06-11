@@ -1,5 +1,6 @@
 """Regression tests for the QuickShell AI/session view wiring."""
 
+import subprocess
 from pathlib import Path
 
 
@@ -9,6 +10,7 @@ SHELL_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" 
 SESSION_ROW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "SessionRow.qml"
 LAUNCHER_WINDOW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "LauncherWindow.qml"
 RUNTIME_PANEL_WINDOW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "RuntimePanelWindow.qml"
+RUNTIME_PANEL_SECTION_HEADER_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "RuntimePanelSectionHeader.qml"
 RUNTIME_SERVICES_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "controllers" / "RuntimeServices.qml"
 RUNTIME_DASHBOARD_STATE_JS = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "controllers" / "DashboardState.js"
 QUICKSHELL_DEFAULT_NIX = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "default.nix"
@@ -799,6 +801,8 @@ def test_quickshell_runtime_is_pinned_and_service_hardened():
     flake_text = (REPO_ROOT / "flake.nix").read_text()
     runtime_nix = QUICKSHELL_DEFAULT_NIX.read_text()
     worktree_nix = WORKTREE_APP_DEFAULT_NIX.read_text()
+    i3pm_main_text = I3PM_MAIN_TS.read_text()
+    i3pm_package_text = (REPO_ROOT / "home-modules" / "tools" / "i3pm-deno.nix").read_text()
 
     assert 'quickshell = {' in flake_text
     assert 'url = "github:quickshell-mirror/quickshell/v0.3.0";' in flake_text
@@ -812,6 +816,30 @@ def test_quickshell_runtime_is_pinned_and_service_hardened():
     assert 'StartLimitIntervalSec = "30s";' in runtime_nix
     assert "StartLimitBurst = 5;" in runtime_nix
     assert '"QS_DISABLE_FILE_WATCHER=1"' in runtime_nix
+    assert 'case "quickshell":' in i3pm_main_text
+    assert 'await import("./commands/quickshell.ts")' in i3pm_main_text
+    assert "$out/share/i3pm/src/commands/quickshell.ts" in i3pm_package_text
+
+
+def test_quickshell_runtime_source_files_are_tracked_by_git():
+    """Nix flakes omit untracked files, so QML source components must be tracked."""
+    result = subprocess.run(
+        [
+            "git",
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "home-modules/desktop/quickshell-runtime-shell",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    untracked_files = [line for line in result.stdout.splitlines() if line.strip()]
+    assert untracked_files == []
 
 
 def test_quickshell_dashboard_reducer_logs_focus_invariant_conflicts():
@@ -1119,6 +1147,16 @@ def test_herdr_space_rows_use_visible_group_model_and_lowercase_copy():
     assert 'text: "agents"' in panel_text
     assert "text: String(root.visibleHerdrSpaces().length)" in panel_text
     assert "values: root.visibleHerdrSpaces()" in panel_text
+
+
+def test_runtime_panel_section_header_is_reusable_tracked_component():
+    panel_text = RUNTIME_PANEL_WINDOW_QML.read_text()
+    header_text = RUNTIME_PANEL_SECTION_HEADER_QML.read_text()
+    assert 'import "." as WindowComponents' in panel_text
+    assert "WindowComponents.RuntimePanelSectionHeader" in panel_text
+    assert "signal clicked()" in header_text
+    assert "property string summary" in header_text
+    assert "property bool clickable" in header_text
 
 
 def test_herdr_parent_rows_render_chevrons_and_children_indent():
