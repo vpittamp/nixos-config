@@ -442,6 +442,106 @@ async def test_focus_window_service_requires_window_dependencies() -> None:
         await service.focus_window(window_id=101)
 
 
+@pytest.mark.asyncio
+async def test_focus_window_fast_service_direct_success_skips_transition() -> None:
+    run_sway_command = AsyncMock(return_value=[SimpleNamespace(success=True)])
+    get_window_transition_state = AsyncMock(return_value={"exists": True})
+    notify_state_change = AsyncMock(return_value=None)
+    service = make_window_focus_service(
+        run_sway_command=run_sway_command,
+        get_window_transition_state=get_window_transition_state,
+        notify_state_change=notify_state_change,
+    )
+
+    result = await service.focus_window_fast({
+        "window_id": 30,
+        "target_variant": "local",
+        "connection_key": "local@ryzen",
+        "session_key": "session-current",
+    })
+
+    assert result == {
+        "success": True,
+        "window_id": 30,
+        "fast": True,
+        "direct": True,
+        "command": "[con_id=30] focus",
+        "transition": "direct_focus",
+    }
+    run_sway_command.assert_awaited_once_with("[con_id=30] focus")
+    get_window_transition_state.assert_not_awaited()
+    notify_state_change.assert_awaited_once_with("focus_changed")
+    assert service.override_payload() == {
+        "session_key": "session-current",
+        "window_id": 30,
+        "connection_key": "local@ryzen",
+    }
+
+
+@pytest.mark.asyncio
+async def test_focus_window_fast_service_falls_back_to_transition() -> None:
+    calls = []
+
+    async def run_sway_command(command):
+        calls.append(command)
+        return [SimpleNamespace(success=len(calls) > 1)]
+
+    service = make_window_focus_service(
+        run_sway_command=AsyncMock(side_effect=run_sway_command),
+        get_window_transition_state=AsyncMock(return_value={
+            "exists": True,
+            "current_workspace": "1",
+            "workspace_name": "2",
+        }),
+        build_window_focus_transition=lambda **_kwargs: {
+            "kind": "workspace_switch",
+            "commands": ["workspace 2", "[con_id=31] focus"],
+        },
+    )
+
+    result = await service.focus_window_fast({
+        "window_id": 31,
+        "target_variant": "local",
+        "connection_key": "local@ryzen",
+    })
+
+    assert result == {
+        "success": True,
+        "window_id": 31,
+        "fast": True,
+        "command": "workspace 2; [con_id=31] focus",
+        "transition": "workspace_switch",
+    }
+    assert calls == ["[con_id=31] focus", "workspace 2; [con_id=31] focus"]
+
+
+@pytest.mark.asyncio
+async def test_focus_window_fast_service_rejects_remote_target() -> None:
+    run_sway_command = AsyncMock(return_value=[SimpleNamespace(success=True)])
+    get_window_transition_state = AsyncMock(return_value={"exists": True})
+    service = make_window_focus_service(
+        run_sway_command=run_sway_command,
+        get_window_transition_state=get_window_transition_state,
+        window_is_locally_tracked=AsyncMock(return_value=False),
+        connection_target_is_current_host=lambda _connection_key: False,
+    )
+
+    result = await service.focus_window_fast({
+        "window_id": 175,
+        "target_variant": "ssh",
+        "connection_key": "vpittamp@ryzen:22",
+    })
+
+    assert result == {
+        "success": False,
+        "window_id": 175,
+        "reason": "remote_target_not_fast_focusable",
+        "fallback_method": "window.focus",
+    }
+    run_sway_command.assert_not_awaited()
+    get_window_transition_state.assert_not_awaited()
+
+
 def test_focus_intent_transitions_pending_to_confirmed() -> None:
     service = make_service()
     service.begin_focus_intent(
