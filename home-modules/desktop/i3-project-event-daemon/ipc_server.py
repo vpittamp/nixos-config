@@ -60,7 +60,7 @@ from .services.dashboard_git_service import DashboardGitService
 from .services.dashboard_worktree_service import DashboardWorktreeService
 from .services.display_service import DisplayService
 from .services.focus_service import FocusService
-from .services.herdr_service import HerdrService
+from .services.herdr_service import HerdrService, RETIRED_SESSION_LIFECYCLE_FIELDS
 from .services.launch_service import LaunchService
 from .services.worktree_profile_service import WorktreeProfileService
 from .models.window_command import CommandBatch
@@ -6734,7 +6734,15 @@ class IPCServer:
         sessions_raw = runtime_snapshot.get("sessions", [])
         if not isinstance(sessions_raw, list):
             raise RuntimeError("runtime.snapshot contract violation: sessions must be a list")
-        sessions = [session for session in sessions_raw if isinstance(session, dict)]
+        sessions = [
+            {
+                key: value
+                for key, value in dict(session).items()
+                if key not in RETIRED_SESSION_LIFECYCLE_FIELDS
+            }
+            for session in sessions_raw
+            if isinstance(session, dict)
+        ]
         return runtime_snapshot, sessions, {}
 
     async def _focus_state(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

@@ -446,7 +446,7 @@ def test_select_current_session_key_ignores_unfocused_herdr_override(server):
 
 
 @pytest.mark.asyncio
-async def test_session_list_preserves_turn_owner_and_activity_substate(server, monkeypatch):
+async def test_session_list_strips_retired_lifecycle_fields(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
     session = make_runtime_session()
     runtime_snapshot["sessions"] = [session]
@@ -463,11 +463,16 @@ async def test_session_list_preserves_turn_owner_and_activity_substate(server, m
 
     assert result["total"] == 1
     session = result["sessions"][0]
-    assert session["session_phase"] == "working"
-    assert session["turn_owner"] == "llm"
-    assert session["turn_owner_label"] == "LLM"
-    assert session["activity_substate"] == "thinking"
-    assert session["activity_substate_label"] == "Thinking"
+    for retired_field in (
+        "session_phase",
+        "session_phase_label",
+        "turn_owner",
+        "turn_owner_label",
+        "activity_substate",
+        "activity_substate_label",
+        "status_reason",
+    ):
+        assert retired_field not in session
     assert session["is_current_window"] is True
     assert session["focus_target"] == {}
     assert result["current_session_key"] == session["session_key"]
