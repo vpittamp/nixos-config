@@ -429,11 +429,7 @@ class HerdrService:
         host_key = self.normalize_host_key(target.get("host") or target.get("ssh_target"))
         ssh_target = str(target.get("ssh_target") or "").strip()
         connection_key = normalize_connection_key(str(target.get("connection_key") or "").strip())
-        normalized = {
-            key: value
-            for key, value in dict(row).items()
-            if key not in RETIRED_SESSION_UI_STATE_FIELDS
-        }
+        normalized = self.sanitize_session_row(row)
         pane_id = str(normalized.get("pane_id") or "").strip()
         session_key = self.session_key(normalized, host_key)
         focused = bool(normalized.get("focused", normalized.get("is_current_window", False)))
@@ -984,6 +980,26 @@ class HerdrService:
         """Normalize optional Herdr text fields."""
         return str(value or "").strip()
 
+    @staticmethod
+    def sanitize_session_row(row: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove retired terminal/tmux lifecycle fields from a Herdr session row."""
+        return {
+            key: value
+            for key, value in dict(row).items()
+            if key not in RETIRED_SESSION_UI_STATE_FIELDS
+        }
+
+    @classmethod
+    def sanitize_session_rows(cls, rows: Any) -> List[Dict[str, Any]]:
+        """Return sanitized Herdr session rows from an arbitrary runtime payload."""
+        if not isinstance(rows, list):
+            return []
+        return [
+            cls.sanitize_session_row(row)
+            for row in rows
+            if isinstance(row, dict)
+        ]
+
     @classmethod
     def normalize_state_labels(cls, value: Any) -> Dict[str, str]:
         """Normalize Herdr state label maps by canonical status state."""
@@ -1100,11 +1116,7 @@ class HerdrService:
         state_labels = self.normalize_state_labels(row.get("state_labels"))
         session_key = self.session_key(row, host_key if is_remote else "")
 
-        normalized = {
-            key: value
-            for key, value in dict(row).items()
-            if key not in RETIRED_SESSION_UI_STATE_FIELDS
-        }
+        normalized = self.sanitize_session_row(row)
         normalized.update({
             "schema": "herdr.ai_session.v1",
             "source": "herdr",

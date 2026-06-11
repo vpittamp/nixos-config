@@ -670,6 +670,26 @@ def test_herdr_service_strips_retired_tmux_and_lifecycle_fields_from_sessions():
         assert retired_field not in session
 
 
+def test_herdr_service_sanitizes_existing_session_rows():
+    rows = HerdrService.sanitize_session_rows([
+        {
+            "session_key": "herdr:pane:pane-1",
+            "pane_id": "pane-1",
+            "source": "herdr",
+            "tmux_session": "legacy",
+            "terminal_context": {"tmux_pane": "%1"},
+            "session_phase": "working",
+        },
+        "invalid",
+    ])
+
+    assert rows == [{
+        "session_key": "herdr:pane:pane-1",
+        "pane_id": "pane-1",
+        "source": "herdr",
+    }]
+
+
 def test_herdr_service_annotates_rows_with_host_context():
     service = HerdrService(
         notify_state_change=lambda event_type: asyncio.sleep(0),

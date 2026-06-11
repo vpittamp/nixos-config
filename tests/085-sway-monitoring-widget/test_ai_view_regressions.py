@@ -278,8 +278,10 @@ def test_daemon_session_rows_strip_legacy_tmux_identity_fields():
     assert "RETIRED_SESSION_UI_STATE_FIELDS" in herdr_text
     assert '"terminal_context"' in herdr_text
     assert '"tmux_session"' in herdr_text
+    assert "def sanitize_session_rows" in herdr_text
     assert "if key not in RETIRED_SESSION_UI_STATE_FIELDS" in herdr_text
-    assert "if key not in RETIRED_SESSION_UI_STATE_FIELDS" in ipc_text
+    assert "RETIRED_SESSION_UI_STATE_FIELDS" not in ipc_text
+    assert "self.herdr_service.sanitize_session_rows" in ipc_text
 
 
 def test_session_status_chip_renders_raw_herdr_status():
