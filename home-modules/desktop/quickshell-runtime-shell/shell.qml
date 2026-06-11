@@ -257,13 +257,6 @@ ShellRoot {
             tab_id: "",
             pane_id: "",
             terminal_id: "",
-            session_phase: "",
-            session_phase_label: "",
-            turn_owner: "",
-            turn_owner_label: "",
-            activity_substate: "",
-            activity_substate_label: "",
-            status_reason: "",
             content: "",
             message: "",
             updated_at: ""
@@ -3726,13 +3719,6 @@ ShellRoot {
             pane_label: "",
             pane_title: "",
             surface_key: "",
-            session_phase: "",
-            session_phase_label: "",
-            turn_owner: "",
-            turn_owner_label: "",
-            activity_substate: "",
-            activity_substate_label: "",
-            status_reason: "",
             content: "",
             message: "",
             updated_at: ""
@@ -3783,13 +3769,6 @@ ShellRoot {
             pane_label: sessionPaneLabel(entry),
             pane_title: stringOrEmpty(entry.pane_title),
             surface_key: stringOrEmpty(entry.surface_key),
-            session_phase: stringOrEmpty(entry.session_phase),
-            session_phase_label: stringOrEmpty(entry.session_phase_label),
-            turn_owner: stringOrEmpty(entry.turn_owner),
-            turn_owner_label: stringOrEmpty(entry.turn_owner_label),
-            activity_substate: stringOrEmpty(entry.activity_substate),
-            activity_substate_label: stringOrEmpty(entry.activity_substate_label),
-            status_reason: stringOrEmpty(entry.status_reason),
             agent_status: stringOrEmpty(entry.agent_status),
             cwd: stringOrEmpty(entry.cwd),
             foreground_cwd: stringOrEmpty(entry.foreground_cwd),
@@ -3861,71 +3840,11 @@ ShellRoot {
     }
 
     function sessionPreviewSemanticBits() {
-        const bits = [];
-        const herdrStatus = stringOrEmpty(sessionPreview.agent_status).toLowerCase();
-        if (["working", "blocked", "done", "idle", "unknown"].indexOf(herdrStatus) >= 0) {
-            bits.push(titleCaseWord(herdrStatus));
-            return bits;
-        }
-        const phase = stringOrEmpty(sessionPreview.session_phase_label || sessionPreview.session_phase);
-        const owner = stringOrEmpty(sessionPreview.turn_owner_label || sessionPreview.turn_owner);
-        const substate = stringOrEmpty(sessionPreview.activity_substate_label || sessionPreview.activity_substate);
-        if (phase) {
-            bits.push(phase);
-        }
-        if (owner) {
-            bits.push(owner);
-        }
-        if (substate) {
-            bits.push(substate);
-        }
-        return bits;
+        return [herdrStatusLabel(sessionPreview)];
     }
 
     function sessionPreviewSemanticSummary() {
         return sessionPreviewSemanticBits().join("  •  ");
-    }
-
-    function sessionPreviewOwnerChipColor() {
-        const owner = stringOrEmpty(sessionPreview.turn_owner).toLowerCase();
-        if (owner === "llm") {
-            return colors.accent;
-        }
-        if (owner === "blocked") {
-            return colors.orange;
-        }
-        if (owner === "user") {
-            return colors.blue;
-        }
-        return colors.textDim;
-    }
-
-    function sessionPreviewOwnerChipBackground() {
-        const owner = stringOrEmpty(sessionPreview.turn_owner).toLowerCase();
-        if (owner === "llm") {
-            return colors.accentBg;
-        }
-        if (owner === "blocked") {
-            return colors.orangeBg;
-        }
-        if (owner === "user") {
-            return colors.blueBg;
-        }
-        return colors.panelAlt;
-    }
-
-    function sessionPreviewOwnerChipBorder() {
-        const owner = stringOrEmpty(sessionPreview.turn_owner).toLowerCase();
-        if (owner === "llm") {
-            return colors.accent;
-        }
-        if (owner === "blocked") {
-            return colors.orange;
-        }
-        if (owner === "user") {
-            return colors.blue;
-        }
-        return colors.border;
     }
 
     function sessionPreviewBody() {
@@ -3956,11 +3875,7 @@ ShellRoot {
     }
 
     function sessionPreviewStatusText() {
-        const herdrStatus = stringOrEmpty(sessionPreview.agent_status).toLowerCase();
-        if (["working", "blocked", "done", "idle", "unknown"].indexOf(herdrStatus) >= 0) {
-            return titleCaseWord(herdrStatus);
-        }
-        return stringOrEmpty(sessionPreview.session_phase_label || sessionPreview.session_phase);
+        return herdrStatusLabel(sessionPreview);
     }
 
     function sessionLauncherEntry(session) {
@@ -3981,7 +3896,7 @@ ShellRoot {
     function launcherSessionMatches(session, tokens) {
         const parentWindow = findWindowById(Number(session && session.window_id || 0));
         const hostTokenData = sessionHostToken(session);
-        return launcherTokensMatch(tokens, [sessionPrimaryLabel(session), sessionSecondaryLabel(session), sessionBadgeLabel(session), compactSessionStateLabel(session), sessionAvailabilityLabel(session), sessionTurnOwnerLabel(session), sessionActivitySubstateLabel(session), toolLabel(session), sessionHostLabel(session), stringOrEmpty(hostTokenData && hostTokenData.label), sessionIdentityLabel(session), sessionPaneLocatorLabel(session), sessionPidLabel(session), stringOrEmpty(session && session.project_name), stringOrEmpty(session && session.project), stringOrEmpty(session && session.stage), stringOrEmpty(session && session.turn_owner), stringOrEmpty(session && session.activity_substate), stringOrEmpty(session && session.last_event_name), stringOrEmpty(session && session.status_reason), parentWindow ? stringOrEmpty(displayTitle(parentWindow)) : ""]);
+        return launcherTokensMatch(tokens, [sessionPrimaryLabel(session), sessionSecondaryLabel(session), sessionBadgeLabel(session), compactSessionStateLabel(session), sessionAvailabilityLabel(session), sessionTurnOwnerLabel(session), sessionActivitySubstateLabel(session), toolLabel(session), sessionHostLabel(session), stringOrEmpty(hostTokenData && hostTokenData.label), sessionIdentityLabel(session), sessionPaneLocatorLabel(session), sessionPidLabel(session), stringOrEmpty(session && session.project_name), stringOrEmpty(session && session.project), parentWindow ? stringOrEmpty(displayTitle(parentWindow)) : ""]);
     }
 
     function launcherSessionHostSortKey(session) {
@@ -5622,36 +5537,13 @@ ShellRoot {
     }
 
     function sessionPhase(session) {
-        const rawHerdrStatus = stringOrEmpty(session && session.agent_status);
-        if (rawHerdrStatus.length > 0) {
-            return herdrStatusState(rawHerdrStatus);
-        }
-        const phase = stringOrEmpty(session && session.session_phase).toLowerCase();
-        if (phase.length > 0) {
-            return phase;
-        }
-        if (boolOrFalse(session && session.output_unseen) || boolOrFalse(session && session.review_pending) || boolOrFalse(session && session.needs_user_action)) {
-            return "needs_attention";
-        }
-        if (boolOrFalse(session && session.output_ready)) {
-            return sessionIsCurrent(session) ? "done" : "needs_attention";
-        }
-        if (stringOrEmpty(session && session.stage_visual_state) === "working") {
-            return "working";
-        }
-        if (boolOrFalse(session && session.process_running)) {
-            return "idle";
-        }
-        return "inactive";
+        return herdrStatusState(session && session.agent_status);
     }
 
     function sessionAccentColor(session) {
         const phase = sessionPhase(session);
-        if (phase === "needs_attention") {
-            return colors.amber;
-        }
-        if (phase === "stopped") {
-            return colors.blueMuted;
+        if (phase === "blocked") {
+            return colors.red;
         }
         if (phase === "done") {
             return colors.accent;
@@ -5670,12 +5562,6 @@ ShellRoot {
         if (phase === "blocked") {
             return colors.redBg;
         }
-        if (phase === "needs_attention") {
-            return colors.amberBg;
-        }
-        if (phase === "stopped") {
-            return colors.blueWash;
-        }
         if (phase === "done") {
             return colors.accentBg;
         }
@@ -5689,23 +5575,8 @@ ShellRoot {
         return value === true;
     }
 
-    function stageState(session) {
-        const stage = stringOrEmpty(session.stage).toLowerCase();
-        if (stage === "attention") {
-            return "attention";
-        }
-        if (stage === "waiting_input") {
-            return "waiting";
-        }
-        if (stage === "output_ready") {
-            return "ready";
-        }
-        return stringOrEmpty(session.stage_visual_state);
-    }
-
     function sessionNeedsAttention(session) {
-        const phase = sessionPhase(session);
-        return phase === "needs_attention" || phase === "blocked";
+        return sessionPhase(session) === "blocked";
     }
 
     function sessionIsIdle(session) {
@@ -5713,30 +5584,7 @@ ShellRoot {
     }
 
     function sessionIsActivelyProcessing(session) {
-        if (sessionPhase(session) === "working") {
-            return true;
-        }
-        const stage = stringOrEmpty(session && session.stage).toLowerCase();
-        const ageSeconds = Number(session && session.activity_age_seconds);
-        const freshness = stringOrEmpty(session && session.activity_freshness).toLowerCase();
-        const pendingTools = Number(session && session.pending_tools);
-        const statusReason = stringOrEmpty(session && session.status_reason).toLowerCase();
-        const lastActivityAt = stringOrEmpty(session && session.last_activity_at);
-
-        if (boolOrFalse(session && session.needs_user_action) || boolOrFalse(session && session.output_ready) || boolOrFalse(session && session.output_unseen)) {
-            return false;
-        }
-        if (freshness === "stale") {
-            return false;
-        }
-        if (boolOrFalse(session && session.pulse_working) || boolOrFalse(session && session.is_streaming) || (Number.isFinite(pendingTools) && pendingTools > 0)) {
-            return true;
-        }
-        if (statusReason === "process_keepalive" && !lastActivityAt.length) {
-            return false;
-        }
-
-        return ["starting", "thinking", "tool_running", "streaming"].indexOf(stage) >= 0 && (!Number.isFinite(ageSeconds) || ageSeconds <= 15) && freshness !== "stale";
+        return sessionPhase(session) === "working";
     }
 
     function sessionHasMotion(session) {
@@ -5744,7 +5592,7 @@ ShellRoot {
     }
 
     function sessionNeedsReview(session) {
-        return sessionPhase(session) === "needs_attention";
+        return sessionPhase(session) === "blocked";
     }
 
     function sessionUserInputPending(session) {
@@ -5919,7 +5767,7 @@ ShellRoot {
     }
 
     function sessionTurnOwner(session) {
-        const herdrStatus = herdrStatusState(session && session.agent_status);
+        const herdrStatus = sessionPhase(session);
         if (herdrStatus === "working") {
             return "llm";
         }
@@ -5927,22 +5775,6 @@ ShellRoot {
             return "blocked";
         }
         if (herdrStatus === "done" || herdrStatus === "idle") {
-            return "user";
-        }
-        const explicitOwner = stringOrEmpty(session && session.turn_owner).toLowerCase();
-        if (["llm", "user", "blocked", "unknown"].indexOf(explicitOwner) >= 0) {
-            return explicitOwner;
-        }
-        if (boolOrFalse(session && session.needs_user_action)) {
-            return "blocked";
-        }
-        if (boolOrFalse(session && session.output_ready) || boolOrFalse(session && session.output_unseen)) {
-            return "user";
-        }
-        if (sessionPhase(session) === "working") {
-            return "llm";
-        }
-        if (boolOrFalse(session && session.process_running)) {
             return "user";
         }
         return "unknown";
@@ -5963,21 +5795,7 @@ ShellRoot {
     }
 
     function sessionActivitySubstateLabel(session) {
-        if (sessionBadgeState(session) === "stopped") {
-            return "";
-        }
-        const explicit = stringOrEmpty(session && session.activity_substate_label);
-        if (explicit.length > 0) {
-            return explicit;
-        }
-        if (stringOrEmpty(session && session.source) === "herdr" || stringOrEmpty(session && session.pane_id)) {
-            return herdrStatusLabel(session);
-        }
-        const stageLabel = stringOrEmpty(session && session.stage_label);
-        if (stageLabel.length > 0) {
-            return stageLabel;
-        }
-        return compactSessionStateLabel(session);
+        return herdrStatusLabel(session);
     }
 
     function sessionBadgeLabel(session) {
@@ -5994,60 +5812,17 @@ ShellRoot {
 
     function sessionActivityChipLabel(session) {
         const state = sessionBadgeState(session);
-        if ((stringOrEmpty(session && session.source) === "herdr" || stringOrEmpty(session && session.pane_id)) && ["working", "blocked", "done", "idle", "unknown"].indexOf(state) >= 0) {
-            return herdrStatusLabel(session);
-        }
-        if (["working", "blocked", "done", "idle", "unknown"].indexOf(state) >= 0) {
-            return titleCaseWord(state);
-        }
-        const stage = stringOrEmpty(session && session.activity_substate).toLowerCase();
-        const substateLabel = sessionActivitySubstateLabel(session);
-
-        if (state === "needs_attention") {
-            return substateLabel.length > 0 ? substateLabel : "Needs attention";
-        }
-        if (stage === "tool_running") {
-            return "Tool";
-        }
-        if (stage === "streaming") {
-            return "Streaming";
-        }
-        if (stage === "starting" || stage === "thinking") {
-            return "Thinking";
-        }
-        if (state === "stopped") {
-            return "";
-        }
-        if (state === "done") {
-            return "Done";
-        }
-        if (substateLabel.length > 0) {
-            return substateLabel;
-        }
-        return compactSessionStateLabel(session);
+        return ["working", "blocked", "done", "idle", "unknown"].indexOf(state) >= 0 ? herdrStatusLabel(session) : compactSessionStateLabel(session);
     }
 
     function sessionBadgeSymbol(session) {
-        const stage = stringOrEmpty(session && session.activity_substate).toLowerCase();
         const owner = sessionTurnOwner(session);
         const state = sessionBadgeState(session);
         if (state === "blocked") {
             return "!";
         }
-        if (owner === "blocked" || state === "needs_attention") {
+        if (owner === "blocked") {
             return "!";
-        }
-        if (stage === "tool_running") {
-            return "⚙";
-        }
-        if (stage === "streaming") {
-            return "≈";
-        }
-        if (stage === "starting" || stage === "thinking") {
-            return "◔";
-        }
-        if (state === "stopped") {
-            return "●";
         }
         if (state === "done") {
             return "●";

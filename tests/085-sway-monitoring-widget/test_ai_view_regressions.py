@@ -40,14 +40,26 @@ I3PM_CLI_README = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / 
 AI_SESSION_SYSTEM_DOC = REPO_ROOT / "docs" / "AI_SESSION_SYSTEM.md"
 
 
-def test_session_phase_prefers_raw_herdr_agent_status():
-    """Herdr agent status should drive AI row state before legacy telemetry fields."""
+def test_session_phase_uses_only_raw_herdr_agent_status():
+    """Herdr agent status should be the only AI row state authority."""
     text = SHELL_QML.read_text()
     assert "function sessionPhase(session)" in text
-    herdr_index = text.index("const rawHerdrStatus = stringOrEmpty(session && session.agent_status);")
-    legacy_index = text.index("const phase = stringOrEmpty(session && session.session_phase).toLowerCase();")
-    assert herdr_index < legacy_index
-    assert "return herdrStatusState(rawHerdrStatus);" in text
+    session_phase_body = text.split("function sessionPhase(session)", 1)[1].split("function ", 1)[0]
+    assert "return herdrStatusState(session && session.agent_status);" in session_phase_body
+    retired_terms = [
+        "session_phase",
+        "stage_visual_state",
+        "output_unseen",
+        "review_pending",
+        "needs_user_action",
+        "output_ready",
+        "process_running",
+        "turn_owner",
+        "activity_substate",
+        "status_reason",
+    ]
+    for term in retired_terms:
+        assert term not in text
 
 
 def test_ai_session_status_does_not_use_notification_boundary_adapters():
@@ -196,7 +208,7 @@ def test_session_status_chip_renders_raw_herdr_status():
     text = SHELL_QML.read_text()
     assert "function sessionActivityChipLabel(session)" in text
     assert "[\"working\", \"blocked\", \"done\", \"idle\", \"unknown\"].indexOf(state) >= 0" in text
-    assert "return titleCaseWord(state);" in text
+    assert "return [\"working\", \"blocked\", \"done\", \"idle\", \"unknown\"].indexOf(state) >= 0 ? herdrStatusLabel(session) : compactSessionStateLabel(session);" in text
     assert "if (badgeState === \"blocked\")" in text
     assert "return \"Blocked\";" in text
 
@@ -207,7 +219,7 @@ def test_session_badge_symbol_and_attention_hooks_cover_blocked_herdr_status():
     assert "function sessionBadgeSymbol(session)" in text
     assert "if (state === \"blocked\")" in text
     assert "return \"!\";" in text
-    assert "return phase === \"needs_attention\" || phase === \"blocked\";" in text
+    assert "return sessionPhase(session) === \"blocked\";" in text
 
 
 def test_current_session_highlight_uses_single_dashboard_current_key():
