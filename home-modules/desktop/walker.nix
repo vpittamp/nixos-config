@@ -1951,6 +1951,9 @@ in
         bookmarks = true         # Quick URL access via bookmarks
         snippets = true          # User-defined command shortcuts ($ prefix)
         providerlist = true      # Help menu - lists all providers and prefixes (? prefix)
+        # Use the cached custom menu below; the built-in provider opens a
+        # persistent native-messaging connection from the daemon context.
+        "1password" = false
 
         # NOTE: Projects and Sesh menus are defined as Elephant Lua menus
         # See ~/.config/elephant/menus/projects.lua and sesh.lua
@@ -2368,45 +2371,6 @@ in
     # Elephant Unicode Provider Configuration
     icon = "accessories-character-map"
     min_score = 30
-  '';
-
-  # 1Password provider configuration
-  # Access via Walker: Meta+D → * → search for login items
-  # Features:
-  #   - Return: copy password (clears after 5 seconds)
-  #   - Shift+Return: copy username
-  #   - Ctrl+Return: copy OTP (if available)
-  # Requirements: 1Password GUI + op CLI (installed via onepassword module)
-  xdg.configFile."elephant/1password.toml".text = ''
-    # Elephant 1Password Provider Configuration
-    # Docs: elephant generatedoc 1password
-    icon = "1password"
-    name_pretty = "1Password"
-    hide_from_providerlist = true
-    min_score = 30
-
-    # Vaults to index - use IDs to avoid ambiguity (Employee vault has type=PERSONAL
-    # which conflicts with the Personal vault name when using name-based lookup)
-    # Personal (ampm3rvesendx6mvksmu2ydh6e) - 1 item
-    # Employee (cu4rqh2szvjlrumhepqe2twsmm) - 631 items
-    vaults = ["ampm3rvesendx6mvksmu2ydh6e", "cu4rqh2szvjlrumhepqe2twsmm"]
-
-    # Notify after copying password
-    notify = true
-
-    # Clear clipboard after 5 seconds for security
-    clear_after = 5
-
-    # Category icons for visual distinction
-    [category_icons]
-    login = "dialog-password-symbolic"
-    secure_note = "accessories-text-editor-symbolic"
-    ssh_key = "utilities-terminal-symbolic"
-    credit_card = "auth-smartcard-symbolic"
-    identity = "avatar-default-symbolic"
-    document = "folder-documents-symbolic"
-    password = "dialog-password-symbolic"
-    api_credential = "network-server-symbolic"
   '';
 
   # Feature 083: Monitor profile switcher menu (Elephant Lua menu)
