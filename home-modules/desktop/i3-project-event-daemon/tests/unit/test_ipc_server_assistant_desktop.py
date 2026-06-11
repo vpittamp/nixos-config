@@ -109,7 +109,7 @@ async def test_notify_state_change_handles_subscriber_set_mutation(server):
 
 
 @pytest.mark.asyncio
-async def test_assistant_desktop_snapshot_filters_active_context(server):
+async def test_assistant_desktop_snapshot_filters_windows_but_keeps_herdr_sessions(server):
     runtime_snapshot = {
         "active_context": {
             "qualified_name": "vpittamp/nixos-config:main",
@@ -153,6 +153,15 @@ async def test_assistant_desktop_snapshot_filters_active_context(server):
                 "session_phase": "done",
                 "context": {"context_key": "other::local::local@host"},
             },
+            {
+                "session_key": "herdr:remote:pane-1",
+                "source": "herdr",
+                "pane_id": "pane-1",
+                "title": "Remote Herdr",
+                "preview": "not project scoped",
+                "session_phase": "working",
+                "context_key": "other::local::local@host",
+            },
         ],
         "focused_window_id": 11,
         "scratchpad": {"available": True, "context_key": "vpittamp/nixos-config:main::local::local@host"},
@@ -167,8 +176,10 @@ async def test_assistant_desktop_snapshot_filters_active_context(server):
 
     assert result["visible_window_count"] == 1
     assert result["focused_window"]["window_id"] == 11
-    assert len(result["sessions"]) == 1
-    assert result["sessions"][0]["session_key"] == "codex:1"
+    assert [session["session_key"] for session in result["sessions"]] == [
+        "codex:1",
+        "herdr:remote:pane-1",
+    ]
 
 
 @pytest.mark.asyncio

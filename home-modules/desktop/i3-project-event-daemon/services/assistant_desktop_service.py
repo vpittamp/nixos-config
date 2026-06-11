@@ -366,13 +366,23 @@ class AssistantDesktopService:
         for session in runtime_snapshot.get("sessions", []) or []:
             if not isinstance(session, dict):
                 continue
+            is_herdr_session = (
+                str(session.get("source") or "").strip().lower() == "herdr"
+                or bool(str(session.get("pane_id") or "").strip())
+                or bool(session.get("is_remote_herdr", False))
+            )
             session_context = session.get("context") if isinstance(session.get("context"), dict) else {}
             session_context_key = str(
                 session_context.get("context_key")
                 or session.get("context_key")
                 or ""
             ).strip()
-            if active_context_key and session_context_key and session_context_key != active_context_key:
+            if (
+                not is_herdr_session
+                and active_context_key
+                and session_context_key
+                and session_context_key != active_context_key
+            ):
                 continue
             relevant_sessions.append(
                 {
