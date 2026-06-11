@@ -44,6 +44,8 @@ class FocusService:
         notify_state_change: Optional[Callable[[str], Awaitable[None]]] = None,
         window_is_locally_tracked: Optional[Callable[[int], Awaitable[bool]]] = None,
         connection_target_is_current_host: Optional[Callable[[str], bool]] = None,
+        local_host: Optional[Callable[[], str]] = None,
+        window_map_snapshot: Optional[Callable[[], Awaitable[Dict[Any, Any]]]] = None,
         remote_daemon_request: Optional[Callable[..., Awaitable[Dict[str, Any]]]] = None,
         parse_remote_target: Optional[Callable[[str, str], Tuple[str, str, int]]] = None,
         remote_run_command: Optional[Callable[..., Awaitable[Any]]] = None,
@@ -66,6 +68,8 @@ class FocusService:
         self._notify_state_change = notify_state_change
         self._window_is_locally_tracked = window_is_locally_tracked
         self._connection_target_is_current_host = connection_target_is_current_host
+        self._local_host = local_host
+        self._window_map_snapshot = window_map_snapshot
         self._remote_daemon_request = remote_daemon_request
         self._parse_remote_target = parse_remote_target
         self._remote_run_command = remote_run_command
@@ -192,6 +196,53 @@ class FocusService:
             and self._sway_command_succeeded
         )
 
+    def connection_target_is_current_host(self, connection_key: str) -> bool:
+        """Return whether an SSH connection target resolves back to this host."""
+        if self._connection_target_is_current_host:
+            return bool(self._connection_target_is_current_host(connection_key))
+        if not (self._parse_remote_target and self._local_host):
+            return False
+        try:
+            _remote_user, remote_host, _remote_port = self._parse_remote_target("", connection_key)
+            normalized_remote_host = str(remote_host or "").strip().lower()
+            normalized_local_host = str(self._local_host() or "").strip().lower()
+            return bool(normalized_remote_host and normalized_remote_host == normalized_local_host)
+        except Exception as exc:
+            logger.debug("Failed to resolve connection target host for %s: %s", connection_key, exc)
+            return False
+
+    @staticmethod
+    def _window_field(window_info: Any, field_name: str) -> int:
+        if isinstance(window_info, dict):
+            return int(window_info.get(field_name, 0) or 0)
+        return int(getattr(window_info, field_name, 0) or 0)
+
+    async def window_is_locally_tracked(self, window_id: int) -> bool:
+        """Return whether a target window exists in this host's tracked window map."""
+        if self._window_is_locally_tracked:
+            return bool(await self._window_is_locally_tracked(int(window_id or 0)))
+        if not self._window_map_snapshot:
+            return False
+
+        target = int(window_id or 0)
+        if target <= 0:
+            return False
+        try:
+            tracked_windows = await self._window_map_snapshot()
+        except Exception as exc:
+            logger.debug("Failed to read tracked windows while resolving local focus target: %s", exc)
+            return False
+        if not isinstance(tracked_windows, dict):
+            return False
+        if target in tracked_windows or str(target) in tracked_windows:
+            return True
+        for window_info in tracked_windows.values():
+            if self._window_field(window_info, "window_id") == target:
+                return True
+            if self._window_field(window_info, "con_id") == target:
+                return True
+        return False
+
     async def focus_window(
         self,
         *,
@@ -206,8 +257,8 @@ class FocusService:
         if int(window_id or 0) <= 0:
             raise ValueError("window_id must be a positive integer")
         if not (
-            self._window_is_locally_tracked
-            and self._connection_target_is_current_host
+            (self._window_is_locally_tracked or self._window_map_snapshot)
+            and (self._connection_target_is_current_host or (self._parse_remote_target and self._local_host))
             and (self._remote_daemon_request or self._parse_remote_target)
             and self._switch_runtime_context
             and (self._get_window_transition_state or self._get_sway_tree)
@@ -220,8 +271,8 @@ class FocusService:
         target_variant_normalized = str(target_variant or "").strip().lower()
         normalized_connection_key = str(connection_key or "").strip()
         normalized_project_name = str(project_name or "").strip()
-        local_window_target = await self._window_is_locally_tracked(int(window_id))
-        connection_targets_current_host = self._connection_target_is_current_host(normalized_connection_key)
+        local_window_target = await self.window_is_locally_tracked(int(window_id))
+        connection_targets_current_host = self.connection_target_is_current_host(normalized_connection_key)
         should_remote_handoff = (
             target_variant_normalized == "ssh"
             and not connection_targets_current_host
@@ -404,8 +455,8 @@ class FocusService:
         if not self._window_focus_ready():
             raise RuntimeError("Sway connection is unavailable")
         if not (
-            self._window_is_locally_tracked
-            and self._connection_target_is_current_host
+            (self._window_is_locally_tracked or self._window_map_snapshot)
+            and (self._connection_target_is_current_host or (self._parse_remote_target and self._local_host))
             and (self._get_window_transition_state or self._get_sway_tree)
         ):
             raise RuntimeError("Window focus dependencies are unavailable")
@@ -417,8 +468,8 @@ class FocusService:
         target_variant = str(params.get("target_variant") or "").strip().lower()
         connection_key = str(params.get("connection_key") or "").strip()
         if target_variant == "ssh":
-            local_window_target = await self._window_is_locally_tracked(window_id)
-            connection_targets_current_host = self._connection_target_is_current_host(connection_key)
+            local_window_target = await self.window_is_locally_tracked(window_id)
+            connection_targets_current_host = self.connection_target_is_current_host(connection_key)
             if not local_window_target and not connection_targets_current_host:
                 return {
                     "success": False,

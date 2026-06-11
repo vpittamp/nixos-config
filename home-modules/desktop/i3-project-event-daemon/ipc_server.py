@@ -527,10 +527,8 @@ class IPCServer:
             get_sway_tree=lambda: self.i3_connection.get_tree(),
             send_tick_barrier=lambda payload: self._send_tick_barrier(payload),
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
-            window_is_locally_tracked=lambda window_id: self._window_is_locally_tracked(window_id),
-            connection_target_is_current_host=lambda connection_key: self._connection_target_is_current_host(
-                connection_key
-            ),
+            local_host=lambda: self._local_host_alias(),
+            window_map_snapshot=lambda: self.state_manager.get_window_map_snapshot(),
             parse_remote_target=lambda remote_target, connection_key="": self._parse_remote_target(
                 remote_target,
                 connection_key,
@@ -10330,29 +10328,11 @@ class IPCServer:
 
     def _connection_target_is_current_host(self, connection_key: str) -> bool:
         """Return whether an SSH connection target resolves back to this host."""
-        _remote_user, remote_host, _remote_port = self._parse_remote_target("", connection_key)
-        if not remote_host:
-            return False
-        return str(remote_host or "").strip().lower() == self._local_host_alias()
+        return self.focus_service.connection_target_is_current_host(connection_key)
 
     async def _window_is_locally_tracked(self, window_id: int) -> bool:
         """Return whether a target window exists in the current host's tracked window map."""
-        target = int(window_id or 0)
-        if target <= 0:
-            return False
-        try:
-            tracked_windows = await self.state_manager.get_window_map_snapshot()
-        except Exception as exc:
-            logger.debug("Failed to read tracked windows while resolving local focus target: %s", exc)
-            return False
-        if target in tracked_windows:
-            return True
-        for window_info in tracked_windows.values():
-            if int(getattr(window_info, "window_id", 0) or 0) == target:
-                return True
-            if int(getattr(window_info, "con_id", 0) or 0) == target:
-                return True
-        return False
+        return await self.focus_service.window_is_locally_tracked(window_id)
 
     def _remote_focus_target(self, session: Dict[str, Any]) -> Tuple[str, str, int]:
         """Return the SSH destination used for remote session handoff."""

@@ -129,6 +129,59 @@ def make_tree_node(
     )
 
 
+def test_connection_target_is_current_host_matches_parsed_remote_host() -> None:
+    service = FocusService(
+        normalize_connection_key=normalize_connection_key,
+        local_host=lambda: "thinkpad",
+        parse_remote_target=lambda _target, connection_key: (
+            "vpittamp",
+            "thinkpad" if connection_key else "",
+            22,
+        ),
+    )
+
+    assert service.connection_target_is_current_host("vpittamp@thinkpad:22") is True
+    assert service.connection_target_is_current_host("") is False
+
+
+def test_connection_target_is_current_host_rejects_different_host() -> None:
+    service = FocusService(
+        normalize_connection_key=normalize_connection_key,
+        local_host=lambda: "thinkpad",
+        parse_remote_target=lambda _target, _connection_key: ("vpittamp", "ryzen", 22),
+    )
+
+    assert service.connection_target_is_current_host("vpittamp@ryzen:22") is False
+
+
+@pytest.mark.asyncio
+async def test_window_is_locally_tracked_matches_window_map_key_and_fields() -> None:
+    service = FocusService(
+        normalize_connection_key=normalize_connection_key,
+        window_map_snapshot=AsyncMock(return_value={
+            101: SimpleNamespace(window_id=101, con_id=1001),
+            202: SimpleNamespace(window_id=44, con_id=303),
+            "404": {"window_id": 304, "con_id": 405},
+        }),
+    )
+
+    assert await service.window_is_locally_tracked(101) is True
+    assert await service.window_is_locally_tracked(44) is True
+    assert await service.window_is_locally_tracked(405) is True
+    assert await service.window_is_locally_tracked(404) is True
+    assert await service.window_is_locally_tracked(999) is False
+
+
+@pytest.mark.asyncio
+async def test_window_is_locally_tracked_reports_false_on_snapshot_error() -> None:
+    service = FocusService(
+        normalize_connection_key=normalize_connection_key,
+        window_map_snapshot=AsyncMock(side_effect=RuntimeError("boom")),
+    )
+
+    assert await service.window_is_locally_tracked(101) is False
+
+
 def test_select_current_session_key_clears_stale_window_override() -> None:
     service = make_service()
     service.set_focus_overrides(

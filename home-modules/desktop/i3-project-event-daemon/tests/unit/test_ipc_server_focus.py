@@ -70,6 +70,9 @@ class DummyStateManager:
     async def get_active_project(self):
         return self.state.active_project
 
+    async def get_window_map_snapshot(self):
+        return dict(self.state.window_map)
+
     async def remove_window(self, _window_id: int):
         return None
 
@@ -170,7 +173,7 @@ def test_focus_intent_finalization_marks_failed_result(server):
 
 @pytest.mark.asyncio
 async def test_focus_window_remote_handoff_does_not_require_local_sway(server, monkeypatch):
-    server._connection_target_is_current_host = lambda _connection_key: False
+    server.focus_service._connection_target_is_current_host = lambda _connection_key: False
     server.focus_service._remote_daemon_request = AsyncMock(return_value={
         "success": True,
         "reason": "ok",
@@ -211,8 +214,8 @@ async def test_focus_window_ssh_context_on_current_host_uses_local_focus(server,
             floating_nodes=[],
         )),
     )
-    server._connection_target_is_current_host = lambda _connection_key: True
-    server._window_is_locally_tracked = AsyncMock(return_value=False)
+    server.focus_service._connection_target_is_current_host = lambda _connection_key: True
+    server.focus_service._window_is_locally_tracked = AsyncMock(return_value=False)
     server._switch_runtime_context_if_needed = AsyncMock(return_value={"switched": False})
     server._send_tick_barrier = AsyncMock()
     server.focus_service._get_window_transition_state = AsyncMock(return_value={
@@ -267,8 +270,8 @@ async def test_focus_window_ssh_target_with_local_window_binding_uses_local_focu
             floating_nodes=[],
         )),
     )
-    server._connection_target_is_current_host = lambda _connection_key: False
-    server._window_is_locally_tracked = AsyncMock(return_value=True)
+    server.focus_service._connection_target_is_current_host = lambda _connection_key: False
+    server.focus_service._window_is_locally_tracked = AsyncMock(return_value=True)
     server._switch_runtime_context_if_needed = AsyncMock(return_value={"switched": False})
     server._send_tick_barrier = AsyncMock()
     server.focus_service._get_window_transition_state = AsyncMock(return_value={
@@ -324,8 +327,8 @@ async def test_window_focus_fast_local_target_skips_full_focus_state(server):
             floating_nodes=[],
         )),
     )
-    server._connection_target_is_current_host = lambda _connection_key: True
-    server._window_is_locally_tracked = AsyncMock(return_value=True)
+    server.focus_service._connection_target_is_current_host = lambda _connection_key: True
+    server.focus_service._window_is_locally_tracked = AsyncMock(return_value=True)
     server._send_tick_barrier = AsyncMock(return_value=None)
     server._focus_state = AsyncMock(return_value={})
     server.notify_state_change = AsyncMock(return_value=None)
@@ -360,7 +363,7 @@ async def test_window_focus_fast_local_target_skips_full_focus_state(server):
     assert result["window_id"] == 30
     assert len(commands) == 1
     assert commands[0] == "[con_id=30] focus"
-    server._window_is_locally_tracked.assert_not_awaited()
+    server.focus_service._window_is_locally_tracked.assert_not_awaited()
     server.focus_service._get_window_transition_state.assert_not_awaited()
     server._send_tick_barrier.assert_not_awaited()
     server._focus_state.assert_not_awaited()
@@ -371,8 +374,8 @@ async def test_window_focus_fast_local_target_skips_full_focus_state(server):
 async def test_window_focus_fast_falls_back_to_transition_when_direct_focus_fails(server):
     commands = []
     server.i3_connection = SimpleNamespace(conn=SimpleNamespace())
-    server._connection_target_is_current_host = lambda _connection_key: True
-    server._window_is_locally_tracked = AsyncMock(return_value=True)
+    server.focus_service._connection_target_is_current_host = lambda _connection_key: True
+    server.focus_service._window_is_locally_tracked = AsyncMock(return_value=True)
     server._send_tick_barrier = AsyncMock(return_value=None)
     server._focus_state = AsyncMock(return_value={})
     server.notify_state_change = AsyncMock(return_value=None)
@@ -412,9 +415,9 @@ async def test_window_focus_fast_falls_back_to_transition_when_direct_focus_fail
 @pytest.mark.asyncio
 async def test_window_focus_fast_rejects_remote_targets(server):
     server.i3_connection = SimpleNamespace(conn=SimpleNamespace(), ipc_command=AsyncMock())
-    server._connection_target_is_current_host = lambda _connection_key: False
-    server._window_is_locally_tracked = AsyncMock(return_value=False)
-    server._get_window_transition_state = AsyncMock(return_value={"exists": True})
+    server.focus_service._connection_target_is_current_host = lambda _connection_key: False
+    server.focus_service._window_is_locally_tracked = AsyncMock(return_value=False)
+    server.focus_service._get_window_transition_state = AsyncMock(return_value={"exists": True})
 
     result = await server._window_focus_fast({
         "window_id": 175,
@@ -426,7 +429,7 @@ async def test_window_focus_fast_rejects_remote_targets(server):
     assert result["reason"] == "remote_target_not_fast_focusable"
     assert result["fallback_method"] == "window.focus"
     server.i3_connection.ipc_command.assert_not_awaited()
-    server._get_window_transition_state.assert_not_awaited()
+    server.focus_service._get_window_transition_state.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -441,8 +444,8 @@ async def test_focus_window_scratchpad_restore_preserves_saved_workspace_and_ful
             floating_nodes=[],
         )),
     )
-    server._connection_target_is_current_host = lambda _connection_key: True
-    server._window_is_locally_tracked = AsyncMock(return_value=True)
+    server.focus_service._connection_target_is_current_host = lambda _connection_key: True
+    server.focus_service._window_is_locally_tracked = AsyncMock(return_value=True)
     server._switch_runtime_context_if_needed = AsyncMock(return_value={"switched": False})
     server._send_tick_barrier = AsyncMock()
     before_restore_state = {
