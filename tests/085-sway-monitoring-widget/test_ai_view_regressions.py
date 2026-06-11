@@ -718,6 +718,12 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     assert '"workspace", "focus", workspaceName' not in activate_workspace_body
     assert "root.windowIsFocused(windowData)" in runtime_panel_text
     assert "root.workspaceIsFocused(workspace)" in bottom_bar_text
+    assert "property var barWorkspaces: []" in bottom_bar_text
+    assert "model: barWorkspaces" in bottom_bar_text
+    assert "model: root.barWorkspacesForOutput(barOutputName)" not in bottom_bar_text
+    assert "onPressed: root.activateWorkspace(workspace)" in bottom_bar_text
+    assert "readonly property var runtimeProjects: root.panelProjects()" not in runtime_panel_text
+    assert "function refreshRuntimePanelData()" in runtime_panel_text
     assert "client.request(\"window.focus_fast\", params)" in window_command_text
     assert "fallback_method === \"window.focus\"" in window_command_text
     assert 'client.request<{ success?: boolean; workspace?: string; fallback_method?: string }>(\n        "workspace.focus_fast",' in workspace_command_text

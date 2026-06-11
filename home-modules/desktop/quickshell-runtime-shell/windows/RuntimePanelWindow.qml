@@ -14,9 +14,9 @@ PanelWindow {
     required property var colors
     readonly property QtObject root: shellRoot
     id: panelWindow
-    readonly property var runtimeSessions: root.panelSessions()
-    readonly property var runtimeHerdrSpaces: root.herdrSpaces()
-    readonly property var runtimeProjects: root.panelProjects()
+    property var runtimeSessions: []
+    property var runtimeHerdrSpaces: []
+    property var runtimeProjects: []
     screen: root.primaryScreen
     visible: root.panelVisible
     color: "transparent"
@@ -30,6 +30,22 @@ PanelWindow {
     WlrLayershell.namespace: "i3pm-runtime-panel"
     WlrLayershell.layer: root.dockedMode ? WlrLayer.Top : WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+
+    function refreshRuntimePanelData() {
+        runtimeSessions = root.panelSessions();
+        runtimeHerdrSpaces = root.herdrSpaces();
+        runtimeProjects = root.panelProjects();
+    }
+
+    Component.onCompleted: refreshRuntimePanelData()
+
+    Connections {
+        target: root
+
+        function onDashboardChanged() {
+            refreshRuntimePanelData();
+        }
+    }
 
     function runtimePanelHasSessions() {
         return runtimeSessions.length > 0 || runtimeHerdrSpaces.length > 0;

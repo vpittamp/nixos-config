@@ -15,6 +15,22 @@ PanelWindow {
     property string fallbackOutputName: ""
     readonly property var barScreen: fallbackMode ? null : modelData
     readonly property string barOutputName: fallbackMode ? root.stringOrEmpty(fallbackOutputName) : root.screenOutputName(barScreen)
+    property var barWorkspaces: []
+
+    function refreshBarWorkspaces() {
+        barWorkspaces = root.barWorkspacesForOutput(barOutputName);
+    }
+
+    onBarOutputNameChanged: refreshBarWorkspaces()
+    Component.onCompleted: refreshBarWorkspaces()
+
+    Connections {
+        target: root
+
+        function onDashboardChanged() {
+            refreshBarWorkspaces();
+        }
+    }
 
     screen: barScreen
     visible: runtimeConfig.perMonitorBars
@@ -98,18 +114,20 @@ PanelWindow {
                         spacing: 6
 
                         Repeater {
-                            model: root.barWorkspacesForOutput(barOutputName)
+                            model: barWorkspaces
 
                             delegate: Rectangle {
                                 required property var modelData
                                 readonly property var workspace: modelData
+                                readonly property bool workspaceFocused: root.workspaceIsFocused(workspace)
+                                readonly property bool workspaceHovered: workspaceMouse.containsMouse
                                 readonly property var workspaceIcons: root.workspaceIconSources(root.workspaceLabel(workspace))
                                 readonly property int workspaceCount: root.workspaceWindowCount(root.workspaceLabel(workspace))
                                 width: Math.max(34, workspaceText.implicitWidth + (workspaceIcons.length ? 30 : 0) + (workspaceCount > 1 ? 14 : 0) + 12)
                                 height: 28
                                 radius: 8
-                                color: root.workspaceChipFill(workspace, workspaceMouse.containsMouse)
-                                border.color: root.workspaceChipBorder(workspace, workspaceMouse.containsMouse)
+                                color: workspaceFocused ? colors.blue : (workspaceHovered ? colors.card : (root.boolOrFalse(workspace && workspace.active) ? colors.card : colors.cardAlt))
+                                border.color: workspaceFocused ? colors.blue : (root.boolOrFalse(workspace && workspace.urgent) ? colors.red : (workspaceHovered ? colors.borderStrong : colors.border))
                                 border.width: 1
 
                                 RowLayout {
@@ -131,7 +149,7 @@ PanelWindow {
                                                 height: 18
                                                 radius: 6
                                                 color: colors.bg
-                                                border.color: root.workspaceIsFocused(workspace) ? colors.blue : (workspaceMouse.containsMouse ? colors.borderStrong : colors.borderStrong)
+                                                border.color: workspaceFocused ? colors.blue : colors.borderStrong
                                                 border.width: 1
 
                                                 IconImage {
@@ -148,9 +166,9 @@ PanelWindow {
                                     Text {
                                         id: workspaceText
                                         text: root.workspaceLabel(workspace)
-                                        color: root.workspaceChipText(workspace, workspaceMouse.containsMouse)
+                                        color: workspaceFocused ? colors.bg : (workspaceHovered ? colors.text : colors.textDim)
                                         font.pixelSize: 11
-                                        font.weight: root.workspaceIsFocused(workspace) ? Font.DemiBold : Font.Medium
+                                        font.weight: workspaceFocused ? Font.DemiBold : Font.Medium
                                     }
 
                                     Rectangle {
@@ -158,14 +176,14 @@ PanelWindow {
                                         width: 12
                                         height: 12
                                         radius: 4
-                                        color: root.workspaceIsFocused(workspace) ? colors.bg : colors.card
-                                        border.color: root.workspaceIsFocused(workspace) ? colors.bg : colors.border
+                                        color: workspaceFocused ? colors.bg : colors.card
+                                        border.color: workspaceFocused ? colors.bg : colors.border
                                         border.width: 1
 
                                         Text {
                                             anchors.centerIn: parent
                                             text: String(workspaceCount)
-                                            color: root.workspaceIsFocused(workspace) ? colors.blue : colors.muted
+                                            color: workspaceFocused ? colors.blue : colors.muted
                                             font.pixelSize: 8
                                             font.weight: Font.DemiBold
                                         }
@@ -175,9 +193,10 @@ PanelWindow {
                                 MouseArea {
                                     id: workspaceMouse
                                     anchors.fill: parent
+                                    acceptedButtons: Qt.LeftButton
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: root.activateWorkspace(workspace)
+                                    onPressed: root.activateWorkspace(workspace)
                                 }
                             }
                         }
