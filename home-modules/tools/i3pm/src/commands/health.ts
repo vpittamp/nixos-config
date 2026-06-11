@@ -48,6 +48,17 @@ interface HerdrRemoteTarget {
   connection_key: string;
 }
 
+interface TailscalePeerHealth {
+  checked: boolean;
+  peer_found: boolean;
+  host: string;
+  dns_name: string;
+  online: boolean | null;
+  expired: boolean | null;
+  tailscale_ips: string[];
+  issue: string;
+}
+
 interface HerdrRemoteHealth extends HerdrHealth {
   host: string;
   ssh_target: string;
@@ -55,6 +66,7 @@ interface HerdrRemoteHealth extends HerdrHealth {
   proxy_reachable: boolean;
   proxy_schema_version: string;
   proxy_protocol_version: number;
+  tailscale: TailscalePeerHealth | null;
 }
 
 interface McpBrowserCandidate {
@@ -201,7 +213,10 @@ function asArray(value: unknown): unknown[] {
 }
 
 function herdrStatusRoot(payload: Record<string, unknown>): Record<string, unknown> {
-  if (Object.keys(asRecord(payload.client)).length > 0 || Object.keys(asRecord(payload.server)).length > 0) {
+  if (
+    Object.keys(asRecord(payload.client)).length > 0 ||
+    Object.keys(asRecord(payload.server)).length > 0
+  ) {
     return payload;
   }
   return asRecord(payload.result);
@@ -302,6 +317,103 @@ function connectionKeyForTarget(sshTarget: string, explicit: string): string {
   }
   const user = parsed.user || Deno.env.get("USER") || "vpittamp";
   return normalizeConnectionKey(`${user}@${parsed.host}:${parsed.port || 22}`);
+}
+
+function boolOrNull(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+function peerAliases(peer: Record<string, unknown>): string[] {
+  const aliases = [
+    String(peer.HostName || "").trim().toLowerCase(),
+    String(peer.DNSName || "").trim().toLowerCase().replace(/\.$/, ""),
+    ...asArray(peer.TailscaleIPs).map((ip) => String(ip || "").trim().toLowerCase()),
+  ];
+  return aliases.filter((alias) => alias.length > 0);
+}
+
+function targetAliases(target: HerdrRemoteTarget): string[] {
+  const parsed = parseSshTarget(target.ssh_target);
+  return [
+    target.host,
+    target.ssh_target,
+    parsed.host,
+    parsed.host.split(".", 1)[0] || "",
+  ]
+    .map((alias) => String(alias || "").trim().toLowerCase().replace(/\.$/, ""))
+    .filter((alias) => alias.length > 0);
+}
+
+async function loadTailscalePeerHealth(
+  targets: HerdrRemoteTarget[],
+): Promise<Map<string, TailscalePeerHealth | null>> {
+  const result = new Map<string, TailscalePeerHealth | null>();
+  for (const target of targets) {
+    result.set(target.connection_key, null);
+  }
+  if (targets.length === 0) {
+    return result;
+  }
+
+  let status: { code: number; stdout: string; stderr: string };
+  try {
+    status = await runCommand(["tailscale", "status", "--json"], 1500);
+  } catch {
+    return result;
+  }
+  if (status.code !== 0 || !status.stdout) {
+    return result;
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(status.stdout) as Record<string, unknown>;
+  } catch {
+    return result;
+  }
+
+  const peers = Object.values(asRecord(payload.Peer))
+    .map(asRecord)
+    .filter((peer) => Object.keys(peer).length > 0);
+  for (const target of targets) {
+    const aliases = targetAliases(target);
+    const peer = peers.find((candidate) => {
+      const candidateAliases = peerAliases(candidate);
+      return aliases.some((alias) =>
+        candidateAliases.includes(alias) ||
+        candidateAliases.some((candidateAlias) => candidateAlias.startsWith(`${alias}.`))
+      );
+    });
+    if (!peer) {
+      result.set(target.connection_key, {
+        checked: true,
+        peer_found: false,
+        host: "",
+        dns_name: "",
+        online: null,
+        expired: null,
+        tailscale_ips: [],
+        issue: "",
+      });
+      continue;
+    }
+    const expired = boolOrNull(peer.Expired ?? peer.expired);
+    const online = boolOrNull(peer.Online ?? peer.online);
+    result.set(target.connection_key, {
+      checked: true,
+      peer_found: true,
+      host: String(peer.HostName || ""),
+      dns_name: String(peer.DNSName || ""),
+      online,
+      expired,
+      tailscale_ips: asArray(peer.TailscaleIPs).map((ip) => String(ip || "")).filter((ip) =>
+        ip.length > 0
+      ),
+      issue: expired === true ? "Tailscale peer node key is expired" : "",
+    });
+  }
+
+  return result;
 }
 
 function herdrRemoteTargetsFile(): string {
@@ -475,7 +587,9 @@ async function collectHerdrHealth(
 }
 
 async function loadHerdrHealth(): Promise<HerdrHealth | null> {
-  const runHerdr = async (args: string[]): Promise<{ code: number; stdout: string; stderr: string }> => {
+  const runHerdr = async (
+    args: string[],
+  ): Promise<{ code: number; stdout: string; stderr: string }> => {
     try {
       return await runCommand(["herdr", ...args], 2500);
     } catch (error) {
@@ -491,7 +605,9 @@ async function loadHerdrHealth(): Promise<HerdrHealth | null> {
 
 async function loadHerdrRemoteHealth(): Promise<HerdrRemoteHealth[]> {
   const targets = await loadHerdrRemoteTargets();
+  const tailscaleHealth = await loadTailscalePeerHealth(targets);
   const results = await Promise.all(targets.map(async (target): Promise<HerdrRemoteHealth> => {
+    const tailscale = tailscaleHealth.get(target.connection_key) ?? null;
     let proxyResult: { code: number; stdout: string; stderr: string };
     try {
       proxyResult = await runCommand([
@@ -527,12 +643,19 @@ async function loadHerdrRemoteHealth(): Promise<HerdrRemoteHealth[]> {
       proxy_reachable: false,
       proxy_schema_version: "",
       proxy_protocol_version: 0,
+      tailscale,
     };
     if (proxyResult.code !== 0 || !proxyResult.stdout) {
+      const issues = [
+        `Herdr proxy unreachable: ${proxyResult.stderr || proxyResult.stdout || "no output"}`,
+      ];
+      if (tailscale?.issue) {
+        issues.unshift(tailscale.issue);
+      }
       return {
         ...base,
         healthy: false,
-        issues: [`Herdr proxy unreachable: ${proxyResult.stderr || proxyResult.stdout || "no output"}`],
+        issues,
         client_version: "",
         server_version: "",
         protocol: 0,
@@ -576,6 +699,9 @@ async function loadHerdrRemoteHealth(): Promise<HerdrRemoteHealth[]> {
     if (proxyProtocolVersion !== 1) {
       issues.push(`Herdr proxy protocol mismatch: ${proxyProtocolVersion || "missing"}`);
     }
+    if (tailscale?.issue) {
+      issues.push(tailscale.issue);
+    }
     const serverRunning = server.running === true;
     const compatible = server.compatible === true;
     if (!serverRunning) {
@@ -603,6 +729,7 @@ async function loadHerdrRemoteHealth(): Promise<HerdrRemoteHealth[]> {
       proxy_reachable: true,
       proxy_schema_version: proxySchemaVersion,
       proxy_protocol_version: proxyProtocolVersion,
+      tailscale,
     };
   }));
   return results;
@@ -862,11 +989,11 @@ function printReport(report: HealthReport): void {
   );
   if (report.dashboard) {
     console.log(
-      `  dashboard ${
-        report.dashboard.healthy ? green("matched") : red("invalid")
-      } ${
+      `  dashboard ${report.dashboard.healthy ? green("matched") : red("invalid")} ${
         dim(
-          `${report.dashboard.schema_version || "missing"} snapshot ${report.dashboard.snapshot_version} focus ${report.dashboard.focus_generation}`,
+          `${
+            report.dashboard.schema_version || "missing"
+          } snapshot ${report.dashboard.snapshot_version} focus ${report.dashboard.focus_generation}`,
         )
       }`,
     );
@@ -882,7 +1009,11 @@ function printReport(report: HealthReport): void {
     console.log(bold("Herdr"));
     console.log(
       `  server ${report.herdr.server_running ? green("running") : red("down")} ${
-        dim(`${report.herdr.server_version || "unknown"} protocol ${report.herdr.protocol || "unknown"}`)
+        dim(
+          `${report.herdr.server_version || "unknown"} protocol ${
+            report.herdr.protocol || "unknown"
+          }`,
+        )
       }`,
     );
     console.log(
@@ -890,11 +1021,15 @@ function printReport(report: HealthReport): void {
         dim(`client ${report.herdr.client_version || "unknown"}`)
       }`,
     );
-    console.log(`  agents ${cyan(String(report.herdr.agent_count))} panes ${cyan(String(report.herdr.pane_count))}`);
     console.log(
-      `  integrations claude=${report.herdr.integrations.claude ? green("installed") : red("missing")} codex=${
-        report.herdr.integrations.codex ? green("installed") : red("missing")
+      `  agents ${cyan(String(report.herdr.agent_count))} panes ${
+        cyan(String(report.herdr.pane_count))
       }`,
+    );
+    console.log(
+      `  integrations claude=${
+        report.herdr.integrations.claude ? green("installed") : red("missing")
+      } codex=${report.herdr.integrations.codex ? green("installed") : red("missing")}`,
     );
     console.log("");
   }
@@ -914,6 +1049,18 @@ function printReport(report: HealthReport): void {
           )
         }`,
       );
+      if (remote.tailscale?.checked && remote.tailscale.peer_found) {
+        const expired = remote.tailscale.expired === true ? red("expired") : green("valid");
+        const online = remote.tailscale.online === false ? yellow("offline") : green("online");
+        console.log(
+          `    ${dim("tailscale")} ${online} ${expired} ${
+            dim(
+              remote.tailscale.dns_name || remote.tailscale.host ||
+                remote.tailscale.tailscale_ips[0] || "",
+            )
+          }`,
+        );
+      }
       for (const issue of remote.issues) {
         console.log(`    ${yellow(issue)}`);
       }
@@ -942,7 +1089,9 @@ function printReport(report: HealthReport): void {
       } ${dim(runtime.endpoint_url)}`,
     );
     if (runtime.listener.pid) {
-      console.log(`  listener pid ${runtime.listener.pid} ${dim(runtime.listener.cmdline || "(unknown)")}`);
+      console.log(
+        `  listener pid ${runtime.listener.pid} ${dim(runtime.listener.cmdline || "(unknown)")}`,
+      );
     }
     if (runtime.stale_candidates.length > 0) {
       console.log(`  stale processes ${red(String(runtime.stale_candidates.length))}`);
