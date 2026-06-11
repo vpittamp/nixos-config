@@ -116,12 +116,46 @@ def test_retired_notification_badge_service_is_not_active_runtime_state():
 
 
 def test_session_display_eligibility_accepts_herdr_panes_without_tmux_identity():
-    """Herdr panes should be visible without terminal anchors or tmux fields."""
+    """AI session display eligibility should be Herdr-native, not tmux-derived."""
     text = SHELL_QML.read_text()
     assert "function sessionIsDisplayEligible(session)" in text
     assert "function sessionIsPanelDisplayEligible(session)" in text
     assert "stringOrEmpty(session.source) === \"herdr\" || stringOrEmpty(session.pane_id)" in text
     assert "return stringOrEmpty(session.pane_id).length > 0;" in text
+    eligibility_body = text.split("function sessionIsDisplayEligible(session)", 1)[1].split("function sessionIsPanelDisplayEligible", 1)[0]
+    panel_eligibility_body = text.split("function sessionIsPanelDisplayEligible(session)", 1)[1].split("function stableSessionCompare", 1)[0]
+    for body in [eligibility_body, panel_eligibility_body]:
+        assert "terminal_anchor_id" not in body
+        assert "tmux_session" not in body
+        assert "tmux_window" not in body
+        assert "tmux_pane" not in body
+        assert "process_running" not in body
+
+
+def test_session_preview_and_sorting_use_herdr_pane_identity_not_tmux_fields():
+    """Launcher session preview/sorting should not reintroduce tmux pane identity."""
+    text = SHELL_QML.read_text()
+    session_preview_body = text.split("function emptySessionPreview()", 1)[1].split("function activeLauncherSessionEntry", 1)[0]
+    restart_preview_body = text.split("function restartSessionPreview()", 1)[1].split("function ensureSessionPreviewForSelection", 1)[0]
+    preview_title_body = text.split("function sessionPreviewTitle()", 1)[1].split("function sessionPreviewSubtitle", 1)[0]
+    preview_subtitle_body = text.split("function sessionPreviewSubtitle()", 1)[1].split("function sessionPreviewSemanticBits", 1)[0]
+    stable_compare_body = text.split("function stableSessionCompare(left, right)", 1)[1].split("function stableSortedSessions", 1)[0]
+    launcher_compare_body = text.split("function launcherSessionCompare(left, right)", 1)[1].split("function launcherSessionGroups", 1)[0]
+
+    for body in [
+        session_preview_body,
+        restart_preview_body,
+        preview_title_body,
+        preview_subtitle_body,
+        stable_compare_body,
+        launcher_compare_body,
+    ]:
+        assert "tmux_session" not in body
+        assert "tmux_window" not in body
+        assert "tmux_pane" not in body
+
+    assert "stringOrEmpty(session && (session.pane_id || session.pane_label))" in text
+    assert "const paneId = stringOrEmpty(session && session.pane_id).trim();" in text
 
 
 def test_session_status_chip_renders_raw_herdr_status():

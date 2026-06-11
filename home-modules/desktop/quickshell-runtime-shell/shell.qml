@@ -249,9 +249,6 @@ ShellRoot {
             bridge_state: "",
             pane_label: "",
             pane_title: "",
-            tmux_session: "",
-            tmux_window: "",
-            tmux_pane: "",
             surface_key: "",
             agent_status: "",
             cwd: "",
@@ -820,11 +817,11 @@ ShellRoot {
     }
 
     function sessionWindowSlot(session) {
-        return firstNumber(session && session.tmux_window, 1000000);
+        return firstNumber(session && (session.tab_id || session.workspace_id), 1000000);
     }
 
     function sessionPaneSlot(session) {
-        return firstNumber(session && session.tmux_pane, firstNumber(session && session.pane_label, 1000000));
+        return firstNumber(session && session.pane_id, firstNumber(session && session.pane_label, 1000000));
     }
 
     function sessionIsCurrentHost(session) {
@@ -858,19 +855,7 @@ ShellRoot {
             return stringOrEmpty(session.pane_id).length > 0;
         }
 
-        const terminalAnchor = stringOrEmpty(session.terminal_anchor_id);
-        const hasTmuxIdentity = stringOrEmpty(session.tmux_session) && stringOrEmpty(session.tmux_window) && stringOrEmpty(session.tmux_pane);
-        if (!terminalAnchor && !hasTmuxIdentity) {
-            return false;
-        }
-
-        // Live processes are always eligible regardless of phase
-        if (boolOrFalse(session.process_running)) {
-            return true;
-        }
-
-        const phase = sessionPhase(session);
-        return phase === "working" || phase === "needs_attention" || phase === "done" || phase === "quiet_alive" || phase === "idle";
+        return false;
     }
 
     function sessionIsPanelDisplayEligible(session) {
@@ -882,19 +867,7 @@ ShellRoot {
             return stringOrEmpty(session.pane_id).length > 0;
         }
 
-        const terminalAnchor = stringOrEmpty(session.terminal_anchor_id);
-        const hasTmuxIdentity = stringOrEmpty(session.tmux_session) && stringOrEmpty(session.tmux_window) && stringOrEmpty(session.tmux_pane);
-        if (!terminalAnchor && !hasTmuxIdentity) {
-            return false;
-        }
-
-        // Live processes are always eligible regardless of phase
-        if (boolOrFalse(session.process_running)) {
-            return true;
-        }
-
-        const phase = sessionPhase(session);
-        return phase === "working" || phase === "needs_attention" || phase === "done" || phase === "quiet_alive" || phase === "idle";
+        return false;
     }
 
     function stableSessionCompare(left, right) {
@@ -914,11 +887,6 @@ ShellRoot {
         }
 
         result = compareAscending(sessionWindowSlot(left), sessionWindowSlot(right));
-        if (result !== 0) {
-            return result;
-        }
-
-        result = compareAscending(stringOrEmpty(left && left.tmux_session), stringOrEmpty(right && right.tmux_session));
         if (result !== 0) {
             return result;
         }
@@ -3757,9 +3725,6 @@ ShellRoot {
             window_id: 0,
             pane_label: "",
             pane_title: "",
-            tmux_session: "",
-            tmux_window: "",
-            tmux_pane: "",
             surface_key: "",
             session_phase: "",
             session_phase_label: "",
@@ -3817,9 +3782,6 @@ ShellRoot {
             window_id: Number(entry.window_id || 0),
             pane_label: sessionPaneLabel(entry),
             pane_title: stringOrEmpty(entry.pane_title),
-            tmux_session: stringOrEmpty(entry.tmux_session),
-            tmux_window: stringOrEmpty(entry.tmux_window),
-            tmux_pane: stringOrEmpty(entry.tmux_pane),
             surface_key: stringOrEmpty(entry.surface_key),
             session_phase: stringOrEmpty(entry.session_phase),
             session_phase_label: stringOrEmpty(entry.session_phase_label),
@@ -3837,7 +3799,7 @@ ShellRoot {
             terminal_id: stringOrEmpty(entry.terminal_id),
             message: herdrSession
                 ? "Focus this Herdr pane to inspect live output."
-                : "Live tmux preview has been retired. Focus the corresponding Herdr pane for live inspection."
+                : "Focus the corresponding Herdr pane for live inspection."
         });
     }
 
@@ -3868,7 +3830,7 @@ ShellRoot {
                 stringOrEmpty(sessionPreview.host_name),
                 stringOrEmpty(sessionPreview.connection_key)
             ),
-            stringOrEmpty(sessionPreview.tmux_pane)
+            stringOrEmpty(sessionPreview.pane_id || sessionPreview.pane_label)
         );
         if (alias.length > 0) {
             return alias;
@@ -3894,9 +3856,6 @@ ShellRoot {
         }
         if (availability.length > 0 && sessionAvailabilityState(sessionPreview) !== "local_window") {
             bits.push(availability);
-        }
-        if (stringOrEmpty(sessionPreview.tmux_session)) {
-            bits.push(stringOrEmpty(sessionPreview.tmux_session));
         }
         return bits.join("  •  ");
     }
@@ -4036,11 +3995,6 @@ ShellRoot {
             return contextKey;
         }
 
-        const terminalAnchor = stringOrEmpty(session && session.terminal_anchor_id);
-        if (terminalAnchor) {
-            return terminalAnchor;
-        }
-
         return stringOrEmpty(session && session.host_name);
     }
 
@@ -4051,11 +4005,6 @@ ShellRoot {
         }
 
         result = compareAscending(stringOrEmpty(left && left.project_name || left && left.project), stringOrEmpty(right && right.project_name || right && right.project));
-        if (result !== 0) {
-            return result;
-        }
-
-        result = compareAscending(stringOrEmpty(left && left.tmux_session), stringOrEmpty(right && right.tmux_session));
         if (result !== 0) {
             return result;
         }
@@ -4898,7 +4847,7 @@ ShellRoot {
         const sessions = activeSessions();
         for (let i = 0; i < sessions.length; i += 1) {
             const session = sessions[i];
-            const sessionPaneId = stringOrEmpty(session && (session.pane_id || session.tmux_pane));
+            const sessionPaneId = stringOrEmpty(session && session.pane_id);
             if (sessionPaneId !== currentPaneId) {
                 continue;
             }
@@ -6191,18 +6140,14 @@ ShellRoot {
                 stringOrEmpty(session && session.host_name),
                 stringOrEmpty(session && session.connection_key)
             ),
-            stringOrEmpty(session && session.tmux_pane)
+            stringOrEmpty(session && (session.pane_id || session.pane_label))
         );
     }
 
     function sessionPaneLabel(session) {
-        const label = stringOrEmpty(session.pane_label || session.pane_title || session.tmux_pane);
+        const label = stringOrEmpty(session.pane_label || session.pane_title || session.pane_id);
         if (label) {
             return label;
-        }
-        const surfaceKind = stringOrEmpty(session.surface_kind);
-        if (surfaceKind === "tmux-pane") {
-            return "Pane";
         }
         return "";
     }
@@ -6220,7 +6165,7 @@ ShellRoot {
     }
 
     function sessionPaneLocatorLabel(session) {
-        const paneId = stringOrEmpty(session && session.tmux_pane).trim();
+        const paneId = stringOrEmpty(session && session.pane_id).trim();
         if (!paneId) {
             return "";
         }
