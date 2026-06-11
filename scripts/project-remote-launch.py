@@ -55,40 +55,6 @@ def build_env_prefix(spec: dict) -> list[str]:
     return env_parts
 
 
-def build_remote_attach_script(spec: dict, remote_dir: str) -> str:
-    remote_attach = spec.get("terminal_launch", {}).get("remote_attach") or {}
-    if not isinstance(remote_attach, dict):
-        remote_attach = {}
-    tmux_session = str(remote_attach.get("tmux_session") or "").strip()
-    tmux_window = str(remote_attach.get("tmux_window") or "").strip()
-    tmux_pane = str(remote_attach.get("tmux_pane") or "").strip()
-    tmux_socket = str(remote_attach.get("tmux_socket") or "").strip()
-    if not (tmux_session and tmux_window and tmux_pane):
-        raise RuntimeError("remote AI attach requires exact tmux session/window/pane identity")
-    tmux_window_index = str(tmux_window).split(":", 1)[0].strip() or str(tmux_window)
-    tmux_cmd = f"tmux -S {shlex.quote(tmux_socket)}" if tmux_socket else "tmux"
-    script_lines = ["set -euo pipefail"]
-    # When no explicit socket is provided, default the remote tmux server to
-    # the NixOS XDG_RUNTIME_DIR location (/run/user/<uid>/tmux-<uid>/default)
-    # rather than the plain default (/tmp/tmux-<uid>/default). NixOS hosts run
-    # tmux out of $XDG_RUNTIME_DIR; an SSH session inherits a clean PATH
-    # without TMUX_TMPDIR set, so bare `tmux` would otherwise look in /tmp.
-    if not tmux_socket:
-        script_lines.append('export TMUX_TMPDIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"')
-    if remote_dir:
-        script_lines.append(f"cd {shlex.quote(remote_dir)}")
-    script_lines.extend([
-        f"{tmux_cmd} has-session -t {shlex.quote(tmux_session)} >/dev/null 2>&1",
-        (
-            f"{tmux_cmd} list-panes -t {shlex.quote(f'{tmux_session}:{tmux_window_index}')} "
-            f"-F '#{{pane_id}}' | grep -Fx {shlex.quote(tmux_pane)} >/dev/null"
-        ),
-        f"{tmux_cmd} select-window -t {shlex.quote(f'{tmux_session}:{tmux_window_index}')} >/dev/null 2>&1",
-        f"{tmux_cmd} select-pane -t {shlex.quote(tmux_pane)} >/dev/null 2>&1",
-    ])
-    return "\n".join(script_lines)
-
-
 def build_remote_interactive_invocation(spec: dict) -> tuple[list[str], list[str]]:
     terminal_launch = spec.get("terminal_launch") or {}
     if not isinstance(terminal_launch, dict):
@@ -104,23 +70,11 @@ def build_remote_interactive_invocation(spec: dict) -> tuple[list[str], list[str
     remote_port = int(remote.get("port", 22) or 22)
     if not (remote_host and helper_name):
         raise RuntimeError("remote launch requires a complete SSH destination")
+    if terminal_launch.get("remote_attach"):
+        raise RuntimeError("remote AI tmux attach specs are retired; focus the Herdr pane instead")
 
     destination = f"{remote_user}@{remote_host}" if remote_user else remote_host
     env_prefix = build_env_prefix(spec)
-    remote_attach = terminal_launch.get("remote_attach") or {}
-    if remote_attach:
-        preflight_script = build_remote_attach_script(spec, remote_dir)
-        attach_script = preflight_script + "\n" + (
-            f"exec env TMUX= {'tmux -S ' + shlex.quote(str(remote_attach.get('tmux_socket') or '').strip()) if str(remote_attach.get('tmux_socket') or '').strip() else 'tmux'} "
-            f"attach-session -t {shlex.quote(str(remote_attach.get('tmux_session') or '').strip())}"
-        )
-        return (
-            ["ssh", "-tt", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-p", str(remote_port), destination,
-             "bash", "-lc", attach_script],
-            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-p", str(remote_port), destination,
-             "bash", "-lc", preflight_script],
-        )
-
     remote_command = env_prefix + [helper_name, remote_dir, *helper_args]
     remote_script = "set -euo pipefail\n"
     if remote_dir:
@@ -221,7 +175,7 @@ def main() -> int:
                 error_message=str(preflight_result.stderr or preflight_result.stdout or "Remote target is unavailable").strip(),
             )
 
-        write_status(spec, status="attaching_tmux" if launch_kind == "attach_ai_session" else "running")
+        write_status(spec, status="running")
         os.execvp(command[0], command)
     except Exception as exc:
         return fail_with_prompt(

@@ -1104,11 +1104,10 @@ class LaunchService:
         """Create a thin deterministic helper script for managed SSH terminals."""
         terminal_launch = spec.get("terminal_launch") or {}
         remote = terminal_launch.get("remote") or {}
-        remote_attach = terminal_launch.get("remote_attach") or {}
         if not isinstance(remote, dict):
             remote = {}
-        if not isinstance(remote_attach, dict):
-            remote_attach = {}
+        if terminal_launch.get("remote_attach"):
+            raise RuntimeError("Remote AI tmux attach specs are retired; use Herdr focus targets")
 
         execution_mode = str(spec.get("execution_mode") or "local").strip() or "local"
         connection_key = str(spec.get("connection_key") or "").strip()
@@ -1132,10 +1131,9 @@ class LaunchService:
         remote_user = str(remote.get("user") or "").strip()
         remote_host = str(remote.get("host") or "").strip()
         remote_port = int(remote.get("port", 22) or 22)
-        requires_remote_dir = not bool(remote_attach)
         if not (remote_user and remote_host and helper_name):
             raise RuntimeError("Remote terminal launch requires a complete SSH profile")
-        if requires_remote_dir and not remote_dir:
+        if not remote_dir:
             raise RuntimeError("Remote terminal launch requires a complete SSH profile")
         if terminal_mode == "managed_project_terminal" and not tmux_session_name:
             raise RuntimeError("Managed remote terminal launch requires tmux_session_name")
@@ -1152,43 +1150,16 @@ class LaunchService:
             f"export {key}={self._quote(value)}"
             for key, value in env_items
         )
-        tmux_session = str(remote_attach.get("tmux_session") or "").strip()
-        tmux_window = str(remote_attach.get("tmux_window") or "").strip()
-        tmux_pane = str(remote_attach.get("tmux_pane") or "").strip()
-        tmux_socket = str(remote_attach.get("tmux_socket") or "").strip()
-        if remote_attach:
-            tmux_cmd = self._tmux_command_prefix(tmux_socket)
-            tmux_window_index = str(tmux_window or "").split(":", 1)[0].strip() or tmux_window
-            remote_invocation_lines = [
-                "set -euo pipefail",
-                f"{tmux_cmd} has-session -t {shlex.quote(tmux_session)} >/dev/null 2>&1",
-                f"{tmux_cmd} select-window -t {shlex.quote(f'{tmux_session}:{tmux_window_index}')} >/dev/null 2>&1 || true",
-                (
-                    f"{tmux_cmd} select-pane -t {shlex.quote(tmux_pane)} >/dev/null 2>&1 || true"
-                    if tmux_pane else "true"
-                ),
-                f"exec env TMUX= {tmux_cmd} attach-session -t {shlex.quote(tmux_session)}",
+        remote_env_invocation = " ".join(
+            self._quote(part)
+            for part in [
+                "env",
+                *[f"{key}={value}" for key, value in env_items],
+                helper_name,
+                remote_dir,
+                *helper_args,
             ]
-            if remote_dir:
-                remote_invocation_lines.insert(1, f"cd {shlex.quote(remote_dir)}")
-            remote_invocation_script = "\n".join(remote_invocation_lines)
-            remote_env_invocation = (
-                "env "
-                + " ".join(self._quote(f"{key}={value}") for key, value in env_items)
-                + " bash -lc "
-                + self._quote(remote_invocation_script)
-            )
-        else:
-            remote_env_invocation = " ".join(
-                self._quote(part)
-                for part in [
-                    "env",
-                    *[f"{key}={value}" for key, value in env_items],
-                    helper_name,
-                    remote_dir,
-                    *helper_args,
-                ]
-            )
+        )
         remote_script = f"""#!/usr/bin/env bash
 set -euo pipefail
 {env_exports}
@@ -1973,11 +1944,9 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                 )
             )
         elif terminal_mode == "managed_project_terminal" and launch_transport == "remote_helper":
-            spec["launch_kind"] = (
-                "attach_ai_session"
-                if bool((terminal_launch.get("remote_attach") or {}))
-                else "open_project_terminal"
-            )
+            if terminal_launch.get("remote_attach"):
+                raise RuntimeError("Remote AI tmux attach specs are retired; use Herdr focus targets")
+            spec["launch_kind"] = "open_project_terminal"
             spec_file = self.write_remote_spec(spec=spec, launch_kind=str(spec.get("launch_kind") or "open_project_terminal"))
             launch_script = self._terminal_helper("project-remote-launch.py")
             shell_command = (

@@ -522,15 +522,11 @@ def test_build_remote_helper_script_for_scoped_terminal_command(server_ssh):
     assert "bash -c" not in content
 
 
-def test_build_remote_helper_script_for_remote_attach_without_remote_dir(server_ssh):
+def test_build_remote_helper_script_rejects_retired_remote_attach_specs(server_ssh):
     spec = {
         "execution_mode": "ssh",
         "connection_key": "vpittamp@ryzen:22",
-        "environment": {
-            "I3PM_PROJECT_NAME": QUALIFIED_NAME,
-            "I3PM_CONTEXT_KEY": f"{QUALIFIED_NAME}::ssh::vpittamp@ryzen:22",
-            "I3PM_REMOTE_SESSION_KEY": "codex|remote-session",
-        },
+        "environment": {},
         "terminal_launch": {
             "mode": "managed_project_terminal",
             "helper_name": "project-terminal-launch.sh",
@@ -550,16 +546,8 @@ def test_build_remote_helper_script_for_remote_attach_without_remote_dir(server_
         },
     }
 
-    helper_path = server_ssh.launch_service.build_remote_terminal_helper_script(spec)
-    try:
-        content = helper_path.read_text()
-    finally:
-        helper_path.unlink(missing_ok=True)
-
-    assert "ssh -tt -o BatchMode=yes -o ConnectTimeout=2 -p 22 vpittamp@ryzen" in content
-    assert "tmux -S /run/user/1000/tmux-1000/default has-session -t i3pm-vpittamp-nixos-config-ma-6e1abb85" in content
-    assert "attach-session -t i3pm-vpittamp-nixos-config-ma-6e1abb85" in content
-    assert "cd " not in content
+    with pytest.raises(RuntimeError, match="Remote AI tmux attach specs are retired"):
+        server_ssh.launch_service.build_remote_terminal_helper_script(spec)
 
 
 def test_build_remote_helper_script_allows_current_host_ssh_launch(server_ssh_current_host):

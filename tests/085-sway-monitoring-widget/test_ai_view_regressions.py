@@ -30,6 +30,7 @@ DAEMON_SERVICES_DIR = REPO_ROOT / "home-modules" / "desktop" / "i3-project-event
 HERDR_SERVICE_PY = DAEMON_SERVICES_DIR / "herdr_service.py"
 LAUNCH_SERVICE_PY = DAEMON_SERVICES_DIR / "launch_service.py"
 SESSION_RUNTIME_SERVICE_PY = DAEMON_SERVICES_DIR / "session_runtime_service.py"
+PROJECT_REMOTE_LAUNCH_PY = REPO_ROOT / "scripts" / "project-remote-launch.py"
 I3PM_MONITORING_DATA_PY = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "monitoring_data.py"
 I3PM_CLI_README = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "README.md"
 AI_SESSION_SYSTEM_DOC = REPO_ROOT / "docs" / "AI_SESSION_SYSTEM.md"
@@ -210,6 +211,7 @@ def test_retired_session_bridge_cleanup_surface_stays_removed():
     daemon_text = IPC_SERVER_PY.read_text()
     herdr_service_text = HERDR_SERVICE_PY.read_text()
     launch_service_text = LAUNCH_SERVICE_PY.read_text()
+    remote_launch_text = PROJECT_REMOTE_LAUNCH_PY.read_text()
     session_cli_text = I3PM_SESSION_TS.read_text()
 
     assert not SESSION_RUNTIME_SERVICE_PY.exists()
@@ -236,8 +238,19 @@ def test_retired_session_bridge_cleanup_surface_stays_removed():
         "build_remote_session_attach_spec",
         "prepare_remote_session_attach_spec",
         "remote_session_terminal_role",
+        "attach_ai_session",
     ]:
         assert retired not in launch_service_text
+
+    for retired in [
+        "build_remote_attach_script",
+        "attach_ai_session",
+        "attach-session",
+        "select-pane",
+        "remote AI attach requires exact tmux",
+    ]:
+        assert retired not in remote_launch_text
+    assert "remote AI tmux attach specs are retired" in remote_launch_text
 
     assert "session.cleanup" not in session_cli_text
     assert "session.doctor" not in session_cli_text
