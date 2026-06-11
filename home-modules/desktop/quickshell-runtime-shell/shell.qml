@@ -7961,7 +7961,7 @@ ShellRoot {
         const status = stringOrEmpty(daemonHealthState.status);
         if (status === "healthy") return "Daemon";
         if (status === "degraded") return "Daemon !";
-        if (status === "unhealthy") return "Daemon !!";
+        if (status === "unhealthy" || status === "critical") return "Daemon !!";
         if (status === "dead" || status === "unreachable") return "Daemon X";
         return "Daemon ?";
     }

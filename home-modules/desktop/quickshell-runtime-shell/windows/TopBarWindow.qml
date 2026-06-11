@@ -158,7 +158,11 @@ PanelWindow {
                     border.width: 1
                     implicitWidth: daemonHealthRow.implicitWidth + 18
                     implicitHeight: parent.height
-                    visible: root.daemonHealthState.status !== "healthy"
+                    visible: root.daemonHealthState.status === "degraded"
+                        || root.daemonHealthState.status === "unhealthy"
+                        || root.daemonHealthState.status === "critical"
+                        || root.daemonHealthState.status === "dead"
+                        || root.daemonHealthState.status === "unreachable"
 
                     Behavior on color {
                         ColorAnimation {

@@ -906,35 +906,109 @@ PY
   '';
 
   daemonHealthScript = pkgs.writeShellScriptBin "quickshell-daemon-health" ''
-    set -euo pipefail
-    SOCK="$XDG_RUNTIME_DIR/i3-project-daemon/ipc.sock"
-    while true; do
-      if [ ! -S "$SOCK" ]; then
-        printf '{"status":"dead","label":"Daemon offline"}\n'
-        sleep 5
-        continue
-      fi
-      RESP=$(printf '{"jsonrpc":"2.0","id":1,"method":"health_check","params":{}}\n' \
-        | ${pkgs.socat}/bin/socat -t5 STDIO "UNIX-CONNECT:$SOCK" 2>/dev/null || true)
-      if [ -z "$RESP" ]; then
-        printf '{"status":"unreachable","label":"Daemon unreachable"}\n'
-        sleep 5
-        continue
-      fi
-      STATUS=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.overall_status // "unknown"' 2>/dev/null || echo "unknown")
-      EVENTS=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.total_events_processed // 0' 2>/dev/null || echo "0")
-      WINDOWS=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.total_windows // 0' 2>/dev/null || echo "0")
-      UPTIME=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '.result.uptime_seconds // 0' 2>/dev/null || echo "0")
-      ISSUES=$(printf '%s' "$RESP" | ${lib.getExe pkgs.jq} -r '[.result.health_issues // [] | .[]] | join("; ")' 2>/dev/null || echo "")
-      ${lib.getExe pkgs.jq} -cn \
-        --arg status "$STATUS" \
-        --argjson events "$EVENTS" \
-        --argjson windows "$WINDOWS" \
-        --argjson uptime "$UPTIME" \
-        --arg issues "$ISSUES" \
-        '{status:$status,events:$events,windows:$windows,uptime:$uptime,issues:$issues}'
-      sleep 5
-    done
+    exec ${lib.getExe pkgs.python3} -u - <<'PY'
+import json
+import os
+import socket
+import stat
+import time
+
+
+SOCKET_PATH = os.path.join(
+    os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}",
+    "i3-project-daemon",
+    "ipc.sock",
+)
+INTERVAL_SECONDS = 5.0
+TIMEOUT_SECONDS = 1.5
+FAILURE_THRESHOLD = 3
+
+
+def emit(payload):
+    print(json.dumps(payload, separators=(",", ":")), flush=True)
+
+
+def rpc_health():
+    if not stat_is_socket(SOCKET_PATH):
+        raise FileNotFoundError(SOCKET_PATH)
+
+    request = {"jsonrpc": "2.0", "id": 1, "method": "health_check", "params": {}}
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(TIMEOUT_SECONDS)
+        client.connect(SOCKET_PATH)
+        client.sendall((json.dumps(request, separators=(",", ":")) + "\n").encode("utf-8"))
+        with client.makefile("rb") as stream:
+            line = stream.readline(1024 * 1024)
+    if not line:
+        raise TimeoutError("daemon returned no response")
+
+    response = json.loads(line.decode("utf-8"))
+    if response.get("error"):
+        message = response["error"].get("message") if isinstance(response["error"], dict) else response["error"]
+        raise RuntimeError(str(message or "daemon health_check returned an error"))
+    result = response.get("result") or {}
+    raw_status = str(result.get("overall_status") or "unknown")
+    status = "unhealthy" if raw_status == "critical" else raw_status
+    issues = result.get("health_issues") or []
+    if not isinstance(issues, list):
+        issues = [str(issues)]
+    return {
+        "status": status,
+        "events": int(result.get("total_events_processed") or 0),
+        "windows": int(result.get("total_windows") or 0),
+        "uptime": float(result.get("uptime_seconds") or 0),
+        "issues": "; ".join(str(issue) for issue in issues if str(issue)),
+        "consecutive_failures": 0,
+        "last_error": "",
+    }
+
+
+def stat_is_socket(path):
+    try:
+        return stat.S_ISSOCK(os.stat(path).st_mode)
+    except FileNotFoundError:
+        return False
+
+
+last_good = None
+consecutive_failures = 0
+
+while True:
+    try:
+        payload = rpc_health()
+        consecutive_failures = 0
+        last_good = payload
+        emit(payload)
+    except Exception as exc:
+        consecutive_failures += 1
+        if consecutive_failures < FAILURE_THRESHOLD:
+            if last_good is not None:
+                payload = dict(last_good)
+                payload["consecutive_failures"] = consecutive_failures
+                payload["last_error"] = str(exc)
+                emit(payload)
+            else:
+                emit({
+                    "status": "unknown",
+                    "events": 0,
+                    "windows": 0,
+                    "uptime": 0,
+                    "issues": "",
+                    "consecutive_failures": consecutive_failures,
+                    "last_error": str(exc),
+                })
+        else:
+            emit({
+                "status": "dead" if not stat_is_socket(SOCKET_PATH) else "unreachable",
+                "events": int((last_good or {}).get("events") or 0),
+                "windows": int((last_good or {}).get("windows") or 0),
+                "uptime": float((last_good or {}).get("uptime") or 0),
+                "issues": str(exc),
+                "consecutive_failures": consecutive_failures,
+                "last_error": str(exc),
+            })
+    time.sleep(INTERVAL_SECONDS)
+PY
   '';
 
   daemonActionScript = pkgs.writeShellScriptBin "quickshell-daemon-action" ''
