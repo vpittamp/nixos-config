@@ -1708,6 +1708,11 @@ class HerdrService:
             parse_remote_target=parse_remote_target,
             normalize_connection_key=normalize_key,
         )
+        launch_task = asyncio.create_task(launch_open({
+            "app_name": str(params.get("app_name") or "herdr").strip() or "herdr",
+            "__intent_epoch": int(params.get("__intent_epoch") or 0),
+            "focus_fast": True,
+        }))
         focus_result = await self.run_proxy_json(target, ["focus", pane_id, "--json"])
         if bool(focus_result.get("success", False)):
             self.bump_remote_generation(target.get("host"))
@@ -1725,11 +1730,7 @@ class HerdrService:
                     connection_key=str(cache_result.get("connection_key") or "").strip(),
                 )
 
-        launch_result = await launch_open({
-            "app_name": str(params.get("app_name") or "herdr").strip() or "herdr",
-            "__intent_epoch": int(params.get("__intent_epoch") or 0),
-            "focus_fast": True,
-        })
+        launch_result = await launch_task
         await self._notify_state_change("ai_session_herdr_changed")
 
         return {

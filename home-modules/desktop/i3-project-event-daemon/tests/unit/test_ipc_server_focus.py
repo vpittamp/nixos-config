@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import importlib.util
 import sys
@@ -128,6 +129,7 @@ async def test_workspace_focus_fast_skips_verification_and_notifies(server):
     ipc_command.assert_awaited_once_with("workspace number 1")
     server._send_tick_barrier.assert_not_awaited()
     server.focus_service.wait_for_workspace_focus.assert_not_awaited()
+    await asyncio.sleep(0)
     server.notify_state_change.assert_awaited_once_with("focus_changed")
 
 
@@ -173,7 +175,7 @@ def test_focus_intent_finalization_marks_failed_result(server):
 
 @pytest.mark.asyncio
 async def test_focus_request_publishes_pending_and_final_focus_events(server):
-    server.notify_state_change = AsyncMock(return_value=None)
+    server.notify_state_change_background = AsyncMock(return_value=None)
     server.focus_service.focus_workspace_fast = AsyncMock(
         return_value={"success": True, "workspace": "9", "fast": True}
     )
@@ -190,8 +192,8 @@ async def test_focus_request_publishes_pending_and_final_focus_events(server):
 
     assert response["result"]["focus_intent"]["state"] == "confirmed"
     assert response["result"]["focus_intent"]["target_key"] == "9"
-    assert server.notify_state_change.await_count == 2
-    server.notify_state_change.assert_any_await("focus_changed")
+    assert server.notify_state_change_background.await_count == 2
+    server.notify_state_change_background.assert_any_await("focus_changed")
 
 
 @pytest.mark.asyncio
@@ -394,6 +396,7 @@ async def test_window_focus_fast_local_target_skips_full_focus_state(server):
     server.focus_service._get_window_transition_state.assert_not_awaited()
     server._send_tick_barrier.assert_not_awaited()
     server._focus_state.assert_not_awaited()
+    await asyncio.sleep(0)
     server.notify_state_change.assert_awaited_once_with("focus_changed")
 
 
@@ -436,6 +439,7 @@ async def test_window_focus_fast_falls_back_to_transition_when_direct_focus_fail
     assert commands[0] == "[con_id=31] focus"
     assert commands[1] == "workspace 2; [con_id=31] floating disable; [con_id=31] focus"
     server.focus_service._get_window_transition_state.assert_awaited_once_with(31)
+    await asyncio.sleep(0)
     server.notify_state_change.assert_awaited_once_with("focus_changed")
 
 

@@ -531,7 +531,7 @@ class IPCServer:
             get_sway_workspaces=lambda: self._sway_get_workspaces(),
             get_sway_tree=lambda: self.i3_connection.get_tree(),
             send_tick_barrier=lambda payload: self._send_tick_barrier(payload),
-            notify_state_change=lambda event_type: self.notify_state_change(event_type),
+            notify_state_change=lambda event_type: self.notify_state_change_background(event_type),
             local_host=lambda: self._local_host_alias(),
             window_map_snapshot=lambda: self.state_manager.get_window_map_snapshot(),
             parse_remote_target=lambda remote_target, connection_key="": self._parse_remote_target(
@@ -653,7 +653,7 @@ class IPCServer:
             invalidate_window_tree_cache=lambda: self.invalidate_window_tree_cache(),
         )
         self.herdr_service = HerdrService(
-            notify_state_change=lambda event_type: self.notify_state_change(event_type),
+            notify_state_change=lambda event_type: self.notify_state_change_background(event_type),
             normalize_project_path=normalize_project_path,
             resolve_worktree_for_path=resolve_discovered_worktree,
             parse_remote_target=self._parse_remote_target,
@@ -996,7 +996,7 @@ class IPCServer:
                 params=params,
             )
             if method in self.focus_service.focus_intent_methods():
-                await self.notify_state_change("focus_changed")
+                await self.notify_state_change_background("focus_changed")
 
         try:
             # Dispatch to handler method
@@ -1406,7 +1406,7 @@ class IPCServer:
             )
             if isinstance(result, dict) and focus_intent:
                 result["focus_intent"] = focus_intent
-                await self.notify_state_change("focus_changed")
+                await self.notify_state_change_background("focus_changed")
             return {"jsonrpc": "2.0", "result": result, "id": request_id}
 
         except KeyError as e:
@@ -2986,6 +2986,31 @@ class IPCServer:
             event_type: Type of state change event (for debugging)
         """
         await self.dashboard_service.notify_state_change(event_type)
+
+    async def notify_state_change_background(self, event_type: str = "dashboard_invalidated") -> None:
+        """Schedule dashboard notification without blocking an action RPC."""
+        self._schedule_state_change_notification(event_type)
+
+    def _schedule_state_change_notification(self, event_type: str = "dashboard_invalidated") -> None:
+        """Run dashboard notification fanout in the background."""
+        task = asyncio.create_task(
+            self.notify_state_change(event_type),
+            name=f"i3pm-dashboard-notify-{event_type}",
+        )
+
+        def _consume_result(fut: asyncio.Future) -> None:
+            try:
+                fut.result()
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.warning(
+                    "Background dashboard notification failed for %s",
+                    event_type,
+                    exc_info=True,
+                )
+
+        task.add_done_callback(_consume_result)
 
     async def _subscribe_state_changes(self, params: Dict[str, Any], writer: asyncio.StreamWriter) -> Dict[str, Any]:
         """Subscribe to state change notifications (Feature 123).
@@ -4835,7 +4860,7 @@ class IPCServer:
             reason=reason,
         )
         if focus_intent:
-            await self.notify_state_change("focus_changed")
+            await self.notify_state_change_background("focus_changed")
 
     def _user_intent_is_current(self, intent_epoch: int) -> bool:
         """Return whether an async action still matches the latest explicit user intent."""

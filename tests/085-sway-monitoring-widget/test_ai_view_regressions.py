@@ -696,6 +696,21 @@ def test_quickshell_action_socket_does_not_force_first_click_cli_fallback():
     assert "return false;" not in send_body.split("daemonActionSocket.connected = true;", 1)[1].split("daemonActionRequestId += 1;", 1)[0]
 
 
+def test_focus_rpc_dispatch_does_not_wait_for_dashboard_fanout():
+    """Focus actions should not block actual focus on dashboard event payloads/subscribers."""
+    ipc_text = (REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon" / "ipc_server.py").read_text()
+    herdr_text = HERDR_SERVICE_PY.read_text()
+
+    assert "async def notify_state_change_background" in ipc_text
+    assert 'await self.notify_state_change("focus_changed")' not in ipc_text
+    assert "notify_state_change=lambda event_type: self.notify_state_change_background(event_type)" in ipc_text
+    assert 'await self.notify_state_change_background("focus_changed")' in ipc_text
+    remote_focus_body = herdr_text.split("async def remote_pane_focus", 1)[1].split("    def build_spaces", 1)[0]
+    assert "launch_task = asyncio.create_task(launch_open({" in remote_focus_body
+    assert "focus_result = await self.run_proxy_json" in remote_focus_body
+    assert "launch_result = await launch_task" in remote_focus_body
+
+
 def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
     """Dashboard updates should flow through snapshot/event reducers, not direct raw replacement."""
     text = SHELL_QML.read_text()

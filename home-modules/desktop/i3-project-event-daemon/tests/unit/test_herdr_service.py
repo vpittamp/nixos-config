@@ -1532,12 +1532,17 @@ async def test_herdr_service_remote_pane_focus_owns_transport_cache_and_launch(m
     proxy_calls = []
     launch_calls = []
     focus_overrides = []
+    action_order = []
 
     async def fake_run_proxy_json(remote_target, args, timeout=2.5):
+        action_order.append("proxy-start")
+        await asyncio.sleep(0.01)
+        action_order.append("proxy-end")
         proxy_calls.append((remote_target, args))
         return {"success": True, "result": {"focused": True}}
 
     async def fake_launch_open(params):
+        action_order.append("launch")
         launch_calls.append(params)
         return {"success": True, "launch": {"reused_existing": True}}
 
@@ -1557,6 +1562,7 @@ async def test_herdr_service_remote_pane_focus_owns_transport_cache_and_launch(m
     )
 
     assert proxy_calls == [(target, ["focus", "remote-b", "--json"])]
+    assert action_order.index("launch") < action_order.index("proxy-end")
     assert launch_calls == [{
         "app_name": "herdr",
         "__intent_epoch": 9,
