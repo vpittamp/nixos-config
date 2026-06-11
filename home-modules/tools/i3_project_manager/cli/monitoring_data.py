@@ -29,7 +29,6 @@ Stream Mode (--listen):
 
 import argparse
 import asyncio
-import hashlib
 import json
 import logging
 import os
@@ -94,20 +93,11 @@ RUNTIME_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
 ACTIVE_WORKTREE_FILE = Path.home() / ".config" / "i3" / "active-worktree.json"
 DAEMON_SOCKET_PATH = RUNTIME_DIR / "i3-project-daemon" / "ipc.sock"
 
-# Remote sesh/tmux session discovery cache (for SSH project window augmentation)
-REMOTE_SESH_CACHE_TTL_SECONDS = 15
-REMOTE_SESH_CACHE: Dict[str, Dict[str, Any]] = {}
 DISCOVERED_TMUX_PROJECT_HINT_CACHE: Dict[str, Any] = {
     "mtime_ns": None,
     "size": None,
     "mapping": {},
 }
-
-
-def _normalize_session_name_key(value: str) -> str:
-    """Normalize session names so separator variants map to one logical key."""
-    from i3_project_manager.core.identity import normalize_session_name_key
-    return normalize_session_name_key(value)
 
 
 def _parse_ssh_connection_key(connection_key: str) -> Optional[Dict[str, Any]]:
@@ -1587,238 +1577,6 @@ def _normalize_remote_path(path: str, remote_user: str = "") -> str:
     return normalized if normalized else "/"
 
 
-def _extract_json_array(payload: str) -> List[Dict[str, Any]]:
-    """Best-effort parse JSON array from noisy SSH command output."""
-    text = str(payload or "").strip()
-    if not text:
-        return []
-
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, list):
-            return [item for item in parsed if isinstance(item, dict)]
-    except json.JSONDecodeError:
-        pass
-
-    start = text.find("[")
-    end = text.rfind("]")
-    if start < 0 or end <= start:
-        return []
-    try:
-        parsed = json.loads(text[start:end + 1])
-        if isinstance(parsed, list):
-            return [item for item in parsed if isinstance(item, dict)]
-    except json.JSONDecodeError:
-        return []
-
-    return []
-
-
-def _remote_profile_cache_key(profile: Dict[str, Any]) -> str:
-    """Build a cache key for remote host/user/port."""
-    host = str(profile.get("host", "")).strip()
-    user = str(profile.get("user", "")).strip()
-    port = str(profile.get("port", 22)).strip()
-    return f"{user}@{host}:{port}"
-
-
-def _fetch_remote_tmux_sessions(profile: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """
-    Fetch remote tmux-backed sesh entries via SSH.
-
-    Returns list of dicts:
-    [{"name": str, "path": str, "attached": bool, "windows": int}]
-    """
-    host = str(profile.get("host", "")).strip()
-    user = str(profile.get("user", "")).strip()
-    try:
-        port = int(profile.get("port", 22))
-    except (TypeError, ValueError):
-        port = 22
-
-    if not host:
-        return []
-
-    cache_key = _remote_profile_cache_key(profile)
-    now = time.time()
-    cached = REMOTE_SESH_CACHE.get(cache_key)
-    if cached and (now - float(cached.get("timestamp", 0))) < REMOTE_SESH_CACHE_TTL_SECONDS:
-        return list(cached.get("sessions", []))
-
-    target = f"{user}@{host}" if user else host
-    cmd: List[str] = [
-        "ssh",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "ConnectTimeout=2",
-        "-o",
-        "ServerAliveInterval=5",
-        "-o",
-        "ServerAliveCountMax=1",
-    ]
-    if port != 22:
-        cmd.extend(["-p", str(port)])
-    cmd.append(target)
-    cmd.append("bash -lc 'command -v sesh >/dev/null 2>&1 && sesh list -j || echo []'")
-
-    sessions: List[Dict[str, Any]] = []
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=6,
-            check=True,
-        )
-        payload = _extract_json_array(result.stdout)
-        for item in payload:
-            if str(item.get("Src", "")).strip() != "tmux":
-                continue
-            name = str(item.get("Name", "")).strip()
-            path = str(item.get("Path", "")).strip()
-            if not name or not path:
-                continue
-            try:
-                window_count = int(item.get("Windows", 0))
-            except (TypeError, ValueError):
-                window_count = 0
-            sessions.append(
-                {
-                    "name": name,
-                    "path": path,
-                    "attached": bool(item.get("Attached", False)),
-                    "windows": window_count,
-                }
-            )
-    except Exception as e:
-        logger.debug(f"Remote session fetch failed for {target}: {e}")
-        sessions = []
-
-    REMOTE_SESH_CACHE[cache_key] = {
-        "timestamp": now,
-        "sessions": sessions,
-    }
-    return sessions
-
-
-def _build_remote_session_window(
-    project_name: str,
-    remote_target: str,
-    remote_dir: str,
-    session: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Create synthetic window payload for a remote tmux/sesh session."""
-    seed = f"{project_name}|{remote_target}|{session.get('name', '')}"
-    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()
-    synthetic_id = -(10_000_000 + (int(digest[:12], 16) % 900_000_000))
-
-    session_name = str(session.get("name", "")).strip()
-    session_windows = int(session.get("windows", 0))
-    attached = bool(session.get("attached", False))
-    summary = f"tmux: {session_name}"
-    if session_windows > 0:
-        summary = f"{summary} • {session_windows} win"
-    if attached:
-        summary = f"{summary} • attached"
-
-    identity = _connection_identity(True, remote_target)
-
-    return {
-        "id": synthetic_id,
-        "pid": 0,
-        "app_id": "remote-sesh",
-        "app_name": "remote-sesh",
-        "display_name": f"ssh:{session_name}",
-        "class": "remote-sesh",
-        "instance": session_name,
-        "title": summary,
-        "full_title": summary,
-        "project": project_name,
-        "scope": "scoped",
-        "icon_path": "",
-        "workspace": "ssh",
-        "workspace_number": 0,
-        "output": "remote",
-        "marks": [],
-        "floating": False,
-        "hidden": False,
-        "focused": False,
-        "fullscreen": False,
-        "is_pwa": False,
-        "state_classes": "window-remote-session",
-        "geometry_x": 0,
-        "geometry_y": 0,
-        "geometry_width": 0,
-        "geometry_height": 0,
-        "badge": {},
-        "project_remote_enabled": True,
-        "project_remote_target": remote_target,
-        "project_remote_dir": remote_dir,
-        "execution_mode": identity["execution_mode"],
-        "host_alias": identity["host_alias"],
-        "connection_key": identity["connection_key"],
-        "identity_key": identity["identity_key"],
-        "is_remote_session": True,
-        "remote_session_name": session_name,
-        "remote_session_summary": summary,
-        "monitor_name": "remote",
-        "workspace_name": "ssh",
-    }
-
-
-def _project_session_suffix(project_name: str) -> str:
-    """
-    Convert qualified project name to common sesh/tmux name suffix.
-
-    Example:
-      PittampalliOrg/stacks:main -> stacks/main
-    """
-    name = str(project_name or "").strip()
-    if not name:
-        return ""
-    if ":" not in name:
-        return ""
-    repo_part, branch = name.split(":", 1)
-    repo_name = repo_part.split("/")[-1]
-    if not repo_name or not branch:
-        return ""
-    return f"{repo_name}/{branch}"
-
-
-def _session_matches_profile(
-    project_name: str,
-    profile: Dict[str, Any],
-    session: Dict[str, Any],
-) -> bool:
-    """Match a remote tmux session to a project profile using path + suffix heuristics."""
-    remote_user = str(profile.get("user", "")).strip()
-    remote_dir = _normalize_remote_path(str(profile.get("remote_dir", "")), remote_user)
-    session_path = _normalize_remote_path(str(session.get("path", "")), remote_user)
-    if remote_dir and session_path and session_path == remote_dir:
-        return True
-
-    # Handle prefix/symlink variations where sesh may report a resolved path.
-    if remote_dir and session_path:
-        if session_path.endswith(remote_dir) or remote_dir.endswith(session_path):
-            return True
-
-    suffix = _project_session_suffix(project_name)
-    session_name = str(session.get("name", "")).strip()
-    if suffix and session_name.endswith(suffix):
-        return True
-
-    # Accept common legacy/new naming variants (e.g. stacks/main vs stacks_main).
-    if (
-        suffix
-        and _normalize_session_name_key(session_name)
-        == _normalize_session_name_key(suffix)
-    ):
-        return True
-
-    return False
-
-
 def _normalize_connection_key(value: str) -> str:
     """Normalize connection identity for stable, collision-resistant IDs."""
     raw = str(value or "").strip().lower()
@@ -2039,87 +1797,6 @@ def _refresh_variant_flags(projects: List[Dict[str, Any]]) -> None:
         project["has_remote_variant"] = "ssh" in variants
 
 
-def _augment_projects_with_remote_sessions(
-    projects_dict: Dict[str, Dict[str, Any]],
-    remote_profiles: Optional[Dict[str, Dict[str, Any]]],
-) -> None:
-    """
-    Add synthetic window items for remote SSH tmux/sesh sessions.
-
-    This makes active remote sessions visible even when no local Sway window is
-    currently attached to them.
-    """
-    if not isinstance(remote_profiles, dict):
-        return
-
-    for project_name, profile in remote_profiles.items():
-        if not isinstance(profile, dict) or not bool(profile.get("enabled", False)):
-            continue
-
-        remote_user = str(profile.get("user", "")).strip()
-        remote_dir = _normalize_remote_path(str(profile.get("remote_dir", "")), remote_user)
-        if not remote_dir:
-            continue
-
-        remote_target = _format_remote_target(
-            profile.get("user", ""),
-            profile.get("host", ""),
-            profile.get("port", 22),
-        )
-
-        remote_sessions = _fetch_remote_tmux_sessions(profile)
-        matching_sessions = [s for s in remote_sessions if _session_matches_profile(project_name, profile, s)]
-        if not matching_sessions:
-            continue
-
-        remote_key = _project_card_key(project_name, True, remote_target)
-        if remote_key not in projects_dict:
-            projects_dict[remote_key] = _create_project_entry(
-                project_name=project_name,
-                remote_enabled=True,
-                remote_target=remote_target,
-                remote_directory=remote_dir,
-                remote_profile_enabled=True,
-                remote_profile_target=remote_target,
-                remote_profile_directory=remote_dir,
-            )
-
-        project_entry = projects_dict[remote_key]
-        project_entry["remote_enabled"] = True
-        if remote_target:
-            project_entry["remote_target"] = remote_target
-        project_entry["remote_directory"] = remote_dir
-        project_entry["remote_directory_display"] = remote_dir.replace(str(Path.home()), "~")
-
-        existing_ids = {int(w.get("id", 0)) for w in project_entry.get("windows", [])}
-        existing_session_names = {
-            _normalize_session_name_key(str(w.get("remote_session_name", "")).strip())
-            for w in project_entry.get("windows", [])
-            if str(w.get("remote_session_name", "")).strip()
-        }
-        for session in matching_sessions:
-            synthetic_window = _build_remote_session_window(
-                project_name,
-                remote_target,
-                remote_dir,
-                session,
-            )
-            synthetic_id = int(synthetic_window["id"])
-            synthetic_session_name = _normalize_session_name_key(
-                str(synthetic_window.get("remote_session_name", "")).strip()
-            )
-            if synthetic_session_name and synthetic_session_name in existing_session_names:
-                continue
-            if synthetic_id in existing_ids:
-                continue
-            project_entry["windows"].append(synthetic_window)
-            existing_ids.add(synthetic_id)
-            if synthetic_session_name:
-                existing_session_names.add(synthetic_session_name)
-
-        project_entry["window_count"] = len(project_entry.get("windows", []))
-
-
 def transform_to_project_view(
     monitors: List[Dict[str, Any]],
     remote_profiles: Optional[Dict[str, Dict[str, Any]]] = None,
@@ -2245,9 +1922,6 @@ def transform_to_project_view(
             window["identity_key"] = global_identity["identity_key"]
             window["context_key"] = ""
             global_windows.append(window)
-
-    # Augment project windows with remote tmux/sesh sessions for SSH projects.
-    _augment_projects_with_remote_sessions(projects_dict, remote_profiles)
 
     # Convert dict to sorted list:
     # 1) project name alphabetical

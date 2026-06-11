@@ -632,6 +632,22 @@ def test_tmux_does_not_expose_retired_ai_session_overview_popup():
     assert "Active AI sessions overview popup" not in text
 
 
+def test_legacy_monitoring_does_not_fan_out_remote_tmux_sessions():
+    """Legacy project JSON should not synthesize AI/session windows from remote tmux."""
+    text = I3PM_MONITORING_DATA_PY.read_text()
+    retired_terms = [
+        "REMOTE_SESH_CACHE",
+        "_fetch_remote_tmux_sessions",
+        "_build_remote_session_window",
+        "_augment_projects_with_remote_sessions",
+        "remote-sesh",
+        "sesh list",
+        "tmux/sesh",
+    ]
+    for term in retired_terms:
+        assert term not in text
+
+
 def test_herdr_space_groups_collapse_state_defaults_expanded():
     text = SHELL_QML.read_text()
     assert "property var collapsedHerdrSpaceGroups: ({})" in text
