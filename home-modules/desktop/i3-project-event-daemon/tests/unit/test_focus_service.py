@@ -435,6 +435,44 @@ def test_begin_user_focus_intent_records_formal_contract_fields() -> None:
     assert service.pending_intent_id == "intent-10"
 
 
+def test_advance_user_intent_increments_epoch_without_non_focus_highlight() -> None:
+    service = make_service()
+
+    epoch = service.advance_user_intent(
+        method="launch.open",
+        params={"app_name": "firefox"},
+        created_at=450.0,
+    )
+
+    assert epoch == 1
+    assert service.user_intent_epoch == 1
+    assert service.user_intent_is_current(1) is True
+    assert service.user_intent_is_current(2) is False
+    assert service.user_intent_is_current(0) is True
+    assert service.focus_intent_payload() == {}
+
+
+def test_advance_user_intent_begins_focus_intent_for_focus_methods() -> None:
+    service = make_service()
+
+    epoch = service.advance_user_intent(
+        method="workspace.focus_fast",
+        params={"workspace": "5"},
+        created_at=455.0,
+    )
+
+    assert epoch == 1
+    assert service.focus_intent_payload() == {
+        "intent_id": "intent-1",
+        "kind": "workspace_focus",
+        "target_key": "5",
+        "state": "pending",
+        "created_at": 455.0,
+        "generation": 1,
+        "reason": "",
+    }
+
+
 def test_finalize_focus_intent_for_result_uses_result_error_reason() -> None:
     service = make_service()
     service.begin_user_focus_intent(

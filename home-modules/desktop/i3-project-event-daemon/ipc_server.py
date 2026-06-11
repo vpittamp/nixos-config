@@ -524,7 +524,6 @@ class IPCServer:
         self._git_snapshot_ttl_background: float = 20.0
         self._git_snapshot_failure_ttl: float = 30.0
         self._active_runtime_context: Optional[Dict[str, Any]] = None
-        self._user_intent_epoch: int = 0
         self.focus_service = FocusService(
             normalize_connection_key=lambda value: self._normalize_connection_key(value),
             schema_version=FOCUS_STATE_SCHEMA_VERSION,
@@ -6545,19 +6544,15 @@ class IPCServer:
         params: Optional[Dict[str, Any]] = None,
     ) -> int:
         """Record a new top-level user intent so stale async work can be ignored."""
-        self._user_intent_epoch += 1
-        intent_id = f"intent-{self._user_intent_epoch}"
         payload = params or {}
-        self.focus_service.begin_user_focus_intent(
-            intent_id=intent_id,
+        intent_epoch = self.focus_service.advance_user_intent(
             method=str(method or "").strip(),
             params=payload,
             created_at=time.time(),
-            generation=self._user_intent_epoch,
         )
         logger.info(
             "User intent epoch=%s method=%s project=%s variant=%s connection=%s session=%s app=%s",
-            self._user_intent_epoch,
+            intent_epoch,
             str(method or "").strip(),
             str(payload.get("qualified_name") or payload.get("project_name") or "").strip(),
             str(payload.get("target_variant") or payload.get("execution_mode") or "").strip(),
@@ -6565,7 +6560,7 @@ class IPCServer:
             str(payload.get("session_key") or "").strip(),
             str(payload.get("app_name") or "").strip(),
         )
-        return self._user_intent_epoch
+        return intent_epoch
 
     def _finalize_focus_intent_for_result(
         self,
@@ -6598,8 +6593,7 @@ class IPCServer:
 
     def _user_intent_is_current(self, intent_epoch: int) -> bool:
         """Return whether an async action still matches the latest explicit user intent."""
-        epoch = int(intent_epoch or 0)
-        return epoch <= 0 or epoch == self._user_intent_epoch
+        return self.focus_service.user_intent_is_current(intent_epoch)
 
     def _stale_intent_result(
         self,
@@ -6614,7 +6608,7 @@ class IPCServer:
             str(session_key or "").strip(),
             str(project_name or "").strip(),
             str(reason or "").strip(),
-            self._user_intent_epoch,
+            self.focus_service.user_intent_epoch,
         )
         return {
             "success": False,

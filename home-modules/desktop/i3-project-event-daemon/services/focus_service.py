@@ -46,6 +46,7 @@ class FocusService:
         self.window_override: Dict[str, Any] = {"window_id": 0, "connection_key": ""}
         self.pending_intent_id: str = ""
         self.focus_intent: Dict[str, Any] = {}
+        self.user_intent_epoch: int = 0
 
     def _workspace_focus_ready(self) -> bool:
         return bool(
@@ -239,6 +240,30 @@ class FocusService:
             created_at=created_at,
             generation=generation,
         )
+
+    def advance_user_intent(
+        self,
+        *,
+        method: str,
+        params: Optional[Dict[str, Any]] = None,
+        created_at: float = 0.0,
+    ) -> int:
+        """Record a new top-level user intent and begin any matching focus intent."""
+        self.user_intent_epoch += 1
+        payload = params or {}
+        self.begin_user_focus_intent(
+            intent_id=f"intent-{self.user_intent_epoch}",
+            method=method,
+            params=payload,
+            created_at=created_at or time.time(),
+            generation=self.user_intent_epoch,
+        )
+        return self.user_intent_epoch
+
+    def user_intent_is_current(self, intent_epoch: int) -> bool:
+        """Return whether an async action still matches the latest explicit user intent."""
+        epoch = int(intent_epoch or 0)
+        return epoch <= 0 or epoch == self.user_intent_epoch
 
     def finalize_focus_intent_for_result(
         self,
