@@ -5,8 +5,8 @@ let
   # To bump version ahead of nixpkgs, override src + npmDepsHash
   copilotCliPackage = pkgs-unstable.github-copilot-cli or pkgs.github-copilot-cli;
 
-  # Wrapper: clear NODE_OPTIONS to prevent Claude Code's interceptor from loading
-  # when copilot is launched from within another AI CLI's Bash tool
+  # Wrapper: clear inherited NODE_OPTIONS when copilot is launched from
+  # within another AI CLI's shell/tool process.
   copilotCliWrapped = pkgs.symlinkJoin {
     name = "github-copilot-cli-wrapped";
     paths = [ copilotCliPackage ];

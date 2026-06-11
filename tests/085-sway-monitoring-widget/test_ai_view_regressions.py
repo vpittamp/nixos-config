@@ -18,6 +18,7 @@ WORKTREE_APP_DEFAULT_NIX = REPO_ROOT / "home-modules" / "desktop" / "quickshell-
 HERDR_NIX = REPO_ROOT / "home-modules" / "terminal" / "herdr.nix"
 CLAUDE_CODE_NIX = REPO_ROOT / "home-modules" / "ai-assistants" / "claude-code.nix"
 CODEX_NIX = REPO_ROOT / "home-modules" / "ai-assistants" / "codex.nix"
+COPILOT_CLI_NIX = REPO_ROOT / "home-modules" / "ai-assistants" / "copilot-cli.nix"
 I3PM_WINDOW_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "window.ts"
 I3PM_DASHBOARD_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "dashboard.ts"
 I3PM_HERDR_PROXY_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "herdr-proxy.ts"
@@ -74,6 +75,18 @@ def test_provider_completion_hooks_do_not_drive_ai_session_state():
     assert not (REPO_ROOT / "scripts" / "claude-hooks" / "finished.sh").exists()
     assert not (REPO_ROOT / "scripts" / "claude-hooks" / "stop-notification-simple.sh.bak").exists()
     assert not (REPO_ROOT / "scripts" / "codex-hooks" / "notify.js").exists()
+
+
+def test_retired_ai_finished_notification_helper_is_not_active():
+    copilot_text = COPILOT_CLI_NIX.read_text()
+
+    assert not (REPO_ROOT / "scripts" / "ai-finished-notification.sh").exists()
+    assert "minimal-otel-interceptor" not in copilot_text
+    assert "Claude Code's interceptor" not in copilot_text
+    assert not (REPO_ROOT / "tests" / "091-optimize-i3pm-project" / "debug_notification_system.sh").exists()
+    assert not (REPO_ROOT / "tests" / "091-optimize-i3pm-project" / "test_manual_notification.sh").exists()
+    assert not (REPO_ROOT / "tests" / "091-optimize-i3pm-project" / "test_notification_callback.sh").exists()
+    assert not (REPO_ROOT / "tests" / "091-optimize-i3pm-project" / "test_notification_simple.sh").exists()
 
 
 def test_retired_notification_badge_service_is_not_active_runtime_state():
