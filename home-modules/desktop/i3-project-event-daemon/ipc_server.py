@@ -531,7 +531,10 @@ class IPCServer:
             connection_target_is_current_host=lambda connection_key: self._connection_target_is_current_host(
                 connection_key
             ),
-            remote_daemon_request=lambda **kwargs: self._remote_daemon_request(**kwargs),
+            parse_remote_target=lambda remote_target, connection_key="": self._parse_remote_target(
+                remote_target,
+                connection_key,
+            ),
             switch_runtime_context=lambda project_name, target_variant, connection_key: self._switch_runtime_context_if_needed(
                 project_name,
                 target_variant,
@@ -8328,27 +8331,7 @@ class IPCServer:
     @staticmethod
     def _extract_json_payload(raw_output: str) -> Optional[Any]:
         """Extract a JSON object or array from stdout that may include shell noise."""
-        payload = str(raw_output or "").strip()
-        if not payload:
-            return None
-
-        candidate_indexes = [index for index in (payload.find("{"), payload.find("[")) if index >= 0]
-        if candidate_indexes:
-            try:
-                return json.loads(payload[min(candidate_indexes):])
-            except Exception:
-                pass
-
-        for line in reversed(payload.splitlines()):
-            stripped = str(line or "").strip()
-            if not stripped or stripped[0] not in {"{", "["}:
-                continue
-            try:
-                return json.loads(stripped)
-            except Exception:
-                continue
-
-        return None
+        return FocusService.extract_json_payload(raw_output)
 
     async def _remote_daemon_request(
         self,
@@ -8358,63 +8341,11 @@ class IPCServer:
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Execute a daemon JSON-RPC call on a remote host over SSH."""
-        remote_user, remote_host, remote_port = self._parse_remote_target("", connection_key)
-        if not remote_host:
-            return {
-                "success": False,
-                "reason": "missing_remote_target",
-                "remote_host": "",
-                "remote_port": 22,
-                "stdout": "",
-                "stderr": "",
-                "result": None,
-            }
-
-        resolved_user = remote_user or str(os.environ.get("USER") or "").strip() or "vpittamp"
-        payload = json.dumps(params or {}, separators=(",", ":"), sort_keys=True)
-        remote_script = (
-            f"i3pm daemon call {shlex.quote(method)} "
-            f"--params-json {shlex.quote(payload)} --json"
+        return await self.focus_service.remote_daemon_request(
+            connection_key=connection_key,
+            method=method,
+            params=params,
         )
-        remote_command = f"bash -lc {shlex.quote(remote_script)}"
-        from .subprocess_utils import run_command
-        result = await run_command(
-            "ssh",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=3",
-            "-p",
-            str(remote_port),
-            f"{resolved_user}@{remote_host}" if resolved_user else remote_host,
-            remote_command,
-            timeout=15.0,
-        )
-
-        parsed = self._extract_json_payload(str(result.stdout or ""))
-        transport_success = result.returncode == 0
-        remote_success = transport_success and parsed is not None
-        if isinstance(parsed, dict) and "success" in parsed:
-            remote_success = remote_success and bool(parsed.get("success", False))
-
-        reason = "ok"
-        if not transport_success:
-            reason = "remote_transport_failed"
-        elif parsed is None:
-            reason = "invalid_remote_response"
-        elif isinstance(parsed, dict) and not bool(parsed.get("success", True)):
-            reason = str(parsed.get("reason") or parsed.get("error") or "remote_call_failed")
-
-        return {
-            "success": remote_success,
-            "reason": reason,
-            "remote_user": resolved_user,
-            "remote_host": remote_host,
-            "remote_port": remote_port,
-            "stdout": str(result.stdout or "").strip(),
-            "stderr": str(result.stderr or "").strip(),
-            "result": parsed,
-        }
 
     def _find_focused_tree_node(self, node: Any) -> Optional[Any]:
         """Recursively find the currently focused tree node."""

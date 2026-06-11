@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import shlex
 import time
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Set, Tuple
@@ -43,6 +45,8 @@ class FocusService:
         window_is_locally_tracked: Optional[Callable[[int], Awaitable[bool]]] = None,
         connection_target_is_current_host: Optional[Callable[[str], bool]] = None,
         remote_daemon_request: Optional[Callable[..., Awaitable[Dict[str, Any]]]] = None,
+        parse_remote_target: Optional[Callable[[str, str], Tuple[str, str, int]]] = None,
+        remote_run_command: Optional[Callable[..., Awaitable[Any]]] = None,
         switch_runtime_context: Optional[Callable[[str, str, str], Awaitable[Dict[str, Any]]]] = None,
         get_window_transition_state: Optional[Callable[[int], Awaitable[Dict[str, Any]]]] = None,
         build_window_focus_transition: Optional[Callable[..., Dict[str, Any]]] = None,
@@ -63,6 +67,8 @@ class FocusService:
         self._window_is_locally_tracked = window_is_locally_tracked
         self._connection_target_is_current_host = connection_target_is_current_host
         self._remote_daemon_request = remote_daemon_request
+        self._parse_remote_target = parse_remote_target
+        self._remote_run_command = remote_run_command
         self._switch_runtime_context = switch_runtime_context
         self._get_window_transition_state = get_window_transition_state
         self._build_window_focus_transition = build_window_focus_transition
@@ -202,7 +208,7 @@ class FocusService:
         if not (
             self._window_is_locally_tracked
             and self._connection_target_is_current_host
-            and self._remote_daemon_request
+            and (self._remote_daemon_request or self._parse_remote_target)
             and self._switch_runtime_context
             and (self._get_window_transition_state or self._get_sway_tree)
             and (self._window_matches_transition_target or self._get_window_transition_state or self._get_sway_tree)
@@ -222,7 +228,7 @@ class FocusService:
             and not local_window_target
         )
         if should_remote_handoff:
-            remote_handoff = await self._remote_daemon_request(
+            remote_handoff = await self.remote_daemon_request(
                 connection_key=normalized_connection_key,
                 method="window.focus",
                 params={
@@ -488,6 +494,121 @@ class FocusService:
             "command": command,
             "transition": str(transition.get("kind") or ""),
         }
+
+    async def remote_daemon_request(
+        self,
+        *,
+        connection_key: str,
+        method: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Execute a daemon JSON-RPC call on a remote host over SSH."""
+        if self._remote_daemon_request:
+            return await self._remote_daemon_request(
+                connection_key=connection_key,
+                method=method,
+                params=params,
+            )
+        if not self._parse_remote_target:
+            raise RuntimeError("Remote focus transport dependencies are unavailable")
+
+        remote_user, remote_host, remote_port = self._parse_remote_target("", connection_key)
+        if not remote_host:
+            return {
+                "success": False,
+                "reason": "missing_remote_target",
+                "remote_host": "",
+                "remote_port": 22,
+                "stdout": "",
+                "stderr": "",
+                "result": None,
+            }
+
+        resolved_user = remote_user or str(os.environ.get("USER") or "").strip() or "vpittamp"
+        payload = json.dumps(params or {}, separators=(",", ":"), sort_keys=True)
+        remote_script = (
+            f"i3pm daemon call {shlex.quote(method)} "
+            f"--params-json {shlex.quote(payload)} --json"
+        )
+        remote_command = f"bash -lc {shlex.quote(remote_script)}"
+
+        if self._remote_run_command:
+            result = await self._remote_run_command(
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=3",
+                "-p",
+                str(remote_port),
+                f"{resolved_user}@{remote_host}" if resolved_user else remote_host,
+                remote_command,
+                timeout=15.0,
+            )
+        else:
+            from ..subprocess_utils import run_command
+            result = await run_command(
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=3",
+                "-p",
+                str(remote_port),
+                f"{resolved_user}@{remote_host}" if resolved_user else remote_host,
+                remote_command,
+                timeout=15.0,
+            )
+
+        parsed = self.extract_json_payload(str(getattr(result, "stdout", "") or ""))
+        transport_success = int(getattr(result, "returncode", 1) or 0) == 0
+        remote_success = transport_success and parsed is not None
+        if isinstance(parsed, dict) and "success" in parsed:
+            remote_success = remote_success and bool(parsed.get("success", False))
+
+        reason = "ok"
+        if not transport_success:
+            reason = "remote_transport_failed"
+        elif parsed is None:
+            reason = "invalid_remote_response"
+        elif isinstance(parsed, dict) and not bool(parsed.get("success", True)):
+            reason = str(parsed.get("reason") or parsed.get("error") or "remote_call_failed")
+
+        return {
+            "success": remote_success,
+            "reason": reason,
+            "remote_user": resolved_user,
+            "remote_host": remote_host,
+            "remote_port": remote_port,
+            "stdout": str(getattr(result, "stdout", "") or "").strip(),
+            "stderr": str(getattr(result, "stderr", "") or "").strip(),
+            "result": parsed,
+        }
+
+    @staticmethod
+    def extract_json_payload(raw_output: str) -> Optional[Any]:
+        """Extract a JSON object or array from stdout that may include shell noise."""
+        payload = str(raw_output or "").strip()
+        if not payload:
+            return None
+
+        candidate_indexes = [index for index in (payload.find("{"), payload.find("[")) if index >= 0]
+        if candidate_indexes:
+            try:
+                return json.loads(payload[min(candidate_indexes):])
+            except Exception:
+                pass
+
+        for line in reversed(payload.splitlines()):
+            stripped = str(line or "").strip()
+            if not stripped or stripped[0] not in {"{", "["}:
+                continue
+            try:
+                return json.loads(stripped)
+            except Exception:
+                continue
+
+        return None
 
     @staticmethod
     def find_focused_tree_node(node: Any) -> Optional[Any]:

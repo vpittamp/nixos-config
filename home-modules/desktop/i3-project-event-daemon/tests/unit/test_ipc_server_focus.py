@@ -171,7 +171,7 @@ def test_focus_intent_finalization_marks_failed_result(server):
 @pytest.mark.asyncio
 async def test_focus_window_remote_handoff_does_not_require_local_sway(server, monkeypatch):
     server._connection_target_is_current_host = lambda _connection_key: False
-    server._remote_daemon_request = AsyncMock(return_value={
+    server.focus_service._remote_daemon_request = AsyncMock(return_value={
         "success": True,
         "reason": "ok",
         "remote_host": "ryzen",

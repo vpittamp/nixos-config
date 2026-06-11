@@ -463,6 +463,96 @@ async def test_focus_window_service_remote_handoff_sets_remote_override() -> Non
 
 
 @pytest.mark.asyncio
+async def test_focus_service_remote_daemon_request_runs_ssh_json_rpc() -> None:
+    remote_run_command = AsyncMock(return_value=SimpleNamespace(
+        returncode=0,
+        stdout='noise\n{"success":true,"current_session_key_after":"session-remote"}\n',
+        stderr="",
+    ))
+    service = FocusService(
+        normalize_connection_key=normalize_connection_key,
+        parse_remote_target=lambda _target, connection_key: ("vpittamp", "ryzen", 2222),
+        remote_run_command=remote_run_command,
+    )
+
+    result = await service.remote_daemon_request(
+        connection_key="vpittamp@ryzen:2222",
+        method="window.focus",
+        params={"window_id": 175},
+    )
+
+    assert result["success"] is True
+    assert result["reason"] == "ok"
+    assert result["remote_user"] == "vpittamp"
+    assert result["remote_host"] == "ryzen"
+    assert result["remote_port"] == 2222
+    assert result["result"] == {
+        "success": True,
+        "current_session_key_after": "session-remote",
+    }
+    args = remote_run_command.await_args.args
+    assert args[:7] == (
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=3",
+        "-p",
+        "2222",
+    )
+    assert args[7] == "vpittamp@ryzen"
+    assert "i3pm daemon call window.focus" in args[8]
+
+
+@pytest.mark.asyncio
+async def test_focus_service_remote_daemon_request_reports_transport_failure() -> None:
+    service = FocusService(
+        normalize_connection_key=normalize_connection_key,
+        parse_remote_target=lambda _target, _connection_key: ("", "ryzen", 22),
+        remote_run_command=AsyncMock(return_value=SimpleNamespace(
+            returncode=255,
+            stdout="",
+            stderr="ssh failed",
+        )),
+    )
+
+    result = await service.remote_daemon_request(
+        connection_key="ryzen",
+        method="window.focus",
+        params={"window_id": 175},
+    )
+
+    assert result["success"] is False
+    assert result["reason"] == "remote_transport_failed"
+    assert result["remote_host"] == "ryzen"
+    assert result["stderr"] == "ssh failed"
+
+
+@pytest.mark.asyncio
+async def test_focus_service_remote_daemon_request_reports_missing_target() -> None:
+    service = FocusService(
+        normalize_connection_key=normalize_connection_key,
+        parse_remote_target=lambda _target, _connection_key: ("", "", 22),
+    )
+
+    result = await service.remote_daemon_request(
+        connection_key="",
+        method="window.focus",
+        params={"window_id": 175},
+    )
+
+    assert result == {
+        "success": False,
+        "reason": "missing_remote_target",
+        "remote_host": "",
+        "remote_port": 22,
+        "stdout": "",
+        "stderr": "",
+        "result": None,
+    }
+
+
+@pytest.mark.asyncio
 async def test_focus_window_service_requires_window_dependencies() -> None:
     service = make_service()
 
