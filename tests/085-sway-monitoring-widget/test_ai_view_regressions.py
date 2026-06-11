@@ -74,6 +74,7 @@ def test_provider_completion_hooks_do_not_drive_ai_session_state():
     assert "notify = [" not in codex_text
     assert not (REPO_ROOT / "scripts" / "claude-hooks" / "finished.sh").exists()
     assert not (REPO_ROOT / "scripts" / "claude-hooks" / "stop-notification-simple.sh.bak").exists()
+    assert not (REPO_ROOT / "scripts" / "claude-hooks" / "bash-history.sh").exists()
     assert not (REPO_ROOT / "scripts" / "codex-hooks" / "notify.js").exists()
 
 
@@ -188,10 +189,13 @@ def test_session_rows_focus_by_explicit_herdr_target():
     assert "function focusSession(sessionKey)" in text
     assert "function sessionFocusTarget(sessionOrKey)" in text
     assert "const explicitTarget = normalizedFocusTarget(sessionOrKey.focus_target);" in text
-    assert "stringOrEmpty(sessionOrKey.source) === \"herdr\" || stringOrEmpty(sessionOrKey.pane_id)" in text
+    assert "function sessionByKey(sessionKey)" in text
+    assert "return session ? normalizedFocusTarget(session.focus_target) : null;" in text
     assert "return explicitTarget;" in text
     assert "const target = sessionFocusTarget(sessionData || resolvedSessionKey);" in text
     assert "runFocusTarget(target);" in text
+    assert 'method: "session.focus"' not in text
+    assert "sessionSpawnRemoteAttachTarget" not in text
     assert "function sendDaemonAction(method, params)" in services_text
     assert "Socket {" in services_text
     assert "daemonActionSocket.write(JSON.stringify(request) + \"\\n\");" in services_text
@@ -320,6 +324,9 @@ def test_side_panel_sessions_close_by_explicit_herdr_target():
     assert "return normalizedFocusTarget(session.close_target);" in text
     assert "function sessionHasClosableSurface(session)" in text
     assert "if (sessionCloseTarget(session))" in text
+    assert "sessionHasTmuxCloseTarget" not in text
+    assert "sessionCloseProcess" not in text
+    assert '"session", "close"' not in text
     assert "function closeSession(session)" in text
     assert "const explicitCloseTarget = sessionCloseTarget(session);" in text
     assert "runDaemonCall(explicitCloseTarget.method, explicitCloseTarget.params);" in text

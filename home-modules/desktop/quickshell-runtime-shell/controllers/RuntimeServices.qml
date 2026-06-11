@@ -36,7 +36,6 @@ Item {
     property alias snippetEditorProcessRef: snippetEditorProcess
     property alias settingsCommandQueryProcessRef: settingsCommandQueryProcess
     property alias launcherQueryProcessRef: launcherQueryProcess
-    property alias sessionCloseProcessRef: sessionCloseProcess
     property alias displayApplyProcessRef: displayApplyProcess
     property alias displayToggleOutputProcessRef: displayToggleOutputProcess
     property alias displayScaleProcessRef: displayScaleProcess
@@ -686,49 +685,6 @@ Item {
             if (shellRoot.launcherMode === "apps" || shellRoot.launcherMode === "files" || shellRoot.launcherMode === "urls" || shellRoot.launcherMode === "runner" || shellRoot.launcherMode === "snippets" || shellRoot.launcherMode === "onepassword" || shellRoot.launcherMode === "clipboard") {
                 shellRoot.launcherLoading = false;
             }
-        }
-    }
-
-    Process {
-        id: sessionCloseProcess
-        command: [runtimeConfig.i3pmBin, "session", "close", "", "--json"]
-        running: false
-        stdout: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                shellRoot.sessionCloseProcessStdout += data + "\n";
-            }
-        }
-        stderr: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                const message = data && data.trim();
-                if (!message) {
-                    return;
-                }
-                shellRoot.sessionCloseProcessStderr += message + "\n";
-                console.warn("session.close:", message);
-            }
-        }
-        onExited: function () {
-            const targetKey = shellRoot.stringOrEmpty(shellRoot.sessionCloseProcessTargetKey);
-            let success = false;
-            const raw = shellRoot.stringOrEmpty(shellRoot.sessionCloseProcessStdout).trim();
-            if (raw) {
-                try {
-                    const parsed = JSON.parse(raw);
-                    success = !!(parsed && parsed.success);
-                } catch (error) {
-                    console.warn("session.close.parse:", raw, error);
-                }
-            }
-            if (!success) {
-                shellRoot.clearSessionClosePending(targetKey);
-            }
-            shellRoot.sessionCloseProcessTargetKey = "";
-            shellRoot.sessionCloseProcessStdout = "";
-            shellRoot.sessionCloseProcessStderr = "";
-            shellRoot.pruneSessionClosePending();
         }
     }
 

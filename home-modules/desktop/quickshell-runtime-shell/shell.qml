@@ -39,7 +39,6 @@ ShellRoot {
     readonly property var snippetEditorProcess: runtimeServices ? runtimeServices.snippetEditorProcessRef : null
     readonly property var settingsCommandQueryProcess: runtimeServices ? runtimeServices.settingsCommandQueryProcessRef : null
     readonly property var launcherQueryProcess: runtimeServices ? runtimeServices.launcherQueryProcessRef : null
-    readonly property var sessionCloseProcess: runtimeServices ? runtimeServices.sessionCloseProcessRef : null
     readonly property var displayApplyProcess: runtimeServices ? runtimeServices.displayApplyProcessRef : null
     readonly property var displayToggleOutputProcess: runtimeServices ? runtimeServices.displayToggleOutputProcessRef : null
     readonly property var displayScaleProcess: runtimeServices ? runtimeServices.displayScaleProcessRef : null
@@ -202,9 +201,6 @@ ShellRoot {
     property string lastFocusedSessionKey: ""
     property string selectedSessionKey: ""
     property var sessionClosePendingMap: ({})
-    property string sessionCloseProcessTargetKey: ""
-    property string sessionCloseProcessStdout: ""
-    property string sessionCloseProcessStderr: ""
     property string displayApplyTarget: ""
     property string displayApplyStdout: ""
     property string displayApplyStderr: ""
@@ -7451,6 +7447,21 @@ ShellRoot {
         runFocusTarget(target);
     }
 
+    function sessionByKey(sessionKey) {
+        const key = stringOrEmpty(sessionKey);
+        if (!key) {
+            return null;
+        }
+        const sessions = activeSessions();
+        for (let i = 0; i < sessions.length; i += 1) {
+            const session = sessions[i];
+            if (sessionMatchesKey(session, key)) {
+                return session;
+            }
+        }
+        return null;
+    }
+
     function cycleSessions(direction) {
         const sessions = panelSessions();
         if (!sessions.length) {
@@ -7673,58 +7684,11 @@ ShellRoot {
     function sessionFocusTarget(sessionOrKey) {
         if (sessionOrKey && typeof sessionOrKey === "object") {
             const explicitTarget = normalizedFocusTarget(sessionOrKey.focus_target);
-            if (stringOrEmpty(sessionOrKey.source) === "herdr" || stringOrEmpty(sessionOrKey.pane_id)) {
-                return explicitTarget;
-            }
-            const isSpawnable = sessionAvailabilityState(sessionOrKey) === "remote_spawnable";
-            const explicitMethod = explicitTarget ? stringOrEmpty(explicitTarget.method) : "";
-            if (isSpawnable && (!explicitTarget || explicitMethod === "session.focus")) {
-                return sessionSpawnRemoteAttachTarget(sessionOrKey);
-            }
-            if (explicitTarget) {
-                return explicitTarget;
-            }
-            const explicitKey = stringOrEmpty(sessionOrKey.session_key);
-            if (explicitKey) {
-                return {
-                    method: "session.focus",
-                    params: {
-                        session_key: explicitKey,
-                    },
-                };
-            }
+            return explicitTarget;
         }
 
-        const sessionKey = stringOrEmpty(sessionOrKey);
-        if (!sessionKey) {
-            return null;
-        }
-
-        return {
-            method: "session.focus",
-            params: {
-                session_key: sessionKey,
-            },
-        };
-    }
-
-    function sessionSpawnRemoteAttachTarget(session) {
-        const terminalContext = (session.terminal_context && typeof session.terminal_context === "object") ? session.terminal_context : {};
-        const params = {
-            session_key: stringOrEmpty(session.session_key),
-            connection_key: stringOrEmpty(session.connection_key) || stringOrEmpty(terminalContext.connection_key),
-            remote_target: stringOrEmpty(session.remote_target) || stringOrEmpty(terminalContext.remote_target),
-            host_name: stringOrEmpty(session.host_name) || stringOrEmpty(terminalContext.host_name),
-            native_session_id: stringOrEmpty(session.native_session_id),
-            tool: stringOrEmpty(session.tool),
-            project_name: stringOrEmpty(session.project_name) || stringOrEmpty(session.project),
-            working_dir: stringOrEmpty(session.working_dir) || stringOrEmpty(terminalContext.working_dir),
-            tmux_session: stringOrEmpty(terminalContext.tmux_session),
-        };
-        return {
-            method: "session.spawn_remote_attach",
-            params: params,
-        };
+        const session = sessionByKey(sessionOrKey);
+        return session ? normalizedFocusTarget(session.focus_target) : null;
     }
 
     function windowFocusTarget(windowData) {
@@ -7814,13 +7778,6 @@ ShellRoot {
         return normalizedFocusTarget(session.close_target);
     }
 
-    function sessionHasTmuxCloseTarget(session) {
-        const terminalContext = (session && session.terminal_context) || {};
-        const tmuxSession = stringOrEmpty(session && session.tmux_session) || stringOrEmpty(terminalContext.tmux_session);
-        const tmuxPane = stringOrEmpty(session && session.tmux_pane) || stringOrEmpty(terminalContext.tmux_pane);
-        return tmuxSession !== "" && tmuxPane !== "";
-    }
-
     function markSessionClosePending(sessionKey) {
         const key = stringOrEmpty(sessionKey);
         if (!key) {
@@ -7873,7 +7830,7 @@ ShellRoot {
         if (sessionCloseTarget(session)) {
             return true;
         }
-        return sessionHasTmuxCloseTarget(session) || sessionClosableWindowId(session) > 0;
+        return sessionClosableWindowId(session) > 0;
     }
 
     function closeSession(session) {
@@ -7890,19 +7847,6 @@ ShellRoot {
         if (explicitCloseTarget) {
             markSessionClosePending(sessionKey);
             runDaemonCall(explicitCloseTarget.method, explicitCloseTarget.params);
-            return;
-        }
-
-        if (sessionHasTmuxCloseTarget(session) && sessionKey) {
-            if (sessionCloseProcess.running) {
-                return;
-            }
-            markSessionClosePending(sessionKey);
-            sessionCloseProcessTargetKey = sessionKey;
-            sessionCloseProcessStdout = "";
-            sessionCloseProcessStderr = "";
-            sessionCloseProcess.command = [shellConfig.i3pmBin, "session", "close", sessionKey, "--json"];
-            sessionCloseProcess.running = true;
             return;
         }
 
