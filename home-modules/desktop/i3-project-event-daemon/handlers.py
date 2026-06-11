@@ -1892,7 +1892,7 @@ async def on_window_focus(
         event: Window event
         state_manager: State manager
         event_buffer: Event buffer for recording events (Feature 017)
-        ipc_server: IPC server for badge state access (Feature 095)
+        ipc_server: IPC server for dashboard/event notifications
     """
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
@@ -1964,28 +1964,6 @@ async def on_window_focus(
         # Feature 074 T066 (US4): Track focused window per workspace
         if current_ws and hasattr(state_manager, 'focus_tracker') and state_manager.focus_tracker:
             await state_manager.focus_tracker.track_window_focus(current_ws.num, window_id)
-
-        # Feature 117: Focus-aware badge dismissal using file-based storage
-        # Only clear "stopped" badges (AI finished) on focus - NOT "working" badges (AI still running)
-        # This allows the pulsating indicator to continue while AI is processing
-        from .badge_service import (
-            read_badge_file,
-            delete_badge_file,
-            BADGE_MIN_AGE_FOR_DISMISS,
-        )
-
-        badge = read_badge_file(window_id)
-        if badge:
-            # Only dismiss "stopped" badges - working badges should persist while AI is running
-            if badge.state == "stopped":
-                age = time.time() - badge.timestamp
-                if age >= BADGE_MIN_AGE_FOR_DISMISS:
-                    if delete_badge_file(window_id):
-                        logger.info(f"[Feature 117] Cleared stopped badge for window {window_id} on focus (age: {age:.1f}s)")
-                else:
-                    logger.debug(f"[Feature 117] Stopped badge for window {window_id} too young to dismiss (age: {age:.1f}s < {BADGE_MIN_AGE_FOR_DISMISS}s)")
-            else:
-                logger.debug(f"[Feature 117] Badge for window {window_id} is '{badge.state}' - not dismissing on focus (AI still running)")
 
     except Exception as e:
         error_msg = str(e)

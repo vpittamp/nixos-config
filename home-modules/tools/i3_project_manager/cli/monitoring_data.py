@@ -71,8 +71,8 @@ try:
 except ImportError:
     I3Connection = None  # Gracefully handle missing i3ipc in one-shot mode
 
-# Feature 095 Enhancement: Animated spinner frames for "working" state badges
-# Braille dot spinner: elegant, modern, 10 frames cycling every 120ms
+# Spinner frames for Herdr/agent working state presentation.
+# Braille dot spinner: 10 frames cycling every 120ms.
 SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 SPINNER_INTERVAL_MS = 120  # milliseconds per frame
 
@@ -88,19 +88,11 @@ def get_spinner_frame() -> str:
     return SPINNER_FRAMES[idx]
 
 
-# Feature 095: File-based badge state directory
-# Badge state files are written by claude-hooks scripts and read by this script
-# Format: $XDG_RUNTIME_DIR/i3pm-badges/<window_id>.json
 RUNTIME_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
-BADGE_STATE_DIR = RUNTIME_DIR / "i3pm-badges"
 
 # Feature 101: Active worktree configuration file
 ACTIVE_WORKTREE_FILE = Path.home() / ".config" / "i3" / "active-worktree.json"
 DAEMON_SOCKET_PATH = RUNTIME_DIR / "i3-project-daemon" / "ipc.sock"
-
-# Feature 107: inotify watcher for immediate badge detection (<15ms latency)
-# Uses subprocess inotifywait to avoid adding Python dependencies
-INOTIFYWAIT_CMD = "inotifywait"  # Requires inotify-tools package
 
 # Remote sesh/tmux session discovery cache (for SSH project window augmentation)
 REMOTE_SESH_CACHE_TTL_SECONDS = 15
@@ -116,34 +108,6 @@ def _normalize_session_name_key(value: str) -> str:
     """Normalize session names so separator variants map to one logical key."""
     from i3_project_manager.core.identity import normalize_session_name_key
     return normalize_session_name_key(value)
-
-
-def load_badge_state_from_files() -> Dict[str, Any]:
-    """Load badge state from filesystem.
-
-    Feature 095: File-based badge tracking without daemon dependency.
-    Reads JSON files from $XDG_RUNTIME_DIR/i3pm-badges/<window_id>.json
-
-    Returns:
-        Dict mapping window_id (string) to badge metadata
-    """
-    badge_state: Dict[str, Any] = {}
-
-    if not BADGE_STATE_DIR.exists():
-        return badge_state
-
-    for badge_file in BADGE_STATE_DIR.glob("*.json"):
-        try:
-            with open(badge_file, "r") as f:
-                badge_data = json.load(f)
-                window_id = badge_file.stem  # filename without .json extension
-                badge_state[window_id] = badge_data
-                logger.debug(f"Feature 095: Loaded badge for window {window_id}: {badge_data.get('state', 'unknown')}")
-        except (json.JSONDecodeError, IOError) as e:
-            logger.warning(f"Feature 095: Failed to read badge file {badge_file}: {e}")
-            continue
-
-    return badge_state
 
 
 def _parse_ssh_connection_key(connection_key: str) -> Optional[Dict[str, Any]]:
@@ -232,98 +196,6 @@ def _connection_key_aliases(value: str) -> set[str]:
         if port == 22:
             aliases.add(_normalize_connection_key(f"{base_target}:22"))
     return {alias for alias in aliases if alias and alias not in {"unknown", "global"}}
-
-
-async def create_badge_watcher() -> Optional[asyncio.subprocess.Process]:
-    """Create inotify watcher subprocess for badge changes.
-
-    Feature 107: Uses inotifywait for immediate badge file detection (<15ms latency).
-    Falls back to polling if inotifywait is not available.
-
-    Returns:
-        Subprocess process if inotifywait available, None otherwise.
-    """
-    import shutil
-
-    # Check if inotifywait is available
-    if not shutil.which(INOTIFYWAIT_CMD):
-        logger.warning("Feature 107: inotifywait not found, falling back to polling")
-        return None
-
-    BADGE_STATE_DIR.mkdir(parents=True, exist_ok=True)
-
-    watch_paths = [str(BADGE_STATE_DIR)]
-    try:
-        # inotifywait in monitor mode (-m) outputs events as they happen
-        # -e create,modify,delete watches for file changes
-        # -q quiet mode (no startup message)
-        # --format outputs watched path, event type, and filename
-        # Feature 135: %w included to distinguish badge dir events from XDG_RUNTIME_DIR events
-        process = await asyncio.create_subprocess_exec(
-            INOTIFYWAIT_CMD,
-            "-m",           # Monitor mode (continuous)
-            "-q",           # Quiet (no initial watching message)
-            "-e", "create,modify,delete,moved_to",
-            "--format", "%w|%e|%f",  # Watched path, event type, filename (pipe-delimited)
-            *watch_paths,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        logger.info(f"Feature 107: Started inotify watcher on {watch_paths} (pid={process.pid})")
-        return process
-    except Exception as e:
-        logger.warning(f"Feature 107: Failed to start inotify watcher: {e}")
-        return None
-
-
-async def read_inotify_events(
-    process: asyncio.subprocess.Process,
-    on_badge_change: asyncio.Event,
-) -> None:
-    """Read inotify events from subprocess and signal badge changes.
-
-    Feature 107: Runs as background task, sets event when badge files change.
-    Feature 135: Filter events from watched runtime directories.
-
-    Args:
-        process: inotifywait subprocess
-        on_badge_change: Event to set when badge file changes detected
-    """
-    if process.stdout is None:
-        return
-
-    badge_dir_path = str(BADGE_STATE_DIR)
-
-    try:
-        while True:
-            line = await process.stdout.readline()
-            if not line:
-                # EOF - process terminated
-                logger.warning("Feature 107: inotifywait process terminated")
-                break
-
-            # Parse event line: "watched_path|EVENT_TYPE|filename"
-            event_line = line.decode().strip()
-            if not event_line:
-                continue
-
-            # Split into watched path, event type, and filename
-            parts = event_line.split("|")
-            if len(parts) < 3:
-                continue
-
-            watched_path, event_type, filename = parts[0], parts[1], parts[2]
-
-            is_badge_dir = watched_path.rstrip("/") == badge_dir_path.rstrip("/")
-            if is_badge_dir:
-                logger.debug(f"Feature 107/135: inotify event: {watched_path} {event_type} {filename}")
-                on_badge_change.set()
-
-    except asyncio.CancelledError:
-        logger.debug("Feature 107: inotify reader cancelled")
-        raise
-    except Exception as e:
-        logger.warning(f"Feature 107: Error reading inotify events: {e}")
 
 
 # Icon resolution - loads from application-registry.json and pwa-registry.json
@@ -1319,18 +1191,12 @@ def _resolve_window_execution_identity(
     }
 
 
-def transform_window(
-    window: Dict[str, Any],
-    badge_state: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+def transform_window(window: Dict[str, Any]) -> Dict[str, Any]:
     """
     Transform daemon window data to Eww-friendly schema.
 
     Args:
         window: Window data from daemon (Sway IPC format)
-        badge_state: Optional dict mapping window IDs (as strings) to badge metadata
-                     (Feature 095: Visual Notification Badges)
-
     Returns:
         WindowInfo dict matching data-model.md specification
     """
@@ -1423,9 +1289,7 @@ def transform_window(
         "geometry_y": geometry.get("y", 0),
         "geometry_width": geometry.get("width", 0),
         "geometry_height": geometry.get("height", 0),
-        # Feature 095: Notification badge data (if present)
-        # badge_state is dict mapping window ID (string) to {"count": "1", "timestamp": ..., "source": "..."}
-        "badge": badge_state.get(str(window.get("id", 0)), {}) if badge_state else {},
+        "badge": {},
     }
 
     # Generate Pango-markup colorized JSON for hover tooltip
@@ -1465,7 +1329,6 @@ def transform_window(
 def transform_workspace(
     workspace: Dict[str, Any],
     monitor_name: str,
-    badge_state: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Transform daemon workspace data to Eww-friendly schema.
@@ -1473,14 +1336,11 @@ def transform_workspace(
     Args:
         workspace: Workspace data from daemon
         monitor_name: Parent monitor name
-        badge_state: Optional dict mapping window IDs (as strings) to badge metadata
-                     (Feature 095: Visual Notification Badges)
-
     Returns:
         WorkspaceInfo dict matching data-model.md specification
     """
     windows = workspace.get("windows", [])
-    transformed_windows = [transform_window(w, badge_state) for w in windows]
+    transformed_windows = [transform_window(w) for w in windows]
 
     return {
         "number": workspace.get("num", workspace.get("number", 1)),
@@ -1493,24 +1353,18 @@ def transform_workspace(
     }
 
 
-def transform_monitor(
-    output: Dict[str, Any],
-    badge_state: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+def transform_monitor(output: Dict[str, Any]) -> Dict[str, Any]:
     """
     Transform daemon output/monitor data to Eww-friendly schema.
 
     Args:
         output: Output data from daemon (contains name, active status, workspaces)
-        badge_state: Optional dict mapping window IDs (as strings) to badge metadata
-                     (Feature 095: Visual Notification Badges)
-
     Returns:
         MonitorInfo dict matching data-model.md specification
     """
     monitor_name = output.get("name", "unknown")
     workspaces = output.get("workspaces", [])
-    transformed_workspaces = [transform_workspace(ws, monitor_name, badge_state) for ws in workspaces]
+    transformed_workspaces = [transform_workspace(ws, monitor_name) for ws in workspaces]
 
     # Determine if monitor has focused workspace
     has_focused = any(ws["focused"] for ws in transformed_workspaces)
@@ -2486,59 +2340,6 @@ async def query_monitoring_data() -> Dict[str, Any]:
             or ""
         ).strip()
 
-        # Feature 095: Load badge state from filesystem (file-based, no daemon)
-        # Badge files are written by claude-hooks scripts in $XDG_RUNTIME_DIR/i3pm-badges/
-        badge_state = load_badge_state_from_files()
-        logger.debug(f"Feature 095: Loaded {len(badge_state)} badges from filesystem")
-
-        # Feature 117: Stale badge cleanup during refresh cycle
-        # Remove badges for windows that no longer exist (orphan cleanup)
-        # Remove badges older than 5 minutes (TTL cleanup)
-        valid_window_ids = set()
-        for output in tree_data.get("outputs", []):
-            for ws in output.get("workspaces", []):
-                for win in ws.get("windows", []):
-                    win_id = win.get("id")
-                    if win_id:
-                        valid_window_ids.add(int(win_id))
-
-        # Orphan cleanup: remove badges for non-existent windows
-        orphan_count = 0
-        for window_id_str in list(badge_state.keys()):
-            try:
-                window_id = int(window_id_str)
-                if window_id not in valid_window_ids:
-                    badge_file = BADGE_STATE_DIR / f"{window_id}.json"
-                    if badge_file.exists():
-                        badge_file.unlink()
-                        del badge_state[window_id_str]
-                        orphan_count += 1
-                        logger.info(f"[Feature 117] Removed orphaned badge for window {window_id}")
-            except (ValueError, OSError) as e:
-                logger.warning(f"[Feature 117] Error cleaning orphan badge {window_id_str}: {e}")
-
-        # TTL cleanup: remove badges older than 5 minutes (300 seconds)
-        MAX_BADGE_AGE = 300
-        now = time.time()
-        ttl_count = 0
-        for window_id_str in list(badge_state.keys()):
-            badge = badge_state.get(window_id_str, {})
-            timestamp = badge.get("timestamp", 0)
-            age = now - timestamp
-            if age > MAX_BADGE_AGE:
-                try:
-                    badge_file = BADGE_STATE_DIR / f"{window_id_str}.json"
-                    if badge_file.exists():
-                        badge_file.unlink()
-                        del badge_state[window_id_str]
-                        ttl_count += 1
-                        logger.info(f"[Feature 117] Removed stale badge {window_id_str} (age: {age:.0f}s)")
-                except OSError as e:
-                    logger.warning(f"[Feature 117] Error cleaning stale badge {window_id_str}: {e}")
-
-        if orphan_count > 0 or ttl_count > 0:
-            logger.debug(f"[Feature 117] Badge cleanup: {orphan_count} orphans, {ttl_count} stale removed")
-
         # Close connection (stateless pattern per research.md Decision 4)
         await client.close()
 
@@ -2547,7 +2348,7 @@ async def query_monitoring_data() -> Dict[str, Any]:
         outputs = tree_data.get("outputs", [])
 
         # Transform daemon response to Eww schema
-        monitors = [transform_monitor(output, badge_state) for output in outputs]
+        monitors = [transform_monitor(output) for output in outputs]
 
         # Validate and compute summary counts
         counts = validate_and_count(monitors)
@@ -2601,36 +2402,6 @@ async def query_monitoring_data() -> Dict[str, Any]:
         current_timestamp = time.time()
         friendly_time = format_friendly_timestamp(current_timestamp)
 
-        # Feature 095 Enhancement: Check if any badges are in "working" state
-        # This is used to trigger more frequent updates for spinner animation
-        has_working_badge = any(
-            badge.get("state") == "working"
-            for badge in badge_state.values()
-        ) if badge_state else False
-
-        # Feature 117 Enhancement: Collect all windows with AI session badges
-        # This provides a pre-computed list for the Active AI Sessions bar in EWW
-        # Includes all badge states: working, stopped+needs_attention, stopped+idle
-        # Visual state is determined by: state, needs_attention fields
-        ai_sessions = []
-        for window in all_windows:
-            badge = window.get("badge", {})
-            # Include window if it has any badge (any state = active AI session)
-            if badge:
-                ai_sessions.append({
-                    "id": window.get("id"),
-                    "project": window.get("project", ""),
-                    "title": window.get("title", ""),
-                    "app_id": window.get("app_id", ""),
-                    "workspace_number": window.get("workspace_number", 0),
-                    "source": badge.get("source", "ai"),  # claude-code, codex, etc.
-                    # Badge state info for visual styling
-                    "state": badge.get("state", "unknown"),  # working, stopped
-                    "needs_attention": badge.get("needs_attention", False),
-                    "count": badge.get("count", 0),  # Number of completions
-                    "session_started": badge.get("session_started", 0),
-                })
-
         # Return success state with project-based view
         # NOTE: Removed for payload optimization:
         # - all_windows (~11KB) - detail view disabled
@@ -2644,11 +2415,9 @@ async def query_monitoring_data() -> Dict[str, Any]:
             "timestamp": current_timestamp,
             "timestamp_friendly": friendly_time,
             "error": None,
-            # Feature 095 Enhancement: Animated spinner frame
             "spinner_frame": get_spinner_frame(),
-            "has_working_badge": has_working_badge,
-            # Feature 117 Enhancement: Pre-computed list for Active AI Sessions bar
-            "ai_sessions": ai_sessions,
+            "has_working_badge": False,
+            "ai_sessions": [],
         }
 
     except DaemonError as e:
@@ -4233,7 +4002,6 @@ async def stream_monitoring_data():
     - Feature 123: Subscribes to daemon state changes (not Sway directly)
       This eliminates the double Sway IPC subscription overhead.
       Daemon caches window tree and notifies when state changes.
-    - Feature 107: Uses inotify for immediate badge detection (<15ms latency)
     - Outputs JSON on every event (<100ms latency)
     - Heartbeat every 5s to detect stale connections
     - Automatic reconnection with exponential backoff (1s, 2s, 4s, max 10s)
@@ -4254,26 +4022,6 @@ async def stream_monitoring_data():
     # Feature 123: Increased heartbeat from 5s to 30s since daemon subscription
     # handles real-time events. Heartbeat is only a fallback for missed events.
     heartbeat_interval = 30.0
-
-    # Feature 107: Start inotify watcher for badge directory
-    badge_watcher_process: Optional[asyncio.subprocess.Process] = None
-    badge_change_event = asyncio.Event()
-    inotify_reader_task: Optional[asyncio.Task] = None
-    use_inotify = True  # Will be set to False if inotifywait unavailable
-
-    try:
-        badge_watcher_process = await create_badge_watcher()
-        if badge_watcher_process:
-            inotify_reader_task = asyncio.create_task(
-                read_inotify_events(badge_watcher_process, badge_change_event)
-            )
-            logger.info("Feature 107: inotify watcher active for badge detection")
-        else:
-            use_inotify = False
-            logger.info("Feature 107: Falling back to polling for badge detection")
-    except Exception as e:
-        logger.warning(f"Feature 107: Failed to start inotify: {e}, using polling")
-        use_inotify = False
 
     while not shutdown_requested:
         try:
@@ -4303,15 +4051,11 @@ async def stream_monitoring_data():
             # Feature 123: Daemon state change event for triggering refresh
             daemon_state_change_event = asyncio.Event()
 
-            # Feature 095 Enhancement: Track if we have working badges for spinner animation
-            has_working_badge = False
             async def refresh_and_output():
                 """Query daemon and output updated JSON with change detection."""
-                nonlocal last_update, has_working_badge, last_payload_hash, last_payload_json, last_payload_data
+                nonlocal last_update, last_payload_hash, last_payload_json, last_payload_data
                 try:
                     data = await query_monitoring_data()
-                    # Track if we have working badges to enable spinner updates
-                    has_working_badge = data.get("has_working_badge", False)
 
                     # OPTIMIZATION: Change detection - skip if payload unchanged
                     payload_json = json.dumps(data, separators=(",", ":"))
@@ -4352,16 +4096,6 @@ async def stream_monitoring_data():
             subscription_task = asyncio.create_task(daemon_subscription_task())
             logger.info("Feature 123: Subscribed to daemon state changes")
 
-            # Feature 095 Enhancement: Spinner animation interval (120ms)
-            # Only used when has_working_badge is True
-            spinner_interval = SPINNER_INTERVAL_MS / 1000.0  # Convert to seconds
-            last_spinner_update = time.time()
-
-            # Feature 107: Polling fallback interval (500ms when inotify unavailable)
-            # Only used when inotify is not available
-            polling_fallback_interval = 0.5  # 500ms
-            last_polling_check = time.time()
-
             # Feature 123: Simple event-driven loop using asyncio.sleep
             # The daemon_subscription_task sets daemon_state_change_event when updates arrive.
             # We use short sleeps and check the event flag - much lower overhead than asyncio.wait()
@@ -4373,25 +4107,6 @@ async def stream_monitoring_data():
                     daemon_state_change_event.clear()
                     logger.debug("Feature 123: Daemon state change triggered refresh")
                     await refresh_and_output()
-
-                # Feature 107: Check for inotify-triggered badge changes
-                elif use_inotify and badge_change_event.is_set():
-                    badge_change_event.clear()
-                    logger.debug("Feature 107: inotify triggered badge refresh")
-                    await refresh_and_output()
-
-                # Feature 107: Polling fallback when inotify unavailable
-                elif not use_inotify and not has_working_badge:
-                    if (current_time - last_polling_check) >= polling_fallback_interval:
-                        badge_state = load_badge_state_from_files()
-                        if any(b.get("state") == "working" for b in badge_state.values()):
-                            logger.debug("Feature 095: Detected working badge from file (polling), triggering refresh")
-                            await refresh_and_output()
-                        last_polling_check = current_time
-
-                # Feature 095 Enhancement: Spinner animation is now handled by EWW defpoll
-                # (spinner_frame and spinner_opacity), so we don't need to refresh here.
-                # This prevents 20 updates/second which caused hover flickering.
 
                 # Send heartbeat if no updates in last N seconds (normal mode)
                 # Feature 123: Heartbeat doesn't re-query daemon since subscription handles events.
@@ -4406,9 +4121,6 @@ async def stream_monitoring_data():
                 # Use asyncio.wait to wake up instantly when an event is set, 
                 # falling back to 1.0s timeout to maintain loop consistency.
                 wait_tasks = [asyncio.create_task(daemon_state_change_event.wait())]
-                if use_inotify:
-                    wait_tasks.append(asyncio.create_task(badge_change_event.wait()))
-                
                 done, pending = await asyncio.wait(
                     wait_tasks, 
                     timeout=1.0, 
@@ -4442,22 +4154,6 @@ async def stream_monitoring_data():
             logger.error(f"Unexpected error in stream loop: {e}", exc_info=True)
             await asyncio.sleep(reconnect_delay)
             reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
-
-    # Feature 107: Cleanup inotify watcher
-    if inotify_reader_task:
-        inotify_reader_task.cancel()
-        try:
-            await inotify_reader_task
-        except asyncio.CancelledError:
-            pass
-    if badge_watcher_process:
-        try:
-            if badge_watcher_process.returncode is None:
-                badge_watcher_process.terminate()
-            await badge_watcher_process.wait()
-            logger.info("Feature 107: inotify watcher stopped")
-        except ProcessLookupError:
-            logger.debug("Feature 107: inotify watcher already exited")
 
     logger.info("Shutdown complete")
     sys.exit(0)
@@ -4858,4 +4554,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-# Feature 095 Enhancement build marker: 1764104128

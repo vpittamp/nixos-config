@@ -69,7 +69,6 @@ from .services.mark_manager import MarkManager  # Feature 076: Mark-based app id
 from .services.tree_cache import initialize_tree_cache  # Feature 091: Tree caching
 from .services.performance_tracker import initialize_performance_tracker  # Feature 091: Performance tracking
 from .monitor_profile_service import MonitorProfileService  # Feature 083: Monitor profile management
-from .badge_service import BadgeState  # Feature 095: Visual notification badges
 from .constants import ConfigPaths  # Feature 101: Centralized paths
 from datetime import datetime
 import time
@@ -205,7 +204,6 @@ class I3ProjectDaemon:
         self.monitor_profiles_directory_watcher: Optional[MonitorProfilesDirectoryWatcher] = None
         self.tree_cache: Optional[Any] = None  # Feature 091: Tree cache service
         self.performance_tracker: Optional[Any] = None  # Feature 091: Performance tracker
-        self.badge_state: BadgeState = BadgeState()  # Feature 095: Visual notification badges
         self.discovery_config: Optional[Any] = None  # Feature 097: Discovery configuration
 
     async def initialize(self) -> None:
@@ -224,13 +222,11 @@ class I3ProjectDaemon:
         # Create IPC server first (needed for event buffer callback)
         # Pass window_rules_getter for Feature 021: T025, T026
         # Pass workspace_tracker for Feature 037: Window filtering
-        # Pass badge_state for Feature 095: Visual notification badges
         self.ipc_server = await IPCServer.from_systemd_socket(
             self.state_manager,
             event_buffer=None,
             window_rules_getter=lambda: self.window_rules,
             workspace_tracker=self.workspace_tracker,
-            badge_state=self.badge_state
         )
         self.state_manager.focus_tracker.set_project_validator(
             self.ipc_server._canonical_discovered_project_name

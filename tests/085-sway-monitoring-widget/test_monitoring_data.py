@@ -762,8 +762,7 @@ class TestLegacyAiCompatibility:
             "current_ai_session_key": "daemon-workflow-session",
         }
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
-             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
-             patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}):
+             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
             mock_instance = AsyncMock()
             mock_instance.get_runtime_snapshot.return_value = mock_daemon_response
             MockClient.return_value = mock_instance
@@ -866,8 +865,7 @@ class TestLegacyAiCompatibility:
         }
 
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
-             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
-             patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}):
+             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
             mock_instance = AsyncMock()
             mock_instance.get_runtime_snapshot.return_value = runtime_snapshot
             MockClient.return_value = mock_instance
@@ -934,8 +932,7 @@ class TestLegacyAiCompatibility:
         with patch("i3_project_manager.cli.monitoring_data.DaemonClient") as MockClient, \
              patch("i3_project_manager.cli.monitoring_data.transform_to_project_view", return_value=copy.deepcopy(project_cards)), \
              patch("i3_project_manager.cli.monitoring_data.validate_and_count", return_value={}), \
-             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}), \
-             patch("i3_project_manager.cli.monitoring_data.load_badge_state_from_files", return_value={}):
+             patch("i3_project_manager.cli.monitoring_data.load_worktree_remote_profiles", return_value={}):
             mock_instance = AsyncMock()
             mock_instance.get_runtime_snapshot.return_value = runtime_snapshot
             MockClient.return_value = mock_instance

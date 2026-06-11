@@ -232,12 +232,10 @@ in
         RestrictRealtime = true;
         RestrictSUIDSGID = true;
 
-        # Create runtime directories before starting
+        # Create runtime directory before starting
         # %t expands to $XDG_RUNTIME_DIR in user services
-        # Feature 117: Also create badge directory for file-based badge storage
         ExecStartPre = [
           "${pkgs.coreutils}/bin/mkdir -p %t/i3-project-daemon"
-          "${pkgs.coreutils}/bin/mkdir -p %t/i3pm-badges"
         ];
 
         # Use wrapper script that dynamically discovers SWAYSOCK

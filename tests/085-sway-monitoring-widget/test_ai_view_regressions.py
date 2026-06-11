@@ -76,6 +76,26 @@ def test_provider_completion_hooks_do_not_drive_ai_session_state():
     assert not (REPO_ROOT / "scripts" / "codex-hooks" / "notify.js").exists()
 
 
+def test_retired_notification_badge_service_is_not_active_runtime_state():
+    daemon_text = IPC_SERVER_PY.read_text()
+    services_text = (REPO_ROOT / "home-modules" / "services" / "i3-project-daemon.nix").read_text()
+    monitoring_data_text = I3PM_MONITORING_DATA_PY.read_text()
+    daemon_client_text = (REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "core" / "daemon_client.py").read_text()
+    handlers_text = (REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon" / "handlers.py").read_text()
+
+    assert not (REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon" / "badge_service.py").exists()
+    assert "create_badge" not in daemon_text
+    assert "clear_badge" not in daemon_text
+    assert "get_badge_state" not in daemon_text
+    assert "badge_state" not in daemon_text
+    assert "i3pm-badges" not in services_text
+    assert "load_badge_state_from_files" not in monitoring_data_text
+    assert "create_badge_watcher" not in monitoring_data_text
+    assert "i3pm-badges" not in monitoring_data_text
+    assert "get_badge_state" not in daemon_client_text
+    assert "badge_service" not in handlers_text
+
+
 def test_session_display_eligibility_accepts_herdr_panes_without_tmux_identity():
     """Herdr panes should be visible without terminal anchors or tmux fields."""
     text = SHELL_QML.read_text()
