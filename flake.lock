@@ -657,6 +657,27 @@
         "type": "github"
       }
     },
+    "quickshell": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1777871389,
+        "narHash": "sha256-gU+VGpwGJ2vvg0mtYqVvj5u+2LteuHlpokH6JSAtueY=",
+        "owner": "quickshell-mirror",
+        "repo": "quickshell",
+        "rev": "59e9c47b0eb48a9e4bcf9631fa062ee939bd2e83",
+        "type": "github"
+      },
+      "original": {
+        "owner": "quickshell-mirror",
+        "ref": "v0.3.0",
+        "repo": "quickshell",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "cachix-deploy-flake": "cachix-deploy-flake",
@@ -678,6 +699,7 @@
         "nixpkgs-lazygit": "nixpkgs-lazygit",
         "nixpkgs-sunshine": "nixpkgs-sunshine",
         "onepassword-shell-plugins": "onepassword-shell-plugins",
+        "quickshell": "quickshell",
         "vscode-server": "vscode-server",
         "walker": "walker"
       }

@@ -110,6 +110,13 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # QuickShell runtime shell. Pin upstream for reliability fixes ahead of the
+    # nixpkgs channel package used by the persistent desktop panel.
+    quickshell = {
+      url = "github:quickshell-mirror/quickshell/v0.3.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # Cachix Deploy for automated deployments
     cachix-deploy-flake = {
       url = "github:cachix/cachix-deploy-flake";

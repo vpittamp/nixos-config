@@ -12,6 +12,7 @@ Item {
 
     property alias clockRef: clock
     property alias dashboardRestartTimerRef: dashboardRestartTimer
+    property alias daemonActionRestartTimerRef: daemonActionRestartTimer
     property alias notificationRestartTimerRef: notificationRestartTimer
     property alias networkRefreshTimerRef: networkRefreshTimer
     property alias systemStatsRestartTimerRef: systemStatsRestartTimer
@@ -39,6 +40,7 @@ Item {
     property alias displayApplyProcessRef: displayApplyProcess
     property alias displayToggleOutputProcessRef: displayToggleOutputProcess
     property alias displayScaleProcessRef: displayScaleProcess
+    property int daemonActionRequestId: 0
 
     function sendDaemonAction(method, params) {
         const normalizedMethod = String(method || "").trim();
@@ -47,7 +49,16 @@ Item {
         }
 
         try {
-            Quickshell.execDetached([runtimeConfig.daemonActionBin, normalizedMethod, JSON.stringify(params || {})]);
+            if (!daemonActionBridge.running) {
+                daemonActionBridge.running = true;
+                return false;
+            }
+            daemonActionRequestId += 1;
+            daemonActionBridge.write(JSON.stringify({
+                id: daemonActionRequestId,
+                method: normalizedMethod,
+                params: params || {},
+            }) + "\n");
             return true;
         } catch (error) {
             console.warn("daemon.action:", error);
@@ -259,6 +270,13 @@ Item {
     }
 
     Timer {
+        id: daemonActionRestartTimer
+        interval: 1000
+        repeat: false
+        onTriggered: daemonActionBridge.running = true
+    }
+
+    Timer {
         id: notificationRestartTimer
         interval: 2000
         repeat: false
@@ -366,6 +384,30 @@ Item {
         onExited: function () {
             shellRoot.resetDashboard("reconnecting", "dashboard watcher exited");
             dashboardRestartTimer.restart();
+        }
+    }
+
+    Process {
+        id: daemonActionBridge
+        command: [runtimeConfig.daemonActionBin, "--jsonl"]
+        running: true
+        stdinEnabled: true
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                shellRoot.handleDaemonActionResponse(data);
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                if (data && data.trim()) {
+                    console.warn("daemon.action:", data);
+                }
+            }
+        }
+        onExited: function () {
+            daemonActionRestartTimer.restart();
         }
     }
 

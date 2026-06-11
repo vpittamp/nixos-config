@@ -1,4 +1,4 @@
-{ config, lib, pkgs, osConfig ? null, ... }:
+{ config, lib, pkgs, inputs ? null, osConfig ? null, ... }:
 
 let
   cfg = config.programs.quickshell-runtime-shell;
@@ -14,6 +14,11 @@ let
     && osConfig.services."power-profiles-daemon".enable;
   supportsLidPolicyControls = hostName == "thinkpad";
   lidPolicyFragmentPath = "/etc/nixos/configurations/thinkpad-lid-policy.nix";
+  quickshellPackage =
+    if inputs != null
+      && lib.hasAttrByPath [ "quickshell" "packages" pkgs.stdenv.hostPlatform.system "default" ] inputs
+    then inputs.quickshell.packages.${pkgs.stdenv.hostPlatform.system}.default
+    else pkgs.quickshell;
 
   # Build shell.qml with accent color substitution
   accentShellQml = pkgs.runCommandLocal "quickshell-accent-shell-qml" { } ''
@@ -100,7 +105,7 @@ EOF
   '';
 
 
-  quickshellBin = lib.getExe pkgs.quickshell;
+  quickshellBin = lib.getExe quickshellPackage;
 
   quickshellI3pmWatchScript = pkgs.writeShellScriptBin "quickshell-i3pm-watch" ''
     set -euo pipefail
@@ -112,35 +117,41 @@ EOF
 
     case "$1:$2" in
       dashboard:watch)
-        pattern='([d]eno .*main[.]ts dashboard watch|[i]3pm .*dashboard watch)'
+        :
         ;;
       *)
         exec "$i3pm_bin" "$@"
         ;;
     esac
 
-    uid="$(${pkgs.coreutils}/bin/id -u)"
-    stale_pids="$(${pkgs.procps}/bin/pgrep -u "$uid" -f "$pattern" 2>/dev/null || true)"
-    for pid in $stale_pids; do
-      if [ "$pid" != "$$" ]; then
-        kill "$pid" 2>/dev/null || true
-      fi
-    done
-    for _ in 1 2 3 4 5 6 7 8 9 10; do
-      remaining=""
-      for pid in $stale_pids; do
-        if [ "$pid" != "$$" ] && kill -0 "$pid" 2>/dev/null; then
-          remaining="$remaining $pid"
+    runtime_dir="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}/i3pm-quickshell"
+    ${pkgs.coreutils}/bin/mkdir -p "$runtime_dir"
+    lock_file="$runtime_dir/dashboard-watch.lock"
+    pid_file="$runtime_dir/dashboard-watch.pid"
+
+    exec 9>"$lock_file"
+    if ! ${pkgs.util-linux}/bin/flock -n 9; then
+      old_pid="$(${pkgs.coreutils}/bin/cat "$pid_file" 2>/dev/null || true)"
+      if [[ "$old_pid" =~ ^[0-9]+$ ]] && [ "$old_pid" != "$$" ]; then
+        old_cmd="$(${pkgs.procps}/bin/ps -p "$old_pid" -o command= 2>/dev/null || true)"
+        if [[ "$old_cmd" =~ dashboard[[:space:]]+watch ]]; then
+          kill "$old_pid" 2>/dev/null || true
         fi
-      done
-      if [ -z "$remaining" ]; then
-        break
       fi
-      ${pkgs.coreutils}/bin/sleep 0.1
-    done
-    for pid in $remaining; do
-      kill -KILL "$pid" 2>/dev/null || true
-    done
+
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        if ${pkgs.util-linux}/bin/flock -n 9; then
+          break
+        fi
+        ${pkgs.coreutils}/bin/sleep 0.1
+      done
+      if ! ${pkgs.util-linux}/bin/flock -n 9; then
+        echo "dashboard watch lock is still held by pid ''${old_pid:-unknown}" >&2
+        exit 1
+      fi
+    fi
+
+    printf '%s\n' "$$" >"$pid_file"
     exec "$i3pm_bin" "$@"
   '';
 
@@ -1026,35 +1037,20 @@ def fail(message: str, code: int = 1) -> None:
     raise SystemExit(code)
 
 
-if len(sys.argv) < 2:
-    fail("usage: quickshell-daemon-action <method> [params-json]")
-
-method = sys.argv[1].strip()
-if not method:
-    fail("daemon action method is required")
-
-params_arg = sys.argv[2] if len(sys.argv) > 2 else "{}"
-try:
-    params = json.loads(params_arg or "{}")
-except json.JSONDecodeError as exc:
-    fail(f"invalid daemon action params JSON: {exc}")
-
-if not isinstance(params, dict):
-    fail("daemon action params must be a JSON object")
-
 runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or ""
 if not runtime_dir:
     fail("XDG_RUNTIME_DIR is not set")
 
 socket_path = os.path.join(runtime_dir, "i3-project-daemon", "ipc.sock")
-request = {
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": method,
-    "params": params,
-}
 
-try:
+
+def rpc_call(method: str, params: dict, request_id=1) -> dict:
+    request = {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": method,
+        "params": params,
+    }
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         client.settimeout(5.0)
         client.connect(socket_path)
@@ -1067,17 +1063,58 @@ try:
             chunks.append(chunk)
             if b"\n" in chunk:
                 break
-except OSError as exc:
-    fail(f"daemon action failed: {exc}")
 
-raw_response = b"".join(chunks).splitlines()[0] if chunks else b""
-if not raw_response:
-    fail("daemon action returned an empty response")
+    raw_response = b"".join(chunks).splitlines()[0] if chunks else b""
+    if not raw_response:
+        raise RuntimeError("daemon action returned an empty response")
+    return json.loads(raw_response.decode("utf-8"))
+
+
+def parse_params(value: str) -> dict:
+    params = json.loads(value or "{}")
+    if not isinstance(params, dict):
+        raise ValueError("daemon action params must be a JSON object")
+    return params
+
+
+def emit(payload: dict) -> None:
+    print(json.dumps(payload, separators=(",", ":")), flush=True)
+
+
+if len(sys.argv) >= 2 and sys.argv[1] == "--jsonl":
+    for line in sys.stdin:
+        try:
+            payload = json.loads(line)
+            if not isinstance(payload, dict):
+                raise ValueError("request must be a JSON object")
+            method = str(payload.get("method") or "").strip()
+            if not method:
+                raise ValueError("daemon action method is required")
+            params = payload.get("params") or {}
+            if not isinstance(params, dict):
+                raise ValueError("daemon action params must be a JSON object")
+            request_id = payload.get("id") or 1
+            emit(rpc_call(method, params, request_id=request_id))
+        except Exception as exc:
+            emit({
+                "jsonrpc": "2.0",
+                "id": locals().get("request_id", 1),
+                "error": {"code": -32000, "message": str(exc)},
+            })
+    raise SystemExit(0)
+
+
+if len(sys.argv) < 2:
+    fail("usage: quickshell-daemon-action <method> [params-json] | --jsonl")
+
+method = sys.argv[1].strip()
+if not method:
+    fail("daemon action method is required")
 
 try:
-    response = json.loads(raw_response.decode("utf-8"))
-except json.JSONDecodeError as exc:
-    fail(f"daemon action returned invalid JSON: {exc}")
+    response = rpc_call(method, parse_params(sys.argv[2] if len(sys.argv) > 2 else "{}"))
+except Exception as exc:
+    fail(f"daemon action failed: {exc}")
 
 error = response.get("error")
 if error:
@@ -2707,7 +2744,7 @@ in
     qt.enable = true;
 
     home.packages = [
-      pkgs.quickshell
+      quickshellPackage
       pkgs.qt6.qtdeclarative
       togglePanelScript
       toggleDockScript
@@ -2786,6 +2823,8 @@ in
         PartOf = [ "sway-session.target" ];
         BindsTo = [ "sway-session.target" ];
         X-Restart-Triggers = [ shellConfigDir ];
+        StartLimitIntervalSec = "30s";
+        StartLimitBurst = 5;
       };
       Service = {
         Type = "simple";
@@ -2795,6 +2834,7 @@ in
         Environment = [
           "QT_QUICK_CONTROLS_STYLE=Fusion"
           "QT_QPA_PLATFORM=wayland"
+          "QS_DISABLE_FILE_WATCHER=1"
           # NVIDIA/Qt6 Wayland buffer import is unstable on ryzen; software
           # Quick rendering keeps the shell alive until the EGL path is fixed.
           "QT_QUICK_BACKEND=software"

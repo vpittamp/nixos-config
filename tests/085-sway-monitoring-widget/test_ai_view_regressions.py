@@ -10,6 +10,7 @@ SESSION_ROW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-s
 LAUNCHER_WINDOW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "LauncherWindow.qml"
 RUNTIME_PANEL_WINDOW_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "RuntimePanelWindow.qml"
 RUNTIME_SERVICES_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "controllers" / "RuntimeServices.qml"
+RUNTIME_DASHBOARD_STATE_JS = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "controllers" / "DashboardState.js"
 QUICKSHELL_DEFAULT_NIX = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "default.nix"
 SWAY_KEYBINDINGS_NIX = REPO_ROOT / "home-modules" / "desktop" / "sway-keybindings.nix"
 NOTIFICATION_TOAST_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "NotificationToast.qml"
@@ -562,8 +563,8 @@ def test_session_rows_focus_by_explicit_herdr_target():
     assert 'method: "session.focus"' not in text
     assert "sessionSpawnRemoteAttachTarget" not in text
     assert "function sendDaemonAction(method, params)" in services_text
-    assert "Quickshell.execDetached([runtimeConfig.daemonActionBin, normalizedMethod, JSON.stringify(params || {})])" in services_text
-    assert "daemonActionSocket.write" not in services_text
+    assert "daemonActionBridge.write(JSON.stringify({" in services_text
+    assert 'command: [runtimeConfig.daemonActionBin, "--jsonl"]' in services_text
     assert "runDaemonAction(normalizedTarget.method, normalizedTarget.params);" in text
 
 
@@ -715,8 +716,8 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     assert "fallback_method === \"window.focus\"" in window_command_text
 
 
-def test_quickshell_daemon_actions_use_one_shot_helper_instead_of_persistent_socket():
-    """Click actions should not depend on a stale long-lived QML socket connection."""
+def test_quickshell_daemon_actions_use_persistent_bridge():
+    """Click actions should use one persistent bridge instead of forking per click."""
     runtime_services_text = (REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "controllers" / "RuntimeServices.qml").read_text()
     quickshell_default_nix_text = (REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "default.nix").read_text()
     send_body = runtime_services_text.split("function sendDaemonAction(method, params)", 1)[1].split("Connections {", 1)[0]
@@ -724,7 +725,12 @@ def test_quickshell_daemon_actions_use_one_shot_helper_instead_of_persistent_soc
     assert "readonly property string daemonActionBin" in quickshell_default_nix_text
     assert "quickshell-daemon-action" in quickshell_default_nix_text
     assert "client.settimeout(5.0)" in quickshell_default_nix_text
-    assert "Quickshell.execDetached([runtimeConfig.daemonActionBin, normalizedMethod, JSON.stringify(params || {})])" in send_body
+    assert "daemonActionBridge.write(JSON.stringify({" in send_body
+    assert "Process {\n        id: daemonActionBridge" in runtime_services_text
+    assert 'command: [runtimeConfig.daemonActionBin, "--jsonl"]' in runtime_services_text
+    assert "stdinEnabled: true" in runtime_services_text
+    assert "shellRoot.handleDaemonActionResponse(data);" in runtime_services_text
+    assert "Quickshell.execDetached([runtimeConfig.daemonActionBin, normalizedMethod, JSON.stringify(params || {})])" not in send_body
     assert "Socket {" not in send_body
     assert "daemonActionSocket" not in runtime_services_text
 
@@ -766,9 +772,11 @@ def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
     assert 'command: [runtimeConfig.i3pmWatchBin, "dashboard", "watch"]' in services_text
     assert "readonly property string i3pmWatchBin" in quickshell_default_nix_text
     assert "quickshell-i3pm-watch" in quickshell_default_nix_text
-    assert "[d]eno .*main[.]ts dashboard watch" in quickshell_default_nix_text
-    assert "kill -KILL" in quickshell_default_nix_text
-    assert "kill -0" in quickshell_default_nix_text
+    assert "dashboard-watch.lock" in quickshell_default_nix_text
+    assert "dashboard-watch.pid" in quickshell_default_nix_text
+    assert "flock -n 9" in quickshell_default_nix_text
+    assert "pgrep" not in quickshell_default_nix_text
+    assert "kill -KILL" not in quickshell_default_nix_text
     assert '"--interval", String(runtimeConfig.dashboardHeartbeatMs)' not in services_text
     assert "dashboardHeartbeatMs" not in quickshell_default_nix_text
     assert "function applyDashboardSnapshot(payload)" in worktree_service_text
@@ -784,6 +792,46 @@ def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
     assert "if (params.event_type === undefined)" in daemon_client_text
     assert "const eventType = String(params.event_type);" in daemon_client_text
     assert 'if (!eventType.includes(".") || message.method !== eventType)' in daemon_client_text
+
+
+def test_quickshell_runtime_is_pinned_and_service_hardened():
+    """Both QuickShell surfaces should use the pinned upstream package and bounded restarts."""
+    flake_text = (REPO_ROOT / "flake.nix").read_text()
+    runtime_nix = QUICKSHELL_DEFAULT_NIX.read_text()
+    worktree_nix = WORKTREE_APP_DEFAULT_NIX.read_text()
+
+    assert 'quickshell = {' in flake_text
+    assert 'url = "github:quickshell-mirror/quickshell/v0.3.0";' in flake_text
+    assert "inputs.nixpkgs.follows = \"nixpkgs\";" in flake_text
+    assert "quickshellPackage =" in runtime_nix
+    assert "inputs.quickshell.packages.${pkgs.stdenv.hostPlatform.system}.default" in runtime_nix
+    assert "lib.getExe quickshellPackage" in runtime_nix
+    assert "quickshellPackage" in worktree_nix
+    assert "pkgs.quickshell" not in runtime_nix.split("home.packages = [", 1)[1].split("];", 1)[0]
+    assert "pkgs.quickshell" not in worktree_nix.split("home.packages = [", 1)[1].split("];", 1)[0]
+    assert 'StartLimitIntervalSec = "30s";' in runtime_nix
+    assert "StartLimitBurst = 5;" in runtime_nix
+    assert '"QS_DISABLE_FILE_WATCHER=1"' in runtime_nix
+
+
+def test_quickshell_dashboard_reducer_logs_focus_invariant_conflicts():
+    """QuickShell should detect impossible focus payloads without becoming state authority."""
+    text = SHELL_QML.read_text()
+    dashboard_state_text = RUNTIME_DASHBOARD_STATE_JS.read_text()
+    invariant_body = dashboard_state_text.split("function focusInvariantIssues(root, state)", 1)[1]
+
+    assert "property string lastDashboardInvariantWarning" in text
+    assert 'import "controllers/DashboardState.js" as DashboardState' in text
+    assert "return DashboardState.dashboardGeneration(state);" in text
+    assert "return DashboardState.focusInvariantIssues(root, state);" in text
+    assert "function dashboardFocusInvariantIssues(state)" in text
+    assert "function checkDashboardFocusInvariants(state)" in text
+    assert "checkDashboardFocusInvariants(dashboard);" in text
+    assert 'issues.push("current_session_matches="' in dashboard_state_text
+    assert 'issues.push("current_session_rows="' in dashboard_state_text
+    assert 'issues.push("current_session_row_mismatch");' in dashboard_state_text
+    assert 'console.warn("dashboard.invariant:", message);' in text
+    assert "current_ai_session_key" not in invariant_body
 
 
 def test_worktree_app_uses_daemon_focus_state_and_no_heartbeat_config():

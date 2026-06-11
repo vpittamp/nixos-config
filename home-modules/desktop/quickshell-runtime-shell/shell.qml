@@ -11,6 +11,7 @@ import Quickshell.Services.SystemTray
 import Quickshell.Services.UPower
 import Quickshell.Wayland
 import Quickshell.Widgets
+import "controllers/DashboardState.js" as DashboardState
 import "controllers" as Controllers
 import "windows" as Windows
 
@@ -90,6 +91,7 @@ ShellRoot {
             uptime: 0,
             issues: ""
         })
+    property string lastDashboardInvariantWarning: ""
 
     property var systemStatsState: ({
             memory_percent: 0,
@@ -2114,6 +2116,9 @@ ShellRoot {
     }
 
     function workspaceNameValue(workspace) {
+        if (typeof workspace === "string" || typeof workspace === "number") {
+            return stringOrEmpty(workspace);
+        }
         return stringOrEmpty(workspace && (workspace.name || workspace.number || workspace.num));
     }
 
@@ -7747,14 +7752,25 @@ ShellRoot {
     }
 
     function dashboardGeneration(state) {
-        if (!state || typeof state !== "object") {
-            return -1;
+        return DashboardState.dashboardGeneration(state);
+    }
+
+    function dashboardFocusInvariantIssues(state) {
+        return DashboardState.focusInvariantIssues(root, state);
+    }
+
+    function checkDashboardFocusInvariants(state) {
+        const issues = dashboardFocusInvariantIssues(state);
+        const message = issues.join(",");
+        if (!message || message === lastDashboardInvariantWarning) {
+            return;
         }
-        const generation = Number(state.snapshot_version || state.generation || -1);
-        return Number.isFinite(generation) ? generation : -1;
+        lastDashboardInvariantWarning = message;
+        console.warn("dashboard.invariant:", message);
     }
 
     function afterDashboardApplied() {
+        checkDashboardFocusInvariants(dashboard);
         syncDisplayApplyStateFromDashboard();
         pruneSessionClosePending();
         clearLocalFocusIntentIfSettled();

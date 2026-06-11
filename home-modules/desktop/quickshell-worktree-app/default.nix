@@ -1,4 +1,4 @@
-{ config, lib, pkgs, osConfig ? null, ... }:
+{ config, lib, pkgs, inputs ? null, osConfig ? null, ... }:
 
 let
   cfg = config.programs.quickshell-worktree-app;
@@ -6,6 +6,11 @@ let
     if osConfig != null && osConfig ? networking && osConfig.networking ? hostName
     then osConfig.networking.hostName
     else "unknown";
+  quickshellPackage =
+    if inputs != null
+      && lib.hasAttrByPath [ "quickshell" "packages" pkgs.stdenv.hostPlatform.system "default" ] inputs
+    then inputs.quickshell.packages.${pkgs.stdenv.hostPlatform.system}.default
+    else pkgs.quickshell;
 
   appConfigDir = pkgs.runCommandLocal "i3pm-quickshell-worktree-app" { } ''
     mkdir -p "$out"
@@ -26,7 +31,7 @@ QtObject {
 EOF
   '';
 
-  quickshellBin = lib.getExe pkgs.quickshell;
+  quickshellBin = lib.getExe quickshellPackage;
   swaymsgBin = lib.getExe pkgs.sway;
 
   openAppScript = pkgs.writeShellScriptBin cfg.commandName ''
@@ -149,7 +154,7 @@ in
     qt.enable = true;
 
     home.packages = [
-      pkgs.quickshell
+      quickshellPackage
       pkgs.qt6.qtdeclarative
       openAppScript
       toggleAppScript
