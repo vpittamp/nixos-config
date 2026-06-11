@@ -7,7 +7,7 @@ interface CommandOptions {
   debug?: boolean;
 }
 
-interface SmokeCheck {
+export interface SmokeCheck {
   name: string;
   budget_ms: number;
   duration_ms: number;
@@ -15,8 +15,9 @@ interface SmokeCheck {
   reason: string;
 }
 
-interface PerfSmokeReport {
+export interface PerfSmokeReport {
   timestamp: string;
+  status: "pass" | "fail";
   overall_status: "pass" | "fail";
   checks: SmokeCheck[];
 }
@@ -113,6 +114,19 @@ function dashboardSessions(snapshot: Record<string, unknown>): Record<string, un
   return asArray(snapshot.active_ai_sessions).map(asRecord);
 }
 
+export function buildPerfSmokeReport(
+  checks: SmokeCheck[],
+  timestamp = new Date().toISOString(),
+): PerfSmokeReport {
+  const status: PerfSmokeReport["status"] = checks.some((check) => check.status === "fail") ? "fail" : "pass";
+  return {
+    timestamp,
+    status,
+    overall_status: status,
+    checks,
+  };
+}
+
 async function collectPerfSmoke(): Promise<PerfSmokeReport> {
   const client = new DaemonClient();
   try {
@@ -183,11 +197,7 @@ async function collectPerfSmoke(): Promise<PerfSmokeReport> {
       return { success: boolValue(result.success), reason: stringValue(result.reason) || "ok" };
     }));
 
-    return {
-      timestamp: new Date().toISOString(),
-      overall_status: checks.some((check) => check.status === "fail") ? "fail" : "pass",
-      checks,
-    };
+    return buildPerfSmokeReport(checks);
   } finally {
     client.disconnect();
   }
