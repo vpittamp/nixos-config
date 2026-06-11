@@ -202,7 +202,15 @@ async def test_focus_window_remote_handoff_does_not_require_local_sway(server, m
 
 @pytest.mark.asyncio
 async def test_focus_window_ssh_context_on_current_host_uses_local_focus(server, monkeypatch):
-    server.i3_connection = SimpleNamespace(conn=SimpleNamespace())
+    server.i3_connection = SimpleNamespace(
+        conn=SimpleNamespace(),
+        get_tree=AsyncMock(return_value=SimpleNamespace(
+            focused=True,
+            id=30,
+            nodes=[],
+            floating_nodes=[],
+        )),
+    )
     server._connection_target_is_current_host = lambda _connection_key: True
     server._window_is_locally_tracked = AsyncMock(return_value=False)
     server._switch_runtime_context_if_needed = AsyncMock(return_value={"switched": False})
@@ -218,8 +226,6 @@ async def test_focus_window_ssh_context_on_current_host_uses_local_focus(server,
         "fullscreen_mode": 0,
         "saved_state": None,
     })
-    server._window_matches_transition_target = AsyncMock(return_value=True)
-    server._verify_window_focus = AsyncMock(return_value={"success": True, "reason": "ok"})
     server._focus_state = AsyncMock(return_value={
         "success": True,
         "current_session_key": "session-current",
@@ -252,7 +258,15 @@ async def test_focus_window_ssh_context_on_current_host_uses_local_focus(server,
 
 @pytest.mark.asyncio
 async def test_focus_window_ssh_target_with_local_window_binding_uses_local_focus(server, monkeypatch):
-    server.i3_connection = SimpleNamespace(conn=SimpleNamespace())
+    server.i3_connection = SimpleNamespace(
+        conn=SimpleNamespace(),
+        get_tree=AsyncMock(return_value=SimpleNamespace(
+            focused=True,
+            id=175,
+            nodes=[],
+            floating_nodes=[],
+        )),
+    )
     server._connection_target_is_current_host = lambda _connection_key: False
     server._window_is_locally_tracked = AsyncMock(return_value=True)
     server._switch_runtime_context_if_needed = AsyncMock(return_value={"switched": False})
@@ -268,8 +282,6 @@ async def test_focus_window_ssh_target_with_local_window_binding_uses_local_focu
         "fullscreen_mode": 0,
         "saved_state": None,
     })
-    server._window_matches_transition_target = AsyncMock(return_value=True)
-    server._verify_window_focus = AsyncMock(return_value={"success": True, "reason": "ok"})
     server._focus_state = AsyncMock(return_value={
         "success": True,
         "current_session_key": "session-current",
@@ -303,7 +315,15 @@ async def test_focus_window_ssh_target_with_local_window_binding_uses_local_focu
 @pytest.mark.asyncio
 async def test_window_focus_fast_local_target_skips_full_focus_state(server):
     commands = []
-    server.i3_connection = SimpleNamespace(conn=SimpleNamespace())
+    server.i3_connection = SimpleNamespace(
+        conn=SimpleNamespace(),
+        get_tree=AsyncMock(return_value=SimpleNamespace(
+            focused=True,
+            id=44,
+            nodes=[],
+            floating_nodes=[],
+        )),
+    )
     server._connection_target_is_current_host = lambda _connection_key: True
     server._window_is_locally_tracked = AsyncMock(return_value=True)
     server._send_tick_barrier = AsyncMock(return_value=None)
@@ -412,12 +432,20 @@ async def test_window_focus_fast_rejects_remote_targets(server):
 @pytest.mark.asyncio
 async def test_focus_window_scratchpad_restore_preserves_saved_workspace_and_fullscreen(server):
     commands = []
-    server.i3_connection = SimpleNamespace(conn=SimpleNamespace())
+    server.i3_connection = SimpleNamespace(
+        conn=SimpleNamespace(),
+        get_tree=AsyncMock(return_value=SimpleNamespace(
+            focused=True,
+            id=44,
+            nodes=[],
+            floating_nodes=[],
+        )),
+    )
     server._connection_target_is_current_host = lambda _connection_key: True
     server._window_is_locally_tracked = AsyncMock(return_value=True)
     server._switch_runtime_context_if_needed = AsyncMock(return_value={"switched": False})
     server._send_tick_barrier = AsyncMock()
-    server._get_window_transition_state = AsyncMock(return_value={
+    before_restore_state = {
         "exists": True,
         "current_workspace": "1",
         "workspace_name": "__i3_scratch",
@@ -433,9 +461,22 @@ async def test_focus_window_scratchpad_restore_preserves_saved_workspace_and_ful
             "fullscreen_mode": 1,
             "original_scratchpad": False,
         },
-    })
-    server._window_matches_transition_target = AsyncMock(return_value=True)
-    server._verify_window_focus = AsyncMock(return_value={"success": True, "reason": "ok"})
+    }
+    after_restore_state = {
+        **before_restore_state,
+        "current_workspace": "3",
+        "workspace_name": "3",
+        "workspace_number": 3,
+        "in_scratchpad": False,
+        "floating": False,
+        "floating_state": "auto_off",
+        "fullscreen_mode": 1,
+        "saved_state": None,
+    }
+    server._get_window_transition_state = AsyncMock(side_effect=[
+        before_restore_state,
+        after_restore_state,
+    ])
     server._focus_state = AsyncMock(return_value={
         "success": True,
         "current_session_key": "",

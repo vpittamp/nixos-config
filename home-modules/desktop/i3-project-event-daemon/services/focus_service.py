@@ -34,6 +34,7 @@ class FocusService:
         run_sway_command: Optional[Callable[[str], Awaitable[Any]]] = None,
         sway_command_succeeded: Optional[Callable[[Any], bool]] = None,
         get_sway_workspaces: Optional[Callable[[], Awaitable[Any]]] = None,
+        get_sway_tree: Optional[Callable[[], Awaitable[Any]]] = None,
         send_tick_barrier: Optional[Callable[[str], Awaitable[None]]] = None,
         notify_state_change: Optional[Callable[[str], Awaitable[None]]] = None,
         window_is_locally_tracked: Optional[Callable[[int], Awaitable[bool]]] = None,
@@ -52,6 +53,7 @@ class FocusService:
         self._run_sway_command = run_sway_command
         self._sway_command_succeeded = sway_command_succeeded
         self._get_sway_workspaces = get_sway_workspaces
+        self._get_sway_tree = get_sway_tree
         self._send_tick_barrier = send_tick_barrier
         self._notify_state_change = notify_state_change
         self._window_is_locally_tracked = window_is_locally_tracked
@@ -199,8 +201,8 @@ class FocusService:
             and self._switch_runtime_context
             and self._get_window_transition_state
             and self._build_window_focus_transition
-            and self._window_matches_transition_target
-            and self._verify_window_focus
+            and (self._window_matches_transition_target or self._get_window_transition_state)
+            and (self._verify_window_focus or self._get_sway_tree)
             and self._focus_state_provider
         ):
             raise RuntimeError("Window focus dependencies are unavailable")
@@ -343,8 +345,8 @@ class FocusService:
                     await asyncio.sleep(delay_s)
                     continue
                 await self._send_tick_barrier(f"i3pm:focus-window:{int(window_id)}")
-                verification = await self._verify_window_focus(int(window_id))
-                if bool(verification.get("success", False)) and await self._window_matches_transition_target(
+                verification = await self.verify_window_focus(int(window_id))
+                if bool(verification.get("success", False)) and await self.window_matches_transition_target(
                     dict(transition.get("expected") or {})
                 ):
                     focus_state_after = await self._focus_state_provider({})
@@ -483,6 +485,63 @@ class FocusService:
             "command": command,
             "transition": str(transition.get("kind") or ""),
         }
+
+    @staticmethod
+    def find_focused_tree_node(node: Any) -> Optional[Any]:
+        """Recursively find the currently focused tree node."""
+        if bool(getattr(node, "focused", False)):
+            return node
+        for child in list(getattr(node, "nodes", []) or []):
+            match = FocusService.find_focused_tree_node(child)
+            if match is not None:
+                return match
+        for child in list(getattr(node, "floating_nodes", []) or []):
+            match = FocusService.find_focused_tree_node(child)
+            if match is not None:
+                return match
+        return None
+
+    async def focused_window_id(self) -> int:
+        """Return the currently focused Sway container id."""
+        if not self._get_sway_tree:
+            return 0
+        if self._sway_available and not self._sway_available():
+            return 0
+        try:
+            tree = await self._get_sway_tree()
+            node = self.find_focused_tree_node(tree)
+            return int(getattr(node, "id", 0) or 0) if node is not None else 0
+        except Exception as exc:
+            logger.debug("Failed to resolve focused window id: %s", exc)
+            return 0
+
+    async def verify_window_focus(self, window_id: int) -> Dict[str, Any]:
+        """Verify that the requested window owns current Sway focus."""
+        if self._verify_window_focus:
+            return await self._verify_window_focus(int(window_id or 0))
+        focused_window_id = await self.focused_window_id()
+        success = int(focused_window_id or 0) == int(window_id or 0)
+        return {
+            "success": success,
+            "window_id": int(window_id or 0),
+            "focused_window_id": int(focused_window_id or 0),
+            "reason": "ok" if success else "focused_window_mismatch",
+        }
+
+    async def window_matches_transition_target(self, expected: Dict[str, Any]) -> bool:
+        """Verify the focused window converged to the planned visible state."""
+        if self._window_matches_transition_target:
+            return await self._window_matches_transition_target(expected)
+        if not self._get_window_transition_state:
+            return False
+        state = await self._get_window_transition_state(int(expected.get("window_id") or 0))
+        if not bool(state.get("exists", False)):
+            return False
+        if bool(state.get("in_scratchpad", False)) != bool(expected.get("in_scratchpad", False)):
+            return False
+        if bool(state.get("floating", False)) != bool(expected.get("floating", False)):
+            return False
+        return int(state.get("fullscreen_mode", 0) or 0) == int(expected.get("fullscreen_mode", 0) or 0)
 
     async def window_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a deterministic daemon-owned action against a window."""

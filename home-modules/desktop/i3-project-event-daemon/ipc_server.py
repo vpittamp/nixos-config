@@ -531,6 +531,7 @@ class IPCServer:
             run_sway_command=lambda command: self._sway_ipc_command(command),
             sway_command_succeeded=lambda result: self._sway_command_succeeded(result),
             get_sway_workspaces=lambda: self._sway_get_workspaces(),
+            get_sway_tree=lambda: self.i3_connection.get_tree(),
             send_tick_barrier=lambda payload: self._send_tick_barrier(payload),
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
             window_is_locally_tracked=lambda window_id: self._window_is_locally_tracked(window_id),
@@ -545,8 +546,6 @@ class IPCServer:
             ),
             get_window_transition_state=lambda window_id: self._get_window_transition_state(window_id),
             build_window_focus_transition=lambda **kwargs: self._build_window_focus_transition(**kwargs),
-            window_matches_transition_target=lambda expected: self._window_matches_transition_target(expected),
-            verify_window_focus=lambda window_id: self._verify_window_focus(window_id),
             focus_state_provider=lambda params=None: self._focus_state(params or {}),
         )
         self.dashboard_git_service = DashboardGitService(
@@ -8474,14 +8473,7 @@ class IPCServer:
 
     async def _window_matches_transition_target(self, expected: Dict[str, Any]) -> bool:
         """Verify the focused window converged to the planned visible state."""
-        state = await self._get_window_transition_state(int(expected.get("window_id") or 0))
-        if not bool(state.get("exists", False)):
-            return False
-        if bool(state.get("in_scratchpad", False)) != bool(expected.get("in_scratchpad", False)):
-            return False
-        if bool(state.get("floating", False)) != bool(expected.get("floating", False)):
-            return False
-        return int(state.get("fullscreen_mode", 0) or 0) == int(expected.get("fullscreen_mode", 0) or 0)
+        return await self.focus_service.window_matches_transition_target(expected)
 
     async def _is_window_in_regular_state(self, window_id: int) -> bool:
         """Check whether a container is focused as a normal tiled window."""
@@ -8604,40 +8596,15 @@ class IPCServer:
 
     def _find_focused_tree_node(self, node: Any) -> Optional[Any]:
         """Recursively find the currently focused tree node."""
-        if bool(getattr(node, "focused", False)):
-            return node
-        for child in list(getattr(node, "nodes", []) or []):
-            match = self._find_focused_tree_node(child)
-            if match is not None:
-                return match
-        for child in list(getattr(node, "floating_nodes", []) or []):
-            match = self._find_focused_tree_node(child)
-            if match is not None:
-                return match
-        return None
+        return FocusService.find_focused_tree_node(node)
 
     async def _focused_window_id(self) -> int:
         """Return the currently focused Sway container id."""
-        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
-            return 0
-        try:
-            tree = await self.i3_connection.get_tree()
-            node = self._find_focused_tree_node(tree)
-            return int(getattr(node, "id", 0) or 0) if node is not None else 0
-        except Exception as e:
-            logger.debug("Failed to resolve focused window id: %s", e)
-            return 0
+        return await self.focus_service.focused_window_id()
 
     async def _verify_window_focus(self, window_id: int) -> Dict[str, Any]:
         """Verify that the requested window owns current Sway focus."""
-        focused_window_id = await self._focused_window_id()
-        success = int(focused_window_id or 0) == int(window_id or 0)
-        return {
-            "success": success,
-            "window_id": int(window_id or 0),
-            "focused_window_id": int(focused_window_id or 0),
-            "reason": "ok" if success else "focused_window_mismatch",
-        }
+        return await self.focus_service.verify_window_focus(window_id)
 
     async def _switch_runtime_context_if_needed(
         self,

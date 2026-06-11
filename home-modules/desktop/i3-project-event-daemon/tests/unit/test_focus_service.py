@@ -543,6 +543,94 @@ async def test_focus_window_fast_service_rejects_remote_target() -> None:
 
 
 @pytest.mark.asyncio
+async def test_focus_service_resolves_focused_window_from_sway_tree() -> None:
+    focused_node = SimpleNamespace(focused=True, id=909, nodes=[], floating_nodes=[])
+    tree = SimpleNamespace(
+        focused=False,
+        id=1,
+        nodes=[
+            SimpleNamespace(focused=False, id=2, nodes=[], floating_nodes=[]),
+            SimpleNamespace(focused=False, id=3, nodes=[focused_node], floating_nodes=[]),
+        ],
+        floating_nodes=[],
+    )
+    service = FocusService(
+        normalize_connection_key=normalize_connection_key,
+        sway_available=lambda: True,
+        get_sway_tree=AsyncMock(return_value=tree),
+    )
+
+    assert await service.focused_window_id() == 909
+    assert await service.verify_window_focus(909) == {
+        "success": True,
+        "window_id": 909,
+        "focused_window_id": 909,
+        "reason": "ok",
+    }
+
+
+@pytest.mark.asyncio
+async def test_focus_service_verify_window_focus_reports_mismatch() -> None:
+    tree = SimpleNamespace(focused=True, id=100, nodes=[], floating_nodes=[])
+    service = FocusService(
+        normalize_connection_key=normalize_connection_key,
+        sway_available=lambda: True,
+        get_sway_tree=AsyncMock(return_value=tree),
+    )
+
+    result = await service.verify_window_focus(101)
+
+    assert result == {
+        "success": False,
+        "window_id": 101,
+        "focused_window_id": 100,
+        "reason": "focused_window_mismatch",
+    }
+
+
+@pytest.mark.asyncio
+async def test_focus_service_matches_transition_target_from_transition_state() -> None:
+    get_window_transition_state = AsyncMock(return_value={
+        "exists": True,
+        "in_scratchpad": False,
+        "floating": True,
+        "fullscreen_mode": 1,
+    })
+    service = FocusService(
+        normalize_connection_key=normalize_connection_key,
+        get_window_transition_state=get_window_transition_state,
+    )
+
+    assert await service.window_matches_transition_target({
+        "window_id": 44,
+        "in_scratchpad": False,
+        "floating": True,
+        "fullscreen_mode": 1,
+    }) is True
+    get_window_transition_state.assert_awaited_once_with(44)
+
+
+@pytest.mark.asyncio
+async def test_focus_service_rejects_transition_target_mismatch() -> None:
+    service = FocusService(
+        normalize_connection_key=normalize_connection_key,
+        get_window_transition_state=AsyncMock(return_value={
+            "exists": True,
+            "in_scratchpad": True,
+            "floating": False,
+            "fullscreen_mode": 0,
+        }),
+    )
+
+    assert await service.window_matches_transition_target({
+        "window_id": 44,
+        "in_scratchpad": False,
+        "floating": False,
+        "fullscreen_mode": 0,
+    }) is False
+
+
+@pytest.mark.asyncio
 async def test_window_action_service_runs_single_command_and_tick() -> None:
     run_sway_command = AsyncMock(return_value=[SimpleNamespace(success=True)])
     send_tick_barrier = AsyncMock(return_value=None)
