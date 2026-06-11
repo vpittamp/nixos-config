@@ -17,8 +17,6 @@ PanelWindow {
     readonly property var runtimeSessions: root.panelSessions()
     readonly property var runtimeHerdrSpaces: root.herdrSpaces()
     readonly property var runtimeProjects: root.panelProjects()
-    readonly property bool hasRuntimeSessions: runtimeSessions.length > 0 || runtimeHerdrSpaces.length > 0
-    readonly property bool hasRuntimeWindows: runtimeProjects.length > 0
     screen: root.primaryScreen
     visible: root.panelVisible
     color: "transparent"
@@ -33,16 +31,26 @@ PanelWindow {
     WlrLayershell.layer: root.dockedMode ? WlrLayer.Top : WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
+    function runtimePanelHasSessions() {
+        return runtimeSessions.length > 0 || runtimeHerdrSpaces.length > 0;
+    }
+
+    function runtimePanelHasWindows() {
+        return runtimeProjects.length > 0;
+    }
+
     function runtimePanelLocalExpanded(section) {
-        if (section === "sessions" && !hasRuntimeSessions) {
+        const hasSessions = runtimePanelHasSessions();
+        const hasWindows = runtimePanelHasWindows();
+        if (section === "sessions" && !hasSessions) {
             return false;
         }
-        if (section === "windows" && !hasRuntimeWindows) {
+        if (section === "windows" && !hasWindows) {
             return false;
         }
 
         const requested = root.stringOrEmpty(root.runtimePanelExpandedSection);
-        if (requested === "balanced" && hasRuntimeSessions && hasRuntimeWindows) {
+        if (requested === "balanced" && hasSessions && hasWindows) {
             return true;
         }
         if (requested === section) {
@@ -52,19 +60,21 @@ PanelWindow {
             return false;
         }
 
-        return section === "sessions" ? hasRuntimeSessions : !hasRuntimeSessions && hasRuntimeWindows;
+        return section === "sessions" ? hasSessions : !hasSessions && hasWindows;
     }
 
     function runtimePanelLocalPreferredHeight(section) {
-        if (section === "sessions" && !hasRuntimeSessions) {
+        const hasSessions = runtimePanelHasSessions();
+        const hasWindows = runtimePanelHasWindows();
+        if (section === "sessions" && !hasSessions) {
             return 0;
         }
-        if (section === "windows" && !hasRuntimeWindows) {
+        if (section === "windows" && !hasWindows) {
             return 0;
         }
 
         const requested = root.stringOrEmpty(root.runtimePanelExpandedSection);
-        const balanced = requested === "balanced" && hasRuntimeSessions && hasRuntimeWindows;
+        const balanced = requested === "balanced" && hasSessions && hasWindows;
         if (balanced) {
             return section === "sessions" ? 320 : 220;
         }
@@ -410,7 +420,7 @@ PanelWindow {
 
             Rectangle {
                 id: sessionsSection
-                visible: panelWindow.hasRuntimeSessions
+                visible: panelWindow.runtimePanelHasSessions()
                 Layout.fillWidth: true
                 Layout.fillHeight: panelWindow.runtimePanelLocalExpanded("sessions")
                 Layout.minimumHeight: panelWindow.runtimePanelLocalExpanded("sessions") ? 180 : 60
@@ -702,11 +712,11 @@ PanelWindow {
 
             Rectangle {
                 id: windowsSection
-                visible: panelWindow.hasRuntimeWindows || !panelWindow.hasRuntimeSessions
+                visible: panelWindow.runtimePanelHasWindows() || !panelWindow.runtimePanelHasSessions()
                 Layout.fillWidth: true
                 Layout.fillHeight: panelWindow.runtimePanelLocalExpanded("windows")
                 Layout.minimumHeight: panelWindow.runtimePanelLocalExpanded("windows") ? 180 : 60
-                Layout.preferredHeight: panelWindow.hasRuntimeWindows ? panelWindow.runtimePanelLocalPreferredHeight("windows") : 72
+                Layout.preferredHeight: panelWindow.runtimePanelHasWindows() ? panelWindow.runtimePanelLocalPreferredHeight("windows") : 72
                 radius: 12
                 color: panelWindow.runtimePanelLocalExpanded("windows") ? colors.panel : colors.cardAlt
                 border.color: panelWindow.runtimePanelLocalExpanded("windows") ? colors.blueMuted : colors.border
@@ -723,10 +733,10 @@ PanelWindow {
                     WindowComponents.RuntimePanelSectionHeader {
                         colorsObject: colors
                         title: "Windows"
-                        summary: panelWindow.hasRuntimeWindows ? root.runtimePanelSectionSummary("windows") : "No tracked project windows"
+                        summary: panelWindow.runtimePanelHasWindows() ? root.runtimePanelSectionSummary("windows") : "No tracked project windows"
                         count: root.runtimePanelSectionCount("windows")
                         expanded: panelWindow.runtimePanelLocalExpanded("windows")
-                        clickable: panelWindow.hasRuntimeWindows
+                        clickable: panelWindow.runtimePanelHasWindows()
                         expandedBorder: colors.blueMuted
                         onClicked: root.toggleRuntimePanelSection("windows")
                     }
@@ -743,7 +753,7 @@ PanelWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        visible: panelWindow.hasRuntimeWindows && root.runtimePanelSectionCollapsed("windows")
+                        visible: panelWindow.runtimePanelHasWindows() && root.runtimePanelSectionCollapsed("windows")
                         text: "Window groups stay available here while Herdr Monitor takes the full panel."
                         color: colors.subtle
                         font.pixelSize: 9
@@ -766,7 +776,7 @@ PanelWindow {
                         boundsBehavior: Flickable.StopAtBounds
                         model: windowProjectsModel
                         cacheBuffer: 1200
-                        visible: panelWindow.hasRuntimeWindows && panelWindow.runtimePanelLocalExpanded("windows")
+                        visible: panelWindow.runtimePanelHasWindows() && panelWindow.runtimePanelLocalExpanded("windows")
 
                         delegate: Rectangle {
                             required property var modelData
