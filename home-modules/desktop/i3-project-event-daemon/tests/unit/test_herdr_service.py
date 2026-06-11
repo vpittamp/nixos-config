@@ -119,7 +119,130 @@ def test_herdr_service_resolves_project_for_cwd_with_worktree_fallback():
 
 
 @pytest.mark.asyncio
-async def test_herdr_service_remote_proxy_event_advances_remote_generation():
+async def test_herdr_service_remote_proxy_event_payload_updates_cached_remote_sessions():
+    notifications = []
+    invalidations = 0
+
+    async def notify_state_change(event_type):
+        notifications.append(event_type)
+
+    def invalidate_snapshot_cache():
+        nonlocal invalidations
+        invalidations += 1
+
+    service = HerdrService(
+        notify_state_change=notify_state_change,
+        invalidate_snapshot_cache=invalidate_snapshot_cache,
+        notify_delay=0.0,
+    )
+    service.store_snapshot(
+        {
+            "sessions": [
+                {"session_key": "local", "pane_id": "local-a", "is_current_host": True},
+                {
+                    "session_key": "herdr:ryzen:pane:remote-a",
+                    "pane_id": "remote-a",
+                    "herdr_host": "ryzen",
+                    "focused": True,
+                    "connection_key": "vpittamp@ryzen:22",
+                },
+            ],
+            "remote_snapshots": [
+                {
+                    "host": "ryzen",
+                    "ssh_target": "ryzen",
+                    "connection_key": "vpittamp@ryzen:22",
+                    "sessions": [{"session_key": "herdr:ryzen:pane:remote-a"}],
+                }
+            ],
+        },
+        now=100.0,
+    )
+
+    await service.handle_remote_proxy_event(
+        {"host": "ryzen", "ssh_target": "ryzen", "connection_key": "vpittamp@ryzen:22"},
+        {
+            "schema_version": "i3pm.herdr_proxy.event.v1",
+            "protocol_version": 1,
+            "event_type": "herdr.changed",
+            "generation": 7,
+            "snapshot_version": 7,
+            "changed_keys": ["focus_state", "active_ai_sessions", "herdr"],
+            "payload": {
+                "active_ai_sessions": [
+                    {
+                        "session_key": "herdr:pane:remote-b",
+                        "pane_id": "remote-b",
+                        "agent": "codex",
+                        "focused": True,
+                        "is_current_window": True,
+                        "host_name": "ryzen",
+                        "connection_key": "local@ryzen",
+                        "execution_mode": "local",
+                        "is_current_host": True,
+                        "close_target": {
+                            "method": "herdr.pane.close",
+                            "params": {"pane_id": "remote-b"},
+                        },
+                    }
+                ],
+                "herdr": {
+                    "herdr_generation": 42,
+                    "local_herdr_generation": 42,
+                    "status": {"server": {"running": True}},
+                },
+            },
+        },
+    )
+    await asyncio.sleep(0)
+
+    assert service.remote_generation_for("ryzen") == 42
+    assert service.remote_proxy_event_generation_for("ryzen") == 7
+    assert invalidations == 0
+    assert notifications == ["ai_session_herdr_changed"]
+    assert [row["session_key"] for row in service.snapshot_cache["sessions"]] == [
+        "herdr:ryzen:pane:remote-b",
+        "local",
+    ]
+    remote_session = service.snapshot_cache["sessions"][0]
+    assert remote_session["execution_mode"] == "ssh"
+    assert remote_session["connection_key"] == "vpittamp@ryzen:22"
+    assert remote_session["is_remote_herdr"] is True
+    assert remote_session["is_current_host"] is False
+    assert remote_session["focus_target"] == {
+        "method": "herdr.remote.pane.focus",
+        "params": {
+            "pane_id": "remote-b",
+            "host": "ryzen",
+            "ssh_target": "ryzen",
+            "connection_key": "vpittamp@ryzen:22",
+            "app_name": "herdr",
+        },
+    }
+    assert remote_session["close_target"] == {}
+    assert service.snapshot_cache["remote_snapshots"][0]["sessions"][0]["session_key"] == "herdr:ryzen:pane:remote-b"
+
+    await service.handle_remote_proxy_event(
+        {"host": "ryzen", "ssh_target": "ryzen", "connection_key": "vpittamp@ryzen:22"},
+        {
+            "schema_version": "i3pm.herdr_proxy.event.v1",
+            "protocol_version": 1,
+            "event_type": "herdr.changed",
+            "generation": 6,
+            "snapshot_version": 6,
+            "changed_keys": ["active_ai_sessions"],
+            "payload": {"active_ai_sessions": []},
+        },
+    )
+    await asyncio.sleep(0)
+
+    assert service.remote_proxy_event_generation_for("ryzen") == 7
+    assert notifications == ["ai_session_herdr_changed"]
+    assert service.snapshot_cache["sessions"][0]["session_key"] == "herdr:ryzen:pane:remote-b"
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_remote_proxy_event_without_payload_invalidates_for_recovery():
     notifications = []
     invalidations = 0
 

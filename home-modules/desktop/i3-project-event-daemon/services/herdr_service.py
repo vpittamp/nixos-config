@@ -100,6 +100,7 @@ class HerdrService:
         self.notify_task: Optional[asyncio.Task] = None
         self.local_herdr_generation: int = 0
         self.remote_herdr_generation: Dict[str, int] = {}
+        self.remote_proxy_event_generation: Dict[str, int] = {}
         self.snapshot_cache: Dict[str, Any] = {}
         self.snapshot_cache_time: float = 0.0
         self.snapshot_cache_ttl: float = snapshot_cache_ttl
@@ -202,6 +203,43 @@ class HerdrService:
         if not host_key:
             return 0
         return int(self.remote_herdr_generation.get(host_key, 0))
+
+    def set_remote_generation(self, host: Any, generation: Any) -> int:
+        """Set a remote Herdr host generation monotonically."""
+        host_key = self.normalize_host_key(host)
+        if not host_key:
+            return 0
+        try:
+            next_generation = int(generation or 0)
+        except (TypeError, ValueError):
+            next_generation = 0
+        if next_generation <= 0:
+            return self.remote_generation_for(host_key)
+        current = self.remote_generation_for(host_key)
+        self.remote_herdr_generation[host_key] = max(current, next_generation)
+        return self.remote_herdr_generation[host_key]
+
+    def remote_proxy_event_generation_for(self, host: Any) -> int:
+        """Return the last applied remote proxy dashboard event generation."""
+        host_key = self.normalize_host_key(host)
+        if not host_key:
+            return 0
+        return int(self.remote_proxy_event_generation.get(host_key, 0))
+
+    def set_remote_proxy_event_generation(self, host: Any, generation: Any) -> int:
+        """Set a remote proxy dashboard event generation monotonically."""
+        host_key = self.normalize_host_key(host)
+        if not host_key:
+            return 0
+        try:
+            next_generation = int(generation or 0)
+        except (TypeError, ValueError):
+            next_generation = 0
+        if next_generation <= 0:
+            return self.remote_proxy_event_generation_for(host_key)
+        current = self.remote_proxy_event_generation_for(host_key)
+        self.remote_proxy_event_generation[host_key] = max(current, next_generation)
+        return self.remote_proxy_event_generation[host_key]
 
     def remote_subscription_key(self, target: Dict[str, str]) -> str:
         """Return a stable task key for a remote Herdr proxy subscription."""
@@ -353,6 +391,231 @@ class HerdrService:
             "updated": updated,
             "focused_session_key": focused_session_key,
             "connection_key": connection_key,
+        }
+
+    def remote_target_matcher(
+        self,
+        target: Dict[str, str],
+        *,
+        normalize_connection_key: Callable[[str], str],
+    ) -> Callable[[Dict[str, Any]], bool]:
+        """Build a predicate matching rows that belong to one remote Herdr target."""
+        host = self.normalize_host_key(target.get("host") or target.get("ssh_target"))
+        ssh_target = str(target.get("ssh_target") or "").strip()
+        connection_key = normalize_connection_key(str(target.get("connection_key") or "").strip())
+
+        def matches_remote(item: Dict[str, Any]) -> bool:
+            item_host = self.normalize_host_key(
+                item.get("herdr_host") or item.get("host_name") or item.get("host")
+            )
+            item_ssh = str(item.get("ssh_target") or item.get("remote_target") or "").strip()
+            item_connection = normalize_connection_key(str(item.get("connection_key") or "").strip())
+            if host and item_host == host:
+                return True
+            if ssh_target and item_ssh == ssh_target:
+                return True
+            return bool(connection_key and item_connection == connection_key)
+
+        return matches_remote
+
+    def normalize_remote_proxy_session_row(
+        self,
+        row: Dict[str, Any],
+        *,
+        target: Dict[str, str],
+        normalize_connection_key: Callable[[str], str],
+    ) -> Dict[str, Any]:
+        """Rewrite a remote proxy dashboard session row for this daemon's remote view."""
+        host_key = self.normalize_host_key(target.get("host") or target.get("ssh_target"))
+        ssh_target = str(target.get("ssh_target") or "").strip()
+        connection_key = normalize_connection_key(str(target.get("connection_key") or "").strip())
+        normalized = {
+            key: value
+            for key, value in dict(row).items()
+            if key not in RETIRED_SESSION_UI_STATE_FIELDS
+        }
+        pane_id = str(normalized.get("pane_id") or "").strip()
+        session_key = self.session_key(normalized, host_key)
+        focused = bool(normalized.get("focused", normalized.get("is_current_window", False)))
+        normalized.update({
+            "schema": "herdr.ai_session.v1",
+            "source": "herdr",
+            "herdr_session": session_key,
+            "session_key": session_key,
+            "render_session_key": session_key,
+            "focused": focused,
+            "is_current_window": focused,
+            "window_active": focused,
+            "pane_active": focused,
+            "execution_mode": "ssh",
+            "connection_key": connection_key,
+            "host_name": host_key,
+            "herdr_host": host_key,
+            "target_host": host_key,
+            "ssh_target": ssh_target,
+            "remote_target": ssh_target,
+            "is_remote_herdr": True,
+            "is_current_host": False,
+            "focus_mode": "remote_herdr_attach",
+            "availability_state": "remote_herdr_attachable",
+            "focus_target": {
+                "method": "herdr.remote.pane.focus",
+                "params": {
+                    "pane_id": pane_id,
+                    "host": host_key,
+                    "ssh_target": ssh_target,
+                    "connection_key": connection_key,
+                    "app_name": "herdr",
+                },
+            } if pane_id else {},
+            "close_target": {},
+            "workspace_focus_target": {},
+            "tab_focus_target": {},
+        })
+        return normalized
+
+    @staticmethod
+    def remote_proxy_payload_generation(event: Dict[str, Any], payload: Dict[str, Any]) -> int:
+        """Return the remote Herdr generation carried by a proxy event payload."""
+        herdr = payload.get("herdr")
+        if not isinstance(herdr, dict):
+            herdr = {}
+        for source in (
+            herdr.get("local_herdr_generation"),
+            herdr.get("herdr_generation"),
+            payload.get("local_herdr_generation"),
+            payload.get("herdr_generation"),
+            event.get("snapshot_version"),
+            event.get("generation"),
+        ):
+            try:
+                generation = int(source or 0)
+            except (TypeError, ValueError):
+                generation = 0
+            if generation > 0:
+                return generation
+        return 0
+
+    def apply_remote_proxy_payload_cache(
+        self,
+        *,
+        target: Dict[str, str],
+        event: Dict[str, Any],
+        now: float,
+        normalize_connection_key: Callable[[str], str],
+    ) -> Dict[str, Any]:
+        """Apply a remote Herdr proxy event payload to the cached merged snapshot."""
+        host_key = self.normalize_host_key(target.get("host") or target.get("ssh_target"))
+        if not host_key:
+            return {"applied": False, "cache_updated": False, "stale": False}
+
+        try:
+            event_generation = int(event.get("snapshot_version") or event.get("generation") or 0)
+        except (TypeError, ValueError):
+            event_generation = 0
+        if event_generation > 0 and event_generation <= self.remote_proxy_event_generation_for(host_key):
+            return {"applied": False, "cache_updated": False, "stale": True}
+
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            return {"applied": False, "cache_updated": False, "stale": False}
+
+        raw_sessions = payload.get("active_ai_sessions")
+        has_session_payload = isinstance(raw_sessions, list)
+        herdr_payload = payload.get("herdr")
+        has_herdr_payload = isinstance(herdr_payload, dict)
+        if not has_session_payload and not has_herdr_payload:
+            return {"applied": False, "cache_updated": False, "stale": False}
+
+        if event_generation > 0:
+            self.set_remote_proxy_event_generation(host_key, event_generation)
+        remote_generation = self.remote_proxy_payload_generation(event, payload)
+        if remote_generation > 0:
+            self.set_remote_generation(host_key, remote_generation)
+        else:
+            remote_generation = self.bump_remote_generation(host_key)
+
+        normalized_sessions = [
+            self.normalize_remote_proxy_session_row(
+                item,
+                target=target,
+                normalize_connection_key=normalize_connection_key,
+            )
+            for item in (raw_sessions or [])
+            if isinstance(item, dict)
+        ]
+
+        cache_updated = False
+        if self.snapshot_cache:
+            matches_remote = self.remote_target_matcher(
+                target,
+                normalize_connection_key=normalize_connection_key,
+            )
+            if has_session_payload:
+                existing_sessions = [
+                    item for item in self.snapshot_cache.get("sessions", []) or []
+                    if not (isinstance(item, dict) and matches_remote(item))
+                ]
+                existing_sessions.extend(normalized_sessions)
+                existing_sessions.sort(key=lambda item: (
+                    not bool(item.get("focused", False)),
+                    0 if bool(item.get("is_current_host", False)) else 1,
+                    str(item.get("herdr_host") or ""),
+                    str(item.get("project_name") or ""),
+                    str(item.get("agent") or ""),
+                    str(item.get("pane_id") or ""),
+                ))
+                self.snapshot_cache["sessions"] = existing_sessions
+                cache_updated = True
+
+            remote_snapshots = self.snapshot_cache.setdefault("remote_snapshots", [])
+            if isinstance(remote_snapshots, list):
+                remote_snapshot = next(
+                    (
+                        item for item in remote_snapshots
+                        if isinstance(item, dict) and matches_remote(item)
+                    ),
+                    None,
+                )
+                if remote_snapshot is None:
+                    remote_snapshot = {
+                        "success": True,
+                        "remote": True,
+                        "host": host_key,
+                        "ssh_target": str(target.get("ssh_target") or "").strip(),
+                        "connection_key": str(target.get("connection_key") or "").strip(),
+                        "agents": [],
+                        "panes": [],
+                        "workspaces": [],
+                        "tabs": [],
+                        "worktrees": [],
+                        "errors": [],
+                    }
+                    remote_snapshots.append(remote_snapshot)
+                remote_snapshot["success"] = True
+                remote_snapshot["remote"] = True
+                remote_snapshot["host"] = host_key
+                remote_snapshot["ssh_target"] = str(target.get("ssh_target") or "").strip()
+                remote_snapshot["connection_key"] = str(target.get("connection_key") or "").strip()
+                remote_snapshot["herdr_generation"] = self.remote_generation_for(host_key)
+                if has_session_payload:
+                    remote_snapshot["sessions"] = normalized_sessions
+                if has_herdr_payload:
+                    remote_snapshot["herdr"] = dict(herdr_payload)
+                    if isinstance(herdr_payload.get("status"), dict):
+                        remote_snapshot["status"] = herdr_payload.get("status")
+                cache_updated = True
+
+            self.snapshot_cache["remote_herdr_generation"] = self.remote_generations_snapshot()
+            self.touch_snapshot_cache(now=now)
+
+        return {
+            "applied": True,
+            "cache_updated": cache_updated,
+            "stale": False,
+            "remote_generation": self.remote_generation_for(host_key),
+            "event_generation": self.remote_proxy_event_generation_for(host_key),
+            "session_count": len(normalized_sessions),
         }
 
     def remote_targets_file(self) -> Path:
@@ -2212,13 +2475,22 @@ class HerdrService:
             backoff = min(backoff * 2, self.subscription_max_backoff)
 
     async def handle_remote_proxy_event(self, target: Dict[str, str], event: Dict[str, Any]) -> None:
-        """Invalidate Herdr-derived dashboard state after a remote proxy event."""
+        """Apply or recover from a remote Herdr proxy event."""
         if not isinstance(event, dict):
             return
         if str(event.get("schema_version") or "") != "i3pm.herdr_proxy.event.v1":
             return
-        self.bump_remote_generation(target.get("host") or target.get("ssh_target"))
-        self.invalidate_snapshot_cache()
+        result = self.apply_remote_proxy_payload_cache(
+            target=target,
+            event=event,
+            now=time.time(),
+            normalize_connection_key=self._normalize_connection_key,
+        )
+        if bool(result.get("stale", False)):
+            return
+        if not bool(result.get("applied", False)):
+            self.bump_remote_generation(target.get("host") or target.get("ssh_target"))
+            self.invalidate_snapshot_cache()
         self.schedule_state_change_notification()
 
     async def handle_subscription_event(self, event: Dict[str, Any]) -> None:
