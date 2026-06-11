@@ -259,28 +259,6 @@ lib.mkIf enableClaudeCode {
         CLAUDE_CODE_WORKFLOWS = "1";
       };
 
-      # Hooks - Commands that run in response to Claude Code events
-      # See: https://docs.claude.com/en/docs/claude-code/hooks
-      #
-      # Security Best Practices (per documentation):
-      # 1. Use absolute paths for scripts
-      # 2. Always quote shell variables with "$VAR" not $VAR
-      # 3. Validate and sanitize inputs in hook scripts
-      # 4. Set explicit timeouts for commands
-      # 5. Use external scripts for complex logic (maintainability)
-      #
-      hooks = {
-        # Stop: Unified "finished" notification when Claude Code completes a turn
-        # Sends desktop notification with "Return to Terminal" action
-        Stop = [{
-          hooks = [{
-            type = "command";
-            command = "${repoRoot}/scripts/claude-hooks/finished.sh";
-            timeout = 10;
-          }];
-        }];
-      };
-
       # Permissions configuration for sandboxed environment
       # WARNING: This grants broad permissions. Only use in trusted/sandboxed environments.
       # Note: Wildcards and patterns have been removed per Claude Code 2.0.11 requirements

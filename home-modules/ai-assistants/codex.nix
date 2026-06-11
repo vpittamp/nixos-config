@@ -149,7 +149,6 @@ force = true
 model = "gpt-5.5"
 model_provider = "openai"
 model_reasoning_effort = "high"
-notify = ["${pkgs.nodejs}/bin/node", "${repoRoot}/scripts/codex-hooks/notify.js"]
 sandbox_mode = "danger-full-access"
 theme = "dark"
 vim_mode = true

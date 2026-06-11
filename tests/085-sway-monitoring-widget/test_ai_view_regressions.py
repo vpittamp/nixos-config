@@ -16,6 +16,8 @@ WORKTREE_APP_SERVICE_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-
 WORKTREE_APP_SHELL_QML = REPO_ROOT / "home-modules" / "desktop" / "quickshell-worktree-app" / "shell.qml"
 WORKTREE_APP_DEFAULT_NIX = REPO_ROOT / "home-modules" / "desktop" / "quickshell-worktree-app" / "default.nix"
 HERDR_NIX = REPO_ROOT / "home-modules" / "terminal" / "herdr.nix"
+CLAUDE_CODE_NIX = REPO_ROOT / "home-modules" / "ai-assistants" / "claude-code.nix"
+CODEX_NIX = REPO_ROOT / "home-modules" / "ai-assistants" / "codex.nix"
 I3PM_WINDOW_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "window.ts"
 I3PM_DASHBOARD_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "dashboard.ts"
 I3PM_HERDR_PROXY_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "herdr-proxy.ts"
@@ -59,6 +61,19 @@ def test_ai_session_status_does_not_use_notification_boundary_adapters():
     assert "session_attention_service" not in daemon_text
     for field in retired_fields[:3]:
         assert field not in service_text
+
+
+def test_provider_completion_hooks_do_not_drive_ai_session_state():
+    claude_text = CLAUDE_CODE_NIX.read_text()
+    codex_text = CODEX_NIX.read_text()
+
+    assert "scripts/claude-hooks/finished.sh" not in claude_text
+    assert "Stop = [{" not in claude_text
+    assert "scripts/codex-hooks/notify.js" not in codex_text
+    assert "notify = [" not in codex_text
+    assert not (REPO_ROOT / "scripts" / "claude-hooks" / "finished.sh").exists()
+    assert not (REPO_ROOT / "scripts" / "claude-hooks" / "stop-notification-simple.sh.bak").exists()
+    assert not (REPO_ROOT / "scripts" / "codex-hooks" / "notify.js").exists()
 
 
 def test_session_display_eligibility_accepts_herdr_panes_without_tmux_identity():

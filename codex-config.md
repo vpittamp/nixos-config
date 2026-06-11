@@ -12,7 +12,6 @@ Codex exports OTEL **log records** (not spans) when `[otel]` is enabled in `~/.c
 
 - `~/.codex/config.toml` (TOML)
   - `[otel]` enables log export and controls exporter options
-  - `notify = ["node", "/path/to/notify.js"]` enables turn-end notifications
 - Batch log export timing (env vars read by the Rust OTEL SDK):
   - `OTEL_BLRP_SCHEDULE_DELAY` (ms)
   - `OTEL_BLRP_MAX_EXPORT_BATCH_SIZE`
@@ -45,32 +44,12 @@ Codex exports OTEL **log records** (not spans) when `[otel]` is enabled in `~/.c
 - `codex.tool_result`
   - `tool_name`, `call_id` (optional), `arguments` (optional), `duration_ms`, `success`, `output`
 
-## 2) Hooks we can use (Codex `notify`)
-
-Codex supports a top-level `notify` hook:
-
-```toml
-notify = ["node", "/absolute/path/to/notify.js"]
-```
-
-Codex invokes this external program with **one JSON argument** per supported notification event.
-
-Currently:
-- `notify` emits **only** `agent-turn-complete` (turn boundary signal).
-
-The JSON payload includes:
-- `type` = `agent-turn-complete`
-- `thread-id` (Codex session id; correlates with `conversation.id`)
-- `cwd` (absolute project dir)
-- `last-assistant-message` (optional)
-- `input-messages` (optional)
-
-## 3) Tracing strategy (Claude-like) for Codex
+## 2) Tracing strategy (Claude-like) for Codex
 
 To mirror our Claude Code trace hierarchy:
 
 - **Session span (CHAIN)**: created from `codex.conversation_starts`, ended on idle timeout.
-- **Turn span (AGENT)**: start on `codex.user_prompt`, end on `notify` (`agent-turn-complete`), fallback to idle timeout.
+- **Turn span (AGENT)**: start on `codex.user_prompt`, end from OTEL event timing or idle timeout.
 - **LLM spans (LLM/CLIENT)**: start/end derived from `codex.api_request.duration_ms`, token counts attached from `codex.sse_event` `response.completed`.
 - **Tool spans (TOOL)**: created from `codex.tool_result.duration_ms`, enriched with `codex.tool_decision` by `call_id` when available.
   - We also parse `arguments` (when present) to generate semantic tool span names and attach `tool.args_preview`.
@@ -81,8 +60,8 @@ To mirror our Claude Code trace hierarchy:
 To keep the same join key as Claude traces, we treat:
 - `session.id = conversation.id` (and inject this into forwarded Codex logs).
 
-## 4) Where this is implemented in this repo
+Codex `notify` hooks are intentionally not configured in the NixOS profile. Herdr owns AI pane/session state and QuickShell should not infer UI state from provider turn-complete hooks.
 
-- OTEL log → trace synthesis: `scripts/codex-otel-interceptor.js`
-- Codex notify hook handler: `scripts/codex-hooks/notify.js`
+## 3) Where this is implemented in this repo
+
 - Codex config + user service wiring: `home-modules/ai-assistants/codex.nix`
