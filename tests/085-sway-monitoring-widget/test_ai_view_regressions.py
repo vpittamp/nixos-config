@@ -568,6 +568,7 @@ def test_remote_herdr_aggregation_uses_proxy_only():
     assert "def run_proxy_json" in herdr_service_text
     assert "def run_ssh_json" not in herdr_service_text
     assert '["ssh", ssh_target, "herdr", *args]' not in herdr_service_text
+    assert '["ssh", str(target.get("ssh_target") or "").strip(), "herdr"]' not in herdr_service_text
     assert 'self.ssh_command_prefix(ssh_target) + ["herdr", *args]' not in herdr_service_text
     assert '["i3pm", "herdr-proxy", *args]' in herdr_service_text
     assert '["i3pm", "herdr-proxy", "events", "--jsonl"]' in herdr_service_text

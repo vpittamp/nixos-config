@@ -1271,7 +1271,14 @@ class HerdrService:
                     "host": str(target.get("host") or "").strip(),
                     "ssh_target": str(target.get("ssh_target") or "").strip(),
                     "connection_key": str(target.get("connection_key") or "").strip(),
-                    "command": ["ssh", str(target.get("ssh_target") or "").strip(), "herdr"],
+                    "command": [
+                        "ssh",
+                        str(target.get("ssh_target") or "").strip(),
+                        "i3pm",
+                        "herdr-proxy",
+                        "snapshot",
+                        "--json",
+                    ],
                     "error": str(remote_snapshot),
                     "returncode": None,
                 }

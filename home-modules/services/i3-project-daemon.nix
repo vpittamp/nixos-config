@@ -162,7 +162,7 @@ in
           };
           ssh_target = mkOption {
             type = types.str;
-            description = "SSH target used to run read-only Herdr list commands.";
+            description = "SSH target used to reach the remote i3pm Herdr proxy.";
           };
           connection_key = mkOption {
             type = types.nullOr types.str;
