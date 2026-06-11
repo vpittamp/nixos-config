@@ -290,6 +290,8 @@ def test_focus_rpc_behavior_lives_in_focus_service_not_ipc_wrappers():
         "async def _output_configure",
         "async def _output_create_virtual",
         "async def _workspace_move_to_output",
+        "async def _health_check",
+        "async def _get_socket_health",
     ]:
         assert retired not in ipc_text
 
@@ -302,6 +304,8 @@ def test_focus_rpc_behavior_lives_in_focus_service_not_ipc_wrappers():
     assert "display_service.configure_output(params)" in ipc_text
     assert "display_service.create_virtual_output(params)" in ipc_text
     assert "display_service.move_workspace_to_output(params)" in ipc_text
+    assert "daemon_status_service.health_check()" in ipc_text
+    assert "daemon_status_service.socket_health()" in ipc_text
     assert "def focus_window_from_params" in focus_text
     assert "def build_window_focus_target" in focus_text
 
