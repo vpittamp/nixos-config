@@ -368,6 +368,18 @@ def test_legacy_session_action_rpc_surface_is_retired():
     assert "AI session inspection and focus commands" not in main_cli_text
 
 
+def test_remote_herdr_aggregation_uses_proxy_only():
+    """ThinkPad remote Herdr state should not fall back to direct SSH fanout commands."""
+    herdr_service_text = (REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon" / "services" / "herdr_service.py").read_text()
+
+    assert "def run_proxy_json" in herdr_service_text
+    assert "def run_ssh_json" not in herdr_service_text
+    assert '["ssh", ssh_target, "herdr", *args]' not in herdr_service_text
+    assert 'self.ssh_command_prefix(ssh_target) + ["herdr", *args]' not in herdr_service_text
+    assert '["i3pm", "herdr-proxy", *args]' in herdr_service_text
+    assert '["i3pm", "herdr-proxy", "events", "--jsonl"]' in herdr_service_text
+
+
 def test_session_titles_prefer_herdr_agent_and_project():
     """Launcher rows should title Herdr sessions by agent and worktree/project."""
     text = SHELL_QML.read_text()

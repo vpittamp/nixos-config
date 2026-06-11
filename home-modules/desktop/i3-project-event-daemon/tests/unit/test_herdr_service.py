@@ -1217,47 +1217,6 @@ async def test_herdr_service_reports_missing_local_binary(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_herdr_service_runs_remote_json_command(monkeypatch):
-    service = HerdrService(
-        notify_state_change=lambda event_type: asyncio.sleep(0),
-        invalidate_snapshot_cache=lambda: None,
-    )
-    calls = []
-
-    def fake_run(command, **kwargs):
-        calls.append((command, kwargs))
-        return subprocess.CompletedProcess(
-            command,
-            0,
-            stdout='{"success":true,"result":{"agents":[]}}\n',
-            stderr="",
-        )
-
-    monkeypatch.setattr(herdr_service_module.shutil, "which", lambda name: f"/bin/{name}")
-    monkeypatch.setattr(herdr_service_module.subprocess, "run", fake_run)
-
-    result = await service.run_ssh_json(
-        {
-            "host": "ryzen",
-            "ssh_target": "ryzen",
-            "connection_key": "vpittamp@ryzen:22",
-        },
-        ["agent", "list"],
-        timeout=1.25,
-    )
-
-    assert result["success"] is True
-    assert result["result"] == {"agents": []}
-    assert result["command"] == ["ssh", "ryzen", "herdr", "agent", "list"]
-    assert result["herdr_host"] == "ryzen"
-    assert result["ssh_target"] == "ryzen"
-    assert result["connection_key"] == "vpittamp@ryzen:22"
-    assert calls[0][0][-3:] == ["herdr", "agent", "list"]
-    assert calls[0][0][:2] == ["ssh", "-o"]
-    assert calls[0][1]["timeout"] == 1.25
-
-
-@pytest.mark.asyncio
 async def test_herdr_service_runs_remote_proxy_command(monkeypatch):
     service = HerdrService(
         notify_state_change=lambda event_type: asyncio.sleep(0),
@@ -1305,22 +1264,22 @@ async def test_herdr_service_reports_remote_transport_errors(monkeypatch):
         invalidate_snapshot_cache=lambda: None,
     )
 
-    missing_target = await service.run_ssh_json({}, ["agent", "list"])
+    missing_target = await service.run_proxy_json({}, ["snapshot", "--json"])
     assert missing_target == {
         "success": False,
         "error": "missing_ssh_target",
-        "command": ["ssh", "", "herdr", "agent", "list"],
+        "command": ["ssh", "", "i3pm", "herdr-proxy", "snapshot", "--json"],
     }
 
     monkeypatch.setattr(herdr_service_module.shutil, "which", lambda _name: None)
-    missing_ssh = await service.run_ssh_json(
+    missing_ssh = await service.run_proxy_json(
         {"ssh_target": "ryzen"},
-        ["agent", "list"],
+        ["snapshot", "--json"],
     )
     assert missing_ssh == {
         "success": False,
         "error": "ssh_not_found",
-        "command": ["ssh", "ryzen", "herdr", "agent", "list"],
+        "command": ["ssh", "ryzen", "i3pm", "herdr-proxy", "snapshot", "--json"],
     }
 
 

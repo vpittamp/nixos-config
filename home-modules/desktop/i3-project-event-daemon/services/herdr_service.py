@@ -2126,57 +2126,6 @@ class HerdrService:
 
         return self._json_payload_from_completed_process(result, command=command)
 
-    async def run_ssh_json(
-        self,
-        target: Dict[str, str],
-        args: List[str],
-        timeout: float = 2.5,
-    ) -> Dict[str, Any]:
-        """Run a Herdr command on a remote host over SSH."""
-        ssh_target = str(target.get("ssh_target") or "").strip()
-        fallback_command = ["ssh", ssh_target, "herdr", *args]
-        if not ssh_target:
-            return {
-                "success": False,
-                "error": "missing_ssh_target",
-                "command": ["ssh", "", "herdr", *args],
-            }
-        if not shutil.which("ssh"):
-            return {
-                "success": False,
-                "error": "ssh_not_found",
-                "command": fallback_command,
-            }
-
-        command = self.ssh_command_prefix(ssh_target) + ["herdr", *args]
-
-        def run() -> subprocess.CompletedProcess[str]:
-            return subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
-
-        try:
-            result = await asyncio.to_thread(run)
-        except subprocess.TimeoutExpired:
-            return {
-                "success": False,
-                "error": "timeout",
-                "command": fallback_command,
-            }
-
-        payload = self._json_payload_from_completed_process(
-            result,
-            command=fallback_command,
-        )
-        payload.setdefault("herdr_host", str(target.get("host") or "").strip())
-        payload.setdefault("ssh_target", ssh_target)
-        payload.setdefault("connection_key", str(target.get("connection_key") or "").strip())
-        return payload
-
     async def run_proxy_json(
         self,
         target: Dict[str, str],
