@@ -30,7 +30,13 @@ export async function workspaceCommand(args: string[], _flags: CommandOptions): 
         return 1;
       }
 
-      const result = await client.request<{ success?: boolean; workspace?: string }>("workspace.focus", { workspace });
+      let result = await client.request<{ success?: boolean; workspace?: string; fallback_method?: string }>(
+        "workspace.focus_fast",
+        { workspace },
+      );
+      if (result.success === false && result.fallback_method === "workspace.focus") {
+        result = await client.request<{ success?: boolean; workspace?: string }>("workspace.focus", { workspace });
+      }
       if (result.success === false) {
         console.error(`Failed to focus workspace ${workspace}`);
         return 1;

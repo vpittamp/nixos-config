@@ -25,6 +25,7 @@ CLAUDE_CODE_NIX = REPO_ROOT / "home-modules" / "ai-assistants" / "claude-code.ni
 CODEX_NIX = REPO_ROOT / "home-modules" / "ai-assistants" / "codex.nix"
 COPILOT_CLI_NIX = REPO_ROOT / "home-modules" / "ai-assistants" / "copilot-cli.nix"
 I3PM_WINDOW_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "window.ts"
+I3PM_WORKSPACE_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "workspace.ts"
 I3PM_DASHBOARD_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "dashboard.ts"
 I3PM_HERDR_PROXY_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "herdr-proxy.ts"
 I3PM_HEALTH_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "health.ts"
@@ -682,6 +683,7 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     runtime_panel_text = RUNTIME_PANEL_WINDOW_QML.read_text()
     bottom_bar_text = (REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "windows" / "BottomBarWindow.qml").read_text()
     window_command_text = I3PM_WINDOW_TS.read_text()
+    workspace_command_text = I3PM_WORKSPACE_TS.read_text()
 
     assert "optimisticFocusedWindowId" not in text
     assert "optimisticFocusedWorkspaceName" not in text
@@ -712,10 +714,14 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     assert "runDaemonSocketCall(\"workspace.focus_fast\", {workspace: workspaceName})" in text
     activate_workspace_body = text.split("function activateWorkspace(workspace)", 1)[1].split("function closeWindow", 1)[0]
     assert "workspace.activate()" not in activate_workspace_body
+    assert 'runDaemonCall("workspace.focus_fast", {workspace: workspaceName})' in activate_workspace_body
+    assert '"workspace", "focus", workspaceName' not in activate_workspace_body
     assert "root.windowIsFocused(windowData)" in runtime_panel_text
     assert "root.workspaceIsFocused(workspace)" in bottom_bar_text
     assert "client.request(\"window.focus_fast\", params)" in window_command_text
     assert "fallback_method === \"window.focus\"" in window_command_text
+    assert 'client.request<{ success?: boolean; workspace?: string; fallback_method?: string }>(\n        "workspace.focus_fast",' in workspace_command_text
+    assert 'fallback_method === "workspace.focus"' in workspace_command_text
 
 
 def test_quickshell_daemon_actions_use_persistent_bridge():
@@ -726,6 +732,9 @@ def test_quickshell_daemon_actions_use_persistent_bridge():
 
     assert "readonly property string daemonActionBin" in quickshell_default_nix_text
     assert "quickshell-daemon-action" in quickshell_default_nix_text
+    assert "from concurrent.futures import ThreadPoolExecutor" in quickshell_default_nix_text
+    assert "executor.submit(handle_jsonl_request, line)" in quickshell_default_nix_text
+    assert "emit_lock = threading.Lock()" in quickshell_default_nix_text
     assert "client.settimeout(5.0)" in quickshell_default_nix_text
     assert "daemonActionBridge.write(JSON.stringify({" in send_body
     assert "Process {\n        id: daemonActionBridge" in runtime_services_text

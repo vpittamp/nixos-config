@@ -7616,7 +7616,7 @@ ShellRoot {
 
         beginLocalFocusIntent("workspace.focus_fast", {workspace: workspaceName});
         if (!runDaemonSocketCall("workspace.focus_fast", {workspace: workspaceName})) {
-            runDetached([shellConfig.i3pmBin, "workspace", "focus", workspaceName]);
+            runDaemonCall("workspace.focus_fast", {workspace: workspaceName});
         }
     }
 

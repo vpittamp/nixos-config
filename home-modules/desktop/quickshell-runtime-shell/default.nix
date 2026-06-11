@@ -1030,6 +1030,8 @@ import json
 import os
 import socket
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 
 def fail(message: str, code: int = 1) -> None:
@@ -1077,30 +1079,44 @@ def parse_params(value: str) -> dict:
     return params
 
 
+emit_lock = threading.Lock()
+
+
 def emit(payload: dict) -> None:
-    print(json.dumps(payload, separators=(",", ":")), flush=True)
+    with emit_lock:
+        print(json.dumps(payload, separators=(",", ":")), flush=True)
+
+
+def handle_jsonl_request(line: str) -> None:
+    request_id = 1
+    try:
+        payload = json.loads(line)
+        if not isinstance(payload, dict):
+            raise ValueError("request must be a JSON object")
+        method = str(payload.get("method") or "").strip()
+        if not method:
+            raise ValueError("daemon action method is required")
+        params = payload.get("params") or {}
+        if not isinstance(params, dict):
+            raise ValueError("daemon action params must be a JSON object")
+        request_id = payload.get("id") or 1
+        emit(rpc_call(method, params, request_id=request_id))
+    except Exception as exc:
+        emit({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {"code": -32000, "message": str(exc)},
+        })
 
 
 if len(sys.argv) >= 2 and sys.argv[1] == "--jsonl":
-    for line in sys.stdin:
-        try:
-            payload = json.loads(line)
-            if not isinstance(payload, dict):
-                raise ValueError("request must be a JSON object")
-            method = str(payload.get("method") or "").strip()
-            if not method:
-                raise ValueError("daemon action method is required")
-            params = payload.get("params") or {}
-            if not isinstance(params, dict):
-                raise ValueError("daemon action params must be a JSON object")
-            request_id = payload.get("id") or 1
-            emit(rpc_call(method, params, request_id=request_id))
-        except Exception as exc:
-            emit({
-                "jsonrpc": "2.0",
-                "id": locals().get("request_id", 1),
-                "error": {"code": -32000, "message": str(exc)},
-            })
+    try:
+        worker_count = int(os.environ.get("QUICKSHELL_DAEMON_ACTION_WORKERS") or "8")
+    except ValueError:
+        worker_count = 8
+    with ThreadPoolExecutor(max_workers=max(1, worker_count)) as executor:
+        for line in sys.stdin:
+            executor.submit(handle_jsonl_request, line)
     raise SystemExit(0)
 
 

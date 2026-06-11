@@ -44,6 +44,7 @@ COMMANDS:
   session          AI session inspection commands
   herdr-proxy      Host-local Herdr proxy for remote dashboard aggregation
   quickshell       QuickShell runtime preflight checks
+  post-rebuild     Combined local post-rebuild smoke checks
   window           Daemon-owned window focus/action commands
   workspace        Daemon-owned workspace focus commands
   dashboard        Dashboard snapshot and watch commands
@@ -77,6 +78,7 @@ EXAMPLES:
   i3pm herdr-proxy snapshot --json    Emit local Herdr proxy snapshot
   i3pm herdr-proxy events --jsonl     Stream typed Herdr proxy events
   i3pm quickshell preflight --json    Check QuickShell source and loader state
+  i3pm post-rebuild smoke --json      Run health, perf, and QuickShell preflight
   i3pm window focus <window_id>       Focus a managed window
   i3pm workspace focus 2              Focus a workspace
   i3pm dashboard snapshot             Show dashboard state
@@ -203,6 +205,14 @@ async function main(): Promise<void> {
       {
         const { quickshellCommand } = await import("./commands/quickshell.ts");
         const exitCode = await quickshellCommand(commandArgs);
+        Deno.exit(exitCode);
+      }
+      break;
+
+    case "post-rebuild":
+      {
+        const { postRebuildCommand } = await import("./commands/post-rebuild.ts");
+        const exitCode = await postRebuildCommand(commandArgs);
         Deno.exit(exitCode);
       }
       break;

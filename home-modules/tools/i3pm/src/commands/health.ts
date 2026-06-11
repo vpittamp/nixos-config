@@ -1102,7 +1102,7 @@ async function loadDaemonContractHealth(): Promise<DaemonContractHealth | null> 
   }
 }
 
-async function collectHealthReport(): Promise<HealthReport> {
+export async function collectHealthReport(): Promise<HealthReport> {
   const coreUnits = await Promise.all([
     loadUnitStatus("i3-project-daemon.service", "user"),
     loadUnitStatus("quickshell-runtime-shell.service", "user"),

@@ -127,7 +127,7 @@ export function buildPerfSmokeReport(
   };
 }
 
-async function collectPerfSmoke(): Promise<PerfSmokeReport> {
+export async function collectPerfSmoke(): Promise<PerfSmokeReport> {
   const client = new DaemonClient();
   try {
     await client.connect();

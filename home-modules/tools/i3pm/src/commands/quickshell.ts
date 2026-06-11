@@ -243,7 +243,9 @@ async function checkRecentLogs(since: string): Promise<QuickShellPreflightCheck>
   }
 }
 
-async function collectQuickShellPreflight(since: string): Promise<QuickShellPreflightReport> {
+export async function collectQuickShellPreflight(
+  since: string,
+): Promise<QuickShellPreflightReport> {
   const checks = await Promise.all([
     checkTrackedRuntimeSource(),
     checkServiceActive(),
