@@ -407,6 +407,7 @@ class FocusService:
             active_session = {}
         active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
         current_workspace_name = ""
+        fallback_workspace_name = ""
         for output in runtime_snapshot.get("outputs", []) or []:
             if not isinstance(output, dict):
                 continue
@@ -415,11 +416,15 @@ class FocusService:
                 if not isinstance(workspace, dict):
                     continue
                 name = str(workspace.get("name") or "").strip()
-                if bool(workspace.get("focused", False)) or (output_current and name == output_current):
+                if bool(workspace.get("focused", False)):
                     current_workspace_name = name or output_current
                     break
+                if not fallback_workspace_name and output_current and name == output_current:
+                    fallback_workspace_name = name or output_current
             if current_workspace_name:
                 break
+        if not current_workspace_name:
+            current_workspace_name = fallback_workspace_name
         return {
             "success": True,
             "schema_version": self.schema_version,

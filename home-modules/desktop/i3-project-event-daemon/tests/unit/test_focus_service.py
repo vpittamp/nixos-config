@@ -219,6 +219,35 @@ def test_build_focus_state_payload_uses_daemon_focus_fields() -> None:
     assert result["active_session"]["agent"] == "codex"
 
 
+def test_build_focus_state_payload_prefers_focused_workspace_over_output_current_fallback() -> None:
+    service = make_service()
+    runtime_snapshot = {
+        "active_context": {"connection_key": "local@thinkpad"},
+        "current_ai_session_key": "",
+        "focused_window_id": 0,
+        "outputs": [
+            {
+                "name": "DP-7",
+                "current_workspace": "1",
+                "workspaces": [
+                    {"name": "1", "focused": False, "visible": True},
+                ],
+            },
+            {
+                "name": "eDP-1",
+                "current_workspace": "2",
+                "workspaces": [
+                    {"name": "2", "focused": True, "visible": False},
+                ],
+            },
+        ],
+    }
+
+    result = service.build_focus_state_payload(runtime_snapshot, [], generation=5)
+
+    assert result["current_workspace_name"] == "2"
+
+
 def test_focus_intent_transitions_pending_to_confirmed() -> None:
     service = make_service()
     service.begin_focus_intent(
