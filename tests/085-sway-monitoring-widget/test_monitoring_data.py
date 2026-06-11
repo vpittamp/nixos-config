@@ -797,10 +797,7 @@ class TestLegacyAiCompatibility:
                 {
                     "session_key": "daemon-session-key",
                     "render_session_key": "daemon-session-key",
-                    "focus_target": {
-                        "method": "session.focus",
-                        "params": {"session_key": "daemon-session-key"},
-                    },
+                    "focus_target": {},
                     "tool": "codex",
                     "display_tool": "Codex",
                     "project": "vpittamp/nixos-config:main",

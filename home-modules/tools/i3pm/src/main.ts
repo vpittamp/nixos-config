@@ -41,7 +41,7 @@ COMMANDS:
   context          Active runtime context commands
   worktree         Git worktree project management (Feature 077)
   launch           Daemon-owned application launch commands
-  session          AI session inspection and focus commands
+  session          AI session inspection commands
   herdr-proxy      Host-local Herdr proxy for remote dashboard aggregation
   window           Daemon-owned window focus/action commands
   workspace        Daemon-owned workspace focus commands
@@ -71,7 +71,7 @@ Run 'i3pm <command> --help' for more information on a specific command.
 EXAMPLES:
   i3pm context current                 Show active runtime context
   i3pm launch open terminal           Launch an app through the daemon
-  i3pm session focus <session_key>    Focus an AI session
+  i3pm session list --json            Inspect daemon AI session rows
   i3pm herdr-proxy focus <pane_id> --json
   i3pm herdr-proxy snapshot --json    Emit local Herdr proxy snapshot
   i3pm window focus <window_id>       Focus a managed window

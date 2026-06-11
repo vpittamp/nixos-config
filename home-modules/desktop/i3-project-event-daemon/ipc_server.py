@@ -62,7 +62,6 @@ from .services.display_service import DisplayService
 from .services.focus_service import FocusService
 from .services.herdr_service import HerdrService
 from .services.launch_service import LaunchService
-from .services.session_action_service import SessionActionService
 from .services.session_runtime_service import SessionRuntimeService
 from .services.worktree_profile_service import WorktreeProfileService
 from .models.window_command import CommandBatch
@@ -547,11 +546,6 @@ class IPCServer:
             ttl=self._worktree_cache_ttl,
         )
         self.worktree_profile_service = WorktreeProfileService()
-        self.session_action_service = SessionActionService(
-            parse_remote_target=self._parse_remote_target,
-            connection_target_is_current_host=lambda value: self._connection_target_is_current_host(value),
-            run_command=lambda *args, **kwargs: subprocess.run(*args, **kwargs),
-        )
         self.display_service = DisplayService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
             output_configure=lambda params: self._output_configure(params),
@@ -568,7 +562,6 @@ class IPCServer:
             transport_kind_for_target_host=lambda value: self._transport_kind_for_target_host(value),
             local_host_alias=lambda: self._local_host_alias(),
             resolve_terminal_launch_transport=lambda **kwargs: self._resolve_terminal_launch_transport(**kwargs),
-            tmux_command_prefix=lambda tmux_socket="": self.session_action_service.tmux_command_prefix(tmux_socket),
             canonical_tmux_socket=lambda: self._canonical_tmux_socket(),
             run_command=lambda *args, **kwargs: subprocess.run(*args, **kwargs),
             repo_root=lambda: self._repo_root(),
@@ -945,8 +938,6 @@ class IPCServer:
             "herdr.workspace.focus",
             "herdr.tab.focus",
             "launch.open",
-            "session.focus",
-            "session.spawn_remote_attach",
             "window.focus",
             "window.focus_fast",
             "workspace.focus",
@@ -1133,12 +1124,6 @@ class IPCServer:
                 result = await self._window_action(params)
             elif method == "session.list":
                 result = await self._session_list(params)
-            elif method == "session.focus":
-                result = await self._session_focus(params)
-            elif method == "session.spawn_remote_attach":
-                result = await self._session_spawn_remote_attach(params)
-            elif method == "session.close":
-                result = await self._session_close(params)
             elif method == "focus.state":
                 result = await self._focus_state(params)
             elif method == "session.cleanup":
@@ -6726,7 +6711,6 @@ class IPCServer:
             "herdr.remote.pane.focus",
             "herdr.workspace.focus",
             "herdr.tab.focus",
-            "session.focus",
             "window.focus",
             "window.focus_fast",
             "workspace.focus",
@@ -6845,110 +6829,6 @@ class IPCServer:
             "current_session_key": current_session_key,
             "focused_window_id": focused_window_id,
         }
-
-    async def _focus_remote_session_attach(
-        self,
-        *,
-        session_key: str,
-        session: Dict[str, Any],
-        intent_epoch: int = 0,
-    ) -> Dict[str, Any]:
-        """Attach a remote tmux-backed session into a deterministic local SSH terminal."""
-        return await self.session_action_service.focus_remote_session_attach(
-            session_key=session_key,
-            session=session,
-            intent_epoch=intent_epoch,
-            user_intent_is_current=self._user_intent_is_current,
-            stale_intent_result=self._stale_intent_result,
-            resolve_remote_attach_profile=self._resolve_remote_attach_profile,
-            prepare_remote_session_attach_spec=self.launch_service.prepare_remote_session_attach_spec,
-            find_live_sway_window=self._find_live_sway_window,
-            state_window_for_id=lambda window_id: self.state_manager.state.window_map.get(window_id),
-            get_reusable_context_terminal_window=self.launch_service.get_reusable_context_terminal_window,
-            remote_bridge_window_mismatch_reason=self.herdr_service.remote_bridge_window_mismatch_reason,
-            close_managed_window=self._close_managed_window,
-            remove_window=self.state_manager.remove_window,
-            invalidate_window_tree_cache=self.invalidate_window_tree_cache,
-            register_launch_for_spec=self.launch_service.register_launch_for_spec,
-            execute_launch_spec=self.launch_service.execute_launch_spec,
-            wait_for_terminal_window=self.launch_service.wait_for_terminal_window,
-            wait_for_launch_status=self.launch_service.wait_for_launch_status,
-            window_focus=self._window_focus,
-            focus_state=self._focus_state,
-            set_focus_overrides=self._set_focus_overrides,
-        )
-
-    async def _focus_local_session_attach(
-        self,
-        *,
-        session_key: str,
-        session: Dict[str, Any],
-        intent_epoch: int = 0,
-    ) -> Dict[str, Any]:
-        """Attach a local tmux-backed session into a managed project terminal."""
-        return await self.session_action_service.focus_local_session_attach(
-            session_key=session_key,
-            session=session,
-            intent_epoch=intent_epoch,
-            user_intent_is_current=self._user_intent_is_current,
-            stale_intent_result=self._stale_intent_result,
-            launch_open=self._launch_open,
-            wait_for_launch_status=self.launch_service.wait_for_launch_status,
-            wait_for_terminal_window=self.launch_service.wait_for_terminal_window,
-            window_focus=self._window_focus,
-            focus_state=self._focus_state,
-            set_focus_overrides=self._set_focus_overrides,
-        )
-
-    async def _session_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Focus an AI session by its daemon-owned session key."""
-        session_key = str(params.get("session_key") or "").strip()
-        if not session_key:
-            raise ValueError("session_key is required")
-
-        sessions_result = await self._session_list({})
-        return await self.session_action_service.focus_session(
-            session_key=session_key,
-            sessions=list(sessions_result.get("sessions", []) or []),
-            intent_epoch=int(params.get("__intent_epoch") or 0),
-            focus_remote_session_attach=self._focus_remote_session_attach,
-            focus_local_session_attach=self._focus_local_session_attach,
-            window_focus=self._window_focus,
-            wait_for_session_focus=self._wait_for_session_focus,
-            focus_state=self._focus_state,
-            set_focus_overrides=self._set_focus_overrides,
-        )
-
-    async def _session_spawn_remote_attach(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Spawn a local SSH terminal that attaches to a remote AI session.
-
-        Used when the panel surfaces a daemon-known remote session that has no
-        matching local SSH bridge window. Reuses the existing remote attach
-        machinery, which already handles the "no existing window → launch" path.
-        """
-        session_key = str(params.get("session_key") or "").strip()
-        sessions_result = await self._session_list({})
-        return await self.session_action_service.spawn_remote_attach(
-            session_key=session_key,
-            sessions=list(sessions_result.get("sessions", []) or []),
-            intent_epoch=int(params.get("__intent_epoch") or 0),
-            focus_remote_session_attach=self._focus_remote_session_attach,
-        )
-
-    async def _session_close(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Close an AI session by killing its tracked tmux pane or fallback window."""
-        session_key = str(params.get("session_key") or "").strip()
-        if not session_key:
-            raise ValueError("session_key is required")
-
-        sessions_result = await self._session_list({})
-        return await self.session_action_service.close_session(
-            session_key=session_key,
-            sessions=list(sessions_result.get("sessions", []) or []),
-            close_managed_window=self._close_managed_window,
-            clear_focus_if_session_matches=self.focus_service.clear_if_session_matches,
-            notify_state_change=self.notify_state_change,
-        )
 
     def _build_dashboard_projects(
         self,
@@ -8900,48 +8780,6 @@ class IPCServer:
             "focused_window_id": int(focused_window_id or 0),
             "reason": "ok" if success else "focused_window_mismatch",
         }
-
-    async def _verify_session_focus(self, session_key: str) -> Dict[str, Any]:
-        """Verify that the requested session became the canonical current session."""
-        sessions_result = await self._session_list({})
-        sessions = sessions_result.get("sessions", []) if isinstance(sessions_result, dict) else []
-        current_session_key = next(
-            (
-                str(session.get("session_key") or "").strip()
-                for session in sessions
-                if isinstance(session, dict) and bool(session.get("is_current_window", False))
-            ),
-            "",
-        )
-        success = current_session_key == str(session_key or "").strip()
-        return {
-            "success": success,
-            "session_key": str(session_key or "").strip(),
-            "current_session_key": current_session_key,
-            "reason": "ok" if success else "current_session_mismatch",
-        }
-
-    async def _wait_for_session_focus(
-        self,
-        session_key: str,
-        *,
-        attempts: int = 8,
-        delay_s: float = 0.2,
-    ) -> Dict[str, Any]:
-        """Poll for canonical current-session convergence after a focus mutation."""
-        verification: Dict[str, Any] = {
-            "success": False,
-            "session_key": str(session_key or "").strip(),
-            "current_session_key": "",
-            "reason": "current_session_mismatch",
-        }
-        for attempt in range(max(int(attempts), 1)):
-            verification = await self._verify_session_focus(session_key)
-            if bool(verification.get("success", False)):
-                return verification
-            if attempt + 1 < max(int(attempts), 1):
-                await asyncio.sleep(delay_s)
-        return verification
 
     async def _switch_runtime_context_if_needed(
         self,

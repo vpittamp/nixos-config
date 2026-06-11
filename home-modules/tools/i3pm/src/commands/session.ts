@@ -7,9 +7,9 @@ interface CommandOptions {
 }
 
 function showHelp(): void {
-  console.log(`i3pm session <list|focus|close|cleanup|doctor> [session_key] [--json]
+  console.log(`i3pm session <list|cleanup|doctor> [--json]
 
-  i3pm session close <session_key> [--json]
+  i3pm session list [--json]
   i3pm session cleanup [--json]
   i3pm session doctor [--json]`);
 }
@@ -29,26 +29,6 @@ export async function sessionCommand(args: string[], _flags: CommandOptions): Pr
   try {
     if (subcommand === "list") {
       const result = await client.request("session.list", {});
-      console.log(parsed.json ? JSON.stringify(result, null, 2) : JSON.stringify(result, null, 2));
-      return 0;
-    }
-    if (subcommand === "focus") {
-      const sessionKey = String(parsed._[1] || "");
-      if (!sessionKey) {
-        console.error("session focus requires a session key");
-        return 1;
-      }
-      const result = await client.request("session.focus", { session_key: sessionKey });
-      console.log(parsed.json ? JSON.stringify(result, null, 2) : JSON.stringify(result, null, 2));
-      return 0;
-    }
-    if (subcommand === "close") {
-      const sessionKey = String(parsed._[1] || "");
-      if (!sessionKey) {
-        console.error("session close requires a session key");
-        return 1;
-      }
-      const result = await client.request("session.close", { session_key: sessionKey });
       console.log(parsed.json ? JSON.stringify(result, null, 2) : JSON.stringify(result, null, 2));
       return 0;
     }

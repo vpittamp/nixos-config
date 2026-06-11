@@ -342,6 +342,32 @@ def test_side_panel_sessions_close_by_explicit_herdr_target():
     assert "z: 0" in row_text
 
 
+def test_legacy_session_action_rpc_surface_is_retired():
+    """AI session actions should be Herdr targets, not the old tmux session RPCs."""
+    daemon_text = IPC_SERVER_PY.read_text()
+    session_cli_text = I3PM_SESSION_TS.read_text()
+    main_cli_text = I3PM_MAIN_TS.read_text()
+
+    assert not (DAEMON_SERVICES_DIR / "session_action_service.py").exists()
+    for retired in [
+        "SessionActionService",
+        "session_action_service",
+        '"session.focus"',
+        '"session.close"',
+        '"session.spawn_remote_attach"',
+        "def _session_focus",
+        "def _session_close",
+        "def _session_spawn_remote_attach",
+    ]:
+        assert retired not in daemon_text
+
+    assert 'subcommand === "focus"' not in session_cli_text
+    assert 'subcommand === "close"' not in session_cli_text
+    assert "session.focus" not in session_cli_text
+    assert "session.close" not in session_cli_text
+    assert "AI session inspection and focus commands" not in main_cli_text
+
+
 def test_session_titles_prefer_herdr_agent_and_project():
     """Launcher rows should title Herdr sessions by agent and worktree/project."""
     text = SHELL_QML.read_text()

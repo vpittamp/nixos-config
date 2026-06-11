@@ -134,10 +134,7 @@ def make_runtime_session(overrides: dict | None = None) -> dict:
         "process_running": True,
         "activity_age_seconds": 1,
         "activity_freshness": "fresh",
-        "focus_target": {
-            "method": "session.focus",
-            "params": {"session_key": "session-1"},
-        },
+        "focus_target": {},
         "terminal_context": {
             "window_id": 101,
             "terminal_anchor_id": "terminal-anchor",
@@ -166,11 +163,6 @@ def make_runtime_session(overrides: dict | None = None) -> dict:
         merged_terminal_context = dict(merged.get("terminal_context") or {})
         merged_terminal_context.update(terminal_context_overrides)
         merged["terminal_context"] = merged_terminal_context
-    focus_target = merged.get("focus_target")
-    if isinstance(focus_target, dict):
-        params = dict(focus_target.get("params") or {})
-        params["session_key"] = str(merged.get("session_key") or "")
-        focus_target["params"] = params
     return merged
 
 
@@ -477,7 +469,7 @@ async def test_session_list_preserves_turn_owner_and_activity_substate(server, m
     assert session["activity_substate"] == "thinking"
     assert session["activity_substate_label"] == "Thinking"
     assert session["is_current_window"] is True
-    assert session["focus_target"]["method"] == "session.focus"
+    assert session["focus_target"] == {}
     assert result["current_session_key"] == session["session_key"]
     assert session["availability_state"] == "remote_bridge_bound"
     assert session["focusability_reason"] == "exact_remote_bridge_bound"
