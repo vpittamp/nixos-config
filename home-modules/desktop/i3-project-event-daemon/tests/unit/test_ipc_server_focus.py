@@ -215,7 +215,7 @@ async def test_focus_window_ssh_context_on_current_host_uses_local_focus(server,
     server._window_is_locally_tracked = AsyncMock(return_value=False)
     server._switch_runtime_context_if_needed = AsyncMock(return_value={"switched": False})
     server._send_tick_barrier = AsyncMock()
-    server._get_window_transition_state = AsyncMock(return_value={
+    server.focus_service._get_window_transition_state = AsyncMock(return_value={
         "exists": True,
         "current_workspace": "1",
         "workspace_name": "1",
@@ -271,7 +271,7 @@ async def test_focus_window_ssh_target_with_local_window_binding_uses_local_focu
     server._window_is_locally_tracked = AsyncMock(return_value=True)
     server._switch_runtime_context_if_needed = AsyncMock(return_value={"switched": False})
     server._send_tick_barrier = AsyncMock()
-    server._get_window_transition_state = AsyncMock(return_value={
+    server.focus_service._get_window_transition_state = AsyncMock(return_value={
         "exists": True,
         "current_workspace": "1",
         "workspace_name": "2",
@@ -329,7 +329,7 @@ async def test_window_focus_fast_local_target_skips_full_focus_state(server):
     server._send_tick_barrier = AsyncMock(return_value=None)
     server._focus_state = AsyncMock(return_value={})
     server.notify_state_change = AsyncMock(return_value=None)
-    server._get_window_transition_state = AsyncMock(return_value={
+    server.focus_service._get_window_transition_state = AsyncMock(return_value={
         "exists": True,
         "current_workspace": "1",
         "workspace_name": "1",
@@ -361,7 +361,7 @@ async def test_window_focus_fast_local_target_skips_full_focus_state(server):
     assert len(commands) == 1
     assert commands[0] == "[con_id=30] focus"
     server._window_is_locally_tracked.assert_not_awaited()
-    server._get_window_transition_state.assert_not_awaited()
+    server.focus_service._get_window_transition_state.assert_not_awaited()
     server._send_tick_barrier.assert_not_awaited()
     server._focus_state.assert_not_awaited()
     server.notify_state_change.assert_awaited_once_with("focus_changed")
@@ -376,7 +376,7 @@ async def test_window_focus_fast_falls_back_to_transition_when_direct_focus_fail
     server._send_tick_barrier = AsyncMock(return_value=None)
     server._focus_state = AsyncMock(return_value={})
     server.notify_state_change = AsyncMock(return_value=None)
-    server._get_window_transition_state = AsyncMock(return_value={
+    server.focus_service._get_window_transition_state = AsyncMock(return_value={
         "exists": True,
         "current_workspace": "1",
         "workspace_name": "2",
@@ -405,7 +405,7 @@ async def test_window_focus_fast_falls_back_to_transition_when_direct_focus_fail
     assert result.get("direct") is not True
     assert commands[0] == "[con_id=31] focus"
     assert commands[1] == "workspace 2; [con_id=31] floating disable; [con_id=31] focus"
-    server._get_window_transition_state.assert_awaited_once_with(31)
+    server.focus_service._get_window_transition_state.assert_awaited_once_with(31)
     server.notify_state_change.assert_awaited_once_with("focus_changed")
 
 
@@ -473,7 +473,7 @@ async def test_focus_window_scratchpad_restore_preserves_saved_workspace_and_ful
         "fullscreen_mode": 1,
         "saved_state": None,
     }
-    server._get_window_transition_state = AsyncMock(side_effect=[
+    server.focus_service._get_window_transition_state = AsyncMock(side_effect=[
         before_restore_state,
         after_restore_state,
     ])

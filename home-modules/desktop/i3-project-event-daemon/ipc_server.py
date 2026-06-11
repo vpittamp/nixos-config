@@ -66,7 +66,6 @@ from .services.focus_service import FocusService
 from .services.herdr_service import HerdrService, RETIRED_SESSION_UI_STATE_FIELDS
 from .services.launch_service import LaunchService
 from .services.worktree_profile_service import WorktreeProfileService
-from .models.window_command import CommandBatch
 
 logger = logging.getLogger(__name__)
 
@@ -442,12 +441,6 @@ class DesktopIconIndex:
                 return self._by_startup_wm[key]
         return {}
 
-
-def shlex_quote(value: str) -> str:
-    """Shell-quote a runtime value for helper scripts."""
-    return shlex.quote(str(value))
-
-
 # JSON-RPC 2.0 Standard Error Codes
 PARSE_ERROR = -32700       # Invalid JSON
 INVALID_REQUEST = -32600   # Not valid JSON-RPC request
@@ -544,8 +537,11 @@ class IPCServer:
                 target_variant,
                 connection_key,
             ),
-            get_window_transition_state=lambda window_id: self._get_window_transition_state(window_id),
-            build_window_focus_transition=lambda **kwargs: self._build_window_focus_transition(**kwargs),
+            get_saved_window_state=(
+                lambda window_id: self.workspace_tracker.get_window_workspace(int(window_id or 0))
+                if self.workspace_tracker
+                else asyncio.sleep(0, result=None)
+            ),
             focus_state_provider=lambda params=None: self._focus_state(params or {}),
         )
         self.dashboard_git_service = DashboardGitService(
@@ -8269,107 +8265,21 @@ class IPCServer:
 
     def _find_tree_node_by_id(self, node: Any, target_id: int) -> Optional[Any]:
         """Recursively walk a Sway tree node to find a container by id."""
-        if getattr(node, "id", None) == target_id:
-            return node
-        for child in list(getattr(node, "nodes", []) or []):
-            match = self._find_tree_node_by_id(child, target_id)
-            if match is not None:
-                return match
-        for child in list(getattr(node, "floating_nodes", []) or []):
-            match = self._find_tree_node_by_id(child, target_id)
-            if match is not None:
-                return match
-        return None
+        return FocusService.find_tree_node_by_id(node, target_id)
 
     @staticmethod
     def _container_is_in_scratchpad(container: Any) -> bool:
         """Return whether a container is currently attached to the scratchpad tree."""
-        parent = container
-        while parent:
-            scratchpad_state = str(getattr(parent, "scratchpad_state", "") or "").strip().lower()
-            if scratchpad_state and scratchpad_state != "none":
-                return True
-            parent = getattr(parent, "parent", None)
-        return False
+        return FocusService.container_is_in_scratchpad(container)
 
     @staticmethod
     def _workspace_switch_command(workspace_name: str) -> str:
         """Build a safe workspace switch command for an arbitrary workspace name."""
-        return f"workspace {shlex_quote(str(workspace_name or '').strip())}"
+        return FocusService.workspace_switch_command(workspace_name)
 
     async def _get_window_transition_state(self, window_id: int) -> Dict[str, Any]:
         """Return live and tracked state used to plan a focus transition."""
-        empty_state = {
-            "exists": False,
-            "window_id": int(window_id or 0),
-            "current_workspace": "",
-            "workspace_name": "",
-            "workspace_number": 0,
-            "in_scratchpad": False,
-            "floating": False,
-            "floating_state": "",
-            "fullscreen_mode": 0,
-            "geometry": None,
-            "saved_state": None,
-            "node": None,
-        }
-        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
-            return empty_state
-
-        try:
-            tree = await self.i3_connection.get_tree()
-            focused = self._find_focused_tree_node(tree)
-            current_workspace = ""
-            if focused is not None:
-                focused_workspace = focused.workspace()
-                current_workspace = str(getattr(focused_workspace, "name", "") or "").strip()
-
-            node = self._find_tree_node_by_id(tree, int(window_id or 0))
-            if node is None:
-                return empty_state
-
-            workspace = node.workspace()
-            workspace_name = str(getattr(workspace, "name", "") or "").strip()
-            workspace_number = int(getattr(workspace, "num", 0) or 0) if workspace is not None else 0
-            floating_state = str(getattr(node, "floating", "") or "").strip().lower()
-            floating = bool(floating_state and not floating_state.endswith("_off"))
-            fullscreen_mode = int(getattr(node, "fullscreen_mode", 0) or 0)
-            geometry = None
-            rect = getattr(node, "rect", None)
-            if rect is not None:
-                geometry = {
-                    "x": int(getattr(rect, "x", 0) or 0),
-                    "y": int(getattr(rect, "y", 0) or 0),
-                    "width": int(getattr(rect, "width", 0) or 0),
-                    "height": int(getattr(rect, "height", 0) or 0),
-                }
-
-            saved_state = None
-            if self.workspace_tracker:
-                try:
-                    saved_state = await self.workspace_tracker.get_window_workspace(int(window_id or 0))
-                except Exception as e:
-                    logger.debug("Failed to load tracked window state for %s: %s", window_id, e)
-
-            return {
-                "exists": True,
-                "window_id": int(window_id or 0),
-                "current_workspace": current_workspace,
-                "workspace_name": workspace_name,
-                "workspace_number": workspace_number,
-                "in_scratchpad": bool(
-                    workspace_name == "__i3_scratch" or self._container_is_in_scratchpad(node)
-                ),
-                "floating": floating,
-                "floating_state": floating_state,
-                "fullscreen_mode": fullscreen_mode,
-                "geometry": geometry,
-                "saved_state": saved_state if isinstance(saved_state, dict) else None,
-                "node": node,
-            }
-        except Exception as e:
-            logger.debug("Failed to inspect transition state for window %s: %s", window_id, e)
-            return empty_state
+        return await self.focus_service.get_window_transition_state(window_id)
 
     def _build_window_focus_transition(
         self,
@@ -8378,98 +8288,10 @@ class IPCServer:
         state: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Plan the commands and expected final state for focusing a window."""
-        selector = f"[con_id={int(window_id)}]"
-        saved_state = dict(state.get("saved_state") or {})
-        saved_workspace_number = int(saved_state.get("workspace_number") or 0)
-        saved_original_scratchpad = bool(saved_state.get("original_scratchpad", False))
-        live_workspace_name = str(state.get("workspace_name") or "").strip()
-        current_workspace = str(state.get("current_workspace") or "").strip()
-        in_scratchpad = bool(state.get("in_scratchpad", False))
-
-        expected_workspace_name = live_workspace_name
-        expected_workspace_number = int(state.get("workspace_number") or 0)
-        if in_scratchpad and saved_workspace_number > 0 and not saved_original_scratchpad:
-            expected_workspace_number = saved_workspace_number
-            expected_workspace_name = str(saved_workspace_number)
-
-        if in_scratchpad and not saved_original_scratchpad:
-            # Window was tiled before being hidden to scratchpad by the window filter.
-            # The saved floating=True is an artifact of scratchpad state — default to tiled.
-            expected_floating = False
-        else:
-            expected_floating = bool(
-                saved_state.get("floating", state.get("floating", False))
-            )
-        expected_fullscreen_mode = int(
-            saved_state.get("fullscreen_mode", state.get("fullscreen_mode", 0)) or 0
+        return self.focus_service.build_window_focus_transition(
+            window_id=window_id,
+            state=state,
         )
-        expected_geometry = saved_state.get("geometry")
-        if not isinstance(expected_geometry, dict):
-            expected_geometry = state.get("geometry") if expected_floating else None
-
-        commands: List[str] = []
-        if in_scratchpad:
-            # Use deterministic 'move to workspace' instead of toggling 'scratchpad show'
-            # to avoid race with the window filter which may have already shown the window.
-            if expected_workspace_number > 0:
-                commands.append(f"workspace number {expected_workspace_number}")
-                commands.append(f"{selector} move workspace number {expected_workspace_number}")
-            else:
-                commands.append(f"{selector} move workspace current")
-            if expected_floating:
-                commands.append(f"{selector} floating enable")
-                if expected_geometry:
-                    commands.append(
-                        f"{selector} resize set {expected_geometry['width']} px {expected_geometry['height']} px"
-                    )
-                    commands.append(
-                        f"{selector} move position {expected_geometry['x']} px {expected_geometry['y']} px"
-                    )
-            else:
-                commands.append(f"{selector} floating disable")
-            if expected_fullscreen_mode > 0:
-                commands.append(f"{selector} fullscreen enable")
-        else:
-            if expected_workspace_name and expected_workspace_name != current_workspace:
-                commands.append(self._workspace_switch_command(expected_workspace_name))
-            if expected_floating:
-                if expected_geometry:
-                    commands.extend(CommandBatch.from_window_state(
-                        window_id=int(window_id),
-                        workspace_num=max(expected_workspace_number, 1),
-                        is_floating=True,
-                        geometry=expected_geometry,
-                        fullscreen_mode=expected_fullscreen_mode,
-                    ).to_batched_command().split("; "))
-                else:
-                    commands.append(f"{selector} floating enable")
-                    if expected_fullscreen_mode > 0:
-                        commands.append(f"{selector} fullscreen enable")
-            else:
-                if str(state.get("floating_state") or "").strip():
-                    commands.append(f"{selector} floating disable")
-                if int(state.get("fullscreen_mode") or 0) > 0 and expected_fullscreen_mode <= 0:
-                    commands.append(f"{selector} fullscreen disable")
-                elif expected_fullscreen_mode > 0:
-                    commands.append(f"{selector} fullscreen enable")
-
-        commands.append(f"{selector} focus")
-
-        transition_kind = "scratchpad_restore" if in_scratchpad else (
-            "workspace_switch" if expected_workspace_name and expected_workspace_name != current_workspace else "direct_focus"
-        )
-        return {
-            "kind": transition_kind,
-            "commands": commands,
-            "expected": {
-                "window_id": int(window_id),
-                "in_scratchpad": False,
-                "floating": expected_floating,
-                "fullscreen_mode": expected_fullscreen_mode,
-                "workspace_name": expected_workspace_name,
-                "workspace_number": expected_workspace_number,
-            },
-        }
 
     async def _window_matches_transition_target(self, expected: Dict[str, Any]) -> bool:
         """Verify the focused window converged to the planned visible state."""

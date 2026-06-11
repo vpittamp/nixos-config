@@ -101,6 +101,34 @@ def make_window_focus_service(**overrides) -> FocusService:
     )
 
 
+def make_tree_node(
+    node_id: int,
+    *,
+    workspace_name: str = "1",
+    workspace_number: int = 1,
+    focused: bool = False,
+    floating: str = "auto_off",
+    fullscreen_mode: int = 0,
+    scratchpad_state: str = "none",
+    parent=None,
+    nodes=None,
+    floating_nodes=None,
+):
+    workspace = SimpleNamespace(name=workspace_name, num=workspace_number)
+    return SimpleNamespace(
+        id=node_id,
+        focused=focused,
+        floating=floating,
+        fullscreen_mode=fullscreen_mode,
+        scratchpad_state=scratchpad_state,
+        parent=parent,
+        rect=SimpleNamespace(x=10, y=20, width=800, height=600),
+        nodes=nodes or [],
+        floating_nodes=floating_nodes or [],
+        workspace=lambda: workspace,
+    )
+
+
 def test_select_current_session_key_clears_stale_window_override() -> None:
     service = make_service()
     service.set_focus_overrides(
@@ -628,6 +656,105 @@ async def test_focus_service_rejects_transition_target_mismatch() -> None:
         "floating": False,
         "fullscreen_mode": 0,
     }) is False
+
+
+@pytest.mark.asyncio
+async def test_focus_service_reads_native_window_transition_state_from_tree() -> None:
+    focused = make_tree_node(10, workspace_name="1", workspace_number=1, focused=True)
+    target = make_tree_node(
+        20,
+        workspace_name="2",
+        workspace_number=2,
+        floating="user_on",
+        fullscreen_mode=1,
+    )
+    tree = make_tree_node(1, nodes=[focused, target])
+    get_saved_window_state = AsyncMock(return_value={"workspace_number": 2})
+    service = FocusService(
+        normalize_connection_key=normalize_connection_key,
+        sway_available=lambda: True,
+        get_sway_tree=AsyncMock(return_value=tree),
+        get_saved_window_state=get_saved_window_state,
+    )
+
+    result = await service.get_window_transition_state(20)
+
+    assert result["exists"] is True
+    assert result["window_id"] == 20
+    assert result["current_workspace"] == "1"
+    assert result["workspace_name"] == "2"
+    assert result["workspace_number"] == 2
+    assert result["floating"] is True
+    assert result["fullscreen_mode"] == 1
+    assert result["geometry"] == {"x": 10, "y": 20, "width": 800, "height": 600}
+    assert result["saved_state"] == {"workspace_number": 2}
+    get_saved_window_state.assert_awaited_once_with(20)
+
+
+def test_focus_service_builds_scratchpad_restore_transition() -> None:
+    service = make_service()
+
+    transition = service.build_window_focus_transition(
+        window_id=44,
+        state={
+            "current_workspace": "1",
+            "workspace_name": "__i3_scratch",
+            "workspace_number": 0,
+            "in_scratchpad": True,
+            "floating": True,
+            "floating_state": "user_on",
+            "fullscreen_mode": 0,
+            "saved_state": {
+                "workspace_number": 3,
+                "floating": False,
+                "geometry": None,
+                "fullscreen_mode": 1,
+                "original_scratchpad": False,
+            },
+        },
+    )
+
+    assert transition["kind"] == "scratchpad_restore"
+    assert transition["commands"] == [
+        "workspace number 3",
+        "[con_id=44] move workspace number 3",
+        "[con_id=44] floating disable",
+        "[con_id=44] fullscreen enable",
+        "[con_id=44] focus",
+    ]
+    assert transition["expected"] == {
+        "window_id": 44,
+        "in_scratchpad": False,
+        "floating": False,
+        "fullscreen_mode": 1,
+        "workspace_name": "3",
+        "workspace_number": 3,
+    }
+
+
+def test_focus_service_builds_workspace_switch_transition_with_quoted_workspace() -> None:
+    service = make_service()
+
+    transition = service.build_window_focus_transition(
+        window_id=45,
+        state={
+            "current_workspace": "1",
+            "workspace_name": "dev work",
+            "workspace_number": 0,
+            "in_scratchpad": False,
+            "floating": False,
+            "floating_state": "auto_off",
+            "fullscreen_mode": 0,
+            "saved_state": None,
+        },
+    )
+
+    assert transition["kind"] == "workspace_switch"
+    assert transition["commands"] == [
+        "workspace 'dev work'",
+        "[con_id=45] floating disable",
+        "[con_id=45] focus",
+    ]
 
 
 @pytest.mark.asyncio
