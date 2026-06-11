@@ -130,9 +130,12 @@ interface DaemonContractHealth {
   issues: string[];
 }
 
-interface HealthReport {
+type HealthOverallStatus = "ok" | "warn" | "fail";
+
+export interface HealthReport {
   timestamp: string;
-  overall_status: "ok" | "warn" | "fail";
+  status: HealthOverallStatus;
+  overall_status: HealthOverallStatus;
   core_issues: string[];
   optional_issues: string[];
   core_units: UnitStatus[];
@@ -160,6 +163,15 @@ const EXPECTED_DAEMON_CONTRACT_SCHEMA = "i3pm.daemon.contract.v1";
 const EXPECTED_DASHBOARD_SCHEMA = "i3pm.dashboard.v2";
 const EXPECTED_DASHBOARD_EVENT_SCHEMA = "i3pm.dashboard.event.v1";
 const EXPECTED_FOCUS_SCHEMA = "i3pm.focus_state.v2";
+
+export function buildHealthReport(
+  report: Omit<HealthReport, "status">,
+): HealthReport {
+  return {
+    ...report,
+    status: report.overall_status,
+  };
+}
 
 function showHelp(): void {
   console.log(`i3pm health [--json]
@@ -1140,7 +1152,7 @@ async function collectHealthReport(): Promise<HealthReport> {
     ? "warn"
     : "ok";
 
-  return {
+  return buildHealthReport({
     timestamp: new Date().toISOString(),
     overall_status: overallStatus,
     core_issues: coreIssues,
@@ -1163,7 +1175,7 @@ async function collectHealthReport(): Promise<HealthReport> {
     herdr,
     herdr_remotes: herdrRemotes,
     mcp_browser_runtime: mcpBrowserRuntime,
-  };
+  });
 }
 
 function printReport(report: HealthReport): void {
