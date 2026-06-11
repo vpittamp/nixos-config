@@ -159,6 +159,7 @@ export interface HealthReport {
 }
 
 const OPTIONAL_USER_UNIT_PREFIXES = ["wayvnc@"];
+const RETIRED_AI_SESSION_USER_UNITS = ["otel-ai-monitor.service"];
 const EXPECTED_DAEMON_CONTRACT_SCHEMA = "i3pm.daemon.contract.v1";
 const EXPECTED_DASHBOARD_SCHEMA = "i3pm.dashboard.v2";
 const EXPECTED_DASHBOARD_EVENT_SCHEMA = "i3pm.dashboard.event.v1";
@@ -871,6 +872,36 @@ function formatUnitStatus(unit: UnitStatus): string {
   return `${unit.name} ${state} ${dim(`${unit.sub_state || "unknown"} / ${unit.result || "n/a"}`)}`;
 }
 
+export function retiredAiSessionUnitIssues(
+  units: Array<{
+    name: string;
+    load_state?: string;
+    active_state?: string;
+    unit_file_state?: string;
+    fragment_path?: string;
+  }>,
+): string[] {
+  const issues: string[] = [];
+  for (const unit of units) {
+    const loadState = String(unit.load_state || "").trim();
+    const activeState = String(unit.active_state || "").trim();
+    const unitFileState = String(unit.unit_file_state || "").trim();
+    const fragmentPath = String(unit.fragment_path || "").trim();
+    const installed = loadState !== "" && loadState !== "not-found";
+    const enabled = unitFileState !== "" && unitFileState !== "disabled";
+    const active = activeState !== "" && !["inactive", "failed"].includes(activeState);
+    if (!installed && !enabled && !active && !fragmentPath) {
+      continue;
+    }
+    issues.push(
+      `retired AI session service ${unit.name} is present (${loadState || "unknown"}/${
+        activeState || "unknown"
+      }); Herdr owns AI session UI state`,
+    );
+  }
+  return issues;
+}
+
 async function loadDashboardHealth(): Promise<DashboardHealth | null> {
   const client = new DaemonClient();
   try {
@@ -1069,6 +1100,9 @@ async function collectHealthReport(): Promise<HealthReport> {
     loadUnitStatus("mcp-browser-orphan-reaper.timer", "user"),
     loadUnitStatus("home-manager-vpittamp.service", "system"),
   ]);
+  const retiredAiSessionUnits = await Promise.all(
+    RETIRED_AI_SESSION_USER_UNITS.map((unit) => loadUnitStatus(unit, "user")),
+  );
 
   const failedUserUnits = await loadFailedUserUnits();
   const optionalIssues = failedUserUnits
@@ -1114,6 +1148,7 @@ async function collectHealthReport(): Promise<HealthReport> {
   for (const unit of coreFailedUserUnits) {
     coreIssues.push(`${unit} is failed`);
   }
+  coreIssues.push(...retiredAiSessionUnitIssues(retiredAiSessionUnits));
   if (!daemonSocketExists) {
     coreIssues.push(`daemon socket missing at ${daemonSocketPath}`);
   }

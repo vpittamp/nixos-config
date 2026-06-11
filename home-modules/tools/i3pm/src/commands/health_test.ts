@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert";
-import { buildHealthReport, type HealthReport } from "./health.ts";
+import { buildHealthReport, type HealthReport, retiredAiSessionUnitIssues } from "./health.ts";
 
 function baseReport(overallStatus: HealthReport["overall_status"]) {
   return {
@@ -52,4 +52,40 @@ Deno.test("buildHealthReport preserves warning and failure status aliases", () =
   assertEquals(warnReport.overall_status, "warn");
   assertEquals(failReport.status, "fail");
   assertEquals(failReport.overall_status, "fail");
+});
+
+Deno.test("retiredAiSessionUnitIssues allows removed otel monitor unit", () => {
+  assertEquals(
+    retiredAiSessionUnitIssues([{
+      name: "otel-ai-monitor.service",
+      load_state: "not-found",
+      active_state: "inactive",
+      unit_file_state: "",
+      fragment_path: "",
+    }]),
+    [],
+  );
+});
+
+Deno.test("retiredAiSessionUnitIssues flags installed or active otel monitor unit", () => {
+  const issues = retiredAiSessionUnitIssues([
+    {
+      name: "otel-ai-monitor.service",
+      load_state: "loaded",
+      active_state: "inactive",
+      unit_file_state: "enabled",
+      fragment_path: "/home/user/.config/systemd/user/otel-ai-monitor.service",
+    },
+    {
+      name: "otel-ai-monitor.service",
+      load_state: "not-found",
+      active_state: "active",
+      unit_file_state: "",
+      fragment_path: "",
+    },
+  ]);
+
+  assertEquals(issues.length, 2);
+  assertEquals(issues[0].includes("retired AI session service otel-ai-monitor.service"), true);
+  assertEquals(issues[0].includes("Herdr owns AI session UI state"), true);
 });

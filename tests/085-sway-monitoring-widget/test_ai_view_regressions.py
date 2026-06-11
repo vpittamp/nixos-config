@@ -38,6 +38,15 @@ PROJECT_REMOTE_LAUNCH_PY = REPO_ROOT / "scripts" / "project-remote-launch.py"
 I3PM_MONITORING_DATA_PY = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "monitoring_data.py"
 I3PM_CLI_README = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "README.md"
 AI_SESSION_SYSTEM_DOC = REPO_ROOT / "docs" / "AI_SESSION_SYSTEM.md"
+LEGACY_EWW_VALIDATION_ARTIFACTS = [
+    REPO_ROOT / "tests" / "085-sway-monitoring-widget" / "performance_validation.sh",
+    REPO_ROOT / "tests" / "085-sway-monitoring-widget" / "QUICKSTART_VALIDATION.md",
+    REPO_ROOT / "tests" / "085-sway-monitoring-widget" / "MULTI_MONITOR_TEST.md",
+    REPO_ROOT / "tests" / "085-sway-monitoring-widget" / "PERFORMANCE_RESULTS.md",
+    REPO_ROOT / "tests" / "085-sway-monitoring-widget" / "test_project_switch.json",
+    REPO_ROOT / "tests" / "085-sway-monitoring-widget" / "test_state_updates.json",
+    REPO_ROOT / "tests" / "085-sway-monitoring-widget" / "test_panel_toggle.json",
+]
 
 
 def test_session_phase_uses_only_raw_herdr_agent_status():
@@ -598,6 +607,12 @@ def test_legacy_monitoring_docs_do_not_claim_ai_or_ui_authority():
     assert "eww-monitoring-panel" not in cli_readme_text
     assert "OTEL remains telemetry-only" in ai_session_doc_text
     assert "Eww monitoring panel state, defpolls, or `monitoring_data.py` as UI authority" in ai_session_doc_text
+
+
+def test_retired_eww_monitoring_validation_artifacts_are_removed():
+    """Validation should use QuickShell/i3pm health, not the retired Eww panel."""
+    for path in LEGACY_EWW_VALIDATION_ARTIFACTS:
+        assert not path.exists(), f"{path.relative_to(REPO_ROOT)} should stay retired"
 
 
 def test_i3pm_herdr_proxy_exposes_snapshot_focus_and_event_stream():
