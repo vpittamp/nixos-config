@@ -602,6 +602,9 @@ def test_legacy_monitoring_docs_do_not_claim_ai_or_ui_authority():
 
 def test_i3pm_herdr_proxy_exposes_snapshot_focus_and_event_stream():
     text = I3PM_HERDR_PROXY_TS.read_text()
+    main_cli_text = I3PM_MAIN_TS.read_text()
+    assert "i3pm herdr-proxy <snapshot|events|focus> [--json|--jsonl]" in text
+    assert "events [--jsonl]" in text
     assert 'subcommand === "snapshot"' in text
     assert 'subcommand === "focus"' in text
     assert 'subcommand === "events"' in text
@@ -611,6 +614,7 @@ def test_i3pm_herdr_proxy_exposes_snapshot_focus_and_event_stream():
     assert 'schema_version: "i3pm.herdr_proxy.event.v1"' in text
     assert 'eventType === "herdr.changed"' in text
     assert 'changedKeys.includes("herdr")' in text
+    assert "i3pm herdr-proxy events --jsonl" in main_cli_text
 
 
 def test_side_panel_sessions_close_by_explicit_herdr_target():

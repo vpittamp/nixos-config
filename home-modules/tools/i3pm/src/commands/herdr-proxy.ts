@@ -7,7 +7,7 @@ interface CommandOptions {
 }
 
 function showHelp(): void {
-  console.log(`i3pm herdr-proxy <snapshot|focus> [--json]
+  console.log(`i3pm herdr-proxy <snapshot|events|focus> [--json|--jsonl]
 
 Ryzen-side Herdr proxy used by remote dashboard aggregation.
 
@@ -60,11 +60,11 @@ export async function herdrProxyCommand(args: string[], _flags: CommandOptions):
       for await (const event of client.subscribeToStateChanges()) {
         const changedKeys = Array.isArray(event.changed_keys) ? event.changed_keys : [];
         const eventType = String(event.event_type || "");
-        const isHerdrEvent = eventType === "herdr.changed"
-          || eventType === "session.changed"
-          || changedKeys.includes("herdr")
-          || changedKeys.includes("active_ai_sessions")
-          || changedKeys.includes("focus_state");
+        const isHerdrEvent = eventType === "herdr.changed" ||
+          eventType === "session.changed" ||
+          changedKeys.includes("herdr") ||
+          changedKeys.includes("active_ai_sessions") ||
+          changedKeys.includes("focus_state");
         if (!isHerdrEvent) {
           continue;
         }

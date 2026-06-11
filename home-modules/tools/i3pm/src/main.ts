@@ -74,6 +74,7 @@ EXAMPLES:
   i3pm session list --json            Inspect daemon AI session rows
   i3pm herdr-proxy focus <pane_id> --json
   i3pm herdr-proxy snapshot --json    Emit local Herdr proxy snapshot
+  i3pm herdr-proxy events --jsonl     Stream typed Herdr proxy events
   i3pm window focus <window_id>       Focus a managed window
   i3pm workspace focus 2              Focus a workspace
   i3pm dashboard snapshot             Show dashboard state
