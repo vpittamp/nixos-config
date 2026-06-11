@@ -4090,16 +4090,8 @@ ShellRoot {
     }
 
     function launcherWindowMatches(windowData, tokens) {
-        const sessions = arrayOrEmpty(windowData && windowData.sessions);
-        const sessionBits = [];
-        for (let i = 0; i < sessions.length; i += 1) {
-            sessionBits.push(sessionPrimaryLabel(sessions[i]));
-            sessionBits.push(toolLabel(sessions[i]));
-            sessionBits.push(sessionHostLabel(sessions[i]));
-        }
-
         const hostTokenData = windowHostToken(windowData);
-        return launcherTokensMatch(tokens, [displayTitle(windowData), displayMeta(windowData), appLabel(windowData), stringOrEmpty(windowData && windowData.project), stringOrEmpty(windowData && windowData.workspace), stringOrEmpty(windowData && windowData.output), stringOrEmpty(windowData && windowData.execution_mode), stringOrEmpty(hostTokenData && hostTokenData.label), sessionBits.join(" ")]);
+        return launcherTokensMatch(tokens, [displayTitle(windowData), displayMeta(windowData), appLabel(windowData), stringOrEmpty(windowData && windowData.project), stringOrEmpty(windowData && windowData.workspace), stringOrEmpty(windowData && windowData.output), stringOrEmpty(windowData && windowData.execution_mode), stringOrEmpty(hostTokenData && hostTokenData.label)]);
     }
 
     function launcherWindowProjects(query) {
@@ -4727,7 +4719,6 @@ ShellRoot {
                 window_count: Number(projectGroup.window_count || windows.length),
                 visible_window_count: Number(projectGroup.visible_window_count || 0),
                 hidden_window_count: Number(projectGroup.hidden_window_count || 0),
-                ai_session_count: Number(projectGroup.ai_session_count || 0),
                 emphasized: !!emphasize
             });
 
@@ -4750,8 +4741,6 @@ ShellRoot {
                     hidden: !!windowData.hidden,
                     floating: !!windowData.floating,
                     scope: windowData.scope,
-                    sessions: arrayOrEmpty(windowData.sessions),
-                    ai_session_count: Number(windowData.ai_session_count || 0)
                 });
             }
 
@@ -5286,12 +5275,8 @@ ShellRoot {
         }
 
         const visibleCount = Number(item.visible_window_count || 0);
-        const sessionCount = Number(item.ai_session_count || 0);
         const bits = [];
         bits.push(String(visibleCount) + (visibleCount === 1 ? " window" : " windows"));
-        if (sessionCount > 0) {
-            bits.push(String(sessionCount) + (sessionCount === 1 ? " session" : " sessions"));
-        }
         return bits.join(" • ");
     }
 
@@ -5575,23 +5560,6 @@ ShellRoot {
     }
 
     function windowHostToken(windowData) {
-        const sessions = arrayOrEmpty(windowData && windowData.sessions);
-        let preferredSession = null;
-        for (let i = 0; i < sessions.length; i += 1) {
-            const session = sessions[i];
-            if (!preferredSession) {
-                preferredSession = session;
-            }
-            if (stringOrEmpty(session && session.execution_mode).toLowerCase() === "ssh") {
-                preferredSession = session;
-                break;
-            }
-        }
-
-        if (preferredSession) {
-            return sessionHostToken(preferredSession);
-        }
-
         return hostToken(stringOrEmpty(windowData && windowData.execution_mode), "", stringOrEmpty(windowData && windowData.connection_key));
     }
 
@@ -6541,14 +6509,6 @@ ShellRoot {
         const next = Object.assign({}, expandedSessionGroups);
         next[key] = !sessionGroupExpanded(group);
         expandedSessionGroups = next;
-    }
-
-    function windowSessionIcons(windowData) {
-        return arrayOrEmpty(windowData.sessions).slice(0, 4);
-    }
-
-    function windowSessionOverflowCount(windowData) {
-        return Math.max(0, arrayOrEmpty(windowData.sessions).length - 4);
     }
 
     function workspaceLabel(workspace) {

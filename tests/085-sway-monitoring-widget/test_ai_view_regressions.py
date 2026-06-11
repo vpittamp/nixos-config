@@ -30,6 +30,7 @@ DAEMON_DIR = REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon"
 DAEMON_SERVICES_DIR = REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon" / "services"
 HERDR_SERVICE_PY = DAEMON_SERVICES_DIR / "herdr_service.py"
 LAUNCH_SERVICE_PY = DAEMON_SERVICES_DIR / "launch_service.py"
+DASHBOARD_MODEL_PY = DAEMON_SERVICES_DIR / "dashboard_model.py"
 SESSION_RUNTIME_SERVICE_PY = DAEMON_SERVICES_DIR / "session_runtime_service.py"
 PROJECT_REMOTE_LAUNCH_PY = REPO_ROOT / "scripts" / "project-remote-launch.py"
 I3PM_MONITORING_DATA_PY = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "monitoring_data.py"
@@ -156,6 +157,23 @@ def test_session_preview_and_sorting_use_herdr_pane_identity_not_tmux_fields():
 
     assert "stringOrEmpty(session && (session.pane_id || session.pane_label))" in text
     assert "const paneId = stringOrEmpty(session && session.pane_id).trim();" in text
+
+
+def test_project_window_cards_do_not_embed_ai_session_badges():
+    """Herdr sessions should stay in session surfaces, not project/window badges."""
+    shell_text = SHELL_QML.read_text()
+    runtime_panel_text = RUNTIME_PANEL_WINDOW_QML.read_text()
+    launcher_text = LAUNCHER_WINDOW_QML.read_text()
+    dashboard_model_text = DASHBOARD_MODEL_PY.read_text()
+
+    for text in [shell_text, runtime_panel_text, launcher_text]:
+        assert "windowSessionIcons" not in text
+        assert "windowSessionOverflowCount" not in text
+        assert "ai_session_count" not in text
+        assert "windowData.sessions" not in text
+
+    assert '"sessions": session_items' not in dashboard_model_text
+    assert '"ai_session_count"' not in dashboard_model_text
 
 
 def test_session_status_chip_renders_raw_herdr_status():

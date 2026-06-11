@@ -215,8 +215,9 @@ def test_build_dashboard_projects_groups_windows_and_shapes_session_rows() -> No
     assert local_project["focused"] is True
     assert local_project["window_count"] == 1
     assert local_project["windows"][0]["focus_target"]["window_id"] == 101
-    assert local_project["windows"][0]["sessions"][0]["session_key"] == "session-current"
-    assert local_project["windows"][0]["sessions"][0]["transport_kind"] == "local"
+    assert "sessions" not in local_project["windows"][0]
+    assert "ai_session_count" not in local_project["windows"][0]
+    assert "ai_session_count" not in local_project
     assert remote_project["visible_window_count"] == 1
     assert remote_project["hidden_window_count"] == 0
     assert remote_project["windows"][0]["visible"] is True

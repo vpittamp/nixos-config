@@ -938,24 +938,6 @@ PanelWindow {
                                             }
                                         }
 
-                                        Rectangle {
-                                            visible: Number(projectGroup.ai_session_count || 0) > 0
-                                            width: visible ? projectSessionCountText.implicitWidth + 12 : 0
-                                            height: 18
-                                            radius: 6
-                                            color: colors.cardAlt
-                                            border.color: "transparent"
-                                            border.width: 0
-
-                                            Text {
-                                                id: projectSessionCountText
-                                                anchors.centerIn: parent
-                                                text: String(Number(projectGroup.ai_session_count || 0))
-                                                color: colors.subtle
-                                                font.pixelSize: 8
-                                                font.weight: Font.DemiBold
-                                            }
-                                        }
                                     }
                                 }
 
@@ -1029,77 +1011,6 @@ PanelWindow {
                                                 font.weight: Font.DemiBold
                                                 elide: Text.ElideRight
                                                 verticalAlignment: Text.AlignVCenter
-                                            }
-
-                                            RowLayout {
-                                                visible: Number(windowData.ai_session_count || 0) > 0
-                                                spacing: 4
-
-                                                Repeater {
-                                                    model: root.windowSessionIcons(windowData)
-
-                                                    delegate: Rectangle {
-                                                        required property var modelData
-                                                        readonly property var session: modelData
-                                                        width: 20
-                                                        height: 20
-                                                        radius: 6
-                                                        color: "transparent"
-                                                        border.color: "transparent"
-                                                        border.width: 0
-
-                                                        Rectangle {
-                                                            anchors.right: parent.right
-                                                            anchors.bottom: parent.bottom
-                                                            anchors.rightMargin: -1
-                                                            anchors.bottomMargin: -1
-                                                            width: 9
-                                                            height: 9
-                                                            radius: 5
-                                                            color: root.sessionAccentColor(session)
-                                                            border.color: "transparent"
-                                                            border.width: 0
-                                                            opacity: root.sessionCompactBadgeOpacity(session)
-                                                        }
-
-                                                        IconImage {
-                                                            anchors.centerIn: parent
-                                                            implicitSize: 13
-                                                            source: root.toolIconSource(session)
-                                                            mipmap: true
-                                                            opacity: root.sessionCompactIconOpacity(session)
-                                                        }
-
-                                                        MouseArea {
-                                                            anchors.fill: parent
-                                                            hoverEnabled: true
-                                                            cursorShape: Qt.PointingHandCursor
-                                                            onClicked: {
-                                                                mouse.accepted = true;
-                                                                root.focusSession(session);
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                Rectangle {
-                                                    visible: root.windowSessionOverflowCount(windowData) > 0
-                                                    width: visible ? overflowText.implicitWidth + 10 : 0
-                                                    height: 18
-                                                    radius: 6
-                                                    color: colors.bg
-                                                    border.color: "transparent"
-                                                    border.width: 0
-
-                                                    Text {
-                                                        id: overflowText
-                                                        anchors.centerIn: parent
-                                                        text: "+" + String(root.windowSessionOverflowCount(windowData))
-                                                        color: colors.subtle
-                                                        font.pixelSize: 8
-                                                        font.weight: Font.DemiBold
-                                                    }
-                                                }
                                             }
 
                                             Rectangle {

@@ -40,15 +40,6 @@ def build_dashboard_projects(
     build_window_focus_target: Callable[..., Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """Group tracked windows into dashboard project cards."""
-    sessions_by_window: Dict[int, List[Dict[str, Any]]] = {}
-    for session in sessions:
-        if not isinstance(session, dict):
-            continue
-        window_id = int(session.get("window_id") or 0)
-        if window_id <= 0:
-            continue
-        sessions_by_window.setdefault(window_id, []).append(session)
-
     active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
     active_project_name = str(
         active_context.get("qualified_name")
@@ -80,61 +71,12 @@ def build_dashboard_projects(
         execution_mode = str(window.get("execution_mode") or execution_mode_for_target_host(target_host)).strip() or "local"
         group_key = project_name if project_name == "global" else build_target_context_key(project_name, target_host)
         hidden = bool(window.get("hidden", False))
-        session_items: List[Dict[str, Any]] = []
-        for session in sessions_by_window.get(window_id, []):
-            if not isinstance(session, dict):
-                continue
-            session_target_host = normalize_target_host(
-                session.get("target_host")
-                or session.get("host_name")
-                or target_host
-            )
-            session_items.append({
-                "session_key": str(session.get("session_key") or ""),
-                "focus_target": dict(session.get("focus_target") or {}),
-                "close_target": dict(session.get("close_target") or {}),
-                "source": str(session.get("source") or "").strip(),
-                "agent": str(session.get("agent") or "").strip(),
-                "tool": str(session.get("tool") or ""),
-                "display_tool": str(session.get("display_tool") or session.get("tool") or ""),
-                "agent_status": str(session.get("agent_status") or "unknown").strip() or "unknown",
-                "pane_id": str(session.get("pane_id") or "").strip(),
-                "tab_id": str(session.get("tab_id") or "").strip(),
-                "workspace_id": str(session.get("workspace_id") or "").strip(),
-                "terminal_id": str(session.get("terminal_id") or "").strip(),
-                "cwd": str(session.get("cwd") or "").strip(),
-                "foreground_cwd": str(session.get("foreground_cwd") or "").strip(),
-                "pane_label": str(session.get("pane_label") or session.get("pane_title") or session.get("pane_id") or "").strip(),
-                "is_current_window": bool(session.get("is_current_window", False)),
-                "pane_active": bool(session.get("pane_active", False)),
-                "window_active": bool(session.get("window_active", False)),
-                "target_host": session_target_host,
-                "transport_kind": str(
-                    session.get("transport_kind")
-                    or transport_kind_for_target_host(session_target_host)
-                ).strip(),
-            })
-
-        session_items.sort(
-            key=lambda item: (
-                bool(item.get("is_current_window", False)),
-                bool(item.get("pane_active", False)),
-                str(item.get("agent_status") or ""),
-                str(item.get("pane_label") or ""),
-                str(item.get("session_key") or ""),
-            ),
-            reverse=True,
-        )
-        has_active_session = any(
-            bool(item.get("window_active", False)) or bool(item.get("pane_active", False))
-            for item in session_items
-        )
         matches_focus_override = window_matches_focus_override(
             window_id=window_id,
             connection_key=str(window.get("connection_key") or "").strip(),
         )
         derived_focused = focused_window_id > 0 and window_id == focused_window_id
-        derived_visible = bool(window.get("visible", False)) or has_active_session or matches_focus_override
+        derived_visible = bool(window.get("visible", False)) or derived_focused or matches_focus_override
         derived_hidden = bool(hidden and not derived_visible)
 
         entry = grouped.setdefault(group_key, {
@@ -146,7 +88,6 @@ def build_dashboard_projects(
             "windows": [],
             "visible_window_count": 0,
             "hidden_window_count": 0,
-            "ai_session_count": 0,
             "is_active": (
                 project_name == active_project_name
                 and target_host == active_target_host
@@ -157,7 +98,6 @@ def build_dashboard_projects(
             entry["hidden_window_count"] = int(entry["hidden_window_count"]) + 1
         else:
             entry["visible_window_count"] = int(entry["visible_window_count"]) + 1
-        entry["ai_session_count"] = int(entry["ai_session_count"]) + len(session_items)
         entry["windows"].append({
             "id": window_id,
             "title": str(window.get("title") or "(untitled)"),
@@ -182,8 +122,6 @@ def build_dashboard_projects(
                 target_variant=execution_mode,
                 connection_key=str(window.get("connection_key") or "").strip(),
             ),
-            "sessions": session_items,
-            "ai_session_count": len(session_items),
         })
 
     projects = list(grouped.values())
