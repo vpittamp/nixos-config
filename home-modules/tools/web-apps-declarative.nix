@@ -61,8 +61,7 @@ let
       --password-store=basic
       ${concatStringsSep " " (app.extraBrowserArgs or [])}
     )
-    printf -v quoted '%q ' "''${cmd[@]}"
-    exec /run/wrappers/bin/sg onepassword -c "''${quoted% }"
+    exec "''${cmd[@]}"
   '';
 
   # Generate i3wm window rules for workspace assignment

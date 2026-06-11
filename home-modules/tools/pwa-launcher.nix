@@ -129,24 +129,6 @@ let
 
     cleanup_stale_singleton
 
-    use_legacy_onepassword_forwarding() {
-      if [[ ! -L "$SINGLETON_LOCK" ]]; then
-        return 1
-      fi
-
-      local lock_target lock_pid=""
-      lock_target=$(readlink "$SINGLETON_LOCK" 2>/dev/null || true)
-      if [[ "$lock_target" =~ -([0-9]+)$ ]]; then
-        lock_pid="''${BASH_REMATCH[1]}"
-      fi
-
-      if [[ -z "$lock_pid" ]] || [[ ! -d "/proc/$lock_pid" ]]; then
-        return 1
-      fi
-
-      [[ "$(stat -c %G "/proc/$lock_pid" 2>/dev/null || true)" == "onepassword" ]]
-    }
-
     # ============================================================================
     # PHASE 3: Launch PWA
     # ============================================================================
@@ -159,10 +141,10 @@ let
     # process into that group creates a long-lived Chrome process the daemon
     # cannot safely introspect or correlate.
     #
-    # Compatibility bridge: if the current Chrome singleton owner is still a
-    # legacy browser session running under the onepassword group, forward this
-    # launch through `sg onepassword` too. Without that, Chrome 145 can TRAP
-    # while trying to hand off `--app=` launches to the existing session.
+    # Never propagate a legacy onepassword-owned Chrome singleton into new
+    # launches. Running the browser itself through `sg onepassword` makes
+    # 1Password native messaging peer validation fail noisily; only
+    # BrowserSupport should cross that boundary.
 
     cmd=(
       ${pkgs.google-chrome}/bin/google-chrome-stable
@@ -182,12 +164,6 @@ let
       while IFS= read -r flag; do
         cmd+=("$flag")
       done <<< "$EXTRA_CHROME_FLAGS"
-    fi
-
-    if use_legacy_onepassword_forwarding; then
-      echo "Forwarding PWA launch through legacy onepassword Chrome session" >&2
-      printf -v quoted_cmd '%q ' "''${cmd[@]}"
-      exec sg onepassword -c "$quoted_cmd"
     fi
 
     exec "''${cmd[@]}"

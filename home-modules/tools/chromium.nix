@@ -109,6 +109,28 @@ let
     echo "active Chrome/PWA path: main profile (~/.config/google-chrome)"
     echo ""
 
+    singleton_lock="$HOME/.config/google-chrome/SingletonLock"
+    if [[ -L "$singleton_lock" ]]; then
+      lock_target="$(readlink "$singleton_lock" 2>/dev/null || true)"
+      lock_pid=""
+      if [[ "$lock_target" =~ -([0-9]+)$ ]]; then
+        lock_pid="''${BASH_REMATCH[1]}"
+      fi
+
+      if [[ -n "$lock_pid" && -d "/proc/$lock_pid" ]]; then
+        singleton_group="$(stat -c %G "/proc/$lock_pid" 2>/dev/null || true)"
+        if [[ "$singleton_group" == "onepassword" ]]; then
+          echo "[bad] active Chrome singleton group is onepassword -> pid $lock_pid"
+          echo "      close/restart Chrome so it relaunches as the normal user group"
+        else
+          echo "[ok] active Chrome singleton group -> $singleton_group (pid $lock_pid)"
+        fi
+      else
+        echo "[stale] active Chrome singleton lock -> $lock_target"
+      fi
+      echo ""
+    fi
+
     check_manifest "system chrome host" "$CHROME_SYSTEM_DIR/com.1password.1password.json"
     check_manifest "system browser-support host" "$CHROME_SYSTEM_DIR/com.1password.browser_support.json"
     check_manifest "user google-chrome host" "$HOME/.config/google-chrome/NativeMessagingHosts/com.1password.1password.json"
@@ -1014,8 +1036,7 @@ let
         ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) extraArgs)}
         "$@"
       )
-      printf -v quoted '%q ' "''${cmd[@]}"
-      exec /run/wrappers/bin/sg onepassword -c "''${quoted% }"
+      exec "''${cmd[@]}"
     '');
 
   chromeCommandWrapper = mkChromeWrapper {
