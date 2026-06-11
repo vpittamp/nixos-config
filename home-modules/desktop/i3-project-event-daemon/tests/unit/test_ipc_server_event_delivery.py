@@ -69,15 +69,24 @@ def server():
     return IPCServer(DummyStateManager())
 
 
+def test_ipc_stats_reads_dashboard_service_subscriber_count(server):
+    writer = _DummyWriter()
+    server.dashboard_service.subscribe(writer)  # type: ignore[arg-type]
+
+    stats = server._get_ipc_stats()
+
+    assert stats["state_change_subscriber_count"] == 1
+    assert not hasattr(server, "state_change_subscribers")
+
+
 @pytest.mark.asyncio
 async def test_notify_state_change_handles_subscriber_set_mutation(server):
     async def remove_second():
-        server.state_change_subscribers.discard(second_writer)
+        server.dashboard_service.discard_subscriber(second_writer)
 
     first_writer = _DummyWriter(on_drain=remove_second)
     second_writer = _DummyWriter()
     server.dashboard_service.subscribers = {first_writer, second_writer}
-    server.state_change_subscribers = server.dashboard_service.subscribers
     server.dashboard_service.event_payload = AsyncMock(return_value={
         "schema_version": "i3pm.dashboard.v2",
         "snapshot_version": 1,

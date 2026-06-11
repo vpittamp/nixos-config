@@ -606,7 +606,6 @@ class IPCServer:
             list_launches=lambda **kwargs: self.launch_service.list_statuses(**kwargs),
             invalidate_worktree_cache=self.invalidate_worktree_cache,
         )
-        self.state_change_subscribers = self.dashboard_service.subscribers
         self._malformed_json_count: int = 0
         self._deferred_filter_task: Optional[asyncio.Task] = None
         self._malformed_json_last_at: Optional[str] = None
@@ -802,7 +801,7 @@ class IPCServer:
         finally:
             self.clients.discard(writer)
             self.subscribed_clients.discard(writer)  # Remove from subscriptions if subscribed
-            self.state_change_subscribers.discard(writer)  # Feature 123: Remove from state change subscriptions
+            self.dashboard_service.discard_subscriber(writer)
             await self._close_client_writer(writer)
 
     async def _close_client_writer(self, writer: asyncio.StreamWriter) -> None:
@@ -874,7 +873,7 @@ class IPCServer:
         return {
             "client_count": len(self.clients),
             "subscribed_client_count": len(self.subscribed_clients),
-            "state_change_subscriber_count": len(self.state_change_subscribers),
+            "state_change_subscriber_count": len(self.dashboard_service.subscribers),
             "malformed_json_count": self._malformed_json_count,
             "last_malformed_json_at": self._malformed_json_last_at,
             "last_malformed_json_peer": self._malformed_json_last_peer or None,
