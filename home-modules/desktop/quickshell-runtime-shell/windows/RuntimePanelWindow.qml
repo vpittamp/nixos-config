@@ -362,14 +362,17 @@ PanelWindow {
             }
 
             Rectangle {
-                visible: root.panelSessions().length > 0 || root.herdrSpaces().length > 0
+                id: sessionsSection
+                readonly property bool expanded: root.runtimePanelSectionExpanded("sessions")
+                readonly property bool hasContent: root.panelSessions().length > 0 || root.herdrSpaces().length > 0
+                visible: hasContent
                 Layout.fillWidth: true
-                Layout.fillHeight: root.runtimePanelSectionExpanded("sessions")
-                Layout.minimumHeight: root.runtimePanelSectionExpanded("sessions") ? 180 : 60
+                Layout.fillHeight: expanded
+                Layout.minimumHeight: expanded ? 180 : 60
                 Layout.preferredHeight: root.runtimePanelSectionPreferredHeight("sessions")
                 radius: 12
-                color: root.runtimePanelSectionExpanded("sessions") ? colors.panel : colors.cardAlt
-                border.color: root.runtimePanelSectionExpanded("sessions") ? colors.lineSoft : colors.border
+                color: expanded ? colors.panel : colors.cardAlt
+                border.color: expanded ? colors.lineSoft : colors.border
                 border.width: 1
 
                 ColumnLayout {
@@ -384,7 +387,7 @@ PanelWindow {
                         Layout.fillWidth: true
                         implicitHeight: 34
                         radius: 10
-                        color: root.runtimePanelSectionExpanded("sessions") ? colors.blueWash : colors.card
+                        color: sessionsSection.expanded ? colors.blueWash : colors.card
                         border.color: colors.lineSoft
                         border.width: 1
 
@@ -395,8 +398,8 @@ PanelWindow {
                             spacing: 8
 
                             Text {
-                                text: root.runtimePanelSectionExpanded("sessions") ? "▾" : "▸"
-                                color: root.runtimePanelSectionExpanded("sessions") ? colors.blue : colors.textDim
+                                text: sessionsSection.expanded ? "▾" : "▸"
+                                color: sessionsSection.expanded ? colors.blue : colors.textDim
                                 font.pixelSize: 12
                                 font.weight: Font.DemiBold
                             }
@@ -465,7 +468,7 @@ PanelWindow {
                         readonly property int spacesMaxHeight: Math.max(150, Math.floor(root.runtimePanelSectionPreferredHeight("sessions") * spacesMaxFraction))
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        visible: root.runtimePanelSectionExpanded("sessions")
+                        visible: sessionsSection.expanded
                         spacing: 10
 
                         RowLayout {
@@ -708,14 +711,17 @@ PanelWindow {
             }
 
             Rectangle {
-                visible: root.panelProjects().length > 0 || root.panelSessions().length === 0
+                id: windowsSection
+                readonly property bool expanded: root.runtimePanelSectionExpanded("windows")
+                readonly property bool hasProjects: root.panelProjects().length > 0
+                visible: hasProjects || root.panelSessions().length === 0
                 Layout.fillWidth: true
-                Layout.fillHeight: root.runtimePanelSectionExpanded("windows")
-                Layout.minimumHeight: root.runtimePanelSectionExpanded("windows") ? 180 : 60
-                Layout.preferredHeight: root.panelProjects().length > 0 ? root.runtimePanelSectionPreferredHeight("windows") : 72
+                Layout.fillHeight: expanded
+                Layout.minimumHeight: expanded ? 180 : 60
+                Layout.preferredHeight: hasProjects ? root.runtimePanelSectionPreferredHeight("windows") : 72
                 radius: 12
-                color: root.runtimePanelSectionExpanded("windows") ? colors.panel : colors.cardAlt
-                border.color: root.runtimePanelSectionExpanded("windows") ? colors.blueMuted : colors.border
+                color: expanded ? colors.panel : colors.cardAlt
+                border.color: expanded ? colors.blueMuted : colors.border
                 border.width: 1
 
                 ColumnLayout {
@@ -730,8 +736,8 @@ PanelWindow {
                         Layout.fillWidth: true
                         implicitHeight: 34
                         radius: 10
-                        color: root.runtimePanelSectionExpanded("windows") ? colors.blueWash : colors.card
-                        border.color: root.runtimePanelSectionExpanded("windows") ? colors.blueMuted : colors.lineSoft
+                        color: windowsSection.expanded ? colors.blueWash : colors.card
+                        border.color: windowsSection.expanded ? colors.blueMuted : colors.lineSoft
                         border.width: 1
 
                         RowLayout {
@@ -741,8 +747,8 @@ PanelWindow {
                             spacing: 8
 
                             Text {
-                                text: root.runtimePanelSectionExpanded("windows") ? "▾" : "▸"
-                                color: root.runtimePanelSectionExpanded("windows") ? colors.blue : colors.textDim
+                                text: windowsSection.expanded ? "▾" : "▸"
+                                color: windowsSection.expanded ? colors.blue : colors.textDim
                                 font.pixelSize: 12
                                 font.weight: Font.DemiBold
                             }
@@ -803,7 +809,7 @@ PanelWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        visible: root.panelProjects().length > 0 && root.runtimePanelSectionCollapsed("windows")
+                        visible: windowsSection.hasProjects && root.runtimePanelSectionCollapsed("windows")
                         text: "Window groups stay available here while Herdr Monitor takes the full panel."
                         color: colors.subtle
                         font.pixelSize: 9
@@ -826,7 +832,7 @@ PanelWindow {
                         boundsBehavior: Flickable.StopAtBounds
                         model: windowProjectsModel
                         cacheBuffer: 1200
-                        visible: root.panelProjects().length > 0 && root.runtimePanelSectionExpanded("windows")
+                        visible: windowsSection.hasProjects && windowsSection.expanded
 
                         delegate: Rectangle {
                             required property var modelData

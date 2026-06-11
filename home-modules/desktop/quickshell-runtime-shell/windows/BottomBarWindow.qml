@@ -22,7 +22,6 @@ PanelWindow {
     anchors.left: true
     anchors.right: true
     anchors.bottom: true
-    height: runtimeConfig.barHeight
     implicitHeight: runtimeConfig.barHeight
     exclusiveZone: implicitHeight
     focusable: false

@@ -759,7 +759,9 @@ in
     });
   '';
 
-  # No battery-related services for desktop (no TLP, no UPower battery monitoring)
+  # QuickShell imports the UPower service for the shared battery model. Ryzen has
+  # no laptop battery, but exposing the DBus service keeps the runtime shell quiet.
+  services.upower.enable = true;
 
   # Additional packages for desktop
   environment.systemPackages = with pkgs; [
