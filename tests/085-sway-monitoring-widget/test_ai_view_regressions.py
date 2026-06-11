@@ -77,6 +77,8 @@ def test_session_preview_and_worktree_app_do_not_render_legacy_phase_fields():
         assert term not in launcher_text
         assert term not in worktree_text
     assert "const phase = stringOrEmpty(session && session.agent_status) || \"idle\";" in worktree_text
+    assert "tmux_pane" not in worktree_text
+    assert "const pane = stringOrEmpty(session && (session.pane_id || session.pane_label));" in worktree_text
 
 
 def test_ai_session_status_does_not_use_notification_boundary_adapters():

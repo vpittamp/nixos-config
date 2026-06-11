@@ -171,7 +171,7 @@ ShellRoot {
 
     function sessionLabel(session) {
         const tool = stringOrEmpty(session && session.tool) || "assistant";
-        const pane = stringOrEmpty(session && (session.pane_label || session.tmux_pane));
+        const pane = stringOrEmpty(session && (session.pane_id || session.pane_label));
         return pane ? `${tool} ${pane}` : tool;
     }
 
