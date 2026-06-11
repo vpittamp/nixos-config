@@ -481,7 +481,7 @@ def test_session_rows_use_daemon_focus_state_for_current_highlight():
     assert "selectedSessionKey" not in text
     assert "selected: false" in panel_text
     assert "currentOverride: root.sessionIsCurrent(modelData)" in panel_text
-    assert "currentOverride: root.sessionIsCurrent(entry)" in launcher_text
+    assert "currentOverride: root.sessionIsCurrent(entry)" not in launcher_text
     assert "const current = currentSessionKey();" in text
     current_session_key_body = text.split("function currentSessionKey()", 1)[1].split("function sessionMatchesKey", 1)[0]
     assert "dashboard.current_ai_session_key" not in current_session_key_body
@@ -724,6 +724,12 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     assert "onPressed: root.activateWorkspace(workspace)" in bottom_bar_text
     assert "readonly property var runtimeProjects: root.panelProjects()" not in runtime_panel_text
     assert "function refreshRuntimePanelData()" in runtime_panel_text
+    assert 'count: root.runtimePanelSectionCount("windows")' not in runtime_panel_text
+    assert "count: panelWindow.runtimePanelWindowCount()" in runtime_panel_text
+    assert "function runtimePanelWindowSummary()" in runtime_panel_text
+    assert "readonly property int agentCount: root.panelSessions().length" not in runtime_panel_text
+    assert "text: String(root.panelSessions().length)" not in runtime_panel_text
+    assert "values: root.panelSessions()" not in runtime_panel_text
     assert "client.request(\"window.focus_fast\", params)" in window_command_text
     assert "fallback_method === \"window.focus\"" in window_command_text
     assert 'client.request<{ success?: boolean; workspace?: string; fallback_method?: string }>(\n        "workspace.focus_fast",' in workspace_command_text

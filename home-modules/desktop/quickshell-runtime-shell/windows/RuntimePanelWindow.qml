@@ -55,6 +55,38 @@ PanelWindow {
         return runtimeProjects.length > 0;
     }
 
+    function runtimePanelWindowCount() {
+        let count = 0;
+        for (let i = 0; i < runtimeProjects.length; i += 1) {
+            count += root.arrayOrEmpty(runtimeProjects[i] && runtimeProjects[i].windows).length;
+        }
+        return count;
+    }
+
+    function runtimePanelSessionSummary() {
+        const bits = [];
+        if (runtimeHerdrSpaces.length > 0) {
+            bits.push(String(runtimeHerdrSpaces.length) + (runtimeHerdrSpaces.length === 1 ? " space" : " spaces"));
+        }
+        if (runtimeSessions.length > 0) {
+            bits.push(String(runtimeSessions.length) + (runtimeSessions.length === 1 ? " agent" : " agents"));
+        }
+        return bits.join(" • ");
+    }
+
+    function runtimePanelWindowSummary() {
+        const projectCount = runtimeProjects.length;
+        const windowCount = runtimePanelWindowCount();
+        const bits = [];
+        if (projectCount > 0) {
+            bits.push(String(projectCount) + (projectCount === 1 ? " project" : " projects"));
+        }
+        if (windowCount > 0) {
+            bits.push(String(windowCount) + (windowCount === 1 ? " window" : " windows"));
+        }
+        return bits.join(" • ");
+    }
+
     function runtimePanelLocalExpanded(section) {
         const hasSessions = runtimePanelHasSessions();
         const hasWindows = runtimePanelHasWindows();
@@ -457,8 +489,8 @@ PanelWindow {
                     WindowComponents.RuntimePanelSectionHeader {
                         colorsObject: colors
                         title: "Herdr Monitor"
-                        summary: root.runtimePanelSectionSummary("sessions")
-                        count: root.runtimePanelSectionCount("sessions")
+                        summary: panelWindow.runtimePanelSessionSummary()
+                        count: panelWindow.runtimeSessions.length
                         expanded: panelWindow.runtimePanelLocalExpanded("sessions")
                         onClicked: root.toggleRuntimePanelSection("sessions")
                     }
@@ -475,7 +507,7 @@ PanelWindow {
 
                     ColumnLayout {
                         id: herdrSessionContent
-                        readonly property int agentCount: root.panelSessions().length
+                        readonly property int agentCount: panelWindow.runtimeSessions.length
                         readonly property int rowHeight: 48
                         readonly property int rowRadius: 7
                         readonly property int rowSpacing: 6
@@ -667,7 +699,7 @@ PanelWindow {
                                 Text {
                                     id: agentsCountText
                                     anchors.centerIn: parent
-                                    text: String(root.panelSessions().length)
+                                    text: String(panelWindow.runtimeSessions.length)
                                     color: colors.muted
                                     font.pixelSize: 8
                                     font.weight: Font.DemiBold
@@ -684,7 +716,7 @@ PanelWindow {
 
                         ScriptModel {
                             id: herdrAgentsModel
-                            values: root.panelSessions()
+                            values: panelWindow.runtimeSessions
                             objectProp: "modelData"
                         }
 
@@ -749,8 +781,8 @@ PanelWindow {
                     WindowComponents.RuntimePanelSectionHeader {
                         colorsObject: colors
                         title: "Windows"
-                        summary: panelWindow.runtimePanelHasWindows() ? root.runtimePanelSectionSummary("windows") : "No tracked project windows"
-                        count: root.runtimePanelSectionCount("windows")
+                        summary: panelWindow.runtimePanelHasWindows() ? panelWindow.runtimePanelWindowSummary() : "No tracked project windows"
+                        count: panelWindow.runtimePanelWindowCount()
                         expanded: panelWindow.runtimePanelLocalExpanded("windows")
                         clickable: panelWindow.runtimePanelHasWindows()
                         expandedBorder: colors.blueMuted
