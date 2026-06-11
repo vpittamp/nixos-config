@@ -122,6 +122,10 @@ async def test_snapshot_uses_owned_generations() -> None:
     assert result["focus_state"]["generation"] == 2
     assert result["dashboard_invariants"]["ok"] is True
 
+    health = await service.validate({})
+    assert health["schema_version"] == "i3pm.dashboard.v2"
+    assert health["focus_schema_version"] == "i3pm.focus_state.v2"
+
 
 @pytest.mark.asyncio
 async def test_notify_state_change_advances_generations_and_notifies_subscribers() -> None:

@@ -117,9 +117,16 @@ class DashboardService:
                 payload,
                 schema_version=self.schema_version,
             )
+        focus_state = payload.get("focus_state")
+        focus_schema_version = (
+            str(focus_state.get("schema_version") or "")
+            if isinstance(focus_state, dict)
+            else ""
+        )
         return {
             "success": bool(invariants.get("ok", False)),
             "schema_version": str(payload.get("schema_version") or ""),
+            "focus_schema_version": focus_schema_version,
             "snapshot_version": int(payload.get("snapshot_version") or 0),
             "session_generation": int(payload.get("session_generation") or 0),
             "display_generation": int(payload.get("display_generation") or 0),

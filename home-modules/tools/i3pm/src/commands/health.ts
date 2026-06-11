@@ -103,6 +103,7 @@ interface DashboardHealth {
   healthy: boolean;
   reachable: boolean;
   schema_version: string;
+  focus_schema_version: string;
   snapshot_version: number;
   session_generation: number;
   display_generation: number;
@@ -794,6 +795,7 @@ async function loadDashboardHealth(): Promise<DashboardHealth | null> {
     const result = await client.request<{
       success?: boolean;
       schema_version?: string;
+      focus_schema_version?: string;
       snapshot_version?: number;
       session_generation?: number;
       display_generation?: number;
@@ -811,10 +813,15 @@ async function loadDashboardHealth(): Promise<DashboardHealth | null> {
     if (schemaVersion !== "i3pm.dashboard.v2") {
       issues.push(`schema_version:${schemaVersion || "missing"}`);
     }
+    const focusSchemaVersion = String(result.focus_schema_version || "");
+    if (focusSchemaVersion !== "i3pm.focus_state.v2") {
+      issues.push(`focus_schema_version:${focusSchemaVersion || "missing"}`);
+    }
     return {
       healthy: result.success === true && issues.length === 0,
       reachable: true,
       schema_version: schemaVersion,
+      focus_schema_version: focusSchemaVersion,
       snapshot_version: Number(result.snapshot_version || 0),
       session_generation: Number(result.session_generation || 0),
       display_generation: Number(result.display_generation || 0),
@@ -828,6 +835,7 @@ async function loadDashboardHealth(): Promise<DashboardHealth | null> {
       healthy: false,
       reachable: false,
       schema_version: "",
+      focus_schema_version: "",
       snapshot_version: 0,
       session_generation: 0,
       display_generation: 0,
@@ -993,7 +1001,7 @@ function printReport(report: HealthReport): void {
         dim(
           `${
             report.dashboard.schema_version || "missing"
-          } snapshot ${report.dashboard.snapshot_version} focus ${report.dashboard.focus_generation}`,
+          } focus-state ${report.dashboard.focus_schema_version || "missing"} snapshot ${report.dashboard.snapshot_version} focus ${report.dashboard.focus_generation}`,
         )
       }`,
     );
