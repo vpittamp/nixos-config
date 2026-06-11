@@ -40,34 +40,17 @@ Item {
     property alias displayToggleOutputProcessRef: displayToggleOutputProcess
     property alias displayScaleProcessRef: displayScaleProcess
 
-    property int daemonActionRequestId: 0
-    readonly property string daemonActionRuntimeDir: String(Quickshell.env("XDG_RUNTIME_DIR") || "")
-    readonly property string daemonActionSocketPath: daemonActionRuntimeDir ? daemonActionRuntimeDir + "/i3-project-daemon/ipc.sock" : ""
-
     function sendDaemonAction(method, params) {
         const normalizedMethod = String(method || "").trim();
-        if (!normalizedMethod || !daemonActionSocketPath) {
+        if (!normalizedMethod || !runtimeConfig.daemonActionBin) {
             return false;
         }
-        if (!daemonActionSocket.connected) {
-            daemonActionSocket.connected = true;
-        }
 
-        daemonActionRequestId += 1;
-        const request = {
-            jsonrpc: "2.0",
-            method: normalizedMethod,
-            params: params || {},
-            id: daemonActionRequestId,
-        };
         try {
-            daemonActionSocket.write(JSON.stringify(request) + "\n");
-            daemonActionSocket.flush();
+            Quickshell.execDetached([runtimeConfig.daemonActionBin, normalizedMethod, JSON.stringify(params || {})]);
             return true;
         } catch (error) {
             console.warn("daemon.action:", error);
-            daemonActionSocket.connected = false;
-            daemonActionReconnectTimer.restart();
             return false;
         }
     }
@@ -335,38 +318,6 @@ Item {
         interval: 0
         repeat: false
         onTriggered: shellRoot.finalizeLauncherWindowSwitcherOpen()
-    }
-
-    Timer {
-        id: daemonActionReconnectTimer
-        interval: 1000
-        repeat: false
-        onTriggered: {
-            if (daemonActionSocketPath && !daemonActionSocket.connected) {
-                daemonActionSocket.connected = true;
-            }
-        }
-    }
-
-    Socket {
-        id: daemonActionSocket
-        path: daemonActionSocketPath
-        connected: daemonActionSocketPath !== ""
-        parser: SplitParser {
-            splitMarker: "\n"
-            onRead: function (data) {
-                shellRoot.handleDaemonActionResponse(data);
-            }
-        }
-        onError: function (_error) {
-            connected = false;
-            daemonActionReconnectTimer.restart();
-        }
-        onConnectionStateChanged: {
-            if (!connected && daemonActionSocketPath) {
-                daemonActionReconnectTimer.restart();
-            }
-        }
     }
 
     Timer {

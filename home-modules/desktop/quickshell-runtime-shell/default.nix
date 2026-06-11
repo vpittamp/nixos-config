@@ -64,6 +64,7 @@ QtObject {
   readonly property string lidPolicyApplyBin: "${lidPolicyApplyScript}/bin/quickshell-lid-policy-apply"
   readonly property string lidInhibitBin: "${lidInhibitScript}/bin/quickshell-lid-inhibit"
   readonly property string pkexecBin: "${pkgs.polkit}/bin/pkexec"
+  readonly property string daemonActionBin: "${daemonActionScript}/bin/quickshell-daemon-action"
   readonly property string daemonHealthBin: "${daemonHealthScript}/bin/quickshell-daemon-health"
   readonly property string launcherQueryBin: "${launcherQueryScript}/bin/quickshell-app-launcher-query"
   readonly property string launcherLaunchBin: "${launcherLaunchScript}/bin/quickshell-elephant-launcher-launch"
@@ -934,6 +935,83 @@ PY
         '{status:$status,events:$events,windows:$windows,uptime:$uptime,issues:$issues}'
       sleep 5
     done
+  '';
+
+  daemonActionScript = pkgs.writeShellScriptBin "quickshell-daemon-action" ''
+    set -euo pipefail
+
+    ${lib.getExe pkgs.python3} - "$@" <<'PY'
+import json
+import os
+import socket
+import sys
+
+
+def fail(message: str, code: int = 1) -> None:
+    print(message, file=sys.stderr)
+    raise SystemExit(code)
+
+
+if len(sys.argv) < 2:
+    fail("usage: quickshell-daemon-action <method> [params-json]")
+
+method = sys.argv[1].strip()
+if not method:
+    fail("daemon action method is required")
+
+params_arg = sys.argv[2] if len(sys.argv) > 2 else "{}"
+try:
+    params = json.loads(params_arg or "{}")
+except json.JSONDecodeError as exc:
+    fail(f"invalid daemon action params JSON: {exc}")
+
+if not isinstance(params, dict):
+    fail("daemon action params must be a JSON object")
+
+runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or ""
+if not runtime_dir:
+    fail("XDG_RUNTIME_DIR is not set")
+
+socket_path = os.path.join(runtime_dir, "i3-project-daemon", "ipc.sock")
+request = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": method,
+    "params": params,
+}
+
+try:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(1.5)
+        client.connect(socket_path)
+        client.sendall((json.dumps(request, separators=(",", ":")) + "\n").encode("utf-8"))
+        chunks = []
+        while True:
+            chunk = client.recv(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            if b"\n" in chunk:
+                break
+except OSError as exc:
+    fail(f"daemon action failed: {exc}")
+
+raw_response = b"".join(chunks).splitlines()[0] if chunks else b""
+if not raw_response:
+    fail("daemon action returned an empty response")
+
+try:
+    response = json.loads(raw_response.decode("utf-8"))
+except json.JSONDecodeError as exc:
+    fail(f"daemon action returned invalid JSON: {exc}")
+
+error = response.get("error")
+if error:
+    if isinstance(error, dict):
+        fail(str(error.get("message") or error))
+    fail(str(error))
+
+PY
   '';
 
   launcherQueryScript = pkgs.writeShellScriptBin "quickshell-app-launcher-query" ''
@@ -2582,6 +2660,7 @@ in
       lidPolicyStatusScript
       lidPolicyApplyScript
       lidInhibitScript
+      daemonActionScript
       daemonHealthScript
       launcherQueryScript
       launcherLaunchScript

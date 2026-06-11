@@ -534,8 +534,8 @@ def test_session_rows_focus_by_explicit_herdr_target():
     assert 'method: "session.focus"' not in text
     assert "sessionSpawnRemoteAttachTarget" not in text
     assert "function sendDaemonAction(method, params)" in services_text
-    assert "Socket {" in services_text
-    assert "daemonActionSocket.write(JSON.stringify(request) + \"\\n\");" in services_text
+    assert "Quickshell.execDetached([runtimeConfig.daemonActionBin, normalizedMethod, JSON.stringify(params || {})])" in services_text
+    assert "daemonActionSocket.write" not in services_text
     assert "runDaemonAction(normalizedTarget.method, normalizedTarget.params);" in text
 
 
@@ -687,13 +687,18 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     assert "fallback_method === \"window.focus\"" in window_command_text
 
 
-def test_quickshell_action_socket_does_not_force_first_click_cli_fallback():
-    """The persistent action socket should attempt the write after reconnecting."""
+def test_quickshell_daemon_actions_use_one_shot_helper_instead_of_persistent_socket():
+    """Click actions should not depend on a stale long-lived QML socket connection."""
     runtime_services_text = (REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "controllers" / "RuntimeServices.qml").read_text()
+    quickshell_default_nix_text = (REPO_ROOT / "home-modules" / "desktop" / "quickshell-runtime-shell" / "default.nix").read_text()
     send_body = runtime_services_text.split("function sendDaemonAction(method, params)", 1)[1].split("Connections {", 1)[0]
 
-    assert "daemonActionSocket.connected = true;" in send_body
-    assert "return false;" not in send_body.split("daemonActionSocket.connected = true;", 1)[1].split("daemonActionRequestId += 1;", 1)[0]
+    assert "readonly property string daemonActionBin" in quickshell_default_nix_text
+    assert "quickshell-daemon-action" in quickshell_default_nix_text
+    assert "client.settimeout(1.5)" in quickshell_default_nix_text
+    assert "Quickshell.execDetached([runtimeConfig.daemonActionBin, normalizedMethod, JSON.stringify(params || {})])" in send_body
+    assert "Socket {" not in send_body
+    assert "daemonActionSocket" not in runtime_services_text
 
 
 def test_focus_rpc_dispatch_does_not_wait_for_dashboard_fanout():
