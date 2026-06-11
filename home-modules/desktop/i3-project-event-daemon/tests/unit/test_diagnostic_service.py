@@ -203,6 +203,34 @@ async def test_recent_events_formats_and_validates_limit() -> None:
 
 
 @pytest.mark.asyncio
+async def test_recent_events_uses_late_bound_event_buffer_provider() -> None:
+    late_buffer = {"value": None}
+    event = SimpleNamespace(
+        event_id="evt-late",
+        event_type="workspace::focus",
+        timestamp=None,
+        source="i3",
+        window_id=None,
+        window_class=None,
+        window_title=None,
+        workspace_name="2",
+        project_name=None,
+        processing_duration_ms=None,
+        error=None,
+    )
+    service = _service(
+        event_buffer=None,
+        event_buffer_provider=lambda: late_buffer["value"],
+    )
+    late_buffer["value"] = _EventBuffer([event])
+
+    result = await service.recent_events({"limit": 10})
+
+    assert result[0]["event_id"] == "evt-late"
+    assert result[0]["event_type"] == "workspace::focus"
+
+
+@pytest.mark.asyncio
 async def test_report_combines_health_i3_state_and_optional_sections() -> None:
     tree = SimpleNamespace(leaves=lambda: [object(), object()])
 

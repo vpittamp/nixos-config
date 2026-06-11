@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 I3ConnectionProvider = Callable[[], Optional[Any]]
 LogIpcEvent = Callable[..., Awaitable[None]]
 WorkspacesProvider = Callable[[], Awaitable[List[Any]]]
+EventBufferProvider = Callable[[], Optional[Any]]
 
 
 class DiagnosticService:
@@ -33,9 +34,11 @@ class DiagnosticService:
         get_workspaces: WorkspacesProvider,
         log_ipc_event: LogIpcEvent,
         registry_path: Path,
+        event_buffer_provider: Optional[EventBufferProvider] = None,
     ) -> None:
         self.state_manager = state_manager
-        self.event_buffer = event_buffer
+        self._event_buffer = event_buffer
+        self.event_buffer_provider = event_buffer_provider or (lambda: self._event_buffer)
         self.i3_connection_provider = i3_connection_provider
         self.daemon_status_service = daemon_status_service
         self.get_workspaces = get_workspaces
@@ -346,10 +349,11 @@ class DiagnosticService:
                 "data": {"limit": limit},
             }))
 
-        if not self.event_buffer:
+        event_buffer = self.event_buffer_provider()
+        if not event_buffer:
             return []
 
-        events = self.event_buffer.get_recent(limit=limit, event_type=event_type)
+        events = event_buffer.get_recent(limit=limit, event_type=event_type)
 
         formatted_events = []
         for event in events:

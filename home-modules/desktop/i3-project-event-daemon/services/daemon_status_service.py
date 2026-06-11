@@ -12,6 +12,7 @@ SocketPathProvider = Callable[[], str]
 IpcStatsProvider = Callable[[], Dict[str, Any]]
 StartupRecoveryProvider = Callable[[], Optional[Any]]
 ReconnectionManagerProvider = Callable[[], Optional[Any]]
+EventBufferProvider = Callable[[], Optional[Any]]
 
 
 class DaemonStatusService:
@@ -25,13 +26,15 @@ class DaemonStatusService:
         i3_connection_provider: Callable[[], Optional[Any]],
         socket_path_provider: SocketPathProvider,
         ipc_stats_provider: IpcStatsProvider,
+        event_buffer_provider: Optional[EventBufferProvider] = None,
         startup_recovery_provider: StartupRecoveryProvider = lambda: None,
         reconnection_manager_provider: ReconnectionManagerProvider = lambda: None,
         status_version: str = "1.0.0",
         health_version: str = "1.4.0",
     ) -> None:
         self.state_manager = state_manager
-        self.event_buffer = event_buffer
+        self._event_buffer = event_buffer
+        self.event_buffer_provider = event_buffer_provider or (lambda: self._event_buffer)
         self.i3_connection_provider = i3_connection_provider
         self.socket_path_provider = socket_path_provider
         self.ipc_stats_provider = ipc_stats_provider
@@ -116,13 +119,14 @@ class DaemonStatusService:
 
         i3_connection = self.i3_connection_provider()
         i3_connected = bool(i3_connection and i3_connection.is_connected)
+        event_buffer = self.event_buffer_provider()
 
         event_subscriptions = []
-        if self.event_buffer:
+        if event_buffer:
             for sub_type in ["window", "workspace", "output", "tick"]:
                 events = [
                     event
-                    for event in self.event_buffer.get_recent(limit=500)
+                    for event in event_buffer.get_recent(limit=500)
                     if event.event_type.startswith(sub_type)
                 ]
                 last_event = events[0] if events else None
@@ -136,7 +140,7 @@ class DaemonStatusService:
                     }
                 )
 
-        total_events = len(self.event_buffer.get_recent(limit=9999)) if self.event_buffer else 0
+        total_events = len(event_buffer.get_recent(limit=9999)) if event_buffer else 0
         total_windows = len(self.state_manager.state.window_map)
 
         health_issues = []

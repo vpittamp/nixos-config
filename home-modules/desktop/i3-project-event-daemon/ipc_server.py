@@ -580,6 +580,7 @@ class IPCServer:
                 else "/run/user/1000/i3-project-daemon/ipc.sock"
             ),
             ipc_stats_provider=lambda: self._get_ipc_stats(),
+            event_buffer_provider=lambda: self.event_buffer,
             startup_recovery_provider=lambda: getattr(self, "startup_recovery_result", None),
             reconnection_manager_provider=lambda: getattr(self, "i3_reconnection_manager", None),
         )
@@ -591,6 +592,7 @@ class IPCServer:
             get_workspaces=lambda: self._sway_get_workspaces(),
             log_ipc_event=lambda **kwargs: self._log_ipc_event(**kwargs),
             registry_path=APP_REGISTRY_PATH,
+            event_buffer_provider=lambda: self.event_buffer,
         )
         self.display_service = DisplayService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),

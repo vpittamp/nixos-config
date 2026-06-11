@@ -119,6 +119,27 @@ def test_health_check_reports_event_subscriptions_and_window_count() -> None:
     }
 
 
+def test_health_check_uses_late_bound_event_buffer_provider() -> None:
+    now = datetime(2026, 1, 1, 12, 0, 0)
+    late_buffer = {
+        "value": _EventBuffer([SimpleNamespace(event_type="window::focus", timestamp=now)])
+    }
+    service = DaemonStatusService(
+        state_manager=_StateManager(),
+        event_buffer=None,
+        event_buffer_provider=lambda: late_buffer["value"],
+        i3_connection_provider=lambda: SimpleNamespace(is_connected=True),
+        socket_path_provider=lambda: "/tmp/i3pm.sock",
+        ipc_stats_provider=lambda: {},
+    )
+
+    health = service.health_check()
+
+    assert health["overall_status"] == "healthy"
+    assert health["total_events_processed"] == 1
+    assert health["event_subscriptions"][0]["event_count"] == 1
+
+
 def test_health_check_reports_critical_when_i3_or_subscriptions_are_missing() -> None:
     service = DaemonStatusService(
         state_manager=_StateManager(),
