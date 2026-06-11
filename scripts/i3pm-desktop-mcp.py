@@ -252,16 +252,22 @@ def _visible_windows(snapshot: Dict[str, Any], *, current_context_only: bool = T
 
 
 def _focused_window(snapshot: Dict[str, Any]) -> Dict[str, Any]:
-    focused_window_id = int(snapshot.get("focused_window_id") or 0)
+    focus_state = _as_dict(snapshot.get("focus_state"))
+    focused_window_id = int(focus_state.get("current_window_id") or 0)
     for window in _tracked_windows(snapshot):
-        if _window_id(window) == focused_window_id or bool(window.get("focused", False)):
+        if focused_window_id > 0 and _window_id(window) == focused_window_id:
             return window
     visible = _visible_windows(snapshot, current_context_only=False)
     return visible[0] if visible else {}
 
 
 def _workspace_summary(snapshot: Dict[str, Any], focused_window: Dict[str, Any]) -> Dict[str, Any]:
-    current_workspace = str(focused_window.get("workspace") or "").strip()
+    focus_state = _as_dict(snapshot.get("focus_state"))
+    current_workspace = str(
+        focus_state.get("current_workspace_name")
+        or focused_window.get("workspace")
+        or ""
+    ).strip()
     current_output = str(focused_window.get("output") or "").strip()
     workspace_count = 0
     for output in _as_list(snapshot.get("outputs")):
@@ -287,9 +293,10 @@ def _workspace_summary(snapshot: Dict[str, Any], focused_window: Dict[str, Any])
 def _build_desktop_context(snapshot: Dict[str, Any], *, include_processes: bool = False, process_limit: int = 8) -> Dict[str, Any]:
     focused = _focused_window(snapshot)
     visible = _visible_windows(snapshot)
+    focus_state = _as_dict(snapshot.get("focus_state"))
     sessions = [
         dict(session)
-        for session in _as_list(snapshot.get("sessions"))
+        for session in _as_list(snapshot.get("active_ai_sessions"))
         if isinstance(session, dict)
     ]
     workspace = _workspace_summary(snapshot, focused)
@@ -303,7 +310,8 @@ def _build_desktop_context(snapshot: Dict[str, Any], *, include_processes: bool 
         "scratchpad": _as_dict(snapshot.get("scratchpad")),
         "active_terminal": _as_dict(snapshot.get("active_terminal")),
         "sessions": sessions,
-        "current_ai_session_key": str(snapshot.get("current_ai_session_key") or ""),
+        "current_session_key": str(focus_state.get("current_session_key") or ""),
+        "focus_state": focus_state,
         "runtime": {
             "daemon_health": "ok",
             "tracked_window_count": len(_tracked_windows(snapshot)),
@@ -516,7 +524,7 @@ def build_tool_result(tool_name: str, result: Dict[str, Any], *, is_error: bool 
 
 def dispatch_tool(client: DaemonRpcClient, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     if name == "get_desktop_context":
-        snapshot = _as_dict(client.request("runtime.snapshot", {}))
+        snapshot = _as_dict(client.request("dashboard.snapshot", {}))
         result = _build_desktop_context(
             snapshot,
             include_processes=bool(arguments.get("include_processes", False)),
@@ -525,7 +533,7 @@ def dispatch_tool(client: DaemonRpcClient, name: str, arguments: Dict[str, Any])
         return build_tool_result(name, result)
 
     if name == "list_windows":
-        snapshot = _as_dict(client.request("runtime.snapshot", {}))
+        snapshot = _as_dict(client.request("dashboard.snapshot", {}))
         query = str(arguments.get("query") or "").strip().lower()
         windows = _visible_windows(
             snapshot,
@@ -559,7 +567,7 @@ def dispatch_tool(client: DaemonRpcClient, name: str, arguments: Dict[str, Any])
         return build_tool_result(name, result)
 
     if name == "focus_window":
-        snapshot = _as_dict(client.request("runtime.snapshot", {}))
+        snapshot = _as_dict(client.request("dashboard.snapshot", {}))
         resolved = _resolve_window_target(snapshot, arguments)
         window = resolved.get("window") if isinstance(resolved.get("window"), dict) else None
         if not resolved.get("matched") or window is None:
@@ -721,7 +729,7 @@ def dispatch_tool(client: DaemonRpcClient, name: str, arguments: Dict[str, Any])
                 target_type="window",
             )
             return build_tool_result(name, result, is_error=True)
-        snapshot = _as_dict(client.request("runtime.snapshot", {}))
+        snapshot = _as_dict(client.request("dashboard.snapshot", {}))
         resolved = _resolve_window_target(snapshot, arguments)
         window = resolved.get("window") if isinstance(resolved.get("window"), dict) else None
         if not resolved.get("matched") or window is None:
