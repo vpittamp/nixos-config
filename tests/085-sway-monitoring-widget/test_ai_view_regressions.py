@@ -23,6 +23,7 @@ COPILOT_CLI_NIX = REPO_ROOT / "home-modules" / "ai-assistants" / "copilot-cli.ni
 I3PM_WINDOW_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "window.ts"
 I3PM_DASHBOARD_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "dashboard.ts"
 I3PM_HERDR_PROXY_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "herdr-proxy.ts"
+I3PM_HEALTH_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "health.ts"
 I3PM_SESSION_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "commands" / "session.ts"
 I3PM_MAIN_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "main.ts"
 I3PM_DAEMON_CLIENT_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "services" / "daemon-client.ts"
@@ -613,6 +614,21 @@ def test_retired_eww_monitoring_validation_artifacts_are_removed():
     """Validation should use QuickShell/i3pm health, not the retired Eww panel."""
     for path in LEGACY_EWW_VALIDATION_ARTIFACTS:
         assert not path.exists(), f"{path.relative_to(REPO_ROOT)} should stay retired"
+
+
+def test_retired_eww_monitoring_panel_is_guarded_out_of_runtime_config():
+    """The retired Eww panel must not return as an active runtime service or shortcut."""
+    health_text = I3PM_HEALTH_TS.read_text()
+    runtime_shell_nix = QUICKSHELL_DEFAULT_NIX.read_text()
+    sway_keybindings_nix = SWAY_KEYBINDINGS_NIX.read_text()
+
+    assert "eww-monitoring-panel.service" in health_text
+    assert "QuickShell and i3pm health own desktop UI state" in health_text
+    assert "retiredDesktopStateUnitIssues" in health_text
+    assert "eww-monitoring-panel" not in runtime_shell_nix
+    assert "toggle-monitoring-panel" not in runtime_shell_nix
+    assert "eww-monitoring-panel" not in sway_keybindings_nix
+    assert "toggle-monitoring-panel" not in sway_keybindings_nix
 
 
 def test_i3pm_herdr_proxy_exposes_snapshot_focus_and_event_stream():

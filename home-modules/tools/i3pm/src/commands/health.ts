@@ -159,7 +159,16 @@ export interface HealthReport {
 }
 
 const OPTIONAL_USER_UNIT_PREFIXES = ["wayvnc@"];
-const RETIRED_AI_SESSION_USER_UNITS = ["otel-ai-monitor.service"];
+const RETIRED_DESKTOP_STATE_USER_UNITS = [
+  {
+    name: "otel-ai-monitor.service",
+    reason: "Herdr owns AI session UI state",
+  },
+  {
+    name: "eww-monitoring-panel.service",
+    reason: "QuickShell and i3pm health own desktop UI state",
+  },
+];
 const EXPECTED_DAEMON_CONTRACT_SCHEMA = "i3pm.daemon.contract.v1";
 const EXPECTED_DASHBOARD_SCHEMA = "i3pm.dashboard.v2";
 const EXPECTED_DASHBOARD_EVENT_SCHEMA = "i3pm.dashboard.event.v1";
@@ -872,13 +881,14 @@ function formatUnitStatus(unit: UnitStatus): string {
   return `${unit.name} ${state} ${dim(`${unit.sub_state || "unknown"} / ${unit.result || "n/a"}`)}`;
 }
 
-export function retiredAiSessionUnitIssues(
+export function retiredDesktopStateUnitIssues(
   units: Array<{
     name: string;
     load_state?: string;
     active_state?: string;
     unit_file_state?: string;
     fragment_path?: string;
+    reason?: string;
   }>,
 ): string[] {
   const issues: string[] = [];
@@ -894,9 +904,9 @@ export function retiredAiSessionUnitIssues(
       continue;
     }
     issues.push(
-      `retired AI session service ${unit.name} is present (${loadState || "unknown"}/${
+      `retired desktop state service ${unit.name} is present (${loadState || "unknown"}/${
         activeState || "unknown"
-      }); Herdr owns AI session UI state`,
+      }); ${unit.reason || "retired service must stay disabled"}`,
     );
   }
   return issues;
@@ -1100,8 +1110,11 @@ async function collectHealthReport(): Promise<HealthReport> {
     loadUnitStatus("mcp-browser-orphan-reaper.timer", "user"),
     loadUnitStatus("home-manager-vpittamp.service", "system"),
   ]);
-  const retiredAiSessionUnits = await Promise.all(
-    RETIRED_AI_SESSION_USER_UNITS.map((unit) => loadUnitStatus(unit, "user")),
+  const retiredDesktopStateUnits = await Promise.all(
+    RETIRED_DESKTOP_STATE_USER_UNITS.map(async (unit) => ({
+      ...await loadUnitStatus(unit.name, "user"),
+      reason: unit.reason,
+    })),
   );
 
   const failedUserUnits = await loadFailedUserUnits();
@@ -1148,7 +1161,7 @@ async function collectHealthReport(): Promise<HealthReport> {
   for (const unit of coreFailedUserUnits) {
     coreIssues.push(`${unit} is failed`);
   }
-  coreIssues.push(...retiredAiSessionUnitIssues(retiredAiSessionUnits));
+  coreIssues.push(...retiredDesktopStateUnitIssues(retiredDesktopStateUnits));
   if (!daemonSocketExists) {
     coreIssues.push(`daemon socket missing at ${daemonSocketPath}`);
   }

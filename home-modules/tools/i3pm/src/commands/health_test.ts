@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert";
-import { buildHealthReport, type HealthReport, retiredAiSessionUnitIssues } from "./health.ts";
+import { buildHealthReport, type HealthReport, retiredDesktopStateUnitIssues } from "./health.ts";
 
 function baseReport(overallStatus: HealthReport["overall_status"]) {
   return {
@@ -54,38 +54,53 @@ Deno.test("buildHealthReport preserves warning and failure status aliases", () =
   assertEquals(failReport.overall_status, "fail");
 });
 
-Deno.test("retiredAiSessionUnitIssues allows removed otel monitor unit", () => {
+Deno.test("retiredDesktopStateUnitIssues allows removed retired desktop state units", () => {
   assertEquals(
-    retiredAiSessionUnitIssues([{
+    retiredDesktopStateUnitIssues([{
       name: "otel-ai-monitor.service",
       load_state: "not-found",
       active_state: "inactive",
       unit_file_state: "",
       fragment_path: "",
+      reason: "Herdr owns AI session UI state",
+    }, {
+      name: "eww-monitoring-panel.service",
+      load_state: "not-found",
+      active_state: "inactive",
+      unit_file_state: "",
+      fragment_path: "",
+      reason: "QuickShell and i3pm health own desktop UI state",
     }]),
     [],
   );
 });
 
-Deno.test("retiredAiSessionUnitIssues flags installed or active otel monitor unit", () => {
-  const issues = retiredAiSessionUnitIssues([
+Deno.test("retiredDesktopStateUnitIssues flags installed or active retired desktop state units", () => {
+  const issues = retiredDesktopStateUnitIssues([
     {
       name: "otel-ai-monitor.service",
       load_state: "loaded",
       active_state: "inactive",
       unit_file_state: "enabled",
       fragment_path: "/home/user/.config/systemd/user/otel-ai-monitor.service",
+      reason: "Herdr owns AI session UI state",
     },
     {
-      name: "otel-ai-monitor.service",
+      name: "eww-monitoring-panel.service",
       load_state: "not-found",
       active_state: "active",
       unit_file_state: "",
       fragment_path: "",
+      reason: "QuickShell and i3pm health own desktop UI state",
     },
   ]);
 
   assertEquals(issues.length, 2);
-  assertEquals(issues[0].includes("retired AI session service otel-ai-monitor.service"), true);
+  assertEquals(issues[0].includes("retired desktop state service otel-ai-monitor.service"), true);
   assertEquals(issues[0].includes("Herdr owns AI session UI state"), true);
+  assertEquals(
+    issues[1].includes("retired desktop state service eww-monitoring-panel.service"),
+    true,
+  );
+  assertEquals(issues[1].includes("QuickShell and i3pm health own desktop UI state"), true);
 });
