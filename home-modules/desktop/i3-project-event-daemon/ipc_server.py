@@ -1293,6 +1293,8 @@ class IPCServer:
             # Feature 074: Session Management - State and version methods (T096-T097)
             elif method == "state.get":
                 result = await self._state_get(params)
+            elif method == "daemon.contract":
+                result = await self._daemon_contract(params)
             elif method == "daemon.version":
                 result = await self._daemon_version(params)
 
@@ -2169,6 +2171,63 @@ class IPCServer:
                 error=error_msg,
             )
 
+    def _daemon_contract_payload(self) -> Dict[str, Any]:
+        """Return the authoritative daemon/runtime contract marker."""
+        return {
+            "schema_version": DAEMON_CONTRACT_SCHEMA_VERSION,
+            "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
+            "dashboard_event_schema_version": DASHBOARD_EVENT_SCHEMA_VERSION,
+            "focus_schema_version": FOCUS_STATE_SCHEMA_VERSION,
+            "current_session_authority": "focus_state.current_session_key",
+            "required_dashboard_fields": [
+                "schema_version",
+                "generation",
+                "snapshot_version",
+                "focus_state",
+                "active_ai_sessions",
+                "dashboard_invariants",
+            ],
+            "retired_dashboard_fields": [
+                "current_ai_session_key",
+                "focus_state.current_ai_session_key",
+                "focus_state.focused_window_id",
+            ],
+            "features": [
+                "session-management",
+                "mark-based-correlation",
+                "auto-save",
+                "auto-restore",
+                "workspace-focus-tracking",
+                "window-focus-tracking",
+                "terminal-cwd-tracking",
+                "daemon-owned-focus-state",
+                "formal-focus-intents",
+                "dashboard-delta-events",
+                "herdr-native-ai-sessions",
+            ],
+        }
+
+    async def _daemon_contract(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get the daemon contract marker used by health and rebuild gates."""
+        start_time = time.perf_counter()
+        error_msg = None
+
+        try:
+            result = self._daemon_contract_payload()
+            logger.debug("IPC: daemon.contract() → %s", result["schema_version"])
+            return result
+
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            await self._log_ipc_event(
+                event_type="daemon::contract",
+                duration_ms=duration_ms,
+                error=error_msg,
+            )
+
     async def _daemon_version(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get daemon API version for version negotiation (T097, Feature 074).
 
@@ -2187,42 +2246,14 @@ class IPCServer:
         error_msg = None
 
         try:
+            contract = self._daemon_contract_payload()
             result = {
                 "version": "1.0.0",
                 "api_version": "1.0.0",
                 "contract": {
-                    "schema_version": DAEMON_CONTRACT_SCHEMA_VERSION,
-                    "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
-                    "dashboard_event_schema_version": DASHBOARD_EVENT_SCHEMA_VERSION,
-                    "focus_schema_version": FOCUS_STATE_SCHEMA_VERSION,
-                    "current_session_authority": "focus_state.current_session_key",
-                    "required_dashboard_fields": [
-                        "schema_version",
-                        "generation",
-                        "snapshot_version",
-                        "focus_state",
-                        "active_ai_sessions",
-                        "dashboard_invariants",
-                    ],
-                    "retired_dashboard_fields": [
-                        "current_ai_session_key",
-                        "focus_state.current_ai_session_key",
-                        "focus_state.focused_window_id",
-                    ],
+                    key: value for key, value in contract.items() if key != "features"
                 },
-                "features": [
-                    "session-management",
-                    "mark-based-correlation",
-                    "auto-save",
-                    "auto-restore",
-                    "workspace-focus-tracking",
-                    "window-focus-tracking",
-                    "terminal-cwd-tracking",
-                    "daemon-owned-focus-state",
-                    "formal-focus-intents",
-                    "dashboard-delta-events",
-                    "herdr-native-ai-sessions",
-                ]
+                "features": list(contract["features"]),
             }
 
             logger.debug(f"IPC: daemon.version() → {result['version']}")

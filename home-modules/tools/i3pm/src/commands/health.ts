@@ -951,10 +951,16 @@ async function loadDaemonContractHealth(): Promise<DaemonContractHealth | null> 
   const client = new DaemonClient();
   try {
     const result = await client.request<{
-      contract?: unknown;
+      schema_version?: unknown;
+      dashboard_schema_version?: unknown;
+      dashboard_event_schema_version?: unknown;
+      focus_schema_version?: unknown;
+      current_session_authority?: unknown;
+      required_dashboard_fields?: unknown;
+      retired_dashboard_fields?: unknown;
       features?: unknown[];
-    }>("daemon.version", {});
-    const contract = asRecord(result.contract);
+    }>("daemon.contract", {});
+    const contract = asRecord(result);
     const schemaVersion = String(contract.schema_version || "");
     const dashboardSchemaVersion = String(contract.dashboard_schema_version || "");
     const dashboardEventSchemaVersion = String(contract.dashboard_event_schema_version || "");
@@ -1048,7 +1054,7 @@ async function loadDaemonContractHealth(): Promise<DaemonContractHealth | null> 
       required_dashboard_fields: [],
       features: [],
       retired_dashboard_fields: [],
-      issues: [message || "daemon.version failed"],
+      issues: [message || "daemon.contract failed"],
     };
   } finally {
     client.disconnect();

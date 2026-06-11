@@ -143,6 +143,31 @@ async def test_daemon_version_exposes_runtime_contract_marker():
 
 
 @pytest.mark.asyncio
+async def test_daemon_contract_exposes_direct_runtime_contract_marker():
+    state_manager = state_module.StateManager()
+    server = ipc_server_module.IPCServer(state_manager)
+
+    contract = await server._daemon_contract({})
+    version = await server._daemon_version({})
+
+    assert contract["schema_version"] == "i3pm.daemon.contract.v1"
+    assert contract["dashboard_schema_version"] == "i3pm.dashboard.v2"
+    assert contract["dashboard_event_schema_version"] == "i3pm.dashboard.event.v1"
+    assert contract["focus_schema_version"] == "i3pm.focus_state.v2"
+    assert contract["current_session_authority"] == "focus_state.current_session_key"
+    assert "generation" in contract["required_dashboard_fields"]
+    assert "snapshot_version" in contract["required_dashboard_fields"]
+    assert "current_ai_session_key" in contract["retired_dashboard_fields"]
+    assert "daemon-owned-focus-state" in contract["features"]
+    assert "formal-focus-intents" in contract["features"]
+    assert "herdr-native-ai-sessions" in contract["features"]
+    assert version["contract"] == {
+        key: value for key, value in contract.items() if key != "features"
+    }
+    assert version["features"] == contract["features"]
+
+
+@pytest.mark.asyncio
 async def test_ipc_server_stop_does_not_block_on_slow_client_close():
     state_manager = state_module.StateManager()
     server = ipc_server_module.IPCServer(state_manager)
