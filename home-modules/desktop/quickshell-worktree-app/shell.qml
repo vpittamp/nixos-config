@@ -85,7 +85,7 @@ ShellRoot {
 
     function windowIsFocused(windowData) {
         const windowId = windowIdValue(windowData);
-        const currentWindowId = Number(dashboardFocusState().current_window_id || dashboardFocusState().focused_window_id || 0);
+        const currentWindowId = Number(dashboardFocusState().current_window_id || 0);
         return windowId > 0 && currentWindowId > 0 && windowId === currentWindowId;
     }
 

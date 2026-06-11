@@ -83,7 +83,7 @@ ICON_EXTENSIONS = (".svg", ".png", ".xpm")
 APP_REGISTRY_PATH = Path.home() / ".config/i3/application-registry.json"
 PWA_REGISTRY_PATH = Path.home() / ".config/i3/pwa-registry.json"
 CHROME_SCOPED_TMP_PREFIX = "/tmp/com.google.Chrome.scoped_dir."
-FOCUS_STATE_SCHEMA_VERSION = "i3pm.focus_state.v1"
+FOCUS_STATE_SCHEMA_VERSION = "i3pm.focus_state.v2"
 
 _DISCOVERED_WORKTREE_CACHE: Dict[str, Any] = {
     "file_path": "",
@@ -8856,14 +8856,14 @@ class IPCServer:
                     else ""
                 )
                 if not current_ai_session_key_after:
-                    current_ai_session_key_after = str(remote_focus_state_after.get("current_ai_session_key") or "").strip()
+                    current_ai_session_key_after = str(remote_focus_state_after.get("current_session_key") or "").strip()
                 focused_window_id_after = (
                     int(remote_result.get("focused_window_id_after") or 0)
                     if isinstance(remote_result, dict)
                     else 0
                 )
                 if focused_window_id_after <= 0:
-                    focused_window_id_after = int(remote_focus_state_after.get("focused_window_id") or 0)
+                    focused_window_id_after = int(remote_focus_state_after.get("current_window_id") or 0)
                 if focused_window_id_after <= 0 and isinstance(remote_verification, dict):
                     focused_window_id_after = int(remote_verification.get("focused_window_id") or 0)
 
@@ -8953,7 +8953,7 @@ class IPCServer:
                 ):
                     focus_state_after = await self._focus_state({})
                     self._set_focus_overrides(
-                        session_key=str(focus_state_after.get("current_ai_session_key") or "").strip(),
+                        session_key=str(focus_state_after.get("current_session_key") or "").strip(),
                         window_id=int(window_id),
                         connection_key=str(connection_key or "").strip(),
                     )
@@ -8964,8 +8964,8 @@ class IPCServer:
                         "target_variant": str(target_variant or "").strip(),
                         "connection_key": str(connection_key or "").strip(),
                         "switched_context": bool(switch_result.get("switched", False)),
-                        "current_ai_session_key_after": str(focus_state_after.get("current_ai_session_key") or "").strip(),
-                        "focused_window_id_after": int(focus_state_after.get("focused_window_id") or 0),
+                        "current_ai_session_key_after": str(focus_state_after.get("current_session_key") or "").strip(),
+                        "focused_window_id_after": int(focus_state_after.get("current_window_id") or 0),
                         "focus_state_after": focus_state_after,
                         "verification": verification,
                     }
@@ -8985,8 +8985,8 @@ class IPCServer:
             "connection_key": str(connection_key or "").strip(),
             "switched_context": bool(switch_result.get("switched", False)),
             "error": last_error or "focus_failed",
-            "current_ai_session_key_after": str(focus_state_after.get("current_ai_session_key") or "").strip(),
-            "focused_window_id_after": int(focus_state_after.get("focused_window_id") or 0),
+            "current_ai_session_key_after": str(focus_state_after.get("current_session_key") or "").strip(),
+            "focused_window_id_after": int(focus_state_after.get("current_window_id") or 0),
             "focus_state_after": focus_state_after,
             "verification": verification,
         }

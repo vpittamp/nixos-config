@@ -84,10 +84,9 @@ def _service(*, invalidations: list[str] | None = None) -> DashboardService:
         build_projects=lambda runtime, sessions: [],
         build_worktrees=lambda runtime: _empty_worktrees(),
         build_focus_state=lambda runtime, sessions, *, generation: {
-            "schema_version": "i3pm.focus_state.v1",
+            "schema_version": "i3pm.focus_state.v2",
             "generation": generation,
             "current_session_key": "",
-            "current_ai_session_key": "",
             "current_window_id": 0,
             "current_workspace_name": "",
             "current_herdr_pane_id": "",

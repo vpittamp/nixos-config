@@ -299,6 +299,7 @@ def test_session_rows_use_daemon_focus_state_for_current_highlight():
     assert "const current = currentSessionKey();" in text
     current_session_key_body = text.split("function currentSessionKey()", 1)[1].split("function sessionMatchesKey", 1)[0]
     assert "dashboard.current_ai_session_key" not in current_session_key_body
+    assert "dashboardFocusState().current_ai_session_key" not in current_session_key_body
 
 
 def test_launcher_session_search_indexes_herdr_fields():
@@ -436,6 +437,8 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     assert "function dashboardFocusState()" in text
     assert "dashboardFocusState().current_window_id" in text
     assert "dashboardFocusState().current_workspace_name" in text
+    window_focus_body = text.split("function windowIsFocused(windowData)", 1)[1].split("function windowIsCurrentTarget", 1)[0]
+    assert "dashboardFocusState().focused_window_id" not in window_focus_body
     assert "const focused = workspaceIsFocused(name);" in text
     assert "focused: boolOrFalse(workspace?.focused)" not in text
     assert "output.current_workspace" not in text
@@ -497,6 +500,8 @@ def test_worktree_app_uses_daemon_focus_state_and_no_heartbeat_config():
 
     assert "function dashboardFocusState()" in shell_text
     assert "function windowIsFocused(windowData)" in shell_text
+    window_focus_body = shell_text.split("function windowIsFocused(windowData)", 1)[1].split("function shortProject", 1)[0]
+    assert "dashboardFocusState().focused_window_id" not in window_focus_body
     assert "windows.find(windowData => windowIsFocused(windowData))" in shell_text
     assert "windowData.focused" not in shell_text
     assert 'dashboardWatchProcess.command = [appConfig.i3pmBin, "dashboard", "watch"];' in service_text
@@ -756,6 +761,11 @@ def test_herdr_space_focus_uses_daemon_focus_state_for_collapsed_children():
     assert "const focus = dashboardFocusState();" in text
     assert "focus.current_herdr_pane_id" in text
     assert "focus.current_herdr_host" in text
+    focus_body = text.split("function herdrSpaceIsFocused(space)", 1)[1].split("function visibleHerdrSpaces", 1)[0]
+    assert "focus.herdr_pane_id" not in focus_body
+    assert "focus.pane_id" not in focus_body
+    assert "focus.herdr_host" not in focus_body
+    assert "focus.host_name" not in focus_body
     assert "!root.boolOrFalse(space && space.is_linked_worktree) || !herdrSpaceGroupCollapsed(groupKey) || herdrSpaceIsFocused(space)" in text
     assert "readonly property bool spaceFocused: root.herdrSpaceIsFocused(space)" in panel_text
     assert "space && space.focused" not in text

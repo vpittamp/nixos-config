@@ -831,7 +831,7 @@ ShellRoot {
 
     function windowIsFocused(windowData) {
         const windowId = windowIdValue(windowData);
-        const currentWindowId = Number(dashboardFocusState().current_window_id || dashboardFocusState().focused_window_id || 0);
+        const currentWindowId = Number(dashboardFocusState().current_window_id || 0);
         return windowId > 0 && currentWindowId > 0 && windowId === currentWindowId;
     }
 
@@ -4739,12 +4739,12 @@ ShellRoot {
 
     function herdrSpaceIsFocused(space) {
         const focus = dashboardFocusState();
-        const currentPaneId = stringOrEmpty(focus.current_herdr_pane_id || focus.herdr_pane_id || focus.pane_id);
+        const currentPaneId = stringOrEmpty(focus.current_herdr_pane_id);
         if (currentPaneId.length === 0) {
             return false;
         }
 
-        const currentHost = normalizeHostAlias(focus.current_herdr_host || focus.herdr_host || focus.host_name);
+        const currentHost = normalizeHostAlias(focus.current_herdr_host);
         const targetSpaceKey = herdrSpaceKey(space);
         const targetWorkspaceId = stringOrEmpty(space && space.workspace_id);
         const targetHost = normalizeHostAlias(space && (space.host_key || space.host_label));
@@ -5163,10 +5163,7 @@ ShellRoot {
     }
 
     function currentSessionKey() {
-        return stringOrEmpty(
-            dashboardFocusState().current_session_key
-            || dashboardFocusState().current_ai_session_key
-        );
+        return stringOrEmpty(dashboardFocusState().current_session_key);
     }
 
     function sessionMatchesKey(session, key) {

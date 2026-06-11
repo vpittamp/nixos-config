@@ -120,7 +120,7 @@ async function collectPerfSmoke(): Promise<PerfSmokeReport> {
     await client.request("dashboard.snapshot", {});
     const snapshot = asRecord(await client.request("dashboard.snapshot", {}));
     const focusState = asRecord(snapshot.focus_state);
-    const currentWindowId = numberValue(focusState.current_window_id || focusState.focused_window_id);
+    const currentWindowId = numberValue(focusState.current_window_id);
     const localWindow = dashboardWindows(snapshot).find((windowData) => {
       const windowId = numberValue(windowData.id || windowData.window_id);
       const mode = stringValue(windowData.execution_mode).toLowerCase();

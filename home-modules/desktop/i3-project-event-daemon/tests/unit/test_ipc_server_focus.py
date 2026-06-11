@@ -141,8 +141,8 @@ async def test_focus_window_remote_handoff_does_not_require_local_sway(server, m
             "current_ai_session_key_after": "session-remote",
             "focused_window_id_after": 175,
             "focus_state_after": {
-                "current_ai_session_key": "session-remote",
-                "focused_window_id": 175,
+                "current_session_key": "session-remote",
+                "current_window_id": 175,
             },
         },
     })
@@ -182,8 +182,8 @@ async def test_focus_window_ssh_context_on_current_host_uses_local_focus(server,
     server._verify_window_focus = AsyncMock(return_value={"success": True, "reason": "ok"})
     server._focus_state = AsyncMock(return_value={
         "success": True,
-        "current_ai_session_key": "session-current",
-        "focused_window_id": 30,
+        "current_session_key": "session-current",
+        "current_window_id": 30,
     })
     server._remote_daemon_request = lambda **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected remote handoff"))
 
@@ -232,8 +232,8 @@ async def test_focus_window_ssh_target_with_local_window_binding_uses_local_focu
     server._verify_window_focus = AsyncMock(return_value={"success": True, "reason": "ok"})
     server._focus_state = AsyncMock(return_value={
         "success": True,
-        "current_ai_session_key": "session-current",
-        "focused_window_id": 175,
+        "current_session_key": "session-current",
+        "current_window_id": 175,
     })
     server._remote_daemon_request = lambda **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected remote handoff"))
 
@@ -398,8 +398,8 @@ async def test_focus_window_scratchpad_restore_preserves_saved_workspace_and_ful
     server._verify_window_focus = AsyncMock(return_value={"success": True, "reason": "ok"})
     server._focus_state = AsyncMock(return_value={
         "success": True,
-        "current_ai_session_key": "",
-        "focused_window_id": 44,
+        "current_session_key": "",
+        "current_window_id": 44,
     })
 
     async def command(cmd):
@@ -547,11 +547,11 @@ async def test_focus_state_reports_current_session_and_window(server, monkeypatc
     result = await server._focus_state({})
 
     assert result["success"] is True
-    assert result["schema_version"] == "i3pm.focus_state.v1"
+    assert result["schema_version"] == "i3pm.focus_state.v2"
     assert result["current_session_key"] == "session-current"
-    assert result["current_ai_session_key"] == "session-current"
+    assert "current_ai_session_key" not in result
     assert result["current_window_id"] == 101
-    assert result["focused_window_id"] == 101
+    assert "focused_window_id" not in result
     assert result["current_herdr_pane_id"] == "pane-1"
     assert result["active_session"]["pane_id"] == "pane-1"
     assert "tmux_session" not in result["active_session"]
@@ -613,8 +613,8 @@ async def test_focus_state_clears_verified_remote_override_without_local_ai_focu
     result = await server._focus_state({})
 
     assert result["success"] is True
-    assert result["current_ai_session_key"] == ""
-    assert result["focused_window_id"] == 404
+    assert result["current_session_key"] == ""
+    assert result["current_window_id"] == 404
     assert result["active_session"]["session_key"] == ""
 
 
@@ -655,7 +655,8 @@ async def test_focus_state_does_not_float_to_remote_session_without_verified_ove
     result = await server._focus_state({})
 
     assert result["success"] is True
-    assert result["current_ai_session_key"] == ""
+    assert result["current_session_key"] == ""
+    assert "current_ai_session_key" not in result
     assert result["active_session"]["session_key"] == ""
 
 
@@ -705,7 +706,8 @@ async def test_focus_state_prefers_focused_local_window_over_stale_override(serv
 
     result = await server._focus_state({})
 
-    assert result["current_ai_session_key"] == "session-local-current"
+    assert result["current_session_key"] == "session-local-current"
+    assert "current_ai_session_key" not in result
     assert result["active_session"]["host_name"] == "thinkpad"
 
 

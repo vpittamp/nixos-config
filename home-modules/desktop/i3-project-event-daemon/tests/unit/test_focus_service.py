@@ -191,10 +191,12 @@ def test_build_focus_state_payload_uses_daemon_focus_fields() -> None:
         generation=42,
     )
 
-    assert result["schema_version"] == "i3pm.focus_state.v1"
+    assert result["schema_version"] == "i3pm.focus_state.v2"
     assert result["generation"] == 42
     assert result["current_session_key"] == "session-current"
+    assert "current_ai_session_key" not in result
     assert result["current_window_id"] == 101
+    assert "focused_window_id" not in result
     assert result["current_workspace_name"] == "2"
     assert result["current_herdr_pane_id"] == "pane-1"
     assert result["current_herdr_host"] == "thinkpad"

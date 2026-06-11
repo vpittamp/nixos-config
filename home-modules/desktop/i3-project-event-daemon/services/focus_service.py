@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, Iterable, List
 
 
-FOCUS_STATE_SCHEMA_VERSION = "i3pm.focus_state.v1"
+FOCUS_STATE_SCHEMA_VERSION = "i3pm.focus_state.v2"
 
 
 class FocusService:
@@ -342,9 +342,7 @@ class FocusService:
             "schema_version": self.schema_version,
             "generation": int(generation or 0),
             "current_session_key": current_session_key,
-            "current_ai_session_key": current_session_key,
             "current_window_id": focused_window_id,
-            "focused_window_id": focused_window_id,
             "current_workspace_name": current_workspace_name,
             "current_herdr_pane_id": str(active_session.get("pane_id") or "").strip(),
             "current_herdr_host": str(

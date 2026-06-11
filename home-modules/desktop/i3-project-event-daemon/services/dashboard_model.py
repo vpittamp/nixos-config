@@ -522,7 +522,6 @@ def validate_dashboard_payload(
 
     current_key = str(
         focus_state.get("current_session_key")
-        or focus_state.get("current_ai_session_key")
         or payload.get("current_ai_session_key")
         or ""
     ).strip()
@@ -558,7 +557,7 @@ def validate_dashboard_payload(
     focused_windows = [window for window in window_rows if bool(window.get("focused", False))]
     if len(focused_windows) > 1:
         warnings.append("duplicate_focused_windows")
-    focus_window_id = int(focus_state.get("current_window_id") or focus_state.get("focused_window_id") or 0)
+    focus_window_id = int(focus_state.get("current_window_id") or 0)
     current_window_rows = [
         window for window in window_rows
         if focus_window_id > 0
