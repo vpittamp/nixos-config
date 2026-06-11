@@ -77,7 +77,7 @@ export function applyDashboardEvent(
 export async function dashboardCommand(args: string[], _flags: CommandOptions): Promise<number> {
   const parsed = parseArgs(args, {
     boolean: ["help", "json"],
-    string: ["count", "interval"],
+    string: ["count"],
     alias: { h: "help" },
   });
   const subcommand = String(parsed._[0] || "");

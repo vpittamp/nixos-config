@@ -540,6 +540,8 @@ def test_dashboard_watch_uses_reducer_style_snapshot_and_event_paths():
     assert 'dashboardWatchProcess.command = [appConfig.i3pmBin, "dashboard", "watch"];' in worktree_service_text
     assert "watch emits one initial snapshot, then typed dashboard delta events." in dashboard_command_text
     assert "const encoded = JSON.stringify(event);" in dashboard_command_text
+    assert '"interval"' not in dashboard_command_text
+    assert "--interval" not in dashboard_command_text
     assert 'message.method !== "state_changed"' not in daemon_client_text
     assert 'event["method"] == "state_changed"' not in (REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "core" / "daemon_client.py").read_text()
     assert '"state_changed"' not in dashboard_command_text
