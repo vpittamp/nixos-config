@@ -103,6 +103,19 @@ def test_ai_session_status_does_not_use_notification_boundary_adapters():
         assert field not in service_text
 
 
+def test_assistant_desktop_rpc_surface_is_retired():
+    """The old assistant.desktop RPC should not compete with Herdr/dashboard state."""
+    daemon_text = IPC_SERVER_PY.read_text()
+    client_text = I3PM_DAEMON_CLIENT_TS.read_text()
+
+    assert not (DAEMON_SERVICES_DIR / "assistant_desktop_service.py").exists()
+    assert "assistant.desktop" not in daemon_text
+    assert "_assistant_desktop" not in daemon_text
+    assert "AssistantDesktopService" not in daemon_text
+    assert "assistant.desktop" not in client_text
+    assert "getAssistantDesktopSnapshot" not in client_text
+
+
 def test_provider_completion_hooks_do_not_drive_ai_session_state():
     claude_text = CLAUDE_CODE_NIX.read_text()
     codex_text = CODEX_NIX.read_text()

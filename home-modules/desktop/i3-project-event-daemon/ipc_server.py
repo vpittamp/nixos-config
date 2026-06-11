@@ -51,7 +51,6 @@ from .services.window_filter import (
     read_process_environ_with_fallback,
 )
 from .services.registry_loader import RegistryLoader, RegistryApp
-from .services.assistant_desktop_service import AssistantDesktopService
 from .services.dashboard_model import (
     build_dashboard_projects as build_dashboard_project_cards,
 )
@@ -605,19 +604,6 @@ class IPCServer:
             invalidate_worktree_cache=self.invalidate_worktree_cache,
         )
         self.state_change_subscribers = self.dashboard_service.subscribers
-        self.assistant_desktop_service = AssistantDesktopService(
-            registry_loader=self.registry_loader,
-            desktop_revision=lambda: int(self._snapshot_version),
-            runtime_snapshot=lambda params: self._runtime_snapshot(params),
-            window_focus=lambda params: self._window_focus(params),
-            window_action=lambda params: self._window_action(params),
-            workspace_focus=lambda params: self._workspace_focus(params),
-            context_ensure=lambda params: self._context_ensure(params),
-            scratchpad_toggle=lambda params: self._scratchpad_toggle(params),
-            launch_open=lambda params: self._launch_open(params),
-            display_cycle=lambda params: self.display_service.cycle(params),
-            run_command=lambda *args, **kwargs: subprocess.run(*args, **kwargs),
-        )
         self._malformed_json_count: int = 0
         self._deferred_filter_task: Optional[asyncio.Task] = None
         self._malformed_json_last_at: Optional[str] = None
@@ -1112,12 +1098,6 @@ class IPCServer:
                 result = await self._focus_state(params)
             elif method == "session.exit":
                 result = await self._session_exit(params)
-            elif method == "assistant.desktop.snapshot":
-                result = await self._assistant_desktop_snapshot(params)
-            elif method == "assistant.desktop.preview":
-                result = await self._assistant_desktop_preview(params)
-            elif method == "assistant.desktop.execute":
-                result = await self._assistant_desktop_execute(params)
 
             # Feature 058: Project management methods (T030-T033)
             elif method == "project_create":
@@ -1749,26 +1729,6 @@ class IPCServer:
             "requested_target_host": requested_target_host,
             "context": context,
         }
-
-    async def _assistant_desktop_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        return await self.assistant_desktop_service.snapshot(params)
-
-    async def _assistant_desktop_resolve_action(
-        self,
-        params: Dict[str, Any],
-        *,
-        runtime_snapshot: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        return await self.assistant_desktop_service.resolve_action(
-            params,
-            runtime_snapshot=runtime_snapshot,
-        )
-
-    async def _assistant_desktop_preview(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        return await self.assistant_desktop_service.preview(params)
-
-    async def _assistant_desktop_execute(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        return await self.assistant_desktop_service.execute(params)
 
     async def _get_projects(self) -> Dict[str, Any]:
         """List all projects with window counts.

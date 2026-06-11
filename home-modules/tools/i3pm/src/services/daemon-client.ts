@@ -257,13 +257,6 @@ export class DaemonClient {
     return await this.request<T>("runtime.snapshot", {});
   }
 
-  async getAssistantDesktopSnapshot<T = unknown>(params?: {
-    include_processes?: boolean;
-    process_limit?: number;
-  }): Promise<T> {
-    return await this.request<T>("assistant.desktop.snapshot", params ?? {});
-  }
-
   async getDashboardSnapshot<T = unknown>(): Promise<T> {
     return await this.request<T>("dashboard.snapshot", {});
   }
