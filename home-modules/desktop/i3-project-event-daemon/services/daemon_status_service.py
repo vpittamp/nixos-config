@@ -64,6 +64,12 @@ class DaemonStatusService:
         health = get_health_metrics()
         health.update_resource_usage()
         stats = await self.state_manager.get_stats()
+        i3_connection = self.i3_connection_provider()
+        i3_connected = (
+            bool(i3_connection.is_connected)
+            if i3_connection is not None
+            else bool(health.i3_connected)
+        )
 
         result = {
             "running": True,
@@ -75,7 +81,7 @@ class DaemonStatusService:
             "last_event_time": datetime.fromtimestamp(health.last_event_time).isoformat()
             if health.last_event_time
             else None,
-            "i3_connected": health.i3_connected,
+            "i3_connected": i3_connected,
             "active_project": stats.get("active_project"),
         }
 
@@ -97,7 +103,7 @@ class DaemonStatusService:
             result["i3_reconnection"] = reconnection_manager.get_stats()
         else:
             result["i3_reconnection"] = {
-                "is_connected": health.i3_connected,
+                "is_connected": i3_connected,
                 "reconnection_count": 0,
             }
 

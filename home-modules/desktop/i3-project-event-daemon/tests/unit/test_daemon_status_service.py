@@ -168,7 +168,7 @@ async def test_daemon_status_includes_recovery_and_reconnection(monkeypatch) -> 
         total_events_processed=12,
         total_errors=2,
         last_event_time=1_767_225_600,
-        i3_connected=True,
+        i3_connected=False,
         update_resource_usage=lambda: None,
     )
     monkeypatch.setattr(health_module, "get_health_metrics", lambda: health_metrics)
@@ -181,7 +181,7 @@ async def test_daemon_status_includes_recovery_and_reconnection(monkeypatch) -> 
     service = DaemonStatusService(
         state_manager=_StateManager(),
         event_buffer=None,
-        i3_connection_provider=lambda: None,
+        i3_connection_provider=lambda: SimpleNamespace(is_connected=True),
         socket_path_provider=lambda: "/tmp/i3pm.sock",
         ipc_stats_provider=lambda: {},
         startup_recovery_provider=lambda: recovery,
