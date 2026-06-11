@@ -108,7 +108,6 @@ def test_validate_dashboard_payload_accepts_single_daemon_current_row() -> None:
             "current_window_id": 101,
             "current_workspace_name": "1",
         },
-        "current_ai_session_key": "session-current",
         "active_ai_sessions": [
             {
                 "session_key": "session-current",
@@ -336,7 +335,6 @@ def test_validate_dashboard_payload_rejects_duplicate_current_rows() -> None:
             "current_session_key": "session-current",
             "current_window_id": 101,
         },
-        "current_ai_session_key": "session-current",
         "active_ai_sessions": [
             {"session_key": "session-current", "is_current_window": True},
             {"session_key": "session-other", "is_current_window": True},
@@ -359,7 +357,6 @@ def test_validate_dashboard_payload_warns_on_transient_window_focus_rows() -> No
             "current_window_id": 101,
             "current_workspace_name": "2",
         },
-        "current_ai_session_key": "session-current",
         "active_ai_sessions": [
             {
                 "session_key": "session-current",
@@ -395,7 +392,6 @@ def test_validate_dashboard_payload_rejects_remote_herdr_focus_mismatch() -> Non
             "current_session_key": "session-local",
             "current_window_id": 101,
         },
-        "current_ai_session_key": "session-local",
         "active_ai_sessions": [
             {
                 "session_key": "session-local",
@@ -420,6 +416,31 @@ def test_validate_dashboard_payload_rejects_remote_herdr_focus_mismatch() -> Non
 
     assert result["ok"] is False
     assert "remote_herdr_focus_mismatch" in result["issues"]
+
+
+def test_validate_dashboard_payload_rejects_retired_focus_aliases() -> None:
+    payload = {
+        "schema_version": "i3pm.dashboard.v2",
+        "focus_state": {
+            "current_session_key": "session-current",
+            "current_ai_session_key": "session-current",
+            "current_window_id": 101,
+            "focused_window_id": 101,
+        },
+        "current_ai_session_key": "session-current",
+        "active_ai_sessions": [
+            {"session_key": "session-current", "is_current_window": True},
+        ],
+        "projects": [{"windows": [{"id": 101, "is_current_window": True}]}],
+        "outputs": [],
+    }
+
+    result = validate_dashboard_payload(payload)
+
+    assert result["ok"] is False
+    assert "retired_current_ai_session_key" in result["issues"]
+    assert "retired_focus_current_ai_session_key" in result["issues"]
+    assert "retired_focus_focused_window_id" in result["issues"]
 
 
 def test_dashboard_event_type_maps_legacy_invalidations_to_typed_events() -> None:

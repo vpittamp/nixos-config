@@ -510,11 +510,18 @@ def validate_dashboard_payload(
     warnings: List[str] = []
     if str(payload.get("schema_version") or "").strip() != schema_version:
         issues.append("schema_version_mismatch")
+    if "current_ai_session_key" in payload:
+        issues.append("retired_current_ai_session_key")
 
     focus_state = payload.get("focus_state")
     if not isinstance(focus_state, dict):
         focus_state = {}
         issues.append("missing_focus_state")
+    else:
+        if "current_ai_session_key" in focus_state:
+            issues.append("retired_focus_current_ai_session_key")
+        if "focused_window_id" in focus_state:
+            issues.append("retired_focus_focused_window_id")
 
     current_key = str(
         focus_state.get("current_session_key")
