@@ -1132,7 +1132,7 @@ class IPCServer:
             elif method == "window.focus_fast":
                 result = await self.focus_service.focus_window_fast(params)
             elif method == "window.action":
-                result = await self._window_action(params)
+                result = await self.focus_service.window_action(params)
             elif method == "session.list":
                 result = await self._session_list(params)
             elif method == "focus.state":
@@ -8284,10 +8284,6 @@ class IPCServer:
         )
         return {"switched": True, "context": await self._context_get_active({})}
 
-    async def _window_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a deterministic daemon-owned action against a window."""
-        return await self.focus_service.window_action(params)
-
     async def _runtime_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return a compact daemon-owned runtime snapshot for UI consumers."""
         params = params or {}
@@ -11638,7 +11634,3 @@ class IPCServer:
             "summary": summary,
             "events": events,
         }
-
-    async def _get_focused_workspace_name(self) -> str:
-        """Return the currently focused workspace name, if available."""
-        return await self.focus_service.focused_workspace_name()

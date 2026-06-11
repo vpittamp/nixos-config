@@ -279,11 +279,13 @@ def test_focus_rpc_behavior_lives_in_focus_service_not_ipc_wrappers():
 
     for retired in [
         "async def _window_focus_fast",
+        "async def _window_action",
         "async def _focus_window_impl",
         "async def _window_focus",
         "async def _workspace_focus_fast",
         "async def _workspace_focus",
         "def _build_window_focus_target",
+        "async def _get_focused_workspace_name",
         "async def _outputs_get_state",
         "async def _output_configure",
         "async def _output_create_virtual",
@@ -293,6 +295,7 @@ def test_focus_rpc_behavior_lives_in_focus_service_not_ipc_wrappers():
 
     assert "focus_service.focus_window_from_params(params)" in ipc_text
     assert "focus_service.focus_window_fast(params)" in ipc_text
+    assert "focus_service.window_action(params)" in ipc_text
     assert "focus_service.focus_workspace(params)" in ipc_text
     assert "focus_service.focus_workspace_fast(params)" in ipc_text
     assert "display_service.outputs_state(params)" in ipc_text
