@@ -60,6 +60,7 @@ from .services.daemon_contract_service import DaemonContractService
 from .services.dashboard_service import DashboardService
 from .services.dashboard_git_service import DashboardGitService
 from .services.dashboard_worktree_service import DashboardWorktreeService
+from .services.daemon_status_service import DaemonStatusService
 from .services.display_service import DisplayService
 from .services.focus_service import FocusService
 from .services.herdr_service import HerdrService, RETIRED_SESSION_UI_STATE_FIELDS
@@ -551,6 +552,19 @@ class IPCServer:
             dashboard_schema_version=DASHBOARD_SCHEMA_VERSION,
             dashboard_event_schema_version=DASHBOARD_EVENT_SCHEMA_VERSION,
             focus_schema_version=FOCUS_STATE_SCHEMA_VERSION,
+        )
+        self.daemon_status_service = DaemonStatusService(
+            state_manager=self.state_manager,
+            event_buffer=self.event_buffer,
+            i3_connection_provider=lambda: self.i3_connection,
+            socket_path_provider=lambda: (
+                str(self.server.sockets[0].getsockname())
+                if self.server and self.server.sockets
+                else "/run/user/1000/i3-project-daemon/ipc.sock"
+            ),
+            ipc_stats_provider=lambda: self._get_ipc_stats(),
+            startup_recovery_provider=lambda: getattr(self, "startup_recovery_result", None),
+            reconnection_manager_provider=lambda: getattr(self, "i3_reconnection_manager", None),
         )
         self.display_service = DisplayService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
@@ -1588,21 +1602,7 @@ class IPCServer:
         error_msg = None
 
         try:
-            stats = await self.state_manager.get_stats()
-            result = {
-                "status": "running",
-                "connected": self.state_manager.state.is_connected,
-                "uptime": stats.get("uptime_seconds", 0),  # Rename for CLI
-                "active_project": stats.get("active_project"),
-                "window_count": stats.get("window_count", 0),
-                "workspace_count": stats.get("workspace_count", 0),
-                "event_count": stats.get("event_count", 0),
-                "error_count": stats.get("error_count", 0),
-                "version": "1.0.0",  # TODO: Get from package metadata
-                "socket_path": str(self.server.sockets[0].getsockname()) if self.server and self.server.sockets else "/run/user/1000/i3-project-daemon/ipc.sock",
-                "ipc_stats": self._get_ipc_stats(),
-            }
-            return result
+            return await self.daemon_status_service.cli_status()
         except Exception as e:
             error_msg = str(e)
             raise
@@ -3740,54 +3740,10 @@ class IPCServer:
 
         Feature 030 (T029): Includes recovery status and i3 reconnection stats
         """
-        import os
-        from .monitoring.health import get_health_metrics
-
         start_time = time.perf_counter()
 
         try:
-            # Get health metrics
-            health = get_health_metrics()
-            health.update_resource_usage()
-
-            stats = await self.state_manager.get_stats()
-
-            result = {
-                "running": True,
-                "uptime_seconds": health.uptime_seconds,
-                "pid": os.getpid(),
-                "memory_mb": health.memory_rss_mb,
-                "event_count": health.total_events_processed,
-                "error_count": health.total_errors,
-                "last_event_time": datetime.fromtimestamp(health.last_event_time).isoformat() if health.last_event_time else None,
-                "i3_connected": health.i3_connected,
-                "active_project": stats.get("active_project"),
-            }
-
-            # Feature 030 (T029): Add recovery status
-            if hasattr(self, 'startup_recovery_result') and self.startup_recovery_result:
-                result["recovery"] = {
-                    "startup_recovery_performed": True,
-                    "startup_recovery_success": self.startup_recovery_result.success,
-                    "actions_taken": self.startup_recovery_result.actions_taken,
-                    "recovery_timestamp": self.startup_recovery_result.timestamp.isoformat(),
-                }
-            else:
-                result["recovery"] = {
-                    "startup_recovery_performed": False,
-                }
-
-            # Feature 030 (T029): Add i3 reconnection stats
-            if hasattr(self, 'i3_reconnection_manager') and self.i3_reconnection_manager:
-                reconnect_stats = self.i3_reconnection_manager.get_stats()
-                result["i3_reconnection"] = reconnect_stats
-            else:
-                result["i3_reconnection"] = {
-                    "is_connected": health.i3_connected,
-                    "reconnection_count": 0,
-                }
-
-            return result
+            return await self.daemon_status_service.daemon_status()
 
         finally:
             duration_ms = (time.perf_counter() - start_time) * 1000
@@ -5545,68 +5501,9 @@ class IPCServer:
             DiagnosticReport with health information
         """
         start_time = time.perf_counter()
-        
-        # Get daemon start time (uptime)
-        daemon_start = getattr(self.state_manager, 'daemon_start_time', time.time())
-        uptime_seconds = time.time() - daemon_start
-        
-        # Check i3 IPC connection
-        i3_connected = False
-        if self.i3_connection:
-            i3_connected = self.i3_connection.is_connected
-        
-        # Check event subscriptions (from existing _daemon_status method)
-        event_subscriptions = []
-        if self.event_buffer:
-            # Get subscription stats from event buffer
-            buffer_stats = getattr(self.event_buffer, 'get_stats', lambda: {})()
-            for sub_type in ['window', 'workspace', 'output', 'tick']:
-                events = [e for e in self.event_buffer.get_recent(limit=500) if e.event_type.startswith(sub_type)]
-                last_event = events[0] if events else None
 
-                event_subscriptions.append({
-                    "subscription_type": sub_type,
-                    "is_active": i3_connected,
-                    "event_count": len(events),
-                    "last_event_time": last_event.timestamp.isoformat() if last_event else None,
-                    "last_event_type": last_event.event_type if last_event else None
-                })
-        
-        # Get total events processed
-        total_events = len(self.event_buffer.get_recent(limit=9999)) if self.event_buffer else 0
-        
-        # Get total windows tracked
-        total_windows = len(self.state_manager.state.window_map)
-        
-        # Assess overall health
-        health_issues = []
-        if not i3_connected:
-            health_issues.append("i3 IPC connection lost")
-        if not event_subscriptions:
-            health_issues.append("No event subscriptions active")
-        if total_events == 0 and uptime_seconds > 60:
-            health_issues.append("No events processed (daemon may not be receiving events)")
-        
-        overall_status = "healthy"
-        if len(health_issues) > 0:
-            if "i3 IPC connection lost" in health_issues or "No event subscriptions" in health_issues:
-                overall_status = "critical"
-            else:
-                overall_status = "warning"
-        
+        result = self.daemon_status_service.health_check()
         duration_ms = (time.perf_counter() - start_time) * 1000
-        
-        result = {
-            "daemon_version": "1.4.0",  # TODO: Get from module __version__
-            "uptime_seconds": round(uptime_seconds, 1),
-            "i3_ipc_connected": i3_connected,
-            "json_rpc_server_running": True,  # If we're responding, server is running
-            "event_subscriptions": event_subscriptions,
-            "total_events_processed": total_events,
-            "total_windows": total_windows,
-            "overall_status": overall_status,
-            "health_issues": health_issues
-        }
         
         await self._log_ipc_event(
             event_type="health_check",
@@ -5634,20 +5531,7 @@ class IPCServer:
         start_time = time.perf_counter()
 
         try:
-            if not self.i3_connection:
-                return {
-                    "status": "disconnected",
-                    "socket_path": None,
-                    "last_validated": None,
-                    "latency_ms": None,
-                    "reconnection_count": 0,
-                    "uptime_seconds": 0.0,
-                    "error": "No i3 connection manager available",
-                }
-
-            # Get health status from connection manager
-            health_status = await self.i3_connection.get_health_status()
-            return health_status.to_dict()
+            return await self.daemon_status_service.socket_health()
 
         finally:
             duration_ms = (time.perf_counter() - start_time) * 1000
