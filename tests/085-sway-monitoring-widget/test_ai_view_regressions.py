@@ -35,6 +35,7 @@ HERDR_SERVICE_PY = DAEMON_SERVICES_DIR / "herdr_service.py"
 LAUNCH_SERVICE_PY = DAEMON_SERVICES_DIR / "launch_service.py"
 DASHBOARD_MODEL_PY = DAEMON_SERVICES_DIR / "dashboard_model.py"
 FOCUS_SERVICE_PY = DAEMON_SERVICES_DIR / "focus_service.py"
+DIAGNOSTIC_SERVICE_PY = DAEMON_SERVICES_DIR / "diagnostic_service.py"
 SESSION_RUNTIME_SERVICE_PY = DAEMON_SERVICES_DIR / "session_runtime_service.py"
 PROJECT_REMOTE_LAUNCH_PY = REPO_ROOT / "scripts" / "project-remote-launch.py"
 I3PM_MONITORING_DATA_PY = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "monitoring_data.py"
@@ -272,10 +273,11 @@ def test_focus_state_active_session_uses_herdr_identity_not_tmux_fields():
     assert '"tmux_pane"' not in focus_body
 
 
-def test_focus_rpc_behavior_lives_in_focus_service_not_ipc_wrappers():
-    """IPC dispatch should call FocusService directly instead of carrying focus wrappers."""
+def test_daemon_rpc_behavior_lives_in_services_not_ipc_wrappers():
+    """IPC dispatch should call services directly instead of carrying wrappers."""
     ipc_text = IPC_SERVER_PY.read_text()
     focus_text = FOCUS_SERVICE_PY.read_text()
+    diagnostic_text = DIAGNOSTIC_SERVICE_PY.read_text()
 
     for retired in [
         "async def _window_focus_fast",
@@ -292,6 +294,12 @@ def test_focus_rpc_behavior_lives_in_focus_service_not_ipc_wrappers():
         "async def _workspace_move_to_output",
         "async def _health_check",
         "async def _get_socket_health",
+        "async def _get_window_identity_diagnostic",
+        "async def _get_window_environment",
+        "async def _get_workspace_rule_diagnostic",
+        "async def _validate_state_diagnostic",
+        "async def _get_recent_events_diagnostic",
+        "async def _get_diagnostic_report_full",
     ]:
         assert retired not in ipc_text
 
@@ -306,8 +314,15 @@ def test_focus_rpc_behavior_lives_in_focus_service_not_ipc_wrappers():
     assert "display_service.move_workspace_to_output(params)" in ipc_text
     assert "daemon_status_service.health_check()" in ipc_text
     assert "daemon_status_service.socket_health()" in ipc_text
+    assert "diagnostic_service.window_identity(params)" in ipc_text
+    assert "diagnostic_service.window_environment(params)" in ipc_text
+    assert "diagnostic_service.workspace_rule(params)" in ipc_text
+    assert "diagnostic_service.validate_state()" in ipc_text
+    assert "diagnostic_service.recent_events(params)" in ipc_text
+    assert "diagnostic_service.report(params)" in ipc_text
     assert "def focus_window_from_params" in focus_text
     assert "def build_window_focus_target" in focus_text
+    assert "class DiagnosticService" in diagnostic_text
 
 
 def test_daemon_session_rows_strip_legacy_tmux_identity_fields():
