@@ -119,10 +119,11 @@ PanelWindow {
                             delegate: Rectangle {
                                 required property var modelData
                                 readonly property var workspace: modelData
+                                readonly property string workspaceLabelValue: root.workspaceLabel(workspace)
                                 readonly property bool workspaceFocused: root.workspaceIsFocused(workspace)
                                 readonly property bool workspaceHovered: workspaceMouse.containsMouse
-                                readonly property var workspaceIcons: root.workspaceIconSources(root.workspaceLabel(workspace))
-                                readonly property int workspaceCount: root.workspaceWindowCount(root.workspaceLabel(workspace))
+                                readonly property var workspaceIcons: root.arrayOrEmpty(workspace && workspace.icon_sources)
+                                readonly property int workspaceCount: Number(workspace && workspace.window_count || 0)
                                 width: Math.max(34, workspaceText.implicitWidth + (workspaceIcons.length ? 30 : 0) + (workspaceCount > 1 ? 14 : 0) + 12)
                                 height: 28
                                 radius: 8
@@ -165,7 +166,7 @@ PanelWindow {
 
                                     Text {
                                         id: workspaceText
-                                        text: root.workspaceLabel(workspace)
+                                        text: workspaceLabelValue
                                         color: workspaceFocused ? colors.bg : (workspaceHovered ? colors.text : colors.textDim)
                                         font.pixelSize: 11
                                         font.weight: workspaceFocused ? Font.DemiBold : Font.Medium

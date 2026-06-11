@@ -19,6 +19,11 @@ PanelWindow {
     property var runtimeProjects: []
     screen: root.primaryScreen
     visible: root.panelVisible
+    onVisibleChanged: {
+        if (visible) {
+            refreshRuntimePanelData();
+        }
+    }
     color: "transparent"
     implicitWidth: runtimeConfig.panelWidth
     anchors.top: true
@@ -43,7 +48,9 @@ PanelWindow {
         target: root
 
         function onDashboardChanged() {
-            refreshRuntimePanelData();
+            if (panelWindow.visible) {
+                refreshRuntimePanelData();
+            }
         }
     }
 

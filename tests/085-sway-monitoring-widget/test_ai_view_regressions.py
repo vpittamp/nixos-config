@@ -721,9 +721,16 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     assert "property var barWorkspaces: []" in bottom_bar_text
     assert "model: barWorkspaces" in bottom_bar_text
     assert "model: root.barWorkspacesForOutput(barOutputName)" not in bottom_bar_text
+    assert "readonly property var workspaceIcons: root.workspaceIconSources(root.workspaceLabel(workspace))" not in bottom_bar_text
+    assert "readonly property int workspaceCount: root.workspaceWindowCount(root.workspaceLabel(workspace))" not in bottom_bar_text
+    assert "readonly property var workspaceIcons: root.arrayOrEmpty(workspace && workspace.icon_sources)" in bottom_bar_text
+    assert "readonly property int workspaceCount: Number(workspace && workspace.window_count || 0)" in bottom_bar_text
+    assert "icon_sources: workspaceIconSourcesForWindows(windows)" in text
+    assert "window_count: windows.length" in text
     assert "onPressed: root.activateWorkspace(workspace)" in bottom_bar_text
     assert "readonly property var runtimeProjects: root.panelProjects()" not in runtime_panel_text
     assert "function refreshRuntimePanelData()" in runtime_panel_text
+    assert "if (panelWindow.visible) {\n                refreshRuntimePanelData();\n            }" in runtime_panel_text
     assert 'count: root.runtimePanelSectionCount("windows")' not in runtime_panel_text
     assert "count: panelWindow.runtimePanelWindowCount()" in runtime_panel_text
     assert "function runtimePanelWindowSummary()" in runtime_panel_text

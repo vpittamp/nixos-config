@@ -1233,12 +1233,16 @@ ShellRoot {
                     continue;
                 }
                 const focused = workspaceIsFocused(name);
+                const windows = arrayOrEmpty(workspace ? workspace.windows : []);
                 items.push({
                     num: Number(workspace?.number || 0),
                     name: name,
+                    label: name,
                     focused: focused,
                     active: focused,
                     urgent: boolOrFalse(workspace?.urgent),
+                    window_count: windows.length,
+                    icon_sources: workspaceIconSourcesForWindows(windows),
                     output: target
                 });
             }
@@ -6451,9 +6455,8 @@ ShellRoot {
         return windows.length;
     }
 
-    function workspaceIconSources(workspaceName) {
-        const workspace = workspaceSnapshot(workspaceName);
-        const windows = arrayOrEmpty(workspace ? workspace.windows : []).slice().sort(function (left, right) {
+    function workspaceIconSourcesForWindows(workspaceWindows) {
+        const windows = arrayOrEmpty(workspaceWindows).slice().sort(function (left, right) {
             const leftFocused = windowIsFocused(left);
             const rightFocused = windowIsFocused(right);
             if (leftFocused !== rightFocused) {
@@ -6488,6 +6491,11 @@ ShellRoot {
         }
 
         return icons;
+    }
+
+    function workspaceIconSources(workspaceName) {
+        const workspace = workspaceSnapshot(workspaceName);
+        return workspaceIconSourcesForWindows(workspace ? workspace.windows : []);
     }
 
     function appLabel(windowData) {
