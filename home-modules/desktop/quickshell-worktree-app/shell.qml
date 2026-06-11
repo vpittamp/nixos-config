@@ -176,7 +176,7 @@ ShellRoot {
     }
 
     function sessionMeta(session) {
-        const phase = stringOrEmpty(session && (session.session_phase_label || session.session_phase)) || "idle";
+        const phase = stringOrEmpty(session && session.agent_status) || "idle";
         const host = stringOrEmpty(session && (session.target_host || session.host_name || session.connection_key));
         return host ? `${phase}  •  ${host}` : phase;
     }

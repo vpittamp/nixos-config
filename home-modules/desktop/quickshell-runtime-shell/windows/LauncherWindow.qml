@@ -1048,44 +1048,6 @@ PanelWindow {
                                         }
                                     }
 
-                                    Rectangle {
-                                        visible: root.stringOrEmpty(root.sessionPreview.turn_owner_label || root.sessionPreview.turn_owner).length > 0
-                                        height: 20
-                                        radius: 6
-                                        color: root.sessionPreviewOwnerChipBackground()
-                                        border.color: root.sessionPreviewOwnerChipBorder()
-                                        border.width: 1
-                                        Layout.preferredWidth: previewOwnerText.implicitWidth + 12
-
-                                        Text {
-                                            id: previewOwnerText
-                                            anchors.centerIn: parent
-                                            text: root.stringOrEmpty(root.sessionPreview.turn_owner_label || root.sessionPreview.turn_owner)
-                                            color: root.sessionPreviewOwnerChipColor()
-                                            font.pixelSize: 8
-                                            font.weight: Font.DemiBold
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        visible: root.stringOrEmpty(root.sessionPreview.activity_substate_label || root.sessionPreview.activity_substate).length > 0
-                                        height: 20
-                                        radius: 6
-                                        color: colors.panelAlt
-                                        border.color: colors.lineSoft
-                                        border.width: 1
-                                        Layout.preferredWidth: previewSubstateText.implicitWidth + 12
-
-                                        Text {
-                                            id: previewSubstateText
-                                            anchors.centerIn: parent
-                                            text: root.stringOrEmpty(root.sessionPreview.activity_substate_label || root.sessionPreview.activity_substate)
-                                            color: colors.textDim
-                                            font.pixelSize: 8
-                                            font.weight: Font.DemiBold
-                                        }
-                                    }
-
                                     Item {
                                         Layout.fillWidth: true
                                     }

@@ -62,6 +62,23 @@ def test_session_phase_uses_only_raw_herdr_agent_status():
         assert term not in text
 
 
+def test_session_preview_and_worktree_app_do_not_render_legacy_phase_fields():
+    """Secondary QuickShell surfaces should not render custom session phase metadata."""
+    launcher_text = LAUNCHER_WINDOW_QML.read_text()
+    worktree_text = WORKTREE_APP_SHELL_QML.read_text()
+    retired_terms = [
+        "session_phase",
+        "turn_owner",
+        "activity_substate",
+        "status_reason",
+        "sessionPreviewOwnerChip",
+    ]
+    for term in retired_terms:
+        assert term not in launcher_text
+        assert term not in worktree_text
+    assert "const phase = stringOrEmpty(session && session.agent_status) || \"idle\";" in worktree_text
+
+
 def test_ai_session_status_does_not_use_notification_boundary_adapters():
     """Notification-derived status fields should not drive the AI session UI."""
     shell_text = SHELL_QML.read_text()
