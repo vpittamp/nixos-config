@@ -56,8 +56,8 @@ class HealthMetrics:
     cpu_percent: float = 0.0
 
     # Health thresholds
-    max_memory_mb: float = 100.0  # From systemd MemoryMax
-    max_cpu_percent: float = 50.0  # From systemd CPUQuota
+    max_memory_mb: float = 512.0  # From systemd MemoryMax
+    max_cpu_percent: float = 100.0  # Alert only on sustained saturation; no systemd CPUQuota
 
     def update_resource_usage(self):
         """Update memory and CPU usage metrics"""

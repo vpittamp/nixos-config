@@ -198,7 +198,6 @@ ShellRoot {
     property var expandedSessionGroups: ({})
     property var collapsedHerdrSpaceGroups: ({})
     property string lastFocusedSessionKey: ""
-    property string selectedSessionKey: ""
     property var localFocusIntent: null
     property var sessionClosePendingMap: ({})
     property string displayApplyTarget: ""
@@ -7169,7 +7168,6 @@ ShellRoot {
         }
 
         const target = sessionFocusTarget(sessionData || resolvedSessionKey);
-        selectedSessionKey = sessionData ? sessionIdentityKey(sessionData) : resolvedSessionKey;
         runFocusTarget(target);
     }
 
@@ -7747,10 +7745,6 @@ ShellRoot {
     function afterDashboardApplied() {
         syncDisplayApplyStateFromDashboard();
         pruneSessionClosePending();
-        const current = currentSessionKey();
-        if (current) {
-            selectedSessionKey = current;
-        }
         clearLocalFocusIntentIfSettled();
         if (launcherVisible && (launcherMode === "projects" || launcherMode === "sessions" || launcherMode === "windows")) {
             restartLauncherQuery();

@@ -461,6 +461,9 @@ def test_session_rows_use_daemon_focus_state_for_current_highlight():
 
     assert "property bool currentOverride: false" in row_text
     assert "readonly property bool isCurrent: currentOverride || rootObject.sessionIsCurrent(session)" in row_text
+    assert "readonly property color currentAccentColor: colorsObject.blue" in row_text
+    assert "colorsObject.blueBg" in row_text
+    assert "colorsObject.blueMuted" in row_text
     assert "function sessionMatchesKey(session, key)" in text
     assert "function pendingFocusIntent()" in text
     assert "function pendingFocusIntentMatches(kind, targetKey)" in text
@@ -471,7 +474,8 @@ def test_session_rows_use_daemon_focus_state_for_current_highlight():
     assert "optimisticCurrentSessionKey" not in text
     assert "optimisticCurrentSessionKey" not in panel_text
     assert "optimisticCurrentSessionKey" not in launcher_text
-    assert "selected: root.sessionMatchesKey(modelData, root.selectedSessionKey)" in panel_text
+    assert "selectedSessionKey" not in text
+    assert "selected: false" in panel_text
     assert "currentOverride: root.sessionIsCurrent(modelData)" in panel_text
     assert "currentOverride: root.sessionIsCurrent(entry)" in launcher_text
     assert "const current = currentSessionKey();" in text
@@ -695,7 +699,7 @@ def test_quickshell_daemon_actions_use_one_shot_helper_instead_of_persistent_soc
 
     assert "readonly property string daemonActionBin" in quickshell_default_nix_text
     assert "quickshell-daemon-action" in quickshell_default_nix_text
-    assert "client.settimeout(1.5)" in quickshell_default_nix_text
+    assert "client.settimeout(5.0)" in quickshell_default_nix_text
     assert "Quickshell.execDetached([runtimeConfig.daemonActionBin, normalizedMethod, JSON.stringify(params || {})])" in send_body
     assert "Socket {" not in send_body
     assert "daemonActionSocket" not in runtime_services_text

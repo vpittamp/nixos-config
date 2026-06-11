@@ -868,6 +868,8 @@ class IPCServer:
                     writer.write(json.dumps(error_response).encode() + b"\n")
                     await writer.drain()
 
+        except (BrokenPipeError, ConnectionError, ConnectionResetError, asyncio.IncompleteReadError) as e:
+            logger.debug("Client %s disconnected during request handling: %s", addr, e)
         except Exception as e:
             logger.error(f"Error handling client {addr}: {e}", exc_info=True)
 

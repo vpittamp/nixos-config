@@ -982,7 +982,7 @@ request = {
 
 try:
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-        client.settimeout(1.5)
+        client.settimeout(5.0)
         client.connect(socket_path)
         client.sendall((json.dumps(request, separators=(",", ":")) + "\n").encode("utf-8"))
         chunks = []

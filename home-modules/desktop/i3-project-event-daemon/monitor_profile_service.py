@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -255,10 +256,15 @@ class MonitorProfileService:
             message: Notification body
             urgency: "low", "normal", or "critical"
         """
+        notify_send = shutil.which("notify-send")
+        if not notify_send:
+            logger.debug("Skipping desktop notification; notify-send is not available")
+            return
+
         try:
             subprocess.run(
                 [
-                    "notify-send",
+                    notify_send,
                     "-u", urgency,
                     "-a", "i3pm",
                     "-t", "3000",

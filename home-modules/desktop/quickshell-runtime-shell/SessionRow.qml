@@ -32,7 +32,7 @@ Rectangle {
     readonly property string gitChipText: rootObject.sessionGitChipText(session)
     readonly property var hostTokenData: rootObject.sessionHostToken(session)
     readonly property color accentColor: rootObject.launcherEntryAccentColor(session)
-    readonly property color currentAccentColor: colorsObject.textDim
+    readonly property color currentAccentColor: colorsObject.blue
     readonly property string projectLabel: rootObject.stringOrEmpty(session && (session.project_label || rootObject.shortProject(rootObject.stringOrEmpty(session.project_name || session.project || "global"))))
     readonly property bool closableSurface: showCloseAction && rootObject.sessionHasClosableSurface(session)
     property bool hasMotion: rootObject.sessionHasMotion(session)
@@ -49,12 +49,10 @@ Rectangle {
     implicitHeight: rowHeight
     radius: compact ? 7 : 8
     color: isCurrent
-        ? (selected
-            ? Qt.tint(colorsObject.blueBg, Qt.rgba(0.40, 0.86, 0.92, 0.08))
-            : Qt.tint(colorsObject.cardAlt, Qt.rgba(0.40, 0.86, 0.92, effectiveHovered ? 0.11 : 0.07)))
+        ? (effectiveHovered ? Qt.tint(colorsObject.blueBg, Qt.rgba(1, 1, 1, 0.035)) : colorsObject.blueBg)
         : (selected ? colorsObject.blueBg : (effectiveHovered ? colorsObject.cardAlt : "transparent"))
     border.color: isCurrent
-        ? (effectiveHovered ? Qt.rgba(1, 1, 1, 0.04) : "transparent")
+        ? (effectiveHovered ? colorsObject.blue : colorsObject.blueMuted)
         : (selected ? colorsObject.blue : (effectiveHovered ? colorsObject.borderStrong : "transparent"))
     border.width: 1
     opacity: (closePending ? 0.9 : 1) * rootObject.sessionIdleRowOpacity(session)
@@ -93,7 +91,7 @@ Rectangle {
         height: isCurrent ? (compact ? 22 : 28) : railHeight
         radius: 1
         color: isCurrent ? currentAccentColor : accentColor
-        opacity: (isCurrent ? 0.28 : (selected ? 0.92 : (effectiveHovered ? 0.72 : 0.46))) * rootObject.sessionIdleTextOpacity(session)
+        opacity: (isCurrent ? 0.92 : (selected ? 0.92 : (effectiveHovered ? 0.72 : 0.46))) * rootObject.sessionIdleTextOpacity(session)
 
         Rectangle {
             visible: isCurrent

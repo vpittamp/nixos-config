@@ -94,10 +94,23 @@ let
         RESULT="''${SERVICE_RESULT:-unknown}"
         EXIT_CODE="''${EXIT_CODE:-unknown}"
         EXIT_STATUS="''${EXIT_STATUS:-unknown}"
-        if [ "$RESULT" = "success" ] || { [ "$EXIT_CODE" = "exited" ] && [ "$EXIT_STATUS" = "0" ]; }; then
+        case "$RESULT" in
+          success|unknown|"")
+            ${pkgs.coreutils}/bin/rm -f "$FAILURE_MARKER"
+            exit 0
+            ;;
+        esac
+        if { [ "$EXIT_CODE" = "exited" ] && [ "$EXIT_STATUS" = "0" ]; } || [ "$EXIT_STATUS" = "143" ]; then
           ${pkgs.coreutils}/bin/rm -f "$FAILURE_MARKER"
           exit 0
         fi
+        case "$RESULT" in
+          exit-code|signal|core-dump|watchdog|timeout|oom-kill) ;;
+          *)
+            ${pkgs.coreutils}/bin/rm -f "$FAILURE_MARKER"
+            exit 0
+            ;;
+        esac
         MESSAGE="Exit reason: $RESULT, code: $EXIT_CODE, status: $EXIT_STATUS"
         printf '%s\n' "$MESSAGE" > "$FAILURE_MARKER"
         ${pkgs.libnotify}/bin/notify-send -i "dialog-error" -u critical \
@@ -105,6 +118,24 @@ let
           "$MESSAGE. Restarting..."
         ;;
     esac
+  '';
+
+  daemonReadyScript = pkgs.writeShellScriptBin "i3pm-daemon-ready" ''
+    set -euo pipefail
+
+    USER_ID=$(${pkgs.coreutils}/bin/id -u)
+    RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$USER_ID}"
+    SOCK="$RUNTIME_DIR/i3-project-daemon/ipc.sock"
+
+    for _ in $(${pkgs.coreutils}/bin/seq 1 15); do
+      if [ -S "$SOCK" ] && ${config.home.profileDirectory}/bin/i3pm daemon ping >/dev/null 2>&1; then
+        exit 0
+      fi
+      ${pkgs.coreutils}/bin/sleep 0.2
+    done
+
+    echo "i3-project-daemon IPC did not become ready at $SOCK" >&2
+    exit 1
   '';
 
   # Wrapper script that discovers SWAYSOCK dynamically before starting daemon
@@ -211,7 +242,9 @@ in
         # Quick restart on failure. Clean exits are not failures and should not
         # produce critical notifications or scheduled restart churn.
         Restart = "on-failure";
-        RestartSec = 2;
+        RestartSec = "750ms";
+        SuccessExitStatus = "SIGTERM SIGINT SIGHUP 143";
+        RestartPreventExitStatus = "SIGTERM SIGINT SIGHUP 143";
 
         # Resource limits.
         #
@@ -219,7 +252,6 @@ in
         # so the original lightweight watcher limits are too restrictive.
         MemoryMax = "512M";
         MemoryHigh = "384M";
-        CPUQuota = "50%";
         TasksMax = 1024;
 
         # Security hardening (minimal since we need /proc access)
@@ -236,7 +268,10 @@ in
         # Use wrapper script that dynamically discovers SWAYSOCK
         # This ensures the daemon works even after Sway restarts
         ExecStart = "${daemonWrapper}/bin/i3-project-daemon-wrapper";
-        ExecStartPost = "-${daemonNotifyScript}/bin/i3pm-daemon-notify started";
+        ExecStartPost = [
+          "${daemonReadyScript}/bin/i3pm-daemon-ready"
+          "-${daemonNotifyScript}/bin/i3pm-daemon-notify started"
+        ];
         ExecStopPost = "-${daemonNotifyScript}/bin/i3pm-daemon-notify stopped";
 
         # Working directory for project config
