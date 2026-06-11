@@ -909,8 +909,8 @@ ShellRoot {
 
                                                     Button {
                                                         text: "Focus"
-                                                        enabled: !appService.busy
-                                                        onClicked: appService.focusSession(root.stringOrEmpty(modelData.session_key))
+                                                        enabled: !appService.busy && !!(modelData && modelData.focus_target)
+                                                        onClicked: appService.focusSession(modelData)
                                                     }
                                                 }
 
@@ -918,7 +918,7 @@ ShellRoot {
                                                     id: sessionMouse
                                                     anchors.fill: parent
                                                     hoverEnabled: true
-                                                    onDoubleClicked: appService.focusSession(root.stringOrEmpty(modelData.session_key))
+                                                    onDoubleClicked: appService.focusSession(modelData)
                                                 }
                                             }
                                         }

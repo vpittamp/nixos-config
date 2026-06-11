@@ -203,11 +203,59 @@ Item {
         runJsonCommand(command, "Removed worktree");
     }
 
-    function focusSession(sessionKey) {
-        const target = stringOrEmpty(sessionKey).trim();
+    function plainJsonValue(value) {
+        if (value === null || value === undefined)
+            return null;
+
+        if (Array.isArray(value)) {
+            const items = [];
+            for (let i = 0; i < value.length; i += 1)
+                items.push(plainJsonValue(value[i]));
+            return items;
+        }
+
+        if (typeof value === "object") {
+            const plain = {};
+            for (const key in value) {
+                if (Object.prototype.hasOwnProperty.call(value, key))
+                    plain[String(key)] = plainJsonValue(value[key]);
+            }
+            return plain;
+        }
+
+        return value;
+    }
+
+    function normalizedActionTarget(target) {
+        if (!target || typeof target !== "object")
+            return null;
+        const method = stringOrEmpty(target.method).trim();
+        if (!method)
+            return null;
+        return {
+            method: method,
+            params: plainJsonValue(target.params || {}) || {},
+        };
+    }
+
+    function runDaemonCall(method, params, successLabel) {
+        const normalizedMethod = stringOrEmpty(method).trim();
+        if (!normalizedMethod)
+            return;
+
+        const command = [appConfig.i3pmBin, "daemon", "call", normalizedMethod];
+        const serializedParams = JSON.stringify(plainJsonValue(params || {}) || {});
+        if (serializedParams)
+            command.push("--params-json", serializedParams);
+        command.push("--json");
+        runJsonCommand(command, successLabel);
+    }
+
+    function focusSession(session) {
+        const target = normalizedActionTarget(session && session.focus_target);
         if (!target)
             return;
-        runJsonCommand([appConfig.i3pmBin, "session", "focus", target, "--json"], "Focused AI session");
+        runDaemonCall(target.method, target.params, "Focused AI session");
     }
 
     function focusWindow(windowId, qualifiedName, targetHost, connectionKey) {

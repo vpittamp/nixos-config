@@ -334,6 +334,20 @@ def test_session_rows_focus_by_explicit_herdr_target():
     assert "runDaemonAction(normalizedTarget.method, normalizedTarget.params);" in text
 
 
+def test_worktree_app_session_focus_uses_explicit_herdr_target():
+    """Standalone Worktree Manager must not call the retired session focus CLI."""
+    shell_text = WORKTREE_APP_SHELL_QML.read_text()
+    service_text = WORKTREE_APP_SERVICE_QML.read_text()
+
+    assert "function focusSession(session)" in service_text
+    assert "normalizedActionTarget(session && session.focus_target)" in service_text
+    assert '"daemon", "call", normalizedMethod' in service_text
+    assert '"session", "focus"' not in service_text
+    assert "i3pmBin, \"session\"" not in service_text
+    assert "appService.focusSession(modelData)" in shell_text
+    assert "appService.focusSession(root.stringOrEmpty(modelData.session_key))" not in shell_text
+
+
 def test_retired_session_bridge_cleanup_surface_stays_removed():
     """Herdr sessions should not revive the old tmux bridge cleanup/doctor path."""
     daemon_text = IPC_SERVER_PY.read_text()
