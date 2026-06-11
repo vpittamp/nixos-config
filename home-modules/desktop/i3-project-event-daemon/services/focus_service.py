@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
@@ -17,6 +18,8 @@ FOCUS_INTENT_METHODS = {
     "workspace.focus",
     "workspace.focus_fast",
 }
+
+logger = logging.getLogger(__name__)
 
 
 class FocusService:
@@ -33,6 +36,15 @@ class FocusService:
         get_sway_workspaces: Optional[Callable[[], Awaitable[Any]]] = None,
         send_tick_barrier: Optional[Callable[[str], Awaitable[None]]] = None,
         notify_state_change: Optional[Callable[[str], Awaitable[None]]] = None,
+        window_is_locally_tracked: Optional[Callable[[int], Awaitable[bool]]] = None,
+        connection_target_is_current_host: Optional[Callable[[str], bool]] = None,
+        remote_daemon_request: Optional[Callable[..., Awaitable[Dict[str, Any]]]] = None,
+        switch_runtime_context: Optional[Callable[[str, str, str], Awaitable[Dict[str, Any]]]] = None,
+        get_window_transition_state: Optional[Callable[[int], Awaitable[Dict[str, Any]]]] = None,
+        build_window_focus_transition: Optional[Callable[..., Dict[str, Any]]] = None,
+        window_matches_transition_target: Optional[Callable[[Dict[str, Any]], Awaitable[bool]]] = None,
+        verify_window_focus: Optional[Callable[[int], Awaitable[Dict[str, Any]]]] = None,
+        focus_state_provider: Optional[Callable[[Optional[Dict[str, Any]]], Awaitable[Dict[str, Any]]]] = None,
     ) -> None:
         self._normalize_connection_key = normalize_connection_key
         self.schema_version = schema_version
@@ -42,6 +54,15 @@ class FocusService:
         self._get_sway_workspaces = get_sway_workspaces
         self._send_tick_barrier = send_tick_barrier
         self._notify_state_change = notify_state_change
+        self._window_is_locally_tracked = window_is_locally_tracked
+        self._connection_target_is_current_host = connection_target_is_current_host
+        self._remote_daemon_request = remote_daemon_request
+        self._switch_runtime_context = switch_runtime_context
+        self._get_window_transition_state = get_window_transition_state
+        self._build_window_focus_transition = build_window_focus_transition
+        self._window_matches_transition_target = window_matches_transition_target
+        self._verify_window_focus = verify_window_focus
+        self._focus_state_provider = focus_state_provider
         self.session_override_key: str = ""
         self.window_override: Dict[str, Any] = {"window_id": 0, "connection_key": ""}
         self.pending_intent_id: str = ""
@@ -149,6 +170,222 @@ class FocusService:
             await asyncio.sleep(0.02)
 
         return await self.focused_workspace_name() == target
+
+    def _window_focus_ready(self) -> bool:
+        return bool(
+            self._sway_available
+            and self._sway_available()
+            and self._run_sway_command
+            and self._sway_command_succeeded
+        )
+
+    async def focus_window(
+        self,
+        *,
+        window_id: int,
+        project_name: str = "",
+        target_variant: str = "",
+        connection_key: str = "",
+        attempts: int = 3,
+        delay_s: float = 0.12,
+    ) -> Dict[str, Any]:
+        """Project-aware window focus flow owned by the focus service."""
+        if int(window_id or 0) <= 0:
+            raise ValueError("window_id must be a positive integer")
+        if not (
+            self._window_is_locally_tracked
+            and self._connection_target_is_current_host
+            and self._remote_daemon_request
+            and self._switch_runtime_context
+            and self._get_window_transition_state
+            and self._build_window_focus_transition
+            and self._window_matches_transition_target
+            and self._verify_window_focus
+            and self._focus_state_provider
+        ):
+            raise RuntimeError("Window focus dependencies are unavailable")
+
+        target_variant_normalized = str(target_variant or "").strip().lower()
+        normalized_connection_key = str(connection_key or "").strip()
+        normalized_project_name = str(project_name or "").strip()
+        local_window_target = await self._window_is_locally_tracked(int(window_id))
+        connection_targets_current_host = self._connection_target_is_current_host(normalized_connection_key)
+        should_remote_handoff = (
+            target_variant_normalized == "ssh"
+            and not connection_targets_current_host
+            and not local_window_target
+        )
+        if should_remote_handoff:
+            remote_handoff = await self._remote_daemon_request(
+                connection_key=normalized_connection_key,
+                method="window.focus",
+                params={
+                    "window_id": int(window_id),
+                    "project_name": normalized_project_name,
+                    "target_variant": "local",
+                    "connection_key": normalized_connection_key,
+                },
+            )
+            remote_host = str(remote_handoff.get("remote_host") or "").strip()
+            remote_result = remote_handoff.get("result")
+            if remote_host:
+                remote_success = bool(remote_handoff.get("success", False))
+                if isinstance(remote_result, dict) and "success" in remote_result:
+                    remote_success = remote_success and bool(remote_result.get("success", False))
+                remote_focus_state_after = (
+                    dict(remote_result.get("focus_state_after") or {})
+                    if isinstance(remote_result, dict) and isinstance(remote_result.get("focus_state_after"), dict)
+                    else {}
+                )
+                remote_verification = (
+                    remote_result.get("verification")
+                    if isinstance(remote_result, dict) and isinstance(remote_result.get("verification"), dict)
+                    else {}
+                )
+                current_session_key_after = (
+                    str(remote_result.get("current_session_key_after") or "").strip()
+                    if isinstance(remote_result, dict)
+                    else ""
+                )
+                if not current_session_key_after:
+                    current_session_key_after = str(remote_focus_state_after.get("current_session_key") or "").strip()
+                focused_window_id_after = (
+                    int(remote_result.get("focused_window_id_after") or 0)
+                    if isinstance(remote_result, dict)
+                    else 0
+                )
+                if focused_window_id_after <= 0:
+                    focused_window_id_after = int(remote_focus_state_after.get("current_window_id") or 0)
+                if focused_window_id_after <= 0 and isinstance(remote_verification, dict):
+                    focused_window_id_after = int(remote_verification.get("focused_window_id") or 0)
+
+                if remote_success:
+                    self.set_focus_overrides(
+                        session_key=current_session_key_after,
+                        window_id=int(window_id),
+                        connection_key=normalized_connection_key,
+                    )
+
+                return {
+                    "success": remote_success,
+                    "window_id": int(window_id),
+                    "project_name": normalized_project_name,
+                    "target_variant": "ssh",
+                    "connection_key": normalized_connection_key,
+                    "switched_context": False,
+                    "remote_handoff": remote_handoff,
+                    "focus_target_host": remote_host,
+                    "current_session_key_after": current_session_key_after,
+                    "focused_window_id_after": focused_window_id_after,
+                    "focus_state_after": remote_focus_state_after,
+                    "verification": (
+                        remote_verification
+                        if isinstance(remote_verification, dict) and remote_verification
+                        else {
+                            "success": remote_success,
+                            "reason": str(remote_handoff.get("reason") or "remote_handoff"),
+                        }
+                    ),
+                }
+
+        if not self._window_focus_ready():
+            raise RuntimeError("Sway connection is unavailable")
+
+        runtime_target_variant = target_variant_normalized
+        runtime_connection_key = normalized_connection_key
+        if target_variant_normalized == "ssh" and (
+            local_window_target or connection_targets_current_host
+        ):
+            runtime_target_variant = ""
+            runtime_connection_key = ""
+
+        switch_result = await self._switch_runtime_context(
+            normalized_project_name,
+            runtime_target_variant,
+            runtime_connection_key,
+        )
+        last_error = ""
+        verification: Dict[str, Any] = {
+            "success": False,
+            "reason": "focus_failed",
+            "window_id": int(window_id),
+            "focused_window_id": 0,
+        }
+
+        assert self._run_sway_command is not None
+        assert self._sway_command_succeeded is not None
+        assert self._send_tick_barrier is not None
+
+        for _ in range(max(int(attempts), 1)):
+            try:
+                transition_state = await self._get_window_transition_state(int(window_id))
+                if not bool(transition_state.get("exists", False)):
+                    last_error = "window_not_found"
+                    await asyncio.sleep(delay_s)
+                    continue
+                transition = self._build_window_focus_transition(
+                    window_id=int(window_id),
+                    state=transition_state,
+                )
+                logger.info(
+                    "window.focus transition=%s window=%s current_ws=%s target_ws=%s scratchpad=%s floating=%s fullscreen=%s",
+                    transition.get("kind"),
+                    int(window_id),
+                    str(transition_state.get("current_workspace") or ""),
+                    str((transition.get("expected") or {}).get("workspace_name") or ""),
+                    bool(transition_state.get("in_scratchpad", False)),
+                    bool((transition.get("expected") or {}).get("floating", False)),
+                    int((transition.get("expected") or {}).get("fullscreen_mode", 0) or 0),
+                )
+                focus_result = await self._run_sway_command("; ".join(transition.get("commands") or []))
+                if not self._sway_command_succeeded(focus_result):
+                    last_error = "focus_failed"
+                    await asyncio.sleep(delay_s)
+                    continue
+                await self._send_tick_barrier(f"i3pm:focus-window:{int(window_id)}")
+                verification = await self._verify_window_focus(int(window_id))
+                if bool(verification.get("success", False)) and await self._window_matches_transition_target(
+                    dict(transition.get("expected") or {})
+                ):
+                    focus_state_after = await self._focus_state_provider({})
+                    self.set_focus_overrides(
+                        session_key=str(focus_state_after.get("current_session_key") or "").strip(),
+                        window_id=int(window_id),
+                        connection_key=normalized_connection_key,
+                    )
+                    return {
+                        "success": True,
+                        "window_id": int(window_id),
+                        "project_name": normalized_project_name,
+                        "target_variant": str(target_variant or "").strip(),
+                        "connection_key": normalized_connection_key,
+                        "switched_context": bool(switch_result.get("switched", False)),
+                        "current_session_key_after": str(focus_state_after.get("current_session_key") or "").strip(),
+                        "focused_window_id_after": int(focus_state_after.get("current_window_id") or 0),
+                        "focus_state_after": focus_state_after,
+                        "verification": verification,
+                    }
+                last_error = str(verification.get("reason") or "window_focus_unverified")
+                if last_error == "ok":
+                    last_error = "window_state_mismatch"
+            except Exception as e:
+                last_error = str(e)
+            await asyncio.sleep(delay_s)
+
+        focus_state_after = await self._focus_state_provider({})
+        return {
+            "success": False,
+            "window_id": int(window_id),
+            "project_name": normalized_project_name,
+            "target_variant": str(target_variant or "").strip(),
+            "connection_key": normalized_connection_key,
+            "switched_context": bool(switch_result.get("switched", False)),
+            "error": last_error or "focus_failed",
+            "current_session_key_after": str(focus_state_after.get("current_session_key") or "").strip(),
+            "focused_window_id_after": int(focus_state_after.get("current_window_id") or 0),
+            "focus_state_after": focus_state_after,
+            "verification": verification,
+        }
 
     def set_focus_overrides(
         self,

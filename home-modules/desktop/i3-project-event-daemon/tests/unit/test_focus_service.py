@@ -63,6 +63,44 @@ def make_action_service(
     )
 
 
+def make_window_focus_service(**overrides) -> FocusService:
+    defaults = {
+        "sway_available": lambda: True,
+        "run_sway_command": AsyncMock(return_value=[SimpleNamespace(success=True)]),
+        "sway_command_succeeded": lambda result: all(bool(getattr(item, "success", False)) for item in result),
+        "send_tick_barrier": AsyncMock(return_value=None),
+        "window_is_locally_tracked": AsyncMock(return_value=False),
+        "connection_target_is_current_host": lambda _connection_key: True,
+        "remote_daemon_request": AsyncMock(return_value={}),
+        "switch_runtime_context": AsyncMock(return_value={"switched": False}),
+        "get_window_transition_state": AsyncMock(return_value={
+            "exists": True,
+            "current_workspace": "1",
+            "workspace_name": "1",
+            "in_scratchpad": False,
+            "floating": False,
+            "fullscreen_mode": 0,
+        }),
+        "build_window_focus_transition": lambda **_kwargs: {
+            "kind": "direct",
+            "commands": ["[con_id=101] focus"],
+            "expected": {"workspace_name": "1", "floating": False, "fullscreen_mode": 0},
+        },
+        "window_matches_transition_target": AsyncMock(return_value=True),
+        "verify_window_focus": AsyncMock(return_value={"success": True, "reason": "ok"}),
+        "focus_state_provider": AsyncMock(return_value={
+            "success": True,
+            "current_session_key": "session-current",
+            "current_window_id": 101,
+        }),
+    }
+    defaults.update(overrides)
+    return FocusService(
+        normalize_connection_key=normalize_connection_key,
+        **defaults,
+    )
+
+
 def test_select_current_session_key_clears_stale_window_override() -> None:
     service = make_service()
     service.set_focus_overrides(
@@ -331,6 +369,77 @@ async def test_focus_workspace_requires_sway_connection() -> None:
 
     with pytest.raises(RuntimeError, match="Sway connection is unavailable"):
         await service.focus_workspace_fast({"workspace": "3"})
+
+
+@pytest.mark.asyncio
+async def test_focus_window_service_local_success_sets_overrides() -> None:
+    service = make_window_focus_service()
+
+    result = await service.focus_window(
+        window_id=101,
+        project_name="vpittamp/nixos-config:main",
+        connection_key="local@thinkpad",
+    )
+
+    assert result["success"] is True
+    assert result["window_id"] == 101
+    assert result["project_name"] == "vpittamp/nixos-config:main"
+    assert result["current_session_key_after"] == "session-current"
+    assert result["focused_window_id_after"] == 101
+    assert result["verification"] == {"success": True, "reason": "ok"}
+    assert service.override_payload() == {
+        "session_key": "session-current",
+        "window_id": 101,
+        "connection_key": "local@thinkpad",
+    }
+
+
+@pytest.mark.asyncio
+async def test_focus_window_service_remote_handoff_sets_remote_override() -> None:
+    remote_daemon_request = AsyncMock(return_value={
+        "success": True,
+        "remote_host": "ryzen",
+        "result": {
+            "success": True,
+            "focus_state_after": {
+                "current_session_key": "session-remote",
+                "current_window_id": 175,
+            },
+            "verification": {"success": True, "reason": "ok"},
+        },
+    })
+    service = make_window_focus_service(
+        window_is_locally_tracked=AsyncMock(return_value=False),
+        connection_target_is_current_host=lambda _connection_key: False,
+        remote_daemon_request=remote_daemon_request,
+    )
+
+    result = await service.focus_window(
+        window_id=175,
+        project_name="PittampalliOrg/stacks:main",
+        target_variant="ssh",
+        connection_key="vpittamp@ryzen:22",
+    )
+
+    assert result["success"] is True
+    assert result["target_variant"] == "ssh"
+    assert result["focus_target_host"] == "ryzen"
+    assert result["current_session_key_after"] == "session-remote"
+    assert result["focused_window_id_after"] == 175
+    remote_daemon_request.assert_awaited_once()
+    assert service.override_payload() == {
+        "session_key": "session-remote",
+        "window_id": 175,
+        "connection_key": "vpittamp@ryzen:22",
+    }
+
+
+@pytest.mark.asyncio
+async def test_focus_window_service_requires_window_dependencies() -> None:
+    service = make_service()
+
+    with pytest.raises(RuntimeError, match="Window focus dependencies are unavailable"):
+        await service.focus_window(window_id=101)
 
 
 def test_focus_intent_transitions_pending_to_confirmed() -> None:

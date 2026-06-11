@@ -533,6 +533,21 @@ class IPCServer:
             get_sway_workspaces=lambda: self._sway_get_workspaces(),
             send_tick_barrier=lambda payload: self._send_tick_barrier(payload),
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
+            window_is_locally_tracked=lambda window_id: self._window_is_locally_tracked(window_id),
+            connection_target_is_current_host=lambda connection_key: self._connection_target_is_current_host(
+                connection_key
+            ),
+            remote_daemon_request=lambda **kwargs: self._remote_daemon_request(**kwargs),
+            switch_runtime_context=lambda project_name, target_variant, connection_key: self._switch_runtime_context_if_needed(
+                project_name,
+                target_variant,
+                connection_key,
+            ),
+            get_window_transition_state=lambda window_id: self._get_window_transition_state(window_id),
+            build_window_focus_transition=lambda **kwargs: self._build_window_focus_transition(**kwargs),
+            window_matches_transition_target=lambda expected: self._window_matches_transition_target(expected),
+            verify_window_focus=lambda window_id: self._verify_window_focus(window_id),
+            focus_state_provider=lambda params=None: self._focus_state(params or {}),
         )
         self.dashboard_git_service = DashboardGitService(
             ttl_current=self._git_snapshot_ttl_current,
@@ -8756,181 +8771,14 @@ class IPCServer:
         delay_s: float = 0.12,
     ) -> Dict[str, Any]:
         """Project-aware focus flow owned by the daemon."""
-        target_variant_normalized = str(target_variant or "").strip().lower()
-        local_window_target = await self._window_is_locally_tracked(window_id)
-        connection_targets_current_host = self._connection_target_is_current_host(connection_key)
-        should_remote_handoff = (
-            target_variant_normalized == "ssh"
-            and not connection_targets_current_host
-            and not local_window_target
+        return await self.focus_service.focus_window(
+            window_id=window_id,
+            project_name=project_name,
+            target_variant=target_variant,
+            connection_key=connection_key,
+            attempts=attempts,
+            delay_s=delay_s,
         )
-        if should_remote_handoff:
-            remote_handoff = await self._remote_daemon_request(
-                connection_key=str(connection_key or "").strip(),
-                method="window.focus",
-                params={
-                    "window_id": int(window_id),
-                    "project_name": str(project_name or "").strip(),
-                    "target_variant": "local",
-                    "connection_key": str(connection_key or "").strip(),
-                },
-            )
-            remote_host = str(remote_handoff.get("remote_host") or "").strip()
-            remote_result = remote_handoff.get("result")
-            if remote_host:
-                remote_success = bool(remote_handoff.get("success", False))
-                if isinstance(remote_result, dict) and "success" in remote_result:
-                    remote_success = remote_success and bool(remote_result.get("success", False))
-                remote_focus_state_after = (
-                    dict(remote_result.get("focus_state_after") or {})
-                    if isinstance(remote_result, dict) and isinstance(remote_result.get("focus_state_after"), dict)
-                    else {}
-                )
-                remote_verification = (
-                    remote_result.get("verification")
-                    if isinstance(remote_result, dict) and isinstance(remote_result.get("verification"), dict)
-                    else {}
-                )
-                current_session_key_after = (
-                    str(remote_result.get("current_session_key_after") or "").strip()
-                    if isinstance(remote_result, dict)
-                    else ""
-                )
-                if not current_session_key_after:
-                    current_session_key_after = str(remote_focus_state_after.get("current_session_key") or "").strip()
-                focused_window_id_after = (
-                    int(remote_result.get("focused_window_id_after") or 0)
-                    if isinstance(remote_result, dict)
-                    else 0
-                )
-                if focused_window_id_after <= 0:
-                    focused_window_id_after = int(remote_focus_state_after.get("current_window_id") or 0)
-                if focused_window_id_after <= 0 and isinstance(remote_verification, dict):
-                    focused_window_id_after = int(remote_verification.get("focused_window_id") or 0)
-
-                if remote_success:
-                    self._set_focus_overrides(
-                        session_key=current_session_key_after,
-                        window_id=int(window_id),
-                        connection_key=str(connection_key or "").strip(),
-                    )
-
-                return {
-                    "success": remote_success,
-                    "window_id": int(window_id),
-                    "project_name": str(project_name or "").strip(),
-                    "target_variant": "ssh",
-                    "connection_key": str(connection_key or "").strip(),
-                    "switched_context": False,
-                    "remote_handoff": remote_handoff,
-                    "focus_target_host": remote_host,
-                    "current_session_key_after": current_session_key_after,
-                    "focused_window_id_after": focused_window_id_after,
-                    "focus_state_after": remote_focus_state_after,
-                    "verification": (
-                        remote_verification
-                        if isinstance(remote_verification, dict) and remote_verification
-                        else {
-                            "success": remote_success,
-                            "reason": str(remote_handoff.get("reason") or "remote_handoff"),
-                        }
-                    ),
-                }
-
-        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
-            raise RuntimeError("Sway connection is unavailable")
-
-        runtime_target_variant = target_variant_normalized
-        runtime_connection_key = str(connection_key or "").strip()
-        if target_variant_normalized == "ssh" and (
-            local_window_target or connection_targets_current_host
-        ):
-            runtime_target_variant = ""
-            runtime_connection_key = ""
-
-        switch_result = await self._switch_runtime_context_if_needed(
-            project_name,
-            runtime_target_variant,
-            runtime_connection_key,
-        )
-        last_error = ""
-        verification: Dict[str, Any] = {
-            "success": False,
-            "reason": "focus_failed",
-            "window_id": int(window_id),
-            "focused_window_id": 0,
-        }
-
-        for _ in range(max(int(attempts), 1)):
-            try:
-                transition_state = await self._get_window_transition_state(window_id)
-                if not bool(transition_state.get("exists", False)):
-                    last_error = "window_not_found"
-                    await asyncio.sleep(delay_s)
-                    continue
-                transition = self._build_window_focus_transition(
-                    window_id=window_id,
-                    state=transition_state,
-                )
-                logger.info(
-                    "window.focus transition=%s window=%s current_ws=%s target_ws=%s scratchpad=%s floating=%s fullscreen=%s",
-                    transition.get("kind"),
-                    window_id,
-                    str(transition_state.get("current_workspace") or ""),
-                    str((transition.get("expected") or {}).get("workspace_name") or ""),
-                    bool(transition_state.get("in_scratchpad", False)),
-                    bool((transition.get("expected") or {}).get("floating", False)),
-                    int((transition.get("expected") or {}).get("fullscreen_mode", 0) or 0),
-                )
-                focus_result = await self._sway_ipc_command("; ".join(transition.get("commands") or []))
-                if not self._sway_command_succeeded(focus_result):
-                    last_error = "focus_failed"
-                    await asyncio.sleep(delay_s)
-                    continue
-                await self._send_tick_barrier(f"i3pm:focus-window:{window_id}")
-                verification = await self._verify_window_focus(window_id)
-                if bool(verification.get("success", False)) and await self._window_matches_transition_target(
-                    dict(transition.get("expected") or {})
-                ):
-                    focus_state_after = await self._focus_state({})
-                    self._set_focus_overrides(
-                        session_key=str(focus_state_after.get("current_session_key") or "").strip(),
-                        window_id=int(window_id),
-                        connection_key=str(connection_key or "").strip(),
-                    )
-                    return {
-                        "success": True,
-                        "window_id": int(window_id),
-                        "project_name": str(project_name or "").strip(),
-                        "target_variant": str(target_variant or "").strip(),
-                        "connection_key": str(connection_key or "").strip(),
-                        "switched_context": bool(switch_result.get("switched", False)),
-                        "current_session_key_after": str(focus_state_after.get("current_session_key") or "").strip(),
-                        "focused_window_id_after": int(focus_state_after.get("current_window_id") or 0),
-                        "focus_state_after": focus_state_after,
-                        "verification": verification,
-                    }
-                last_error = str(verification.get("reason") or "window_focus_unverified")
-                if last_error == "ok":
-                    last_error = "window_state_mismatch"
-            except Exception as e:
-                last_error = str(e)
-            await asyncio.sleep(delay_s)
-
-        focus_state_after = await self._focus_state({})
-        return {
-            "success": False,
-            "window_id": int(window_id),
-            "project_name": str(project_name or "").strip(),
-            "target_variant": str(target_variant or "").strip(),
-            "connection_key": str(connection_key or "").strip(),
-            "switched_context": bool(switch_result.get("switched", False)),
-            "error": last_error or "focus_failed",
-            "current_session_key_after": str(focus_state_after.get("current_session_key") or "").strip(),
-            "focused_window_id_after": int(focus_state_after.get("current_window_id") or 0),
-            "focus_state_after": focus_state_after,
-            "verification": verification,
-        }
 
     async def _window_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Focus a managed window through the daemon-owned runtime path."""
