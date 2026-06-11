@@ -121,8 +121,8 @@ monitoring-data-backend --listen
 ## Service Fields
 
 ### Core Fields
-- `service_name`: systemd service unit name (e.g., "eww-top-bar.service")
-- `display_name`: Human-readable name (e.g., "Eww Top Bar")
+- `service_name`: systemd service unit name (e.g., "quickshell-runtime-shell.service")
+- `display_name`: Human-readable name (e.g., "QuickShell Runtime Shell")
 - `category`: Service category ("core", "ui", "system", "optional")
 - `description`: Brief description of service function
 
@@ -243,7 +243,7 @@ Services can be restarted via the `restart-service` command:
 
 ```bash
 # Restart user service
-restart-service eww-top-bar true
+restart-service quickshell-runtime-shell true
 
 # Restart system service (requires sudo)
 restart-service tailscaled.service false

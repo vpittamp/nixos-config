@@ -2880,7 +2880,7 @@ def query_service_health(
              MemoryCurrent, NRestarts, ActiveEnterTimestamp (Feature 088 US2)
 
     Args:
-        service_name: Service name (e.g., "eww-top-bar.service")
+        service_name: Service name (e.g., "quickshell-runtime-shell.service")
         is_user_service: True for user services (--user flag)
         socket_name: Socket unit name if socket-activated
 

@@ -47,6 +47,17 @@ LEGACY_EWW_VALIDATION_ARTIFACTS = [
     REPO_ROOT / "tests" / "085-sway-monitoring-widget" / "test_project_switch.json",
     REPO_ROOT / "tests" / "085-sway-monitoring-widget" / "test_state_updates.json",
     REPO_ROOT / "tests" / "085-sway-monitoring-widget" / "test_panel_toggle.json",
+    REPO_ROOT / "tests" / "094-enhance-project-tab" / "sway-tests" / "test_app_create_form.json",
+    REPO_ROOT / "tests" / "094-enhance-project-tab" / "sway-tests" / "test_app_delete_form.json",
+    REPO_ROOT / "tests" / "094-enhance-project-tab" / "sway-tests" / "test_app_edit_form.json",
+    REPO_ROOT / "tests" / "094-enhance-project-tab" / "sway-tests" / "test_app_hover_detail.json",
+    REPO_ROOT / "tests" / "094-enhance-project-tab" / "sway-tests" / "test_project_create_form.json",
+    REPO_ROOT / "tests" / "094-enhance-project-tab" / "sway-tests" / "test_project_delete_form.json",
+    REPO_ROOT / "tests" / "094-enhance-project-tab" / "sway-tests" / "test_project_edit_form.json",
+    REPO_ROOT / "tests" / "094-enhance-project-tab" / "sway-tests" / "test_project_hover_detail.json",
+    REPO_ROOT / "tests" / "094-enhance-project-tab" / "sway-tests" / "test_worktree_forms.json",
+    REPO_ROOT / "tests" / "096-bolster-project-and" / "scripts" / "capture-screenshot.sh",
+    REPO_ROOT / "tests" / "096-bolster-project-and" / "scripts" / "eww-debug.sh",
 ]
 
 
@@ -621,6 +632,9 @@ def test_retired_eww_monitoring_panel_is_guarded_out_of_runtime_config():
     health_text = I3PM_HEALTH_TS.read_text()
     runtime_shell_nix = QUICKSHELL_DEFAULT_NIX.read_text()
     sway_keybindings_nix = SWAY_KEYBINDINGS_NIX.read_text()
+    feature_096_conftest = (REPO_ROOT / "tests" / "096-bolster-project-and" / "conftest.py").read_text()
+    feature_096_readme = (REPO_ROOT / "tests" / "096-bolster-project-and" / "README.md").read_text()
+    feature_094_conftest = (REPO_ROOT / "tests" / "094-enhance-project-tab" / "conftest.py").read_text()
 
     assert "eww-monitoring-panel.service" in health_text
     assert "QuickShell and i3pm health own desktop UI state" in health_text
@@ -629,6 +643,11 @@ def test_retired_eww_monitoring_panel_is_guarded_out_of_runtime_config():
     assert "toggle-monitoring-panel" not in runtime_shell_nix
     assert "eww-monitoring-panel" not in sway_keybindings_nix
     assert "toggle-monitoring-panel" not in sway_keybindings_nix
+    assert "eww-monitoring-panel" not in feature_096_conftest
+    assert "eww --config" not in feature_096_conftest
+    assert "Eww monitoring-panel UI tests and debugging helpers are retired" in feature_096_readme
+    assert "retired project-tab/Eww-era suite" in feature_094_conftest
+    assert "QuickShell, i3pm health, and focused daemon tests" in feature_094_conftest
 
 
 def test_i3pm_herdr_proxy_exposes_snapshot_focus_and_event_stream():

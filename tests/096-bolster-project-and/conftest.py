@@ -90,27 +90,8 @@ def populated_projects_dir(temp_projects_dir: Path) -> Path:
     return temp_projects_dir
 
 
-# Eww state dump fixture for debugging failed UI tests
-@pytest.fixture
-def eww_state_dump():
-    """Capture eww state for debugging test failures"""
-    import subprocess
-    try:
-        result = subprocess.run(
-            ["eww", "--config", f"{Path.home()}/.config/eww-monitoring-panel", "state"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        return result.stdout
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return "eww state capture failed"
-
-
 # Test markers for categorization
 def pytest_configure(config):
     """Register custom markers"""
     config.addinivalue_line("markers", "unit: Unit tests (fast, isolated)")
-    config.addinivalue_line("markers", "integration: Integration tests (may require eww daemon)")
-    config.addinivalue_line("markers", "sway: Sway UI tests (require running Sway session)")
-    config.addinivalue_line("markers", "screenshot: Screenshot comparison tests")
+    config.addinivalue_line("markers", "integration: Integration tests for compatibility services")
