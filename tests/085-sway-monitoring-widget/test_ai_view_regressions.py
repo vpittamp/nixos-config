@@ -31,6 +31,7 @@ DAEMON_SERVICES_DIR = REPO_ROOT / "home-modules" / "desktop" / "i3-project-event
 HERDR_SERVICE_PY = DAEMON_SERVICES_DIR / "herdr_service.py"
 LAUNCH_SERVICE_PY = DAEMON_SERVICES_DIR / "launch_service.py"
 DASHBOARD_MODEL_PY = DAEMON_SERVICES_DIR / "dashboard_model.py"
+FOCUS_SERVICE_PY = DAEMON_SERVICES_DIR / "focus_service.py"
 SESSION_RUNTIME_SERVICE_PY = DAEMON_SERVICES_DIR / "session_runtime_service.py"
 PROJECT_REMOTE_LAUNCH_PY = REPO_ROOT / "scripts" / "project-remote-launch.py"
 I3PM_MONITORING_DATA_PY = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "monitoring_data.py"
@@ -174,6 +175,19 @@ def test_project_window_cards_do_not_embed_ai_session_badges():
 
     assert '"sessions": session_items' not in dashboard_model_text
     assert '"ai_session_count"' not in dashboard_model_text
+
+
+def test_focus_state_active_session_uses_herdr_identity_not_tmux_fields():
+    """Daemon focus_state should expose Herdr pane identity, not tmux pane identity."""
+    text = FOCUS_SERVICE_PY.read_text()
+    focus_body = text.split("def build_focus_state_payload", 1)[1].split("def ", 1)[0]
+
+    assert '"current_herdr_pane_id": str(active_session.get("pane_id") or "").strip(),' in focus_body
+    assert '"pane_id": str(active_session.get("pane_id") or "").strip(),' in focus_body
+    assert "active_session.get(\"tmux_pane\")" not in focus_body
+    assert '"tmux_session"' not in focus_body
+    assert '"tmux_window"' not in focus_body
+    assert '"tmux_pane"' not in focus_body
 
 
 def test_session_status_chip_renders_raw_herdr_status():

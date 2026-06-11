@@ -346,11 +346,7 @@ class FocusService:
             "current_window_id": focused_window_id,
             "focused_window_id": focused_window_id,
             "current_workspace_name": current_workspace_name,
-            "current_herdr_pane_id": str(
-                active_session.get("pane_id")
-                or active_session.get("tmux_pane")
-                or ""
-            ).strip(),
+            "current_herdr_pane_id": str(active_session.get("pane_id") or "").strip(),
             "current_herdr_host": str(
                 active_session.get("host_name")
                 or active_session.get("herdr_host")
@@ -374,8 +370,5 @@ class FocusService:
                 "connection_key": str(active_session.get("connection_key") or "").strip(),
                 "focus_connection_key": str(active_session.get("focus_connection_key") or "").strip(),
                 "host_name": str(active_session.get("host_name") or "").strip(),
-                "tmux_session": str(active_session.get("tmux_session") or "").strip(),
-                "tmux_window": str(active_session.get("tmux_window") or "").strip(),
-                "tmux_pane": str(active_session.get("tmux_pane") or "").strip(),
             },
         }

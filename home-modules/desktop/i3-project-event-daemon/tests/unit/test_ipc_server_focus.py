@@ -539,9 +539,7 @@ async def test_focus_state_reports_current_session_and_window(server, monkeypatc
             "focus_connection_key": "local@thinkpad",
             "host_name": "thinkpad",
             "is_current_host": True,
-            "tmux_session": "i3pm-test",
-            "tmux_window": "0:main",
-            "tmux_pane": "%1",
+            "pane_id": "pane-1",
         }
     ]
     server._load_reconciled_session_runtime = AsyncMock(return_value=(runtime_snapshot, sessions, {}))
@@ -554,7 +552,11 @@ async def test_focus_state_reports_current_session_and_window(server, monkeypatc
     assert result["current_ai_session_key"] == "session-current"
     assert result["current_window_id"] == 101
     assert result["focused_window_id"] == 101
-    assert result["active_session"]["tmux_pane"] == "%1"
+    assert result["current_herdr_pane_id"] == "pane-1"
+    assert result["active_session"]["pane_id"] == "pane-1"
+    assert "tmux_session" not in result["active_session"]
+    assert "tmux_window" not in result["active_session"]
+    assert "tmux_pane" not in result["active_session"]
 
 
 @pytest.mark.asyncio
