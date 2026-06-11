@@ -839,16 +839,25 @@ ShellRoot {
             return intent;
         }
         if (localFocusIntent && stringOrEmpty(localFocusIntent.state) === "pending") {
+            const createdAt = Number(localFocusIntent.created_at || 0);
+            if (createdAt > 0 && (Date.now() / 1000) - createdAt > 5) {
+                localFocusIntent = null;
+                return null;
+            }
             return localFocusIntent;
         }
         return null;
     }
 
-    function pendingFocusIntentMatches(kind, targetKey) {
+    function pendingFocusIntentFor(kind) {
         const intent = pendingFocusIntent();
+        return intent && stringOrEmpty(intent.kind) === stringOrEmpty(kind) ? intent : null;
+    }
+
+    function pendingFocusIntentMatches(kind, targetKey) {
+        const intent = pendingFocusIntentFor(kind);
         const normalizedTargetKey = stringOrEmpty(targetKey);
         return !!intent
-            && stringOrEmpty(intent.kind) === stringOrEmpty(kind)
             && normalizedTargetKey !== ""
             && stringOrEmpty(intent.target_key) === normalizedTargetKey;
     }
@@ -945,8 +954,9 @@ ShellRoot {
 
     function windowIsFocused(windowData) {
         const windowId = windowIdValue(windowData);
-        if (pendingFocusIntentMatches("window_focus", String(windowId))) {
-            return true;
+        const pendingWindowFocus = pendingFocusIntentFor("window_focus");
+        if (pendingWindowFocus) {
+            return pendingFocusIntentMatches("window_focus", String(windowId));
         }
         const currentWindowId = Number(dashboardFocusState().current_window_id || 0);
         return windowId > 0 && currentWindowId > 0 && windowId === currentWindowId;
@@ -2109,8 +2119,9 @@ ShellRoot {
 
     function workspaceIsFocused(workspace) {
         const workspaceName = workspaceNameValue(workspace);
-        if (pendingFocusIntentMatches("workspace_focus", workspaceName)) {
-            return true;
+        const pendingWorkspaceFocus = pendingFocusIntentFor("workspace_focus");
+        if (pendingWorkspaceFocus) {
+            return pendingFocusIntentMatches("workspace_focus", workspaceName);
         }
         const currentWorkspace = stringOrEmpty(dashboardFocusState().current_workspace_name);
         return workspaceName !== "" && currentWorkspace !== "" && workspaceName === currentWorkspace;
@@ -6140,9 +6151,10 @@ ShellRoot {
     }
 
     function sessionIsCurrent(session) {
-        const pendingSessionTarget = sessionPendingFocusTargetKey(session);
-        if (pendingFocusIntentMatches("herdr_pane_focus", pendingSessionTarget)) {
-            return true;
+        const pendingHerdrFocus = pendingFocusIntentFor("herdr_pane_focus");
+        if (pendingHerdrFocus) {
+            const pendingSessionTarget = sessionPendingFocusTargetKey(session);
+            return pendingFocusIntentMatches("herdr_pane_focus", pendingSessionTarget);
         }
         const current = currentSessionKey();
         if (current) {

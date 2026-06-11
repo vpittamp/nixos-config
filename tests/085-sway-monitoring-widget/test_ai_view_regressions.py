@@ -485,6 +485,30 @@ def test_session_rows_use_daemon_focus_state_for_current_highlight():
     assert "current_ai_session_key: \"\"" not in text
 
 
+def test_pending_focus_highlight_replaces_current_highlight():
+    """A pending focus intent should highlight only the target, not old current plus target."""
+    text = SHELL_QML.read_text()
+
+    assert "function pendingFocusIntentFor(kind)" in text
+
+    session_body = text.split("function sessionIsCurrent(session)", 1)[1].split("function sessionHasConflict", 1)[0]
+    assert 'const pendingHerdrFocus = pendingFocusIntentFor("herdr_pane_focus");' in session_body
+    assert 'return pendingFocusIntentMatches("herdr_pane_focus", pendingSessionTarget);' in session_body
+    assert "const current = currentSessionKey();" in session_body
+    assert session_body.index('const pendingHerdrFocus = pendingFocusIntentFor("herdr_pane_focus");') < session_body.index("const current = currentSessionKey();")
+    assert 'if (pendingFocusIntentMatches("herdr_pane_focus", pendingSessionTarget)) {\n            return true;\n        }' not in session_body
+
+    workspace_body = text.split("function workspaceIsFocused(workspace)", 1)[1].split("function workspaceChipFill", 1)[0]
+    assert 'const pendingWorkspaceFocus = pendingFocusIntentFor("workspace_focus");' in workspace_body
+    assert 'return pendingFocusIntentMatches("workspace_focus", workspaceName);' in workspace_body
+    assert workspace_body.index('const pendingWorkspaceFocus = pendingFocusIntentFor("workspace_focus");') < workspace_body.index("const currentWorkspace =")
+
+    window_body = text.split("function windowIsFocused(windowData)", 1)[1].split("function windowIsCurrentTarget", 1)[0]
+    assert 'const pendingWindowFocus = pendingFocusIntentFor("window_focus");' in window_body
+    assert 'return pendingFocusIntentMatches("window_focus", String(windowId));' in window_body
+    assert window_body.index('const pendingWindowFocus = pendingFocusIntentFor("window_focus");') < window_body.index("const currentWindowId =")
+
+
 def test_daemon_runtime_uses_current_session_key_not_retired_ai_alias():
     """Runtime snapshots should not keep the retired AI-specific current-session alias alive."""
     daemon_text = (REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon" / "ipc_server.py").read_text()
