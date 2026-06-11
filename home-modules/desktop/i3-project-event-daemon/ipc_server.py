@@ -502,6 +502,8 @@ class IPCServer:
         self.server: Optional[asyncio.Server] = None
         self.clients: set[asyncio.StreamWriter] = set()
         self.subscribed_clients: set[asyncio.StreamWriter] = set()  # Feature 017: Event subscriptions
+        self._dashboard_notify_task: Optional[asyncio.Task] = None
+        self._dashboard_notify_pending: set[str] = set()
         self.registry_loader = RegistryLoader()
         self.icon_resolver = DesktopIconIndex()
         try:
@@ -2993,12 +2995,39 @@ class IPCServer:
         """Schedule dashboard notification without blocking an action RPC."""
         self._schedule_state_change_notification(event_type)
 
+    @staticmethod
+    def _coalesced_dashboard_event_type(event_types: set[str]) -> str:
+        """Return one conservative event type for a batch of pending notifications."""
+        if not event_types:
+            return "dashboard_invalidated"
+        if len(event_types) == 1:
+            return next(iter(event_types))
+
+        priority = (
+            "dashboard_invalidated",
+            "worktree_changed",
+            "display_layout_changed",
+            "ai_session_herdr_changed",
+            "ai_session_git_changed",
+            "focus_changed",
+        )
+        for event_type in priority:
+            if event_type in event_types:
+                return event_type
+        return sorted(event_types)[0]
+
     def _schedule_state_change_notification(self, event_type: str = "dashboard_invalidated") -> None:
         """Run dashboard notification fanout in the background."""
+        self._dashboard_notify_pending.add(str(event_type or "dashboard_invalidated"))
+        current = self._dashboard_notify_task
+        if current and not current.done():
+            return
+
         task = asyncio.create_task(
-            self.notify_state_change(event_type),
-            name=f"i3pm-dashboard-notify-{event_type}",
+            self._drain_scheduled_state_notifications(),
+            name="i3pm-dashboard-notify-coalesced",
         )
+        self._dashboard_notify_task = task
 
         def _consume_result(fut: asyncio.Future) -> None:
             try:
@@ -3007,12 +3036,21 @@ class IPCServer:
                 pass
             except Exception:
                 logger.warning(
-                    "Background dashboard notification failed for %s",
-                    event_type,
+                    "Background dashboard notification failed",
                     exc_info=True,
                 )
+            finally:
+                if self._dashboard_notify_task is fut:
+                    self._dashboard_notify_task = None
 
         task.add_done_callback(_consume_result)
+
+    async def _drain_scheduled_state_notifications(self) -> None:
+        """Drain pending notification requests with coalescing to avoid focus backpressure."""
+        while self._dashboard_notify_pending:
+            pending = set(self._dashboard_notify_pending)
+            self._dashboard_notify_pending.clear()
+            await self.notify_state_change(self._coalesced_dashboard_event_type(pending))
 
     async def _subscribe_state_changes(self, params: Dict[str, Any], writer: asyncio.StreamWriter) -> Dict[str, Any]:
         """Subscribe to state change notifications (Feature 123).

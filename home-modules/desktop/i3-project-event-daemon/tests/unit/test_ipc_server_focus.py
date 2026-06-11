@@ -133,6 +133,40 @@ async def test_workspace_focus_fast_skips_verification_and_notifies(server):
     server.notify_state_change.assert_awaited_once_with("focus_changed")
 
 
+@pytest.mark.asyncio
+async def test_dashboard_notifications_coalesce_while_fanout_is_active(server):
+    blocker = asyncio.Event()
+    calls: list[str] = []
+
+    async def notify(event_type: str) -> None:
+        calls.append(event_type)
+        if len(calls) == 1:
+            await blocker.wait()
+
+    server.notify_state_change = AsyncMock(side_effect=notify)
+
+    server._schedule_state_change_notification("focus_changed")
+    await asyncio.sleep(0)
+    server._schedule_state_change_notification("focus_changed")
+    server._schedule_state_change_notification("focus_changed")
+    server._schedule_state_change_notification("focus_changed")
+    blocker.set()
+
+    for _ in range(5):
+        await asyncio.sleep(0)
+        task = server._dashboard_notify_task
+        if not task or task.done():
+            break
+
+    assert calls == ["focus_changed", "focus_changed"]
+
+
+def test_coalesced_dashboard_event_type_prefers_broadest_change(server):
+    assert server._coalesced_dashboard_event_type({"focus_changed"}) == "focus_changed"
+    assert server._coalesced_dashboard_event_type({"focus_changed", "worktree_changed"}) == "worktree_changed"
+    assert server._coalesced_dashboard_event_type({"focus_changed", "dashboard_invalidated"}) == "dashboard_invalidated"
+
+
 def test_focus_intent_is_formalized_for_window_focus(server):
     epoch = server._advance_user_intent_epoch(
         method="window.focus_fast",
