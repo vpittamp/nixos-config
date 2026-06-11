@@ -14,8 +14,11 @@ PanelWindow {
     required property var colors
     readonly property QtObject root: shellRoot
     id: panelWindow
-    readonly property bool hasRuntimeSessions: root.panelSessions().length > 0 || root.herdrSpaces().length > 0
-    readonly property bool hasRuntimeWindows: root.panelProjects().length > 0
+    readonly property var runtimeSessions: root.panelSessions()
+    readonly property var runtimeHerdrSpaces: root.herdrSpaces()
+    readonly property var runtimeProjects: root.panelProjects()
+    readonly property bool hasRuntimeSessions: runtimeSessions.length > 0 || runtimeHerdrSpaces.length > 0
+    readonly property bool hasRuntimeWindows: runtimeProjects.length > 0
     screen: root.primaryScreen
     visible: root.panelVisible
     color: "transparent"
@@ -730,7 +733,7 @@ PanelWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        visible: root.panelProjects().length === 0
+                        visible: panelWindow.runtimeProjects.length === 0
                         text: "No tracked project windows"
                         color: colors.subtle
                         font.pixelSize: 10
@@ -750,7 +753,7 @@ PanelWindow {
 
                     ScriptModel {
                         id: windowProjectsModel
-                        values: root.panelProjects()
+                        values: panelWindow.runtimeProjects
                         objectProp: "modelData"
                     }
 

@@ -35,6 +35,11 @@ Rectangle {
     readonly property color currentAccentColor: colorsObject.blue
     readonly property string projectLabel: rootObject.stringOrEmpty(session && (session.project_label || rootObject.shortProject(rootObject.stringOrEmpty(session.project_name || session.project || "global"))))
     readonly property bool closableSurface: showCloseAction && rootObject.sessionHasClosableSurface(session)
+    readonly property bool isIdle: rootObject.sessionIsIdle(session)
+    readonly property real idleRowOpacity: isIdle ? (isCurrent ? 0.9 : 0.76) : 1
+    readonly property real idleTextOpacity: isIdle ? (isCurrent ? 0.86 : 0.72) : 1
+    readonly property real idleChipOpacity: isIdle ? (isCurrent ? 0.9 : 0.76) : 1
+    readonly property real toolIconOpacity: hasMotion ? 0.96 : (isIdle ? (isCurrent ? 0.64 : 0.5) : 0.92)
     property bool hasMotion: rootObject.sessionHasMotion(session)
     property int activitySpinnerFrame: 0
     readonly property var activitySpinnerFrames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -55,7 +60,7 @@ Rectangle {
         ? (effectiveHovered ? colorsObject.blue : colorsObject.blueMuted)
         : (selected ? colorsObject.blue : (effectiveHovered ? colorsObject.borderStrong : "transparent"))
     border.width: 1
-    opacity: (closePending ? 0.9 : 1) * rootObject.sessionIdleRowOpacity(session)
+    opacity: (closePending ? 0.9 : 1) * idleRowOpacity
 
     Rectangle {
         visible: isCurrent
@@ -68,7 +73,7 @@ Rectangle {
     }
 
     function resetMotionVisuals() {
-        sessionToolIconWrap.opacity = rootObject.sessionToolIconOpacity(session);
+        sessionToolIconWrap.opacity = toolIconOpacity;
         sessionToolIconWrap.scale = 1;
     }
 
@@ -91,7 +96,7 @@ Rectangle {
         height: isCurrent ? (compact ? 22 : 28) : railHeight
         radius: 1
         color: isCurrent ? currentAccentColor : accentColor
-        opacity: (isCurrent ? 0.92 : (selected ? 0.92 : (effectiveHovered ? 0.72 : 0.46))) * rootObject.sessionIdleTextOpacity(session)
+        opacity: (isCurrent ? 0.92 : (selected ? 0.92 : (effectiveHovered ? 0.72 : 0.46))) * idleTextOpacity
 
         Rectangle {
             visible: isCurrent
@@ -125,7 +130,7 @@ Rectangle {
                 width: compact ? 16 : 18
                 height: compact ? 16 : 18
                 scale: 1
-                opacity: rootObject.sessionToolIconOpacity(session)
+                opacity: toolIconOpacity
 
                 ParallelAnimation {
                     running: hasMotion
@@ -195,7 +200,7 @@ Rectangle {
                 font.pixelSize: compact ? 12 : 13
                 font.weight: Font.DemiBold
                 elide: Text.ElideRight
-                opacity: rootObject.sessionIdleTextOpacity(session)
+                opacity: idleTextOpacity
             }
 
             Text {
@@ -204,7 +209,7 @@ Rectangle {
                 color: isCurrent ? colorsObject.textDim : (selected ? colorsObject.textDim : colorsObject.subtle)
                 font.pixelSize: compact ? 9 : 10
                 elide: Text.ElideRight
-                opacity: rootObject.sessionIdleTextOpacity(session)
+                opacity: idleTextOpacity
             }
         }
 
@@ -217,7 +222,7 @@ Rectangle {
             border.width: 1
             Layout.preferredWidth: launcherHostTokenRow.implicitWidth + 16
             Layout.maximumWidth: 132
-            opacity: rootObject.sessionIdleChipOpacity(session)
+            opacity: idleChipOpacity
 
             RowLayout {
                 id: launcherHostTokenRow
@@ -270,7 +275,7 @@ Rectangle {
             color: colorsObject.panelAlt
             border.color: colorsObject.lineSoft
             border.width: 1
-            opacity: rootObject.sessionIdleChipOpacity(session)
+            opacity: idleChipOpacity
             Layout.preferredWidth: currentChipText.implicitWidth + 12
 
             Text {
@@ -291,7 +296,7 @@ Rectangle {
             border.color: colorsObject.lineSoft
             border.width: 1
             Layout.preferredWidth: projectText.implicitWidth + 12
-            opacity: rootObject.sessionIdleChipOpacity(session)
+            opacity: idleChipOpacity
 
             Text {
                 id: projectText
@@ -310,7 +315,7 @@ Rectangle {
             color: rootObject.sessionGitChipBackground(session)
             border.color: "transparent"
             border.width: 0
-            opacity: rootObject.sessionIdleChipOpacity(session) * 0.84
+            opacity: idleChipOpacity * 0.84
             Layout.preferredWidth: gitText.implicitWidth + 12
 
             Text {
@@ -332,7 +337,7 @@ Rectangle {
                 : rootObject.sessionBadgeBackground(session)
             border.color: rootObject.sessionBadgeBorderColor(session)
             border.width: border.color === "transparent" ? 0 : 1
-            opacity: rootObject.sessionIdleChipOpacity(session)
+            opacity: idleChipOpacity
             Layout.preferredWidth: stoppedNotification
                 ? (compact ? 22 : 24)
                 : (activityLabel.length > 0
