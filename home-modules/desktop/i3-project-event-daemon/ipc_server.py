@@ -1256,13 +1256,13 @@ class IPCServer:
 
             # Feature 102 T046: Output state IPC method
             elif method == "outputs.get_state":
-                result = await self._outputs_get_state(params)
+                result = await self.display_service.outputs_state(params)
             elif method == "output.configure":
-                result = await self._output_configure(params)
+                result = await self.display_service.configure_output(params)
             elif method == "output.create_virtual":
-                result = await self._output_create_virtual(params)
+                result = await self.display_service.create_virtual_output(params)
             elif method == "workspace.move_to_output":
-                result = await self._workspace_move_to_output(params)
+                result = await self.display_service.move_workspace_to_output(params)
             elif method == "workspace.focus":
                 result = await self.focus_service.focus_workspace(params)
             elif method == "workspace.focus_fast":
@@ -11638,32 +11638,6 @@ class IPCServer:
             "summary": summary,
             "events": events,
         }
-
-    async def _outputs_get_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get current output state from OutputEventService.
-
-        Feature 102 T046: Returns cached output state for all outputs or a specific output.
-
-        Args:
-            params: Optional parameters
-                - output_name: Specific output name to query (optional)
-
-        Returns:
-            Dict with output state information
-        """
-        return await self.display_service.outputs_state(params)
-
-    async def _output_configure(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply a deterministic output configuration command through the daemon."""
-        return await self.display_service.configure_output(params)
-
-    async def _output_create_virtual(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a virtual output through the daemon-owned Sway connection."""
-        return await self.display_service.create_virtual_output(params)
-
-    async def _workspace_move_to_output(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Move a workspace to a target output through the daemon."""
-        return await self.display_service.move_workspace_to_output(params)
 
     async def _get_focused_workspace_name(self) -> str:
         """Return the currently focused workspace name, if available."""

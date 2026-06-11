@@ -409,7 +409,7 @@ async def test_workspace_move_to_output_uses_runtime_move_semantics():
     server.i3_connection = SimpleNamespace(conn=SimpleNamespace(command=command))
     server._send_tick_barrier = AsyncMock(return_value=None)
 
-    result = await server._workspace_move_to_output({"workspace": "7", "output_name": "DP-1"})
+    result = await server.display_service.move_workspace_to_output({"workspace": "7", "output_name": "DP-1"})
 
     assert result == {"success": True, "workspace": "7", "output_name": "DP-1"}
     assert commands == ["workspace 7", "move workspace to output DP-1"]

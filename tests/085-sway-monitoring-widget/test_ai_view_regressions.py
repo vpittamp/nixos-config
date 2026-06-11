@@ -284,6 +284,10 @@ def test_focus_rpc_behavior_lives_in_focus_service_not_ipc_wrappers():
         "async def _workspace_focus_fast",
         "async def _workspace_focus",
         "def _build_window_focus_target",
+        "async def _outputs_get_state",
+        "async def _output_configure",
+        "async def _output_create_virtual",
+        "async def _workspace_move_to_output",
     ]:
         assert retired not in ipc_text
 
@@ -291,6 +295,10 @@ def test_focus_rpc_behavior_lives_in_focus_service_not_ipc_wrappers():
     assert "focus_service.focus_window_fast(params)" in ipc_text
     assert "focus_service.focus_workspace(params)" in ipc_text
     assert "focus_service.focus_workspace_fast(params)" in ipc_text
+    assert "display_service.outputs_state(params)" in ipc_text
+    assert "display_service.configure_output(params)" in ipc_text
+    assert "display_service.create_virtual_output(params)" in ipc_text
+    assert "display_service.move_workspace_to_output(params)" in ipc_text
     assert "def focus_window_from_params" in focus_text
     assert "def build_window_focus_target" in focus_text
 
