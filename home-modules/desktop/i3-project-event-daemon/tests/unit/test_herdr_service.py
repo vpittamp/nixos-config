@@ -617,6 +617,10 @@ def test_herdr_service_normalizes_local_and_remote_sessions(monkeypatch):
                 "pane_id": "pane-a",
                 "agent": "codex",
                 "agent_status": "NeedsInput",
+                "session_phase": "working",
+                "turn_owner": "llm",
+                "activity_substate": "thinking",
+                "status_reason": "legacy",
                 "focused": True,
             }],
             "panes": [{
@@ -638,6 +642,8 @@ def test_herdr_service_normalizes_local_and_remote_sessions(monkeypatch):
     assert len(local_rows) == 1
     assert local_rows[0]["session_key"] == "herdr:pane:pane-a"
     assert local_rows[0]["agent_status"] == "unknown"
+    for retired_field in ("session_phase", "turn_owner", "activity_substate", "status_reason"):
+        assert retired_field not in local_rows[0]
     assert local_rows[0]["focus_target"] == {
         "method": "herdr.pane.focus",
         "params": {"pane_id": "pane-a"},
@@ -650,6 +656,18 @@ def test_herdr_service_normalizes_local_and_remote_sessions(monkeypatch):
             "workspace_id": "workspace-r",
             "agent": "claude",
             "agent_status": "NeedsInput",
+            "session_phase": "working",
+            "session_phase_label": "Working",
+            "turn_owner": "llm",
+            "turn_owner_label": "LLM",
+            "activity_substate": "thinking",
+            "activity_substate_label": "Thinking",
+            "stage_visual_state": "working",
+            "needs_user_action": False,
+            "output_ready": False,
+            "output_unseen": False,
+            "review_pending": False,
+            "status_reason": "legacy",
             "focused": True,
             "cwd": "/repo/remote",
         },
@@ -665,6 +683,21 @@ def test_herdr_service_normalizes_local_and_remote_sessions(monkeypatch):
 
     assert remote_row["session_key"] == "herdr:ryzen:pane:pane-r"
     assert remote_row["agent_status"] == "NeedsInput"
+    for retired_field in (
+        "session_phase",
+        "session_phase_label",
+        "turn_owner",
+        "turn_owner_label",
+        "activity_substate",
+        "activity_substate_label",
+        "stage_visual_state",
+        "needs_user_action",
+        "output_ready",
+        "output_unseen",
+        "review_pending",
+        "status_reason",
+    ):
+        assert retired_field not in remote_row
     assert remote_row["execution_mode"] == "ssh"
     assert remote_row["is_current_host"] is False
     assert remote_row["focus_target"] == {

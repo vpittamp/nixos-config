@@ -34,6 +34,21 @@ HERDR_EVENT_SUBSCRIPTION_TYPES = (
     "pane.agent_detected",
 )
 
+RETIRED_SESSION_LIFECYCLE_FIELDS = {
+    "session_phase",
+    "session_phase_label",
+    "turn_owner",
+    "turn_owner_label",
+    "activity_substate",
+    "activity_substate_label",
+    "stage_visual_state",
+    "needs_user_action",
+    "output_ready",
+    "output_unseen",
+    "review_pending",
+    "status_reason",
+}
+
 
 class HerdrService:
     """Own local Herdr event subscription lifecycle and notification coalescing."""
@@ -805,7 +820,11 @@ class HerdrService:
         state_labels = self.normalize_state_labels(row.get("state_labels"))
         session_key = self.session_key(row, host_key if is_remote else "")
 
-        normalized = dict(row)
+        normalized = {
+            key: value
+            for key, value in dict(row).items()
+            if key not in RETIRED_SESSION_LIFECYCLE_FIELDS
+        }
         normalized.update({
             "schema": "herdr.ai_session.v1",
             "source": "herdr",
