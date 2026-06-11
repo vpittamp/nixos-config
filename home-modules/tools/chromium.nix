@@ -1075,6 +1075,8 @@ let
       --remote-debugging-port=${toString sharedBrowserMcp.chromeDevtoolsBrowserPort} \
       --user-data-dir=${lib.escapeShellArg sharedBrowserMcp.chromeDevtoolsProfileDir} \
       --no-first-run \
+      --disable-extensions \
+      --disable-component-extensions-with-background-pages \
       "$@"
   '');
 

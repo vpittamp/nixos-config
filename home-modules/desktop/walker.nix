@@ -3080,8 +3080,8 @@ PY
         echo "Timeout waiting for SWAYSOCK environment variable" >&2
         exit 1
       '';
-      ExecStart = pkgs.writeShellScript "elephant-with-onepassword-group" ''
-        exec /run/wrappers/bin/sg onepassword -c ${lib.escapeShellArg "${inputs.elephant.packages.${pkgs.system}.default}/bin/elephant"}
+      ExecStart = pkgs.writeShellScript "elephant-launcher-backend" ''
+        exec ${lib.escapeShellArg "${inputs.elephant.packages.${pkgs.system}.default}/bin/elephant"}
       '';
       Restart = "on-failure";
       RestartSec = 1;

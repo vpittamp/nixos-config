@@ -303,6 +303,8 @@ let
       --remote-debugging-port=${toString shared.chromeDevtoolsBrowserPort} \
       --user-data-dir="${shared.chromeDevtoolsProfileDir}" \
       --no-first-run \
+      --disable-extensions \
+      --disable-component-extensions-with-background-pages \
       --disable-background-networking \
       --disable-component-update \
       --disable-features=MediaRouter,OptimizationHints,Translate \
