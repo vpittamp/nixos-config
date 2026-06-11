@@ -39,6 +39,7 @@ PROJECT_REMOTE_LAUNCH_PY = REPO_ROOT / "scripts" / "project-remote-launch.py"
 I3PM_MONITORING_DATA_PY = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "monitoring_data.py"
 I3PM_CLI_README = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "README.md"
 AI_SESSION_SYSTEM_DOC = REPO_ROOT / "docs" / "AI_SESSION_SYSTEM.md"
+I3PM_HERDR_MIGRATION_DOC = REPO_ROOT / "docs" / "I3PM_HERDR_MIGRATION.md"
 LEGACY_EWW_VALIDATION_ARTIFACTS = [
     REPO_ROOT / "tests" / "085-sway-monitoring-widget" / "performance_validation.sh",
     REPO_ROOT / "tests" / "085-sway-monitoring-widget" / "QUICKSTART_VALIDATION.md",
@@ -613,6 +614,7 @@ def test_legacy_monitoring_docs_do_not_claim_ai_or_ui_authority():
     monitoring_data_text = I3PM_MONITORING_DATA_PY.read_text()
     cli_readme_text = I3PM_CLI_README.read_text()
     ai_session_doc_text = AI_SESSION_SYSTEM_DOC.read_text()
+    herdr_migration_text = I3PM_HERDR_MIGRATION_DOC.read_text()
 
     assert "Legacy monitoring data compatibility backend" in monitoring_data_text
     assert "It is no longer the active QuickShell runtime state authority." in monitoring_data_text
@@ -621,6 +623,8 @@ def test_legacy_monitoring_docs_do_not_claim_ai_or_ui_authority():
     assert "eww-monitoring-panel" not in cli_readme_text
     assert "OTEL remains telemetry-only" in ai_session_doc_text
     assert "Eww monitoring panel state, defpolls, or `monitoring_data.py` as UI authority" in ai_session_doc_text
+    assert "HerdrService strips legacy tmux and lifecycle fields" in herdr_migration_text
+    assert "IPC does not own those retired UI fields" in herdr_migration_text
 
 
 def test_retired_eww_monitoring_validation_artifacts_are_removed():

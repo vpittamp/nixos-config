@@ -105,7 +105,7 @@ These paths must not participate in AI session identity, current-row selection, 
 - custom lifecycle fields such as `session_phase`, `turn_owner`, `activity_substate`, and `status_reason`
 - Eww monitoring panel state and `monitoring_data.py` as UI authority
 
-The daemon strips legacy tmux and lifecycle fields from `active_ai_sessions` and `session.list`.
+HerdrService strips legacy tmux and lifecycle fields before rows reach `active_ai_sessions` and `session.list`; IPC does not own those retired UI fields.
 
 ## Post-Rebuild Smoke
 
