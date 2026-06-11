@@ -66,6 +66,9 @@ interface HerdrRemoteHealth extends HerdrHealth {
   proxy_reachable: boolean;
   proxy_schema_version: string;
   proxy_protocol_version: number;
+  proxy_herdr_generation: number;
+  proxy_local_herdr_generation: number;
+  daemon_remote_generation: number;
   tailscale: TailscalePeerHealth | null;
 }
 
@@ -624,11 +627,47 @@ async function loadHerdrHealth(): Promise<HerdrHealth | null> {
   return await collectHerdrHealth(runHerdr);
 }
 
+async function loadDaemonRemoteHerdrGenerations(
+  targets: HerdrRemoteTarget[],
+): Promise<Map<string, number>> {
+  const generations = new Map<string, number>();
+  for (const target of targets) {
+    generations.set(target.connection_key, 0);
+  }
+  if (targets.length === 0) {
+    return generations;
+  }
+
+  const client = new DaemonClient();
+  try {
+    const snapshot = asRecord(await client.request("herdr.snapshot", { refresh: true }));
+    const remoteGenerations = asRecord(snapshot.remote_herdr_generation);
+    for (const target of targets) {
+      const aliases = targetAliases(target);
+      let generation = 0;
+      for (const alias of aliases) {
+        const candidate = Number(remoteGenerations[alias]);
+        if (Number.isFinite(candidate) && candidate > generation) {
+          generation = candidate;
+        }
+      }
+      generations.set(target.connection_key, generation);
+    }
+  } catch {
+    return generations;
+  } finally {
+    client.disconnect();
+  }
+  return generations;
+}
+
 async function loadHerdrRemoteHealth(): Promise<HerdrRemoteHealth[]> {
   const targets = await loadHerdrRemoteTargets();
   const tailscaleHealth = await loadTailscalePeerHealth(targets);
+  const daemonRemoteGenerations = await loadDaemonRemoteHerdrGenerations(targets);
   const results = await Promise.all(targets.map(async (target): Promise<HerdrRemoteHealth> => {
     const tailscale = tailscaleHealth.get(target.connection_key) ?? null;
+    const daemonRemoteGeneration = daemonRemoteGenerations.get(target.connection_key) ?? 0;
     let proxyResult: { code: number; stdout: string; stderr: string };
     try {
       proxyResult = await runCommand([
@@ -664,6 +703,9 @@ async function loadHerdrRemoteHealth(): Promise<HerdrRemoteHealth[]> {
       proxy_reachable: false,
       proxy_schema_version: "",
       proxy_protocol_version: 0,
+      proxy_herdr_generation: 0,
+      proxy_local_herdr_generation: 0,
+      daemon_remote_generation: daemonRemoteGeneration,
       tailscale,
     };
     if (proxyResult.code !== 0 || !proxyResult.stdout) {
@@ -710,6 +752,8 @@ async function loadHerdrRemoteHealth(): Promise<HerdrRemoteHealth[]> {
 
     const proxySchemaVersion = String(snapshot.schema_version || "");
     const proxyProtocolVersion = Number(snapshot.protocol_version || 0);
+    const proxyHerdrGeneration = Number(snapshot.herdr_generation || 0);
+    const proxyLocalHerdrGeneration = Number(snapshot.local_herdr_generation || 0);
     const statusRoot = herdrStatusRoot(asRecord(snapshot.status));
     const client = asRecord(statusRoot.client);
     const server = asRecord(statusRoot.server);
@@ -719,6 +763,9 @@ async function loadHerdrRemoteHealth(): Promise<HerdrRemoteHealth[]> {
     }
     if (proxyProtocolVersion !== 1) {
       issues.push(`Herdr proxy protocol mismatch: ${proxyProtocolVersion || "missing"}`);
+    }
+    if (daemonRemoteGeneration <= 0) {
+      issues.push("Remote Herdr generation is not advancing through daemon snapshot");
     }
     if (tailscale?.issue) {
       issues.push(tailscale.issue);
@@ -750,6 +797,9 @@ async function loadHerdrRemoteHealth(): Promise<HerdrRemoteHealth[]> {
       proxy_reachable: true,
       proxy_schema_version: proxySchemaVersion,
       proxy_protocol_version: proxyProtocolVersion,
+      proxy_herdr_generation: proxyHerdrGeneration,
+      proxy_local_herdr_generation: proxyLocalHerdrGeneration,
+      daemon_remote_generation: daemonRemoteGeneration,
       tailscale,
     };
   }));
@@ -1220,6 +1270,8 @@ function printReport(report: HealthReport): void {
               remote.proxy_reachable ? "reachable" : "down"
             } ${remote.proxy_schema_version || "missing-schema"} protocol ${
               remote.proxy_protocol_version || "unknown"
+            } proxy-gen ${remote.proxy_herdr_generation || 0} daemon-gen ${
+              remote.daemon_remote_generation || 0
             } agents ${remote.agent_count} panes ${remote.pane_count}`,
           )
         }`,
