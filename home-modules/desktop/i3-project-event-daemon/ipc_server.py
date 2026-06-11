@@ -588,7 +588,9 @@ class IPCServer:
         )
         self.display_service = DisplayService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
-            output_configure=lambda params: self._output_configure(params),
+            run_sway_command=lambda command: self._sway_ipc_command(command),
+            sway_command_succeeded=lambda result: self._sway_command_succeeded(result),
+            send_tick_barrier=lambda payload: self._send_tick_barrier(payload),
             i3_connection=lambda: self.i3_connection,
             monitor_profile_service=lambda: getattr(self, "monitor_profile_service", None),
             display_generation=lambda: self._display_generation,
@@ -12105,146 +12107,19 @@ class IPCServer:
         Returns:
             Dict with output state information
         """
-        from .services.output_event_service import get_output_event_service
-
-        output_service = get_output_event_service()
-        if not output_service:
-            return {
-                "initialized": False,
-                "outputs": {},
-                "count": 0,
-                "active_count": 0,
-            }
-
-        output_name = params.get("output_name")
-        cached_outputs = output_service.get_current_state()
-
-        if output_name:
-            # Return specific output state
-            if output_name in cached_outputs:
-                state = cached_outputs[output_name]
-                return {
-                    "initialized": True,
-                    "output_name": output_name,
-                    "state": state.to_dict(),
-                    "active": state.active,
-                }
-            else:
-                return {
-                    "initialized": True,
-                    "output_name": output_name,
-                    "state": None,
-                    "error": f"Output '{output_name}' not found in cache",
-                }
-        else:
-            # Return all output states
-            outputs_dict = {
-                name: state.to_dict()
-                for name, state in cached_outputs.items()
-            }
-            active_outputs = output_service.get_active_outputs()
-            focused_output = None
-            try:
-                if self.i3_connection and getattr(self.i3_connection, "conn", None):
-                    sway_outputs = await self.i3_connection.get_outputs()
-                    for output in sway_outputs:
-                        if getattr(output, "focused", False):
-                            focused_output = getattr(output, "name", None)
-                            break
-            except Exception as e:
-                logger.debug("Failed to resolve focused output: %s", e)
-
-            return {
-                "initialized": True,
-                "outputs": outputs_dict,
-                "count": len(cached_outputs),
-                "active_count": len(active_outputs),
-                "active_outputs": active_outputs,
-                "focused_output": focused_output,
-            }
+        return await self.display_service.outputs_state(params)
 
     async def _output_configure(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Apply a deterministic output configuration command through the daemon."""
-        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
-            raise RuntimeError("Sway connection is unavailable")
-
-        output_name = str(params.get("output_name") or "").strip()
-        if not output_name:
-            raise ValueError("output_name is required")
-
-        enabled = params.get("enabled")
-        mode = str(params.get("mode") or "").strip()
-        scale = params.get("scale")
-        position_x = params.get("position_x")
-        position_y = params.get("position_y")
-
-        command_parts = [f"output {output_name}"]
-        if enabled is not None:
-            command_parts.append("enable" if bool(enabled) else "disable")
-        if mode:
-            command_parts.append(f"mode {mode}")
-        if position_x is not None and position_y is not None:
-            command_parts.append(f"position {int(position_x)},{int(position_y)}")
-        if scale is not None:
-            command_parts.append(f"scale {float(scale)}")
-
-        if len(command_parts) == 1:
-            raise ValueError("No output configuration fields were provided")
-
-        command = " ".join(command_parts)
-        result = await self._sway_ipc_command(command)
-        if not self._sway_command_succeeded(result):
-            return {"success": False, "output_name": output_name, "error": f"command_failed:{command}"}
-        await self._send_tick_barrier(f"i3pm:output-configure:{output_name}")
-        return {"success": True, "output_name": output_name, "command": command}
+        return await self.display_service.configure_output(params)
 
     async def _output_create_virtual(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Create a virtual output through the daemon-owned Sway connection."""
-        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
-            raise RuntimeError("Sway connection is unavailable")
-        result = await self._sway_ipc_command("create_output")
-        if not self._sway_command_succeeded(result):
-            return {"success": False, "error": "command_failed:create_output"}
-        await self._send_tick_barrier("i3pm:output-create")
-        return {"success": True}
+        return await self.display_service.create_virtual_output(params)
 
     async def _workspace_move_to_output(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Move a workspace to a target output through the daemon."""
-        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
-            raise RuntimeError("Sway connection is unavailable")
-
-        workspace = params.get("workspace")
-        output_name = str(params.get("output_name") or "").strip()
-        if workspace is None:
-            raise ValueError("workspace is required")
-        if not output_name:
-            raise ValueError("output_name is required")
-
-        workspace_ref = str(workspace).strip()
-        if not workspace_ref:
-            raise ValueError("workspace must not be empty")
-
-        focus_command = f"workspace {workspace_ref}"
-        result = await self._sway_ipc_command(focus_command)
-        if not self._sway_command_succeeded(result):
-            return {
-                "success": False,
-                "workspace": workspace_ref,
-                "output_name": output_name,
-                "error": f"command_failed:{focus_command}",
-            }
-
-        move_command = f"move workspace to output {output_name}"
-        result = await self._sway_ipc_command(move_command)
-        if not self._sway_command_succeeded(result):
-            return {
-                "success": False,
-                "workspace": workspace_ref,
-                "output_name": output_name,
-                "error": f"command_failed:{move_command}",
-            }
-        await self._send_tick_barrier(f"i3pm:workspace-output:{workspace_ref}:{output_name}")
-        return {"success": True, "workspace": workspace_ref, "output_name": output_name}
+        return await self.display_service.move_workspace_to_output(params)
 
     async def _workspace_focus_fast(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Low-latency workspace focus path for click-driven UI actions."""

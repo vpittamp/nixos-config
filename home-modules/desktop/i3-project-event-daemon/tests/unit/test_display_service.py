@@ -54,10 +54,21 @@ def make_output(
     )
 
 
-def make_service(*, output_configure=None, notify=None) -> DisplayService:
+def make_service(
+    *,
+    run_sway_command=None,
+    sway_command_succeeded=None,
+    send_tick_barrier=None,
+    notify=None,
+) -> DisplayService:
     return DisplayService(
         notify_state_change=notify or AsyncMock(return_value=None),
-        output_configure=output_configure or AsyncMock(return_value={"success": True}),
+        run_sway_command=run_sway_command or AsyncMock(return_value=[SimpleNamespace(success=True)]),
+        sway_command_succeeded=(
+            sway_command_succeeded
+            or (lambda result: all(bool(getattr(item, "success", False)) for item in result))
+        ),
+        send_tick_barrier=send_tick_barrier or AsyncMock(return_value=None),
     )
 
 
@@ -163,3 +174,142 @@ async def test_cycle_applies_next_layout(monkeypatch, tmp_path) -> None:
     notify.assert_awaited_once_with("display_layout_changed")
     assert current_file.read_text(encoding="utf-8") == "b\n"
     assert result["applied"] is True
+
+
+@pytest.mark.asyncio
+async def test_configure_output_builds_command_and_ticks() -> None:
+    run_sway_command = AsyncMock(return_value=[SimpleNamespace(success=True)])
+    send_tick_barrier = AsyncMock(return_value=None)
+    service = make_service(
+        run_sway_command=run_sway_command,
+        send_tick_barrier=send_tick_barrier,
+    )
+
+    result = await service.configure_output({
+        "output_name": "DP-1",
+        "enabled": True,
+        "mode": "1920x1080@60Hz",
+        "position_x": 10,
+        "position_y": 20,
+        "scale": 1.25,
+    })
+
+    assert result == {
+        "success": True,
+        "output_name": "DP-1",
+        "command": "output DP-1 enable mode 1920x1080@60Hz position 10,20 scale 1.25",
+    }
+    run_sway_command.assert_awaited_once_with(
+        "output DP-1 enable mode 1920x1080@60Hz position 10,20 scale 1.25"
+    )
+    send_tick_barrier.assert_awaited_once_with("i3pm:output-configure:DP-1")
+
+
+@pytest.mark.asyncio
+async def test_configure_output_reports_command_failure() -> None:
+    service = make_service(run_sway_command=AsyncMock(return_value=[SimpleNamespace(success=False)]))
+
+    result = await service.configure_output({"output_name": "DP-1", "scale": 2.0})
+
+    assert result == {
+        "success": False,
+        "output_name": "DP-1",
+        "error": "command_failed:output DP-1 scale 2.0",
+    }
+
+
+@pytest.mark.asyncio
+async def test_configure_output_validates_required_fields() -> None:
+    service = make_service()
+
+    with pytest.raises(ValueError, match="output_name is required"):
+        await service.configure_output({"scale": 1.0})
+
+    with pytest.raises(ValueError, match="No output configuration fields"):
+        await service.configure_output({"output_name": "DP-1"})
+
+
+@pytest.mark.asyncio
+async def test_create_virtual_output_runs_sway_command_and_tick() -> None:
+    run_sway_command = AsyncMock(return_value=[SimpleNamespace(success=True)])
+    send_tick_barrier = AsyncMock(return_value=None)
+    service = make_service(
+        run_sway_command=run_sway_command,
+        send_tick_barrier=send_tick_barrier,
+    )
+
+    result = await service.create_virtual_output({})
+
+    assert result == {"success": True}
+    run_sway_command.assert_awaited_once_with("create_output")
+    send_tick_barrier.assert_awaited_once_with("i3pm:output-create")
+
+
+@pytest.mark.asyncio
+async def test_move_workspace_to_output_uses_runtime_move_semantics() -> None:
+    run_sway_command = AsyncMock(return_value=[SimpleNamespace(success=True)])
+    send_tick_barrier = AsyncMock(return_value=None)
+    service = make_service(
+        run_sway_command=run_sway_command,
+        send_tick_barrier=send_tick_barrier,
+    )
+
+    result = await service.move_workspace_to_output({"workspace": "7", "output_name": "DP-1"})
+
+    assert result == {"success": True, "workspace": "7", "output_name": "DP-1"}
+    assert [call.args[0] for call in run_sway_command.await_args_list] == [
+        "workspace 7",
+        "move workspace to output DP-1",
+    ]
+    send_tick_barrier.assert_awaited_once_with("i3pm:workspace-output:7:DP-1")
+
+
+@pytest.mark.asyncio
+async def test_move_workspace_to_output_reports_move_failure() -> None:
+    run_sway_command = AsyncMock(side_effect=[
+        [SimpleNamespace(success=True)],
+        [SimpleNamespace(success=False)],
+    ])
+    service = make_service(run_sway_command=run_sway_command)
+
+    result = await service.move_workspace_to_output({"workspace": "7", "output_name": "DP-1"})
+
+    assert result == {
+        "success": False,
+        "workspace": "7",
+        "output_name": "DP-1",
+        "error": "command_failed:move workspace to output DP-1",
+    }
+
+
+@pytest.mark.asyncio
+async def test_outputs_state_returns_cached_outputs_with_focused_output(monkeypatch) -> None:
+    output_event_service_module = importlib.import_module(
+        "i3_project_daemon.services.output_event_service"
+    )
+    cached_state = SimpleNamespace(active=True, to_dict=lambda: {"name": "DP-1", "active": True})
+    monkeypatch.setattr(
+        output_event_service_module,
+        "get_output_event_service",
+        lambda: SimpleNamespace(
+            get_current_state=lambda: {"DP-1": cached_state},
+            get_active_outputs=lambda: ["DP-1"],
+        ),
+    )
+    i3_connection = SimpleNamespace(
+        conn=SimpleNamespace(
+            get_outputs=AsyncMock(return_value=[make_output("DP-1", focused=True)]),
+        ),
+    )
+    service = make_service()
+
+    result = await service.outputs_state({}, i3_connection=i3_connection)
+
+    assert result == {
+        "initialized": True,
+        "outputs": {"DP-1": {"name": "DP-1", "active": True}},
+        "count": 1,
+        "active_count": 1,
+        "active_outputs": ["DP-1"],
+        "focused_output": "DP-1",
+    }
