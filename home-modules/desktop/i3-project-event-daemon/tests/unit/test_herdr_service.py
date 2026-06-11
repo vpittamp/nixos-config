@@ -485,6 +485,68 @@ def test_herdr_service_normalizes_result_arrays_and_status_labels():
     }
 
 
+def test_herdr_service_strips_retired_tmux_and_lifecycle_fields_from_sessions():
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+
+    row = {
+        "pane_id": "pane-1",
+        "workspace_id": "workspace-1",
+        "agent": "codex",
+        "agent_status": "working",
+        "cwd": "/repo/main",
+        "focused": True,
+        "session_phase": "working",
+        "turn_owner": "llm",
+        "activity_substate": "thinking",
+        "status_reason": "otel",
+        "terminal_anchor_id": "anchor-1",
+        "terminal_context": {"tmux_pane": "%0"},
+        "tmux_session": "i3pm-main",
+        "tmux_window": "0:main",
+        "tmux_pane": "%0",
+        "tmux_session_name": "i3pm-main",
+        "native_session_id": "native-1",
+        "session_id": "legacy-session",
+        "process_running": True,
+        "activity_freshness": "fresh",
+    }
+
+    session = service.normalize_session_row(
+        row,
+        local_host="thinkpad",
+        normalize_connection_key=lambda value: value,
+        project_for_cwd=lambda cwd: {
+            "project_name": "vpittamp/nixos-config:main",
+            "project_path": cwd,
+        },
+    )
+
+    assert session["schema"] == "herdr.ai_session.v1"
+    assert session["session_key"] == "herdr:pane:pane-1"
+    assert session["pane_id"] == "pane-1"
+    assert session["agent_status"] == "working"
+    for retired_field in (
+        "session_phase",
+        "turn_owner",
+        "activity_substate",
+        "status_reason",
+        "terminal_anchor_id",
+        "terminal_context",
+        "tmux_session",
+        "tmux_window",
+        "tmux_pane",
+        "tmux_session_name",
+        "native_session_id",
+        "session_id",
+        "process_running",
+        "activity_freshness",
+    ):
+        assert retired_field not in session
+
+
 def test_herdr_service_annotates_rows_with_host_context():
     service = HerdrService(
         notify_state_change=lambda event_type: asyncio.sleep(0),

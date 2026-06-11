@@ -249,6 +249,18 @@ def test_focus_state_active_session_uses_herdr_identity_not_tmux_fields():
     assert '"tmux_pane"' not in focus_body
 
 
+def test_daemon_session_rows_strip_legacy_tmux_identity_fields():
+    """Daemon AI session rows should expose Herdr identity, not terminal/tmux identity."""
+    herdr_text = (REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon" / "services" / "herdr_service.py").read_text()
+    ipc_text = IPC_SERVER_PY.read_text()
+
+    assert "RETIRED_SESSION_UI_STATE_FIELDS" in herdr_text
+    assert '"terminal_context"' in herdr_text
+    assert '"tmux_session"' in herdr_text
+    assert "if key not in RETIRED_SESSION_UI_STATE_FIELDS" in herdr_text
+    assert "if key not in RETIRED_SESSION_UI_STATE_FIELDS" in ipc_text
+
+
 def test_session_status_chip_renders_raw_herdr_status():
     """Session chips should title-case Herdr's status rather than custom lifecycle labels."""
     text = SHELL_QML.read_text()

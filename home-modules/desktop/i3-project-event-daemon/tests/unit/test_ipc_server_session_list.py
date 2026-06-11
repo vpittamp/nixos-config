@@ -446,7 +446,7 @@ def test_select_current_session_key_ignores_unfocused_herdr_override(server):
 
 
 @pytest.mark.asyncio
-async def test_session_list_strips_retired_lifecycle_fields(server, monkeypatch):
+async def test_session_list_strips_retired_ui_state_fields(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
     session = make_runtime_session()
     runtime_snapshot["sessions"] = [session]
@@ -471,6 +471,16 @@ async def test_session_list_strips_retired_lifecycle_fields(server, monkeypatch)
         "activity_substate",
         "activity_substate_label",
         "status_reason",
+        "terminal_anchor_id",
+        "terminal_context",
+        "tmux_session",
+        "tmux_window",
+        "tmux_pane",
+        "native_session_id",
+        "session_id",
+        "process_running",
+        "activity_age_seconds",
+        "activity_freshness",
     ):
         assert retired_field not in session
     assert session["is_current_window"] is True

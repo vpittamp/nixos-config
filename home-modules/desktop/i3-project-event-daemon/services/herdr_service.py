@@ -49,6 +49,23 @@ RETIRED_SESSION_LIFECYCLE_FIELDS = {
     "status_reason",
 }
 
+RETIRED_SESSION_UI_STATE_FIELDS = RETIRED_SESSION_LIFECYCLE_FIELDS | {
+    "activity_age_seconds",
+    "activity_freshness",
+    "identity_phase",
+    "native_session_id",
+    "process_running",
+    "session_id",
+    "terminal_anchor_id",
+    "terminal_context",
+    "tmux_pane",
+    "tmux_server_key",
+    "tmux_session",
+    "tmux_session_name",
+    "tmux_socket",
+    "tmux_window",
+}
+
 
 class HerdrService:
     """Own local Herdr event subscription lifecycle and notification coalescing."""
@@ -823,7 +840,7 @@ class HerdrService:
         normalized = {
             key: value
             for key, value in dict(row).items()
-            if key not in RETIRED_SESSION_LIFECYCLE_FIELDS
+            if key not in RETIRED_SESSION_UI_STATE_FIELDS
         }
         normalized.update({
             "schema": "herdr.ai_session.v1",
