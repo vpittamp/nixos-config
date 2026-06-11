@@ -56,6 +56,7 @@ from .services.dashboard_model import (
     DASHBOARD_SCHEMA_VERSION,
     build_dashboard_projects as build_dashboard_project_cards,
 )
+from .services.daemon_contract_service import DaemonContractService
 from .services.dashboard_service import DashboardService
 from .services.dashboard_git_service import DashboardGitService
 from .services.dashboard_worktree_service import DashboardWorktreeService
@@ -85,7 +86,6 @@ ICON_EXTENSIONS = (".svg", ".png", ".xpm")
 APP_REGISTRY_PATH = Path.home() / ".config/i3/application-registry.json"
 PWA_REGISTRY_PATH = Path.home() / ".config/i3/pwa-registry.json"
 CHROME_SCOPED_TMP_PREFIX = "/tmp/com.google.Chrome.scoped_dir."
-DAEMON_CONTRACT_SCHEMA_VERSION = "i3pm.daemon.contract.v1"
 FOCUS_STATE_SCHEMA_VERSION = "i3pm.focus_state.v2"
 
 _DISCOVERED_WORKTREE_CACHE: Dict[str, Any] = {
@@ -547,6 +547,11 @@ class IPCServer:
             ttl=self._worktree_cache_ttl,
         )
         self.worktree_profile_service = WorktreeProfileService()
+        self.daemon_contract_service = DaemonContractService(
+            dashboard_schema_version=DASHBOARD_SCHEMA_VERSION,
+            dashboard_event_schema_version=DASHBOARD_EVENT_SCHEMA_VERSION,
+            focus_schema_version=FOCUS_STATE_SCHEMA_VERSION,
+        )
         self.display_service = DisplayService(
             notify_state_change=lambda event_type: self.notify_state_change(event_type),
             output_configure=lambda params: self._output_configure(params),
@@ -2170,49 +2175,13 @@ class IPCServer:
                 error=error_msg,
             )
 
-    def _daemon_contract_payload(self) -> Dict[str, Any]:
-        """Return the authoritative daemon/runtime contract marker."""
-        return {
-            "schema_version": DAEMON_CONTRACT_SCHEMA_VERSION,
-            "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
-            "dashboard_event_schema_version": DASHBOARD_EVENT_SCHEMA_VERSION,
-            "focus_schema_version": FOCUS_STATE_SCHEMA_VERSION,
-            "current_session_authority": "focus_state.current_session_key",
-            "required_dashboard_fields": [
-                "schema_version",
-                "generation",
-                "snapshot_version",
-                "focus_state",
-                "active_ai_sessions",
-                "dashboard_invariants",
-            ],
-            "retired_dashboard_fields": [
-                "current_ai_session_key",
-                "focus_state.current_ai_session_key",
-                "focus_state.focused_window_id",
-            ],
-            "features": [
-                "session-management",
-                "mark-based-correlation",
-                "auto-save",
-                "auto-restore",
-                "workspace-focus-tracking",
-                "window-focus-tracking",
-                "terminal-cwd-tracking",
-                "daemon-owned-focus-state",
-                "formal-focus-intents",
-                "dashboard-delta-events",
-                "herdr-native-ai-sessions",
-            ],
-        }
-
     async def _daemon_contract(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get the daemon contract marker used by health and rebuild gates."""
         start_time = time.perf_counter()
         error_msg = None
 
         try:
-            result = self._daemon_contract_payload()
+            result = self.daemon_contract_service.contract_payload()
             logger.debug("IPC: daemon.contract() → %s", result["schema_version"])
             return result
 
@@ -2245,15 +2214,7 @@ class IPCServer:
         error_msg = None
 
         try:
-            contract = self._daemon_contract_payload()
-            result = {
-                "version": "1.0.0",
-                "api_version": "1.0.0",
-                "contract": {
-                    key: value for key, value in contract.items() if key != "features"
-                },
-                "features": list(contract["features"]),
-            }
+            result = self.daemon_contract_service.version_payload()
 
             logger.debug(f"IPC: daemon.version() → {result['version']}")
             return result
