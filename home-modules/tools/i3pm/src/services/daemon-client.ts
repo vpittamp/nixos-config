@@ -17,10 +17,10 @@ function isIgnorableSocketCloseError(error: unknown): boolean {
     return false;
   }
   const message = String(error.message || "");
-  return message.includes("Bad resource ID")
-    || message.includes("Broken pipe")
-    || message.includes("not connected")
-    || message.includes("closed");
+  return message.includes("Bad resource ID") ||
+    message.includes("Broken pipe") ||
+    message.includes("not connected") ||
+    message.includes("closed");
 }
 
 /**
@@ -308,7 +308,9 @@ export class DaemonClient {
    * Subscribe to daemon event stream (async iterator)
    * Yields events as they are broadcast by the daemon
    */
-  async *subscribeToEvents(): AsyncIterableIterator<{ type: string; data: unknown; timestamp: string }> {
+  async *subscribeToEvents(): AsyncIterableIterator<
+    { type: string; data: unknown; timestamp: string }
+  > {
     if (!this.conn) {
       throw new DaemonError("Not connected to daemon");
     }
@@ -365,8 +367,9 @@ export class DaemonClient {
 
   /**
    * Subscribe to daemon state change notifications.
-   * Yields lightweight invalidation events that consumers can use to refetch
-   * heavier dashboard/session state only when needed.
+   * Yields typed dashboard events with generation metadata and optional
+   * partial payloads. Consumers should refetch only on invalidation,
+   * generation gaps, or parse failures.
    */
   async *subscribeToStateChanges(): AsyncIterableIterator<{
     type: string;
@@ -417,18 +420,29 @@ export class DaemonClient {
             : [];
           yield {
             type: String(params.type || eventType),
-            schema_version: params.schema_version === undefined ? undefined : String(params.schema_version),
+            schema_version: params.schema_version === undefined
+              ? undefined
+              : String(params.schema_version),
             event_type: eventType,
             generation: params.generation === undefined ? undefined : Number(params.generation),
             changed_keys: changedKeys,
-            payload: params.payload && typeof params.payload === "object" && !Array.isArray(params.payload)
-              ? params.payload as Record<string, unknown>
-              : undefined,
+            payload:
+              params.payload && typeof params.payload === "object" && !Array.isArray(params.payload)
+                ? params.payload as Record<string, unknown>
+                : undefined,
             timestamp: Number(params.timestamp || Date.now()),
-            snapshot_version: params.snapshot_version === undefined ? undefined : Number(params.snapshot_version),
-            session_generation: params.session_generation === undefined ? undefined : Number(params.session_generation),
-            display_generation: params.display_generation === undefined ? undefined : Number(params.display_generation),
-            focus_generation: params.focus_generation === undefined ? undefined : Number(params.focus_generation),
+            snapshot_version: params.snapshot_version === undefined
+              ? undefined
+              : Number(params.snapshot_version),
+            session_generation: params.session_generation === undefined
+              ? undefined
+              : Number(params.session_generation),
+            display_generation: params.display_generation === undefined
+              ? undefined
+              : Number(params.display_generation),
+            focus_generation: params.focus_generation === undefined
+              ? undefined
+              : Number(params.focus_generation),
           };
         } catch {
           // Ignore malformed notification lines and continue consuming the stream.

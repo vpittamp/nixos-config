@@ -27,7 +27,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function isDeltaEvent(event: {
+export function isDeltaEvent(event: {
   event_type: string;
   changed_keys: string[];
   payload?: Record<string, unknown>;
@@ -41,7 +41,7 @@ function isDeltaEvent(event: {
   return event.payload !== undefined && Object.keys(event.payload).length > 0;
 }
 
-function applyDashboardEvent(
+export function applyDashboardEvent(
   currentSnapshot: Record<string, unknown>,
   event: {
     generation?: number;
@@ -89,7 +89,9 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
     const client = new DaemonClient();
     try {
       const snapshot = await fetchSnapshot(client);
-      console.log(parsed.json ? JSON.stringify(snapshot, null, 2) : JSON.stringify(snapshot, null, 2));
+      console.log(
+        parsed.json ? JSON.stringify(snapshot, null, 2) : JSON.stringify(snapshot, null, 2),
+      );
       return 0;
     } finally {
       client.disconnect();
@@ -154,10 +156,10 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
             continue;
           }
           if (
-            !currentSnapshot
-            || !Number.isFinite(generation)
-            || generation > lastSeenGeneration + 1
-            || !isDeltaEvent(event)
+            !currentSnapshot ||
+            !Number.isFinite(generation) ||
+            generation > lastSeenGeneration + 1 ||
+            !isDeltaEvent(event)
           ) {
             await emitSnapshot();
             continue;
