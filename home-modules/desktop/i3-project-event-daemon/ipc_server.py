@@ -8714,56 +8714,7 @@ class IPCServer:
 
     async def _window_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a deterministic daemon-owned action against a window."""
-        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
-            raise RuntimeError("Sway connection is unavailable")
-
-        window_id = int(params.get("window_id") or 0)
-        if window_id <= 0:
-            raise ValueError("window_id must be a positive integer")
-
-        action = str(params.get("action") or "").strip().lower()
-        if not action:
-            raise ValueError("action is required")
-
-        action_map = {
-            "kill": [f'[con_id={window_id}] kill'],
-            "floating_toggle": [f'[con_id={window_id}] floating toggle'],
-            "fullscreen_toggle": [f'[con_id={window_id}] fullscreen toggle'],
-            "move_scratchpad": [f'[con_id={window_id}] move scratchpad'],
-            "move_left": [f'[con_id={window_id}] move left'],
-            "move_right": [f'[con_id={window_id}] move right'],
-            "move_up": [f'[con_id={window_id}] move up'],
-            "move_down": [f'[con_id={window_id}] move down'],
-            "layout_stacking": [f'[con_id={window_id}] focus', 'layout stacking'],
-            "layout_tabbed": [f'[con_id={window_id}] focus', 'layout tabbed'],
-            "layout_toggle_split": [f'[con_id={window_id}] focus', 'layout toggle split'],
-            "split_h": [f'[con_id={window_id}] focus', 'split h'],
-            "split_v": [f'[con_id={window_id}] focus', 'split v'],
-        }
-        if action == "focus":
-            return await self._focus_window_impl(
-                window_id=window_id,
-                project_name=str(params.get("project_name") or "").strip(),
-                target_variant=str(params.get("target_variant") or "").strip().lower(),
-                connection_key=str(params.get("connection_key") or "").strip(),
-                attempts=int(params.get("attempts") or 3),
-                delay_s=float(params.get("delay_s") or 0.12),
-            )
-        if action not in action_map:
-            raise ValueError(f"Unsupported window action: {action}")
-
-        for command in action_map[action]:
-            result = await self._sway_ipc_command(command)
-            if not self._sway_command_succeeded(result):
-                return {
-                    "success": False,
-                    "window_id": window_id,
-                    "action": action,
-                    "error": f"command_failed:{command}",
-                }
-
-        await self._send_tick_barrier(f"i3pm:window-action:{action}:{window_id}")
-        return {"success": True, "window_id": window_id, "action": action}
+        return await self.focus_service.window_action(params)
 
     async def _runtime_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return a compact daemon-owned runtime snapshot for UI consumers."""

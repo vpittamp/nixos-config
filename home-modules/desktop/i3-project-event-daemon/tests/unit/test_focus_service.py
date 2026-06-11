@@ -542,6 +542,94 @@ async def test_focus_window_fast_service_rejects_remote_target() -> None:
     get_window_transition_state.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_window_action_service_runs_single_command_and_tick() -> None:
+    run_sway_command = AsyncMock(return_value=[SimpleNamespace(success=True)])
+    send_tick_barrier = AsyncMock(return_value=None)
+    service = make_window_focus_service(
+        run_sway_command=run_sway_command,
+        send_tick_barrier=send_tick_barrier,
+    )
+
+    result = await service.window_action({
+        "window_id": 404,
+        "action": "floating_toggle",
+    })
+
+    assert result == {"success": True, "window_id": 404, "action": "floating_toggle"}
+    run_sway_command.assert_awaited_once_with("[con_id=404] floating toggle")
+    send_tick_barrier.assert_awaited_once_with("i3pm:window-action:floating_toggle:404")
+
+
+@pytest.mark.asyncio
+async def test_window_action_service_runs_layout_command_sequence() -> None:
+    run_sway_command = AsyncMock(return_value=[SimpleNamespace(success=True)])
+    service = make_window_focus_service(run_sway_command=run_sway_command)
+
+    result = await service.window_action({
+        "window_id": 405,
+        "action": "layout_tabbed",
+    })
+
+    assert result["success"] is True
+    assert [call.args[0] for call in run_sway_command.await_args_list] == [
+        "[con_id=405] focus",
+        "layout tabbed",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_window_action_service_reports_command_failure() -> None:
+    run_sway_command = AsyncMock(side_effect=[
+        [SimpleNamespace(success=True)],
+        [SimpleNamespace(success=False)],
+    ])
+    service = make_window_focus_service(run_sway_command=run_sway_command)
+
+    result = await service.window_action({
+        "window_id": 406,
+        "action": "split_v",
+    })
+
+    assert result == {
+        "success": False,
+        "window_id": 406,
+        "action": "split_v",
+        "error": "command_failed:split v",
+    }
+
+
+@pytest.mark.asyncio
+async def test_window_action_service_focus_delegates_to_focus_window() -> None:
+    service = make_window_focus_service()
+
+    result = await service.window_action({
+        "window_id": 101,
+        "action": "focus",
+        "project_name": "vpittamp/nixos-config:main",
+        "target_variant": "local",
+    })
+
+    assert result["success"] is True
+    assert result["window_id"] == 101
+    assert result["project_name"] == "vpittamp/nixos-config:main"
+    assert service.window_override == {"window_id": 101, "connection_key": ""}
+
+
+@pytest.mark.asyncio
+async def test_window_action_service_validates_window_and_action() -> None:
+    service = make_window_focus_service()
+
+    with pytest.raises(ValueError, match="window_id must be a positive integer"):
+        await service.window_action({"window_id": 0, "action": "kill"})
+
+    with pytest.raises(ValueError, match="action is required"):
+        await service.window_action({"window_id": 101})
+
+    with pytest.raises(ValueError, match="Unsupported window action"):
+        await service.window_action({"window_id": 101, "action": "warp"})
+
+
 def test_focus_intent_transitions_pending_to_confirmed() -> None:
     service = make_service()
     service.begin_focus_intent(
