@@ -8264,59 +8264,6 @@ class IPCServer:
             return await conn_get_workspaces()
         raise RuntimeError("Sway workspace interface is unavailable")
 
-    def _find_tree_node_by_id(self, node: Any, target_id: int) -> Optional[Any]:
-        """Recursively walk a Sway tree node to find a container by id."""
-        return FocusService.find_tree_node_by_id(node, target_id)
-
-    @staticmethod
-    def _container_is_in_scratchpad(container: Any) -> bool:
-        """Return whether a container is currently attached to the scratchpad tree."""
-        return FocusService.container_is_in_scratchpad(container)
-
-    @staticmethod
-    def _workspace_switch_command(workspace_name: str) -> str:
-        """Build a safe workspace switch command for an arbitrary workspace name."""
-        return FocusService.workspace_switch_command(workspace_name)
-
-    async def _get_window_transition_state(self, window_id: int) -> Dict[str, Any]:
-        """Return live and tracked state used to plan a focus transition."""
-        return await self.focus_service.get_window_transition_state(window_id)
-
-    def _build_window_focus_transition(
-        self,
-        *,
-        window_id: int,
-        state: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """Plan the commands and expected final state for focusing a window."""
-        return self.focus_service.build_window_focus_transition(
-            window_id=window_id,
-            state=state,
-        )
-
-    async def _window_matches_transition_target(self, expected: Dict[str, Any]) -> bool:
-        """Verify the focused window converged to the planned visible state."""
-        return await self.focus_service.window_matches_transition_target(expected)
-
-    async def _is_window_in_regular_state(self, window_id: int) -> bool:
-        """Check whether a container is focused as a normal tiled window."""
-        if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
-            return False
-        try:
-            tree = await self.i3_connection.get_tree()
-            node = self._find_tree_node_by_id(tree, int(window_id))
-            if node is None:
-                return False
-            fullscreen_raw = getattr(node, "fullscreen_mode", -1)
-            fullscreen_mode = -1 if fullscreen_raw is None else int(fullscreen_raw)
-            floating_state = str(getattr(node, "floating", "") or "").strip().lower()
-            return fullscreen_mode == 0 and (
-                not floating_state or floating_state.endswith("_off")
-            )
-        except Exception as e:
-            logger.debug("Failed to inspect window %s state: %s", window_id, e)
-            return False
-
     async def _send_tick_barrier(self, payload: str) -> None:
         """Flush pending Sway command effects before continuing."""
         if not self.i3_connection or not getattr(self.i3_connection, "conn", None):
@@ -8325,37 +8272,6 @@ class IPCServer:
             await self.i3_connection.conn.send_tick(payload)
         except Exception as e:
             logger.debug("Tick barrier failed for %s: %s", payload, e)
-
-    @staticmethod
-    def _extract_json_payload(raw_output: str) -> Optional[Any]:
-        """Extract a JSON object or array from stdout that may include shell noise."""
-        return FocusService.extract_json_payload(raw_output)
-
-    async def _remote_daemon_request(
-        self,
-        *,
-        connection_key: str,
-        method: str,
-        params: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """Execute a daemon JSON-RPC call on a remote host over SSH."""
-        return await self.focus_service.remote_daemon_request(
-            connection_key=connection_key,
-            method=method,
-            params=params,
-        )
-
-    def _find_focused_tree_node(self, node: Any) -> Optional[Any]:
-        """Recursively find the currently focused tree node."""
-        return FocusService.find_focused_tree_node(node)
-
-    async def _focused_window_id(self) -> int:
-        """Return the currently focused Sway container id."""
-        return await self.focus_service.focused_window_id()
-
-    async def _verify_window_focus(self, window_id: int) -> Dict[str, Any]:
-        """Verify that the requested window owns current Sway focus."""
-        return await self.focus_service.verify_window_focus(window_id)
 
     async def _switch_runtime_context_if_needed(
         self,
@@ -10325,14 +10241,6 @@ class IPCServer:
 
         normalized_connection = self._normalize_connection_key(connection_key)
         return normalized_connection == self._normalize_connection_key(f"local@{local_host}")
-
-    def _connection_target_is_current_host(self, connection_key: str) -> bool:
-        """Return whether an SSH connection target resolves back to this host."""
-        return self.focus_service.connection_target_is_current_host(connection_key)
-
-    async def _window_is_locally_tracked(self, window_id: int) -> bool:
-        """Return whether a target window exists in the current host's tracked window map."""
-        return await self.focus_service.window_is_locally_tracked(window_id)
 
     def _remote_focus_target(self, session: Dict[str, Any]) -> Tuple[str, str, int]:
         """Return the SSH destination used for remote session handoff."""

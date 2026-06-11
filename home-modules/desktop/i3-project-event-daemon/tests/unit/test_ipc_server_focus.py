@@ -234,7 +234,9 @@ async def test_focus_window_ssh_context_on_current_host_uses_local_focus(server,
         "current_session_key": "session-current",
         "current_window_id": 30,
     })
-    server._remote_daemon_request = lambda **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected remote handoff"))
+    server.focus_service._remote_daemon_request = (
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected remote handoff"))
+    )
 
     async def command(_cmd):
         return [{"success": True}]
@@ -290,7 +292,9 @@ async def test_focus_window_ssh_target_with_local_window_binding_uses_local_focu
         "current_session_key": "session-current",
         "current_window_id": 175,
     })
-    server._remote_daemon_request = lambda **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected remote handoff"))
+    server.focus_service._remote_daemon_request = (
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected remote handoff"))
+    )
 
     async def command(_cmd):
         return [{"success": True}]
