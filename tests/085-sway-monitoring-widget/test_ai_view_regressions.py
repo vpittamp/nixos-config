@@ -119,6 +119,20 @@ def test_retired_ai_finished_notification_helper_is_not_active():
     copilot_text = COPILOT_CLI_NIX.read_text()
 
     assert not (REPO_ROOT / "scripts" / "ai-finished-notification.sh").exists()
+    assert not (
+        REPO_ROOT
+        / "home-modules"
+        / "desktop"
+        / "i3-project-event-daemon"
+        / "models"
+        / "notification_context.py"
+    ).exists()
+    assert not (
+        REPO_ROOT
+        / "tests"
+        / "079-preview-pane-user-experience"
+        / "test_notification_click.py"
+    ).exists()
     assert "minimal-otel-interceptor" not in copilot_text
     assert "Claude Code's interceptor" not in copilot_text
     assert not (REPO_ROOT / "tests" / "091-optimize-i3pm-project" / "debug_notification_system.sh").exists()
