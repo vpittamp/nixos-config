@@ -36,6 +36,7 @@ LAUNCH_SERVICE_PY = DAEMON_SERVICES_DIR / "launch_service.py"
 DASHBOARD_MODEL_PY = DAEMON_SERVICES_DIR / "dashboard_model.py"
 FOCUS_SERVICE_PY = DAEMON_SERVICES_DIR / "focus_service.py"
 DIAGNOSTIC_SERVICE_PY = DAEMON_SERVICES_DIR / "diagnostic_service.py"
+TRACE_SERVICE_PY = DAEMON_SERVICES_DIR / "trace_service.py"
 SESSION_RUNTIME_SERVICE_PY = DAEMON_SERVICES_DIR / "session_runtime_service.py"
 PROJECT_REMOTE_LAUNCH_PY = REPO_ROOT / "scripts" / "project-remote-launch.py"
 I3PM_MONITORING_DATA_PY = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "monitoring_data.py"
@@ -278,6 +279,7 @@ def test_daemon_rpc_behavior_lives_in_services_not_ipc_wrappers():
     ipc_text = IPC_SERVER_PY.read_text()
     focus_text = FOCUS_SERVICE_PY.read_text()
     diagnostic_text = DIAGNOSTIC_SERVICE_PY.read_text()
+    trace_text = TRACE_SERVICE_PY.read_text()
 
     for retired in [
         "async def _window_focus_fast",
@@ -300,6 +302,18 @@ def test_daemon_rpc_behavior_lives_in_services_not_ipc_wrappers():
         "async def _validate_state_diagnostic",
         "async def _get_recent_events_diagnostic",
         "async def _get_diagnostic_report_full",
+        "async def _trace_start",
+        "async def _trace_start_app",
+        "async def _trace_stop",
+        "async def _trace_get",
+        "async def _trace_list",
+        "async def _trace_snapshot",
+        "async def _traces_list_templates",
+        "async def _traces_start_from_template",
+        "async def _traces_get_cross_reference",
+        "async def _events_get_by_trace",
+        "async def _traces_query_window_traces",
+        "async def _events_get_causality_chain",
     ]:
         assert retired not in ipc_text
 
@@ -320,9 +334,22 @@ def test_daemon_rpc_behavior_lives_in_services_not_ipc_wrappers():
     assert "diagnostic_service.validate_state()" in ipc_text
     assert "diagnostic_service.recent_events(params)" in ipc_text
     assert "diagnostic_service.report(params)" in ipc_text
+    assert "trace_service.start(params)" in ipc_text
+    assert "trace_service.start_app(params)" in ipc_text
+    assert "trace_service.stop(params)" in ipc_text
+    assert "trace_service.get(params)" in ipc_text
+    assert "trace_service.list(params)" in ipc_text
+    assert "trace_service.snapshot(params)" in ipc_text
+    assert "trace_service.list_templates(params)" in ipc_text
+    assert "trace_service.start_from_template(params)" in ipc_text
+    assert "trace_service.get_cross_reference(params)" in ipc_text
+    assert "trace_service.events_by_trace(params)" in ipc_text
+    assert "trace_service.query_window_traces(params)" in ipc_text
+    assert "trace_service.causality_chain(params)" in ipc_text
     assert "def focus_window_from_params" in focus_text
     assert "def build_window_focus_target" in focus_text
     assert "class DiagnosticService" in diagnostic_text
+    assert "class TraceService" in trace_text
 
 
 def test_daemon_session_rows_strip_legacy_tmux_identity_fields():
