@@ -283,14 +283,12 @@ def dashboard_changed_keys_for_event(event_type: str) -> List[str]:
         return [
             "focus_state",
             "active_ai_sessions",
-            "current_ai_session_key",
             "worktrees",
         ]
     if typed_event == "herdr.changed":
         return [
             "focus_state",
             "active_ai_sessions",
-            "current_ai_session_key",
             "herdr",
         ]
     if typed_event == "display.changed":
@@ -457,7 +455,6 @@ def build_dashboard_snapshot_payload(
     herdr_snapshot = runtime_snapshot.get("herdr", {}) if isinstance(runtime_snapshot, dict) else {}
     if not isinstance(herdr_snapshot, dict):
         herdr_snapshot = {}
-    current_session_key = str(runtime_snapshot.get("current_ai_session_key") or "").strip()
     payload = {
         "status": "ok",
         "schema_version": schema_version,
@@ -484,7 +481,6 @@ def build_dashboard_snapshot_payload(
         "worktrees": worktrees,
         "worktree_count": len(worktrees),
         "active_ai_sessions": sessions,
-        "current_ai_session_key": current_session_key,
         "focus_state": focus_state,
         "herdr": build_herdr_dashboard_summary(
             herdr_snapshot,
@@ -522,7 +518,6 @@ def validate_dashboard_payload(
 
     current_key = str(
         focus_state.get("current_session_key")
-        or payload.get("current_ai_session_key")
         or ""
     ).strip()
     sessions = [

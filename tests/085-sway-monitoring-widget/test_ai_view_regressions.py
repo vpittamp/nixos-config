@@ -300,6 +300,7 @@ def test_session_rows_use_daemon_focus_state_for_current_highlight():
     current_session_key_body = text.split("function currentSessionKey()", 1)[1].split("function sessionMatchesKey", 1)[0]
     assert "dashboard.current_ai_session_key" not in current_session_key_body
     assert "dashboardFocusState().current_ai_session_key" not in current_session_key_body
+    assert "current_ai_session_key: \"\"" not in text
 
 
 def test_launcher_session_search_indexes_herdr_fields():
@@ -439,6 +440,8 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     assert "dashboardFocusState().current_workspace_name" in text
     window_focus_body = text.split("function windowIsFocused(windowData)", 1)[1].split("function windowIsCurrentTarget", 1)[0]
     assert "dashboardFocusState().focused_window_id" not in window_focus_body
+    focus_command_body = text.split("if (windowFastFocusEligible(windowData))", 1)[1].split("if (explicitTarget)", 1)[0]
+    assert "windowData.current_ai_session_key" not in focus_command_body
     assert "const focused = workspaceIsFocused(name);" in text
     assert "focused: boolOrFalse(workspace?.focused)" not in text
     assert "output.current_workspace" not in text

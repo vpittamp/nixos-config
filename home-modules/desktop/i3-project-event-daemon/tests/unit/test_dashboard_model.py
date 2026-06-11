@@ -440,7 +440,6 @@ def test_dashboard_changed_keys_follow_typed_event_contract() -> None:
     assert dashboard_changed_keys_for_event("ai_session_herdr_changed") == [
         "focus_state",
         "active_ai_sessions",
-        "current_ai_session_key",
         "herdr",
     ]
     assert dashboard_changed_keys_for_event("dashboard_invalidated") == ["dashboard"]
@@ -630,6 +629,7 @@ def test_build_dashboard_snapshot_payload_shapes_herdr_summary() -> None:
     )
 
     assert payload["schema_version"] == "i3pm.dashboard.v2"
+    assert "current_ai_session_key" not in payload
     assert payload["dashboard_invariants"]["ok"] is True
     assert payload["project_count"] == 1
     assert payload["worktree_count"] == 1

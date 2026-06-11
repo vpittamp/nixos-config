@@ -149,6 +149,5 @@ async def test_notify_state_change_advances_generations_and_notifies_subscribers
     assert notification["params"]["changed_keys"] == [
         "focus_state",
         "active_ai_sessions",
-        "current_ai_session_key",
         "worktrees",
     ]

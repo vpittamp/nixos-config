@@ -52,7 +52,6 @@ ShellRoot {
             active_context: {},
             active_terminal: {},
             active_ai_sessions: [],
-            current_ai_session_key: "",
             focus_state: {},
             display_layout: {},
             outputs: [],
@@ -7313,7 +7312,7 @@ ShellRoot {
                     project_name: stringOrEmpty(windowData.project),
                     target_variant: stringOrEmpty(windowData.execution_mode),
                     connection_key: stringOrEmpty(windowData.connection_key),
-                    session_key: stringOrEmpty(windowData.session_key || windowData.current_ai_session_key),
+                    session_key: stringOrEmpty(windowData.session_key),
                 },
             };
         }
@@ -7568,7 +7567,6 @@ ShellRoot {
             active_context: {},
             active_terminal: {},
             active_ai_sessions: [],
-            current_ai_session_key: "",
             display_layout: {},
             outputs: [],
             projects: [],

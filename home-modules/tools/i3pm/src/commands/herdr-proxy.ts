@@ -64,7 +64,6 @@ export async function herdrProxyCommand(args: string[], _flags: CommandOptions):
           || eventType === "session.changed"
           || changedKeys.includes("herdr")
           || changedKeys.includes("active_ai_sessions")
-          || changedKeys.includes("current_ai_session_key")
           || changedKeys.includes("focus_state");
         if (!isHerdrEvent) {
           continue;
