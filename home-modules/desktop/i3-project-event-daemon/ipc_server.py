@@ -529,6 +529,7 @@ class IPCServer:
             schema_version=FOCUS_STATE_SCHEMA_VERSION,
             sway_available=lambda: bool(self.i3_connection and getattr(self.i3_connection, "conn", None)),
             run_sway_command=lambda command: self._sway_ipc_command(command),
+            run_sway_fast_command=lambda command: self._swaymsg_ipc_command(command),
             sway_command_succeeded=lambda result: self._sway_command_succeeded(result),
             get_sway_workspaces=lambda: self._sway_get_workspaces(),
             get_sway_tree=lambda: self.i3_connection.get_tree(),
@@ -671,6 +672,10 @@ class IPCServer:
             ),
             build_worktrees=lambda runtime_snapshot: self._build_dashboard_worktrees(runtime_snapshot),
             build_focus_state=lambda *args, **kwargs: self.focus_service.build_focus_state_payload(
+                *args,
+                **kwargs,
+            ),
+            build_lightweight_focus_state=lambda *args, **kwargs: self.focus_service.build_lightweight_focus_state_payload(
                 *args,
                 **kwargs,
             ),
@@ -999,8 +1004,6 @@ class IPCServer:
                 method=method,
                 params=params,
             )
-            if method in self.focus_service.focus_intent_methods():
-                await self.notify_state_change_background("focus_changed")
 
         try:
             # Dispatch to handler method
@@ -3047,6 +3050,9 @@ class IPCServer:
 
     async def _drain_scheduled_state_notifications(self) -> None:
         """Drain pending notification requests with coalescing to avoid focus backpressure."""
+        # Let the action RPC that scheduled this task flush its response before
+        # dashboard event shaping does any heavier work on the daemon loop.
+        await asyncio.sleep(0.25)
         while self._dashboard_notify_pending:
             pending = set(self._dashboard_notify_pending)
             self._dashboard_notify_pending.clear()
@@ -6540,6 +6546,39 @@ class IPCServer:
         if callable(conn_command):
             return await conn_command(command)
         raise RuntimeError("Sway command interface is unavailable")
+
+    async def _swaymsg_ipc_command(self, command: str) -> Any:
+        """Run a low-latency Sway command on a fresh IPC connection."""
+        swaymsg = shutil.which("swaymsg")
+        if not swaymsg:
+            return await self._sway_ipc_command(command)
+
+        env = os.environ.copy()
+        if "SWAYSOCK" not in env and "I3SOCK" in env:
+            env["SWAYSOCK"] = env["I3SOCK"]
+
+        try:
+            completed = await asyncio.to_thread(
+                subprocess.run,
+                [swaymsg, "-t", "command", command],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=0.25,
+                env=env,
+            )
+        except subprocess.TimeoutExpired:
+            return [{"success": False, "error": f"swaymsg_timeout:{command}"}]
+
+        raw_stdout = str(completed.stdout or "").strip()
+        raw_stderr = str(completed.stderr or "").strip()
+        if completed.returncode != 0:
+            return [{"success": False, "error": raw_stderr or raw_stdout or f"swaymsg_failed:{command}"}]
+        try:
+            payload = json.loads(raw_stdout or "[]")
+            return payload if isinstance(payload, list) else [payload]
+        except json.JSONDecodeError:
+            return [{"success": False, "error": raw_stdout or raw_stderr or "invalid_swaymsg_response"}]
 
     async def _sway_get_workspaces(self) -> Any:
         """Read Sway workspaces through the available connection wrapper."""

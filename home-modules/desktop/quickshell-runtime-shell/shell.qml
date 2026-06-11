@@ -7409,16 +7409,20 @@ ShellRoot {
     function runDaemonSocketCall(method, params) {
         const normalizedMethod = stringOrEmpty(method);
         if (!normalizedMethod || !runtimeServices || typeof runtimeServices.sendDaemonAction !== "function") {
+            console.warn("daemon.action: bridge unavailable for", normalizedMethod || "<missing method>");
             return false;
         }
-        return runtimeServices.sendDaemonAction(normalizedMethod, plainJsonValue(params || {}) || {});
+        const sent = runtimeServices.sendDaemonAction(normalizedMethod, plainJsonValue(params || {}) || {});
+        if (!sent) {
+            console.warn("daemon.action: bridge rejected", normalizedMethod);
+        }
+        return sent;
     }
 
     function runDaemonAction(method, params) {
-        if (runDaemonSocketCall(method, params)) {
-            return;
+        if (!runDaemonSocketCall(method, params)) {
+            localFocusIntent = null;
         }
-        runDaemonCall(method, params);
     }
 
     function runFocusTarget(target) {
@@ -7624,7 +7628,7 @@ ShellRoot {
 
         beginLocalFocusIntent("workspace.focus_fast", {workspace: workspaceName});
         if (!runDaemonSocketCall("workspace.focus_fast", {workspace: workspaceName})) {
-            runDaemonCall("workspace.focus_fast", {workspace: workspaceName});
+            localFocusIntent = null;
         }
     }
 

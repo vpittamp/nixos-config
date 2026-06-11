@@ -625,7 +625,7 @@ def test_validate_dashboard_payload_rejects_herdr_session_without_pane() -> None
 def test_dashboard_event_type_maps_legacy_invalidations_to_typed_events() -> None:
     assert dashboard_event_type_for_state_change("focus_changed") == "focus.changed"
     assert dashboard_event_type_for_state_change("window::focus") == "window.changed"
-    assert dashboard_event_type_for_state_change("workspace.focus") == "workspace.changed"
+    assert dashboard_event_type_for_state_change("workspace.focus") == "focus.changed"
     assert dashboard_event_type_for_state_change("display-profile-applied") == "display.changed"
     assert dashboard_event_type_for_state_change("ai_session_herdr_changed") == "herdr.changed"
     assert dashboard_event_type_for_state_change("agent_session_changed") == "session.changed"
@@ -634,7 +634,7 @@ def test_dashboard_event_type_maps_legacy_invalidations_to_typed_events() -> Non
 
 
 def test_dashboard_changed_keys_follow_typed_event_contract() -> None:
-    assert dashboard_changed_keys_for_event("focus_changed") == ["focus_state", "outputs", "projects"]
+    assert dashboard_changed_keys_for_event("focus_changed") == ["focus_state"]
     assert dashboard_changed_keys_for_event("window_changed") == ["focus_state", "projects", "tracked_windows"]
     assert dashboard_changed_keys_for_event("display_changed") == ["outputs", "active_outputs", "display_layout"]
     assert dashboard_changed_keys_for_event("ai_session_herdr_changed") == [
@@ -654,7 +654,7 @@ def test_advance_dashboard_event_state_updates_generations_by_typed_event() -> N
         focus_generation=40,
     )
     assert focus_state["event_type"] == "focus.changed"
-    assert focus_state["changed_keys"] == ["focus_state", "outputs", "projects"]
+    assert focus_state["changed_keys"] == ["focus_state"]
     assert focus_state["snapshot_version"] == 11
     assert focus_state["session_generation"] == 20
     assert focus_state["display_generation"] == 30

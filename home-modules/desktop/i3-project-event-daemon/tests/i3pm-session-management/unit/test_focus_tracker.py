@@ -62,7 +62,9 @@ def state_manager():
 @pytest.fixture
 def focus_tracker(state_manager, temp_config_dir):
     """Create FocusTracker instance with temp config dir."""
-    return FocusTracker(state_manager, config_dir=temp_config_dir)
+    tracker = FocusTracker(state_manager, config_dir=temp_config_dir)
+    tracker._persist_delay_s = 0
+    return tracker
 
 
 # ============================================================================

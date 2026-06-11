@@ -93,6 +93,16 @@ def _service(*, invalidations: list[str] | None = None) -> DashboardService:
             "current_herdr_host": "",
             "pending_intent_id": "",
         },
+        build_lightweight_focus_state=lambda *, generation, base_focus_state=None: {
+            "schema_version": "i3pm.focus_state.v2",
+            "generation": generation,
+            "current_session_key": str((base_focus_state or {}).get("current_session_key") or ""),
+            "current_window_id": int((base_focus_state or {}).get("current_window_id") or 0),
+            "current_workspace_name": "fast",
+            "current_herdr_pane_id": "",
+            "current_herdr_host": "",
+            "pending_intent_id": "",
+        },
         build_herdr_spaces=lambda herdr_snapshot, sessions: [],
         list_launches=lambda **kwargs: [],
         invalidate_worktree_cache=lambda: invalidations.append("worktree"),
@@ -102,6 +112,10 @@ def _service(*, invalidations: list[str] | None = None) -> DashboardService:
 
 async def _empty_worktrees() -> list[dict]:
     return []
+
+
+async def _async_value(value: dict) -> dict:
+    return value
 
 
 @pytest.mark.asyncio
@@ -153,3 +167,59 @@ async def test_notify_state_change_advances_generations_and_notifies_subscribers
         "active_ai_sessions",
         "worktrees",
     ]
+
+
+@pytest.mark.asyncio
+async def test_focus_event_payload_uses_lightweight_focus_state_without_snapshot_reload() -> None:
+    runtime_loads = 0
+
+    async def runtime_loader(params):
+        nonlocal runtime_loads
+        runtime_loads += 1
+        assert isinstance(params, dict)
+        return _runtime_snapshot(), [], {}
+
+    service = DashboardService(
+        runtime_loader=runtime_loader,
+        display_snapshot=lambda: _async_value({"outputs": []}),
+        build_projects=lambda runtime, sessions: [],
+        build_worktrees=lambda runtime: _empty_worktrees(),
+        build_focus_state=lambda runtime, sessions, *, generation: {
+            "schema_version": "i3pm.focus_state.v2",
+            "generation": generation,
+            "current_session_key": "",
+            "current_window_id": 1,
+            "current_workspace_name": "1",
+            "current_herdr_pane_id": "",
+            "current_herdr_host": "",
+            "pending_intent_id": "",
+        },
+        build_lightweight_focus_state=lambda *, generation, base_focus_state=None: {
+            "schema_version": "i3pm.focus_state.v2",
+            "generation": generation,
+            "current_session_key": str((base_focus_state or {}).get("current_session_key") or ""),
+            "current_window_id": int((base_focus_state or {}).get("current_window_id") or 0),
+            "current_workspace_name": "2",
+            "current_herdr_pane_id": "",
+            "current_herdr_host": "",
+            "pending_intent_id": "",
+        },
+        build_herdr_spaces=lambda herdr_snapshot, sessions: [],
+        list_launches=lambda **kwargs: [],
+        invalidate_worktree_cache=lambda: None,
+        timestamp=lambda: 42.0,
+    )
+
+    service.snapshot_version = 7
+    service.focus_generation = 3
+    await service.snapshot({})
+    assert runtime_loads == 1
+
+    payload = await service.event_payload(["focus_state"])
+
+    assert runtime_loads == 1
+    assert payload["generation"] == 7
+    assert payload["focus_state"]["generation"] == 3
+    assert payload["focus_state"]["current_session_key"] == ""
+    assert payload["focus_state"]["current_window_id"] == 1
+    assert payload["focus_state"]["current_workspace_name"] == "2"

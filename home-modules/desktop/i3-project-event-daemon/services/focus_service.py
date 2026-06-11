@@ -37,6 +37,7 @@ class FocusService:
         schema_version: str = FOCUS_STATE_SCHEMA_VERSION,
         sway_available: Optional[Callable[[], bool]] = None,
         run_sway_command: Optional[Callable[[str], Awaitable[Any]]] = None,
+        run_sway_fast_command: Optional[Callable[[str], Awaitable[Any]]] = None,
         sway_command_succeeded: Optional[Callable[[Any], bool]] = None,
         get_sway_workspaces: Optional[Callable[[], Awaitable[Any]]] = None,
         get_sway_tree: Optional[Callable[[], Awaitable[Any]]] = None,
@@ -61,6 +62,7 @@ class FocusService:
         self.schema_version = schema_version
         self._sway_available = sway_available
         self._run_sway_command = run_sway_command
+        self._run_sway_fast_command = run_sway_fast_command
         self._sway_command_succeeded = sway_command_succeeded
         self._get_sway_workspaces = get_sway_workspaces
         self._get_sway_tree = get_sway_tree
@@ -85,6 +87,9 @@ class FocusService:
         self.pending_intent_id: str = ""
         self.focus_intent: Dict[str, Any] = {}
         self.user_intent_epoch: int = 0
+        self.current_workspace_name: str = ""
+        self.current_window_id: int = 0
+        self.current_session_key: str = ""
 
     def _workspace_focus_ready(self) -> bool:
         return bool(
@@ -111,9 +116,8 @@ class FocusService:
 
         workspace_ref = self._workspace_ref(params)
         command = f"workspace number {workspace_ref}"
-        assert self._run_sway_command is not None
         assert self._sway_command_succeeded is not None
-        result = await self._run_sway_command(command)
+        result = await self.run_fast_sway_command(command)
         if not self._sway_command_succeeded(result):
             return {
                 "success": False,
@@ -122,9 +126,17 @@ class FocusService:
                 "fallback_method": "workspace.focus",
             }
 
-        if self._notify_state_change:
-            await self._notify_state_change("focus_changed")
+        self.current_workspace_name = workspace_ref
+        self.current_window_id = 0
+        self.current_session_key = ""
         return {"success": True, "workspace": workspace_ref, "fast": True}
+
+    async def run_fast_sway_command(self, command: str) -> Any:
+        """Run a click-driven focus command on the lowest-latency Sway path."""
+        if self._run_sway_fast_command:
+            return await self._run_sway_fast_command(command)
+        assert self._run_sway_command is not None
+        return await self._run_sway_command(command)
 
     async def focus_workspace(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Focus a workspace through the daemon-owned Sway connection."""
@@ -491,17 +503,14 @@ class FocusService:
 
         session_key = str(params.get("session_key") or "").strip()
         direct_command = f"[con_id={window_id}] focus"
-        assert self._run_sway_command is not None
         assert self._sway_command_succeeded is not None
-        direct_result = await self._run_sway_command(direct_command)
+        direct_result = await self.run_fast_sway_command(direct_command)
         if self._sway_command_succeeded(direct_result):
             self.set_focus_overrides(
                 session_key=session_key,
                 window_id=int(window_id),
                 connection_key=connection_key,
             )
-            if self._notify_state_change:
-                await self._notify_state_change("focus_changed")
             return {
                 "success": True,
                 "window_id": int(window_id),
@@ -533,7 +542,7 @@ class FocusService:
                 "fallback_method": "window.focus",
             }
 
-        result = await self._run_sway_command(command)
+        result = await self.run_fast_sway_command(command)
         if not self._sway_command_succeeded(result):
             return {
                 "success": False,
@@ -547,8 +556,6 @@ class FocusService:
             window_id=int(window_id),
             connection_key=connection_key,
         )
-        if self._notify_state_change:
-            await self._notify_state_change("focus_changed")
         return {
             "success": True,
             "window_id": int(window_id),
@@ -1034,6 +1041,8 @@ class FocusService:
             "window_id": int(window_id or 0),
             "connection_key": self._normalize_connection_key(str(connection_key or "").strip()),
         }
+        self.current_session_key = self.session_override_key
+        self.current_window_id = int(window_id or 0)
         self.pending_intent_id = ""
 
     def set_window_override(
@@ -1047,6 +1056,7 @@ class FocusService:
             "window_id": int(window_id or 0),
             "connection_key": self._normalize_connection_key(str(connection_key or "").strip()),
         }
+        self.current_window_id = int(window_id or 0)
 
     def set_pending_intent(self, intent_id: str) -> None:
         """Persist the daemon-owned pending focus intent identifier."""
@@ -1549,6 +1559,9 @@ class FocusService:
                 break
         if not current_workspace_name:
             current_workspace_name = fallback_workspace_name
+        self.current_workspace_name = current_workspace_name
+        self.current_window_id = focused_window_id
+        self.current_session_key = current_session_key
         return {
             "success": True,
             "schema_version": self.schema_version,
@@ -1583,3 +1596,30 @@ class FocusService:
                 "host_name": str(active_session.get("host_name") or "").strip(),
             },
         }
+
+    def build_lightweight_focus_state_payload(
+        self,
+        *,
+        generation: int,
+        base_focus_state: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Build a focus-only delta without touching runtime/session/dashboard loaders."""
+        base = dict(base_focus_state or {}) if isinstance(base_focus_state, dict) else {}
+        current_workspace_name = str(self.current_workspace_name or base.get("current_workspace_name") or "").strip()
+        current_window_id = int(self.current_window_id or base.get("current_window_id") or 0)
+        current_session_key = str(self.current_session_key or base.get("current_session_key") or "").strip()
+        payload = {
+            "success": True,
+            "schema_version": self.schema_version,
+            "generation": int(generation or 0),
+            "current_session_key": current_session_key,
+            "current_window_id": current_window_id,
+            "current_workspace_name": current_workspace_name,
+            "current_herdr_pane_id": str(base.get("current_herdr_pane_id") or "").strip(),
+            "current_herdr_host": str(base.get("current_herdr_host") or "").strip(),
+            "pending_intent_id": str(self.pending_intent_id or "").strip(),
+            "focus_intent": self.focus_intent_payload(),
+            "active_context": base.get("active_context") if isinstance(base.get("active_context"), dict) else {},
+            "active_session": base.get("active_session") if isinstance(base.get("active_session"), dict) else {},
+        }
+        return payload

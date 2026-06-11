@@ -391,7 +391,7 @@ def test_build_focus_state_payload_prefers_focused_workspace_over_output_current
 
 
 @pytest.mark.asyncio
-async def test_focus_workspace_fast_notifies_without_verification() -> None:
+async def test_focus_workspace_fast_skips_notification_and_verification() -> None:
     notify_state_change = AsyncMock(return_value=None)
     send_tick_barrier = AsyncMock(return_value=None)
     service = make_action_service(
@@ -404,7 +404,7 @@ async def test_focus_workspace_fast_notifies_without_verification() -> None:
     assert result == {"success": True, "workspace": "3", "fast": True}
     service._run_sway_command.assert_awaited_once_with("workspace number 3")
     send_tick_barrier.assert_not_awaited()
-    notify_state_change.assert_awaited_once_with("focus_changed")
+    notify_state_change.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -659,7 +659,7 @@ async def test_focus_window_fast_service_direct_success_skips_transition() -> No
     }
     run_sway_command.assert_awaited_once_with("[con_id=30] focus")
     get_window_transition_state.assert_not_awaited()
-    notify_state_change.assert_awaited_once_with("focus_changed")
+    notify_state_change.assert_not_awaited()
     assert service.override_payload() == {
         "session_key": "session-current",
         "window_id": 30,

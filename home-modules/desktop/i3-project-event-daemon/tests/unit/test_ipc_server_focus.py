@@ -122,6 +122,7 @@ async def test_workspace_focus_fast_skips_verification_and_notifies(server):
     server._send_tick_barrier = AsyncMock(return_value=None)
     server.focus_service.wait_for_workspace_focus = AsyncMock(return_value=True)
     server.notify_state_change = AsyncMock(return_value=None)
+    server.focus_service._run_sway_fast_command = ipc_command
 
     result = await server.focus_service.focus_workspace_fast({"workspace": "1"})
 
@@ -129,8 +130,8 @@ async def test_workspace_focus_fast_skips_verification_and_notifies(server):
     ipc_command.assert_awaited_once_with("workspace number 1")
     server._send_tick_barrier.assert_not_awaited()
     server.focus_service.wait_for_workspace_focus.assert_not_awaited()
-    await asyncio.sleep(0)
-    server.notify_state_change.assert_awaited_once_with("focus_changed")
+    await asyncio.sleep(0.3)
+    server.notify_state_change.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -152,13 +153,13 @@ async def test_dashboard_notifications_coalesce_while_fanout_is_active(server):
     server._schedule_state_change_notification("focus_changed")
     blocker.set()
 
-    for _ in range(5):
-        await asyncio.sleep(0)
+    for _ in range(30):
+        await asyncio.sleep(0.01)
         task = server._dashboard_notify_task
         if not task or task.done():
             break
 
-    assert calls == ["focus_changed", "focus_changed"]
+    assert calls == ["focus_changed"]
 
 
 def test_coalesced_dashboard_event_type_prefers_broadest_change(server):
@@ -208,7 +209,7 @@ def test_focus_intent_finalization_marks_failed_result(server):
 
 
 @pytest.mark.asyncio
-async def test_focus_request_publishes_pending_and_final_focus_events(server):
+async def test_focus_request_publishes_final_focus_event(server):
     server.notify_state_change_background = AsyncMock(return_value=None)
     server.focus_service.focus_workspace_fast = AsyncMock(
         return_value={"success": True, "workspace": "9", "fast": True}
@@ -226,8 +227,7 @@ async def test_focus_request_publishes_pending_and_final_focus_events(server):
 
     assert response["result"]["focus_intent"]["state"] == "confirmed"
     assert response["result"]["focus_intent"]["target_key"] == "9"
-    assert server.notify_state_change_background.await_count == 2
-    server.notify_state_change_background.assert_any_await("focus_changed")
+    server.notify_state_change_background.assert_awaited_once_with("focus_changed")
 
 
 @pytest.mark.asyncio
@@ -412,6 +412,7 @@ async def test_window_focus_fast_local_target_skips_full_focus_state(server):
         return [SimpleNamespace(success=True, error="")]
 
     server.i3_connection.ipc_command = ipc_command
+    server.focus_service._run_sway_fast_command = ipc_command
 
     result = await server.focus_service.focus_window_fast({
         "window_id": 30,
@@ -430,8 +431,8 @@ async def test_window_focus_fast_local_target_skips_full_focus_state(server):
     server.focus_service._get_window_transition_state.assert_not_awaited()
     server._send_tick_barrier.assert_not_awaited()
     server._focus_state.assert_not_awaited()
-    await asyncio.sleep(0)
-    server.notify_state_change.assert_awaited_once_with("focus_changed")
+    await asyncio.sleep(0.3)
+    server.notify_state_change.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -460,6 +461,7 @@ async def test_window_focus_fast_falls_back_to_transition_when_direct_focus_fail
         return [SimpleNamespace(success=len(commands) > 1, error="")]
 
     server.i3_connection.ipc_command = ipc_command
+    server.focus_service._run_sway_fast_command = ipc_command
 
     result = await server.focus_service.focus_window_fast({
         "window_id": 31,
@@ -473,8 +475,8 @@ async def test_window_focus_fast_falls_back_to_transition_when_direct_focus_fail
     assert commands[0] == "[con_id=31] focus"
     assert commands[1] == "workspace 2; [con_id=31] floating disable; [con_id=31] focus"
     server.focus_service._get_window_transition_state.assert_awaited_once_with(31)
-    await asyncio.sleep(0)
-    server.notify_state_change.assert_awaited_once_with("focus_changed")
+    await asyncio.sleep(0.3)
+    server.notify_state_change.assert_not_awaited()
 
 
 @pytest.mark.asyncio

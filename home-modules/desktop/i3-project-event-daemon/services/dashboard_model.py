@@ -253,6 +253,8 @@ def dashboard_event_type_for_state_change(event_type: str) -> str:
     """Map daemon invalidations to the typed dashboard event contract."""
     normalized = str(event_type or "dashboard_invalidated").strip() or "dashboard_invalidated"
     compact = normalized.replace("::", "_").replace(".", "_").replace("-", "_")
+    if compact == "workspace_focus":
+        return "focus.changed"
     if compact.startswith("focus"):
         return "focus.changed"
     if compact.startswith("window"):
@@ -274,7 +276,7 @@ def dashboard_changed_keys_for_event(event_type: str) -> List[str]:
     """Return coarse dashboard model keys affected by a typed dashboard event."""
     typed_event = dashboard_event_type_for_state_change(event_type)
     if typed_event == "focus.changed":
-        return ["focus_state", "outputs", "projects"]
+        return ["focus_state"]
     if typed_event == "window.changed":
         return ["focus_state", "projects", "tracked_windows"]
     if typed_event == "workspace.changed":

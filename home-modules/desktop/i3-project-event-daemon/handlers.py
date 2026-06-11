@@ -145,8 +145,13 @@ async def _invalidate_cache_and_notify(ipc_server, event_type: str) -> None:
         # Invalidate the window tree cache so next query gets fresh data
         ipc_server.invalidate_window_tree_cache()
 
-        # Notify any subscribed monitoring panel instances
-        await ipc_server.notify_state_change(event_type)
+        # Notify any subscribed monitoring panel instances without blocking the
+        # Sway event handler path.
+        notify_background = getattr(ipc_server, "notify_state_change_background", None)
+        if callable(notify_background):
+            await notify_background(event_type)
+        else:
+            await ipc_server.notify_state_change(event_type)
     except Exception as e:
         # Never let cache management break normal event handling
         logger.debug(f"[Feature 123] Error invalidating cache: {e}")

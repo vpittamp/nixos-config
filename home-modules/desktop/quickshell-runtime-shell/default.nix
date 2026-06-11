@@ -1022,10 +1022,7 @@ while True:
 PY
   '';
 
-  daemonActionScript = pkgs.writeShellScriptBin "quickshell-daemon-action" ''
-    set -euo pipefail
-
-    ${lib.getExe pkgs.python3} - "$@" <<'PY'
+  daemonActionPython = pkgs.writeText "quickshell-daemon-action.py" ''
 import json
 import os
 import socket
@@ -1111,9 +1108,9 @@ def handle_jsonl_request(line: str) -> None:
 
 if len(sys.argv) >= 2 and sys.argv[1] == "--jsonl":
     try:
-        worker_count = int(os.environ.get("QUICKSHELL_DAEMON_ACTION_WORKERS") or "8")
+        worker_count = int(os.environ.get("QUICKSHELL_DAEMON_ACTION_WORKERS") or "1")
     except ValueError:
-        worker_count = 8
+        worker_count = 1
     with ThreadPoolExecutor(max_workers=max(1, worker_count)) as executor:
         for line in sys.stdin:
             executor.submit(handle_jsonl_request, line)
@@ -1137,8 +1134,12 @@ if error:
     if isinstance(error, dict):
         fail(str(error.get("message") or error))
     fail(str(error))
+  '';
 
-PY
+  daemonActionScript = pkgs.writeShellScriptBin "quickshell-daemon-action" ''
+    set -euo pipefail
+
+    exec ${lib.getExe pkgs.python3} ${daemonActionPython} "$@"
   '';
 
   launcherQueryScript = pkgs.writeShellScriptBin "quickshell-app-launcher-query" ''

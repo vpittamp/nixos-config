@@ -36,6 +36,7 @@ class DashboardService:
         build_herdr_spaces: Callable[[Dict[str, Any], List[Dict[str, Any]]], List[Dict[str, Any]]],
         list_launches: Callable[..., List[Dict[str, Any]]],
         invalidate_worktree_cache: Callable[[], None],
+        build_lightweight_focus_state: Optional[Callable[..., Dict[str, Any]]] = None,
         timestamp: Callable[[], float] = time.time,
         schema_version: str = DASHBOARD_SCHEMA_VERSION,
         event_schema_version: str = DASHBOARD_EVENT_SCHEMA_VERSION,
@@ -45,6 +46,7 @@ class DashboardService:
         self._build_projects = build_projects
         self._build_worktrees = build_worktrees
         self._build_focus_state = build_focus_state
+        self._build_lightweight_focus_state = build_lightweight_focus_state
         self._build_herdr_spaces = build_herdr_spaces
         self._list_launches = list_launches
         self._invalidate_worktree_cache = invalidate_worktree_cache
@@ -56,6 +58,7 @@ class DashboardService:
         self.session_generation = 0
         self.display_generation = 0
         self.focus_generation = 0
+        self._last_snapshot: Dict[str, Any] = {}
 
     def subscribe(self, writer: asyncio.StreamWriter) -> Dict[str, Any]:
         """Subscribe a client to typed dashboard events."""
@@ -88,7 +91,7 @@ class DashboardService:
             sessions,
             generation=int(self.focus_generation or self.snapshot_version or 0),
         )
-        return build_dashboard_snapshot_payload(
+        payload = build_dashboard_snapshot_payload(
             runtime_snapshot=runtime_snapshot,
             display_snapshot=display_snapshot,
             projects=projects,
@@ -107,6 +110,8 @@ class DashboardService:
             timestamp=int(self._timestamp()),
             schema_version=self.schema_version,
         )
+        self._last_snapshot = payload
+        return payload
 
     async def validate(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return dashboard invariant status without exposing validation internals."""
@@ -138,6 +143,29 @@ class DashboardService:
 
     async def event_payload(self, changed_keys: List[str]) -> Dict[str, Any]:
         """Build a partial dashboard payload for a typed state-change event."""
+        normalized_changed_keys = [str(key or "").strip() for key in changed_keys]
+        if normalized_changed_keys == ["focus_state"] and self._build_lightweight_focus_state:
+            snapshot = self._last_snapshot if isinstance(self._last_snapshot, dict) else {}
+            base_focus_state = (
+                snapshot.get("focus_state")
+                if isinstance(snapshot.get("focus_state"), dict)
+                else {}
+            )
+            focus_state = self._build_lightweight_focus_state(
+                generation=int(self.focus_generation or self.snapshot_version or 0),
+                base_focus_state=base_focus_state,
+            )
+            return {
+                "status": str(snapshot.get("status") or "ok"),
+                "schema_version": str(snapshot.get("schema_version") or self.schema_version),
+                "timestamp": int(self._timestamp()),
+                "generation": self.snapshot_version,
+                "snapshot_version": self.snapshot_version,
+                "session_generation": self.session_generation,
+                "display_generation": self.display_generation,
+                "focus_generation": self.focus_generation,
+                "focus_state": focus_state,
+            }
         snapshot = await self.snapshot({"skip_git_hydration": True})
         return dashboard_event_payload_from_snapshot(
             snapshot,
@@ -194,10 +222,11 @@ class DashboardService:
         for writer in list(self.subscribers):
             try:
                 writer.write((notification + "\n").encode())
-                await asyncio.wait_for(writer.drain(), timeout=0.25)
-            except asyncio.TimeoutError:
-                logger.warning("Timed out notifying dashboard event subscriber")
-                dead_clients.add(writer)
+                transport = getattr(writer, "transport", None)
+                get_buffer_size = getattr(transport, "get_write_buffer_size", None)
+                if callable(get_buffer_size) and int(get_buffer_size() or 0) > 1_000_000:
+                    logger.warning("Dropping slow dashboard event subscriber with oversized write buffer")
+                    dead_clients.add(writer)
             except (ConnectionResetError, BrokenPipeError, ConnectionError):
                 dead_clients.add(writer)
             except Exception as exc:

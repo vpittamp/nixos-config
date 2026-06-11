@@ -41,6 +41,9 @@ class FocusTracker:
         self.workspace_focus_file = self.config_dir / "workspace-focus-state.json"
 
         self._lock = asyncio.Lock()
+        self._persist_task: Optional[asyncio.Task] = None
+        self._persist_dirty = False
+        self._persist_delay_s = 0.5
 
     def set_project_validator(self, validator: Optional[Callable[[str], bool]]) -> None:
         """Update the validator used for canonical project enforcement."""
@@ -87,14 +90,16 @@ class FocusTracker:
             logger.info(f"Skipping focus tracking for invalid project identity: {project}")
             return
 
+        persist_immediately = self._persist_delay_s <= 0
         async with self._lock:
             # Update DaemonState
             self.state_manager.state.set_focused_workspace(project, workspace_num)
 
-            # Persist to disk
-            await self.persist_focus_state()
-
             logger.debug(f"Tracked workspace focus: {project} → workspace {workspace_num}")
+        if persist_immediately:
+            await self.persist_focus_state()
+        else:
+            self._schedule_persist()
 
     async def track_window_focus(self, workspace_num: int, window_id: int) -> None:
         """Track window focus for a workspace (T065, US4)
@@ -103,14 +108,16 @@ class FocusTracker:
             workspace_num: Workspace number
             window_id: Window ID that was focused
         """
+        persist_immediately = self._persist_delay_s <= 0
         async with self._lock:
             # Update DaemonState
             self.state_manager.state.set_focused_window(workspace_num, window_id)
 
-            # Persist to disk
-            await self.persist_focus_state()
-
             logger.debug(f"Tracked window focus: workspace {workspace_num} → window {window_id}")
+        if persist_immediately:
+            await self.persist_focus_state()
+        else:
+            self._schedule_persist()
 
     async def get_project_focused_workspace(self, project: str) -> Optional[int]:
         """Get focused workspace for a project (T023, US1)
@@ -149,23 +156,48 @@ class FocusTracker:
         Writes both project focus and workspace focus to separate JSON files.
         """
         try:
-            # Persist project focus state
-            project_focus_data = self._prune_project_focus_map(
-                self.state_manager.state.project_focused_workspace
-            )
-            self.state_manager.state.project_focused_workspace = project_focus_data
-            self.project_focus_file.write_text(json.dumps(project_focus_data, indent=2))
+            async with self._lock:
+                project_focus_data = self._prune_project_focus_map(
+                    self.state_manager.state.project_focused_workspace
+                )
+                self.state_manager.state.project_focused_workspace = project_focus_data
+                workspace_focus_data = {
+                    str(k): v for k, v in self.state_manager.state.workspace_focused_window.items()
+                }
 
-            # Persist workspace focus state
-            workspace_focus_data = {
-                str(k): v for k, v in self.state_manager.state.workspace_focused_window.items()
-            }
-            self.workspace_focus_file.write_text(json.dumps(workspace_focus_data, indent=2))
+            await asyncio.to_thread(
+                self._write_focus_state_files,
+                project_focus_data,
+                workspace_focus_data,
+            )
 
             logger.debug(f"Persisted focus state to {self.config_dir}")
 
         except Exception as e:
             logger.error(f"Failed to persist focus state: {e}")
+
+    def _write_focus_state_files(
+        self,
+        project_focus_data: dict[str, int],
+        workspace_focus_data: dict[str, int],
+    ) -> None:
+        """Write focus state files off the daemon event loop."""
+        self.project_focus_file.write_text(json.dumps(project_focus_data, indent=2))
+        self.workspace_focus_file.write_text(json.dumps(workspace_focus_data, indent=2))
+
+    def _schedule_persist(self) -> None:
+        """Debounce focus-state persistence so focus handling stays low latency."""
+        self._persist_dirty = True
+        task = self._persist_task
+        if task and not task.done():
+            return
+        self._persist_task = asyncio.create_task(self._persist_focus_state_loop())
+
+    async def _persist_focus_state_loop(self) -> None:
+        while self._persist_dirty:
+            self._persist_dirty = False
+            await asyncio.sleep(self._persist_delay_s)
+            await self.persist_focus_state()
 
     async def load_focus_state(self) -> None:
         """Load focus state from JSON files (T025, US1)
