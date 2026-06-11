@@ -4,10 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 
 FOCUS_STATE_SCHEMA_VERSION = "i3pm.focus_state.v2"
+FOCUS_INTENT_METHODS = {
+    "herdr.pane.focus",
+    "herdr.remote.pane.focus",
+    "herdr.workspace.focus",
+    "window.focus",
+    "window.focus_fast",
+    "workspace.focus",
+    "workspace.focus_fast",
+}
 
 
 class FocusService:
@@ -180,6 +189,109 @@ class FocusService:
                 "created_at": 0.0,
                 "generation": 0,
             }
+
+    @staticmethod
+    def focus_intent_methods() -> Set[str]:
+        """Return JSON-RPC methods that participate in focus intent state."""
+        return set(FOCUS_INTENT_METHODS)
+
+    @staticmethod
+    def focus_intent_kind_and_target(
+        *,
+        method: str,
+        params: Dict[str, Any],
+    ) -> Tuple[str, str]:
+        """Map a click-driven focus method to the formal focus intent contract."""
+        normalized_method = str(method or "").strip()
+        if normalized_method in {"window.focus", "window.focus_fast"}:
+            return ("window_focus", str(int(params.get("window_id") or 0)))
+        if normalized_method in {"workspace.focus", "workspace.focus_fast"}:
+            return ("workspace_focus", str(params.get("workspace") or "").strip())
+        if normalized_method in {"herdr.pane.focus", "herdr.remote.pane.focus"}:
+            host = str(params.get("host") or params.get("ssh_target") or "").strip()
+            pane_id = str(params.get("pane_id") or "").strip()
+            return ("herdr_pane_focus", f"{host}:{pane_id}" if host else pane_id)
+        if normalized_method == "herdr.workspace.focus":
+            return ("herdr_workspace_focus", str(params.get("workspace_id") or "").strip())
+        return ("", "")
+
+    def begin_user_focus_intent(
+        self,
+        *,
+        intent_id: str,
+        method: str,
+        params: Dict[str, Any],
+        created_at: float,
+        generation: int,
+    ) -> Dict[str, Any]:
+        """Begin a focus intent for a click-driven JSON-RPC method."""
+        normalized_method = str(method or "").strip()
+        if normalized_method not in FOCUS_INTENT_METHODS:
+            return {}
+        intent_kind, target_key = self.focus_intent_kind_and_target(
+            method=normalized_method,
+            params=params,
+        )
+        return self.begin_focus_intent(
+            intent_id=intent_id,
+            kind=intent_kind,
+            target_key=target_key,
+            created_at=created_at,
+            generation=generation,
+        )
+
+    def finalize_focus_intent_for_result(
+        self,
+        *,
+        method: str,
+        intent_epoch: int,
+        result: Any,
+    ) -> Dict[str, Any]:
+        """Confirm or fail the focus intent associated with a handled request."""
+        normalized_method = str(method or "").strip()
+        normalized_epoch = int(intent_epoch or 0)
+        if normalized_method not in FOCUS_INTENT_METHODS or normalized_epoch <= 0:
+            return {}
+
+        success = True
+        reason = "ok"
+        if isinstance(result, dict):
+            success = bool(result.get("success", True))
+            verification = result.get("verification")
+            verification_reason = (
+                str(verification.get("reason") or "").strip()
+                if isinstance(verification, dict)
+                else ""
+            )
+            reason = str(
+                result.get("reason")
+                or result.get("error")
+                or verification_reason
+                or ""
+            ).strip() or ("ok" if success else "failed")
+        return self.finish_focus_intent(
+            intent_id=f"intent-{normalized_epoch}",
+            state="confirmed" if success else "failed",
+            reason=reason,
+        )
+
+    def fail_focus_intent_for_exception(
+        self,
+        *,
+        method: str,
+        intent_epoch: int,
+        reason: str,
+    ) -> Dict[str, Any]:
+        """Mark an active focus intent failed when request handling raises."""
+        normalized_method = str(method or "").strip()
+        normalized_epoch = int(intent_epoch or 0)
+        if normalized_method not in FOCUS_INTENT_METHODS or normalized_epoch <= 0:
+            return {}
+        return self.finish_focus_intent(
+            intent_id=f"intent-{normalized_epoch}",
+            state="failed",
+            reason=str(reason or "exception").strip(),
+        )
 
     def begin_focus_intent(
         self,

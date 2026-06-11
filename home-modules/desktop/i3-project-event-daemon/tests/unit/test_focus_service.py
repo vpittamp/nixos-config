@@ -376,3 +376,107 @@ def test_focus_intent_transitions_pending_to_failed() -> None:
     assert service.pending_intent_id == ""
     assert result["state"] == "failed"
     assert result["reason"] == "remote_transport_failed"
+
+
+def test_focus_intent_kind_and_target_maps_focus_methods() -> None:
+    assert FocusService.focus_intent_kind_and_target(
+        method="window.focus_fast",
+        params={"window_id": 101},
+    ) == ("window_focus", "101")
+    assert FocusService.focus_intent_kind_and_target(
+        method="workspace.focus",
+        params={"workspace": "33"},
+    ) == ("workspace_focus", "33")
+    assert FocusService.focus_intent_kind_and_target(
+        method="herdr.remote.pane.focus",
+        params={"ssh_target": "ryzen", "pane_id": "pane-1"},
+    ) == ("herdr_pane_focus", "ryzen:pane-1")
+    assert FocusService.focus_intent_kind_and_target(
+        method="herdr.workspace.focus",
+        params={"workspace_id": "workspace-1"},
+    ) == ("herdr_workspace_focus", "workspace-1")
+
+
+def test_begin_user_focus_intent_ignores_non_focus_methods() -> None:
+    service = make_service()
+
+    result = service.begin_user_focus_intent(
+        intent_id="intent-1",
+        method="daemon.status",
+        params={},
+        created_at=100.0,
+        generation=1,
+    )
+
+    assert result == {}
+    assert service.focus_intent_payload() == {}
+
+
+def test_begin_user_focus_intent_records_formal_contract_fields() -> None:
+    service = make_service()
+
+    result = service.begin_user_focus_intent(
+        intent_id="intent-10",
+        method="herdr.pane.focus",
+        params={"pane_id": "pane-2"},
+        created_at=400.0,
+        generation=10,
+    )
+
+    assert result == {
+        "intent_id": "intent-10",
+        "kind": "herdr_pane_focus",
+        "target_key": "pane-2",
+        "state": "pending",
+        "created_at": 400.0,
+        "generation": 10,
+        "reason": "",
+    }
+    assert service.pending_intent_id == "intent-10"
+
+
+def test_finalize_focus_intent_for_result_uses_result_error_reason() -> None:
+    service = make_service()
+    service.begin_user_focus_intent(
+        intent_id="intent-11",
+        method="workspace.focus_fast",
+        params={"workspace": "9"},
+        created_at=500.0,
+        generation=11,
+    )
+
+    result = service.finalize_focus_intent_for_result(
+        method="workspace.focus_fast",
+        intent_epoch=11,
+        result={"success": False, "error": "command_failed:workspace number 9"},
+    )
+
+    assert result["intent_id"] == "intent-11"
+    assert result["kind"] == "workspace_focus"
+    assert result["target_key"] == "9"
+    assert result["state"] == "failed"
+    assert result["reason"] == "command_failed:workspace number 9"
+    assert service.pending_intent_id == ""
+
+
+def test_fail_focus_intent_for_exception_marks_active_intent_failed() -> None:
+    service = make_service()
+    service.begin_user_focus_intent(
+        intent_id="intent-12",
+        method="window.focus",
+        params={"window_id": 808},
+        created_at=600.0,
+        generation=12,
+    )
+
+    result = service.fail_focus_intent_for_exception(
+        method="window.focus",
+        intent_epoch=12,
+        reason="boom",
+    )
+
+    assert result["intent_id"] == "intent-12"
+    assert result["kind"] == "window_focus"
+    assert result["state"] == "failed"
+    assert result["reason"] == "boom"
+    assert service.pending_intent_id == ""
