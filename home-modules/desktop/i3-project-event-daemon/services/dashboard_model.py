@@ -606,15 +606,40 @@ def validate_dashboard_payload(
         if focused_row_id != focus_window_id:
             warnings.append("focused_window_row_mismatch")
 
+    workspace_rows: List[Dict[str, Any]] = []
     focused_workspaces = []
     for output in payload.get("outputs", []) or []:
         if not isinstance(output, dict):
             continue
         for workspace in output.get("workspaces", []) or []:
-            if isinstance(workspace, dict) and bool(workspace.get("focused", False)):
+            if not isinstance(workspace, dict):
+                continue
+            workspace_rows.append(workspace)
+            if bool(workspace.get("focused", False)):
                 focused_workspaces.append(workspace)
     if len(focused_workspaces) > 1:
         issues.append("duplicate_focused_workspaces")
+    current_workspace_name = str(focus_state.get("current_workspace_name") or "").strip()
+    if current_workspace_name and workspace_rows:
+        matching_current_workspaces = [
+            workspace for workspace in workspace_rows
+            if str(workspace.get("name") or workspace.get("workspace_name") or "").strip()
+            == current_workspace_name
+        ]
+        if len(matching_current_workspaces) != 1:
+            issues.append("current_workspace_row_not_unique")
+        elif not bool(matching_current_workspaces[0].get("focused", False)):
+            issues.append("current_workspace_row_mismatch")
+        if len(focused_workspaces) == 1:
+            focused_workspace_name = str(
+                focused_workspaces[0].get("name")
+                or focused_workspaces[0].get("workspace_name")
+                or ""
+            ).strip()
+            if focused_workspace_name != current_workspace_name:
+                issues.append("focused_workspace_row_mismatch")
+        elif not focused_workspaces:
+            issues.append("current_workspace_focus_missing")
 
     remote_focused = [
         session for session in sessions

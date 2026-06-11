@@ -404,6 +404,63 @@ def test_validate_dashboard_payload_warns_on_transient_window_focus_rows() -> No
     assert "focused_window_row_mismatch" in result["warnings"]
 
 
+def test_validate_dashboard_payload_rejects_workspace_focus_mismatch() -> None:
+    payload = {
+        "schema_version": "i3pm.dashboard.v2",
+        "generation": 1,
+        "snapshot_version": 1,
+        "focus_state": {
+            "current_session_key": "",
+            "current_window_id": 0,
+            "current_workspace_name": "2",
+        },
+        "active_ai_sessions": [],
+        "projects": [],
+        "outputs": [
+            {
+                "workspaces": [
+                    {"name": "1", "focused": True},
+                    {"name": "2", "focused": False},
+                ],
+            },
+        ],
+    }
+
+    result = validate_dashboard_payload(payload)
+
+    assert result["ok"] is False
+    assert "current_workspace_row_mismatch" in result["issues"]
+    assert "focused_workspace_row_mismatch" in result["issues"]
+
+
+def test_validate_dashboard_payload_rejects_duplicate_current_workspace_rows() -> None:
+    payload = {
+        "schema_version": "i3pm.dashboard.v2",
+        "generation": 1,
+        "snapshot_version": 1,
+        "focus_state": {
+            "current_session_key": "",
+            "current_window_id": 0,
+            "current_workspace_name": "2",
+        },
+        "active_ai_sessions": [],
+        "projects": [],
+        "outputs": [
+            {
+                "workspaces": [
+                    {"name": "2", "focused": True},
+                    {"name": "2", "focused": False},
+                ],
+            },
+        ],
+    }
+
+    result = validate_dashboard_payload(payload)
+
+    assert result["ok"] is False
+    assert "current_workspace_row_not_unique" in result["issues"]
+
+
 def test_validate_dashboard_payload_rejects_remote_herdr_focus_mismatch() -> None:
     payload = {
         "schema_version": "i3pm.dashboard.v2",
