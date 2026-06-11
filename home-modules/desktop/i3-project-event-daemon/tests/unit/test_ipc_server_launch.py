@@ -386,7 +386,7 @@ async def test_launch_open_clears_stale_focus_override_for_explicit_project_inte
         "reason": "healthy",
     })
     server_local.launch_service.dispatch_managed_terminal_command = lambda _spec: None
-    server_local._window_focus = AsyncMock(return_value={"success": True, "window_id": 7})
+    server_local.focus_service.focus_window_from_params = AsyncMock(return_value={"success": True, "window_id": 7})
 
     result = await server_local._launch_open({
         "app_name": "terminal",
@@ -794,11 +794,11 @@ async def test_launch_open_reuses_existing_terminal_for_scoped_terminal_command(
     }
     server_local._prepare_launch = AsyncMock(return_value=spec)
     server_local.launch_service.get_reusable_context_terminal_window = AsyncMock(return_value=existing_window)
-    server_local._window_focus = AsyncMock(return_value={"success": True, "window_id": 321})
+    server_local.focus_service.focus_window_from_params = AsyncMock(return_value={"success": True, "window_id": 321})
 
     result = await server_local._launch_open({"app_name": "yazi"})
 
-    server_local._window_focus.assert_awaited_once()
+    server_local.focus_service.focus_window_from_params.assert_awaited_once()
     assert result["success"] is True
     assert result["launch"]["reused_existing"] is True
     assert result["launch"]["window_id"] == 321
@@ -822,14 +822,14 @@ async def test_launch_open_reuses_existing_single_instance_gui_window(server_loc
     }
     server_local._prepare_launch = AsyncMock(return_value=spec)
     server_local.launch_service.get_reusable_context_app_window = AsyncMock(return_value=existing_window)
-    server_local._window_focus = AsyncMock(return_value={"success": True, "window_id": 456})
+    server_local.focus_service.focus_window_from_params = AsyncMock(return_value={"success": True, "window_id": 456})
     server_local.launch_service.register_launch_for_spec = AsyncMock()
     server_local.launch_service.execute_launch_spec = MagicMock()
 
     result = await server_local._launch_open({"app_name": "code"})
 
     server_local.launch_service.get_reusable_context_app_window.assert_awaited_once()
-    server_local._window_focus.assert_awaited_once()
+    server_local.focus_service.focus_window_from_params.assert_awaited_once()
     server_local.launch_service.register_launch_for_spec.assert_not_awaited()
     server_local.launch_service.execute_launch_spec.assert_not_called()
     assert result["success"] is True
@@ -862,14 +862,14 @@ async def test_launch_open_reuses_existing_single_instance_global_terminal_app(s
     }
     server_local._prepare_launch = AsyncMock(return_value=spec)
     server_local.launch_service.get_reusable_context_app_window = AsyncMock(return_value=existing_window)
-    server_local._window_focus = AsyncMock(return_value={"success": True, "window_id": 789})
+    server_local.focus_service.focus_window_from_params = AsyncMock(return_value={"success": True, "window_id": 789})
     server_local.launch_service.register_launch_for_spec = AsyncMock()
     server_local.launch_service.execute_launch_spec = MagicMock()
 
     result = await server_local._launch_open({"app_name": "herdr"})
 
     server_local.launch_service.get_reusable_context_app_window.assert_awaited_once()
-    server_local._window_focus.assert_awaited_once()
+    server_local.focus_service.focus_window_from_params.assert_awaited_once()
     server_local.launch_service.register_launch_for_spec.assert_not_awaited()
     server_local.launch_service.execute_launch_spec.assert_not_called()
     assert result["success"] is True
@@ -902,15 +902,15 @@ async def test_launch_open_focus_fast_uses_fast_focus_for_reused_global_window(s
     }
     server_local._prepare_launch = AsyncMock(return_value=spec)
     server_local.launch_service.get_reusable_context_app_window = AsyncMock(return_value=existing_window)
-    server_local._window_focus = AsyncMock(return_value={"success": True, "window_id": 789})
-    server_local._window_focus_fast = AsyncMock(return_value={"success": True, "window_id": 789, "fast": True})
+    server_local.focus_service.focus_window_from_params = AsyncMock(return_value={"success": True, "window_id": 789})
+    server_local.focus_service.focus_window_fast = AsyncMock(return_value={"success": True, "window_id": 789, "fast": True})
     server_local.launch_service.register_launch_for_spec = AsyncMock()
     server_local.launch_service.execute_launch_spec = MagicMock()
 
     result = await server_local._launch_open({"app_name": "herdr", "focus_fast": True})
 
-    server_local._window_focus.assert_not_awaited()
-    server_local._window_focus_fast.assert_awaited_once_with({
+    server_local.focus_service.focus_window_from_params.assert_not_awaited()
+    server_local.focus_service.focus_window_fast.assert_awaited_once_with({
         "window_id": 789,
         "project_name": "",
         "target_variant": "local",

@@ -93,7 +93,7 @@ async def test_workspace_focus_waits_for_requested_workspace(server):
     server.i3_connection = SimpleNamespace(conn=SimpleNamespace(command=command_mock, get_workspaces=get_workspaces))
     server._send_tick_barrier = AsyncMock(return_value=None)
 
-    result = await server._workspace_focus({"workspace": "1"})
+    result = await server.focus_service.focus_workspace({"workspace": "1"})
 
     assert result == {"success": True, "workspace": "1"}
     command_mock.assert_awaited_once_with("workspace number 1")
@@ -107,7 +107,7 @@ async def test_workspace_focus_returns_failure_when_focus_never_changes(server):
     server.i3_connection = SimpleNamespace(conn=SimpleNamespace(command=command_mock, get_workspaces=get_workspaces))
     server._send_tick_barrier = AsyncMock(return_value=None)
 
-    result = await server._workspace_focus({"workspace": "1"})
+    result = await server.focus_service.focus_workspace({"workspace": "1"})
 
     assert result["success"] is False
     assert result["workspace"] == "1"
@@ -119,15 +119,15 @@ async def test_workspace_focus_fast_skips_verification_and_notifies(server):
     ipc_command = AsyncMock(return_value=[SimpleNamespace(success=True, error="")])
     server.i3_connection = SimpleNamespace(conn=SimpleNamespace(), ipc_command=ipc_command)
     server._send_tick_barrier = AsyncMock(return_value=None)
-    server._wait_for_workspace_focus = AsyncMock(return_value=True)
+    server.focus_service.wait_for_workspace_focus = AsyncMock(return_value=True)
     server.notify_state_change = AsyncMock(return_value=None)
 
-    result = await server._workspace_focus_fast({"workspace": "1"})
+    result = await server.focus_service.focus_workspace_fast({"workspace": "1"})
 
     assert result == {"success": True, "workspace": "1", "fast": True}
     ipc_command.assert_awaited_once_with("workspace number 1")
     server._send_tick_barrier.assert_not_awaited()
-    server._wait_for_workspace_focus.assert_not_awaited()
+    server.focus_service.wait_for_workspace_focus.assert_not_awaited()
     server.notify_state_change.assert_awaited_once_with("focus_changed")
 
 
@@ -174,7 +174,7 @@ def test_focus_intent_finalization_marks_failed_result(server):
 @pytest.mark.asyncio
 async def test_focus_request_publishes_pending_and_final_focus_events(server):
     server.notify_state_change = AsyncMock(return_value=None)
-    server._workspace_focus_fast = AsyncMock(
+    server.focus_service.focus_workspace_fast = AsyncMock(
         return_value={"success": True, "workspace": "9", "fast": True}
     )
 
@@ -213,7 +213,7 @@ async def test_focus_window_remote_handoff_does_not_require_local_sway(server, m
         },
     })
 
-    result = await server._focus_window_impl(
+    result = await server.focus_service.focus_window(
         window_id=175,
         project_name="PittampalliOrg/stacks:main",
         target_variant="ssh",
@@ -266,7 +266,7 @@ async def test_focus_window_ssh_context_on_current_host_uses_local_focus(server,
 
     server.i3_connection.conn.command = command
 
-    result = await server._focus_window_impl(
+    result = await server.focus_service.focus_window(
         window_id=30,
         project_name="vpittamp/nixos-config:main",
         target_variant="ssh",
@@ -324,7 +324,7 @@ async def test_focus_window_ssh_target_with_local_window_binding_uses_local_focu
 
     server.i3_connection.conn.command = command
 
-    result = await server._focus_window_impl(
+    result = await server.focus_service.focus_window(
         window_id=175,
         project_name="PittampalliOrg/stacks:main",
         target_variant="ssh",
@@ -377,7 +377,7 @@ async def test_window_focus_fast_local_target_skips_full_focus_state(server):
 
     server.i3_connection.ipc_command = ipc_command
 
-    result = await server._window_focus_fast({
+    result = await server.focus_service.focus_window_fast({
         "window_id": 30,
         "target_variant": "local",
         "connection_key": "local@ryzen",
@@ -424,7 +424,7 @@ async def test_window_focus_fast_falls_back_to_transition_when_direct_focus_fail
 
     server.i3_connection.ipc_command = ipc_command
 
-    result = await server._window_focus_fast({
+    result = await server.focus_service.focus_window_fast({
         "window_id": 31,
         "target_variant": "local",
         "connection_key": "local@ryzen",
@@ -446,7 +446,7 @@ async def test_window_focus_fast_rejects_remote_targets(server):
     server.focus_service._window_is_locally_tracked = AsyncMock(return_value=False)
     server.focus_service._get_window_transition_state = AsyncMock(return_value={"exists": True})
 
-    result = await server._window_focus_fast({
+    result = await server.focus_service.focus_window_fast({
         "window_id": 175,
         "target_variant": "ssh",
         "connection_key": "vpittamp@ryzen:22",
@@ -519,7 +519,7 @@ async def test_focus_window_scratchpad_restore_preserves_saved_workspace_and_ful
 
     server.i3_connection.conn.command = command
 
-    result = await server._focus_window_impl(
+    result = await server.focus_service.focus_window(
         window_id=44,
         project_name="vpittamp/nixos-config:main",
         target_variant="local",

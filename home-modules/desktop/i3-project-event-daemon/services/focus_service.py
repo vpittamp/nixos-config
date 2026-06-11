@@ -447,6 +447,20 @@ class FocusService:
             "verification": verification,
         }
 
+    async def focus_window_from_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Focus a managed window from JSON-RPC shaped parameters."""
+        window_id = int(params.get("window_id") or 0)
+        if window_id <= 0:
+            raise ValueError("window_id must be a positive integer")
+        return await self.focus_window(
+            window_id=window_id,
+            project_name=str(params.get("project_name") or "").strip(),
+            target_variant=str(params.get("target_variant") or "").strip().lower(),
+            connection_key=str(params.get("connection_key") or "").strip(),
+            attempts=int(params.get("attempts") or 3),
+            delay_s=float(params.get("delay_s") or 0.12),
+        )
+
     async def focus_window_fast(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Low-latency local window focus path for click-driven UI actions."""
         if not self._window_focus_ready():
@@ -987,6 +1001,25 @@ class FocusService:
         if self._send_tick_barrier:
             await self._send_tick_barrier(f"i3pm:window-action:{action}:{window_id}")
         return {"success": True, "window_id": window_id, "action": action}
+
+    @staticmethod
+    def build_window_focus_target(
+        *,
+        window_id: int,
+        project_name: str = "",
+        target_variant: str = "",
+        connection_key: str = "",
+    ) -> Dict[str, Any]:
+        """Return a daemon-owned focus target for a window entry."""
+        return {
+            "method": "window.focus",
+            "params": {
+                "window_id": int(window_id),
+                "project_name": str(project_name or "").strip(),
+                "target_variant": str(target_variant or "").strip(),
+                "connection_key": str(connection_key or "").strip(),
+            },
+        }
 
     def set_focus_overrides(
         self,

@@ -1128,9 +1128,9 @@ class IPCServer:
             elif method == "get_terminal_anchor":
                 result = await self.launch_service.terminal_anchor(params.get("terminal_anchor_id", ""))
             elif method == "window.focus":
-                result = await self._window_focus(params)
+                result = await self.focus_service.focus_window_from_params(params)
             elif method == "window.focus_fast":
-                result = await self._window_focus_fast(params)
+                result = await self.focus_service.focus_window_fast(params)
             elif method == "window.action":
                 result = await self._window_action(params)
             elif method == "session.list":
@@ -1264,9 +1264,9 @@ class IPCServer:
             elif method == "workspace.move_to_output":
                 result = await self._workspace_move_to_output(params)
             elif method == "workspace.focus":
-                result = await self._workspace_focus(params)
+                result = await self.focus_service.focus_workspace(params)
             elif method == "workspace.focus_fast":
-                result = await self._workspace_focus_fast(params)
+                result = await self.focus_service.focus_workspace_fast(params)
 
             # Method aliases for Deno CLI compatibility
             elif method == "list_projects":
@@ -6496,25 +6496,6 @@ class IPCServer:
             return "local_helper"
         return "remote_helper"
 
-    def _build_window_focus_target(
-        self,
-        *,
-        window_id: int,
-        project_name: str = "",
-        target_variant: str = "",
-        connection_key: str = "",
-    ) -> Dict[str, Any]:
-        """Return a daemon-owned focus target for a window entry."""
-        return {
-            "method": "window.focus",
-            "params": {
-                "window_id": int(window_id),
-                "project_name": str(project_name or "").strip(),
-                "target_variant": str(target_variant or "").strip(),
-                "connection_key": str(connection_key or "").strip(),
-            },
-        }
-
     def _flatten_runtime_windows(self, runtime_snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Flatten dashboard windows from runtime snapshot outputs/workspaces."""
         flattened: List[Dict[str, Any]] = []
@@ -6695,7 +6676,7 @@ class IPCServer:
             build_target_context_key=self._build_target_context_key,
             transport_kind_for_target_host=self._transport_kind_for_target_host,
             window_matches_focus_override=self.focus_service.window_matches_focus_override,
-            build_window_focus_target=self._build_window_focus_target,
+            build_window_focus_target=self.focus_service.build_window_focus_target,
         )
 
     async def _build_dashboard_worktrees(
@@ -6721,8 +6702,8 @@ class IPCServer:
         return await self.launch_service.open_launch(
             payload=payload,
             prepare_launch=self._prepare_launch,
-            focus_window=self._window_focus,
-            focus_window_fast=self._window_focus_fast,
+            focus_window=self.focus_service.focus_window_from_params,
+            focus_window_fast=self.focus_service.focus_window_fast,
             clear_focus_overrides=self._clear_focus_overrides,
         )
 
@@ -8302,44 +8283,6 @@ class IPCServer:
             f"i3pm:context-switch:{desired_project}:{desired_target_host or 'auto'}"
         )
         return {"switched": True, "context": await self._context_get_active({})}
-
-    async def _window_focus_fast(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Low-latency local window focus path for click-driven UI actions."""
-        return await self.focus_service.focus_window_fast(params)
-
-    async def _focus_window_impl(
-        self,
-        *,
-        window_id: int,
-        project_name: str = "",
-        target_variant: str = "",
-        connection_key: str = "",
-        attempts: int = 3,
-        delay_s: float = 0.12,
-    ) -> Dict[str, Any]:
-        """Project-aware focus flow owned by the daemon."""
-        return await self.focus_service.focus_window(
-            window_id=window_id,
-            project_name=project_name,
-            target_variant=target_variant,
-            connection_key=connection_key,
-            attempts=attempts,
-            delay_s=delay_s,
-        )
-
-    async def _window_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Focus a managed window through the daemon-owned runtime path."""
-        window_id = int(params.get("window_id") or 0)
-        if window_id <= 0:
-            raise ValueError("window_id must be a positive integer")
-        return await self._focus_window_impl(
-            window_id=window_id,
-            project_name=str(params.get("project_name") or "").strip(),
-            target_variant=str(params.get("target_variant") or "").strip().lower(),
-            connection_key=str(params.get("connection_key") or "").strip(),
-            attempts=int(params.get("attempts") or 3),
-            delay_s=float(params.get("delay_s") or 0.12),
-        )
 
     async def _window_action(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a deterministic daemon-owned action against a window."""
@@ -11722,18 +11665,6 @@ class IPCServer:
         """Move a workspace to a target output through the daemon."""
         return await self.display_service.move_workspace_to_output(params)
 
-    async def _workspace_focus_fast(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Low-latency workspace focus path for click-driven UI actions."""
-        return await self.focus_service.focus_workspace_fast(params)
-
-    async def _workspace_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Focus a workspace through the daemon-owned Sway connection."""
-        return await self.focus_service.focus_workspace(params)
-
     async def _get_focused_workspace_name(self) -> str:
         """Return the currently focused workspace name, if available."""
         return await self.focus_service.focused_workspace_name()
-
-    async def _wait_for_workspace_focus(self, workspace_ref: str, *, timeout_s: float) -> bool:
-        """Wait briefly for Sway to report the requested focused workspace."""
-        return await self.focus_service.wait_for_workspace_focus(workspace_ref, timeout_s=timeout_s)

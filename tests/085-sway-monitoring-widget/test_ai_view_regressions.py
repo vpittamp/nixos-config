@@ -272,6 +272,29 @@ def test_focus_state_active_session_uses_herdr_identity_not_tmux_fields():
     assert '"tmux_pane"' not in focus_body
 
 
+def test_focus_rpc_behavior_lives_in_focus_service_not_ipc_wrappers():
+    """IPC dispatch should call FocusService directly instead of carrying focus wrappers."""
+    ipc_text = IPC_SERVER_PY.read_text()
+    focus_text = FOCUS_SERVICE_PY.read_text()
+
+    for retired in [
+        "async def _window_focus_fast",
+        "async def _focus_window_impl",
+        "async def _window_focus",
+        "async def _workspace_focus_fast",
+        "async def _workspace_focus",
+        "def _build_window_focus_target",
+    ]:
+        assert retired not in ipc_text
+
+    assert "focus_service.focus_window_from_params(params)" in ipc_text
+    assert "focus_service.focus_window_fast(params)" in ipc_text
+    assert "focus_service.focus_workspace(params)" in ipc_text
+    assert "focus_service.focus_workspace_fast(params)" in ipc_text
+    assert "def focus_window_from_params" in focus_text
+    assert "def build_window_focus_target" in focus_text
+
+
 def test_daemon_session_rows_strip_legacy_tmux_identity_fields():
     """Daemon AI session rows should expose Herdr identity, not terminal/tmux identity."""
     herdr_text = (REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon" / "services" / "herdr_service.py").read_text()
