@@ -534,6 +534,8 @@ def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_sta
     assert "const leftFocused = windowIsFocused(left);" in text
     assert "method: \"window.focus_fast\"" in text
     assert "runDaemonSocketCall(\"workspace.focus_fast\", {workspace: workspaceName})" in text
+    activate_workspace_body = text.split("function activateWorkspace(workspace)", 1)[1].split("function closeWindow", 1)[0]
+    assert "workspace.activate()" not in activate_workspace_body
     assert "root.windowIsFocused(windowData)" in runtime_panel_text
     assert "root.workspaceIsFocused(workspace)" in bottom_bar_text
     assert "client.request(\"window.focus_fast\", params)" in window_command_text

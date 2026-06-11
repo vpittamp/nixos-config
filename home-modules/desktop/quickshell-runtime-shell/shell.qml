@@ -7525,11 +7525,6 @@ ShellRoot {
             return;
         }
 
-        if (typeof workspace.activate === "function") {
-            workspace.activate();
-            return;
-        }
-
         if (!runDaemonSocketCall("workspace.focus_fast", {workspace: workspaceName})) {
             runDetached([shellConfig.i3pmBin, "workspace", "focus", workspaceName]);
         }
