@@ -924,7 +924,7 @@ async def test_launch_open_focus_fast_uses_fast_focus_for_reused_global_window(s
 
 
 @pytest.mark.asyncio
-async def test_launch_open_does_not_reuse_remote_bridge_when_context_mark_drifted(server_ssh):
+async def test_launch_open_does_not_reuse_context_terminal_when_context_mark_drifted(server_ssh):
     spec = {
         "app_name": "terminal",
         "project_name": QUALIFIED_NAME,

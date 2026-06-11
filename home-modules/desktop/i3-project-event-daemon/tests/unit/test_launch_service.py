@@ -494,7 +494,7 @@ def test_build_prepared_args_renders_registry_parameters(tmp_path: Path) -> None
     ]
 
 
-def test_build_launch_env_includes_remote_tmux_and_worktree_metadata(tmp_path: Path) -> None:
+def test_build_launch_env_includes_remote_terminal_and_worktree_metadata(tmp_path: Path) -> None:
     service = make_service(tmp_path)
 
     env = service.build_launch_env(

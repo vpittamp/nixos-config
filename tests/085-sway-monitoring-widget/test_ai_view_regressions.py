@@ -26,6 +26,7 @@ I3PM_SESSION_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "comma
 I3PM_MAIN_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "main.ts"
 I3PM_DAEMON_CLIENT_TS = REPO_ROOT / "home-modules" / "tools" / "i3pm" / "src" / "services" / "daemon-client.ts"
 IPC_SERVER_PY = REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon" / "ipc_server.py"
+DAEMON_DIR = REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon"
 DAEMON_SERVICES_DIR = REPO_ROOT / "home-modules" / "desktop" / "i3-project-event-daemon" / "services"
 HERDR_SERVICE_PY = DAEMON_SERVICES_DIR / "herdr_service.py"
 LAUNCH_SERVICE_PY = DAEMON_SERVICES_DIR / "launch_service.py"
@@ -256,6 +257,46 @@ def test_retired_session_bridge_cleanup_surface_stays_removed():
     assert "session.doctor" not in session_cli_text
     assert "cleanup" not in session_cli_text
     assert "doctor" not in session_cli_text
+
+
+def test_retired_remote_ai_bridge_metadata_stays_removed():
+    """Remote AI rows should be Herdr-native, not local tmux bridge windows."""
+    active_daemon_text = "\n".join(
+        path.read_text()
+        for path in [
+            IPC_SERVER_PY,
+            DAEMON_DIR / "handlers.py",
+            DAEMON_DIR / "state.py",
+            DAEMON_DIR / "models" / "legacy.py",
+            DAEMON_SERVICES_DIR / "window_filter.py",
+        ]
+    )
+    shell_text = SHELL_QML.read_text()
+
+    for retired in [
+        "I3PM_REMOTE_SESSION_KEY",
+        "I3PM_REMOTE_SURFACE_KEY",
+        "I3PM_REMOTE_TMUX",
+        "remote_session_key",
+        "remote_surface_key",
+        "remote_tmux_",
+    ]:
+        assert retired not in active_daemon_text
+
+    for retired in [
+        "remote_bridge_bound",
+        "remote_bridge_attachable",
+        "remote_spawnable",
+        "bridge_window_id",
+        "remote_source_stale",
+        "tmux_missing",
+        "stale_source",
+        "exact_remote_tmux_attachable",
+        "exact_remote_bridge_bound",
+    ]:
+        assert retired not in shell_text
+
+    assert "remote_herdr_attach" in shell_text
 
 
 def test_local_window_and_workspace_clicks_use_fast_focus_without_optimistic_state():

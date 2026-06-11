@@ -246,7 +246,6 @@ ShellRoot {
             availability_state: "",
             focusability_reason: "",
             window_id: 0,
-            bridge_window_id: 0,
             bridge_state: "",
             pane_label: "",
             pane_title: "",
@@ -862,10 +861,6 @@ ShellRoot {
         const terminalAnchor = stringOrEmpty(session.terminal_anchor_id);
         const hasTmuxIdentity = stringOrEmpty(session.tmux_session) && stringOrEmpty(session.tmux_window) && stringOrEmpty(session.tmux_pane);
         if (!terminalAnchor && !hasTmuxIdentity) {
-            return false;
-        }
-
-        if (boolOrFalse(session.remote_source_stale)) {
             return false;
         }
 
@@ -5724,9 +5719,6 @@ ShellRoot {
         if (boolOrFalse(session && session.output_ready)) {
             return sessionIsCurrent(session) ? "done" : "needs_attention";
         }
-        if (boolOrFalse(session && session.remote_source_stale)) {
-            return "stale";
-        }
         if (stringOrEmpty(session && session.stage_visual_state) === "working") {
             return "working";
         }
@@ -5753,12 +5745,6 @@ ShellRoot {
         if (phase === "idle") {
             return colors.subtle;
         }
-        if (phase === "tmux_missing") {
-            return colors.orange;
-        }
-        if (phase === "stale" || phase === "stale_source") {
-            return colors.subtle;
-        }
         return colors.blueMuted;
     }
 
@@ -5778,9 +5764,6 @@ ShellRoot {
         }
         if (phase === "working") {
             return stageBackground(session);
-        }
-        if (phase === "tmux_missing") {
-            return colors.orangeBg;
         }
         return colors.panelAlt;
     }
@@ -5826,7 +5809,7 @@ ShellRoot {
         if (boolOrFalse(session && session.needs_user_action) || boolOrFalse(session && session.output_ready) || boolOrFalse(session && session.output_unseen)) {
             return false;
         }
-        if (boolOrFalse(session && session.remote_source_stale) || freshness === "stale") {
+        if (freshness === "stale") {
             return false;
         }
         if (boolOrFalse(session && session.pulse_working) || boolOrFalse(session && session.is_streaming) || (Number.isFinite(pendingTools) && pendingTools > 0)) {
@@ -5927,12 +5910,6 @@ ShellRoot {
         if (state === "idle") {
             return hasHerdrStatus ? colors.amber : colors.subtle;
         }
-        if (state === "tmux_missing") {
-            return colors.orange;
-        }
-        if (state === "stale" || state === "stale_source") {
-            return colors.subtle;
-        }
         return colors.muted;
     }
 
@@ -5956,12 +5933,6 @@ ShellRoot {
         }
         if (state === "idle") {
             return root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt;
-        }
-        if (state === "tmux_missing") {
-            return colors.orangeBg;
-        }
-        if (state === "stale" || state === "stale_source") {
-            return colors.bg;
         }
         return colors.cardAlt;
     }
@@ -5989,63 +5960,20 @@ ShellRoot {
         if (explicit.length > 0) {
             return explicit;
         }
-        if (boolOrFalse(session && session.remote_source_stale)) {
-            return "stale_source";
-        }
-        if (stringOrEmpty(session && session.session_phase).toLowerCase() === "tmux_missing") {
-            return "tmux_missing";
-        }
-        if (Number(session && session.bridge_window_id) > 0) {
-            return "remote_bridge_bound";
-        }
         const focusMode = stringOrEmpty(session && session.focus_mode).toLowerCase();
-        if (focusMode === "remote_bridge_bound") {
-            return "remote_bridge_bound";
-        }
-        if (focusMode === "remote_bridge_attachable") {
-            return "remote_bridge_attachable";
-        }
         if (focusMode === "local_window") {
             return "local_window";
         }
-        if (sessionIsRemoteSpawnable(session)) {
-            return "remote_spawnable";
+        if (focusMode === "remote_herdr_attach") {
+            return "remote_herdr_attachable";
         }
         return "unavailable";
     }
 
-    function sessionIsRemoteSpawnable(session) {
-        if (!session) {
-            return false;
-        }
-        if (stringOrEmpty(session.execution_mode).toLowerCase() !== "ssh") {
-            return false;
-        }
-        const terminalContext = (session.terminal_context && typeof session.terminal_context === "object") ? session.terminal_context : {};
-        const remoteTarget = stringOrEmpty(session.remote_target) || stringOrEmpty(terminalContext.remote_target);
-        const connectionKey = stringOrEmpty(session.connection_key) || stringOrEmpty(terminalContext.connection_key);
-        if (!remoteTarget && !connectionKey) {
-            return false;
-        }
-        return true;
-    }
-
     function sessionAvailabilityLabel(session) {
         const state = sessionAvailabilityState(session);
-        if (state === "remote_bridge_bound") {
-            return "Attached here";
-        }
-        if (state === "remote_bridge_attachable") {
-            return "Attach here";
-        }
-        if (state === "remote_spawnable") {
-            return "Open & attach";
-        }
-        if (state === "stale_source") {
-            return "Stale source";
-        }
-        if (state === "tmux_missing") {
-            return "Tmux missing";
+        if (state === "remote_herdr_attachable") {
+            return "Remote Herdr";
         }
         if (state === "unavailable") {
             return "Unavailable";
@@ -6322,12 +6250,6 @@ ShellRoot {
         }
         if (badgeState === "working") {
             return "Working";
-        }
-        if (badgeState === "tmux_missing") {
-            return "Tmux missing";
-        }
-        if (badgeState === "stale_source") {
-            return "Stale source";
         }
         if (badgeState === "stale") {
             return "Stale";
@@ -7754,11 +7676,6 @@ ShellRoot {
     }
 
     function sessionClosableWindowId(session) {
-        const bridgeWindowId = Number(session && session.bridge_window_id || 0);
-        if (bridgeWindowId > 0) {
-            return bridgeWindowId;
-        }
-
         const windowId = Number(session && session.window_id || 0);
         if (windowId > 0) {
             return windowId;

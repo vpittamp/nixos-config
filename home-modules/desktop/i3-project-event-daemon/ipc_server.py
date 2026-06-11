@@ -3339,13 +3339,6 @@ class IPCServer:
                         "remote_port": i3pm_env.get("I3PM_REMOTE_PORT", ""),
                         "remote_dir": i3pm_env.get("I3PM_REMOTE_DIR", ""),
                         "remote_session_name": i3pm_env.get("I3PM_REMOTE_SESSION_NAME", ""),
-                        "remote_session_key": i3pm_env.get("I3PM_REMOTE_SESSION_KEY", ""),
-                        "remote_surface_key": i3pm_env.get("I3PM_REMOTE_SURFACE_KEY", ""),
-                        "remote_tmux_socket": i3pm_env.get("I3PM_REMOTE_TMUX_SOCKET", ""),
-                        "remote_tmux_server_key": i3pm_env.get("I3PM_REMOTE_TMUX_SERVER_KEY", ""),
-                        "remote_tmux_session": i3pm_env.get("I3PM_REMOTE_TMUX_SESSION", ""),
-                        "remote_tmux_window": i3pm_env.get("I3PM_REMOTE_TMUX_WINDOW", ""),
-                        "remote_tmux_pane": i3pm_env.get("I3PM_REMOTE_TMUX_PANE", ""),
                     }
                     tracked_window = tracked_windows.get(int(window.id)) or tracked_windows_by_con_id.get(int(window.id))
                     if tracked_window:
@@ -3397,13 +3390,6 @@ class IPCServer:
             "remote_port": str(getattr(tracked_window, "remote_port", "") or ""),
             "remote_dir": str(getattr(tracked_window, "remote_dir", "") or ""),
             "remote_session_name": str(getattr(tracked_window, "remote_session_name", "") or ""),
-            "remote_session_key": str(getattr(tracked_window, "remote_session_key", "") or ""),
-            "remote_surface_key": str(getattr(tracked_window, "remote_surface_key", "") or ""),
-            "remote_tmux_socket": str(getattr(tracked_window, "remote_tmux_socket", "") or ""),
-            "remote_tmux_server_key": str(getattr(tracked_window, "remote_tmux_server_key", "") or ""),
-            "remote_tmux_session": str(getattr(tracked_window, "remote_tmux_session", "") or ""),
-            "remote_tmux_window": str(getattr(tracked_window, "remote_tmux_window", "") or ""),
-            "remote_tmux_pane": str(getattr(tracked_window, "remote_tmux_pane", "") or ""),
             "terminal_anchor_id": str(getattr(tracked_window, "terminal_anchor_id", "") or ""),
             "app_key": str(getattr(tracked_window, "app_identifier", "") or ""),
             "app_name": str(getattr(tracked_window, "app_identifier", "") or ""),
@@ -3725,13 +3711,6 @@ class IPCServer:
                     "remote_port": env.get("I3PM_REMOTE_PORT", ""),
                     "remote_dir": env.get("I3PM_REMOTE_DIR", ""),
                     "remote_session_name": env.get("I3PM_REMOTE_SESSION_NAME", ""),
-                    "remote_session_key": env.get("I3PM_REMOTE_SESSION_KEY", ""),
-                    "remote_surface_key": env.get("I3PM_REMOTE_SURFACE_KEY", ""),
-                    "remote_tmux_socket": env.get("I3PM_REMOTE_TMUX_SOCKET", ""),
-                    "remote_tmux_server_key": env.get("I3PM_REMOTE_TMUX_SERVER_KEY", ""),
-                    "remote_tmux_session": env.get("I3PM_REMOTE_TMUX_SESSION", ""),
-                    "remote_tmux_window": env.get("I3PM_REMOTE_TMUX_WINDOW", ""),
-                    "remote_tmux_pane": env.get("I3PM_REMOTE_TMUX_PANE", ""),
                 }
                 if tracked_window:
                     window_data.update(self._tracked_window_runtime_fields(tracked_window))
@@ -9244,41 +9223,6 @@ class IPCServer:
                     "context_key": str(
                         visible_window.get("context_key")
                         or getattr(window_info, "context_key", "")
-                        or ""
-                    ),
-                    "remote_session_key": str(
-                        visible_window.get("remote_session_key")
-                        or getattr(window_info, "remote_session_key", "")
-                        or ""
-                    ),
-                    "remote_surface_key": str(
-                        visible_window.get("remote_surface_key")
-                        or getattr(window_info, "remote_surface_key", "")
-                        or ""
-                    ),
-                    "remote_tmux_socket": str(
-                        visible_window.get("remote_tmux_socket")
-                        or getattr(window_info, "remote_tmux_socket", "")
-                        or ""
-                    ),
-                    "remote_tmux_server_key": str(
-                        visible_window.get("remote_tmux_server_key")
-                        or getattr(window_info, "remote_tmux_server_key", "")
-                        or ""
-                    ),
-                    "remote_tmux_session": str(
-                        visible_window.get("remote_tmux_session")
-                        or getattr(window_info, "remote_tmux_session", "")
-                        or ""
-                    ),
-                    "remote_tmux_window": str(
-                        visible_window.get("remote_tmux_window")
-                        or getattr(window_info, "remote_tmux_window", "")
-                        or ""
-                    ),
-                    "remote_tmux_pane": str(
-                        visible_window.get("remote_tmux_pane")
-                        or getattr(window_info, "remote_tmux_pane", "")
                         or ""
                     ),
                     "focused": bool(visible_window.get("focused", False)),
