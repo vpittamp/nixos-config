@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Widgets
 
+import "." as WindowComponents
 import ".." as RootComponents
 
 PanelWindow {
@@ -383,68 +384,13 @@ PanelWindow {
                     anchors.bottomMargin: 8
                     spacing: 8
 
-                    Rectangle {
-                        Layout.fillWidth: true
-                        implicitHeight: 34
-                        radius: 10
-                        color: sessionsSection.expanded ? colors.blueWash : colors.card
-                        border.color: colors.lineSoft
-                        border.width: 1
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 10
-                            anchors.rightMargin: 10
-                            spacing: 8
-
-                            Text {
-                                text: sessionsSection.expanded ? "▾" : "▸"
-                                color: sessionsSection.expanded ? colors.blue : colors.textDim
-                                font.pixelSize: 12
-                                font.weight: Font.DemiBold
-                            }
-
-                            Text {
-                                text: "Herdr Monitor"
-                                color: colors.text
-                                font.pixelSize: 12
-                                font.weight: Font.DemiBold
-                            }
-
-                            Text {
-                                Layout.fillWidth: true
-                                text: root.runtimePanelSectionSummary("sessions")
-                                color: colors.subtle
-                                font.pixelSize: 8
-                                font.weight: Font.Medium
-                                elide: Text.ElideRight
-                            }
-
-                            Rectangle {
-                                width: sessionSectionCount.implicitWidth + 12
-                                height: 20
-                                radius: 6
-                                color: colors.bg
-                                border.color: "transparent"
-                                border.width: 0
-
-                                Text {
-                                    id: sessionSectionCount
-                                    anchors.centerIn: parent
-                                    text: String(root.runtimePanelSectionCount("sessions"))
-                                    color: colors.muted
-                                    font.pixelSize: 9
-                                    font.weight: Font.DemiBold
-                                }
-                            }
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.toggleRuntimePanelSection("sessions")
-                        }
+                    WindowComponents.RuntimePanelSectionHeader {
+                        colorsObject: colors
+                        title: "Herdr Monitor"
+                        summary: root.runtimePanelSectionSummary("sessions")
+                        count: root.runtimePanelSectionCount("sessions")
+                        expanded: sessionsSection.expanded
+                        onClicked: root.toggleRuntimePanelSection("sessions")
                     }
 
                     Text {
@@ -732,69 +678,15 @@ PanelWindow {
                     anchors.bottomMargin: 8
                     spacing: 8
 
-                    Rectangle {
-                        Layout.fillWidth: true
-                        implicitHeight: 34
-                        radius: 10
-                        color: windowsSection.expanded ? colors.blueWash : colors.card
-                        border.color: windowsSection.expanded ? colors.blueMuted : colors.lineSoft
-                        border.width: 1
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 10
-                            anchors.rightMargin: 10
-                            spacing: 8
-
-                            Text {
-                                text: windowsSection.expanded ? "▾" : "▸"
-                                color: windowsSection.expanded ? colors.blue : colors.textDim
-                                font.pixelSize: 12
-                                font.weight: Font.DemiBold
-                            }
-
-                            Text {
-                                text: "Windows"
-                                color: colors.text
-                                font.pixelSize: 12
-                                font.weight: Font.DemiBold
-                            }
-
-                            Text {
-                                Layout.fillWidth: true
-                                text: root.panelProjects().length > 0 ? root.runtimePanelSectionSummary("windows") : "No tracked project windows"
-                                color: colors.subtle
-                                font.pixelSize: 8
-                                font.weight: Font.Medium
-                                elide: Text.ElideRight
-                            }
-
-                            Rectangle {
-                                width: windowsSectionCount.implicitWidth + 12
-                                height: 20
-                                radius: 6
-                                color: colors.bg
-                                border.color: "transparent"
-                                border.width: 0
-
-                                Text {
-                                    id: windowsSectionCount
-                                    anchors.centerIn: parent
-                                    text: String(root.runtimePanelSectionCount("windows"))
-                                    color: colors.muted
-                                    font.pixelSize: 9
-                                    font.weight: Font.DemiBold
-                                }
-                            }
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: root.panelProjects().length > 0 ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            enabled: root.panelProjects().length > 0
-                            onClicked: root.toggleRuntimePanelSection("windows")
-                        }
+                    WindowComponents.RuntimePanelSectionHeader {
+                        colorsObject: colors
+                        title: "Windows"
+                        summary: windowsSection.hasProjects ? root.runtimePanelSectionSummary("windows") : "No tracked project windows"
+                        count: root.runtimePanelSectionCount("windows")
+                        expanded: windowsSection.expanded
+                        clickable: windowsSection.hasProjects
+                        expandedBorder: colors.blueMuted
+                        onClicked: root.toggleRuntimePanelSection("windows")
                     }
 
                     Text {
