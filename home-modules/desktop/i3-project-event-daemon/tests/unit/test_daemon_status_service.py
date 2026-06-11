@@ -30,8 +30,10 @@ if "i3_project_daemon" not in sys.modules:
 
 status_module = importlib.import_module("i3_project_daemon.services.daemon_status_service")
 health_module = importlib.import_module("i3_project_daemon.monitoring.health")
+models_module = importlib.import_module("i3_project_daemon.models")
 
 DaemonStatusService = status_module.DaemonStatusService
+EventEntry = models_module.EventEntry
 
 
 class _StateManager:
@@ -368,6 +370,33 @@ async def test_events_rpc_filters_late_bound_buffer_and_logs_query() -> None:
     assert logged
     assert logged[0]["event_type"] == "query::daemon_events"
     assert logged[0]["result_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_events_rpc_serializes_real_event_entry_without_to_dict() -> None:
+    timestamp = datetime(2026, 1, 1, 12, 0, 0)
+    service = _new_service(
+        event_buffer_provider=lambda: _EventBuffer(
+            [
+                EventEntry(
+                    event_id=7,
+                    source="ipc",
+                    event_type="query::daemon_status",
+                    timestamp=timestamp,
+                    query_method="daemon.status",
+                    query_result_count=1,
+                )
+            ]
+        )
+    )
+
+    result = await service.events_rpc({"limit": 5})
+
+    assert result["events"][0]["event_id"] == "7"
+    assert result["events"][0]["event_type"] == "query::daemon_status"
+    assert result["events"][0]["data"]["timestamp"] == "2026-01-01T12:00:00"
+    assert result["events"][0]["data"]["query_method"] == "daemon.status"
+    assert result["events"][0]["data"]["query_result_count"] == 1
 
 
 @pytest.mark.asyncio

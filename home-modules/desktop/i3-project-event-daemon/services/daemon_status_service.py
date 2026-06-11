@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import time
+from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional
@@ -23,6 +24,35 @@ LogIpcEvent = Callable[..., Awaitable[None]]
 
 async def _noop_log_ipc_event(**_kwargs: Any) -> None:
     return None
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    return value
+
+
+def _event_data(event: Any) -> Dict[str, Any]:
+    to_dict = getattr(event, "to_dict", None)
+    if callable(to_dict):
+        return _json_safe(to_dict())
+    if is_dataclass(event):
+        return _json_safe(
+            {key: value for key, value in asdict(event).items() if value is not None}
+        )
+    return _json_safe(
+        {
+            key: value
+            for key, value in vars(event).items()
+            if not key.startswith("_") and value is not None
+        }
+    )
 
 
 class DaemonStatusService:
@@ -187,7 +217,7 @@ class DaemonStatusService:
                     "source": event.source,
                     "event_type": event.event_type,
                     "timestamp": event.timestamp.isoformat(),
-                    "data": event.to_dict(),
+                    "data": _event_data(event),
                 }
 
                 correlation_id = getattr(event, "correlation_id", None)
