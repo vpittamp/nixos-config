@@ -94,7 +94,7 @@ let
         RESULT="''${SERVICE_RESULT:-unknown}"
         EXIT_CODE="''${EXIT_CODE:-unknown}"
         EXIT_STATUS="''${EXIT_STATUS:-unknown}"
-        if [ "$RESULT" = "success" ]; then
+        if [ "$RESULT" = "success" ] || { [ "$EXIT_CODE" = "exited" ] && [ "$EXIT_STATUS" = "0" ]; }; then
           ${pkgs.coreutils}/bin/rm -f "$FAILURE_MARKER"
           exit 0
         fi
@@ -208,14 +208,9 @@ in
         # Shutdown timeout: 15s (daemon has 10s timeout internally + 5s buffer)
         TimeoutStopSec = 15;
 
-        # Feature 137: Prevent stale state accumulation
-        # Automatically restart daemon every 12 hours to clear accumulated
-        # failed launches, expired notifications, and other transient state
-        # that can cause PWA workspace assignment failures over time
-        RuntimeMaxSec = "12h";
-
-        # Quick restart on failure
-        Restart = "always";
+        # Quick restart on failure. Clean exits are not failures and should not
+        # produce critical notifications or scheduled restart churn.
+        Restart = "on-failure";
         RestartSec = 2;
 
         # Resource limits.
