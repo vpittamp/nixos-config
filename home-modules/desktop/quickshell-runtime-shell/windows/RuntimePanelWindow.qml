@@ -621,12 +621,21 @@ PanelWindow {
                                 readonly property bool canFocus: root.herdrSpaceFocusTarget(space) !== null
                                 readonly property bool spaceFocused: root.herdrSpaceIsFocused(space)
                                 readonly property bool hovered: spaceMouse.containsMouse
+                                readonly property bool hasStatusMotion: root.herdrSpaceEffectiveStatus(space) === "working"
+                                property int statusSpinnerFrame: 0
                                 width: herdrSpacesList.width
                                 implicitHeight: herdrSessionContent.rowHeight
                                 radius: herdrSessionContent.rowRadius
                                 color: root.herdrSpaceFill(space, hovered)
                                 border.color: root.herdrSpaceBorder(space, hovered)
                                 border.width: 1
+
+                                Timer {
+                                    running: herdrSpaceRow.hasStatusMotion
+                                    repeat: true
+                                    interval: 95
+                                    onTriggered: herdrSpaceRow.statusSpinnerFrame = (herdrSpaceRow.statusSpinnerFrame + 1) % 10
+                                }
 
                                 Rectangle {
                                     anchors.left: parent.left
@@ -668,7 +677,7 @@ PanelWindow {
                                     Text {
                                         Layout.preferredWidth: 12
                                         horizontalAlignment: Text.AlignHCenter
-                                        text: root.herdrSpaceStatusDot(space)
+                                        text: root.herdrSpaceStatusDot(space, herdrSpaceRow.statusSpinnerFrame)
                                         color: root.herdrSpaceStatusColor(space)
                                         font.pixelSize: 12
                                         font.weight: Font.DemiBold
@@ -775,7 +784,8 @@ PanelWindow {
                                 colorsObject: colors
                                 session: modelData
                                 selected: false
-                                currentOverride: root.sessionIsCurrent(modelData)
+                                currentOverrideSet: true
+                                currentOverride: root.sessionCurrentOverride(modelData)
                                 interactive: true
                                 compact: true
                                 showHostToken: false

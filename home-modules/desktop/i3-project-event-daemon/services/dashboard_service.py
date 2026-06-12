@@ -155,7 +155,55 @@ class DashboardService:
                 generation=int(self.focus_generation or self.snapshot_version or 0),
                 base_focus_state=base_focus_state,
             )
-            return {
+            active_ai_sessions: List[Dict[str, Any]] = []
+            active_session: Dict[str, Any] = {}
+            current_session_key = str(focus_state.get("current_session_key") or "").strip()
+            for row in snapshot.get("active_ai_sessions", []) or []:
+                if not isinstance(row, dict):
+                    continue
+                session = dict(row)
+                is_current = bool(
+                    current_session_key
+                    and str(session.get("session_key") or "").strip() == current_session_key
+                )
+                session["is_current_window"] = is_current
+                if str(session.get("source") or "").strip() == "herdr":
+                    session["focused"] = is_current
+                    session["pane_active"] = is_current
+                    session["window_active"] = is_current
+                if is_current:
+                    active_session = dict(session)
+                active_ai_sessions.append(session)
+            if active_session:
+                focus_state = dict(focus_state)
+                focus_state["current_herdr_pane_id"] = str(active_session.get("pane_id") or "").strip()
+                focus_state["current_herdr_host"] = str(
+                    active_session.get("host_name")
+                    or active_session.get("herdr_host")
+                    or ""
+                ).strip()
+                focus_state["active_session"] = {
+                    "session_key": str(active_session.get("session_key") or "").strip(),
+                    "herdr_session": str(active_session.get("herdr_session") or "").strip(),
+                    "workspace_id": str(active_session.get("workspace_id") or "").strip(),
+                    "tab_id": str(active_session.get("tab_id") or "").strip(),
+                    "pane_id": str(active_session.get("pane_id") or "").strip(),
+                    "terminal_id": str(active_session.get("terminal_id") or "").strip(),
+                    "agent": str(active_session.get("agent") or active_session.get("tool") or "").strip(),
+                    "agent_status": str(active_session.get("agent_status") or "").strip(),
+                    "focused": bool(active_session.get("focused", False)),
+                    "window_id": int(active_session.get("window_id") or 0),
+                    "project_name": str(
+                        active_session.get("project_name")
+                        or active_session.get("project")
+                        or ""
+                    ).strip(),
+                    "execution_mode": str(active_session.get("execution_mode") or "").strip(),
+                    "connection_key": str(active_session.get("connection_key") or "").strip(),
+                    "focus_connection_key": str(active_session.get("focus_connection_key") or "").strip(),
+                    "host_name": str(active_session.get("host_name") or "").strip(),
+                }
+            payload = {
                 "status": str(snapshot.get("status") or "ok"),
                 "schema_version": str(snapshot.get("schema_version") or self.schema_version),
                 "timestamp": int(self._timestamp()),
@@ -166,6 +214,9 @@ class DashboardService:
                 "focus_generation": self.focus_generation,
                 "focus_state": focus_state,
             }
+            if active_ai_sessions:
+                payload["active_ai_sessions"] = active_ai_sessions
+            return payload
         snapshot = await self.snapshot({"skip_git_hydration": True})
         return dashboard_event_payload_from_snapshot(
             snapshot,

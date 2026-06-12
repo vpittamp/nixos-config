@@ -76,6 +76,26 @@ def test_herdr_service_subscription_payload_covers_local_agent_events():
     assert "pane.agent_detected" in subscriptions
 
 
+def test_herdr_service_status_subscription_payload_targets_one_pane():
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+
+    payload = service.status_event_subscribe_payload("pane-a")
+
+    assert payload == {
+        "id": "i3pm-herdr-status-pane-a",
+        "method": "events.subscribe",
+        "params": {
+            "subscriptions": [{
+                "type": "pane.agent_status_changed",
+                "pane_id": "pane-a",
+            }],
+        },
+    }
+
+
 def test_herdr_service_tracks_remote_generations_by_host():
     service = HerdrService(
         notify_state_change=lambda event_type: asyncio.sleep(0),
@@ -592,7 +612,7 @@ def test_herdr_service_normalizes_result_arrays_and_status_labels():
         "branch_label": "main",
     }]
 
-    assert service.normalize_agent_status("NeedsInput") == "unknown"
+    assert service.normalize_agent_status("NeedsInput") == "blocked"
     assert service.normalize_agent_status("NeedsInput", preserve_raw=True) == "NeedsInput"
     assert service.agent_status_state("NeedsInput") == "blocked"
     assert service.agent_status_state("tool-running") == "working"
@@ -846,7 +866,7 @@ def test_herdr_service_normalizes_local_and_remote_sessions(monkeypatch):
 
     assert len(local_rows) == 1
     assert local_rows[0]["session_key"] == "herdr:pane:pane-a"
-    assert local_rows[0]["agent_status"] == "unknown"
+    assert local_rows[0]["agent_status"] == "blocked"
     for retired_field in ("session_phase", "turn_owner", "activity_substate", "status_reason"):
         assert retired_field not in local_rows[0]
     assert local_rows[0]["focus_target"] == {
@@ -887,7 +907,7 @@ def test_herdr_service_normalizes_local_and_remote_sessions(monkeypatch):
     )
 
     assert remote_row["session_key"] == "herdr:ryzen:pane:pane-r"
-    assert remote_row["agent_status"] == "NeedsInput"
+    assert remote_row["agent_status"] == "blocked"
     for retired_field in (
         "session_phase",
         "session_phase_label",
@@ -1052,7 +1072,7 @@ async def test_herdr_service_builds_remote_snapshot(monkeypatch):
     assert snapshot["agents"][0]["execution_mode"] == "ssh"
     assert snapshot["agents"][0]["connection_key"] == "vpittamp@ryzen:22"
     assert snapshot["sessions"][0]["session_key"] == "herdr:ryzen:pane:pane-r"
-    assert snapshot["sessions"][0]["agent_status"] == "NeedsInput"
+    assert snapshot["sessions"][0]["agent_status"] == "blocked"
     assert snapshot["sessions"][0]["focus_target"]["method"] == "herdr.remote.pane.focus"
     assert snapshot["sessions"][0]["is_remote_herdr"] is True
     assert snapshot["errors"] == []
@@ -1573,7 +1593,7 @@ async def test_herdr_service_remote_pane_focus_owns_transport_cache_and_launch(m
         "window_id": 0,
         "connection_key": "vpittamp@ryzen:22",
     }]
-    assert notifications == ["ai_session_herdr_changed"]
+    assert notifications == ["focus_changed", "ai_session_herdr_changed"]
     assert service.remote_generation_for("ryzen") == 1
     assert result["success"] is True
     assert service.snapshot_cache["sessions"][0]["focused"] is False

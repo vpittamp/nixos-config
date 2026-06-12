@@ -223,3 +223,90 @@ async def test_focus_event_payload_uses_lightweight_focus_state_without_snapshot
     assert payload["focus_state"]["current_session_key"] == ""
     assert payload["focus_state"]["current_window_id"] == 1
     assert payload["focus_state"]["current_workspace_name"] == "2"
+
+
+@pytest.mark.asyncio
+async def test_focus_event_payload_updates_session_rows_without_snapshot_reload() -> None:
+    runtime_loads = 0
+
+    async def runtime_loader(params):
+        nonlocal runtime_loads
+        runtime_loads += 1
+        return _runtime_snapshot(), [], {}
+
+    service = DashboardService(
+        runtime_loader=runtime_loader,
+        display_snapshot=lambda: _async_value({"outputs": []}),
+        build_projects=lambda runtime, sessions: [],
+        build_worktrees=lambda runtime: _empty_worktrees(),
+        build_focus_state=lambda runtime, sessions, *, generation: {
+            "schema_version": "i3pm.focus_state.v2",
+            "generation": generation,
+            "current_session_key": "",
+            "current_window_id": 0,
+            "current_workspace_name": "",
+            "current_herdr_pane_id": "",
+            "current_herdr_host": "",
+            "pending_intent_id": "",
+        },
+        build_lightweight_focus_state=lambda *, generation, base_focus_state=None: {
+            "schema_version": "i3pm.focus_state.v2",
+            "generation": generation,
+            "current_session_key": "session-b",
+            "current_window_id": 0,
+            "current_workspace_name": "2",
+            "current_herdr_pane_id": str((base_focus_state or {}).get("current_herdr_pane_id") or ""),
+            "current_herdr_host": str((base_focus_state or {}).get("current_herdr_host") or ""),
+            "pending_intent_id": "",
+        },
+        build_herdr_spaces=lambda herdr_snapshot, sessions: [],
+        list_launches=lambda **kwargs: [],
+        invalidate_worktree_cache=lambda: None,
+        timestamp=lambda: 42.0,
+    )
+    service.snapshot_version = 10
+    service.focus_generation = 6
+    service._last_snapshot = {
+        "status": "ok",
+        "schema_version": "i3pm.dashboard.v2",
+        "focus_state": {
+            "current_session_key": "session-a",
+            "current_herdr_pane_id": "pane-a",
+            "current_herdr_host": "ryzen",
+            "active_session": {"session_key": "session-a"},
+        },
+        "active_ai_sessions": [
+            {
+                "source": "herdr",
+                "session_key": "session-a",
+                "herdr_session": "session-a",
+                "pane_id": "pane-a",
+                "host_name": "ryzen",
+                "focused": True,
+                "is_current_window": True,
+                "pane_active": True,
+                "window_active": True,
+            },
+            {
+                "source": "herdr",
+                "session_key": "session-b",
+                "herdr_session": "session-b",
+                "pane_id": "pane-b",
+                "host_name": "ryzen",
+                "tool": "codex",
+                "focused": False,
+                "is_current_window": False,
+                "pane_active": False,
+                "window_active": False,
+            },
+        ],
+    }
+
+    payload = await service.event_payload(["focus_state"])
+
+    assert runtime_loads == 0
+    assert payload["focus_state"]["current_session_key"] == "session-b"
+    assert payload["focus_state"]["current_herdr_pane_id"] == "pane-b"
+    assert payload["focus_state"]["active_session"]["session_key"] == "session-b"
+    assert [row["is_current_window"] for row in payload["active_ai_sessions"]] == [False, True]
+    assert [row["focused"] for row in payload["active_ai_sessions"]] == [False, True]

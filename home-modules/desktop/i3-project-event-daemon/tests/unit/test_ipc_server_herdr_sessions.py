@@ -238,6 +238,15 @@ def test_herdr_space_computes_git_metadata_when_worktree_list_misses_repo(server
         "workspace_id": "builder-ws",
         "cwd": str(repo_path),
         "foreground_cwd": "/",
+        "git_state": "dirty",
+        "git_compact": "● 3 ↑2 ↓1",
+        "git_freshness": "fresh",
+        "git_snapshot": {
+            "state": "dirty",
+            "dirty_count": 3,
+            "ahead": 2,
+            "behind": 1,
+        },
     }]
     snapshot = {
         "workspaces": [{
@@ -276,6 +285,15 @@ def test_herdr_space_computes_git_metadata_when_worktree_list_misses_repo(server
     assert spaces[0]["checkout_path"] == str(repo_path)
     assert spaces[0]["is_linked_worktree"] is False
     assert spaces[0]["branch_label"] == "fix/repo-editor-commit-guard"
+    assert spaces[0]["git_state"] == "dirty"
+    assert spaces[0]["git_compact"] == "● 3 ↑2 ↓1"
+    assert spaces[0]["git_freshness"] == "fresh"
+    assert spaces[0]["git_snapshot"] == {
+        "state": "dirty",
+        "dirty_count": 3,
+        "ahead": 2,
+        "behind": 1,
+    }
 
 
 def test_herdr_git_metadata_repo_name_uses_repo_key_for_main_checkout(server, tmp_path):
@@ -1007,7 +1025,7 @@ async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
     remote_row = rows[1]
     assert local_row["agent_status"] == "blocked"
     assert local_row["close_target"]["method"] == "herdr.pane.close"
-    assert remote_row["agent_status"] == "NeedsInput"
+    assert remote_row["agent_status"] == "blocked"
     assert remote_row["herdr_host"] == "ryzen"
     assert remote_row["ssh_target"] == "ryzen"
     assert remote_row["is_remote_herdr"] is True
@@ -1025,6 +1043,77 @@ async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
     }
     assert remote_row["close_target"] == {}
     assert server.focus_service.select_current_session_key(rows, focused_window_id=0) == "herdr:pane:local-pane"
+
+
+@pytest.mark.asyncio
+async def test_herdr_proxy_snapshot_hydrates_git_fields_for_remote_consumers(server, monkeypatch):
+    proxy_payload = {
+        "success": True,
+        "herdr_generation": 5,
+        "local_herdr_generation": 5,
+        "remote_herdr_generation": {},
+        "status": {"success": True},
+        "agents": [{
+            "pane_id": "pane-a",
+            "agent": "codex",
+            "agent_status": "working",
+            "cwd": "/repo",
+            "workspace_id": "workspace-a",
+        }],
+        "panes": [{
+            "pane_id": "pane-a",
+            "cwd": "/repo",
+            "workspace_id": "workspace-a",
+        }],
+        "workspaces": [{
+            "workspace_id": "workspace-a",
+            "label": "repo",
+        }],
+        "tabs": [],
+        "worktrees": [],
+        "sessions": [{
+            "session_key": "herdr:pane:pane-a",
+            "pane_id": "pane-a",
+            "agent": "codex",
+            "agent_status": "working",
+            "project_name": "vpittamp/repo:main",
+            "workspace_id": "workspace-a",
+        }],
+        "errors": [],
+    }
+
+    async def fake_proxy_snapshot(params):
+        assert params == {"refresh": True}
+        return dict(proxy_payload)
+
+    async def fake_hydrate(_runtime_snapshot, sessions):
+        sessions[0]["git_state"] = "dirty"
+        sessions[0]["git_compact"] = "● 2 ↑1"
+        sessions[0]["git_freshness"] = "fresh"
+        sessions[0]["git_snapshot"] = {
+            "state": "dirty",
+            "dirty_count": 2,
+            "ahead": 1,
+            "status_compact": "● 2 ↑1",
+        }
+        sessions[0]["git_tooltip"] = "Status: 2 modified, ahead 1"
+
+    monkeypatch.setattr(server.herdr_service, "proxy_snapshot", fake_proxy_snapshot)
+    monkeypatch.setattr(server, "_hydrate_runtime_git_state", fake_hydrate)
+
+    snapshot = await server._herdr_proxy_snapshot({"refresh": True})
+
+    assert snapshot["sessions"][0]["git_compact"] == "● 2 ↑1"
+    assert snapshot["active_ai_sessions"][0]["git_state"] == "dirty"
+    assert snapshot["agents"][0]["git_snapshot"] == {
+        "state": "dirty",
+        "dirty_count": 2,
+        "ahead": 1,
+        "status_compact": "● 2 ↑1",
+    }
+    assert snapshot["agents"][0]["git_compact"] == "● 2 ↑1"
+    assert snapshot["panes"][0]["git_freshness"] == "fresh"
+    assert snapshot["panes"][0]["git_tooltip"] == "Status: 2 modified, ahead 1"
 
 
 @pytest.mark.asyncio
@@ -1065,11 +1154,11 @@ async def test_herdr_remote_unreachable_reports_error_without_rows(server, monke
 async def test_herdr_pane_actions_call_herdr_with_pane_id(server, monkeypatch):
     calls = []
 
-    async def fake_run_herdr_json(args, timeout=2.0):
-        calls.append(args)
+    async def fake_run_socket_json(*, method, params=None, timeout=0.5):
+        calls.append((method, params))
         return {"success": True, "result": {"ok": True}}
 
-    monkeypatch.setattr(server.herdr_service, "run_json", fake_run_herdr_json)
+    monkeypatch.setattr(server.herdr_service, "run_socket_json", fake_run_socket_json)
 
     server.herdr_service.snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
     focus_result = await server.herdr_service.pane_focus({"pane_id": "w123-1"})
@@ -1077,8 +1166,8 @@ async def test_herdr_pane_actions_call_herdr_with_pane_id(server, monkeypatch):
     close_result = await server.herdr_service.pane_close({"pane_id": "w123-1"})
 
     assert calls == [
-        ["agent", "focus", "w123-1"],
-        ["pane", "close", "w123-1"],
+        ("agent.focus", {"target": "w123-1"}),
+        ("pane.close", {"pane_id": "w123-1"}),
     ]
     assert focus_result["success"] is True
     assert focus_result["pane_id"] == "w123-1"
@@ -1103,7 +1192,8 @@ async def test_herdr_remote_pane_focus_switches_pane_then_reuses_herdr_app(serve
 
     monkeypatch.setattr(server.herdr_service, "load_remote_targets", lambda: [target])
     monkeypatch.setattr(server.herdr_service, "run_proxy_json", fake_run_herdr_proxy_json)
-    server.notify_state_change = AsyncMock(return_value=None)
+    notify_state_change = AsyncMock(return_value=None)
+    server.herdr_service._notify_state_change = notify_state_change
     server._launch_open = AsyncMock(return_value={
         "success": True,
         "launch": {
@@ -1133,7 +1223,7 @@ async def test_herdr_remote_pane_focus_switches_pane_then_reuses_herdr_app(serve
         "__intent_epoch": 12,
         "focus_fast": True,
     })
-    server.notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
+    notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
     assert server.herdr_service.remote_generation_for("ryzen") == 1
     assert result["success"] is True
     assert result["launch"]["launch"]["reused_existing"] is True
@@ -1198,7 +1288,8 @@ async def test_herdr_remote_pane_focus_updates_cached_remote_rows(server, monkey
     monkeypatch.setattr(server.herdr_service, "load_remote_targets", lambda: [target])
     monkeypatch.setattr(server.herdr_service, "run_proxy_json", fake_run_herdr_proxy_json)
     server._launch_open = AsyncMock(return_value={"success": True, "launch": {"reused_existing": True}})
-    server.notify_state_change = AsyncMock(return_value=None)
+    notify_state_change = AsyncMock(return_value=None)
+    server.herdr_service._notify_state_change = notify_state_change
 
     result = await server.herdr_service.remote_pane_focus(
         {
@@ -1222,7 +1313,10 @@ async def test_herdr_remote_pane_focus_updates_cached_remote_rows(server, monkey
         "__intent_epoch": 0,
         "focus_fast": True,
     })
-    server.notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
+    assert [call.args[0] for call in notify_state_change.await_args_list] == [
+        "focus_changed",
+        "ai_session_herdr_changed",
+    ]
     assert sessions[0]["focused"] is False
     assert sessions[1]["focused"] is True
     assert sessions[1]["is_current_window"] is True
@@ -1264,7 +1358,8 @@ async def test_herdr_event_subscription_sends_expected_payload_and_invalidates_c
     server.herdr_service.snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
     server.herdr_service.snapshot_cache_time = 123.0
     server.herdr_service.notify_delay = 0.0
-    server.notify_state_change = AsyncMock()
+    notify_state_change = AsyncMock()
+    server.herdr_service._notify_state_change = notify_state_change
 
     try:
         with pytest.raises(ConnectionError):
@@ -1274,7 +1369,7 @@ async def test_herdr_event_subscription_sends_expected_payload_and_invalidates_c
         await unix_server.wait_closed()
 
     assert received_event.is_set()
-    assert requests == [server.herdr_service.event_subscribe_payload()]
+    assert requests == [server.herdr_service.event_subscribe_payload(pane_ids=["stale"])]
     subscriptions = requests[0]["params"]["subscriptions"]
     assert {"type": "workspace.created"} in subscriptions
     assert {"type": "workspace.updated"} in subscriptions
@@ -1290,17 +1385,19 @@ async def test_herdr_event_subscription_sends_expected_payload_and_invalidates_c
     assert {"type": "pane.focused"} in subscriptions
     assert {"type": "pane.exited"} in subscriptions
     assert {"type": "pane.agent_detected"} in subscriptions
+    assert {"type": "pane.agent_status_changed", "pane_id": "stale"} in subscriptions
     assert server.herdr_service.snapshot_cache == {}
     assert server.herdr_service.snapshot_cache_time == 0.0
     await asyncio.sleep(0)
-    server.notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
+    notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
 
 
 @pytest.mark.asyncio
 async def test_herdr_subscription_event_does_not_collect_remote_snapshots(server, monkeypatch):
     server.herdr_service.snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
     server.herdr_service.notify_delay = 0.0
-    server.notify_state_change = AsyncMock()
+    notify_state_change = AsyncMock()
+    server.herdr_service._notify_state_change = notify_state_change
     load_remote_targets = MagicMock(return_value=[])
     monkeypatch.setattr(server.herdr_service, "load_remote_targets", load_remote_targets)
 
@@ -1309,20 +1406,76 @@ async def test_herdr_subscription_event_does_not_collect_remote_snapshots(server
     assert server.herdr_service.snapshot_cache == {}
     load_remote_targets.assert_not_called()
     await asyncio.sleep(0)
-    server.notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
+    notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
+
+
+@pytest.mark.asyncio
+async def test_herdr_agent_status_event_invalidates_cache_without_remote_snapshot(server, monkeypatch):
+    server.herdr_service.snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
+    server.herdr_service.notify_delay = 0.0
+    notify_state_change = AsyncMock()
+    server.herdr_service._notify_state_change = notify_state_change
+    load_remote_targets = MagicMock(return_value=[])
+    monkeypatch.setattr(server.herdr_service, "load_remote_targets", load_remote_targets)
+
+    await server.herdr_service.handle_subscription_event({
+        "event": "pane.agent_status_changed",
+        "data": {
+            "pane_id": "stale",
+            "agent_status": "done",
+            "custom_status": "ready for review",
+            "state_labels": {"done": "ready"},
+        },
+    })
+
+    assert server.herdr_service.snapshot_cache == {}
+    load_remote_targets.assert_not_called()
+    await asyncio.sleep(0)
+    notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
+
+
+@pytest.mark.asyncio
+async def test_herdr_topology_event_invalidates_without_resubscribe(server):
+    server.herdr_service.snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
+    server.herdr_service.notify_delay = 0.0
+    notify_state_change = AsyncMock()
+    server.herdr_service._notify_state_change = notify_state_change
+    ensure_status_subscription = MagicMock()
+    cancel_status_subscription = MagicMock()
+    server.herdr_service.ensure_status_subscription = ensure_status_subscription
+    server.herdr_service.cancel_status_subscription = cancel_status_subscription
+
+    result = await server.herdr_service.handle_subscription_event({
+        "event": "pane.agent_detected",
+        "data": {"pane_id": "new-pane"},
+    })
+
+    assert result is None
+    assert server.herdr_service.snapshot_cache == {}
+    ensure_status_subscription.assert_called_once_with("new-pane")
+    cancel_status_subscription.assert_not_called()
+    await asyncio.sleep(0)
+    notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
+
+    await server.herdr_service.handle_subscription_event({
+        "event": "pane.closed",
+        "data": {"pane_id": "new-pane"},
+    })
+    cancel_status_subscription.assert_called_once_with("new-pane")
 
 
 @pytest.mark.asyncio
 async def test_herdr_subscription_events_are_coalesced(server):
     server.herdr_service.notify_delay = 0.01
-    server.notify_state_change = AsyncMock()
+    notify_state_change = AsyncMock()
+    server.herdr_service._notify_state_change = notify_state_change
 
     await server.herdr_service.handle_subscription_event({"event": "pane_updated", "data": {"pane_id": "a"}})
     await server.herdr_service.handle_subscription_event({"event": "pane_updated", "data": {"pane_id": "b"}})
     await server.herdr_service.handle_subscription_event({"event": "pane_updated", "data": {"pane_id": "c"}})
     await asyncio.sleep(0.03)
 
-    server.notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
+    notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
 
 
 @pytest.mark.asyncio

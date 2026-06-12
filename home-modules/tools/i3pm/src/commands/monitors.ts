@@ -3,6 +3,7 @@
  * Feature 049: Intelligent Automatic Workspace-to-Monitor Assignment
  */
 
+import { parseArgs } from "@std/cli/parse-args";
 import { DaemonClient } from "../services/daemon-client.ts";
 
 interface ActiveMonitorStatus {
@@ -37,18 +38,37 @@ interface MonitorsConfigResponse {
 }
 
 export async function monitorsCommand(args: string[], flags: Record<string, unknown>): Promise<number> {
-  const [subcommand] = args;
+  const parsed = parseArgs(args, {
+    boolean: ["help", "json"],
+    alias: { h: "help" },
+  });
+  const subcommand = String(parsed._[0] || "");
+  const commandFlags = {
+    ...flags,
+    help: parsed.help,
+    json: parsed.json === true,
+  };
+
+  if (commandFlags.help || !subcommand) {
+    console.error("Usage: i3pm monitors <status|reassign|config> [--json]");
+    console.error("");
+    console.error("Subcommands:");
+    console.error("  status    - Show current monitor role assignments");
+    console.error("  reassign  - Force workspace reassignment to monitors");
+    console.error("  config    - Show monitor role configuration");
+    return 0;
+  }
 
   try {
     switch (subcommand) {
       case "status":
-        return await monitorsStatus(flags);
+        return await monitorsStatus(commandFlags);
       case "reassign":
-        return await monitorsReassign(flags);
+        return await monitorsReassign(commandFlags);
       case "config":
-        return await monitorsConfig(flags);
+        return await monitorsConfig(commandFlags);
       default:
-        console.error("Usage: i3pm monitors <status|reassign|config>");
+        console.error("Usage: i3pm monitors <status|reassign|config> [--json]");
         console.error("");
         console.error("Subcommands:");
         console.error("  status    - Show current monitor role assignments");
@@ -120,7 +140,9 @@ async function monitorsReassign(flags: Record<string, unknown>): Promise<number>
   await client.connect();
 
   try {
-    console.log("Triggering workspace reassignment...");
+    if (!flags.json) {
+      console.log("Triggering workspace reassignment...");
+    }
     const result = await client.sendRequest<MonitorsReassignResponse>("monitors.reassign", {});
 
     if (flags.json) {

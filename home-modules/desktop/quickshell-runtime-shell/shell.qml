@@ -735,6 +735,16 @@ ShellRoot {
     }
 
     function sessionIdentityKey(session) {
+        const sessionKey = stringOrEmpty(session && session.session_key);
+        if (sessionKey) {
+            return sessionKey;
+        }
+
+        const renderSessionKey = stringOrEmpty(session && session.render_session_key);
+        if (renderSessionKey) {
+            return renderSessionKey;
+        }
+
         const herdrSession = stringOrEmpty(session && session.herdr_session);
         if (herdrSession) {
             return herdrSession;
@@ -743,16 +753,6 @@ ShellRoot {
         const paneId = stringOrEmpty(session && session.pane_id);
         if (paneId) {
             return "herdr:pane:" + paneId;
-        }
-
-        const renderSessionKey = stringOrEmpty(session && session.render_session_key);
-        if (renderSessionKey) {
-            return renderSessionKey;
-        }
-
-        const sessionKey = stringOrEmpty(session && session.session_key);
-        if (sessionKey) {
-            return sessionKey;
         }
 
         const surfaceKey = stringOrEmpty(session && session.surface_key);
@@ -856,12 +856,28 @@ ShellRoot {
         return intent && stringOrEmpty(intent.kind) === stringOrEmpty(kind) ? intent : null;
     }
 
-    function pendingFocusIntentMatches(kind, targetKey) {
-        const intent = pendingFocusIntentFor(kind);
+    function localPendingFocusIntentFor(kind) {
+        if (!localFocusIntent || stringOrEmpty(localFocusIntent.state) !== "pending") {
+            return null;
+        }
+        const createdAt = Number(localFocusIntent.created_at || 0);
+        if (createdAt > 0 && (Date.now() / 1000) - createdAt > 5) {
+            localFocusIntent = null;
+            return null;
+        }
+        return stringOrEmpty(localFocusIntent.kind) === stringOrEmpty(kind) ? localFocusIntent : null;
+    }
+
+    function focusIntentMatchesTarget(intent, targetKey) {
         const normalizedTargetKey = stringOrEmpty(targetKey);
         return !!intent
             && normalizedTargetKey !== ""
             && stringOrEmpty(intent.target_key) === normalizedTargetKey;
+    }
+
+    function pendingFocusIntentMatches(kind, targetKey) {
+        const intent = pendingFocusIntentFor(kind);
+        return focusIntentMatchesTarget(intent, targetKey);
     }
 
     function focusIntentKindAndTarget(method, params) {
@@ -936,14 +952,14 @@ ShellRoot {
         }
     }
 
-    function sessionPendingFocusTargetKey(session) {
+    function sessionPendingFocusTargetKey(session, intent) {
         const paneId = stringOrEmpty(session && session.pane_id);
         if (!paneId) {
             return "";
         }
 
-        const intent = pendingFocusIntent();
-        const targetKey = stringOrEmpty(intent && intent.target_key);
+        const activeIntent = intent || pendingFocusIntent();
+        const targetKey = stringOrEmpty(activeIntent && activeIntent.target_key);
         if (targetKey.indexOf(":") < 0) {
             return paneId;
         }
@@ -1234,15 +1250,24 @@ ShellRoot {
                 }
                 const focused = workspaceIsFocused(name);
                 const windows = arrayOrEmpty(workspace ? workspace.windows : []);
+                const visible = boolOrFalse(workspace?.visible);
+                const hasWindows = windows.length > 0;
+                if (!focused && !visible && !hasWindows) {
+                    continue;
+                }
                 items.push({
                     num: Number(workspace?.number || 0),
                     name: name,
                     label: name,
                     focused: focused,
-                    active: focused,
+                    active: focused || visible || hasWindows,
                     urgent: boolOrFalse(workspace?.urgent),
                     window_count: windows.length,
                     icon_sources: workspaceIconSourcesForWindows(windows),
+                    configured: boolOrFalse(workspace?.configured),
+                    monitor_role: stringOrEmpty(workspace?.monitor_role),
+                    app_name: stringOrEmpty(workspace?.app_name),
+                    app_names: arrayOrEmpty(workspace?.app_names),
                     output: target
                 });
             }
@@ -5107,27 +5132,40 @@ ShellRoot {
         if (state === "blocked") {
             return colors.red;
         }
-        if (state === "done") {
-            return colors.green;
-        }
         if (state === "working") {
+            return colors.amber;
+        }
+        if (state === "done") {
             return colors.teal;
         }
         if (state === "idle") {
-            return colors.amber;
+            return colors.green;
         }
         return colors.muted;
     }
 
-    function herdrSpaceStatusDot(space) {
+    function herdrStatusIcon(state, spinnerFrame) {
+        const normalized = herdrStatusState(state);
+        if (normalized === "blocked") {
+            return "◉";
+        }
+        if (normalized === "working") {
+            const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+            const frame = Number(spinnerFrame || 0);
+            return frames[Math.max(0, Math.trunc(frame)) % frames.length];
+        }
+        if (normalized === "done") {
+            return "●";
+        }
+        if (normalized === "idle") {
+            return "✓";
+        }
+        return "○";
+    }
+
+    function herdrSpaceStatusDot(space, spinnerFrame) {
         const state = herdrSpaceEffectiveStatus(space);
-        if (state === "idle") {
-            return "○";
-        }
-        if (state === "unknown") {
-            return "·";
-        }
-        return "●";
+        return herdrStatusIcon(state, spinnerFrame);
     }
 
     function herdrSpaceFill(space, hovered) {
@@ -5313,10 +5351,18 @@ ShellRoot {
         if (!session || !target) {
             return false;
         }
-        return target === sessionIdentityKey(session)
-            || target === stringOrEmpty(session && session.session_key)
-            || target === stringOrEmpty(session && session.render_session_key)
-            || target === stringOrEmpty(session && session.herdr_session);
+        const candidates = [
+            stringOrEmpty(session && session.session_key),
+            stringOrEmpty(session && session.render_session_key),
+            stringOrEmpty(session && session.herdr_session),
+            sessionIdentityKey(session),
+        ];
+        for (let i = 0; i < candidates.length; i += 1) {
+            if (candidates[i] && candidates[i] === target) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function windowSectionSubtitle(item) {
@@ -5670,7 +5716,7 @@ ShellRoot {
             return override;
         }
         if (state === "unknown") {
-            return "Idle";
+            return "Unknown";
         }
         return titleCaseWord(state);
     }
@@ -5685,15 +5731,15 @@ ShellRoot {
             return colors.red;
         }
         if (phase === "done") {
-            return colors.accent;
+            return colors.teal;
         }
         if (phase === "working") {
-            return stageColor(session);
+            return colors.amber;
         }
         if (phase === "idle") {
-            return colors.subtle;
+            return colors.green;
         }
-        return colors.blueMuted;
+        return colors.muted;
     }
 
     function sessionTint(session) {
@@ -5702,10 +5748,13 @@ ShellRoot {
             return colors.redBg;
         }
         if (phase === "done") {
-            return colors.accentBg;
+            return colors.tealBg;
         }
         if (phase === "working") {
-            return stageBackground(session);
+            return colors.amberBg;
+        }
+        if (phase === "idle") {
+            return colors.greenBg;
         }
         return colors.panelAlt;
     }
@@ -5806,13 +5855,13 @@ ShellRoot {
             return colors.violet;
         }
         if (state === "done") {
-            return hasHerdrStatus ? colors.green : colors.accent;
+            return hasHerdrStatus ? colors.teal : colors.accent;
         }
         if (state === "working") {
-            return hasHerdrStatus ? colors.teal : root.sessionAccentColor(session);
+            return hasHerdrStatus ? colors.amber : root.sessionAccentColor(session);
         }
         if (state === "idle") {
-            return hasHerdrStatus ? colors.amber : colors.subtle;
+            return hasHerdrStatus ? colors.green : colors.subtle;
         }
         return colors.muted;
     }
@@ -5830,13 +5879,13 @@ ShellRoot {
             return Qt.tint(colors.violetBg, Qt.rgba(1, 1, 1, 0.04));
         }
         if (state === "done") {
-            return hasHerdrStatus ? colors.greenBg : colors.accentBg;
+            return hasHerdrStatus ? colors.tealBg : colors.accentBg;
         }
         if (state === "working") {
-            return hasHerdrStatus ? colors.tealBg : (root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt);
+            return hasHerdrStatus ? colors.amberBg : (root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt);
         }
         if (state === "idle") {
-            return root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt;
+            return hasHerdrStatus ? colors.greenBg : (root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt);
         }
         return colors.cardAlt;
     }
@@ -5958,10 +6007,10 @@ ShellRoot {
         const owner = sessionTurnOwner(session);
         const state = sessionBadgeState(session);
         if (state === "blocked") {
-            return "!";
+            return "◉";
         }
         if (owner === "blocked") {
-            return "!";
+            return "◉";
         }
         if (state === "done") {
             return "●";
@@ -5970,7 +6019,7 @@ ShellRoot {
             return "◔";
         }
         if (owner === "user") {
-            return "○";
+            return "✓";
         }
         if (state === "stale") {
             return "◌";
@@ -6160,16 +6209,40 @@ ShellRoot {
     }
 
     function sessionIsCurrent(session) {
+        const localPendingHerdrFocus = localPendingFocusIntentFor("herdr_pane_focus");
+        if (localPendingHerdrFocus) {
+            const localPendingSessionTarget = sessionPendingFocusTargetKey(session, localPendingHerdrFocus);
+            return focusIntentMatchesTarget(localPendingHerdrFocus, localPendingSessionTarget);
+        }
+
+        const current = currentSessionKey();
+        if (current) {
+            return sessionMatchesKey(session, current);
+        }
+        const focus = dashboardFocusState();
+        const currentPaneId = stringOrEmpty(focus.current_herdr_pane_id);
+        if (currentPaneId) {
+            if (currentPaneId !== stringOrEmpty(session && session.pane_id)) {
+                return false;
+            }
+            const currentHost = normalizeHostAlias(focus.current_herdr_host);
+            const sessionHost = normalizeHostAlias(session && (session.herdr_host || session.host_name || session.target_host));
+            if (currentHost && sessionHost && currentHost !== sessionHost) {
+                return false;
+            }
+            return true;
+        }
+
         const pendingHerdrFocus = pendingFocusIntentFor("herdr_pane_focus");
         if (pendingHerdrFocus) {
             const pendingSessionTarget = sessionPendingFocusTargetKey(session);
             return pendingFocusIntentMatches("herdr_pane_focus", pendingSessionTarget);
         }
-        const current = currentSessionKey();
-        if (current) {
-            return sessionMatchesKey(session, current);
-        }
         return false;
+    }
+
+    function sessionCurrentOverride(session) {
+        return sessionIsCurrent(session);
     }
 
     function sessionHasConflict(session) {
@@ -7879,11 +7952,11 @@ ShellRoot {
             const result = response && typeof response.result === "object" ? response.result : null;
             const focusIntent = result && typeof result.focus_intent === "object" ? result.focus_intent : null;
             if (focusIntent) {
-                if (localFocusIntentMatches(focusIntent) && stringOrEmpty(focusIntent.state) !== "pending") {
+                const intentState = stringOrEmpty(focusIntent.state);
+                if (localFocusIntentMatches(focusIntent) && intentState === "failed") {
                     localFocusIntent = null;
                 }
                 const currentFocus = dashboard && typeof dashboard.focus_state === "object" ? dashboard.focus_state : {};
-                const intentState = stringOrEmpty(focusIntent.state);
                 dashboard = Object.assign({}, dashboard, {
                     focus_state: Object.assign({}, currentFocus, {
                         pending_intent_id: intentState === "pending" ? stringOrEmpty(focusIntent.intent_id) : "",

@@ -33,6 +33,13 @@ HERDR_EVENT_SUBSCRIPTION_TYPES = (
     "pane.exited",
     "pane.agent_detected",
 )
+HERDR_STATUS_EVENT_TYPE = "pane.agent_status_changed"
+HERDR_GIT_SPACE_FIELDS = (
+    "git_state",
+    "git_compact",
+    "git_freshness",
+    "git_snapshot",
+)
 
 RETIRED_SESSION_LIFECYCLE_FIELDS = {
     "session_phase",
@@ -96,6 +103,7 @@ class HerdrService:
         self.subscription_max_backoff = subscription_max_backoff
         self.notify_delay = notify_delay
         self.subscription_task: Optional[asyncio.Task] = None
+        self.status_subscription_tasks: Dict[str, asyncio.Task] = {}
         self.remote_subscription_tasks: Dict[str, asyncio.Task] = {}
         self.notify_task: Optional[asyncio.Task] = None
         self.local_herdr_generation: int = 0
@@ -946,7 +954,7 @@ class HerdrService:
         status = raw.lower()
         if status in {"working", "blocked", "done", "idle", "unknown"}:
             return status
-        return "unknown"
+        return HerdrService.agent_status_state(status)
 
     @staticmethod
     def agent_status_state(value: Any) -> str:
@@ -1107,10 +1115,7 @@ class HerdrService:
             if is_remote and remote_target
             else normalize_connection_key(f"local@{self.normalize_host_key(local_host)}")
         )
-        agent_status = self.normalize_agent_status(
-            row.get("agent_status"),
-            preserve_raw=is_remote,
-        )
+        agent_status = self.normalize_agent_status(row.get("agent_status"))
         display_agent = self.normalize_text_field(row.get("display_agent"))
         custom_status = self.normalize_text_field(row.get("custom_status"))
         state_labels = self.normalize_state_labels(row.get("state_labels"))
@@ -1729,6 +1734,7 @@ class HerdrService:
                     window_id=0,
                     connection_key=str(cache_result.get("connection_key") or "").strip(),
                 )
+                await self._notify_state_change("focus_changed")
 
         launch_result = await launch_task
         await self._notify_state_change("ai_session_herdr_changed")
@@ -1795,6 +1801,16 @@ class HerdrService:
                 except (TypeError, ValueError):
                     continue
             return 0
+
+        def copy_git_fields(target: Dict[str, Any], source: Dict[str, Any], *, prefer: bool = False) -> None:
+            for field in HERDR_GIT_SPACE_FIELDS:
+                if field not in source:
+                    continue
+                value = source.get(field)
+                if value in (None, ""):
+                    continue
+                if prefer or target.get(field) in (None, ""):
+                    target[field] = copy.deepcopy(value)
 
         def worktree_metadata_for(item: Dict[str, Any]) -> Dict[str, Any]:
             is_remote = bool(item.get("is_remote_herdr", False)) or str(item.get("execution_mode") or "") == "ssh"
@@ -1872,7 +1888,7 @@ class HerdrService:
                 "worktree_path",
                 "worktreePath",
             )
-            return {
+            metadata = {
                 "repo_key": text_field(merged, "repo_key", "repoKey", "repository_key", "repositoryKey"),
                 "repo_name": text_field(merged, "repo_name", "repoName", "repository", "repository_name"),
                 "repo_root": text_field(merged, "repo_root", "repoRoot", "root", "repository_root"),
@@ -1880,6 +1896,8 @@ class HerdrService:
                 "is_linked_worktree": bool_field(merged, "is_linked_worktree", "isLinkedWorktree", "linked", "is_linked"),
                 "branch_label": text_field(merged, "branch_label", "branchLabel", "branch"),
             }
+            copy_git_fields(metadata, merged, prefer=True)
+            return metadata
 
         def workspace_label_for(item: Dict[str, Any], workspace_id: str) -> str:
             label = str(
@@ -1976,6 +1994,7 @@ class HerdrService:
                     "branch_label": str(metadata.get("branch_label") or "").strip(),
                     "_label_source": label_source,
                 }
+                copy_git_fields(existing, metadata, prefer=True)
                 if focus_target:
                     existing["focus_target"] = focus_target
                 spaces[space_key] = existing
@@ -2002,6 +2021,7 @@ class HerdrService:
                         existing[key] = value
                 if metadata.get("is_linked_worktree"):
                     existing["is_linked_worktree"] = True
+                copy_git_fields(existing, metadata)
             return existing
 
         workspaces = [
@@ -2063,6 +2083,7 @@ class HerdrService:
             candidate_status = self.agent_status_state(session.get("agent_status"))
             if self.agent_status_rank(candidate_status) > self.agent_status_rank(current_status):
                 space["agent_status"] = candidate_status
+            copy_git_fields(space, session, prefer=bool(session.get("focused", False)))
             if bool(session.get("focused", False)) or str(space.get("project_name") or "global") == "global":
                 space["project_name"] = project_name
 
@@ -2388,16 +2409,77 @@ class HerdrService:
             return Path(os.path.expanduser(override))
         return Path.home() / ".config" / "herdr" / "herdr.sock"
 
-    def event_subscribe_payload(self) -> Dict[str, Any]:
+    @staticmethod
+    def pane_ids_from_rows(rows: Any) -> List[str]:
+        """Return stable non-empty Herdr pane ids from row dictionaries."""
+        if not isinstance(rows, list):
+            return []
+        pane_ids: List[str] = []
+        seen: Set[str] = set()
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            pane_id = str(row.get("pane_id") or "").strip()
+            if not pane_id or pane_id in seen:
+                continue
+            seen.add(pane_id)
+            pane_ids.append(pane_id)
+        return pane_ids
+
+    def cached_subscription_pane_ids(self) -> List[str]:
+        """Return local pane ids already known to the Herdr snapshot cache."""
+        pane_ids: List[str] = []
+        seen: Set[str] = set()
+        for collection_name in ("agents", "sessions", "panes"):
+            for pane_id in self.pane_ids_from_rows(self.snapshot_cache.get(collection_name)):
+                if pane_id in seen:
+                    continue
+                seen.add(pane_id)
+                pane_ids.append(pane_id)
+        return pane_ids
+
+    async def subscription_pane_ids(self) -> List[str]:
+        """Return pane ids that need explicit Herdr status-change subscriptions."""
+        cached = self.cached_subscription_pane_ids()
+        if cached:
+            return cached
+        payload = await self.run_json(["agent", "list"], timeout=1.0)
+        return self.pane_ids_from_rows(self.result_array(payload, "agents"))
+
+    def event_subscribe_payload(self, pane_ids: Optional[List[str]] = None) -> Dict[str, Any]:
         """Return the JSON-RPC payload for Herdr's event stream API."""
+        subscriptions = [
+            {"type": event_type}
+            for event_type in HERDR_EVENT_SUBSCRIPTION_TYPES
+        ]
+        seen_pane_ids: Set[str] = set()
+        for pane_id in pane_ids or []:
+            normalized_pane_id = str(pane_id or "").strip()
+            if not normalized_pane_id or normalized_pane_id in seen_pane_ids:
+                continue
+            seen_pane_ids.add(normalized_pane_id)
+            subscriptions.append({
+                "type": HERDR_STATUS_EVENT_TYPE,
+                "pane_id": normalized_pane_id,
+            })
         return {
             "id": "i3pm-herdr-events",
             "method": "events.subscribe",
             "params": {
-                "subscriptions": [
-                    {"type": event_type}
-                    for event_type in HERDR_EVENT_SUBSCRIPTION_TYPES
-                ],
+                "subscriptions": subscriptions,
+            },
+        }
+
+    def status_event_subscribe_payload(self, pane_id: str) -> Dict[str, Any]:
+        """Return a Herdr event stream payload for one pane's status changes."""
+        return {
+            "id": f"i3pm-herdr-status-{pane_id}",
+            "method": "events.subscribe",
+            "params": {
+                "subscriptions": [{
+                    "type": HERDR_STATUS_EVENT_TYPE,
+                    "pane_id": pane_id,
+                }],
             },
         }
 
@@ -2431,7 +2513,8 @@ class HerdrService:
         socket_path = self.socket_path()
         reader, writer = await asyncio.open_unix_connection(str(socket_path))
         try:
-            request = self.event_subscribe_payload()
+            pane_ids = await self.subscription_pane_ids()
+            request = self.event_subscribe_payload(pane_ids=pane_ids)
             await self.write_json_line(writer, request)
             ack = await self.read_json_line(reader, timeout=3.0)
             result = ack.get("result") if isinstance(ack, dict) else {}
@@ -2463,6 +2546,66 @@ class HerdrService:
                 logger.debug("Local Herdr event subscription unavailable: %s", exc)
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, self.subscription_max_backoff)
+
+    async def connect_status_subscription_once(self, pane_id: str) -> None:
+        """Connect once to one local Herdr pane status stream and process until close."""
+        socket_path = self.socket_path()
+        reader, writer = await asyncio.open_unix_connection(str(socket_path))
+        try:
+            request = self.status_event_subscribe_payload(pane_id)
+            await self.write_json_line(writer, request)
+            ack = await self.read_json_line(reader, timeout=3.0)
+            result = ack.get("result") if isinstance(ack, dict) else {}
+            if (
+                ack.get("id") != request["id"]
+                or not isinstance(result, dict)
+                or result.get("type") != "subscription_started"
+            ):
+                raise RuntimeError(f"Herdr pane status subscription failed: {ack}")
+            logger.debug("Subscribed to Herdr status events for pane %s", pane_id)
+
+            while True:
+                event = await self.read_json_line(reader)
+                await self.handle_subscription_event(event)
+        finally:
+            writer.close()
+            await self._close_writer(writer)
+
+    async def run_status_subscription(self, pane_id: str) -> None:
+        """Maintain one pane-specific status subscription with bounded reconnect backoff."""
+        backoff = self.subscription_initial_backoff
+        while True:
+            try:
+                await self.connect_status_subscription_once(pane_id)
+                backoff = self.subscription_initial_backoff
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.debug("Herdr status subscription unavailable for pane %s: %s", pane_id, exc)
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, self.subscription_max_backoff)
+
+    def ensure_status_subscription(self, pane_id: str) -> None:
+        """Ensure a pane-specific status event subscription is running."""
+        normalized_pane_id = str(pane_id or "").strip()
+        if not normalized_pane_id:
+            return
+        existing = self.status_subscription_tasks.get(normalized_pane_id)
+        if existing is not None and not existing.done():
+            return
+        self.status_subscription_tasks[normalized_pane_id] = asyncio.create_task(
+            self.run_status_subscription(normalized_pane_id),
+            name=f"i3pm-herdr-status-{normalized_pane_id}",
+        )
+
+    def cancel_status_subscription(self, pane_id: str) -> None:
+        """Cancel a pane-specific status event subscription."""
+        normalized_pane_id = str(pane_id or "").strip()
+        if not normalized_pane_id:
+            return
+        task = self.status_subscription_tasks.pop(normalized_pane_id, None)
+        if task is not None and not task.done():
+            task.cancel()
 
     def start_subscription(self) -> None:
         """Start local and configured remote Herdr event subscription tasks."""
@@ -2513,6 +2656,14 @@ class HerdrService:
         else:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+
+        status_tasks = list(self.status_subscription_tasks.values())
+        self.status_subscription_tasks = {}
+        for status_task in status_tasks:
+            if not status_task.done():
+                status_task.cancel()
+        if status_tasks:
+            await asyncio.gather(*status_tasks, return_exceptions=True)
 
         remote_tasks = list(self.remote_subscription_tasks.values())
         self.remote_subscription_tasks = {}
@@ -2590,10 +2741,33 @@ class HerdrService:
             self.invalidate_snapshot_cache()
         self.schedule_state_change_notification()
 
+    @staticmethod
+    def subscription_event_name(event: Dict[str, Any]) -> str:
+        """Return a normalized Herdr event name from subscription or event envelopes."""
+        raw_event = str(event.get("event") or "").strip()
+        data = event.get("data")
+        if not raw_event and isinstance(data, dict):
+            raw_event = str(data.get("type") or "").strip()
+        return raw_event
+
+    @staticmethod
+    def subscription_event_pane_id(event: Dict[str, Any]) -> str:
+        """Return the pane id carried by a Herdr event envelope, if any."""
+        data = event.get("data")
+        if isinstance(data, dict):
+            return str(data.get("pane_id") or "").strip()
+        return ""
+
     async def handle_subscription_event(self, event: Dict[str, Any]) -> None:
         """Invalidate Herdr-derived dashboard state after a local Herdr event."""
         if not isinstance(event, dict):
             return
+        event_name = self.subscription_event_name(event)
+        pane_id = self.subscription_event_pane_id(event)
+        if event_name in {"pane.closed", "pane_closed"}:
+            self.cancel_status_subscription(pane_id)
+        elif event_name in {"pane.created", "pane_created", "pane.agent_detected", "pane_agent_detected"}:
+            self.ensure_status_subscription(pane_id)
         self.bump_local_generation()
         self.invalidate_snapshot_cache()
         self.schedule_state_change_notification()

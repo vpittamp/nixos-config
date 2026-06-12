@@ -355,6 +355,8 @@ class DashboardGitService:
         for session in sessions:
             if not isinstance(session, dict):
                 continue
+            if bool(session.get("is_remote_herdr", False)):
+                continue
             project_name = str(
                 session.get("canonical_project_name")
                 or session.get("project_name")
@@ -390,6 +392,8 @@ class DashboardGitService:
 
         for session in sessions:
             if not isinstance(session, dict):
+                continue
+            if bool(session.get("is_remote_herdr", False)):
                 continue
             project_name = str(
                 session.get("canonical_project_name")

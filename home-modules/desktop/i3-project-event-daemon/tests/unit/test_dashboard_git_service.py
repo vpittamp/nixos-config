@@ -193,6 +193,60 @@ async def test_hydrate_runtime_git_state_enriches_sessions_and_worktrees() -> No
 
 
 @pytest.mark.asyncio
+async def test_hydrate_runtime_git_state_preserves_remote_herdr_git_fields() -> None:
+    service = DashboardGitService()
+    runtime_snapshot = {
+        "active_context": {
+            "qualified_name": "vpittamp/nixos-config:main",
+        },
+        "current_session_key": "remote-session",
+    }
+    sessions = [{
+        "session_key": "remote-session",
+        "project_name": "vpittamp/nixos-config:main",
+        "is_remote_herdr": True,
+        "git_state": "dirty",
+        "git_compact": "● 6",
+        "git_freshness": "fresh",
+        "git_snapshot": {
+            "state": "dirty",
+            "dirty_count": 6,
+            "status_compact": "● 6",
+        },
+    }]
+    build_worktrees = AsyncMock(return_value=[{
+        "qualified_name": "vpittamp/nixos-config:main",
+        "path": "/tmp/local-nixos-config",
+        "branch": "main",
+        "is_active": True,
+        "visible_window_count": 1,
+        "scoped_window_count": 1,
+        "is_clean": True,
+    }])
+    get_snapshot = AsyncMock(return_value={
+        "state": "clean",
+        "freshness": "fresh",
+        "status_compact": "",
+        "status_tooltip": "Status: clean",
+        "attribution": "exact_worktree",
+        "dirty_count": 0,
+    })
+
+    await service.hydrate_runtime_git_state(
+        runtime_snapshot,
+        sessions,
+        build_dashboard_worktrees=build_worktrees,
+        get_or_schedule_git_snapshot=get_snapshot,
+    )
+
+    get_snapshot.assert_awaited_once()
+    assert sessions[0]["git_state"] == "dirty"
+    assert sessions[0]["git_compact"] == "● 6"
+    assert sessions[0]["git_snapshot"]["dirty_count"] == 6
+    assert runtime_snapshot["dashboard_worktrees"][0]["git_state"] == "clean"
+
+
+@pytest.mark.asyncio
 async def test_refresh_git_snapshot_notifies_only_after_cached_fingerprint_changes() -> None:
     service = DashboardGitService()
     base_snapshot = {

@@ -74,6 +74,15 @@ from .services.worktree_profile_service import WorktreeProfileService
 
 logger = logging.getLogger(__name__)
 
+HERDR_PROXY_GIT_FIELDS = (
+    "git_snapshot",
+    "git_state",
+    "git_compact",
+    "git_freshness",
+    "git_attribution",
+    "git_tooltip",
+)
+
 ICON_SEARCH_DIRS = [
     Path.home() / ".local/share/icons",
     Path.home() / ".icons",
@@ -90,6 +99,7 @@ DESKTOP_DIRS = [
 ICON_EXTENSIONS = (".svg", ".png", ".xpm")
 APP_REGISTRY_PATH = Path.home() / ".config/i3/application-registry.json"
 PWA_REGISTRY_PATH = Path.home() / ".config/i3/pwa-registry.json"
+WORKSPACE_ASSIGNMENTS_PATH = Path.home() / ".config/sway/workspace-assignments.json"
 CHROME_SCOPED_TMP_PREFIX = "/tmp/com.google.Chrome.scoped_dir."
 FOCUS_STATE_SCHEMA_VERSION = "i3pm.focus_state.v2"
 
@@ -516,6 +526,12 @@ class IPCServer:
         self._window_tree_cache: Optional[Dict[str, Any]] = None
         self._window_tree_cache_time: float = 0.0
         self._window_tree_cache_ttl: float = 15.0  # Max cache age in seconds (fallback if invalidation missed)
+        self._workspace_slots_cache: Dict[str, Any] = {
+            "mtime_ns": None,
+            "size": None,
+            "active_outputs": (),
+            "slots_by_output": {},
+        }
 
         self._worktree_cache_ttl: float = 10.0
         self._git_probe_timeout_seconds: float = 2.5
@@ -1026,7 +1042,7 @@ class IPCServer:
             elif method == "herdr.snapshot":
                 result = await self.herdr_service.snapshot(params)
             elif method == "herdr.proxy.snapshot":
-                result = await self.herdr_service.proxy_snapshot(params)
+                result = await self._herdr_proxy_snapshot(params)
             elif method == "herdr.proxy.pane.focus":
                 result = await self.herdr_service.proxy_pane_focus(params)
             elif method == "herdr.pane.focus":
@@ -2968,6 +2984,39 @@ class IPCServer:
             get_or_schedule_git_snapshot=self._get_or_schedule_git_snapshot,
         )
 
+    async def _herdr_proxy_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Return the remote Herdr proxy payload with dashboard-equivalent git metadata."""
+        snapshot = await self.herdr_service.proxy_snapshot(params)
+        sessions = [
+            dict(session)
+            for session in snapshot.get("sessions", []) or []
+            if isinstance(session, dict)
+        ]
+        await self._hydrate_runtime_git_state(snapshot, sessions)
+        snapshot["sessions"] = sessions
+        snapshot["active_ai_sessions"] = [dict(session) for session in sessions]
+
+        sessions_by_pane = {
+            str(session.get("pane_id") or "").strip(): session
+            for session in sessions
+            if str(session.get("pane_id") or "").strip()
+        }
+        for collection_name in ("agents", "panes"):
+            enriched_rows: List[Dict[str, Any]] = []
+            for row in snapshot.get(collection_name, []) or []:
+                if not isinstance(row, dict):
+                    continue
+                item = dict(row)
+                session = sessions_by_pane.get(str(item.get("pane_id") or "").strip())
+                if isinstance(session, dict):
+                    for field in HERDR_PROXY_GIT_FIELDS:
+                        if field in session:
+                            item[field] = session[field]
+                enriched_rows.append(item)
+            snapshot[collection_name] = enriched_rows
+
+        return snapshot
+
     async def _worktree_refresh(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Invalidate worktree/dashboard caches after CLI-side worktree mutations."""
         _ = params
@@ -3368,6 +3417,110 @@ class IPCServer:
             return int(match.group(1))
         return 0
 
+    def _configured_workspace_slots_by_output(
+        self,
+        active_output_names: List[str],
+    ) -> Dict[str, Dict[str, Dict[str, Any]]]:
+        """Load declarative workspace slots keyed by live output name."""
+        active_outputs = [str(name or "").strip() for name in active_output_names if str(name or "").strip()]
+        active_output_set = set(active_outputs)
+        active_output_key = tuple(sorted(active_output_set))
+        if not active_output_set:
+            return {}
+
+        try:
+            stat = WORKSPACE_ASSIGNMENTS_PATH.stat()
+        except OSError:
+            return {}
+
+        cached = self._workspace_slots_cache
+        if (
+            cached.get("mtime_ns") == stat.st_mtime_ns
+            and cached.get("size") == stat.st_size
+            and cached.get("active_outputs") == active_output_key
+        ):
+            cached_slots = cached.get("slots_by_output", {})
+            return cached_slots if isinstance(cached_slots, dict) else {}
+
+        payload = self._load_json_file(WORKSPACE_ASSIGNMENTS_PATH)
+        assignments = payload.get("assignments", [])
+        output_preferences = payload.get("output_preferences", {})
+        if not isinstance(assignments, list):
+            return {}
+        if not isinstance(output_preferences, dict):
+            output_preferences = {}
+
+        slots_by_output: Dict[str, Dict[str, Dict[str, Any]]] = {
+            output_name: {} for output_name in active_outputs
+        }
+
+        def output_candidates(item: Dict[str, Any]) -> List[str]:
+            role = str(item.get("monitor_role") or "").strip()
+            candidates: List[str] = []
+            primary_output = str(item.get("primary_output") or "").strip()
+            if primary_output:
+                candidates.append(primary_output)
+            role_outputs = output_preferences.get(role)
+            if isinstance(role_outputs, list):
+                candidates.extend(str(value or "").strip() for value in role_outputs)
+            fallback_outputs = item.get("fallback_outputs")
+            if isinstance(fallback_outputs, list):
+                candidates.extend(str(value or "").strip() for value in fallback_outputs)
+            return [candidate for candidate in candidates if candidate]
+
+        for item in assignments:
+            if not isinstance(item, dict):
+                continue
+            raw_workspace = item.get("workspace_number", item.get("workspace"))
+            try:
+                workspace_number = int(raw_workspace)
+            except (TypeError, ValueError):
+                continue
+            if workspace_number <= 0:
+                continue
+
+            target_output = ""
+            for candidate in output_candidates(item):
+                if candidate in active_output_set:
+                    target_output = candidate
+                    break
+            if not target_output:
+                continue
+
+            workspace_name = str(workspace_number)
+            output_slots = slots_by_output.setdefault(target_output, {})
+            existing = output_slots.get(workspace_name)
+            if existing is not None:
+                app_name = str(item.get("app_name") or "").strip()
+                if app_name:
+                    app_names = existing.setdefault("app_names", [])
+                    if isinstance(app_names, list) and app_name not in app_names:
+                        app_names.append(app_name)
+                continue
+
+            app_name = str(item.get("app_name") or "").strip()
+            output_slots[workspace_name] = {
+                "number": workspace_number,
+                "name": workspace_name,
+                "focused": False,
+                "visible": False,
+                "output": target_output,
+                "windows": [],
+                "configured": True,
+                "monitor_role": str(item.get("monitor_role") or "").strip(),
+                "app_name": app_name,
+                "app_names": [app_name] if app_name else [],
+                "source": str(item.get("source") or "").strip(),
+            }
+
+        self._workspace_slots_cache = {
+            "mtime_ns": stat.st_mtime_ns,
+            "size": stat.st_size,
+            "active_outputs": active_output_key,
+            "slots_by_output": slots_by_output,
+        }
+        return slots_by_output
+
     def _project_outputs_from_tracked_windows(
         self,
         outputs: List[Dict[str, Any]],
@@ -3406,6 +3559,24 @@ class IPCServer:
                 workspace_index[(output_name, workspace_name)] = projected_workspace
             projected_outputs.append(projected_output)
             output_index[output_name] = projected_output
+
+        configured_slots = self._configured_workspace_slots_by_output(list(output_index.keys()))
+        for output_name, workspace_slots in configured_slots.items():
+            projected_output = output_index.get(output_name)
+            if projected_output is None or not isinstance(workspace_slots, dict):
+                continue
+            for workspace_name, workspace_slot in workspace_slots.items():
+                workspace_key = (output_name, workspace_name)
+                if workspace_key in workspace_index:
+                    workspace_index[workspace_key]["configured"] = True
+                    workspace_index[workspace_key]["monitor_role"] = workspace_slot.get("monitor_role", "")
+                    workspace_index[workspace_key]["app_name"] = workspace_slot.get("app_name", "")
+                    workspace_index[workspace_key]["app_names"] = workspace_slot.get("app_names", [])
+                    workspace_index[workspace_key]["source"] = workspace_slot.get("source", "")
+                    continue
+                projected_workspace = dict(workspace_slot)
+                projected_output["workspaces"].append(projected_workspace)
+                workspace_index[workspace_key] = projected_workspace
 
         fallback_output_name = str(projected_outputs[0].get("name") or "").strip() if projected_outputs else ""
 
@@ -7245,6 +7416,28 @@ class IPCServer:
             # Sort by name to get consistent connection order
             # For HEADLESS-1, HEADLESS-2, HEADLESS-3, this gives correct numerical order
             active_outputs.sort(key=lambda o: o.name)
+            active_output_names = {output.name for output in active_outputs}
+
+            config_data = self._load_json_file(WORKSPACE_ASSIGNMENTS_PATH)
+            output_preferences = config_data.get("output_preferences", {})
+            if not isinstance(output_preferences, dict):
+                output_preferences = {}
+            role_by_output: Dict[str, str] = {}
+            assigned_roles: set[str] = set()
+            for role in ["primary", "secondary", "tertiary"]:
+                candidates = output_preferences.get(role, [])
+                if not isinstance(candidates, list):
+                    continue
+                for candidate in candidates:
+                    output_name = str(candidate or "").strip()
+                    if output_name in active_output_names and output_name not in role_by_output:
+                        role_by_output[output_name] = role
+                        assigned_roles.add(role)
+                        break
+            fallback_roles = [
+                role for role in ["primary", "secondary", "tertiary"]
+                if role not in assigned_roles
+            ]
 
             # Get workspaces from Sway IPC
             workspaces = await self._sway_get_workspaces()
@@ -7252,13 +7445,9 @@ class IPCServer:
             # Build monitor status with workspace distribution
             active_monitors = []
             for idx, output in enumerate(active_outputs):
-                # Infer role from connection order (Feature 001 US1)
-                if idx == 0:
-                    role = "primary"
-                elif idx == 1:
-                    role = "secondary"
-                else:
-                    role = "tertiary"
+                role = role_by_output.get(output.name)
+                if not role:
+                    role = fallback_roles.pop(0) if fallback_roles else f"monitor-{idx + 1}"
 
                 # Find workspaces on this output
                 output_workspaces = [
@@ -7375,7 +7564,7 @@ class IPCServer:
             # Load output_preferences for monitor_assignments in response
             from pathlib import Path
             import json
-            config_path = Path.home() / ".config" / "sway" / "workspace-assignments.json"
+            config_path = WORKSPACE_ASSIGNMENTS_PATH
             monitor_assignments = {}
             if config_path.exists():
                 with open(config_path) as f:
@@ -7439,7 +7628,7 @@ class IPCServer:
             from pathlib import Path
 
             # Load workspace-assignments.json (generated by Feature 001)
-            config_path = Path.home() / ".config/sway/workspace-assignments.json"
+            config_path = WORKSPACE_ASSIGNMENTS_PATH
 
             if not config_path.exists():
                 logger.warning(f"workspace-assignments.json not found at {config_path}")
@@ -7457,7 +7646,7 @@ class IPCServer:
                 # Note: JSON uses "monitor_role" field name
                 monitor_role = assignment.get("monitor_role")
                 workspace_assignments.append({
-                    "preferred_workspace": assignment.get("workspace"),
+                    "preferred_workspace": assignment.get("workspace_number") or assignment.get("workspace"),
                     "app_name": assignment.get("app_name", "unknown"),
                     "preferred_monitor_role": monitor_role if monitor_role else "inferred",
                     "source": assignment.get("source", "unknown")

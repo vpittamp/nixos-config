@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import importlib
 import importlib.util
+import json
 import sys
 import time
 from pathlib import Path
@@ -91,6 +92,145 @@ def make_runtime_snapshot():
         "current_session_key": "",
         "focused_window_id": 101,
     }
+
+
+def test_project_outputs_merge_configured_workspace_slots_by_output(server, tmp_path, monkeypatch):
+    config_path = tmp_path / "workspace-assignments.json"
+    config_path.write_text(json.dumps({
+        "version": "1.0",
+        "output_preferences": {
+            "primary": ["DP-1"],
+            "secondary": ["HDMI-A-1"],
+            "tertiary": ["DP-2"],
+        },
+        "assignments": [
+            {
+                "workspace_number": 1,
+                "app_name": "terminal",
+                "monitor_role": "primary",
+                "primary_output": "DP-1",
+                "fallback_outputs": ["HDMI-A-1", "DP-2"],
+                "source": "nix",
+            },
+            {
+                "workspace_number": 33,
+                "app_name": "herdr",
+                "monitor_role": "primary",
+                "primary_output": "DP-1",
+                "fallback_outputs": ["HDMI-A-1", "DP-2"],
+                "source": "nix",
+            },
+            {
+                "workspace_number": 131,
+                "app_name": "workflow-builder-dev-pwa",
+                "monitor_role": "secondary",
+                "primary_output": "HDMI-A-1",
+                "fallback_outputs": ["DP-1", "DP-2"],
+                "source": "nix",
+            },
+            {
+                "workspace_number": 158,
+                "app_name": "mediaite-pwa",
+                "monitor_role": "tertiary",
+                "primary_output": "DP-2",
+                "fallback_outputs": ["DP-1", "HDMI-A-1"],
+                "source": "nix",
+            },
+            {
+                "workspace_number": 158,
+                "app_name": "duplicate-slot",
+                "monitor_role": "tertiary",
+                "primary_output": "DP-2",
+                "fallback_outputs": ["DP-1", "HDMI-A-1"],
+                "source": "nix",
+            },
+        ],
+    }))
+    monkeypatch.setattr(ipc_server_module, "WORKSPACE_ASSIGNMENTS_PATH", config_path)
+
+    outputs = [
+        {
+            "name": "DP-1",
+            "active": True,
+            "primary": True,
+            "geometry": {},
+            "current_workspace": "33",
+            "workspaces": [
+                {
+                    "number": 33,
+                    "name": "33",
+                    "focused": False,
+                    "visible": True,
+                    "output": "DP-1",
+                    "windows": [{"id": 3301}],
+                }
+            ],
+        },
+        {
+            "name": "HDMI-A-1",
+            "active": True,
+            "primary": False,
+            "geometry": {},
+            "current_workspace": "131",
+            "workspaces": [],
+        },
+        {
+            "name": "DP-2",
+            "active": True,
+            "primary": False,
+            "geometry": {},
+            "current_workspace": "158",
+            "workspaces": [],
+        },
+    ]
+
+    result = server._project_outputs_from_tracked_windows(outputs, [])
+    workspaces_by_output = {
+        output["name"]: output["workspaces"]
+        for output in result
+    }
+
+    assert [workspace["name"] for workspace in workspaces_by_output["DP-1"]] == ["1", "33"]
+    live_workspace = workspaces_by_output["DP-1"][1]
+    assert live_workspace["visible"] is True
+    assert live_workspace["configured"] is True
+    assert live_workspace["app_name"] == "herdr"
+
+    assert [workspace["name"] for workspace in workspaces_by_output["HDMI-A-1"]] == ["131"]
+    assert workspaces_by_output["HDMI-A-1"][0]["configured"] is True
+    assert workspaces_by_output["HDMI-A-1"][0]["monitor_role"] == "secondary"
+
+    assert [workspace["name"] for workspace in workspaces_by_output["DP-2"]] == ["158"]
+    assert workspaces_by_output["DP-2"][0]["app_names"] == ["mediaite-pwa", "duplicate-slot"]
+
+
+@pytest.mark.asyncio
+async def test_monitors_config_accepts_generated_workspace_number_key(server, tmp_path, monkeypatch):
+    config_path = tmp_path / "workspace-assignments.json"
+    config_path.write_text(json.dumps({
+        "version": "1.0",
+        "output_preferences": {"primary": ["DP-1"]},
+        "assignments": [
+            {
+                "workspace_number": 33,
+                "app_name": "herdr",
+                "monitor_role": "primary",
+                "source": "nix",
+            }
+        ],
+    }))
+    monkeypatch.setattr(ipc_server_module, "WORKSPACE_ASSIGNMENTS_PATH", config_path)
+
+    result = await server._monitors_config({})
+
+    assert result["workspace_assignments"] == [
+        {
+            "preferred_workspace": 33,
+            "app_name": "herdr",
+            "preferred_monitor_role": "primary",
+            "source": "nix",
+        }
+    ]
 
 
 def make_runtime_session(overrides: dict | None = None) -> dict:
