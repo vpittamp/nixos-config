@@ -217,7 +217,11 @@ class DashboardService:
             if active_ai_sessions:
                 payload["active_ai_sessions"] = active_ai_sessions
             return payload
-        snapshot = await self.snapshot({"skip_git_hydration": True})
+        git_bearing_keys = {"active_ai_sessions", "herdr", "worktrees"}
+        skip_git_hydration = not any(
+            key in git_bearing_keys for key in normalized_changed_keys
+        )
+        snapshot = await self.snapshot({"skip_git_hydration": skip_git_hydration})
         return dashboard_event_payload_from_snapshot(
             snapshot,
             changed_keys,

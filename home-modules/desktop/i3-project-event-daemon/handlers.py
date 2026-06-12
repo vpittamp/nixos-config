@@ -890,9 +890,21 @@ async def on_window_new(
             # Feature 035/057 - Environment Variable-Based Scope:
             # Use I3PM_SCOPE from app registry as single source of truth
             # All apps launched via registry wrapper have this variable set
-            scope_for_mark = window_env.scope if window_env else "global"  # Default to global if no I3PM environment
-            # Feature 103: Use app_name from environment, or derive from window class
-            app_for_mark = window_env.app_name if window_env and window_env.app_name else window_class.lower().replace(" ", "-")
+            scope_for_mark = (
+                window_env.scope
+                if window_env
+                else ("global" if (actual_project or "global") == "global" else "scoped")
+            )  # Default to global if no I3PM environment
+            # Feature 103: Prefer registry launch identity over Chrome's dynamic PWA app-id.
+            app_for_mark = (
+                window_env.app_name
+                if window_env and window_env.app_name
+                else (
+                    str(matched_launch.app_name)
+                    if matched_launch and getattr(matched_launch, "app_name", "")
+                    else window_class.lower().replace(" ", "-")
+                )
+            )
             project_for_mark = actual_project or "global"
 
             # Feature 103: Build unified mark
@@ -1315,12 +1327,21 @@ async def on_window_new(
                                 from . import window_filtering
                                 is_floating = container.floating == "user_on" or container.floating == "auto_on"
 
+                                tracker_app_name = (
+                                    window_env.app_name
+                                    if window_env and window_env.app_name
+                                    else (
+                                        str(matched_launch.app_name)
+                                        if matched_launch and getattr(matched_launch, "app_name", "")
+                                        else window_class
+                                    )
+                                )
                                 await workspace_tracker.track_window(
                                     window_id=container.id,
                                     workspace_number=preferred_ws,
                                     floating=is_floating,
                                     project_name=actual_project if actual_project else "",
-                                    app_name=window_env.app_name if window_env else "",
+                                    app_name=tracker_app_name,
                                     window_class=window_class,
                                 )
                                 await workspace_tracker.save()

@@ -52,13 +52,16 @@ class DummyStateManager:
             active_project="global",
             window_map={},
             launch_registry=DummyLaunchRegistry(),
+            scoped_classes=set(),
         )
         self.launch_registry = self.state.launch_registry
+        self.removed_windows = []
 
     async def get_active_project(self):
         return self.state.active_project
 
     async def remove_window(self, _window_id: int):
+        self.removed_windows.append(_window_id)
         return None
 
 
@@ -375,6 +378,128 @@ async def test_runtime_snapshot_keeps_transient_unbound_window_visible(server, m
     assert snapshot["tracked_windows"][0]["workspace"] == "1"
     assert snapshot["outputs"][0]["workspaces"][0]["windows"][0]["id"] == 101
     assert snapshot["outputs"][0]["workspaces"][0]["windows"][0]["binding_state"] == "transient_unbound"
+
+
+@pytest.mark.asyncio
+async def test_runtime_snapshot_prunes_stale_bound_window_missing_from_tree(server, monkeypatch):
+    tracked_window = WindowInfo(
+        window_id=202,
+        con_id=202,
+        window_class="google-chrome",
+        window_title="Closed app",
+        window_instance="chrome",
+        app_identifier="browser",
+        project="global",
+        marks=["global:browser:global:202"],
+        scope="global",
+        workspace="4",
+        output="eDP-1",
+        binding_state="bound_workspace",
+        last_workspace="4",
+        last_output="eDP-1",
+    )
+
+    async def fake_context_get_active(_params):
+        return {
+            "qualified_name": "global",
+            "project_name": "global",
+            "execution_mode": "local",
+            "connection_key": "local@thinkpad",
+            "context_key": "global::host::thinkpad",
+        }
+
+    async def fake_window_map_snapshot():
+        return {202: tracked_window}
+
+    server._get_window_tree = AsyncMock(return_value={
+        "outputs": [
+            {
+                "name": "eDP-1",
+                "active": True,
+                "primary": True,
+                "geometry": {},
+                "current_workspace": "4",
+                "workspaces": [
+                    {
+                        "number": 4,
+                        "name": "4",
+                        "focused": True,
+                        "visible": True,
+                        "output": "eDP-1",
+                        "windows": [],
+                    }
+                ],
+            }
+        ],
+        "total_windows": 0,
+        "cached": False,
+    })
+    monkeypatch.setattr(server, "_context_get_active", fake_context_get_active)
+    monkeypatch.setattr(server.state_manager, "get_window_map_snapshot", fake_window_map_snapshot, raising=False)
+    monkeypatch.setattr(server.launch_service, "get_reusable_context_terminal_window", AsyncMock(return_value=None))
+    monkeypatch.setattr(server.launch_service, "launch_stats", lambda: {})
+
+    snapshot = await server._runtime_snapshot({})
+
+    assert snapshot["total_windows"] == 0
+    assert snapshot["tracked_windows"] == []
+    assert snapshot["outputs"][0]["workspaces"][0]["windows"] == []
+    assert server.state_manager.removed_windows == [202]
+
+
+def test_extract_windows_prefers_mark_app_identity_over_dynamic_chrome_class(server):
+    tracked_window = WindowInfo(
+        window_id=1405,
+        con_id=1405,
+        window_class="chrome-github.com__-Default",
+        window_title="GitHub",
+        window_instance="",
+        app_identifier="chrome-github.com__-Default",
+        project="global",
+        marks=["global:github-pwa:global:1405"],
+        scope="global",
+        workspace="54",
+        output="HDMI-A-1",
+        binding_state="bound_workspace",
+    )
+    rect = SimpleNamespace(x=0, y=0, width=100, height=100)
+    node = SimpleNamespace(
+        id=1405,
+        window=None,
+        app_id="chrome-github.com__-Default",
+        window_class="",
+        window_instance="",
+        name="GitHub",
+        marks=["global:github-pwa:global:1405"],
+        pid=0,
+        floating="auto_off",
+        focused=False,
+        fullscreen_mode=0,
+        rect=rect,
+        nodes=[],
+        floating_nodes=[],
+    )
+    workspace = SimpleNamespace(
+        window=None,
+        app_id="",
+        type="workspace",
+        name="54",
+        nodes=[node],
+        floating_nodes=[],
+    )
+
+    windows = server._extract_windows_from_container(
+        workspace,
+        54,
+        "HDMI-A-1",
+        tracked_windows={1405: tracked_window},
+        tracked_windows_by_con_id={1405: tracked_window},
+    )
+
+    assert len(windows) == 1
+    assert windows[0]["app_key"] == "github-pwa"
+    assert windows[0]["app_name"] == "github-pwa"
+    assert windows[0]["project"] == "global"
 
 
 def make_local_payload():

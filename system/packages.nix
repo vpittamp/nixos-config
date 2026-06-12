@@ -15,6 +15,12 @@ let
   # GitHub Agentic Workflows — gh CLI extension (resolved via $PATH).
   gh-aw = pkgs.callPackage ../packages/gh-aw.nix { };
 
+  # Latest dlvhdr GitHub TUIs. These are local pins because the main nixpkgs
+  # input currently lags gh-dash/diffnav and does not package gh-enhance.
+  gh-dash = pkgs.callPackage ../packages/gh-dash.nix { };
+  gh-enhance = pkgs.callPackage ../packages/gh-enhance.nix { };
+  diffnav = pkgs.callPackage ../packages/diffnav.nix { };
+
   # Plugins are now managed through home-manager:
   # - Tmux plugins via programs.tmux.plugins
   # - Vim plugins via programs.neovim.plugins
@@ -73,6 +79,9 @@ let
     git
     gh
     lazygit
+    gh-dash
+    gh-enhance
+    diffnav
 
     # Build tools
     gnumake

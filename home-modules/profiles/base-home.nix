@@ -47,6 +47,9 @@ in
     ../editors/neovim.nix
     ../tools/copilot-auth.nix        # GitHub Copilot authentication (1Password + hosts.json)
     ../tools/gh-aw.nix               # Register gh-aw as a `gh` CLI extension (xdg link)
+    ../tools/gh-dash.nix             # GitHub PR/issues dashboard and gh extension link
+    ../tools/gh-enhance.nix          # Register gh-enhance as a `gh` CLI extension (xdg link)
+    ../tools/diffnav.nix             # GitHub-style diff pager and gh extension link
 
     # Tool configurations
     ../tools/git.nix

@@ -135,6 +135,52 @@ async def test_workspace_focus_fast_skips_verification_and_notifies(server):
 
 
 @pytest.mark.asyncio
+async def test_window_action_invalidates_dashboard_on_success(server):
+    server.focus_service.window_action = AsyncMock(
+        return_value={"success": True, "window_id": 404, "action": "kill"}
+    )
+    server.invalidate_window_tree_cache = Mock()
+    server.notify_state_change_background = AsyncMock(return_value=None)
+
+    response = await server._handle_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "window.action",
+            "params": {"window_id": 404, "action": "kill"},
+        },
+        SimpleNamespace(),
+    )
+
+    assert response["result"] == {"success": True, "window_id": 404, "action": "kill"}
+    server.invalidate_window_tree_cache.assert_called_once_with()
+    server.notify_state_change_background.assert_awaited_once_with("window::action")
+
+
+@pytest.mark.asyncio
+async def test_window_action_does_not_invalidate_dashboard_on_failure(server):
+    server.focus_service.window_action = AsyncMock(
+        return_value={"success": False, "window_id": 404, "action": "kill"}
+    )
+    server.invalidate_window_tree_cache = Mock()
+    server.notify_state_change_background = AsyncMock(return_value=None)
+
+    response = await server._handle_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "window.action",
+            "params": {"window_id": 404, "action": "kill"},
+        },
+        SimpleNamespace(),
+    )
+
+    assert response["result"] == {"success": False, "window_id": 404, "action": "kill"}
+    server.invalidate_window_tree_cache.assert_not_called()
+    server.notify_state_change_background.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_dashboard_notifications_coalesce_while_fanout_is_active(server):
     blocker = asyncio.Event()
     calls: list[str] = []

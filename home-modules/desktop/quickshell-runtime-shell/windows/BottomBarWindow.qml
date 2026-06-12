@@ -61,7 +61,7 @@ PanelWindow {
             spacing: 8
 
             Rectangle {
-                Layout.preferredWidth: 184
+                Layout.preferredWidth: Math.max(184, contextTitleText.implicitWidth + contextOutputText.implicitWidth + (contextGitChip.visible ? contextGitText.implicitWidth + 18 : 0) + 40)
                 Layout.fillHeight: true
                 radius: 8
                 color: colors.card
@@ -82,6 +82,7 @@ PanelWindow {
                     }
 
                     Text {
+                        id: contextTitleText
                         Layout.fillWidth: true
                         text: root.currentContextTitle()
                         color: colors.text
@@ -90,12 +91,46 @@ PanelWindow {
                         elide: Text.ElideRight
                     }
 
+                    Rectangle {
+                        id: contextGitChip
+                        visible: root.currentContextGitChipVisible()
+                        width: contextGitText.implicitWidth + 10
+                        height: 16
+                        radius: 5
+                        color: root.currentContextGitChipBackground()
+                        border.color: "transparent"
+                        border.width: 0
+
+                        Text {
+                            id: contextGitText
+                            anchors.centerIn: parent
+                            text: root.currentContextGitChipText()
+                            color: root.currentContextGitChipForeground()
+                            font.pixelSize: 8
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
                     Text {
+                        id: contextOutputText
                         text: barOutputName || root.modeLabel((dashboard.active_context || {}).execution_mode)
                         color: colors.muted
                         font.pixelSize: 10
                         elide: Text.ElideRight
                     }
+                }
+
+                MouseArea {
+                    id: contextMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.NoButton
+                }
+
+                ToolTip {
+                    visible: contextMouse.containsMouse && root.currentContextGitTooltip().length > 0
+                    text: root.currentContextGitTooltip()
+                    delay: 500
                 }
             }
 

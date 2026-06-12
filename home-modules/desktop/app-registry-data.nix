@@ -376,6 +376,60 @@ let
       description = "Terminal UI for git worktree management";
     })
 
+    # WS34: GitHub Dashboard (gh-dash)
+    (mkApp {
+      name = "gh-dash";
+      display_name = "gh-dash";
+      command = "ghostty";
+      parameters = "-e gh-dash";
+      scope = "global";
+      expected_class = "com.mitchellh.ghostty";
+      preferred_workspace = 34;
+      preferred_monitor_role = "tertiary";
+      icon = iconPath "gh-dash.png";
+      nix_package = "pkgs.gh-dash";
+      multi_instance = true;
+      fallback_behavior = "use_home";
+      aliases = [ "dash" "github-dashboard" "pr-dashboard" ];
+      description = "Terminal UI for GitHub pull requests and issues";
+    })
+
+    # WS35: GitHub Actions TUI (gh-enhance)
+    (mkApp {
+      name = "gh-enhance";
+      display_name = "gh-enhance";
+      command = "ghostty";
+      parameters = "-e gh-enhance";
+      scope = "global";
+      expected_class = "com.mitchellh.ghostty";
+      preferred_workspace = 35;
+      preferred_monitor_role = "tertiary";
+      icon = iconPath "gh-enhance.png";
+      nix_package = "pkgs.gh-enhance";
+      multi_instance = true;
+      fallback_behavior = "use_home";
+      aliases = [ "enhance" "github-actions" "actions-tui" ];
+      description = "Terminal UI for GitHub Actions runs and logs";
+    })
+
+    # WS36: Git Diff Navigator (diffnav)
+    (mkApp {
+      name = "gh-diffnav";
+      display_name = "gh-diffnav";
+      command = "ghostty";
+      parameters = "-e gh-diffnav --watch";
+      scope = "global";
+      expected_class = "com.mitchellh.ghostty";
+      preferred_workspace = 36;
+      preferred_monitor_role = "tertiary";
+      icon = iconPath "git.svg";
+      nix_package = "pkgs.diffnav";
+      multi_instance = true;
+      fallback_behavior = "use_home";
+      aliases = [ "diffnav" "git-diffnav" "github-diffnav" ];
+      description = "Terminal diff navigator with GitHub-style file tree";
+    })
+
     # WS13: Docker Tools (lazydocker)
     (mkApp {
       name = "lazydocker";

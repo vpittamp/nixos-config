@@ -156,10 +156,10 @@ PanelWindow {
         const requested = root.stringOrEmpty(root.runtimePanelExpandedSection);
         const balanced = requested === "balanced" && hasSessions && hasWindows;
         if (balanced) {
-            return section === "sessions" ? 320 : 220;
+            return section === "sessions" ? Math.max(520, Math.floor(panelWindow.height * 0.66)) : 220;
         }
         if (runtimePanelLocalExpanded(section)) {
-            return section === "sessions" ? 360 : 320;
+            return section === "sessions" ? Math.max(640, panelWindow.height - 112) : 320;
         }
         return 60;
     }
@@ -540,12 +540,18 @@ PanelWindow {
                     ColumnLayout {
                         id: herdrSessionContent
                         readonly property int agentCount: panelWindow.runtimeSessions.length
+                        readonly property int spaceCount: panelWindow.runtimeVisibleHerdrSpaces().length
                         readonly property int rowHeight: 48
                         readonly property int rowRadius: 7
                         readonly property int rowSpacing: 6
                         readonly property int chipHeight: 18
-                        readonly property real spacesMaxFraction: agentCount <= 0 ? 0.86 : (agentCount <= 2 ? 0.68 : 0.52)
-                        readonly property int spacesMaxHeight: Math.max(150, Math.floor(panelWindow.runtimePanelLocalPreferredHeight("sessions") * spacesMaxFraction))
+                        readonly property int sectionHeaderHeight: 28
+                        readonly property int sectionSpacing: 10
+                        readonly property int spacesContentHeight: spaceCount <= 0 ? 0 : (spaceCount * rowHeight) + ((spaceCount - 1) * rowSpacing)
+                        readonly property int agentsContentHeight: agentCount <= 0 ? 0 : (agentCount * rowHeight) + ((agentCount - 1) * rowSpacing)
+                        readonly property int agentsReservedHeight: agentCount <= 0 ? 0 : Math.min(agentsContentHeight, 220) + sectionHeaderHeight + sectionSpacing
+                        readonly property int availableContentHeight: Math.max(260, height - sectionHeaderHeight - sectionSpacing - agentsReservedHeight)
+                        readonly property int spacesMaxHeight: Math.max(240, availableContentHeight)
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         visible: panelWindow.runtimePanelLocalExpanded("sessions")
@@ -622,6 +628,9 @@ PanelWindow {
                                 readonly property bool spaceFocused: root.herdrSpaceIsFocused(space)
                                 readonly property bool hovered: spaceMouse.containsMouse
                                 readonly property bool hasStatusMotion: root.herdrSpaceEffectiveStatus(space) === "working"
+                                readonly property string metaLabel: root.herdrSpaceMetaLabel(space)
+                                readonly property string gitChipText: root.herdrSpaceGitChipText(space)
+                                readonly property string gitTooltip: root.herdrSpaceGitTooltip(space)
                                 property int statusSpinnerFrame: 0
                                 width: herdrSpacesList.width
                                 implicitHeight: herdrSessionContent.rowHeight
@@ -696,13 +705,38 @@ PanelWindow {
                                             elide: Text.ElideRight
                                         }
 
-                                        Text {
+                                        RowLayout {
                                             Layout.fillWidth: true
-                                            text: root.herdrSpaceMetaLabel(space)
-                                            visible: text.length > 0
-                                            color: colors.subtle
-                                            font.pixelSize: 8
-                                            elide: Text.ElideRight
+                                            visible: herdrSpaceRow.metaLabel.length > 0 || root.herdrSpaceGitChipVisible(space)
+                                            spacing: 5
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: herdrSpaceRow.metaLabel
+                                                visible: text.length > 0
+                                                color: colors.subtle
+                                                font.pixelSize: 8
+                                                elide: Text.ElideRight
+                                            }
+
+                                            Rectangle {
+                                                visible: root.herdrSpaceGitChipVisible(space)
+                                                height: 14
+                                                radius: 5
+                                                color: root.herdrSpaceGitChipBackground(space)
+                                                border.color: "transparent"
+                                                border.width: 0
+                                                Layout.preferredWidth: herdrSpaceGitText.implicitWidth + 10
+
+                                                Text {
+                                                    id: herdrSpaceGitText
+                                                    anchors.centerIn: parent
+                                                    text: herdrSpaceRow.gitChipText
+                                                    color: root.herdrSpaceGitChipForeground(space)
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.Medium
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -714,6 +748,12 @@ PanelWindow {
                                     hoverEnabled: true
                                     cursorShape: herdrSpaceRow.canFocus ? Qt.PointingHandCursor : Qt.ArrowCursor
                                     onClicked: root.focusHerdrSpace(space)
+                                }
+
+                                ToolTip {
+                                    visible: spaceMouse.containsMouse && herdrSpaceRow.gitTooltip.length > 0
+                                    text: herdrSpaceRow.gitTooltip
+                                    delay: 500
                                 }
                             }
                         }

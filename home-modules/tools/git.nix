@@ -54,6 +54,10 @@ in
         editor = "nvim";
         autocrlf = "input";
       };
+      pager = {
+        diff = "diffnav";
+        show = "diffnav";
+      };
       color.ui = true;
       push.autoSetupRemote = true;
       pull.rebase = false;

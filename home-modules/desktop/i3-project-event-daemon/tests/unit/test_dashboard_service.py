@@ -310,3 +310,97 @@ async def test_focus_event_payload_updates_session_rows_without_snapshot_reload(
     assert payload["focus_state"]["active_session"]["session_key"] == "session-b"
     assert [row["is_current_window"] for row in payload["active_ai_sessions"]] == [False, True]
     assert [row["focused"] for row in payload["active_ai_sessions"]] == [False, True]
+
+
+@pytest.mark.asyncio
+async def test_git_bearing_event_payload_keeps_hydrated_herdr_space_git_fields() -> None:
+    runtime_params: list[dict] = []
+
+    async def runtime_loader(params):
+        runtime_params.append(dict(params))
+        session = {
+            "source": "herdr",
+            "session_key": "session-a",
+            "pane_id": "pane-a",
+            "agent_status": "idle",
+        }
+        if not params.get("skip_git_hydration", False):
+            session.update({
+                "git_compact": "↓2",
+                "git_freshness": "fresh",
+                "git_snapshot": {"status_compact": "↓2", "behind": 2},
+            })
+        return _runtime_snapshot(), [session], {}
+
+    def build_herdr_spaces(_herdr_snapshot, sessions):
+        space = {
+            "space_key": "space-a",
+            "label": "stacks",
+            "branch_label": "main",
+        }
+        for field in ("git_compact", "git_freshness", "git_snapshot"):
+            if field in sessions[0]:
+                space[field] = sessions[0][field]
+        return [space]
+
+    service = DashboardService(
+        runtime_loader=runtime_loader,
+        display_snapshot=lambda: _async_value({"outputs": []}),
+        build_projects=lambda runtime, sessions: [],
+        build_worktrees=lambda runtime: _empty_worktrees(),
+        build_focus_state=lambda runtime, sessions, *, generation: {
+            "schema_version": "i3pm.focus_state.v2",
+            "generation": generation,
+            "current_session_key": "",
+            "current_window_id": 0,
+            "current_workspace_name": "",
+            "current_herdr_pane_id": "",
+            "current_herdr_host": "",
+            "pending_intent_id": "",
+        },
+        build_herdr_spaces=build_herdr_spaces,
+        list_launches=lambda **kwargs: [],
+        invalidate_worktree_cache=lambda: None,
+        timestamp=lambda: 42.0,
+    )
+
+    payload = await service.event_payload(["focus_state", "active_ai_sessions", "herdr"])
+
+    assert runtime_params[-1] == {"skip_git_hydration": False}
+    assert payload["active_ai_sessions"][0]["git_compact"] == "↓2"
+    assert payload["herdr"]["spaces"][0]["git_compact"] == "↓2"
+    assert payload["herdr"]["spaces"][0]["git_snapshot"]["behind"] == 2
+
+
+@pytest.mark.asyncio
+async def test_non_git_event_payload_keeps_skip_git_hydration_fast_path() -> None:
+    runtime_params: list[dict] = []
+
+    async def runtime_loader(params):
+        runtime_params.append(dict(params))
+        return _runtime_snapshot(), [], {}
+
+    service = DashboardService(
+        runtime_loader=runtime_loader,
+        display_snapshot=lambda: _async_value({"outputs": []}),
+        build_projects=lambda runtime, sessions: [{"project": "global"}],
+        build_worktrees=lambda runtime: _empty_worktrees(),
+        build_focus_state=lambda runtime, sessions, *, generation: {
+            "schema_version": "i3pm.focus_state.v2",
+            "generation": generation,
+            "current_session_key": "",
+            "current_window_id": 0,
+            "current_workspace_name": "",
+            "current_herdr_pane_id": "",
+            "current_herdr_host": "",
+            "pending_intent_id": "",
+        },
+        build_herdr_spaces=lambda herdr_snapshot, sessions: [],
+        list_launches=lambda **kwargs: [],
+        invalidate_worktree_cache=lambda: None,
+        timestamp=lambda: 42.0,
+    )
+
+    await service.event_payload(["focus_state", "projects", "tracked_windows"])
+
+    assert runtime_params[-1] == {"skip_git_hydration": True}

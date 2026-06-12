@@ -350,31 +350,4 @@
     }
   '';
 
-  # gh-dash configuration: start with preview closed to avoid stuck/"null" pane
-  xdg.configFile."gh-dash/config.yml".text = ''
-    # yaml-language-server: $schema=https://gh-dash.dev/schema.json
-    defaults:
-      preview:
-        open: false   # keep preview closed on load; toggle with "p"
-        width: 50
-      prsLimit: 30
-      issuesLimit: 30
-      view: prs
-
-    prSections:
-      - title: Needs My Review
-        filters: is:open review-requested:@me
-      - title: My PRs
-        filters: is:open author:@me
-      - title: Involved
-        filters: is:open involves:@me -author:@me
-
-    issuesSections:
-      - title: Assigned
-        filters: is:open assignee:@me
-      - title: Created
-        filters: is:open author:@me
-      - title: Involved
-        filters: is:open involves:@me -author:@me
-  '';
 }

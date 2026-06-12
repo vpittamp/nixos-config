@@ -246,6 +246,9 @@ EOF
 
       # GitHub Agentic Workflows — gh CLI extension
       gh-aw = pkgs.callPackage ./gh-aw.nix { };
+      gh-dash = pkgs.callPackage ./gh-dash.nix { };
+      gh-enhance = pkgs.callPackage ./gh-enhance.nix { };
+      diffnav = pkgs.callPackage ./diffnav.nix { };
 
       # Cachix Deploy specification
       # Build with: nix build .#deploy

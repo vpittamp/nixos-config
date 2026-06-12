@@ -26,6 +26,12 @@ let
   # See packages/dapr-cli.nix for the rationale and Go-toolchain constraints.
   dapr-cli = pkgs.callPackage ../packages/dapr-cli.nix { };
 
+  # Latest dlvhdr GitHub TUIs. These are local pins because the main nixpkgs
+  # input currently lags gh-dash/diffnav and does not package gh-enhance.
+  gh-dash = pkgs.callPackage ../packages/gh-dash.nix { };
+  gh-enhance = pkgs.callPackage ../packages/gh-enhance.nix { };
+  diffnav = pkgs.callPackage ../packages/diffnav.nix { };
+
   # Herdr terminal multiplexer for AI coding agents, sourced from its flake.
   # Current Codex Nix builds expose the long-running interactive process as
   # codex-raw, so carry a small compatibility patch until upstream recognizes
@@ -152,6 +158,9 @@ let
     delta
     diff-so-fancy
     lazygit
+    gh-dash
+    gh-enhance
+    diffnav
     gittyup # GUI git client (Qt-based, lightweight alternative to GitKraken)
   ] ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
     gitkraken # Git GUI client (x86_64 only)

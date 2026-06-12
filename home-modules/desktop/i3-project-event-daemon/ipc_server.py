@@ -1192,6 +1192,9 @@ class IPCServer:
                 result = await self.focus_service.focus_window_fast(params)
             elif method == "window.action":
                 result = await self.focus_service.window_action(params)
+                if isinstance(result, dict) and bool(result.get("success", False)):
+                    self.invalidate_window_tree_cache()
+                    await self.notify_state_change_background("window::action")
             elif method == "session.list":
                 result = await self._session_list(params)
             elif method == "focus.state":
@@ -3740,12 +3743,14 @@ class IPCServer:
                 # Get project from marks (format: SCOPE:PROJECT:WINDOW_ID)
                 project = None
                 scope_from_mark = None
+                app_key_from_mark = None
                 for mark in node.marks:
                     if mark.startswith("scoped:") or mark.startswith("global:"):
                         # Feature 101: Use centralized mark parser
                         parsed = parse_mark(mark, node.id if hasattr(node, 'id') else node.window)
                         if parsed:
                             scope_from_mark = parsed.scope
+                            app_key_from_mark = parsed.app_name
                             project = parsed.project_name
                         break
 
@@ -3793,7 +3798,7 @@ class IPCServer:
 
                 # Extract app_id and worktree metadata from already-read env
                 app_id = env.get("I3PM_APP_ID")
-                app_key = env.get("I3PM_APP_NAME") or ""
+                app_key = env.get("I3PM_APP_NAME") or app_key_from_mark or ""
                 if app_id:
                     logger.debug(f"Found I3PM_APP_ID for window {window_id} PID {node.pid}: {app_id}")
                 elif env:
@@ -3848,6 +3853,13 @@ class IPCServer:
                         window_data["project"] = str(getattr(tracked_window, "project", "") or "")
                     if not window_data["scope"]:
                         window_data["scope"] = str(getattr(tracked_window, "scope", "") or "")
+                if app_key_from_mark and (
+                    not str(window_data.get("app_key") or "").strip()
+                    or str(window_data.get("app_key") or "").strip() == window_class
+                    or str(window_data.get("app_key") or "").strip().startswith("chrome-")
+                ):
+                    window_data["app_key"] = app_key_from_mark
+                    window_data["app_name"] = app_key_from_mark
                 if not window_data.get("app_key"):
                     window_data["app_key"] = str(window_data.get("app_name") or "")
                 window_data["icon_path"] = self._resolve_window_icon_path(
@@ -6817,15 +6829,42 @@ class IPCServer:
         active_context = await self._context_get_active({})
         tracked_windows = await self.state_manager.get_window_map_snapshot()
         outputs = tree_result.get("outputs", []) if isinstance(tree_result, dict) else []
-        visible_windows_by_id: Dict[int, Dict[str, Any]] = {}
-        if isinstance(tree_result, dict):
-            for window in self._flatten_runtime_windows(tree_result):
+
+        def runtime_windows_by_id(runtime_snapshot: Any) -> Dict[int, Dict[str, Any]]:
+            windows_by_id: Dict[int, Dict[str, Any]] = {}
+            if not isinstance(runtime_snapshot, dict):
+                return windows_by_id
+            for window in self._flatten_runtime_windows(runtime_snapshot):
                 if not isinstance(window, dict):
                     continue
                 window_id = int(window.get("id") or 0)
                 if window_id <= 0:
                     continue
-                visible_windows_by_id[window_id] = dict(window)
+                windows_by_id[window_id] = dict(window)
+            return windows_by_id
+
+        visible_windows_by_id: Dict[int, Dict[str, Any]] = runtime_windows_by_id(tree_result)
+        if isinstance(tree_result, dict) and bool(tree_result.get("cached", False)):
+            cached_missing_bound_windows = False
+            for window_info in tracked_windows.values():
+                window_id = int(getattr(window_info, "window_id", 0) or 0)
+                if window_id <= 0 or window_id in visible_windows_by_id:
+                    continue
+                tracked_binding_state = str(getattr(window_info, "binding_state", "") or "").strip()
+                if not tracked_binding_state:
+                    tracked_binding_state = (
+                        "bound_workspace"
+                        if str(getattr(window_info, "workspace", "") or "").strip()
+                        else "transient_unbound"
+                    )
+                if tracked_binding_state == "bound_workspace":
+                    cached_missing_bound_windows = True
+                    break
+            if cached_missing_bound_windows:
+                tree_result = await self._get_window_tree({**params, "force_refresh": True})
+                outputs = tree_result.get("outputs", []) if isinstance(tree_result, dict) else []
+                visible_windows_by_id = runtime_windows_by_id(tree_result)
+
         active_outputs = [
             output.get("name")
             for output in outputs
@@ -6857,6 +6896,7 @@ class IPCServer:
                 logger.debug("runtime.snapshot scratchpad status failed: %s", e)
 
         tracked_window_list = []
+        stale_bound_window_ids: List[int] = []
         ssh_tracked_window_count = 0
         scoped_tracked_window_count = 0
         for window_info in tracked_windows.values():
@@ -6866,6 +6906,12 @@ class IPCServer:
             window_id = int(getattr(window_info, "window_id", 0) or 0)
             visible_window = visible_windows_by_id.get(window_id, {})
             tracked_binding_state = str(getattr(window_info, "binding_state", "") or "").strip()
+            if not tracked_binding_state:
+                tracked_binding_state = (
+                    "bound_workspace"
+                    if str(getattr(window_info, "workspace", "") or "").strip()
+                    else "transient_unbound"
+                )
             tracked_last_workspace = str(getattr(window_info, "last_workspace", "") or "").strip()
             tracked_last_output = str(getattr(window_info, "last_output", "") or "").strip()
             scope = str(
@@ -6875,8 +6921,12 @@ class IPCServer:
             )
             if visible_window:
                 binding_state = "scratchpad_hidden" if bool(visible_window.get("hidden", False)) else "bound_workspace"
+            elif tracked_binding_state == "bound_workspace":
+                if window_id > 0:
+                    stale_bound_window_ids.append(window_id)
+                continue
             else:
-                binding_state = tracked_binding_state or "transient_unbound"
+                binding_state = tracked_binding_state
             hidden = binding_state == "scratchpad_hidden"
             visible = binding_state != "scratchpad_hidden"
             icon_path = self._resolve_window_icon_path(
@@ -6961,6 +7011,19 @@ class IPCServer:
                     "tmux_session_name": str(getattr(window_info, "tmux_session_name", "") or ""),
                 }
             )
+
+        if stale_bound_window_ids:
+            stale_ids = sorted(set(stale_bound_window_ids))
+            logger.info(
+                "Pruning %s stale bound workspace window(s) absent from Sway tree: %s",
+                len(stale_ids),
+                stale_ids,
+            )
+            for stale_window_id in stale_ids:
+                try:
+                    await self.state_manager.remove_window(stale_window_id)
+                except Exception as exc:
+                    logger.debug("Failed to prune stale window %s: %s", stale_window_id, exc)
 
         outputs = self._project_outputs_from_tracked_windows(outputs, tracked_window_list)
 

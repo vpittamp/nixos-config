@@ -639,6 +639,114 @@ ShellRoot {
         return qualified ? shortProject(qualified) : "Global";
     }
 
+    function currentContextGitSource() {
+        const activeWorktree = activeWorktreeItem();
+        if (activeWorktree && stringOrEmpty(activeWorktree.kind) !== "global") {
+            return activeWorktree;
+        }
+
+        const activeProject = activeContextProjectName();
+        const activeHost = normalizeHostAlias(activeContextTargetHost());
+
+        const sessions = activeSessions();
+        for (let i = 0; i < sessions.length; i += 1) {
+            const session = sessions[i];
+            const project = stringOrEmpty(session && (session.project_name || session.project));
+            const host = normalizeHostAlias(session && (session.herdr_host || session.host_name || session.target_host));
+            if (project === activeProject && (!activeHost || !host || host === activeHost)) {
+                return session;
+            }
+        }
+
+        const spaces = herdrSpaces();
+        for (let j = 0; j < spaces.length; j += 1) {
+            const space = spaces[j];
+            const project = stringOrEmpty(space && space.project_name);
+            const host = normalizeHostAlias(space && (space.host_key || space.host_label));
+            if (project === activeProject && (!activeHost || !host || host === activeHost)) {
+                return space;
+            }
+        }
+        return null;
+    }
+
+    function currentContextGitChipText() {
+        const source = currentContextGitSource();
+        if (!source) {
+            return "";
+        }
+        const snapshot = source.git_snapshot && typeof source.git_snapshot === "object" ? source.git_snapshot : ({});
+        const compact = stringOrEmpty(source.git_status_compact) || stringOrEmpty(source.git_compact) || stringOrEmpty(snapshot.status_compact);
+        const freshness = (stringOrEmpty(source.git_freshness) || stringOrEmpty(snapshot.freshness)).toLowerCase();
+        if (!compact && freshness !== "stale") {
+            return "";
+        }
+        if (!compact) {
+            return "~";
+        }
+        return freshness === "stale" ? (compact + " ~") : compact;
+    }
+
+    function currentContextGitChipVisible() {
+        return currentContextGitChipText().length > 0;
+    }
+
+    function currentContextGitChipForeground() {
+        const source = currentContextGitSource();
+        if (!source) {
+            return colors.muted;
+        }
+        const snapshot = source.git_snapshot && typeof source.git_snapshot === "object" ? source.git_snapshot : ({});
+        const state = stringOrEmpty(source.git_state || snapshot.state).toLowerCase();
+        const dirtyCount = Number(source.dirty_count || snapshot.dirty_count || 0);
+        const behind = Number(source.behind || snapshot.behind || 0);
+        const ahead = Number(source.ahead || snapshot.ahead || 0);
+        if (state === "conflicted" || state === "dirty" || dirtyCount > 0) {
+            return colors.red;
+        }
+        if (behind > 0) {
+            return colors.red;
+        }
+        if (ahead > 0) {
+            return colors.green;
+        }
+        return colors.muted;
+    }
+
+    function currentContextGitChipBackground() {
+        const source = currentContextGitSource();
+        if (!source) {
+            return colors.panelAlt;
+        }
+        const snapshot = source.git_snapshot && typeof source.git_snapshot === "object" ? source.git_snapshot : ({});
+        const state = stringOrEmpty(source.git_state || snapshot.state).toLowerCase();
+        const dirtyCount = Number(source.dirty_count || snapshot.dirty_count || 0);
+        const behind = Number(source.behind || snapshot.behind || 0);
+        const ahead = Number(source.ahead || snapshot.ahead || 0);
+        if (state === "conflicted" || state === "dirty" || dirtyCount > 0 || behind > 0) {
+            return Qt.tint(colors.panelAlt, Qt.rgba(0.99, 0.64, 0.69, 0.08));
+        }
+        if (ahead > 0) {
+            return Qt.tint(colors.panelAlt, Qt.rgba(0.53, 0.94, 0.67, 0.06));
+        }
+        return Qt.tint(colors.panelAlt, Qt.rgba(0.53, 0.94, 0.67, 0.04));
+    }
+
+    function currentContextGitTooltip() {
+        const source = currentContextGitSource();
+        if (!source) {
+            return "";
+        }
+        const snapshot = source.git_snapshot && typeof source.git_snapshot === "object" ? source.git_snapshot : ({});
+        const tooltip = stringOrEmpty(source.git_status_tooltip) || stringOrEmpty(source.git_tooltip) || stringOrEmpty(snapshot.status_tooltip);
+        if (tooltip.length > 0) {
+            return tooltip;
+        }
+        const compact = currentContextGitChipText();
+        const title = currentContextTitle();
+        return compact.length > 0 ? (title + "\nGit: " + compact) : "";
+    }
+
     function activeContextProjectName() {
         const context = dashboard.active_context || {};
         return stringOrEmpty(context.qualified_name || context.project_name);
@@ -1278,9 +1386,20 @@ ShellRoot {
         return items;
     }
 
+    function dashboardHasOutput(outputName) {
+        const outputs = arrayOrEmpty(dashboard.outputs);
+        const target = stringOrEmpty(outputName);
+        for (let i = 0; i < outputs.length; i += 1) {
+            if (stringOrEmpty(outputs[i] ? outputs[i].name : "") === target) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     function barWorkspacesForOutput(outputName) {
         const dashboardWorkspaces = dashboardWorkspacesForOutput(outputName);
-        if (dashboardWorkspaces.length > 0) {
+        if (dashboardWorkspaces.length > 0 || dashboardHasOutput(outputName)) {
             return dashboardWorkspaces;
         }
         return workspacesForScreen(findScreenByOutputName(outputName));
@@ -5219,6 +5338,92 @@ ShellRoot {
         return branch;
     }
 
+    function herdrSpaceGitSnapshot(space) {
+        const snapshot = space && space.git_snapshot;
+        return snapshot && typeof snapshot === "object" ? snapshot : ({});
+    }
+
+    function herdrSpaceGitState(space) {
+        const directState = stringOrEmpty(space && space.git_state).toLowerCase();
+        if (directState.length > 0) {
+            return directState;
+        }
+        return stringOrEmpty(herdrSpaceGitSnapshot(space).state).toLowerCase() || "unknown";
+    }
+
+    function herdrSpaceGitFreshness(space) {
+        const directFreshness = stringOrEmpty(space && space.git_freshness).toLowerCase();
+        if (directFreshness.length > 0) {
+            return directFreshness;
+        }
+        return stringOrEmpty(herdrSpaceGitSnapshot(space).freshness).toLowerCase();
+    }
+
+    function herdrSpaceGitChipText(space) {
+        const snapshot = herdrSpaceGitSnapshot(space);
+        const compact = stringOrEmpty(space && space.git_compact) || stringOrEmpty(snapshot.status_compact);
+        const freshness = herdrSpaceGitFreshness(space);
+        if (!compact && freshness !== "stale") {
+            return "";
+        }
+        if (!compact) {
+            return "~";
+        }
+        return freshness === "stale" ? (compact + " ~") : compact;
+    }
+
+    function herdrSpaceGitChipVisible(space) {
+        return herdrSpaceGitChipText(space).length > 0;
+    }
+
+    function herdrSpaceGitChipForeground(space) {
+        const snapshot = herdrSpaceGitSnapshot(space);
+        const state = herdrSpaceGitState(space);
+        if (state === "conflicted" || state === "dirty") {
+            return colors.red;
+        }
+        if (Number(snapshot.behind || 0) > 0) {
+            return colors.red;
+        }
+        if (Number(snapshot.ahead || 0) > 0) {
+            return colors.green;
+        }
+        return colors.muted;
+    }
+
+    function herdrSpaceGitChipBackground(space) {
+        const snapshot = herdrSpaceGitSnapshot(space);
+        const state = herdrSpaceGitState(space);
+        if (state === "conflicted" || state === "dirty") {
+            return Qt.tint(colors.panelAlt, Qt.rgba(0.99, 0.64, 0.69, 0.08));
+        }
+        if (Number(snapshot.behind || 0) > 0) {
+            return Qt.tint(colors.panelAlt, Qt.rgba(0.99, 0.64, 0.69, 0.07));
+        }
+        if (Number(snapshot.ahead || 0) > 0) {
+            return Qt.tint(colors.panelAlt, Qt.rgba(0.53, 0.94, 0.67, 0.06));
+        }
+        return Qt.tint(colors.panelAlt, Qt.rgba(0.53, 0.94, 0.67, 0.04));
+    }
+
+    function herdrSpaceGitTooltip(space) {
+        const snapshot = herdrSpaceGitSnapshot(space);
+        const tooltip = stringOrEmpty(space && space.git_tooltip) || stringOrEmpty(snapshot.status_tooltip);
+        if (tooltip.length > 0) {
+            return tooltip;
+        }
+        const compact = herdrSpaceGitChipText(space);
+        const branch = herdrSpaceBranchLabel(space);
+        const parts = [];
+        if (branch.length > 0) {
+            parts.push("Branch: " + branch);
+        }
+        if (compact.length > 0) {
+            parts.push("Git: " + compact);
+        }
+        return parts.join("\n");
+    }
+
     function herdrSpaceIndent(space) {
         return boolOrFalse(space && space.is_linked_worktree) && stringOrEmpty(space && space.group_key).length > 0 ? 18 : 0;
     }
@@ -7715,17 +7920,27 @@ ShellRoot {
             return;
         }
 
-        const command = [shellConfig.i3pmBin, "window", "action", String(windowId), "close"];
         const project = stringOrEmpty(windowData.project);
         const variant = stringOrEmpty(windowData.execution_mode);
+        const params = {
+            window_id: windowId,
+            action: "kill",
+            project_name: project,
+            target_variant: variant,
+            connection_key: stringOrEmpty(windowData.connection_key),
+        };
 
+        if (runDaemonSocketCall("window.action", params)) {
+            return;
+        }
+
+        const command = [shellConfig.i3pmBin, "window", "action", String(windowId), "close"];
         if (project && project !== "global") {
             command.push("--project", project);
         }
         if (variant) {
             command.push("--variant", variant);
         }
-
         runDetached(command);
     }
 

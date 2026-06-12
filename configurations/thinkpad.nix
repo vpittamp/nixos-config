@@ -346,6 +346,9 @@ in
       # Latest lazygit / lazydocker without bumping the main channel
       lazygit = pkgs-lazygit.lazygit;
       lazydocker = pkgs-lazygit.lazydocker;
+      gh-dash = prev.callPackage ../packages/gh-dash.nix { };
+      gh-enhance = prev.callPackage ../packages/gh-enhance.nix { };
+      diffnav = prev.callPackage ../packages/diffnav.nix { };
 
       # Update Google Chrome Stable to latest available without updating entire nixpkgs
       google-chrome = prev.google-chrome.overrideAttrs (old: rec {
