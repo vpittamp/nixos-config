@@ -154,10 +154,16 @@ theme = "dark"
 vim_mode = true
 web_search = "live"
 
-# Codex feature flags. Beta features per `/experimental` menu (Codex 0.130+).
-# `shell_snapshot` and `unified_exec` are stable+default-on; explicit set is informational.
+# Codex feature flags (verified against `codex features list`, Codex 0.139.0).
+# Every `stable`-stage feature (shell_snapshot, unified_exec, multi_agent, hooks,
+# fast_mode, plugins, browser_use, computer_use, ...) is already default-on, so we
+# only pin the few that matter for this setup. `goals` graduated to `stable` in
+# 0.139; `memories`/`prevent_idle_sleep` are still `experimental`-stage (default-on)
+# and pinned here so they survive future default flips. The remaining off-by-default
+# flags are either `under development` (incomplete) or niche `experimental` infra
+# (external_migration, network_proxy) — intentionally left off.
 [features]
-goals = true              # Persistent thread goals + automatic continuation
+goals = true              # Persistent thread goals + automatic continuation (now stable)
 memories = true           # Generate/use memories across conversations (/memories)
 prevent_idle_sleep = true # Keep machine awake while a thread is actively running
 
