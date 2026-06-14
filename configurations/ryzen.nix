@@ -824,6 +824,7 @@ in
 
     # ========== SCREEN RECORDING (Feature 115) ==========
     # Hardware-accelerated screen recording with NVIDIA NVENC
+    obs-studio        # PipeWire/portal screen capture validation and streaming
     wf-recorder       # Wayland screen recorder with NVENC support
     grim              # Screenshot utility for Wayland
     slurp             # Region selection for screenshots/recording

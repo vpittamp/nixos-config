@@ -1458,6 +1458,16 @@ PY
       exit 1
     fi
 
+    # The i3pm/PWA desktop files are installed to
+    # ~/.local/share/i3pm-applications/applications/ (intentionally off the
+    # standard XDG path so Walker/Elephant do not list duplicates). gtk-launch
+    # only searches <dir>/applications for each entry in XDG_DATA_DIRS, and the
+    # QuickShell service environment does NOT include these dirs — so registry
+    # and PWA launches fail with "no such application" while system apps (whose
+    # .desktop lives in the profile/system share dirs) still work. Prepend the
+    # i3pm dirs here so gtk-launch can resolve every launcher entry.
+    export XDG_DATA_DIRS="$HOME/.local/share/i3pm-applications:$HOME/.local/share:''${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+
     # gtk-launch searches XDG_DATA_DIRS for <name>.desktop
     exec ${pkgs.gtk3}/bin/gtk-launch "''${identifier%.desktop}"
   '';

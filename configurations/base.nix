@@ -103,12 +103,12 @@
   services.clusterCerts.enable = true;
 
   # Keep crash dumps available for debugging, but cap total retained space.
-  systemd.coredump.extraConfig = ''
-    Storage=external
-    Compress=yes
-    MaxUse=1G
-    KeepFree=5G
-  '';
+  systemd.coredump.settings.Coredump = {
+    Storage = "external";
+    Compress = "yes";
+    MaxUse = "1G";
+    KeepFree = "5G";
+  };
 
   # Core Nix configuration
   nix = {

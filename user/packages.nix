@@ -108,9 +108,9 @@ let
   # Language servers and development tools (from nixpkgs)
   languageServers = with pkgs; [
     # TypeScript/JavaScript
-    nodePackages.typescript-language-server
-    nodePackages.prettier
-    nodePackages.eslint
+    typescript-language-server
+    prettier
+    eslint
 
     # Python
     pyright
@@ -133,7 +133,7 @@ let
   # Package managers (from nixpkgs)
   packageManagers = with pkgs; [
     yarn
-    nodePackages.pnpm
+    pnpm
     uv # Fast Python package installer and resolver (replaces poetry)
   ];
 

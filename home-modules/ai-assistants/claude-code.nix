@@ -92,7 +92,7 @@ lib.mkIf enableClaudeCode {
           };
         };
         typescript = {
-          command = "${pkgs.nodePackages_latest.typescript-language-server}/bin/typescript-language-server";
+          command = "${pkgs.typescript-language-server}/bin/typescript-language-server";
           args = [ "--stdio" ];
           extensionToLanguage = {
             ".ts" = "typescript";
@@ -116,7 +116,7 @@ lib.mkIf enableClaudeCode {
           };
         };
         yaml = {
-          command = "${pkgs.nodePackages_latest.yaml-language-server}/bin/yaml-language-server";
+          command = "${pkgs.yaml-language-server}/bin/yaml-language-server";
           args = [ "--stdio" ];
           extensionToLanguage = {
             ".yaml" = "yaml";
@@ -135,7 +135,7 @@ lib.mkIf enableClaudeCode {
   # Without this, Claude Code can't persist any runtime setting because the
   # store-backed symlink is read-only (EROFS).
   home.activation.writableClaudeSettings = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    _src='${config.home.file.".claude/settings.json".source}'
+    _src='${pkgs.writeText "claude-settings.json" (builtins.toJSON config.programs.claude-code.settings)}'
     _dst="$HOME/.claude/settings.json"
     run ${pkgs.coreutils}/bin/mkdir -p "$HOME/.claude"
     # Drop any leftover read-only symlink from a previous generation, then

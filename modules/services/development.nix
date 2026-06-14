@@ -59,7 +59,7 @@
 
     # Development tools
     vscode
-    nodejs_20
+    nodejs
     deno
     python3
     go

@@ -89,7 +89,7 @@ let
     pkg-config
 
     # Language support
-    nodejs_20
+    nodejs
     deno
     python3
     go
@@ -140,7 +140,7 @@ in
   essential = systemTools ++ (with pkgs; [
     git
     docker-compose
-    nodejs_20
+    nodejs
     python3
   ]);
 

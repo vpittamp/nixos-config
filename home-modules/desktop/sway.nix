@@ -435,7 +435,7 @@ let
     default = {
       name = "default";
       description = "Full Ryzen desktop layout (HDMI-A-1, DP-1, DP-2)";
-      default = false;
+      default = true;
       outputs = [
         {
           name = "HDMI-A-1";
@@ -514,7 +514,6 @@ let
     single = {
       name = "single";
       description = "Manual single-monitor mode (DP-1 only)";
-      default = true;
       outputs = [
         {
           name = "HDMI-A-1";
@@ -599,7 +598,7 @@ let
   managedProfileDefault =
     if isHeadless then headlessProfileDefault
     else if isHybrid then "local-only"
-    else if isRyzen then "single"
+    else if isRyzen then "default"
     else "";
   hasManagedMonitorProfiles = (builtins.length (builtins.attrNames managedMonitorProfiles)) > 0;
 
@@ -879,12 +878,28 @@ in
           scale = "1.0";
         };
       } else if isRyzen then {
-        # Capture-safe Ryzen default for Moonlight/Sunshine.
-        # Full and dual physical layouts remain available through monitor profiles,
-        # but Sway reload should not re-enable side outputs and change KMS index 0.
+        # Ryzen multi-monitor desktop layout (Feature 001).
+        # Physical layout (left → right): HDMI-A-1 | DP-1 (primary) | DP-2,
+        # with DP-3 below DP-1 when present. Full/dual/single layouts remain
+        # selectable through the managed monitor profiles.
         "DP-1" = {
           mode = "1920x1200@60Hz";
+          position = "1920,0";
+          scale = "1.0";
+        };
+        "HDMI-A-1" = {
+          mode = "1920x1080@60Hz";
           position = "0,0";
+          scale = "1.0";
+        };
+        "DP-2" = {
+          mode = "1920x1200@60Hz";
+          position = "3840,0";
+          scale = "1.0";
+        };
+        "DP-3" = {
+          mode = "1920x1080@60Hz";
+          position = "1920,1200";
           scale = "1.0";
         };
       } else if isHybrid then {
@@ -1142,11 +1157,12 @@ in
 
       # Startup commands (FR-015)
       startup = [
-        # D-Bus activation environment
-        { command = "${pkgs.dbus}/bin/dbus-update-activation-environment --systemd --all"; }
+        # D-Bus activation environment for portals and Wayland-aware user services.
+        { command = "XDG_CURRENT_DESKTOP=sway XDG_SESSION_TYPE=wayland ${pkgs.dbus}/bin/dbus-update-activation-environment --systemd WAYLAND_DISPLAY DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP XDG_SESSION_TYPE"; }
 
         # Import Wayland/Sway environment for systemd services and shells
         # SWAYSOCK is needed for swaymsg commands in terminals
+        { command = "systemctl --user set-environment XDG_CURRENT_DESKTOP=sway XDG_SESSION_TYPE=wayland"; }
         { command = "systemctl --user import-environment WAYLAND_DISPLAY DISPLAY SWAYSOCK"; }
 
         # Export Wayland environment to tmux global environment for clipboard access
@@ -1187,15 +1203,6 @@ in
       # Benefit: Provides immediate feedback when launching apps from Walker
       # Behavior: Workspace automatically switches to show newly launched app
       focus_on_window_activation focus
-
-      ${lib.optionalString isRyzen ''
-        # Keep Sunshine's numeric KMS output stable. When Sway reload enabled
-        # HDMI-A-1/DP-2, Sunshine started capturing DP-2 as output_name=0.
-        output DP-1 enable mode 1920x1200@60Hz position 0 0 scale 1.0
-        output HDMI-A-1 disable
-        output DP-2 disable
-        output DP-3 disable
-      ''}
 
       # NOTE: focus_follows_mouse and mouse_warping are now set in config.focus block
       # to properly override home-manager defaults (see lines 415-420)

@@ -21,17 +21,7 @@
 
     # Antigravity CLI — Google's Gemini-CLI successor (announced 2026-05-19, I/O 2026).
     # Gemini CLI sunsets requests for Google AI Pro/Ultra/Free on 2026-06-18.
-    #
-    # Status as of 2026-05-27: antigravity-cli 1.0.3 landed on nixpkgs master
-    # via PR #524900 (merged 2026-05-27), but nixos-unstable is still ~2240
-    # commits behind that merge commit, so `pkgs.antigravity-cli` isn't yet
-    # available via our main `nixpkgs` input. Pin to the master merge commit
-    # directly until the channel catches up.
-    #
-    # TODO(antigravity-cli): once nixos-unstable advances past 3a1ee2b4a (the
-    # 1.0.3 merge), delete this input and switch consumers to
-    # `pkgs.antigravity-cli` (or `pkgs-unstable.antigravity-cli`).
-    nixpkgs-antigravity-cli.url = "github:NixOS/nixpkgs/3a1ee2b4a58de0939ce747fc004461fc44e2c26e";
+    # We now consume it directly from `pkgs-unstable`.
 
     # Flake organization
     flake-parts = {
@@ -70,7 +60,6 @@
     # Provides native desktop app with git worktree support for parallel sessions
     claude-desktop = {
       url = "github:k3d3/claude-desktop-linux-flake";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     disko = {

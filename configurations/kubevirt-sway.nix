@@ -146,7 +146,7 @@
     argocd
 
     # Development
-    nodejs_20
+    nodejs
     python3
     go
 

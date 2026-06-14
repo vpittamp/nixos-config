@@ -76,7 +76,7 @@ in
     coreutils
   ] ++ lib.optionals (packageEnv == "development") [
     # Development tools if requested
-    nodejs_20
+    nodejs
     python3
     go
     docker-client

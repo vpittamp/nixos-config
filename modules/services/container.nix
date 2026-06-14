@@ -206,7 +206,7 @@ in
         inotify-tools
         
         # Node.js for VS Code
-        nodejs_20
+        nodejs
         
         # For patching binaries
         patchelf
@@ -237,7 +237,7 @@ in
           # Map shell names to package sets
           case "$shell" in
             nodejs|node|js)
-              local packages="nodejs_20 nodePackages.yarn nodePackages.pnpm"
+              local packages="nodejs yarn pnpm"
               echo "Loading Node.js environment..."
               ;;
             python|py)

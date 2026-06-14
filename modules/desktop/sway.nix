@@ -82,6 +82,27 @@ in {
     # D-Bus: Required for Wayland session management
     services.dbus.enable = true;
 
+    # XDG portals: browser/OBS screen sharing on Sway goes through
+    # xdg-desktop-portal-wlr, which publishes selected streams via PipeWire.
+    xdg.portal = {
+      enable = mkDefault true;
+      wlr = {
+        enable = mkDefault true;
+        settings.screencast = {
+          max_fps = mkDefault 30;
+          chooser_type = mkDefault "simple";
+          chooser_cmd = mkDefault "${pkgs.slurp}/bin/slurp -f 'Monitor: %o' -or";
+        };
+      };
+      config.sway = {
+        default = mkDefault "gtk";
+        "org.freedesktop.impl.portal.Inhibit" = mkDefault "none";
+        "org.freedesktop.impl.portal.ScreenCast" = mkDefault "wlr";
+        "org.freedesktop.impl.portal.Screenshot" = mkDefault "wlr";
+      };
+      extraPortals = mkDefault [ pkgs.xdg-desktop-portal-gtk ];
+    };
+
     # PipeWire for audio/video (better Wayland support than PulseAudio)
     services.pipewire = {
       enable = mkDefault true;

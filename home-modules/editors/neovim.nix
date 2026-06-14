@@ -9,11 +9,11 @@
     ripgrep           # For telescope
     fd                # For telescope file finder
     nodejs            # For various language servers
-    nodePackages_latest.typescript-language-server  # LSP: TypeScript/JavaScript
-    nodePackages_latest.typescript                  # Provides tsserver runtime
+    typescript-language-server  # LSP: TypeScript/JavaScript
+    typescript                  # Provides tsserver runtime
     pyright                                          # LSP: Python
     nil                                              # LSP: Nix
-    nodePackages_latest.yaml-language-server          # LSP: YAML
+    yaml-language-server          # LSP: YAML
     lua-language-server                              # LSP: Lua
     nixpkgs-fmt                                      # Formatter used by nil_ls
     (writeShellScriptBin "nvim-telescope-picker" ''

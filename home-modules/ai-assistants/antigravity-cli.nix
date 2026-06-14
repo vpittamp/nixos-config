@@ -1,4 +1,4 @@
-{ config, pkgs, lib, inputs, ... }:
+{ config, pkgs, pkgs-unstable, lib, inputs, ... }:
 
 # Antigravity CLI — Google's Gemini-CLI successor.
 #
@@ -21,14 +21,7 @@
 #   - hooks / skills (Antigravity CLI keeps Agent Skills, Hooks, Subagents)
 
 let
-  # The pinned nixpkgs-antigravity-cli input is a separate nixpkgs eval — it
-  # does NOT inherit `nixpkgs.config.allowUnfree` from the main config, so
-  # import it explicitly with allowUnfree set. (license = unfree on antigravity-cli.)
-  antigravityCliPkgs = import inputs.nixpkgs-antigravity-cli {
-    system = pkgs.system;
-    config.allowUnfree = true;
-  };
-  antigravityCliPackage = antigravityCliPkgs.antigravity-cli;
+  antigravityCliPackage = pkgs-unstable.antigravity-cli;
 in
 {
   home.packages = [ antigravityCliPackage ];
