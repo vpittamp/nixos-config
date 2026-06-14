@@ -204,9 +204,15 @@ in
       firefox = pkgs-unstable.firefox;
       firefox-unwrapped = pkgs-unstable.firefox-unwrapped;
 
-      # Latest lazygit / lazydocker without bumping the main channel
-      lazygit = pkgs-lazygit.lazygit;
-      lazydocker = pkgs-lazygit.lazydocker;
+      # Latest lazygit / lazydocker without bumping the main channel.
+      # Wrap them (and k9s) so `infocmp` (ncurses) is always on their PATH —
+      # otherwise these gocui/tcell TUIs crash on startup when launched from
+      # the systemd/daemon context with a stripped PATH. See
+      # packages/with-terminfo.nix. Wrapping in the overlay means every
+      # reference (package lists + ${pkgs.x}/bin string interps) gets it.
+      lazygit = (import ../packages/with-terminfo.nix { pkgs = prev; }) pkgs-lazygit.lazygit "lazygit";
+      lazydocker = (import ../packages/with-terminfo.nix { pkgs = prev; }) pkgs-lazygit.lazydocker "lazydocker";
+      k9s = (import ../packages/with-terminfo.nix { pkgs = prev; }) prev.k9s "k9s";
       gh-dash = prev.callPackage ../packages/gh-dash.nix { };
       gh-enhance = prev.callPackage ../packages/gh-enhance.nix { };
       diffnav = prev.callPackage ../packages/diffnav.nix { };
