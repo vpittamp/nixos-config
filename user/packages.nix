@@ -32,6 +32,11 @@ let
   gh-enhance = pkgs.callPackage ../packages/gh-enhance.nix { };
   diffnav = pkgs.callPackage ../packages/diffnav.nix { };
 
+  # Wrap terminal TUIs so `infocmp` (ncurses) is always on their PATH; see
+  # packages/with-terminfo.nix for why (daemon/systemd launches get a stripped
+  # PATH and gocui/tcell TUIs crash without infocmp at startup).
+  withTerminfo = import ../packages/with-terminfo.nix { inherit pkgs lib; };
+
   # Herdr terminal multiplexer for AI coding agents, sourced from its flake.
   # Current Codex Nix builds expose the long-running interactive process as
   # codex-raw, so carry a small compatibility patch until upstream recognizes
@@ -58,7 +63,7 @@ let
     ripgrep
     fd
     bat
-    lazydocker
+    (withTerminfo pkgs.lazydocker "lazydocker")
     eza
     direnv
     stow
@@ -157,7 +162,7 @@ let
     git-crypt
     delta
     diff-so-fancy
-    lazygit
+    (withTerminfo pkgs.lazygit "lazygit")
     gh-dash
     gh-enhance
     diffnav

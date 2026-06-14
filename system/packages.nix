@@ -4,6 +4,11 @@
 { pkgs, inputs ? { }, ... }:
 
 let
+  # Wrap terminal TUIs so `infocmp` (ncurses) is always on their PATH; see
+  # packages/with-terminfo.nix for why (daemon/systemd launches get a stripped
+  # PATH and gocui/tcell TUIs crash without infocmp at startup).
+  withTerminfo = import ../packages/with-terminfo.nix { inherit pkgs; };
+
   # Custom packages
   idpbuilder = pkgs.callPackage ../packages/idpbuilder.nix {
     idpbuilderSrc = inputs.idpbuilder-src or null;
@@ -78,7 +83,7 @@ let
     # Version control
     git
     gh
-    lazygit
+    (withTerminfo pkgs.lazygit "lazygit")
     gh-dash
     gh-enhance
     diffnav
@@ -107,7 +112,7 @@ let
   kubernetesTools = with pkgs; [
     kubectl
     kubernetes-helm
-    k9s
+    (withTerminfo pkgs.k9s "k9s")
     argocd
     vcluster
     kind

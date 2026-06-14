@@ -399,6 +399,13 @@ class LaunchService:
         for key in (
             "DBUS_SESSION_BUS_ADDRESS",
             "DISPLAY",
+            # PATH must be forwarded: systemd-run --user launches otherwise
+            # inherit the systemd user manager's stripped-down PATH (just
+            # systemd's own bin), so apps that shell out to helper binaries at
+            # startup (e.g. lazydocker/lazygit -> infocmp from ncurses) crash
+            # with "executable file not found in $PATH". The daemon's own PATH
+            # includes the user + system profiles, so pass it through.
+            "PATH",
             "SWAYSOCK",
             "WAYLAND_DISPLAY",
             "XDG_CURRENT_DESKTOP",
