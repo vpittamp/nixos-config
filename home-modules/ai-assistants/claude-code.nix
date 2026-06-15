@@ -66,14 +66,22 @@ lib.mkIf enableClaudeCode {
         force = true;
       };
 
-      # The claude-code HM module symlinks ~/.claude/settings.json into the
-      # read-only Nix store, so Claude Code's own writes (e.g. `/tui fullscreen`,
-      # theme toggles) fail with EROFS. Suppress the symlink here; the
-      # writableClaudeSettings activation below installs a writable copy of the
-      # same generated content instead. Declarative settings stay the source of
-      # truth (the copy is refreshed on every rebuild); runtime tweaks persist
-      # between rebuilds.
+      # The claude-code HM module symlinks settings.json into the read-only Nix
+      # store, so Claude Code's own writes (e.g. `/tui fullscreen`, theme toggles)
+      # fail with EROFS. Suppress that symlink; the writableClaudeSettings
+      # activation below installs a writable copy of the same generated content
+      # instead. Declarative settings stay the source of truth (the copy is
+      # refreshed on every rebuild); runtime tweaks persist between rebuilds.
+      #
+      # IMPORTANT (nixpkgs 26.11): the module keys this file by its `configDir`,
+      # which now defaults to an ABSOLUTE path ($HOME/.claude). So it declares
+      # home.file."${configDir}/settings.json" (e.g.
+      # "/home/vpittamp/.claude/settings.json"), NOT the relative
+      # ".claude/settings.json". Suppressing only the relative key (as before)
+      # left the absolute-key symlink active — it clobbered the writable copy and
+      # wedged home-manager activation. Suppress BOTH keys.
       ".claude/settings.json".enable = lib.mkForce false;
+      "${config.programs.claude-code.configDir}/settings.json".enable = lib.mkForce false;
 
       # LSP plugin for Claude Code — provides code intelligence via language servers
       # All binaries are Nix-managed and available in PATH

@@ -120,18 +120,15 @@ in
     in
     {
       home-manager = {
-        # Back up (rather than hard-fail on) files HM would clobber. Required
-        # since nixpkgs 26.11: home-manager's programs.claude-code module now
-        # manages ~/.claude/settings.json as a read-only store symlink, and the
-        # `.claude/settings.json".enable = lib.mkForce false` suppression in
-        # ai-assistants/claude-code.nix no longer takes effect. That symlink
-        # collides with the writable copy installed by the writableClaudeSettings
-        # activation, and with backups disabled checkLinkTargets aborts the whole
-        # activation (broke home-manager on thinkpad+ryzen after the 26.11 boot).
-        # With a fixed extension the conflict is moved to <file>.hm-bak (mv
-        # overwrites, so it does not accumulate) and the writable copy is
-        # reinstated post-link as before.
-        backupFileExtension = "hm-bak";
+        # Disable home-manager automatic backups; we manage state with git
+        # instead. Do NOT set a fixed backupFileExtension here: files re-created
+        # as real files every activation (e.g. the writable ~/.claude/settings.json
+        # copy from ai-assistants/claude-code.nix) would clobber the same <file>.<ext>
+        # backup target on the next run — home-manager then refuses ("backup would
+        # be clobbered"), wedging activation on every reboot. Clobbers are fixed at
+        # the source by suppressing the offending managed symlink (see
+        # ai-assistants/claude-code.nix), not by backing it up here.
+        backupFileExtension = null;
         useGlobalPkgs = true;
         useUserPackages = true;
         extraSpecialArgs = {
