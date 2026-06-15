@@ -278,7 +278,24 @@ def dashboard_changed_keys_for_event(event_type: str) -> List[str]:
     if typed_event == "focus.changed":
         return ["focus_state"]
     if typed_event == "window.changed":
-        return ["focus_state", "projects", "tracked_windows"]
+        keys = ["focus_state", "projects", "tracked_windows"]
+        # Window add/remove/move changes per-workspace membership, window
+        # counts, and icon sets — all carried in `outputs`. Refresh `outputs`
+        # for those so the bottom-bar workspace pills stay live instead of
+        # drifting until the next full snapshot (and eventually falling back
+        # to the stale compositor workspace list). Pure focus/title changes
+        # don't touch membership, so they stay lightweight (no 35KB `outputs`
+        # blob shipped on every window focus).
+        normalized = (
+            str(event_type or "")
+            .replace("::", "_")
+            .replace(".", "_")
+            .replace("-", "_")
+            .lower()
+        )
+        if any(token in normalized for token in ("new", "close", "move")):
+            keys.append("outputs")
+        return keys
     if typed_event == "workspace.changed":
         return ["focus_state", "outputs", "projects"]
     if typed_event == "session.changed":

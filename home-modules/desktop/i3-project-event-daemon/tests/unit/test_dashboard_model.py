@@ -649,6 +649,21 @@ def test_dashboard_changed_keys_follow_typed_event_contract() -> None:
     assert dashboard_changed_keys_for_event("dashboard_invalidated") == ["dashboard"]
 
 
+def test_window_membership_changes_refresh_outputs_focus_does_not() -> None:
+    # Window add/remove/move alters per-workspace membership/counts/icons,
+    # which live in `outputs`; the bottom-bar pills must refresh on these.
+    for event_type in ("window::new", "window::close", "window::move"):
+        keys = dashboard_changed_keys_for_event(event_type)
+        assert "outputs" in keys, f"{event_type} should refresh outputs"
+        assert keys[:3] == ["focus_state", "projects", "tracked_windows"]
+    # Pure focus/title changes do not move windows between workspaces, so they
+    # stay lightweight and must NOT ship the full outputs blob.
+    for event_type in ("window::focus", "window::title", "window_changed"):
+        keys = dashboard_changed_keys_for_event(event_type)
+        assert "outputs" not in keys, f"{event_type} should stay lightweight"
+        assert keys == ["focus_state", "projects", "tracked_windows"]
+
+
 def test_advance_dashboard_event_state_updates_generations_by_typed_event() -> None:
     focus_state = advance_dashboard_event_state(
         event_type="focus_changed",
