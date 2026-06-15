@@ -447,6 +447,17 @@ in
         command = "${pkgs.tuigreet}/bin/tuigreet --time --remember --cmd 'sway --unsupported-gpu'";
         user = "greeter";
       };
+      # Autologin on boot: start the Sway session as vpittamp with no password
+      # prompt, so ryzen is reachable remotely after a reboot. The whole remote
+      # stack lives inside the Sway session — Sunshine/Moonlight, WayVNC, the
+      # i3pm daemon, and herdr panel aggregation all need a live session, and
+      # tuigreet on tty1 otherwise requires a physical keyboard. Falls back to
+      # the tuigreet default_session after logout. (Ryzen's disk is unencrypted,
+      # so physical access already implies full data access.)
+      initial_session = {
+        command = "sway --unsupported-gpu";
+        user = "vpittamp";
+      };
     };
   };
 
