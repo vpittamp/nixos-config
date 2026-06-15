@@ -1320,24 +1320,6 @@ ShellRoot {
         return screens[0];
     }
 
-    function workspacesForScreen(screen) {
-        const outputName = screenOutputName(screen);
-        const items = [];
-        const workspaces = arrayOrEmpty(I3.workspaces);
-
-        for (let i = 0; i < workspaces.length; i += 1) {
-            const workspace = workspaces[i];
-            const monitor = workspace && workspace.monitor ? workspace.monitor : null;
-            const workspaceOutput = stringOrEmpty(monitor ? monitor.name : "");
-            if (!outputName || !workspaceOutput || workspaceOutput === outputName) {
-                items.push(workspace);
-            }
-        }
-
-        items.sort((left, right) => Number(left?.num || 0) - Number(right?.num || 0));
-        return items;
-    }
-
     function dashboardWorkspacesForOutput(outputName) {
         const outputs = arrayOrEmpty(dashboard.outputs);
         const target = stringOrEmpty(outputName);
@@ -1386,23 +1368,16 @@ ShellRoot {
         return items;
     }
 
-    function dashboardHasOutput(outputName) {
-        const outputs = arrayOrEmpty(dashboard.outputs);
-        const target = stringOrEmpty(outputName);
-        for (let i = 0; i < outputs.length; i += 1) {
-            if (stringOrEmpty(outputs[i] ? outputs[i].name : "") === target) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     function barWorkspacesForOutput(outputName) {
-        const dashboardWorkspaces = dashboardWorkspacesForOutput(outputName);
-        if (dashboardWorkspaces.length > 0 || dashboardHasOutput(outputName)) {
-            return dashboardWorkspaces;
-        }
-        return workspacesForScreen(findScreenByOutputName(outputName));
+        // Single source of truth: the i3pm daemon snapshot (dashboard.outputs).
+        // The daemon owns the i3ipc connection and now pushes `outputs` live on
+        // every workspace-membership change, so the bar renders purely from it.
+        // No compositor-side fallback (Quickshell's I3.workspaces) — a second,
+        // independently-tracked source could disagree with the daemon and
+        // render phantom or missing workspaces. Before the first snapshot (or
+        // while the daemon is unreachable) this returns [] and the workspace
+        // strip is empty, matching the rest of the daemon-sourced bar.
+        return dashboardWorkspacesForOutput(outputName);
     }
 
     function currentLayoutLabel() {
