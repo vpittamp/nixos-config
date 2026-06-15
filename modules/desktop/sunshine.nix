@@ -354,10 +354,17 @@ in {
       }
     );
 
-    # Add user to required groups for capture
+    # Add user to required groups for capture and input injection.
+    # `services.sunshine.enable` pulls in `hardware.uinput`, which makes
+    # /dev/uinput group-owned by `uinput` (this rule wins over the `input`-group
+    # rule we add for dotool). Without membership here Sunshine can't open
+    # /dev/uinput, so virtual-input creation fails with "Permission denied"
+    # (notably the absolute pointer / touch + pen devices), and the Moonlight
+    # client's mouse doesn't track on the remote desktop.
     users.users.${sunshineUser}.extraGroups = [
       "video"
       "input"
+      "uinput"
     ];
 
     # Environment variables for hardware encoding
