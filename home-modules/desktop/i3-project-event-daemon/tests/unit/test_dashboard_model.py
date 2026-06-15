@@ -461,7 +461,7 @@ def test_validate_dashboard_payload_rejects_duplicate_current_workspace_rows() -
     assert "current_workspace_row_not_unique" in result["issues"]
 
 
-def test_validate_dashboard_payload_rejects_remote_herdr_focus_mismatch() -> None:
+def test_validate_dashboard_payload_warns_on_remote_herdr_focus_mismatch() -> None:
     payload = {
         "schema_version": "i3pm.dashboard.v2",
         "generation": 1,
@@ -494,8 +494,12 @@ def test_validate_dashboard_payload_rejects_remote_herdr_focus_mismatch() -> Non
 
     result = validate_dashboard_payload(payload)
 
-    assert result["ok"] is False
-    assert "remote_herdr_focus_mismatch" in result["issues"]
+    # A remote herdr session focused from its own host (while this host is focused
+    # on a local session) is legitimate — surfaced as a warning, not a fatal
+    # invariant that would blank the dashboard snapshot.
+    assert result["ok"] is True
+    assert "remote_herdr_focus_mismatch" in result["warnings"]
+    assert "remote_herdr_focus_mismatch" not in result["issues"]
 
 
 def test_validate_dashboard_payload_rejects_retired_focus_aliases() -> None:

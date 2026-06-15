@@ -1084,9 +1084,11 @@ def test_dashboard_projects_use_authoritative_focused_window_id(server):
     ]
 
 
-def test_dashboard_invariants_reject_remote_herdr_focus_mismatch(server):
+def test_dashboard_invariants_warn_on_remote_herdr_focus_mismatch(server):
     payload = {
         "schema_version": "i3pm.dashboard.v2",
+        "generation": 1,
+        "snapshot_version": 1,
         "focus_state": {
             "current_session_key": "session-local",
             "current_window_id": 101,
@@ -1097,6 +1099,7 @@ def test_dashboard_invariants_reject_remote_herdr_focus_mismatch(server):
                 "session_key": "session-local",
                 "is_current_window": True,
                 "source": "herdr",
+                "pane_id": "pane-local",
                 "focused": False,
                 "is_current_host": True,
             },
@@ -1104,6 +1107,7 @@ def test_dashboard_invariants_reject_remote_herdr_focus_mismatch(server):
                 "session_key": "session-remote",
                 "is_current_window": False,
                 "source": "herdr",
+                "pane_id": "pane-remote",
                 "focused": True,
                 "is_current_host": False,
             },
@@ -1114,5 +1118,6 @@ def test_dashboard_invariants_reject_remote_herdr_focus_mismatch(server):
 
     result = validate_dashboard_payload(payload)
 
-    assert result["ok"] is False
-    assert "remote_herdr_focus_mismatch" in result["issues"]
+    # Remote-focused-remotely while focused-locally is legitimate: warn, don't fail.
+    assert result["ok"] is True
+    assert "remote_herdr_focus_mismatch" in result["warnings"]

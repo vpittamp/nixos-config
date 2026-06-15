@@ -653,7 +653,14 @@ def validate_dashboard_payload(
     if remote_focused and current_key:
         remote_keys = {str(session.get("session_key") or "").strip() for session in remote_focused}
         if current_key not in remote_keys:
-            issues.append("remote_herdr_focus_mismatch")
+            # Non-fatal: a remote herdr session reports focused=True from ITS OWN
+            # host's herdr (e.g. ryzen's focused pane), which is independent of
+            # this host's current_session_key — the user can be focused on a local
+            # session while a remote session stays focused remotely. Raising this
+            # as a hard invariant blanked the WHOLE dashboard snapshot whenever a
+            # remote agent was focused (e.g. right after a daemon restart), so
+            # surface it as a warning instead of failing the snapshot.
+            warnings.append("remote_herdr_focus_mismatch")
 
     return {
         "ok": not issues,
