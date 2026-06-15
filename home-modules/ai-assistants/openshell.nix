@@ -195,7 +195,14 @@ lib.mkMerge [
     xdg.configFile."openshell/gateways/${gatewayName}/metadata.json".text = gatewayMetadata;
 
     home.activation.openshellRyzenGateway = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      $DRY_RUN_CMD ${ryzenGatewaySync}/bin/openshell-ryzen-sync
+      # Bound this network sync: it runs kubectl against the ryzen cluster, which
+      # blocks indefinitely when ryzen is unreachable or its cluster is still
+      # coming up (e.g. just after a reboot). Without a cap it hangs the whole
+      # home-manager activation past its 5-min timeout, wedging the service into a
+      # kill/retry loop. Non-fatal — the sync is also available on demand as
+      # `openshell-ryzen-sync`.
+      $DRY_RUN_CMD ${pkgs.coreutils}/bin/timeout 30 ${ryzenGatewaySync}/bin/openshell-ryzen-sync \
+        || echo "openshellRyzenGateway: skipped (ryzen unreachable or sync timed out)"
     '';
   })
 ]
