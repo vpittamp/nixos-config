@@ -475,13 +475,20 @@ def test_herdr_spaces_use_sidebar_names_and_single_effective_focus(server):
 
     spaces = build_herdr_spaces(server, snapshot, sessions)
 
-    assert [space["label"] for space in spaces] == ["nixos-config"]
-    assert [space["focused"] for space in spaces] == [True]
-    assert spaces[0]["space_key"] == "herdr:ryzen:workspace:remote-ws"
-    assert spaces[0]["project_name"] == "vpittamp/nixos-config:main"
+    # All workspaces are listed now (idle local ones are not collapsed away when
+    # a remote agent exists). Sidebar/workspace labels are still used.
+    by_ws = {s["workspace_id"]: s for s in spaces}
+    assert set(by_ws) == {"local-ws", "remote-ws"}
+    assert by_ws["local-ws"]["label"] == "main"
+    assert by_ws["remote-ws"]["label"] == "nixos-config"
+    # Single effective focus: both workspaces report focused=True in the input,
+    # but only the one with the focused agent session stays effectively focused.
+    assert [s["workspace_id"] for s in spaces if s["focused"]] == ["remote-ws"]
+    assert by_ws["remote-ws"]["space_key"] == "herdr:ryzen:workspace:remote-ws"
+    assert by_ws["remote-ws"]["project_name"] == "vpittamp/nixos-config:main"
 
 
-def test_herdr_spaces_skip_agentless_local_workspaces_when_remote_agents_exist(server):
+def test_herdr_spaces_keep_agentless_local_workspaces_when_remote_agents_exist(server):
     local_host = server._local_host_alias()
     sessions = [{
         "source": "herdr",
@@ -539,8 +546,12 @@ def test_herdr_spaces_skip_agentless_local_workspaces_when_remote_agents_exist(s
 
     spaces = build_herdr_spaces(server, snapshot, sessions)
 
-    assert [space["space_key"] for space in spaces] == ["herdr:ryzen:workspace:remote-ws"]
-    assert spaces[0]["agent_count"] == 1
+    # Idle local workspaces stay visible even when a remote agent exists
+    # (previously they were collapsed away, so the panel showed only the remote
+    # agent space). All three workspaces are listed.
+    assert {space["workspace_id"] for space in spaces} == {"local-shell", "local-main", "remote-ws"}
+    remote = next(s for s in spaces if s["workspace_id"] == "remote-ws")
+    assert remote["agent_count"] == 1
 
 
 @pytest.mark.asyncio

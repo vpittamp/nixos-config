@@ -2231,24 +2231,12 @@ class HerdrService:
             if not str(space.get("project_name") or "").strip():
                 space["project_name"] = "global"
 
-        has_agent_spaces = any(int(space.get("agent_count", 0) or 0) > 0 for space in spaces.values())
-        if has_agent_spaces:
-            agent_group_keys = {
-                f"{space.get('host_key')}:{str(space.get('repo_key') or '').strip()}"
-                for space in spaces.values()
-                if int(space.get("agent_count", 0) or 0) > 0
-                and str(space.get("repo_key") or "").strip()
-                and str(space.get("checkout_path") or "").strip()
-            }
-            spaces = {
-                key: space
-                for key, space in spaces.items()
-                if int(space.get("agent_count", 0) or 0) > 0
-                or (
-                    not bool(space.get("is_linked_worktree", False))
-                    and f"{space.get('host_key')}:{str(space.get('repo_key') or '').strip()}" in agent_group_keys
-                )
-            }
+        # Show ALL herdr workspaces in the panel (local + remote, agent or idle).
+        # Previously, as soon as ANY space had an agent this collapsed the list to
+        # only agent spaces (+ their repo-group siblings) and dropped every idle
+        # workspace — so the moment a single remote (ryzen) agent appeared, all of
+        # the local-host spaces vanished from the panel. We intentionally keep the
+        # full set so every workspace stays listed.
 
         group_counts: Dict[str, int] = {}
         group_has_parent: Dict[str, bool] = {}

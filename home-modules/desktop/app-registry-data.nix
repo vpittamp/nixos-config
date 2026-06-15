@@ -753,7 +753,7 @@ let
     expected_class = "com.herdr.ryzen";
     preferred_workspace = 37;  # 33 is the local herdr; registry forbids sharing a workspace
     preferred_monitor_role = "primary";
-    icon = iconPath "herdr.svg";
+    icon = iconPath "herdr-ryzen.svg";  # ryzen-tinted Herdr glyph, distinct from local herdr.svg
     nix_package = "inputs.herdr.packages.<system>.default";
     multi_instance = false;
     fallback_behavior = "skip";
