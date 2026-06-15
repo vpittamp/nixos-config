@@ -5848,6 +5848,14 @@ ShellRoot {
         return hostToken(stringOrEmpty(session && session.execution_mode), stringOrEmpty(session && session.host_name), stringOrEmpty(session && session.connection_key));
     }
 
+    function spaceHostToken(space) {
+        return hostToken(
+            stringOrEmpty(space && space.execution_mode),
+            stringOrEmpty(space && (space.host_label || space.host_key)),
+            stringOrEmpty(space && space.connection_key)
+        );
+    }
+
     function sessionHostGroupKey(session) {
         const token = sessionHostToken(session);
         const label = stringOrEmpty(token && token.label).trim().toLowerCase();

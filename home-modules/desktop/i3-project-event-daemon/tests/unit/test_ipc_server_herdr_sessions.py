@@ -424,7 +424,10 @@ def test_herdr_spaces_group_by_host_workspace_and_prioritize_status(server):
     assert remote_space["pane_count"] == 2
     assert remote_space["tab_count"] == 1
     assert remote_space["project_name"] == "PittampalliOrg/workflow-builder:main"
-    assert "focus_target" not in remote_space
+    assert remote_space["focus_target"] == {
+        "method": "herdr.remote.window.focus",
+        "params": {"host": "ryzen", "app_name": "herdr-ryzen"},
+    }
     assert local_space["agent_status"] == "working"
     assert local_space["focus_target"] == {
         "method": "herdr.workspace.focus",
@@ -933,8 +936,63 @@ def test_herdr_remote_worktree_space_remains_focus_only(server):
 
     assert spaces[0]["execution_mode"] == "ssh"
     assert spaces[0]["is_current_host"] is False
-    assert "focus_target" not in spaces[0]
+    # Remote spaces are now clickable but stay focus-only: a focus_target that
+    # just raises the per-host Herdr window, and still NO close_target.
+    assert spaces[0]["focus_target"]["method"] == "herdr.remote.window.focus"
+    assert spaces[0]["focus_target"]["params"]["host"] == "ryzen"
+    assert spaces[0]["focus_target"]["params"]["app_name"] == "herdr-ryzen"
     assert "close_target" not in spaces[0]
+
+
+def test_herdr_spaces_prefer_local_focus_when_both_hosts_report_focused(server):
+    # Each host independently reports focused=True for its own active pane. The
+    # panel must mark the LOCAL space focused, not the remote one (the primary
+    # selection must not depend on upstream session sort order).
+    local = server._local_host_alias()
+    sessions = [{
+        "source": "herdr", "agent": "claude", "agent_status": "working", "focused": True,
+        "herdr_host": local, "host_name": local, "is_current_host": True,
+        "is_remote_herdr": False, "execution_mode": "local",
+        "pane_id": "local-pane", "project_name": "vpittamp/nixos-config:main",
+        "workspace_id": "local-ws",
+    }, {
+        "source": "herdr", "agent": "codex", "agent_status": "working", "focused": True,
+        "herdr_host": "ryzen", "host_name": "ryzen", "is_current_host": False,
+        "is_remote_herdr": True, "execution_mode": "ssh",
+        "pane_id": "remote-pane", "project_name": "PittampalliOrg/stacks:main",
+        "workspace_id": "remote-ws",
+    }]
+    snapshot = {
+        "workspaces": [
+            {"workspace_id": "local-ws", "label": "nixos", "focused": True,
+             "herdr_host": local, "execution_mode": "local", "is_remote_herdr": False},
+            {"workspace_id": "remote-ws", "label": "stacks", "focused": True,
+             "herdr_host": "ryzen", "execution_mode": "ssh", "is_remote_herdr": True},
+        ],
+        "agents": sessions, "panes": [], "tabs": [],
+    }
+    spaces = build_herdr_spaces(server, snapshot, sessions)
+    focused = [s for s in spaces if s["focused"]]
+    assert len(focused) == 1
+    assert focused[0]["space_key"] == f"herdr:{local}:workspace:local-ws"
+    assert focused[0]["is_current_host"] is True
+
+
+@pytest.mark.asyncio
+async def test_herdr_remote_window_focus_raises_per_host_window(server):
+    # A remote space row raises the per-host Herdr window (herdr-<host>) without
+    # focusing a specific remote pane (the proxy can't switch a remote workspace).
+    server._launch_open = AsyncMock(return_value={"success": True, "launch": {"reused_existing": True}})
+    result = await server.herdr_service.remote_window_focus(
+        {"host": "ryzen", "app_name": "herdr-ryzen", "__intent_epoch": 7},
+        launch_open=server._launch_open,
+    )
+    server._launch_open.assert_awaited_once_with({
+        "app_name": "herdr-ryzen", "focus_fast": True, "__intent_epoch": 7,
+    })
+    assert result["success"] is True
+    assert result["host"] == "ryzen"
+    assert result["app_name"] == "herdr-ryzen"
 
 
 @pytest.mark.asyncio

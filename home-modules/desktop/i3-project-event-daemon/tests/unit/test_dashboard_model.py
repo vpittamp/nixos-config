@@ -849,20 +849,25 @@ def test_build_dashboard_snapshot_payload_shapes_herdr_summary() -> None:
     assert payload["herdr"]["spaces"] == [{"id": "space-1", "pane_count": 1}]
 
 
-def test_build_dashboard_snapshot_payload_fails_fast_on_invariant_violation() -> None:
-    with pytest.raises(RuntimeError, match="current_session_key_not_unique"):
-        build_dashboard_snapshot_payload(
-            runtime_snapshot={"current_session_key": "session-missing"},
-            display_snapshot={},
-            projects=[],
-            worktrees=[],
-            sessions=[],
-            focus_state={"current_session_key": "session-missing"},
-            herdr_spaces=[],
-            launches=[],
-            snapshot_version=1,
-            session_generation=1,
-            display_generation=1,
-            focus_generation=1,
-            timestamp=12345,
-        )
+def test_build_dashboard_snapshot_payload_degrades_gracefully_on_invariant_violation() -> None:
+    # An invariant violation must NOT raise / blank the panel. The payload is
+    # returned with dashboard_status='degraded' and the issue recorded in
+    # dashboard_invariants so the panel renders best-effort.
+    payload = build_dashboard_snapshot_payload(
+        runtime_snapshot={"current_session_key": "session-missing"},
+        display_snapshot={},
+        projects=[],
+        worktrees=[],
+        sessions=[],
+        focus_state={"current_session_key": "session-missing"},
+        herdr_spaces=[],
+        launches=[],
+        snapshot_version=1,
+        session_generation=1,
+        display_generation=1,
+        focus_generation=1,
+        timestamp=12345,
+    )
+    assert payload["dashboard_status"] == "degraded"
+    assert payload["dashboard_invariants"]["ok"] is False
+    assert "current_session_key_not_unique" in payload["dashboard_invariants"]["issues"]

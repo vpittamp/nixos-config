@@ -1824,11 +1824,14 @@ class HerdrService:
             or str(params.get("app_name") or "").strip()
             or "herdr"
         )
-        launch_task = asyncio.create_task(launch_open({
-            "app_name": remote_app_name,
-            "__intent_epoch": int(params.get("__intent_epoch") or 0),
-            "focus_fast": True,
-        }))
+        # Defensive: _raise_herdr_window swallows a missing-app RuntimeError (the
+        # generic herdr-<host> name may have no registered app for an arbitrary
+        # remote target) so the remote pane focus itself still succeeds.
+        launch_task = asyncio.create_task(self._raise_herdr_window(
+            remote_app_name,
+            launch_open,
+            intent_epoch=int(params.get("__intent_epoch") or 0),
+        ))
         focus_result = await self.run_proxy_json(target, ["focus", pane_id, "--json"])
         if bool(focus_result.get("success", False)):
             self.bump_remote_generation(target.get("host"))
@@ -1857,6 +1860,37 @@ class HerdrService:
             "ssh_target": str(target.get("ssh_target") or "").strip(),
             "connection_key": str(target.get("connection_key") or "").strip(),
             "herdr": focus_result,
+            "launch": launch_result,
+        }
+
+    async def remote_window_focus(
+        self,
+        params: Dict[str, Any],
+        *,
+        launch_open: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
+    ) -> Dict[str, Any]:
+        """Raise the local Ghostty window hosting a remote host's Herdr (the
+        per-host herdr-<host> app) WITHOUT focusing a specific remote pane.
+
+        Used by remote workspace/space rows: the i3pm herdr proxy only exposes
+        pane focus, so a remote *workspace* can't be precisely switched from here,
+        but the row should still be clickable and bring the ryzen Herdr window
+        forward. Precise pane focus stays on remote agent (session) rows.
+        """
+        host = str(params.get("host") or params.get("herdr_host") or "").strip()
+        app_name = (
+            str(params.get("app_name") or "").strip()
+            or self.herdr_remote_app_name(host)
+        )
+        launch_result = await self._raise_herdr_window(
+            app_name,
+            launch_open,
+            intent_epoch=int(params.get("__intent_epoch") or 0),
+        )
+        return {
+            "success": bool((launch_result or {}).get("success", True)),
+            "host": host,
+            "app_name": app_name,
             "launch": launch_result,
         }
 
@@ -2150,6 +2184,18 @@ class HerdrService:
                     "method": "herdr.workspace.focus",
                     "params": {"workspace_id": workspace_id},
                 }
+            elif is_remote:
+                # Remote workspaces can't be precisely switched from here (the
+                # proxy only exposes pane focus), but make the row clickable by
+                # raising the per-host Herdr window (e.g. the com.herdr.ryzen
+                # Ghostty window). Precise pane focus stays on remote agent rows.
+                focus_target = {
+                    "method": "herdr.remote.window.focus",
+                    "params": {
+                        "host": host_key,
+                        "app_name": self.herdr_remote_app_name(host_key),
+                    },
+                }
             metadata = enrich_worktree(host_key, workspace_id, worktree_metadata_for(workspace))
             ensure_space(
                 host_key=host_key,
@@ -2280,9 +2326,20 @@ class HerdrService:
             normalized_workspace = workspace_id or "unknown"
             focused_session_space_keys.append(f"herdr:{host_key}:workspace:{normalized_workspace}")
 
+        # Prefer a LOCAL focused session's space before any remote one. A remote
+        # host independently reports focused=True for its own active pane, and the
+        # primary selection must not let that override this host's focus (it used
+        # to depend implicitly on upstream session sort order). Fall back to the
+        # first remote focused session, then to any focused space (local-first).
+        candidate_session_spaces = [
+            space_key for space_key in focused_session_space_keys if space_key in spaces
+        ]
         selected_focused_space = next(
-            (space_key for space_key in focused_session_space_keys if space_key in spaces),
-            None,
+            (
+                space_key for space_key in candidate_session_spaces
+                if bool(spaces.get(space_key, {}).get("is_current_host", False))
+            ),
+            next(iter(candidate_session_spaces), None),
         )
         if selected_focused_space is None:
             focused_spaces = [
@@ -2349,6 +2406,12 @@ class HerdrService:
             except json.JSONDecodeError:
                 payload = {}
 
+        # A herdr CLI command can exit 0 while reporting a top-level error object
+        # (e.g. `herdr agent focus <missing>` -> {"error":{...}} with rc 0). Treat
+        # that as failure, mirroring run_socket_json, so the focus/close CLI
+        # fallbacks don't report phantom success.
+        if isinstance(payload.get("error"), dict):
+            payload["success"] = False
         payload.setdefault("success", result.returncode == 0)
         payload.setdefault("returncode", result.returncode)
         payload.setdefault("stdout", stdout)

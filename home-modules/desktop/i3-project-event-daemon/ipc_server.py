@@ -1005,6 +1005,7 @@ class IPCServer:
             "herdr.pane.focus",
             "herdr.pane.close",
             "herdr.remote.pane.focus",
+            "herdr.remote.window.focus",
             "herdr.workspace.focus",
             "herdr.tab.focus",
             "launch.open",
@@ -1057,6 +1058,11 @@ class IPCServer:
                     params,
                     launch_open=self._launch_open,
                     set_focus_overrides=self._set_focus_overrides,
+                )
+            elif method == "herdr.remote.window.focus":
+                result = await self.herdr_service.remote_window_focus(
+                    params,
+                    launch_open=self._launch_open,
                 )
             elif method == "herdr.workspace.focus":
                 result = await self.herdr_service.workspace_focus(

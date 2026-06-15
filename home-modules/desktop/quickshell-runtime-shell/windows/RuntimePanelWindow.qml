@@ -692,6 +692,36 @@ PanelWindow {
                                         font.weight: Font.DemiBold
                                     }
 
+                                    // Host (local vs remote) badge — monogram of the herdr host,
+                                    // local/remote color so each space shows where it lives.
+                                    Rectangle {
+                                        id: spaceHostChip
+                                        readonly property var hostTok: root.spaceHostToken(space)
+                                        Layout.preferredWidth: 16
+                                        Layout.preferredHeight: 14
+                                        Layout.alignment: Qt.AlignVCenter
+                                        radius: 4
+                                        color: spaceHostChip.hostTok.background
+                                        border.color: spaceHostChip.hostTok.border
+                                        border.width: 1
+                                        opacity: herdrSpaceRow.spaceFocused ? 1.0 : 0.85
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: spaceHostChip.hostTok.monogram
+                                            color: spaceHostChip.hostTok.foreground
+                                            font.pixelSize: 9
+                                            font.weight: Font.Bold
+                                        }
+
+                                        MouseArea { id: spaceHostChipMouse; anchors.fill: parent; hoverEnabled: true }
+                                        ToolTip {
+                                            visible: spaceHostChipMouse.containsMouse
+                                            text: (spaceHostChip.hostTok.is_remote ? "remote · " : "local · ") + spaceHostChip.hostTok.label
+                                            delay: 400
+                                        }
+                                    }
+
                                     ColumnLayout {
                                         Layout.fillWidth: true
                                         spacing: 1
@@ -828,7 +858,7 @@ PanelWindow {
                                 currentOverride: root.sessionCurrentOverride(modelData)
                                 interactive: true
                                 compact: true
-                                showHostToken: false
+                                showHostToken: true
                                 showProjectChip: false
                                 showCurrentChip: false
                                 closePending: root.sessionClosePending(modelData)

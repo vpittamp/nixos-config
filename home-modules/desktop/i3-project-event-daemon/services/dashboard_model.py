@@ -497,11 +497,15 @@ def build_dashboard_snapshot_payload(
         schema_version=schema_version,
     )
     payload["dashboard_invariants"] = dashboard_invariants
-    if not bool(dashboard_invariants.get("ok", False)):
-        raise RuntimeError(
-            "dashboard.snapshot invariant violation: "
-            + ",".join(str(issue) for issue in dashboard_invariants.get("issues", []) or [])
-        )
+    # Degrade gracefully — NEVER blank the whole dashboard on an invariant.
+    # Return the payload (with dashboard_invariants embedded) plus a status flag
+    # so the panel renders best-effort; the QuickShell client already surfaces
+    # the issues as a warning (checkDashboardFocusInvariants). Previously any
+    # single tripped invariant (e.g. a focused remote herdr session after a
+    # daemon restart) raised here and blanked the entire panel.
+    payload["dashboard_status"] = (
+        "ok" if bool(dashboard_invariants.get("ok", False)) else "degraded"
+    )
     return payload
 
 
