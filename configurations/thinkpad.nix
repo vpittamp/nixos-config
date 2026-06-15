@@ -477,10 +477,17 @@ in
   # Swap configured in hardware/thinkpad.nix (uses dedicated partition)
 
   # ========== HIBERNATION SUPPORT ==========
-  # Full suspend-to-disk (not available on Hetzner VM or WSL2)
-  boot.resumeDevice = "/var/lib/swapfile";
-  # Note: After installation, get swap offset with: filefrag -v /var/lib/swapfile
-  # Then add: boot.kernelParams = [ "resume_offset=XXXXX" ];
+  # Full suspend-to-disk. Resume from the dedicated swap PARTITION (same device
+  # as swapDevices in hardware/thinkpad.nix). It is 34 GiB > 30 GiB RAM, so it
+  # can hold a full hibernation image, and needs no resume_offset.
+  #
+  # resumeDevice MUST be a block device. A file path here (the old
+  # "/var/lib/swapfile") makes newer systemd's hibernate-resume generator emit
+  # `resume=/var/lib/swapfile` and then wait forever for that non-existent
+  # device — "A start job is running for /var/lib/swapfile (… / no limit)" —
+  # which hangs boot on 26.11. The stale /var/lib/swapfile file is unused (it is
+  # not in swapDevices) and can be deleted to reclaim 16 GiB.
+  boot.resumeDevice = "/dev/disk/by-uuid/2d05acef-3fb1-4264-be73-8a71fcaeab1d";
 
   # Memory management tweaks
   boot.kernel.sysctl = {
