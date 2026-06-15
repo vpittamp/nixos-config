@@ -11,7 +11,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 from .dashboard_model import (
     DASHBOARD_EVENT_SCHEMA_VERSION,
     DASHBOARD_SCHEMA_VERSION,
-    advance_dashboard_event_state,
+    advance_dashboard_event_state_for_batch,
     build_dashboard_snapshot_payload,
     dashboard_event_notification,
     dashboard_event_payload_from_snapshot,
@@ -228,10 +228,22 @@ class DashboardService:
             schema_version=self.schema_version,
         )
 
-    async def notify_state_change(self, event_type: str = "dashboard_invalidated") -> None:
-        """Notify subscribed clients with a typed dashboard event."""
-        event_state = advance_dashboard_event_state(
-            event_type=event_type,
+    async def notify_state_change(self, event_type="dashboard_invalidated") -> None:
+        """Notify subscribed clients with a typed dashboard event.
+
+        `event_type` may be a single event string or an iterable of event types
+        coalesced into one notification. For a batch, the emitted delta is the
+        lossless union of every event's changed keys and generation bumps, so a
+        membership change (e.g. window::close / workspace::empty) batched with a
+        focus switch still ships `outputs` instead of being downgraded to a
+        focus-only delta.
+        """
+        if isinstance(event_type, str):
+            event_types = [event_type]
+        else:
+            event_types = [str(item) for item in event_type] or ["dashboard_invalidated"]
+        event_state = advance_dashboard_event_state_for_batch(
+            event_types=event_types,
             snapshot_version=self.snapshot_version,
             session_generation=self.session_generation,
             display_generation=self.display_generation,

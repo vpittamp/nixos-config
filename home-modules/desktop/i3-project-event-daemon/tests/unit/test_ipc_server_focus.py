@@ -183,10 +183,10 @@ async def test_window_action_does_not_invalidate_dashboard_on_failure(server):
 @pytest.mark.asyncio
 async def test_dashboard_notifications_coalesce_while_fanout_is_active(server):
     blocker = asyncio.Event()
-    calls: list[str] = []
+    calls: list = []
 
-    async def notify(event_type: str) -> None:
-        calls.append(event_type)
+    async def notify(event_types) -> None:
+        calls.append(event_types)
         if len(calls) == 1:
             await blocker.wait()
 
@@ -205,7 +205,10 @@ async def test_dashboard_notifications_coalesce_while_fanout_is_active(server):
         if not task or task.done():
             break
 
-    assert calls == ["focus_changed"]
+    # Rapid identical schedules still coalesce into a single drained batch; the
+    # drain now hands the whole pending set to notify_state_change (lossless
+    # union) rather than one collapsed representative type.
+    assert calls == [{"focus_changed"}]
 
 
 def test_coalesced_dashboard_event_type_prefers_broadest_change(server):

@@ -110,7 +110,14 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
       let snapshotInFlight = false;
       let snapshotQueued = false;
 
-      const emitSnapshot = async (): Promise<void> => {
+      // resetBaseline adopts the freshly-fetched snapshot's generation as the
+      // new high-water mark instead of max()-ing against the prior one. This is
+      // required after a daemon restart: the daemon's generation counter resets
+      // low, and a stale-high lastSeenGeneration would make the event loop below
+      // drop every post-restart delta as "already seen", freezing the bar/panel
+      // until quickshell itself restarts. A reconnect's snapshot is always the
+      // authoritative current state, so its generation is the correct baseline.
+      const emitSnapshot = async (resetBaseline = false): Promise<void> => {
         if (snapshotInFlight) {
           snapshotQueued = true;
           return;
@@ -132,7 +139,9 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
 
             const generation = Number(snapshot.snapshot_version ?? -1);
             if (Number.isFinite(generation)) {
-              lastSeenGeneration = Math.max(lastSeenGeneration, generation);
+              lastSeenGeneration = resetBaseline
+                ? generation
+                : Math.max(lastSeenGeneration, generation);
             }
             currentSnapshot = snapshot;
 
@@ -149,7 +158,9 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
       try {
         await snapshotClient.connect();
         await subscriptionClient.connect();
-        await emitSnapshot();
+        // Reconnect (or first connect): adopt the daemon's current generation as
+        // the baseline so a restarted daemon's low generation isn't rejected.
+        await emitSnapshot(true);
 
         for await (const event of subscriptionClient.subscribeToStateChanges()) {
           const generation = Number(event.generation ?? event.snapshot_version ?? -1);

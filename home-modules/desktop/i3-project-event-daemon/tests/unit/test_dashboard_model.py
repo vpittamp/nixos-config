@@ -664,6 +664,57 @@ def test_window_membership_changes_refresh_outputs_focus_does_not() -> None:
         assert keys == ["focus_state", "projects", "tracked_windows"]
 
 
+def test_coalesced_batch_unions_changed_keys_so_membership_still_ships_outputs() -> None:
+    # The transient-pill bug: a window emptying a workspace (window::close +
+    # workspace::empty) coalesced with the focus switch away from it. Collapsing
+    # to one representative ("focus_changed") shipped only ["focus_state"], so
+    # `outputs` never refreshed and the emptied pill lingered. The union must
+    # keep every affected key.
+    keys = dashboard_model.dashboard_changed_keys_for_events(
+        ["window::close", "workspace::empty", "focus_changed"]
+    )
+    assert "outputs" in keys
+    assert "focus_state" in keys
+    # Order-stable union, first-seen wins.
+    assert keys[0] == "focus_state"
+
+
+def test_advance_batch_bumps_every_affected_generation() -> None:
+    state = dashboard_model.advance_dashboard_event_state_for_batch(
+        event_types=["window::close", "workspace::empty", "agent_session_changed"],
+        snapshot_version=10,
+        session_generation=20,
+        display_generation=30,
+        focus_generation=40,
+    )
+    # Union of keys: membership outputs + session keys all present.
+    assert "outputs" in state["changed_keys"]
+    assert "active_ai_sessions" in state["changed_keys"]
+    # Union of generation bumps: a session event bumps session_generation AND
+    # the membership/session events bump focus_generation; display untouched.
+    assert state["session_generation"] == 21
+    assert state["focus_generation"] == 41
+    assert state["display_generation"] == 30
+    assert state["snapshot_version"] == 11
+
+
+def test_single_event_batch_matches_legacy_per_event_behavior() -> None:
+    # advance_dashboard_event_state must remain a thin wrapper: a one-event batch
+    # reduces exactly to the prior per-event result.
+    single = advance_dashboard_event_state(
+        event_type="window::move",
+        snapshot_version=1,
+        session_generation=2,
+        display_generation=3,
+        focus_generation=4,
+    )
+    assert single["event_type"] == "window.changed"
+    assert single["changed_keys"] == ["focus_state", "projects", "tracked_windows", "outputs"]
+    assert single["focus_generation"] == 5
+    assert single["session_generation"] == 2
+    assert single["display_generation"] == 3
+
+
 def test_advance_dashboard_event_state_updates_generations_by_typed_event() -> None:
     focus_state = advance_dashboard_event_state(
         event_type="focus_changed",

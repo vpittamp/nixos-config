@@ -3123,7 +3123,12 @@ class IPCServer:
         while self._dashboard_notify_pending:
             pending = set(self._dashboard_notify_pending)
             self._dashboard_notify_pending.clear()
-            await self.notify_state_change(self._coalesced_dashboard_event_type(pending))
+            # Pass the whole batch so the delta is the lossless union of every
+            # pending event's changed keys. Collapsing to a single representative
+            # type dropped membership updates (e.g. window::close coalesced with
+            # a focus switch downgraded to focus_changed, never shipping outputs,
+            # so an emptied workspace pill lingered until the next change).
+            await self.notify_state_change(pending)
 
     async def _subscribe_state_changes(self, params: Dict[str, Any], writer: asyncio.StreamWriter) -> Dict[str, Any]:
         """Subscribe to state change notifications (Feature 123).

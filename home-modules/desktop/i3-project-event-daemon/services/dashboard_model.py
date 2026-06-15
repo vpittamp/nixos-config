@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Tuple
 
 
 DASHBOARD_SCHEMA_VERSION = "i3pm.dashboard.v2"
@@ -315,6 +315,42 @@ def dashboard_changed_keys_for_event(event_type: str) -> List[str]:
     return ["dashboard"]
 
 
+def dashboard_changed_keys_for_events(event_types: Iterable[str]) -> List[str]:
+    """Union of changed keys across a coalesced batch of events (order-stable).
+
+    Coalescing several pending invalidations into one notification must not drop
+    any consumer's update. Collapsing a batch to a single representative event
+    (e.g. a window::close + workspace::empty + focus switch all collapsing to
+    "focus_changed") would ship only ["focus_state"] and leave `outputs` stale —
+    the emptied workspace pill would linger until the next membership change.
+    Returning the union keeps every affected key in the delta.
+    """
+    union: List[str] = []
+    for event_type in event_types:
+        for key in dashboard_changed_keys_for_event(event_type):
+            if key not in union:
+                union.append(key)
+    return union or ["dashboard"]
+
+
+def _batch_representative_event(event_types: List[str]) -> str:
+    """Pick the raw event that best represents a coalesced batch.
+
+    A full invalidation dominates; otherwise prefer the event whose typed delta
+    carries the most keys, so the envelope's method/type reflect the heaviest
+    change. (Correctness no longer depends on this choice — changed_keys and the
+    generation bumps are unioned across the whole batch — it only shapes the
+    human-facing event_type.)
+    """
+    for event_type in event_types:
+        if dashboard_event_type_for_state_change(event_type) == "dashboard.invalidated":
+            return event_type
+    return max(
+        event_types,
+        key=lambda event_type: (len(dashboard_changed_keys_for_event(event_type)), event_type),
+    )
+
+
 def advance_dashboard_event_state(
     *,
     event_type: str,
@@ -324,34 +360,69 @@ def advance_dashboard_event_state(
     focus_generation: int,
 ) -> Dict[str, Any]:
     """Advance dashboard generations for one typed state-change event."""
-    normalized_type = str(event_type or "dashboard_invalidated")
-    typed_event_type = dashboard_event_type_for_state_change(normalized_type)
-    changed_keys = dashboard_changed_keys_for_event(normalized_type)
+    return advance_dashboard_event_state_for_batch(
+        event_types=[str(event_type or "dashboard_invalidated")],
+        snapshot_version=snapshot_version,
+        session_generation=session_generation,
+        display_generation=display_generation,
+        focus_generation=focus_generation,
+    )
+
+
+def advance_dashboard_event_state_for_batch(
+    *,
+    event_types: Iterable[str],
+    snapshot_version: int,
+    session_generation: int,
+    display_generation: int,
+    focus_generation: int,
+) -> Dict[str, Any]:
+    """Advance dashboard generations for a coalesced batch of events.
+
+    changed_keys is the union of every pending event's keys, and each generation
+    counter is bumped if ANY event in the batch would bump it — so coalescing is
+    lossless. A single-event batch reduces exactly to the prior per-event
+    behaviour.
+    """
+    types = [str(event_type or "dashboard_invalidated") for event_type in event_types]
+    if not types:
+        types = ["dashboard_invalidated"]
+    typed_events = [dashboard_event_type_for_state_change(event_type) for event_type in types]
+    changed_keys = dashboard_changed_keys_for_events(types)
+    representative = _batch_representative_event(types)
+    typed_representative = dashboard_event_type_for_state_change(representative)
+
     next_snapshot_version = int(snapshot_version or 0) + 1
     next_session_generation = int(session_generation or 0)
     next_display_generation = int(display_generation or 0)
     next_focus_generation = int(focus_generation or 0)
-    if typed_event_type in {"session.changed", "herdr.changed"}:
+    if any(typed in {"session.changed", "herdr.changed"} for typed in typed_events):
         next_session_generation += 1
-    if typed_event_type in {
-        "focus.changed",
-        "window.changed",
-        "workspace.changed",
-        "session.changed",
-        "herdr.changed",
-    }:
+    if any(
+        typed in {
+            "focus.changed",
+            "window.changed",
+            "workspace.changed",
+            "session.changed",
+            "herdr.changed",
+        }
+        for typed in typed_events
+    ):
         next_focus_generation += 1
-    if typed_event_type == "display.changed":
+    if any(typed == "display.changed" for typed in typed_events):
         next_display_generation += 1
     return {
-        "type": normalized_type,
-        "event_type": typed_event_type,
+        "type": representative,
+        "event_type": typed_representative,
         "changed_keys": changed_keys,
         "snapshot_version": next_snapshot_version,
         "session_generation": next_session_generation,
         "display_generation": next_display_generation,
         "focus_generation": next_focus_generation,
-        "invalidate_worktree_cache": normalized_type.startswith("project") or normalized_type.startswith("worktree"),
+        "invalidate_worktree_cache": any(
+            event_type.startswith("project") or event_type.startswith("worktree")
+            for event_type in types
+        ),
     }
 
 
