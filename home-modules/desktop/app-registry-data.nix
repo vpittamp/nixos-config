@@ -47,6 +47,18 @@ let
   # Feature 125: Pass hostName for host-specific parameterization
   pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib assetsPackage hostName; };
   pwas = pwaSitesConfig.pwaSites;
+
+  # Per-instance Herdr window identity. Each herdr instance (the local server,
+  # and one per remote host attached via `herdr --remote`) runs as its OWN
+  # Ghostty window tagged with a unique GTK app-id (`--class`). The i3pm daemon
+  # focuses the correct window per AI-session row by that app-id, since Ghostty
+  # native tabs are invisible to sway and cannot be switched externally.
+  # Token must be a valid GTK app-id element: lowercase, dots -> underscores.
+  herdrHostToken =
+    let h = builtins.replaceStrings [ "." ] [ "_" ] (lib.toLower hostName);
+    in if h == "" then "local" else h;
+  herdrLocalClass = "com.herdr.${herdrHostToken}";
+
   # Validation helper: check for dangerous characters
   validateParameters = params:
     if builtins.match ".*[;|&`].*" params != null then
@@ -612,22 +624,24 @@ let
       description = "Open-source AI agent with desktop interface";
     })
 
-    # WS33: Herdr Agent Multiplexer
+    # WS33: Herdr Agent Multiplexer (LOCAL instance — attaches this host's herdr server)
+    # Launched as its own Ghostty window with a per-host GTK app-id so the daemon
+    # can focus THIS window (vs the remote herdr-<host> windows) for local rows.
     (mkApp {
       name = "herdr";
-      display_name = "Herdr";
+      display_name = "Herdr (local)";
       command = "ghostty";
-      parameters = if hostName == "thinkpad" then "-e herdr --remote ryzen --remote-keybindings local" else "-e herdr";
+      parameters = "--class=${herdrLocalClass} --title=herdr:${herdrHostToken} -e herdr";
       scope = "global";
-      expected_class = "com.mitchellh.ghostty";
+      expected_class = herdrLocalClass;
       preferred_workspace = 33;
       preferred_monitor_role = "primary";
       icon = iconPath "herdr.svg";
       nix_package = "inputs.herdr.packages.<system>.default";
       multi_instance = false;
       fallback_behavior = "skip";
-      aliases = [ "agent-mux" "agent-multiplexer" "ai-multiplexer" ];
-      description = "Terminal workspace manager for AI coding agents";
+      aliases = [ "agent-mux" "agent-multiplexer" "ai-multiplexer" "herdr-local" ];
+      description = "Terminal workspace manager for AI coding agents (local server)";
     })
 
     # WS12: Remote Access (Primary: remmina)
@@ -726,6 +740,26 @@ let
     })
 
   ]
+  # WS33: Herdr Agent Multiplexer (REMOTE ryzen instance, thinkpad only).
+  # Its own Ghostty window with app-id com.herdr.ryzen so the daemon focuses
+  # THIS window for ryzen rows (vs the local com.herdr.thinkpad window).
+  # Daemon mapping: remote rows with herdr_host=ryzen -> app "herdr-ryzen".
+  ++ lib.optional (hostName == "thinkpad") (mkApp {
+    name = "herdr-ryzen";
+    display_name = "Herdr (ryzen)";
+    command = "ghostty";
+    parameters = "--class=com.herdr.ryzen --title=herdr:ryzen -e herdr --remote ryzen --remote-keybindings local";
+    scope = "global";
+    expected_class = "com.herdr.ryzen";
+    preferred_workspace = 37;  # 33 is the local herdr; registry forbids sharing a workspace
+    preferred_monitor_role = "primary";
+    icon = iconPath "herdr.svg";
+    nix_package = "inputs.herdr.packages.<system>.default";
+    multi_instance = false;
+    fallback_behavior = "skip";
+    aliases = [ "herdr-remote" "agent-mux-ryzen" "ryzen-herdr" ];
+    description = "Terminal workspace manager attached to ryzen's herdr server over SSH";
+  })
   ++ lib.optional (hostName == "thinkpad") (mkApp {
     name = "ryzen-desktop";
     display_name = "Ryzen Desktop";

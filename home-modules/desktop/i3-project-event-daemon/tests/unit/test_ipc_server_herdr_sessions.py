@@ -1038,7 +1038,7 @@ async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
             "host": "ryzen",
             "ssh_target": "ryzen",
             "connection_key": "vpittamp@ryzen:22",
-            "app_name": "herdr",
+            "app_name": "herdr-ryzen",
         },
     }
     assert remote_row["close_target"] == {}
@@ -1219,7 +1219,7 @@ async def test_herdr_remote_pane_focus_switches_pane_then_reuses_herdr_app(serve
 
     assert calls == [(target, ["focus", "remote-pane", "--json"])]
     server._launch_open.assert_awaited_once_with({
-        "app_name": "herdr",
+        "app_name": "herdr-ryzen",
         "__intent_epoch": 12,
         "focus_fast": True,
     })
@@ -1309,7 +1309,7 @@ async def test_herdr_remote_pane_focus_updates_cached_remote_rows(server, monkey
     remote_sessions = server.herdr_service.snapshot_cache["remote_snapshots"][0]["sessions"]
     assert result["success"] is True
     server._launch_open.assert_awaited_once_with({
-        "app_name": "herdr",
+        "app_name": "herdr-ryzen",
         "__intent_epoch": 0,
         "focus_fast": True,
     })

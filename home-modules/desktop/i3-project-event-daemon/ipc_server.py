@@ -1046,7 +1046,10 @@ class IPCServer:
             elif method == "herdr.proxy.pane.focus":
                 result = await self.herdr_service.proxy_pane_focus(params)
             elif method == "herdr.pane.focus":
-                result = await self.herdr_service.pane_focus(params)
+                result = await self.herdr_service.pane_focus(
+                    params,
+                    launch_open=self._launch_open,
+                )
             elif method == "herdr.pane.close":
                 result = await self.herdr_service.pane_close(params)
             elif method == "herdr.remote.pane.focus":
@@ -1056,9 +1059,15 @@ class IPCServer:
                     set_focus_overrides=self._set_focus_overrides,
                 )
             elif method == "herdr.workspace.focus":
-                result = await self.herdr_service.workspace_focus(params)
+                result = await self.herdr_service.workspace_focus(
+                    params,
+                    launch_open=self._launch_open,
+                )
             elif method == "herdr.tab.focus":
-                result = await self.herdr_service.tab_focus(params)
+                result = await self.herdr_service.tab_focus(
+                    params,
+                    launch_open=self._launch_open,
+                )
             elif method == "display.snapshot":
                 result = await self.display_service.snapshot()
             elif method == "display.apply":

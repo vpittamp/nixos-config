@@ -135,6 +135,53 @@ class HerdrService:
     def _default_normalize_connection_key(value: str) -> str:
         return str(value or "").strip().lower()
 
+    # ------------------------------------------------------------------
+    # Per-instance Herdr window routing
+    #
+    # Each herdr instance runs as its own Ghostty window with a unique GTK
+    # app-id (`com.herdr.<host>`), registered as app "herdr" (local) or
+    # "herdr-<host>" (remote). Focusing an AI-session row must raise the
+    # Ghostty window for that row's host, because Ghostty native tabs are
+    # invisible to sway and cannot be switched externally. We reuse
+    # launch.open (which focuses an existing single-instance window by
+    # app-id, or launches it) keyed on the per-instance app name.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _sanitize_host_token(host: str) -> str:
+        """Match the app-registry GTK app-id token (lowercase, dots -> '_')."""
+        token = str(host or "").strip().lower().replace(".", "_")
+        return re.sub(r"[^a-z0-9_-]+", "", token)
+
+    @staticmethod
+    def herdr_local_app_name() -> str:
+        """Registry app name for this host's local herdr window."""
+        return "herdr"
+
+    def herdr_remote_app_name(self, host: str) -> str:
+        """Registry app name for the Ghostty window attached to ``host``'s herdr."""
+        token = self._sanitize_host_token(host)
+        return f"herdr-{token}" if token else "herdr"
+
+    async def _raise_herdr_window(
+        self,
+        app_name: str,
+        launch_open: Optional[Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]],
+        *,
+        intent_epoch: int = 0,
+    ) -> Dict[str, Any]:
+        """Focus (or launch) the Ghostty window hosting a herdr instance."""
+        if launch_open is None or not app_name:
+            return {}
+        try:
+            return await launch_open({
+                "app_name": app_name,
+                "focus_fast": True,
+                "__intent_epoch": int(intent_epoch or 0),
+            })
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("herdr window raise failed for %s: %s", app_name, exc)
+            return {"success": False, "error": str(exc)}
+
     def configured_remote_targets(self) -> List[Dict[str, str]]:
         """Return daemon-configured remote Herdr targets for merged snapshots."""
         if self._load_remote_targets is None:
@@ -469,7 +516,7 @@ class HerdrService:
                     "host": host_key,
                     "ssh_target": ssh_target,
                     "connection_key": connection_key,
-                    "app_name": "herdr",
+                    "app_name": self.herdr_remote_app_name(host_key),
                 },
             } if pane_id else {},
             "close_target": {},
@@ -1176,7 +1223,7 @@ class HerdrService:
                     "host": host_key,
                     "ssh_target": ssh_target,
                     "connection_key": normalize_connection_key(connection_key),
-                    "app_name": "herdr",
+                    "app_name": self.herdr_remote_app_name(host_key),
                 },
             } if is_remote else ({
                 "method": "herdr.pane.focus",
@@ -1622,11 +1669,25 @@ class HerdrService:
         ))
         return self.store_snapshot(snapshot, now=now)
 
-    async def pane_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Focus a local Herdr pane and invalidate local Herdr state."""
+    async def pane_focus(
+        self,
+        params: Dict[str, Any],
+        *,
+        launch_open: Optional[Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]] = None,
+    ) -> Dict[str, Any]:
+        """Focus a local Herdr pane, raise its Ghostty window, invalidate state."""
         pane_id = str(params.get("pane_id") or "").strip()
         if not pane_id:
             raise ValueError("pane_id is required")
+        raise_task = (
+            asyncio.create_task(self._raise_herdr_window(
+                self.herdr_local_app_name(),
+                launch_open,
+                intent_epoch=int(params.get("__intent_epoch") or 0),
+            ))
+            if launch_open is not None
+            else None
+        )
         result = await self.run_socket_json(
             method="agent.focus",
             params={"target": pane_id},
@@ -1636,7 +1697,13 @@ class HerdrService:
         if bool(result.get("success", False)):
             self.bump_local_generation()
             self.invalidate_snapshot_cache()
-        return {"success": bool(result.get("success", False)), "pane_id": pane_id, "herdr": result}
+        launch_result = await raise_task if raise_task is not None else {}
+        return {
+            "success": bool(result.get("success", False)),
+            "pane_id": pane_id,
+            "herdr": result,
+            "launch": launch_result,
+        }
 
     async def pane_close(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Close a local Herdr pane and invalidate local Herdr state."""
@@ -1654,11 +1721,25 @@ class HerdrService:
         self.invalidate_snapshot_cache()
         return {"success": bool(result.get("success", False)), "pane_id": pane_id, "herdr": result}
 
-    async def workspace_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Focus a local Herdr workspace and invalidate local Herdr state."""
+    async def workspace_focus(
+        self,
+        params: Dict[str, Any],
+        *,
+        launch_open: Optional[Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]] = None,
+    ) -> Dict[str, Any]:
+        """Focus a local Herdr workspace, raise its Ghostty window, invalidate state."""
         workspace_id = str(params.get("workspace_id") or "").strip()
         if not workspace_id:
             raise ValueError("workspace_id is required")
+        raise_task = (
+            asyncio.create_task(self._raise_herdr_window(
+                self.herdr_local_app_name(),
+                launch_open,
+                intent_epoch=int(params.get("__intent_epoch") or 0),
+            ))
+            if launch_open is not None
+            else None
+        )
         result = await self.run_socket_json(
             method="workspace.focus",
             params={"workspace_id": workspace_id},
@@ -1668,17 +1749,33 @@ class HerdrService:
         if bool(result.get("success", False)):
             self.bump_local_generation()
             self.invalidate_snapshot_cache()
+        launch_result = await raise_task if raise_task is not None else {}
         return {
             "success": bool(result.get("success", False)),
             "workspace_id": workspace_id,
             "herdr": result,
+            "launch": launch_result,
         }
 
-    async def tab_focus(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Focus a local Herdr tab and invalidate local Herdr state."""
+    async def tab_focus(
+        self,
+        params: Dict[str, Any],
+        *,
+        launch_open: Optional[Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]] = None,
+    ) -> Dict[str, Any]:
+        """Focus a local Herdr tab, raise its Ghostty window, invalidate state."""
         tab_id = str(params.get("tab_id") or "").strip()
         if not tab_id:
             raise ValueError("tab_id is required")
+        raise_task = (
+            asyncio.create_task(self._raise_herdr_window(
+                self.herdr_local_app_name(),
+                launch_open,
+                intent_epoch=int(params.get("__intent_epoch") or 0),
+            ))
+            if launch_open is not None
+            else None
+        )
         result = await self.run_socket_json(
             method="tab.focus",
             params={"tab_id": tab_id},
@@ -1688,7 +1785,13 @@ class HerdrService:
         if bool(result.get("success", False)):
             self.bump_local_generation()
             self.invalidate_snapshot_cache()
-        return {"success": bool(result.get("success", False)), "tab_id": tab_id, "herdr": result}
+        launch_result = await raise_task if raise_task is not None else {}
+        return {
+            "success": bool(result.get("success", False)),
+            "tab_id": tab_id,
+            "herdr": result,
+            "launch": launch_result,
+        }
 
     async def remote_pane_focus(
         self,
@@ -1713,8 +1816,16 @@ class HerdrService:
             parse_remote_target=parse_remote_target,
             normalize_connection_key=normalize_key,
         )
+        # Raise the Ghostty window attached to THIS remote host (e.g. herdr-ryzen),
+        # not the generic local herdr window — so the panel jumps to the correct
+        # instance. Falls back to the row-supplied app_name, then plain "herdr".
+        remote_app_name = (
+            self.herdr_remote_app_name(str(target.get("host") or ""))
+            or str(params.get("app_name") or "").strip()
+            or "herdr"
+        )
         launch_task = asyncio.create_task(launch_open({
-            "app_name": str(params.get("app_name") or "herdr").strip() or "herdr",
+            "app_name": remote_app_name,
             "__intent_epoch": int(params.get("__intent_epoch") or 0),
             "focus_fast": True,
         }))

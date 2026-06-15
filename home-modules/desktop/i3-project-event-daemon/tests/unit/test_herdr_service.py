@@ -236,7 +236,7 @@ async def test_herdr_service_remote_proxy_event_payload_updates_cached_remote_se
             "host": "ryzen",
             "ssh_target": "ryzen",
             "connection_key": "vpittamp@ryzen:22",
-            "app_name": "herdr",
+            "app_name": "herdr-ryzen",
         },
     }
     assert remote_session["close_target"] == {}
@@ -932,7 +932,7 @@ def test_herdr_service_normalizes_local_and_remote_sessions(monkeypatch):
             "host": "ryzen",
             "ssh_target": "ryzen",
             "connection_key": "vpittamp@ryzen:22",
-            "app_name": "herdr",
+            "app_name": "herdr-ryzen",
         },
     }
 
@@ -1495,6 +1495,54 @@ async def test_herdr_service_local_pane_actions_own_generations_and_cache(monkey
 
 
 @pytest.mark.asyncio
+async def test_herdr_service_local_focus_raises_local_herdr_window(monkeypatch):
+    """Local pane/tab/workspace focus must raise the local 'herdr' Ghostty window."""
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+
+    async def fake_run_socket_json(*, method, params=None, timeout=0.5):
+        return {"success": True, "socket": True}
+
+    monkeypatch.setattr(service, "run_socket_json", fake_run_socket_json)
+
+    launch_calls = []
+
+    async def fake_launch_open(payload):
+        launch_calls.append(payload)
+        return {"success": True, "reused_existing": True}
+
+    pane_result = await service.pane_focus(
+        {"pane_id": "pane-a", "__intent_epoch": 3}, launch_open=fake_launch_open
+    )
+    await service.tab_focus({"tab_id": "tab-a"}, launch_open=fake_launch_open)
+    await service.workspace_focus({"workspace_id": "ws-a"}, launch_open=fake_launch_open)
+
+    # Every local focus targets the single local "herdr" registry app (not a
+    # remote herdr-<host> window), and threads the user-intent epoch through.
+    assert launch_calls == [
+        {"app_name": "herdr", "focus_fast": True, "__intent_epoch": 3},
+        {"app_name": "herdr", "focus_fast": True, "__intent_epoch": 0},
+        {"app_name": "herdr", "focus_fast": True, "__intent_epoch": 0},
+    ]
+    assert pane_result["launch"] == {"success": True, "reused_existing": True}
+
+
+def test_herdr_service_remote_app_name_is_per_host():
+    """Remote window app name maps deterministically from herdr_host."""
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    assert service.herdr_local_app_name() == "herdr"
+    assert service.herdr_remote_app_name("ryzen") == "herdr-ryzen"
+    assert service.herdr_remote_app_name("Ryzen") == "herdr-ryzen"
+    assert service.herdr_remote_app_name("host.example") == "herdr-host_example"
+    assert service.herdr_remote_app_name("") == "herdr"
+
+
+@pytest.mark.asyncio
 async def test_herdr_service_local_focus_falls_back_to_cli_when_socket_unavailable(monkeypatch):
     service = HerdrService(
         notify_state_change=lambda event_type: asyncio.sleep(0),
@@ -1584,7 +1632,7 @@ async def test_herdr_service_remote_pane_focus_owns_transport_cache_and_launch(m
     assert proxy_calls == [(target, ["focus", "remote-b", "--json"])]
     assert action_order.index("launch") < action_order.index("proxy-end")
     assert launch_calls == [{
-        "app_name": "herdr",
+        "app_name": "herdr-ryzen",
         "__intent_epoch": 9,
         "focus_fast": True,
     }]
