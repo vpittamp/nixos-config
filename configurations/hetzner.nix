@@ -335,7 +335,7 @@
   };
 
   # Ensure user is in required groups
-  users.users.vpittamp.extraGroups = lib.mkForce [ "wheel" "networkmanager" "audio" "video" "input" "docker" "libvirtd" ];
+  users.users.vpittamp.extraGroups = lib.mkForce [ "wheel" "networkmanager" "audio" "video" "input" "docker" ];
 
   # ========== TAILSCALE ==========
   services.tailscale = {

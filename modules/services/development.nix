@@ -10,19 +10,12 @@
     # wsl.docker-desktop.enable = lib.mkDefault false;
   };
 
-  # Libvirt for VMs
-  virtualisation.libvirtd = {
-    enable = lib.mkDefault true;
-    qemu = {
-      package = pkgs.qemu_kvm;
-      runAsRoot = true;
-      swtpm.enable = true;
-      # ovmf submodule removed - OVMF images now available by default with QEMU
-    };
-  };
+  # Libvirt/KVM removed — unused (no VMs defined; containers + Talos-in-Docker
+  # cover all workloads). Hosts that genuinely want KVM enable it explicitly via
+  # services.bare-metal.enableVirtualization, which owns the libvirtd/kvm groups.
 
   # Add users to necessary groups
-  users.users.vpittamp.extraGroups = [ "docker" "libvirtd" ];
+  users.users.vpittamp.extraGroups = [ "docker" ];
 
   # Development packages
   environment.systemPackages = with pkgs; let

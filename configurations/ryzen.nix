@@ -264,9 +264,9 @@ in
   services.bare-metal = {
     enable = true;
 
-    # Full KVM virtualization with virt-manager
-    # (Hetzner: no nested KVM, M1: ARM only, WSL2: no KVM)
-    enableVirtualization = true;
+    # KVM/libvirt removed — unused (no VMs; libvirtd only idle-flapped as failed).
+    # Drops libvirtd, virt-manager, and the libvirtd/kvm groups.
+    enableVirtualization = false;
 
     # Podman rootless containers (complement to Docker)
     enablePodman = true;
