@@ -39,7 +39,6 @@ GLOBAL OPTIONS:
 
 COMMANDS:
   context          Active runtime context commands
-  worktree         Git worktree project management (Feature 077)
   launch           Daemon-owned application launch commands
   session          AI session inspection commands
   herdr-proxy      Host-local Herdr proxy for remote dashboard aggregation
@@ -52,21 +51,14 @@ COMMANDS:
   perf             Runtime latency smoke checks
   display          Display layout snapshot/apply/cycle commands
   run              Smart application launcher with run-raise-hide (Feature 051)
-  scratchpad       Project-scoped scratchpad terminal management
   windows          Window state visualization
   daemon           Daemon status and event monitoring
   tree-monitor     Real-time window state event monitoring (Feature 065)
   trace            Window tracing for debugging (Feature 101)
-  layout           Workspace layout persistence (save/restore)
   rules            Window classification rules
   monitors         Workspace-to-monitor mapping configuration
   monitor          Interactive monitoring dashboard
-  app-classes      Application class management
   apps             Application registry management (Feature 034)
-  account          GitHub account configuration (Feature 100)
-  clone            Clone repository with bare setup (Feature 100)
-  discover         Discover bare repositories and worktrees (Feature 100)
-  repo             Repository management commands (Feature 100)
 
 Run 'i3pm <command> --help' for more information on a specific command.
 
@@ -85,17 +77,10 @@ EXAMPLES:
   i3pm health                         Validate local runtime convergence
   i3pm perf smoke --json              Validate focus/dashboard latency budgets
   i3pm display snapshot               Show display layout state
-  i3pm worktree list                   List all worktrees
-  i3pm worktree suggest-name "improve launcher refresh"  Suggest a new branch name
-  i3pm worktree switch account/repo:branch   Switch to worktree
-  i3pm worktree host set account/repo:branch --host thinkpad --dir /remote/path
   i3pm run firefox                     Toggle Firefox (launch/focus/summon)
   i3pm run alacritty --hide            Toggle terminal visibility
-  i3pm scratchpad toggle               Toggle project terminal
   i3pm windows --live                  Live window visualization
   i3pm daemon status                   Show daemon status
-  i3pm layout save my-layout           Save current workspace layout
-  i3pm layout restore my-layout        Restore saved layout
   i3pm rules list                      List classification rules
   i3pm monitors config show            Show workspace distribution config
   i3pm monitors reassign               Redistribute workspaces
@@ -283,24 +268,10 @@ async function main(): Promise<void> {
       }
       break;
 
-    case "worktree":
-      {
-        const { worktreeCommand } = await import("./commands/worktree.ts");
-        await worktreeCommand(commandArgs);
-      }
-      break;
-
     case "run":
       {
         const { runCommand } = await import("./commands/run.ts");
         await runCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
-      }
-      break;
-
-    case "scratchpad":
-      {
-        const { scratchpadCommand } = await import("./commands/scratchpad.ts");
-        await scratchpadCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 
@@ -341,13 +312,6 @@ async function main(): Promise<void> {
       }
       break;
 
-    case "layout":
-      {
-        const { layoutCommand } = await import("./commands/layout.ts");
-        await layoutCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
-      }
-      break;
-
     case "rules":
       {
         const { rulesCommand } = await import("./commands/rules.ts");
@@ -369,13 +333,6 @@ async function main(): Promise<void> {
       }
       break;
 
-    case "app-classes":
-      {
-        const { appClassesCommand } = await import("./commands/app-classes.ts");
-        await appClassesCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
-      }
-      break;
-
     case "apps":
       {
         const { appsCommand } = await import("./commands/apps.ts");
@@ -384,63 +341,6 @@ async function main(): Promise<void> {
           debug: args.debug,
         });
         Deno.exit(exitCode);
-      }
-      break;
-
-    // Feature 100: Structured Git Repository Management
-    case "account":
-      {
-        const subcommand = String(commandArgs[0] || "");
-        const subArgs = commandArgs.slice(1).map(String);
-        if (subcommand === "add") {
-          const { accountAdd } = await import("./commands/account/add.ts");
-          const exitCode = await accountAdd(subArgs);
-          Deno.exit(exitCode);
-        } else if (subcommand === "list") {
-          const { accountList } = await import("./commands/account/list.ts");
-          const exitCode = await accountList(subArgs);
-          Deno.exit(exitCode);
-        } else {
-          console.error(`Unknown account subcommand: ${subcommand}`);
-          console.error("Available subcommands: add, list");
-          Deno.exit(1);
-        }
-      }
-      break;
-
-    case "clone":
-      {
-        const { clone } = await import("./commands/clone/index.ts");
-        const exitCode = await clone(commandArgs);
-        Deno.exit(exitCode);
-      }
-      break;
-
-    case "discover":
-      {
-        const { discover } = await import("./commands/discover/index.ts");
-        const exitCode = await discover(commandArgs);
-        Deno.exit(exitCode);
-      }
-      break;
-
-    case "repo":
-      {
-        const subcommand = String(commandArgs[0] || "");
-        const subArgs = commandArgs.slice(1).map(String);
-        if (subcommand === "list") {
-          const { repoList } = await import("./commands/repo/list.ts");
-          const exitCode = await repoList(subArgs);
-          Deno.exit(exitCode);
-        } else if (subcommand === "get") {
-          const { repoGet } = await import("./commands/repo/get.ts");
-          const exitCode = await repoGet(subArgs);
-          Deno.exit(exitCode);
-        } else {
-          console.error(`Unknown repo subcommand: ${subcommand}`);
-          console.error("Available subcommands: list, get");
-          Deno.exit(1);
-        }
       }
       break;
 

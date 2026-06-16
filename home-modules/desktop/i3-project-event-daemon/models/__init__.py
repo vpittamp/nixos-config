@@ -22,7 +22,6 @@ Version: 1.3.0 - Added Feature 091 models
 """
 
 # Feature 058: New Pydantic models (replace old dataclass versions)
-from .layout import WindowSnapshot, Layout
 from .project import Project, ActiveProjectState
 from .remote_config import RemoteConfig
 
@@ -49,15 +48,6 @@ from .floating_config import (
     FloatingWindowConfig,
     FLOATING_SIZE_DIMENSIONS,
     get_floating_dimensions,
-)
-
-# Feature 078: Enhanced Project Selection in Eww Preview Dialog
-from .project_filter import (
-    MatchPosition,
-    GitStatus,
-    ProjectListItem,
-    ScoredMatch,
-    FilterState,
 )
 
 # Feature 102: Unified Event Tracing System
@@ -109,8 +99,6 @@ from .legacy import (
 
 __all__ = [
     # Feature 058: New Pydantic models
-    "WindowSnapshot",
-    "Layout",
     "Project",
     "ActiveProjectState",
     # Feature 087: Remote Project Environment Support
@@ -122,12 +110,6 @@ __all__ = [
     "OperationMetrics",
     "ProjectSwitchMetrics",
     "PerformanceSnapshot",
-    # Feature 078: Enhanced Project Selection
-    "MatchPosition",
-    "GitStatus",
-    "ProjectListItem",
-    "ScoredMatch",
-    "FilterState",
     # Feature 102: Unified Event Tracing System
     "EventSource",
     "EventCategory",

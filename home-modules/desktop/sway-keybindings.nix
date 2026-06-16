@@ -41,7 +41,6 @@ in
     "${modifier}+Shift+n" = "workspace prev";
 
     # ========== APPLICATION LAUNCHERS ==========
-    "${modifier}+Return" = "exec i3pm scratchpad toggle";
     "${modifier}+Shift+Return" = "exec i3pm launch open terminal";
     "${modifier}+d" = primaryLauncherCommand;
     "Mod1+space" = "exec walker";

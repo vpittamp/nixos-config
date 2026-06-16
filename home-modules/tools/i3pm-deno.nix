@@ -25,7 +25,7 @@ let
       mkdir -p $out/share/i3pm
       cp -r * $out/share/i3pm/
 
-      # Ensure key worktree command sources are packaged.
+      # Ensure key command sources are packaged.
       for required in \
         "$out/share/i3pm/src/commands/context.ts" \
         "$out/share/i3pm/src/commands/dashboard.ts" \
@@ -35,10 +35,7 @@ let
         "$out/share/i3pm/src/commands/quickshell.ts" \
         "$out/share/i3pm/src/commands/session.ts" \
         "$out/share/i3pm/src/commands/workspace.ts" \
-        "$out/share/i3pm/src/commands/window.ts" \
-        "$out/share/i3pm/src/commands/worktree/remote.ts" \
-        "$out/share/i3pm/src/commands/worktree/helpers.ts" \
-        "$out/share/i3pm/src/commands/worktree/rename.ts"
+        "$out/share/i3pm/src/commands/window.ts"
       do
         if [ ! -f "$required" ]; then
           echo "ERROR: missing ''${required#$out/share/i3pm/} in i3pm package output" >&2

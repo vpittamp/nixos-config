@@ -190,10 +190,7 @@ let
 
   regularWorkspaceOwningApplications = [
     # TERMINAL APPLICATIONS OVERVIEW:
-    # 1. Regular terminals (name="terminal", "ghostty"): Use deterministic anchor-keyed tmux session management
-    # 2. Scratchpad terminal (name="scratchpad-terminal"): Uses tmux directly with scratchpad-{project} naming
-    #    - Scratchpad is launched by daemon, not via app registry wrapper
-    #    - Provides quick floating terminal access per project
+    # Regular terminals (name="terminal", "ghostty"): Use deterministic anchor-keyed tmux session management
 
     # WS1: Terminals (Primary: ghostty with sesh)
     (mkApp {
@@ -826,34 +823,6 @@ let
   # This provides workspace assignments and window rules for i3pm
   ++ (builtins.map mkPWAApp pwas);
 
-  scratchpadLaunchables = [
-    # Scratchpad Terminal (Feature 062, Feature 101)
-    # Special floating terminal for quick project access
-    # NOTE: Launched by daemon via Sway IPC, not through wrapper
-    # Parameters shown here are for documentation/reference only
-    # Feature 101: Uses workspace 0 as marker for scratchpad windows
-    # One scratchpad terminal per worktree - toggle focuses existing if present
-    (mkApp {
-      name = "scratchpad-terminal";
-      display_name = "Scratchpad Terminal";
-      command = "ghostty";
-      # Actual launch command (via daemon): ghostty -e bash -c 'tmux new-session -A -s scratchpad-{project} -c {working_dir}'
-      # This creates/attaches to project-specific tmux session named "scratchpad-{project}"
-      parameters = "-e bash -c 'tmux new-session -A -s scratchpad-PROJECT -c PROJECT_DIR'";
-      scope = "global";
-      expected_class = "com.mitchellh.ghostty";
-      # Feature 101: Workspace 0 = scratchpad home (not a real workspace)
-      # Used for deterministic tracking - scratchpad windows always have workspace_number=0
-      preferred_workspace = 0;
-      scratchpad = true;  # Feature 101: Mark as scratchpad-managed app
-      icon = iconPath "ghostty.svg";
-      nix_package = "pkgs.ghostty";
-      multi_instance = false;  # Feature 101: One per worktree, toggle focuses existing
-      fallback_behavior = "use_home";
-      description = "Project-scoped floating scratchpad terminal with tmux session (scratchpad-{project})";
-    })
-  ];
-
   workspaceUtilityApplications = [
     # QuickShell worktree manager (workspace utility)
     # This is launcher-visible, global, and intentionally owns a dedicated
@@ -906,7 +875,7 @@ let
     })
   ];
 
-  nonOwningLaunchables = scratchpadLaunchables ++ floatingUtilityApplications;
+  nonOwningLaunchables = floatingUtilityApplications;
 
   applications = workspaceOwningApplications ++ nonOwningLaunchables;
 

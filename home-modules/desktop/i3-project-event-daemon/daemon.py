@@ -63,7 +63,6 @@ from .handlers import (
     on_output,  # Feature 024: R013
 )
 from .window_filtering import WorkspaceTracker  # Feature 037: Window filtering
-from .services.scratchpad_manager import ScratchpadManager  # Feature 062: Scratchpad terminals
 from .services.run_raise_manager import RunRaiseManager  # Feature 051: Run-raise-hide launching
 from .services.mark_manager import MarkManager  # Feature 076: Mark-based app identification
 from .services.tree_cache import initialize_tree_cache  # Feature 091: Tree caching
@@ -197,7 +196,6 @@ class I3ProjectDaemon:
         self.output_states_watcher: Optional[OutputStatesWatcher] = None  # Output states file watcher
         self.application_registry: Dict[str, Dict] = {}  # Feature 037 T027: Application registry
         self.registry_watcher: Optional[ApplicationRegistryWatcher] = None  # Auto-reload on rebuild
-        self.scratchpad_manager: Optional[ScratchpadManager] = None  # Feature 062: Scratchpad terminal manager
         self.mark_manager: Optional[MarkManager] = None  # Feature 076: Mark-based app identification
         self.monitor_profile_service: Optional[MonitorProfileService] = None  # Feature 083: Monitor profile management
         self.monitor_profile_watcher: Optional[MonitorProfileWatcher] = None  # Feature 083: Profile file watcher
@@ -352,13 +350,6 @@ class I3ProjectDaemon:
         self.tree_cache = initialize_tree_cache(self.connection.conn, ttl_ms=100.0)
         self.performance_tracker = initialize_performance_tracker(max_history=100, target_ms=200.0)
         logger.info("[Feature 091] Tree cache and performance tracker initialized")
-
-        # Feature 062: Initialize scratchpad manager
-        self.scratchpad_manager = ScratchpadManager(self.connection.conn)
-        self.ipc_server.scratchpad_manager = self.scratchpad_manager
-        # Rediscover existing scratchpad terminals from previous daemon session
-        rediscovered = await self.scratchpad_manager.rediscover_terminals()
-        logger.info(f"Scratchpad manager initialized, rediscovered {rediscovered} terminal(s)")
 
         # Feature 051: Initialize run-raise manager
         self.run_raise_manager = RunRaiseManager(
@@ -564,10 +555,6 @@ class I3ProjectDaemon:
             await self.event_buffer.add_event(entry)
             logger.info(f"Logged daemon::start event (duration: {duration_ms:.2f}ms)")
 
-        # Feature 097 T057: Trigger background discovery if enabled (T056: config loading already done above)
-        if self.discovery_config and self.discovery_config.auto_discover_on_startup:
-            logger.info("[Feature 097] Auto-discover enabled, scheduling background discovery...")
-            asyncio.create_task(self._run_startup_discovery())
 
     async def _trigger_output_state_change(self) -> None:
         """Trigger workspace reassignment after output states file change.
@@ -634,108 +621,6 @@ class I3ProjectDaemon:
 
         except Exception as e:
             logger.error(f"Failed to trigger output state change: {e}")
-
-    async def _run_startup_discovery(self) -> None:
-        """Run background project discovery on daemon startup.
-
-        Feature 097 T057-T059: Background discovery with timeout and logging.
-
-        This runs in the background without blocking daemon startup.
-        Uses 60-second timeout (T058) and logs results to journal (T059).
-        """
-        from .services.discovery_service import scan_directory
-        from .services.project_service import ProjectService
-
-        start_time = time.perf_counter()
-        discovery_timeout = 60  # T058: 60-second timeout
-
-        logger.info("[Feature 097] Starting background startup discovery...")
-
-        try:
-            # Create project service for creating/updating projects
-            project_service = ProjectService(
-                config_dir=self.config_dir,
-                state_manager=self.state_manager
-            )
-
-            created_count = 0
-            updated_count = 0
-            error_count = 0
-
-            # Scan each configured path with timeout
-            for scan_path in self.discovery_config.scan_paths:
-                expanded_path = str(Path(scan_path).expanduser())
-
-                try:
-                    # T058: Apply timeout to entire discovery operation
-                    result = await asyncio.wait_for(
-                        scan_directory(
-                            expanded_path,
-                            max_depth=self.discovery_config.max_depth,
-                            exclude_patterns=self.discovery_config.exclude_patterns,
-                        ),
-                        timeout=discovery_timeout
-                    )
-
-                    # Process discovered repositories
-                    for repo in result.repositories:
-                        try:
-                            existing = project_service.find_by_directory(repo.path)
-                            if existing:
-                                await project_service._update_from_discovery(existing, repo)
-                                updated_count += 1
-                            else:
-                                await project_service._create_from_discovery(repo)
-                                created_count += 1
-                        except Exception as e:
-                            logger.warning(f"[Feature 097] Failed to process repo {repo.name}: {e}")
-                            error_count += 1
-
-                    error_count += len(result.errors)
-
-                except asyncio.TimeoutError:
-                    logger.warning(f"[Feature 097] Scan of {scan_path} timed out after {discovery_timeout}s")
-                    error_count += 1
-                except Exception as e:
-                    logger.error(f"[Feature 097] Failed to scan {scan_path}: {e}")
-                    error_count += 1
-
-            # T059: Log results to daemon journal
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            logger.info(
-                f"[Feature 097] Startup discovery complete: "
-                f"{created_count} created, {updated_count} updated, {error_count} errors | "
-                f"Duration: {duration_ms:.1f}ms"
-            )
-
-            # Log discovery::startup event
-            if self.event_buffer:
-                entry = EventEntry(
-                    event_id=self.event_buffer.event_counter,
-                    event_type="discovery::startup",
-                    timestamp=datetime.now(),
-                    source="daemon",
-                    created_count=created_count,
-                    updated_count=updated_count,
-                    error_count=error_count,
-                    processing_duration_ms=duration_ms,
-                )
-                await self.event_buffer.add_event(entry)
-
-            # Emit projects_discovered event for UI refresh
-            if self.ipc_server and (created_count > 0 or updated_count > 0):
-                await self.ipc_server.broadcast_event_entry(EventEntry(
-                    event_id=self.event_buffer.event_counter if self.event_buffer else 0,
-                    event_type="projects_discovered",
-                    timestamp=datetime.now(),
-                    source="startup_discovery",
-                    created_count=created_count,
-                    updated_count=updated_count,
-                ))
-
-        except Exception as e:
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            logger.error(f"[Feature 097] Startup discovery failed: {e} (after {duration_ms:.1f}ms)")
 
     async def register_event_handlers(self) -> None:
         """Register all i3 event handlers."""
@@ -876,9 +761,6 @@ class I3ProjectDaemon:
 
         # Feature 074: Session Management - Load persisted focus state (T025, US1)
         await self.state_manager.load_focus_state()
-
-        # Feature 074: Session Management - Initialize auto-save and auto-restore managers (T099, US5-US6)
-        self.state_manager.initialize_auto_save_manager(self.connection.conn, ipc_server=self.ipc_server)
 
     async def run(self) -> None:
         """Main event loop."""
