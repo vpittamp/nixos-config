@@ -759,19 +759,6 @@ ShellRoot {
         const context = dashboard.active_context || {};
         return stringOrEmpty(context.qualified_name || context.project_name);
     }
-
-    function activeContextExecutionMode() {
-        const context = dashboard.active_context || {};
-        const transportKind = stringOrEmpty(context.transport_kind).toLowerCase();
-        if (transportKind === "ssh_helper") {
-            return "ssh";
-        }
-        if (transportKind === "local_process") {
-            return "local";
-        }
-        return stringOrEmpty(context.execution_mode || "local") || "local";
-    }
-
     function activeContextTargetHost() {
         const context = dashboard.active_context || {};
         return normalizeHostAlias(context.target_host || context.host_alias || shellConfig.hostName);
@@ -780,62 +767,6 @@ ShellRoot {
     function isGlobalContext() {
         const project = activeContextProjectName();
         return !project || project === "global";
-    }
-
-    function activeContextHostName() {
-        const context = dashboard.active_context || {};
-        const remote = context.remote || {};
-        return stringOrEmpty(context.target_host || context.host_alias || remote.host_alias || remote.host || context.connection_key || shellConfig.hostName);
-    }
-
-    function activeContextSummaryLabel() {
-        if (isGlobalContext()) {
-            return "Shared  " + currentLayoutLabel();
-        }
-
-        const hostName = stringOrEmpty(activeContextHostName());
-        const parts = [];
-        if (hostName) {
-            parts.push(hostName);
-        }
-        parts.push(currentLayoutLabel());
-        return parts.join("  ");
-    }
-
-    function activeTerminal() {
-        const terminal = dashboard.active_terminal || {};
-        return terminal && typeof terminal === "object" ? terminal : {};
-    }
-
-    function activeTerminalAvailable() {
-        return boolOrFalse(activeTerminal().available);
-    }
-
-    function activeTerminalChipLabel() {
-        if (isGlobalContext()) {
-            return "";
-        }
-        return activeTerminalAvailable() ? "Focus shell" : "Open shell";
-    }
-
-    function activeTerminalMetaLabel() {
-        if (isGlobalContext()) {
-            return "";
-        }
-
-        const terminal = activeTerminal();
-        const sessionName = stringOrEmpty(terminal.tmux_session_name);
-        if (sessionName) {
-            return activeTerminalAvailable() ? "Live tmux session" : "Reusable tmux session";
-        }
-        return activeTerminalAvailable() ? "Shell available" : "Shell not started";
-    }
-
-    function openActiveTerminal() {
-        if (isGlobalContext()) {
-            return;
-        }
-        runDetached([shellConfig.i3pmBin, "launch", "open", "terminal"]);
     }
 
     function activeSessions() {
@@ -3412,97 +3343,7 @@ ShellRoot {
         const spacing = 8;
         return 16 + (visibleRows * cardHeight) + (Math.max(0, visibleRows - 1) * spacing);
     }
-
-    function dashboardWorktrees() {
-        return arrayOrEmpty(dashboard.worktrees);
-    }
-
-    function activeWorktreeItem() {
-        const items = worktreeItems();
-        for (let i = 0; i < items.length; i += 1) {
-            if (boolOrFalse(items[i].is_active)) {
-                return items[i];
-            }
-        }
-        return items.length ? items[0] : null;
-    }
-
-    function worktreePickerSummaryTitle() {
-        const activeItem = activeWorktreeItem();
-        return worktreeDisplayName(activeItem);
-    }
-
-    function inactiveWorktreeItems() {
-        const items = worktreeItems();
-        const filtered = [];
-        for (let i = 0; i < items.length; i += 1) {
-            const item = items[i];
-            if (!item || boolOrFalse(item.is_active) || stringOrEmpty(item.kind) === "global") {
-                continue;
-            }
-            filtered.push(item);
-        }
-        return filtered;
-    }
-
-    function worktreeItems() {
-        const items = [
-            {
-                kind: "global",
-                qualified_name: "global",
-                is_active: root.isGlobalContext(),
-                active_target_host: root.activeContextTargetHost(),
-                host_profile_available: false,
-                host_profile_host: "",
-                visible_window_count: 0,
-                scoped_window_count: 0,
-                is_clean: true,
-                dirty_count: 0,
-                git_state: "clean",
-                git_freshness: "",
-                git_status_compact: "",
-                last_used_at: 0,
-                use_count: 0
-            }
-        ];
-
-        const worktrees = dashboardWorktrees();
-        for (let i = 0; i < worktrees.length; i += 1) {
-            const worktree = worktrees[i];
-            items.push({
-                kind: "worktree",
-                qualified_name: stringOrEmpty(worktree.qualified_name),
-                repo_display: stringOrEmpty(worktree.repo_display),
-                repo_name: stringOrEmpty(worktree.repo_name),
-                account: stringOrEmpty(worktree.account),
-                branch: stringOrEmpty(worktree.branch),
-                path: stringOrEmpty(worktree.path),
-                is_main: boolOrFalse(worktree.is_main),
-                is_clean: boolOrFalse(worktree.is_clean),
-                is_stale: boolOrFalse(worktree.is_stale),
-                has_conflicts: boolOrFalse(worktree.has_conflicts),
-                ahead: Number(worktree.ahead || 0),
-                behind: Number(worktree.behind || 0),
-                dirty_count: Number(worktree.dirty_count || 0),
-                git_state: stringOrEmpty(worktree.git_state),
-                git_freshness: stringOrEmpty(worktree.git_freshness),
-                git_status_compact: stringOrEmpty(worktree.git_status_compact),
-                is_active: boolOrFalse(worktree.is_active),
-                active_target_host: normalizeHostAlias(worktree.active_target_host),
-                host_profile_available: boolOrFalse(worktree.host_profile_available),
-                host_profile_host: normalizeHostAlias(worktree.host_profile_host),
-                visible_window_count: Number(worktree.visible_window_count || 0),
-                scoped_window_count: Number(worktree.scoped_window_count || 0),
-                last_used_at: Number(worktree.last_used_at || 0),
-                use_count: Number(worktree.use_count || 0),
-                last_commit_message: stringOrEmpty(worktree.last_commit_message)
-            });
-        }
-
-        return items;
-    }
-
-    function normalizeLauncherMode(mode) {
+function normalizeLauncherMode(mode) {
         const value = stringOrEmpty(mode).toLowerCase();
         const modes = arrayOrEmpty(launcherModesModel);
         for (let index = 0; index < modes.length; index += 1) {
@@ -5351,51 +5192,7 @@ ShellRoot {
         bits.push(String(visibleCount) + (visibleCount === 1 ? " window" : " windows"));
         return bits.join(" • ");
     }
-
-    function worktreeDisplayName(item) {
-        if (!item || stringOrEmpty(item.kind) === "global") {
-            return "Global";
-        }
-        return shortProject(stringOrEmpty(item.qualified_name));
-    }
-
-    function worktreeSubtitle(item) {
-        if (!item) {
-            return "";
-        }
-        if (stringOrEmpty(item.kind) === "global") {
-            return "Clear context and keep shared windows visible";
-        }
-
-        const bits = [];
-        const branch = stringOrEmpty(item.branch);
-        if (branch) {
-            bits.push(branch);
-        }
-        if (Number(item.dirty_count || 0) > 0) {
-            bits.push(String(Number(item.dirty_count || 0)) + " changed");
-        }
-        if (Number(item.ahead || 0) > 0) {
-            bits.push("↑" + String(Number(item.ahead || 0)));
-        }
-        if (Number(item.behind || 0) > 0) {
-            bits.push("↓" + String(Number(item.behind || 0)));
-        }
-        if (stringOrEmpty(item.git_freshness) === "stale") {
-            bits.push("status old");
-        }
-        if (Number(item.visible_window_count || 0) > 0) {
-            bits.push(String(Number(item.visible_window_count || 0)) + " visible");
-        } else if (Number(item.scoped_window_count || 0) > 0) {
-            bits.push(String(Number(item.scoped_window_count || 0)) + " scoped");
-        }
-        if (boolOrFalse(item.host_profile_available)) {
-            bits.push("peer:" + stringOrEmpty(item.host_profile_host));
-        }
-        return bits.join("  •  ");
-    }
-
-    function worktreeStatusLabel(item) {
+   function worktreeStatusLabel(item) {
         if (!item || stringOrEmpty(item.kind) === "global") {
             return "";
         }
@@ -5490,18 +5287,7 @@ ShellRoot {
     function projectTargetHostLabel(entry) {
         return stringOrEmpty(entry && entry.target_host);
     }
-
-    function sessionProjectBadgeFill(projectGroup) {
-        const project = stringOrEmpty(projectGroup && projectGroup.project_name);
-        return project && project === activeContextProjectName() ? colors.blueBg : colors.cardAlt;
-    }
-
-    function sessionProjectBadgeText(projectGroup) {
-        const project = stringOrEmpty(projectGroup && projectGroup.project_name);
-        return project && project === activeContextProjectName() ? colors.text : colors.textDim;
-    }
-
-    function sessionGroupFill(group) {
+   function sessionGroupFill(group) {
         if (boolOrFalse(group && group.is_current_host)) {
             return colors.panelAlt;
         }
