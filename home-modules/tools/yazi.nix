@@ -127,58 +127,58 @@ in
         open = {
           prepend_rules = [
             # Directories - offer both editors
-            { name = "*/"; use = ["folder-vscode" "folder-nvim" "open"]; }
+            { url = "*/"; use = ["folder-vscode" "folder-nvim" "open"]; }
             
             # Configuration files - prefer nvim for quick edits
-            { name = "*.toml"; use = ["nvim" "vscode" "edit"]; }
-            { name = "*.yaml"; use = ["nvim" "vscode" "edit"]; }
-            { name = "*.yml"; use = ["nvim" "vscode" "edit"]; }
-            { name = "*.json"; use = ["nvim" "vscode" "edit"]; }
-            { name = "*.nix"; use = ["nvim" "vscode" "edit"]; }
-            { name = "*.conf"; use = ["nvim" "vscode" "edit"]; }
-            { name = "*.config"; use = ["nvim" "vscode" "edit"]; }
-            { name = ".env*"; use = ["nvim" "vscode" "edit"]; }
+            { url = "*.toml"; use = ["nvim" "vscode" "edit"]; }
+            { url = "*.yaml"; use = ["nvim" "vscode" "edit"]; }
+            { url = "*.yml"; use = ["nvim" "vscode" "edit"]; }
+            { url = "*.json"; use = ["nvim" "vscode" "edit"]; }
+            { url = "*.nix"; use = ["nvim" "vscode" "edit"]; }
+            { url = "*.conf"; use = ["nvim" "vscode" "edit"]; }
+            { url = "*.config"; use = ["nvim" "vscode" "edit"]; }
+            { url = ".env*"; use = ["nvim" "vscode" "edit"]; }
             
             # Shell scripts - nvim for quick edits
-            { name = "*.sh"; use = ["nvim" "vscode" "edit"]; }
-            { name = "*.bash"; use = ["nvim" "vscode" "edit"]; }
-            { name = "*.zsh"; use = ["nvim" "vscode" "edit"]; }
-            { name = "*.fish"; use = ["nvim" "vscode" "edit"]; }
+            { url = "*.sh"; use = ["nvim" "vscode" "edit"]; }
+            { url = "*.bash"; use = ["nvim" "vscode" "edit"]; }
+            { url = "*.zsh"; use = ["nvim" "vscode" "edit"]; }
+            { url = "*.fish"; use = ["nvim" "vscode" "edit"]; }
             
             # Programming files - VSCode first for better IDE features
-            { name = "*.ts"; use = ["vscode" "nvim" "edit"]; }
-            { name = "*.tsx"; use = ["vscode" "nvim" "edit"]; }
-            { name = "*.js"; use = ["vscode" "nvim" "edit"]; }
-            { name = "*.jsx"; use = ["vscode" "nvim" "edit"]; }
-            { name = "*.rs"; use = ["vscode" "nvim" "edit"]; }
-            { name = "*.go"; use = ["vscode" "nvim" "edit"]; }
-            { name = "*.py"; use = ["vscode" "nvim" "edit"]; }
-            { name = "*.java"; use = ["vscode" "nvim" "edit"]; }
-            { name = "*.c"; use = ["vscode" "nvim" "edit"]; }
-            { name = "*.cpp"; use = ["vscode" "nvim" "edit"]; }
-            { name = "*.h"; use = ["vscode" "nvim" "edit"]; }
-            { name = "*.hpp"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.ts"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.tsx"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.js"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.jsx"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.rs"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.go"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.py"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.java"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.c"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.cpp"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.h"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.hpp"; use = ["vscode" "nvim" "edit"]; }
             
             # Web files - VSCode for better preview
-            { name = "*.html"; use = ["vscode" "nvim" "open"]; }
-            { name = "*.css"; use = ["vscode" "nvim" "edit"]; }
-            { name = "*.scss"; use = ["vscode" "nvim" "edit"]; }
-            { name = "*.sass"; use = ["vscode" "nvim" "edit"]; }
-            { name = "*.less"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.html"; use = ["vscode" "nvim" "open"]; }
+            { url = "*.css"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.scss"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.sass"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.less"; use = ["vscode" "nvim" "edit"]; }
             
             # Documentation - VSCode for markdown preview
-            { name = "*.md"; use = ["vscode" "nvim" "edit"]; }
-            { name = "*.mdx"; use = ["vscode" "nvim" "edit"]; }
-            { name = "README*"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.md"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.mdx"; use = ["vscode" "nvim" "edit"]; }
+            { url = "README*"; use = ["vscode" "nvim" "edit"]; }
             
             # Data files
-            { name = "*.csv"; use = ["vscode" "nvim" "edit"]; }
-            { name = "*.xml"; use = ["nvim" "vscode" "edit"]; }
-            { name = "*.sql"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.csv"; use = ["vscode" "nvim" "edit"]; }
+            { url = "*.xml"; use = ["nvim" "vscode" "edit"]; }
+            { url = "*.sql"; use = ["vscode" "nvim" "edit"]; }
             
             # Text files - nvim for quick edits
-            { name = "*.txt"; use = ["nvim" "vscode" "edit"]; }
-            { name = "*.log"; use = ["nvim" "vscode" "less"]; }
+            { url = "*.txt"; use = ["nvim" "vscode" "edit"]; }
+            { url = "*.log"; use = ["nvim" "vscode" "less"]; }
           ];
           
           append_rules = [
@@ -315,46 +315,46 @@ in
             { mime = "application/x-rar"; fg = "#f14c4c"; }
             
             # Fallback
-            { name = "*"; fg = "#cccccc"; }
-            { name = "*/"; fg = "#569cd6"; }
+            { url = "*"; fg = "#cccccc"; }
+            { url = "*/"; fg = "#569cd6"; }
           ];
         };
         
         icon = {
           rules = [
             # Programming
-            { name = "*.c"; text = ""; }
-            { name = "*.cpp"; text = ""; }
-            { name = "*.h"; text = ""; }
-            { name = "*.hpp"; text = ""; }
-            { name = "*.rs"; text = ""; }
-            { name = "*.go"; text = ""; }
-            { name = "*.py"; text = ""; }
-            { name = "*.js"; text = ""; }
-            { name = "*.jsx"; text = "⚛"; }
-            { name = "*.ts"; text = ""; }
-            { name = "*.tsx"; text = "⚛"; }
-            { name = "*.vue"; text = "﵂"; }
-            { name = "*.json"; text = ""; }
-            { name = "*.toml"; text = ""; }
-            { name = "*.yaml"; text = ""; }
-            { name = "*.yml"; text = ""; }
-            { name = "*.nix"; text = ""; }
+            { url = "*.c"; text = ""; }
+            { url = "*.cpp"; text = ""; }
+            { url = "*.h"; text = ""; }
+            { url = "*.hpp"; text = ""; }
+            { url = "*.rs"; text = ""; }
+            { url = "*.go"; text = ""; }
+            { url = "*.py"; text = ""; }
+            { url = "*.js"; text = ""; }
+            { url = "*.jsx"; text = "⚛"; }
+            { url = "*.ts"; text = ""; }
+            { url = "*.tsx"; text = "⚛"; }
+            { url = "*.vue"; text = "﵂"; }
+            { url = "*.json"; text = ""; }
+            { url = "*.toml"; text = ""; }
+            { url = "*.yaml"; text = ""; }
+            { url = "*.yml"; text = ""; }
+            { url = "*.nix"; text = ""; }
             
             # Text
-            { name = "*.txt"; text = ""; }
-            { name = "*.md"; text = ""; }
+            { url = "*.txt"; text = ""; }
+            { url = "*.md"; text = ""; }
             
             # Archives
-            { name = "*.zip"; text = ""; }
-            { name = "*.tar"; text = ""; }
-            { name = "*.gz"; text = ""; }
-            { name = "*.7z"; text = ""; }
-            { name = "*.bz2"; text = ""; }
+            { url = "*.zip"; text = ""; }
+            { url = "*.tar"; text = ""; }
+            { url = "*.gz"; text = ""; }
+            { url = "*.7z"; text = ""; }
+            { url = "*.bz2"; text = ""; }
             
             # Default
-            { name = "*"; text = ""; }
-            { name = "*/"; text = ""; }
+            { url = "*"; text = ""; }
+            { url = "*/"; text = ""; }
           ];
         };
       };
