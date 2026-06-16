@@ -4266,7 +4266,20 @@ ShellRoot {
 
     function launcherWindowProjects(query) {
         const tokens = launcherQueryTokens(query);
-        const projects = panelProjects();
+        const allProjects = arrayOrEmpty(dashboard.projects);
+        const projects = [];
+        for (let p = 0; p < allProjects.length; p += 1) {
+            const projectGroup = allProjects[p];
+            const visibleWindows = arrayOrEmpty(projectGroup && projectGroup.windows).filter(function (windowData) {
+                return !windowIsCurrentTarget(windowData);
+            });
+            if (!visibleWindows.length) {
+                continue;
+            }
+            projects.push(Object.assign({}, projectGroup, {
+                windows: visibleWindows
+            }));
+        }
         if (!tokens.length) {
             return projects;
         }
@@ -4767,105 +4780,6 @@ ShellRoot {
         }
     }
 
-    function projectLauncherEntries(query) {
-        const entries = [];
-        const worktrees = dashboardWorktrees();
-        const currentHost = currentHostAlias();
-
-        if (!isGlobalContext()) {
-            entries.push({
-                kind: "global",
-                identifier: "__clear__",
-                text: "Clear Project Context",
-                subtext: "Return to global context",
-                qualified_name: "global",
-                target_host: "",
-                is_active: false,
-                repo_display: "",
-                repo_name: "",
-                account: "",
-                branch: "",
-                path: "",
-                is_main: false,
-                is_clean: true,
-                is_stale: false,
-                has_conflicts: false,
-                ahead: 0,
-                behind: 0,
-                dirty_count: 0,
-                git_state: "clean",
-                git_freshness: "",
-                git_status_compact: "",
-                visible_window_count: 0,
-                scoped_window_count: 0,
-                last_used_at: 0,
-                use_count: 0
-            });
-        }
-
-        for (let i = 0; i < worktrees.length; i += 1) {
-            const worktree = worktrees[i];
-            if (!worktree) {
-                continue;
-            }
-
-            const baseItem = {
-                kind: "project",
-                qualified_name: stringOrEmpty(worktree.qualified_name),
-                repo_display: stringOrEmpty(worktree.repo_display),
-                repo_name: stringOrEmpty(worktree.repo_name),
-                account: stringOrEmpty(worktree.account),
-                branch: stringOrEmpty(worktree.branch),
-                path: stringOrEmpty(worktree.path),
-                is_main: boolOrFalse(worktree.is_main),
-                is_clean: boolOrFalse(worktree.is_clean),
-                is_stale: boolOrFalse(worktree.is_stale),
-                has_conflicts: boolOrFalse(worktree.has_conflicts),
-                ahead: Number(worktree.ahead || 0),
-                behind: Number(worktree.behind || 0),
-                dirty_count: Number(worktree.dirty_count || 0),
-                git_state: stringOrEmpty(worktree.git_state),
-                git_freshness: stringOrEmpty(worktree.git_freshness),
-                git_status_compact: stringOrEmpty(worktree.git_status_compact),
-                active_target_host: normalizeHostAlias(worktree.active_target_host),
-                host_profile_available: boolOrFalse(worktree.host_profile_available),
-                host_profile_host: normalizeHostAlias(worktree.host_profile_host),
-                visible_window_count: Number(worktree.visible_window_count || 0),
-                scoped_window_count: Number(worktree.scoped_window_count || 0),
-                last_used_at: Number(worktree.last_used_at || 0),
-                use_count: Number(worktree.use_count || 0),
-                last_commit_message: stringOrEmpty(worktree.last_commit_message)
-            };
-
-            const targetHosts = [];
-            if (currentHost) {
-                targetHosts.push(currentHost);
-            }
-            if (baseItem.host_profile_available && baseItem.host_profile_host && baseItem.host_profile_host !== currentHost) {
-                targetHosts.push(baseItem.host_profile_host);
-            }
-
-            for (let j = 0; j < targetHosts.length; j += 1) {
-                const targetHost = targetHosts[j];
-                const entry = {
-                    kind: "project",
-                    identifier: baseItem.qualified_name + "::host::" + targetHost,
-                    text: shortProject(baseItem.qualified_name) + " • " + targetHost,
-                    subtext: "",
-                    target_host: targetHost,
-                    is_active: boolOrFalse(worktree.is_active) && baseItem.active_target_host === targetHost
-                };
-                Object.assign(entry, baseItem);
-                entry.subtext = launcherProjectSubtitle(entry);
-                entries.push(entry);
-            }
-        }
-
-        return entries.filter(function (entry) {
-            return launcherProjectMatches(entry, query);
-        });
-    }
-
     function panelWindowItems() {
         const items = [];
         const projects = arrayOrEmpty(dashboard.projects);
@@ -4940,33 +4854,6 @@ ShellRoot {
         }
 
         return items;
-    }
-
-    function panelProjects() {
-        const projects = arrayOrEmpty(dashboard.projects);
-        const visibleProjects = [];
-        for (let i = 0; i < projects.length; i += 1) {
-            const projectGroup = projects[i];
-            const windows = arrayOrEmpty(projectGroup && projectGroup.windows).filter(function(windowData) {
-                return !windowIsCurrentTarget(windowData);
-            });
-            if (!windows.length) {
-                continue;
-            }
-            visibleProjects.push(Object.assign({}, projectGroup, {
-                windows: windows
-            }));
-        }
-        return visibleProjects;
-    }
-
-    function panelWindowCount() {
-        let count = 0;
-        const projects = panelProjects();
-        for (let i = 0; i < projects.length; i += 1) {
-            count += arrayOrEmpty(projects[i].windows).length;
-        }
-        return count;
     }
 
     function herdrDashboard() {
@@ -5115,25 +5002,15 @@ ShellRoot {
         if (panelSessions().length > 0 || herdrSpaces().length > 0) {
             return "sessions";
         }
-        if (panelProjects().length > 0) {
-            return "windows";
-        }
         return "";
     }
 
     function runtimePanelExpandedSectionValue() {
         const requested = stringOrEmpty(runtimePanelExpandedSection);
         const hasSessions = panelSessions().length > 0 || herdrSpaces().length > 0;
-        const hasWindows = panelProjects().length > 0;
 
-        if (requested === "balanced" && hasSessions && hasWindows) {
-            return "balanced";
-        }
         if (requested === "sessions" && hasSessions) {
             return "sessions";
-        }
-        if (requested === "windows" && hasWindows) {
-            return "windows";
         }
         return runtimePanelDefaultExpandedSection();
     }
@@ -5142,75 +5019,7 @@ ShellRoot {
         if (section === "sessions") {
             return panelSessions().length > 0 || herdrSpaces().length > 0;
         }
-        if (section === "windows") {
-            return panelProjects().length > 0;
-        }
         return false;
-    }
-
-    function runtimePanelSectionExpanded(section) {
-        if (!runtimePanelSectionHasContent(section)) {
-            return false;
-        }
-
-        const activeSection = runtimePanelExpandedSectionValue();
-        if (activeSection === "balanced") {
-            return true;
-        }
-        return activeSection === section;
-    }
-
-    function runtimePanelSectionCollapsed(section) {
-        if (!runtimePanelSectionHasContent(section)) {
-            return false;
-        }
-
-        const activeSection = runtimePanelExpandedSectionValue();
-        return activeSection.length > 0 && activeSection !== "balanced" && activeSection !== section;
-    }
-
-    function runtimePanelSectionCount(section) {
-        if (section === "sessions") {
-            return panelSessions().length;
-        }
-        if (section === "windows") {
-            return panelWindowCount();
-        }
-        return 0;
-    }
-
-    function runtimePanelSectionSummary(section) {
-        if (section === "sessions") {
-            const hostCount = groupedSessionBands().length;
-            const spaceCount = visibleHerdrSpaces().length;
-            const sessionCount = panelSessions().length;
-            const bits = [];
-            if (hostCount > 0) {
-                bits.push(String(hostCount) + (hostCount === 1 ? " host" : " hosts"));
-            }
-            if (spaceCount > 0) {
-                bits.push(String(spaceCount) + (spaceCount === 1 ? " space" : " spaces"));
-            }
-            if (sessionCount > 0) {
-                bits.push(String(sessionCount) + (sessionCount === 1 ? " agent" : " agents"));
-            }
-            return bits.join(" • ");
-        }
-
-        if (section === "windows") {
-            const projectCount = panelProjects().length;
-            const windowCount = panelWindowCount();
-            const bits = [];
-            if (projectCount > 0) {
-                bits.push(String(projectCount) + (projectCount === 1 ? " project" : " projects"));
-            }
-            if (windowCount > 0) {
-                bits.push(String(windowCount) + (windowCount === 1 ? " window" : " windows"));
-            }
-            return bits.join(" • ");
-        }
-
-        return "";
     }
 
     function herdrSpaceStatus(space) {
@@ -5466,9 +5275,6 @@ ShellRoot {
         }
 
         const activeSection = runtimePanelExpandedSectionValue();
-        if (activeSection === "balanced") {
-            return section === "sessions" ? 320 : 220;
-        }
         if (activeSection === section) {
             return section === "sessions" ? 360 : 320;
         }
@@ -5477,12 +5283,6 @@ ShellRoot {
 
     function toggleRuntimePanelSection(section) {
         if (!runtimePanelSectionHasContent(section)) {
-            return;
-        }
-
-        const activeSection = runtimePanelExpandedSectionValue();
-        if (activeSection === section && runtimePanelSectionHasContent("sessions") && runtimePanelSectionHasContent("windows")) {
-            runtimePanelExpandedSection = "balanced";
             return;
         }
 
@@ -5496,13 +5296,6 @@ ShellRoot {
     function showRuntimePanelSection(section) {
         const requested = stringOrEmpty(section);
         showRuntimePanel();
-        if (requested === "balanced") {
-            runtimePanelExpandedSection = runtimePanelDefaultExpandedSection();
-            if (runtimePanelSectionHasContent("sessions") && runtimePanelSectionHasContent("windows")) {
-                runtimePanelExpandedSection = "balanced";
-            }
-            return;
-        }
         if (runtimePanelSectionHasContent(requested)) {
             runtimePanelExpandedSection = requested;
             return;
@@ -5845,20 +5638,6 @@ ShellRoot {
 
     function windowHostToken(windowData) {
         return hostToken(stringOrEmpty(windowData && windowData.execution_mode), "", stringOrEmpty(windowData && windowData.connection_key));
-    }
-
-    function projectCardFill(projectGroup) {
-        const project = stringOrEmpty(projectGroup && projectGroup.project);
-        const mode = stringOrEmpty(projectGroup && projectGroup.execution_mode).toLowerCase();
-        const active = !!(projectGroup && projectGroup.is_active);
-
-        if (project === "global") {
-            return active ? colors.panelAlt : colors.cardAlt;
-        }
-        if (mode === "ssh") {
-            return active ? "#101c24" : colors.cardAlt;
-        }
-        return active ? colors.panelAlt : colors.cardAlt;
     }
 
     function projectHeaderFill(projectGroup) {
@@ -8019,7 +7798,7 @@ ShellRoot {
         dashboard = root.dashboardHasUsableData(dashboard)
             ? root.dashboardStateWithStatus(dashboard, status, errorMessage)
             : root.emptyDashboardState(status, errorMessage);
-        if (launcherVisible && (launcherMode === "projects" || launcherMode === "sessions" || launcherMode === "windows")) {
+        if (launcherVisible && (launcherMode === "sessions" || launcherMode === "windows")) {
             restartLauncherQuery();
         }
     }
@@ -8047,7 +7826,7 @@ ShellRoot {
         syncDisplayApplyStateFromDashboard();
         pruneSessionClosePending();
         clearLocalFocusIntentIfSettled();
-        if (launcherVisible && (launcherMode === "projects" || launcherMode === "sessions" || launcherMode === "windows")) {
+        if (launcherVisible && (launcherMode === "sessions" || launcherMode === "windows")) {
             restartLauncherQuery();
         }
     }

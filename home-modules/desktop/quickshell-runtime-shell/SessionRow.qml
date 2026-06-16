@@ -17,7 +17,6 @@ Rectangle {
     property bool closePending: false
     property bool showAccentRail: true
     property bool showHostToken: true
-    property bool showProjectChip: true
     property bool showCurrentChip: false
     property bool showCloseAction: interactive
     signal clicked
@@ -34,7 +33,6 @@ Rectangle {
     readonly property var hostTokenData: rootObject.sessionHostToken(session)
     readonly property color accentColor: rootObject.launcherEntryAccentColor(session)
     readonly property color currentAccentColor: colorsObject.blue
-    readonly property string projectLabel: rootObject.stringOrEmpty(session && (session.project_label || rootObject.shortProject(rootObject.stringOrEmpty(session.project_name || session.project || "global"))))
     readonly property bool closableSurface: showCloseAction && rootObject.sessionHasClosableSurface(session)
     readonly property bool isIdle: rootObject.sessionIsIdle(session)
     readonly property real idleRowOpacity: isIdle ? (isCurrent ? 0.9 : 0.76) : 1
@@ -284,26 +282,6 @@ Rectangle {
                 anchors.centerIn: parent
                 text: "Current"
                 color: currentAccentColor
-                font.pixelSize: compact ? 7 : 8
-                font.weight: Font.DemiBold
-            }
-        }
-
-        Rectangle {
-            visible: showProjectChip && projectLabel.length > 0
-            height: chipHeight
-            radius: 6
-            color: isCurrent ? colorsObject.panelAlt : (selected ? colorsObject.bg : colorsObject.panelAlt)
-            border.color: colorsObject.lineSoft
-            border.width: 1
-            Layout.preferredWidth: projectText.implicitWidth + 12
-            opacity: idleChipOpacity
-
-            Text {
-                id: projectText
-                anchors.centerIn: parent
-                text: projectLabel
-                color: isCurrent ? currentAccentColor : (selected ? colorsObject.blue : colorsObject.textDim)
                 font.pixelSize: compact ? 7 : 8
                 font.weight: Font.DemiBold
             }

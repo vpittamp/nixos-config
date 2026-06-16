@@ -16,7 +16,6 @@ PanelWindow {
     id: panelWindow
     property var runtimeSessions: []
     property var runtimeHerdrSpaces: []
-    property var runtimeProjects: []
     screen: root.primaryScreen
     visible: root.panelVisible
     onVisibleChanged: {
@@ -39,7 +38,6 @@ PanelWindow {
     function refreshRuntimePanelData() {
         runtimeSessions = root.panelSessions();
         runtimeHerdrSpaces = root.herdrSpaces();
-        runtimeProjects = root.panelProjects();
     }
 
     Component.onCompleted: refreshRuntimePanelData()
@@ -56,18 +54,6 @@ PanelWindow {
 
     function runtimePanelHasSessions() {
         return runtimeSessions.length > 0 || runtimeHerdrSpaces.length > 0;
-    }
-
-    function runtimePanelHasWindows() {
-        return runtimeProjects.length > 0;
-    }
-
-    function runtimePanelWindowCount() {
-        let count = 0;
-        for (let i = 0; i < runtimeProjects.length; i += 1) {
-            count += root.arrayOrEmpty(runtimeProjects[i] && runtimeProjects[i].windows).length;
-        }
-        return count;
     }
 
     function runtimeVisibleHerdrSpaces() {
@@ -94,72 +80,26 @@ PanelWindow {
         return bits.join(" • ");
     }
 
-    function runtimePanelWindowSummary() {
-        const projectCount = runtimeProjects.length;
-        const windowCount = runtimePanelWindowCount();
-        const bits = [];
-        if (projectCount > 0) {
-            bits.push(String(projectCount) + (projectCount === 1 ? " project" : " projects"));
-        }
-        if (windowCount > 0) {
-            bits.push(String(windowCount) + (windowCount === 1 ? " window" : " windows"));
-        }
-        return bits.join(" • ");
-    }
-
     function runtimePanelLocalExpanded(section) {
-        const hasSessions = runtimePanelHasSessions();
-        const hasWindows = runtimePanelHasWindows();
-        if (section === "sessions" && !hasSessions) {
-            return false;
+        if (section === "sessions") {
+            return runtimePanelHasSessions();
         }
-        if (section === "windows" && !hasWindows) {
-            return false;
-        }
-
-        const requested = root.stringOrEmpty(root.runtimePanelExpandedSection);
-        if (requested === "balanced" && hasSessions && hasWindows) {
-            return true;
-        }
-        if (requested === section) {
-            return true;
-        }
-        if (requested === "sessions" || requested === "windows") {
-            return false;
-        }
-
-        return section === "sessions" ? hasSessions : !hasSessions && hasWindows;
+        return false;
     }
 
     function runtimePanelLocalCollapsed(section) {
-        const hasSessions = runtimePanelHasSessions();
-        const hasWindows = runtimePanelHasWindows();
-        if (section === "sessions" && !hasSessions) {
-            return false;
-        }
-        if (section === "windows" && !hasWindows) {
+        if (section === "sessions" && !runtimePanelHasSessions()) {
             return false;
         }
         return !runtimePanelLocalExpanded(section);
     }
 
     function runtimePanelLocalPreferredHeight(section) {
-        const hasSessions = runtimePanelHasSessions();
-        const hasWindows = runtimePanelHasWindows();
-        if (section === "sessions" && !hasSessions) {
+        if (section === "sessions" && !runtimePanelHasSessions()) {
             return 0;
-        }
-        if (section === "windows" && !hasWindows) {
-            return 0;
-        }
-
-        const requested = root.stringOrEmpty(root.runtimePanelExpandedSection);
-        const balanced = requested === "balanced" && hasSessions && hasWindows;
-        if (balanced) {
-            return section === "sessions" ? Math.max(520, Math.floor(panelWindow.height * 0.66)) : 220;
         }
         if (runtimePanelLocalExpanded(section)) {
-            return section === "sessions" ? Math.max(640, panelWindow.height - 112) : 320;
+            return Math.max(640, panelWindow.height - 112);
         }
         return 60;
     }
@@ -859,308 +799,10 @@ PanelWindow {
                                 interactive: true
                                 compact: true
                                 showHostToken: true
-                                showProjectChip: false
                                 showCurrentChip: false
                                 closePending: root.sessionClosePending(modelData)
                                 onClicked: root.focusSession(modelData)
                                 onCloseRequested: root.closeSession(modelData)
-                            }
-                        }
-                    }
-                }
-            }
-
-            Rectangle {
-                id: windowsSection
-                visible: panelWindow.runtimePanelHasWindows() || !panelWindow.runtimePanelHasSessions()
-                Layout.fillWidth: true
-                Layout.fillHeight: panelWindow.runtimePanelLocalExpanded("windows")
-                Layout.minimumHeight: panelWindow.runtimePanelLocalExpanded("windows") ? 180 : 60
-                Layout.preferredHeight: panelWindow.runtimePanelHasWindows() ? panelWindow.runtimePanelLocalPreferredHeight("windows") : 72
-                radius: 12
-                color: panelWindow.runtimePanelLocalExpanded("windows") ? colors.panel : colors.cardAlt
-                border.color: panelWindow.runtimePanelLocalExpanded("windows") ? colors.blueMuted : colors.border
-                border.width: 1
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 8
-                    anchors.rightMargin: 8
-                    anchors.topMargin: 8
-                    anchors.bottomMargin: 8
-                    spacing: 8
-
-                    WindowComponents.RuntimePanelSectionHeader {
-                        colorsObject: colors
-                        title: "Windows"
-                        summary: panelWindow.runtimePanelHasWindows() ? panelWindow.runtimePanelWindowSummary() : "No tracked project windows"
-                        count: panelWindow.runtimePanelWindowCount()
-                        expanded: panelWindow.runtimePanelLocalExpanded("windows")
-                        clickable: panelWindow.runtimePanelHasWindows()
-                        expandedBorder: colors.blueMuted
-                        onClicked: root.toggleRuntimePanelSection("windows")
-                    }
-
-                    Text {
-                        Layout.fillWidth: true
-                        visible: panelWindow.runtimeProjects.length === 0
-                        text: "No tracked project windows"
-                        color: colors.subtle
-                        font.pixelSize: 10
-                        font.weight: Font.Medium
-                        wrapMode: Text.WordWrap
-                    }
-
-                    Text {
-                        Layout.fillWidth: true
-                        visible: panelWindow.runtimePanelLocalCollapsed("windows")
-                        text: "Window groups stay available here while Herdr Monitor takes the full panel."
-                        color: colors.subtle
-                        font.pixelSize: 9
-                        font.weight: Font.Medium
-                        wrapMode: Text.WordWrap
-                    }
-
-                    ScriptModel {
-                        id: windowProjectsModel
-                        values: panelWindow.runtimeProjects
-                        objectProp: "modelData"
-                    }
-
-                    ListView {
-                        id: windowsList
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        clip: true
-                        spacing: 8
-                        boundsBehavior: Flickable.StopAtBounds
-                        model: windowProjectsModel
-                        cacheBuffer: 1200
-                        visible: panelWindow.runtimePanelHasWindows() && panelWindow.runtimePanelLocalExpanded("windows")
-
-                        delegate: Rectangle {
-                            required property var modelData
-                            readonly property var projectGroup: modelData
-                            readonly property var projectWindows: root.arrayOrEmpty(projectGroup.windows)
-                            width: windowsList.width
-                            implicitHeight: 52 + (projectWindows.length * 44) + (Math.max(0, projectWindows.length - 1) * 6) + 10
-                            radius: 12
-                            color: root.projectCardFill(projectGroup)
-                            border.color: "transparent"
-                            border.width: 0
-
-                            Rectangle {
-                                visible: root.stringOrEmpty(projectGroup.project) !== "global"
-                                width: 3
-                                radius: 1
-                                color: root.modeAccentColor(projectGroup.execution_mode)
-                                anchors.left: parent.left
-                                anchors.top: parent.top
-                                anchors.bottom: parent.bottom
-                                anchors.leftMargin: 2
-                                anchors.topMargin: 8
-                                anchors.bottomMargin: 8
-                                opacity: projectGroup.is_active ? 0.95 : 0.72
-                            }
-
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 10
-                                anchors.rightMargin: 8
-                                anchors.topMargin: 8
-                                anchors.bottomMargin: 8
-                                spacing: 8
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    implicitHeight: 30
-                                    radius: 10
-                                    color: root.projectHeaderFill(projectGroup)
-                                    border.color: "transparent"
-                                    border.width: 0
-
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.leftMargin: 8
-                                        anchors.rightMargin: 8
-                                        spacing: 8
-
-                                        Rectangle {
-                                            width: 20
-                                            height: 20
-                                            radius: 7
-                                            color: root.stringOrEmpty(projectGroup.project) === "global" ? colors.card : (projectGroup.is_active ? colors.blueBg : colors.bg)
-                                            border.color: "transparent"
-                                            border.width: 0
-
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: root.stringOrEmpty(projectGroup.project) === "global" ? "G" : root.shortProject(projectGroup.project).slice(0, 1).toUpperCase()
-                                                color: root.stringOrEmpty(projectGroup.project) === "global" ? colors.subtle : (projectGroup.is_active ? colors.blue : colors.muted)
-                                                font.pixelSize: 10
-                                                font.weight: Font.DemiBold
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            visible: root.stringOrEmpty(projectGroup.project) !== "global"
-                                            width: visible ? projectModeText.implicitWidth + 12 : 0
-                                            height: 18
-                                            radius: 6
-                                            color: root.stringOrEmpty(projectGroup.execution_mode) === "ssh" ? colors.tealBg : colors.blueBg
-                                            border.color: root.modeAccentColor(projectGroup.execution_mode)
-                                            border.width: 1
-
-                                            Text {
-                                                id: projectModeText
-                                                anchors.centerIn: parent
-                                                text: root.modeChipLabel(projectGroup.execution_mode)
-                                                color: root.modeAccentColor(projectGroup.execution_mode)
-                                                font.pixelSize: 8
-                                                font.weight: Font.DemiBold
-                                            }
-                                        }
-
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: root.stringOrEmpty(projectGroup.project) === "global" ? "Shared Windows" : root.shortProject(projectGroup.project)
-                                            color: projectGroup.is_active ? (root.stringOrEmpty(projectGroup.execution_mode) === "ssh" ? colors.teal : colors.text) : colors.textDim
-                                            font.pixelSize: 12
-                                            font.weight: Font.DemiBold
-                                            elide: Text.ElideRight
-                                        }
-
-                                        Rectangle {
-                                            width: projectWindowCountText.implicitWidth + 12
-                                            height: 18
-                                            radius: 6
-                                            color: colors.bg
-                                            border.color: "transparent"
-                                            border.width: 0
-
-                                            Text {
-                                                id: projectWindowCountText
-                                                anchors.centerIn: parent
-                                                text: String(projectWindows.length)
-                                                color: colors.muted
-                                                font.pixelSize: 8
-                                                font.weight: Font.DemiBold
-                                            }
-                                        }
-
-                                    }
-                                }
-
-                                Repeater {
-                                    model: projectWindows
-
-                                    delegate: Rectangle {
-                                        required property var modelData
-                                        readonly property var windowData: modelData
-                                        Layout.fillWidth: true
-                                        Layout.leftMargin: 12
-                                        Layout.rightMargin: 2
-                                        implicitHeight: 44
-                                        radius: 8
-                                        color: root.sidebarRowFill(windowData, windowMouse.containsMouse)
-                                        border.color: "transparent"
-                                        border.width: 0
-                                        opacity: root.windowIsFocused(windowData) ? 1 : (windowData.hidden ? 0.72 : 0.94)
-
-                                        Rectangle {
-                                            visible: root.windowIsFocused(windowData)
-                                            width: 3
-                                            radius: 1
-                                            color: colors.blue
-                                            anchors.left: parent.left
-                                            anchors.top: parent.top
-                                            anchors.bottom: parent.bottom
-                                            anchors.leftMargin: 5
-                                            anchors.topMargin: 7
-                                            anchors.bottomMargin: 7
-                                        }
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: root.windowIsFocused(windowData) ? 16 : 12
-                                            anchors.rightMargin: 8
-                                            spacing: 8
-
-                                            Rectangle {
-                                                width: 28
-                                                height: 28
-                                                radius: 7
-                                                color: colors.bg
-                                                border.color: "transparent"
-                                                border.width: 0
-
-                                                IconImage {
-                                                    anchors.centerIn: parent
-                                                    implicitSize: 20
-                                                    source: root.iconSourceFor(windowData)
-                                                    visible: source !== ""
-                                                    mipmap: true
-                                                    opacity: root.windowIsFocused(windowData) ? 1 : 0.9
-                                                }
-
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    visible: root.iconSourceFor(windowData) === ""
-                                                    text: root.appLabel(windowData).slice(0, 1).toUpperCase()
-                                                    color: root.windowIsFocused(windowData) ? colors.text : colors.textDim
-                                                    font.pixelSize: 12
-                                                    font.weight: Font.DemiBold
-                                                }
-                                            }
-
-                                            Text {
-                                                Layout.fillWidth: true
-                                                text: root.displayTitle(windowData)
-                                                color: root.sidebarRowText(windowData, windowMouse.containsMouse)
-                                                font.pixelSize: 13
-                                                font.weight: Font.DemiBold
-                                                elide: Text.ElideRight
-                                                verticalAlignment: Text.AlignVCenter
-                                            }
-
-                                            Rectangle {
-                                                width: 18
-                                                height: 18
-                                                radius: 6
-                                                color: closeMouse.containsMouse ? colors.redBg : colors.bg
-                                                border.color: "transparent"
-                                                border.width: 0
-
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: "×"
-                                                    color: closeMouse.containsMouse ? colors.red : (root.windowIsFocused(windowData) ? colors.muted : colors.subtle)
-                                                    font.pixelSize: 10
-                                                    font.weight: Font.DemiBold
-                                                }
-
-                                                MouseArea {
-                                                    id: closeMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        mouse.accepted = true;
-                                                        root.closeWindow(windowData);
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            id: windowMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: root.focusWindow(windowData)
-                                        }
-                                    }
-                                }
                             }
                         }
                     }
