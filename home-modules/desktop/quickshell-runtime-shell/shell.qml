@@ -622,41 +622,57 @@ ShellRoot {
         return colors.subtle;
     }
 
-    function currentContextTitle() {
-        const context = dashboard.active_context || {};
-        const qualified = stringOrEmpty(context.qualified_name || context.project_name);
-        return qualified ? shortProject(qualified) : "Global";
-    }
-
-    function currentContextGitSource() {
-        const activeWorktree = activeWorktreeItem();
-        if (activeWorktree && stringOrEmpty(activeWorktree.kind) !== "global") {
-            return activeWorktree;
-        }
-
-        const activeProject = activeContextProjectName();
-        const activeHost = normalizeHostAlias(activeContextTargetHost());
-
-        const sessions = activeSessions();
-        for (let i = 0; i < sessions.length; i += 1) {
-            const session = sessions[i];
-            const project = stringOrEmpty(session && (session.project_name || session.project));
-            const host = normalizeHostAlias(session && (session.herdr_host || session.host_name || session.target_host));
-            if (project === activeProject && (!activeHost || !host || host === activeHost)) {
-                return session;
-            }
-        }
-
+    // The bottom-bar context chip is keyed off the focused Herdr space (the repo
+    // you're actually working in) rather than the retired project system. Herdr
+    // spaces already carry repo_name / branch_label and the same git_* fields the
+    // chip renders, so this is a drop-in source swap.
+    function focusedHerdrSpace() {
         const spaces = herdrSpaces();
-        for (let j = 0; j < spaces.length; j += 1) {
-            const space = spaces[j];
-            const project = stringOrEmpty(space && space.project_name);
-            const host = normalizeHostAlias(space && (space.host_key || space.host_label));
-            if (project === activeProject && (!activeHost || !host || host === activeHost)) {
+        const fs = dashboard.focus_state || {};
+        const host = normalizeHostAlias(fs.current_herdr_host);
+        let anyFocused = null;
+        for (let i = 0; i < spaces.length; i += 1) {
+            const space = spaces[i];
+            if (!boolOrFalse(space && space.focused)) {
+                continue;
+            }
+            if (!anyFocused) {
+                anyFocused = space;
+            }
+            const spaceHost = normalizeHostAlias(space.host_key || space.host_label);
+            if (!host || !spaceHost || spaceHost === host) {
                 return space;
             }
         }
-        return null;
+        return anyFocused;
+    }
+
+    function currentContextTitle() {
+        const space = focusedHerdrSpace();
+        if (space) {
+            const repo = stringOrEmpty(space.repo_name);
+            const branch = stringOrEmpty(space.branch_label);
+            if (repo && branch && repo !== branch) {
+                return repo + ":" + branch;
+            }
+            if (repo) {
+                return repo;
+            }
+            const label = stringOrEmpty(space.label);
+            if (label) {
+                return label;
+            }
+        }
+        return "Global";
+    }
+
+    function currentContextExecutionMode() {
+        const space = focusedHerdrSpace();
+        return space ? stringOrEmpty(space.execution_mode) : "";
+    }
+
+    function currentContextGitSource() {
+        return focusedHerdrSpace();
     }
 
     function currentContextGitChipText() {

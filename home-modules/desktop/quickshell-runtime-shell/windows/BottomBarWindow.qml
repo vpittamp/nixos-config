@@ -78,7 +78,7 @@ PanelWindow {
                         width: 7
                         height: 7
                         radius: 4
-                        color: stringOrEmpty((dashboard.active_context || {}).execution_mode) === "ssh" ? colors.teal : colors.accent
+                        color: root.currentContextExecutionMode() === "ssh" ? colors.teal : colors.accent
                     }
 
                     Text {
