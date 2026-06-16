@@ -31,6 +31,13 @@ in
 
   xdg.configFile."herdr/config.toml" = {
     force = true;
+    # Reload the running herdr server when this config changes, so a long-lived
+    # server doesn't keep serving (and re-diagnosing) a stale in-memory config
+    # after a switch — e.g. re-emitting the prefix+shift+h keybind warning even
+    # though the fix is already on disk. No-op when no server is running.
+    onChange = ''
+      ${herdrPackage}/bin/herdr server reload-config >/dev/null 2>&1 || true
+    '';
     text = ''
     # Managed by Home Manager. Edit home-modules/terminal/herdr.nix.
     onboarding = false
