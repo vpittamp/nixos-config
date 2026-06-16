@@ -133,10 +133,6 @@ in
     "${modifier}+Shift+minus" = "move scratchpad";
     "${modifier}+minus" = "scratchpad show";
 
-    # ========== PROJECT MANAGEMENT (i3pm) ==========
-    "${modifier}+p" = "exec i3-project-switch";
-    "${modifier}+Shift+p" = "exec i3-project-clear";
-
     # ========== APP SHORTCUTS (via i3pm app registry) ==========
     "${modifier}+y" = "exec i3pm run yazi";
 

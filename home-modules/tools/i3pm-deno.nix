@@ -92,23 +92,12 @@ EOF
       maintainers = [ ];
     };
   };
-  # Wrapper scripts for Sway keybindings (aliases don't work with exec)
-  i3-project-switch = pkgs.writeShellScriptBin "i3-project-switch" ''
-    # Launch Walker with the projects provider for fuzzy selection
-    exec ${pkgs.walker}/bin/walker -m projects
-  '';
-
-  i3-project-clear = pkgs.writeShellScriptBin "i3-project-clear" ''
-    exec i3pm context clear "$@"
-  '';
 in
 {
   config = {
     # Install i3pm binary and wrapper scripts
     home.packages = [
       i3pm
-      i3-project-switch  # For Win+P keybinding (sway-keybindings.nix)
-      i3-project-clear   # For Win+Shift+P keybinding (sway-keybindings.nix)
     ];
 
     # Feature 109: Declarative GitHub accounts configuration
