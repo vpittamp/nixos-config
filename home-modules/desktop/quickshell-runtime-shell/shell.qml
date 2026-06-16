@@ -349,20 +349,9 @@ ShellRoot {
             label: "URLs",
             title: "Open URL",
             placeholder: "Search Chrome URLs, bookmarks, tabs, or paste a link",
-            help: "Enter open  •  Shift+Enter browser  •  Ctrl+Enter copy  •  Ctrl+3 Projects",
+            help: "Enter open  •  Shift+Enter browser  •  Ctrl+Enter copy",
             icon: "internet-web-browser",
             fallbackGlyph: "U",
-            accentColorKey: "teal",
-            accentBgKey: "tealBg"
-        },
-        {
-            id: "projects",
-            label: "Projects",
-            title: "Switch Project",
-            placeholder: "Filter projects",
-            help: "Tab modes  •  Up/Down results  •  Ctrl+1 Apps  •  Ctrl+2 URLs",
-            icon: "folder-development",
-            fallbackGlyph: "P",
             accentColorKey: "teal",
             accentBgKey: "tealBg"
         },
@@ -3612,9 +3601,6 @@ ShellRoot {
         if (launcherMode === "urls") {
             return launcherEntries.length ? launcherEntries.length + " URL result" + (launcherEntries.length === 1 ? "" : "s") : "No matching URLs";
         }
-        if (launcherMode === "projects") {
-            return launcherEntries.length ? launcherEntries.length + " project context" + (launcherEntries.length === 1 ? "" : "s") : "No matching projects";
-        }
         if (launcherMode === "runner") {
             return launcherEntries.length ? launcherEntries.length + " command ready" : "Type a command to run";
         }
@@ -3652,9 +3638,6 @@ ShellRoot {
         if (launcherMode === "urls") {
             return "No Chrome URLs or PWAs match the current query";
         }
-        if (launcherMode === "projects") {
-            return "No projects match the current query";
-        }
         if (launcherMode === "runner") {
             return "Type a command to run from the current context";
         }
@@ -3685,9 +3668,6 @@ ShellRoot {
             nextQuery = nextQuery.slice(1).replace(/^\s+/, "");
         } else if (nextQuery.indexOf(";u") === 0) {
             nextMode = "urls";
-            nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
-        } else if (nextQuery.indexOf(";p") === 0) {
-            nextMode = "projects";
             nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
         } else if (nextQuery === ">" || nextQuery.indexOf(">") === 0) {
             nextMode = "runner";
@@ -6969,12 +6949,6 @@ ShellRoot {
 
         if (launcherQueryProcess.running) {
             launcherQueryProcess.running = false;
-        }
-
-        if (launcherMode === "projects") {
-            launcherLoading = false;
-            setLauncherEntries(projectLauncherEntries(launcherQuery));
-            return;
         }
 
         if (launcherMode === "files") {
