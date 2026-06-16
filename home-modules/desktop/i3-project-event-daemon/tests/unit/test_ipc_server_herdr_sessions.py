@@ -1111,7 +1111,10 @@ async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
         },
     }
     assert remote_row["close_target"] == {}
-    assert server.focus_service.select_current_session_key(rows, focused_window_id=0) == "herdr:pane:local-pane"
+    # With sway focus on the local herdr window, the local row's active pane is current.
+    assert server.focus_service.select_current_session_key(
+        rows, focused_herdr_host="__local__"
+    ) == "herdr:pane:local-pane"
 
 
 @pytest.mark.asyncio

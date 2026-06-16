@@ -5996,17 +5996,32 @@ class IPCServer:
             session for session in herdr_snapshot.get("sessions", [])
             if isinstance(session, dict)
         ]
-        focused_window_id = next(
+        focused_window = next(
             (
-                int(window.get("id") or 0)
+                window
                 for window in self._flatten_runtime_windows(runtime_snapshot)
                 if isinstance(window, dict) and bool(window.get("focused", False))
             ),
-            0,
+            None,
         )
+        focused_window_id = int(focused_window.get("id") or 0) if focused_window else 0
+        # Map the sway-focused window to a herdr instance, if any. Herdr instances
+        # are launched as their own windows with registry app names "herdr" (local)
+        # and "herdr-<host>" (remote). This is the authoritative signal for which
+        # herdr session owns focus — each instance marks its own active pane
+        # focused=True, so the per-instance flag alone is ambiguous across windows.
+        focused_herdr_host: Optional[str] = None
+        if focused_window is not None:
+            focused_app = str(
+                focused_window.get("app_name") or focused_window.get("app_key") or ""
+            ).strip()
+            if focused_app == "herdr":
+                focused_herdr_host = "__local__"
+            elif focused_app.startswith("herdr-"):
+                focused_herdr_host = focused_app[len("herdr-"):]
         current_session_key = self.focus_service.select_current_session_key(
             sessions,
-            focused_window_id=focused_window_id,
+            focused_herdr_host=focused_herdr_host,
         )
         self.focus_service.mark_current_session(
             sessions,

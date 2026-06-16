@@ -627,24 +627,27 @@ ShellRoot {
     // spaces already carry repo_name / branch_label and the same git_* fields the
     // chip renders, so this is a drop-in source swap.
     function focusedHerdrSpace() {
-        const spaces = herdrSpaces();
         const fs = dashboard.focus_state || {};
+        // Deterministic: the daemon reports the focused herdr pane via
+        // current_session_key (empty when sway focus is not on a herdr window).
+        // No focused pane => no current space => the chip reads "Global". This is
+        // a pure function of real focus, with no "any focused space" fallback.
+        if (!stringOrEmpty(fs.current_session_key)) {
+            return null;
+        }
         const host = normalizeHostAlias(fs.current_herdr_host);
-        let anyFocused = null;
+        const spaces = herdrSpaces();
         for (let i = 0; i < spaces.length; i += 1) {
             const space = spaces[i];
             if (!boolOrFalse(space && space.focused)) {
                 continue;
             }
-            if (!anyFocused) {
-                anyFocused = space;
-            }
             const spaceHost = normalizeHostAlias(space.host_key || space.host_label);
-            if (!host || !spaceHost || spaceHost === host) {
+            if (!host || spaceHost === host) {
                 return space;
             }
         }
-        return anyFocused;
+        return null;
     }
 
     function currentContextTitle() {

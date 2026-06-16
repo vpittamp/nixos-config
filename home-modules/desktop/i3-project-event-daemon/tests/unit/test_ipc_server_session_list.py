@@ -569,145 +569,76 @@ def make_local_payload():
     }
 
 
-def test_select_current_session_key_ignores_stale_override_when_focus_moves_windows(server):
-    server._set_focus_overrides(
-        session_key="session-old",
-        window_id=133,
-        connection_key="local@thinkpad",
-    )
-    sessions = [
-        {
-            "session_key": "session-old",
-            "window_id": 133,
-            "is_current_host": True,
-            "window_active": False,
-            "pane_active": True,
-        },
-        {
-            "session_key": "session-new",
-            "window_id": 146,
-            "is_current_host": True,
-            "window_active": True,
-            "pane_active": False,
-        },
-    ]
-
-    current_session_key = server.focus_service.select_current_session_key(
-        sessions,
-        focused_window_id=146,
-    )
-
-    assert current_session_key == "session-new"
-    assert server.focus_service.session_override_key == ""
-
-
-def test_select_current_session_key_clears_override_when_focus_moves_to_non_session_window(server):
-    server._set_focus_overrides(
-        session_key="session-remote",
-        window_id=29,
-        connection_key="vpittamp@ryzen:22",
-    )
-    sessions = [
-        {
-            "session_key": "session-remote",
-            "window_id": 29,
-            "is_current_host": True,
-            "window_active": False,
-            "pane_active": True,
-        }
-    ]
-
-    current_session_key = server.focus_service.select_current_session_key(
-        sessions,
-        focused_window_id=32,
-    )
-
-    assert current_session_key == ""
-    assert server.focus_service.session_override_key == ""
-    assert server.focus_service.window_override == {"window_id": 0, "connection_key": ""}
-
-
-def test_select_current_session_key_preserves_override_when_focused_window_still_matches(server):
-    server._set_focus_overrides(
-        session_key="session-remote",
-        window_id=29,
-        connection_key="vpittamp@ryzen:22",
-    )
-    sessions = [
-        {
-            "session_key": "session-remote",
-            "window_id": 31,
-            "is_current_host": True,
-            "window_active": False,
-            "pane_active": False,
-        }
-    ]
-
-    current_session_key = server.focus_service.select_current_session_key(
-        sessions,
-        focused_window_id=29,
-    )
-
-    assert current_session_key == "session-remote"
-    assert server.focus_service.session_override_key == "session-remote"
-
-
-def test_select_current_session_key_prefers_focused_herdr_override_over_local_focus(server):
-    server._set_focus_overrides(
-        session_key="herdr:ryzen:pane:w1-1",
-        window_id=0,
-        connection_key="vpittamp@ryzen:22",
-    )
-    sessions = [
+def _herdr_local_and_remote_both_active():
+    """Both herdr instances mark their own active pane focused — the ambiguous
+    case the deterministic selector must resolve purely from sway focus."""
+    return [
         {
             "session_key": "herdr:thinkpad:pane:w0-1",
             "source": "herdr",
             "focused": True,
+            "pane_active": True,
             "is_current_host": True,
+            "host_name": "thinkpad",
         },
         {
             "session_key": "herdr:ryzen:pane:w1-1",
             "source": "herdr",
             "focused": True,
+            "pane_active": True,
             "is_current_host": False,
+            "host_name": "ryzen",
         },
     ]
 
-    current_session_key = server.focus_service.select_current_session_key(
-        sessions,
-        focused_window_id=0,
+
+def test_current_session_follows_focused_local_herdr_instance(server):
+    """The reported bug: sway focus is on the LOCAL herdr window, but the remote
+    instance also reports its pane focused. Deterministically the local instance
+    wins — selection is a pure function of which herdr window holds sway focus."""
+    result = server.focus_service.select_current_session_key(
+        _herdr_local_and_remote_both_active(),
+        focused_herdr_host="__local__",
     )
+    assert result == "herdr:thinkpad:pane:w0-1"
 
-    assert current_session_key == "herdr:ryzen:pane:w1-1"
 
-
-def test_select_current_session_key_ignores_unfocused_herdr_override(server):
-    server._set_focus_overrides(
-        session_key="herdr:ryzen:pane:w1-1",
-        window_id=0,
-        connection_key="vpittamp@ryzen:22",
+def test_current_session_follows_focused_remote_herdr_instance(server):
+    """Sway focus on the remote herdr-<host> window selects that host's pane."""
+    result = server.focus_service.select_current_session_key(
+        _herdr_local_and_remote_both_active(),
+        focused_herdr_host="ryzen",
     )
+    assert result == "herdr:ryzen:pane:w1-1"
+
+
+def test_current_session_empty_when_focus_not_on_herdr_window(server):
+    """No fallback: focus on a non-herdr window (or nothing) => nothing focused."""
+    result = server.focus_service.select_current_session_key(
+        _herdr_local_and_remote_both_active(),
+        focused_herdr_host=None,
+    )
+    assert result == ""
+
+
+def test_current_session_empty_when_focused_instance_has_no_active_pane(server):
+    """No fallback/guess: if the focused instance reports no active pane, the
+    current session is empty rather than an arbitrarily chosen row."""
     sessions = [
         {
             "session_key": "herdr:thinkpad:pane:w0-1",
-            "source": "herdr",
-            "focused": True,
-            "is_current_host": True,
-        },
-        {
-            "session_key": "herdr:ryzen:pane:w1-1",
             "source": "herdr",
             "focused": False,
-            "is_current_host": False,
+            "pane_active": False,
+            "is_current_host": True,
+            "host_name": "thinkpad",
         },
     ]
-
-    current_session_key = server.focus_service.select_current_session_key(
+    result = server.focus_service.select_current_session_key(
         sessions,
-        focused_window_id=0,
+        focused_herdr_host="__local__",
     )
-
-    assert current_session_key == "herdr:thinkpad:pane:w0-1"
+    assert result == ""
 
 
 @pytest.mark.asyncio

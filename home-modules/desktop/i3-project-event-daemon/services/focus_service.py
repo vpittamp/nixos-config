@@ -1384,107 +1384,67 @@ class FocusService:
         self,
         sessions: List[Dict[str, Any]],
         *,
-        focused_window_id: int,
+        focused_herdr_host: Optional[str] = None,
     ) -> str:
-        """Return the single session key that owns current focus."""
-        override_key = self.current_session_override_key(
+        """Deterministically return the session key that owns current focus.
+
+        The current session is, by definition, the active pane of the herdr
+        instance whose window holds sway focus — nothing else. Each herdr instance
+        independently marks its own active pane ``focused=True``, so the
+        per-instance flag alone cannot disambiguate across instances; the
+        sway-focused window is the single authoritative signal. The caller derives
+        ``focused_herdr_host`` from that window's registry app name:
+
+          * ``"__local__"`` — focus is on the local herdr instance window.
+          * ``"<host>"``    — focus is on the remote herdr-<host> window.
+          * ``None``        — focus is not on a herdr window.
+
+        There are NO fallbacks: if focus is not on a herdr window, or the focused
+        instance reports no active pane, the result is "" (nothing focused). Click
+        responsiveness is handled client-side via optimistic pending-focus intents,
+        so no daemon-side click override is consulted here — the rendered current
+        session is always a pure function of where sway focus actually is.
+        """
+        candidates = self._sessions_for_focused_herdr_instance(
             sessions,
-            focused_window_id=focused_window_id,
+            focused_herdr_host=focused_herdr_host,
         )
-        if override_key:
-            override_session = next(
-                (
-                    session for session in sessions
-                    if isinstance(session, dict)
-                    and str(session.get("session_key") or "").strip() == override_key
-                ),
-                None,
-            )
-            if (
-                isinstance(override_session, dict)
-                and str(override_session.get("source") or "").strip() == "herdr"
-                and bool(override_session.get("focused", False))
-            ):
-                return override_key
-
-        local_herdr_focused = next(
+        if not candidates:
+            return ""
+        return next(
             (
                 str(session.get("session_key") or "").strip()
-                for session in sessions
-                if isinstance(session, dict)
-                and str(session.get("source") or "").strip() == "herdr"
-                and bool(session.get("focused", False))
-                and bool(session.get("is_current_host", False))
-                and str(session.get("session_key") or "").strip()
+                for session in candidates
+                if bool(session.get("pane_active", False))
+                or bool(session.get("focused", False))
             ),
             "",
         )
-        if local_herdr_focused:
-            return local_herdr_focused
 
-        remote_herdr_focused = next(
-            (
-                str(session.get("session_key") or "").strip()
-                for session in sessions
-                if isinstance(session, dict)
-                and str(session.get("source") or "").strip() == "herdr"
-                and bool(session.get("focused", False))
-                and str(session.get("session_key") or "").strip()
-            ),
-            "",
-        )
-        if remote_herdr_focused:
-            return remote_herdr_focused
+    @staticmethod
+    def _sessions_for_focused_herdr_instance(
+        sessions: List[Dict[str, Any]],
+        *,
+        focused_herdr_host: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        """Herdr sessions belonging to the sway-focused herdr instance (only)."""
+        if not focused_herdr_host:
+            return []
 
-        if focused_window_id > 0:
-            window_sessions = [
-                session for session in sessions
-                if int(session.get("window_id") or 0) == focused_window_id
-                and bool(session.get("is_current_host", False))
-            ]
-            if window_sessions:
-                override_match = next(
-                    (
-                        str(session.get("session_key") or "").strip()
-                        for session in window_sessions
-                        if str(session.get("session_key") or "").strip() == override_key
-                    ),
-                    "",
-                )
-                if override_match:
-                    return override_match
+        def _is_herdr(session: Dict[str, Any]) -> bool:
+            return isinstance(session, dict) and str(session.get("source") or "").strip() == "herdr"
 
-                if override_key:
-                    self.session_override_key = ""
-                    self.window_override = {"window_id": 0, "connection_key": ""}
+        def _host_token(value: Any) -> str:
+            return str(value or "").strip().lower()
 
-                exact_match = next(
-                    (
-                        str(session.get("session_key") or "")
-                        for session in window_sessions
-                        if bool(session.get("window_active", False))
-                        and bool(session.get("pane_active", False))
-                    ),
-                    "",
-                )
-                if exact_match:
-                    return exact_match
-
-                return str(window_sessions[0].get("session_key") or "")
-
-            override_window_id = int(self.window_override.get("window_id") or 0)
-            if override_key and override_window_id > 0 and override_window_id == focused_window_id:
-                return override_key
-
-            if override_key:
-                self.session_override_key = ""
-                self.window_override = {"window_id": 0, "connection_key": ""}
-                return ""
-
-        if override_key:
-            return override_key
-
-        return ""
+        if focused_herdr_host == "__local__":
+            return [s for s in sessions if _is_herdr(s) and bool(s.get("is_current_host", False))]
+        host = _host_token(focused_herdr_host)
+        return [
+            s for s in sessions
+            if _is_herdr(s)
+            and _host_token(s.get("host_name") or s.get("herdr_host")) == host
+        ]
 
     @staticmethod
     def mark_current_session(

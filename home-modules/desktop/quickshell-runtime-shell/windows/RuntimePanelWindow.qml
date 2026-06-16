@@ -77,6 +77,13 @@ PanelWindow {
         if (runtimeSessions.length > 0) {
             bits.push(String(runtimeSessions.length) + (runtimeSessions.length === 1 ? " agent" : " agents"));
         }
+        // Reflect the "nothing focused" state explicitly: when sway focus is not
+        // on any herdr pane the daemon reports an empty current_session_key, so no
+        // row is highlighted — call that out rather than leaving it ambiguous.
+        if (runtimePanelHasSessions()
+            && !root.stringOrEmpty((root.dashboard.focus_state || {}).current_session_key)) {
+            bits.push("no session focused");
+        }
         return bits.join(" • ");
     }
 

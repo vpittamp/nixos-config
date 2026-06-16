@@ -182,62 +182,75 @@ async def test_window_is_locally_tracked_reports_false_on_snapshot_error() -> No
     assert await service.window_is_locally_tracked(101) is False
 
 
-def test_select_current_session_key_clears_stale_window_override() -> None:
+def test_select_current_session_key_selects_active_pane_of_focused_local_instance() -> None:
     service = make_service()
-    service.set_focus_overrides(
-        session_key="session-old",
-        window_id=133,
-        connection_key="local@thinkpad",
-    )
-    sessions = [
-        {
-            "session_key": "session-old",
-            "window_id": 133,
-            "is_current_host": True,
-            "window_active": False,
-            "pane_active": True,
-        },
-        {
-            "session_key": "session-new",
-            "window_id": 146,
-            "is_current_host": True,
-            "window_active": True,
-            "pane_active": False,
-        },
-    ]
-
-    result = service.select_current_session_key(sessions, focused_window_id=146)
-
-    assert result == "session-new"
-    assert service.session_override_key == ""
-    assert service.window_override == {"window_id": 0, "connection_key": ""}
-
-
-def test_select_current_session_key_prefers_focused_remote_herdr_override() -> None:
-    service = make_service()
-    service.set_focus_overrides(
-        session_key="herdr:ryzen:pane:w1-1",
-        window_id=0,
-        connection_key="vpittamp@ryzen:22",
-    )
     sessions = [
         {
             "session_key": "herdr:thinkpad:pane:w0-1",
             "source": "herdr",
             "focused": True,
+            "pane_active": True,
             "is_current_host": True,
+            "host_name": "thinkpad",
         },
         {
             "session_key": "herdr:ryzen:pane:w1-1",
             "source": "herdr",
             "focused": True,
+            "pane_active": True,
             "is_current_host": False,
+            "host_name": "ryzen",
         },
     ]
 
-    result = service.select_current_session_key(sessions, focused_window_id=0)
+    # Sway focus is on the local herdr window: the local instance's active pane is
+    # current, deterministically, even though the remote instance also reports its
+    # own pane focused.
+    result = service.select_current_session_key(sessions, focused_herdr_host="__local__")
+
+    assert result == "herdr:thinkpad:pane:w0-1"
+
+
+def test_select_current_session_key_selects_focused_remote_instance() -> None:
+    service = make_service()
+    sessions = [
+        {
+            "session_key": "herdr:thinkpad:pane:w0-1",
+            "source": "herdr",
+            "focused": True,
+            "pane_active": True,
+            "is_current_host": True,
+            "host_name": "thinkpad",
+        },
+        {
+            "session_key": "herdr:ryzen:pane:w1-1",
+            "source": "herdr",
+            "focused": True,
+            "pane_active": True,
+            "is_current_host": False,
+            "host_name": "ryzen",
+        },
+    ]
+
+    result = service.select_current_session_key(sessions, focused_herdr_host="ryzen")
 
     assert result == "herdr:ryzen:pane:w1-1"
+
+
+def test_select_current_session_key_empty_when_focus_not_on_herdr() -> None:
+    service = make_service()
+    sessions = [
+        {
+            "session_key": "herdr:thinkpad:pane:w0-1",
+            "source": "herdr",
+            "focused": True,
+            "pane_active": True,
+            "is_current_host": True,
+            "host_name": "thinkpad",
+        },
+    ]
+
+    assert service.select_current_session_key(sessions, focused_herdr_host=None) == ""
 
 
 def test_mark_current_session_produces_single_current_row() -> None:
