@@ -544,17 +544,6 @@ ShellRoot {
         return sections.length ? sections[0] : null;
     }
 
-    function settingsSectionIndex(section) {
-        const target = stringOrEmpty(section).toLowerCase();
-        const sections = arrayOrEmpty(settingsSectionsModel);
-        for (let index = 0; index < sections.length; index += 1) {
-            if (stringOrEmpty(sections[index] && sections[index].id) === target) {
-                return index;
-            }
-        }
-        return 0;
-    }
-
     function launcherModeMeta(mode) {
         const target = stringOrEmpty(mode).toLowerCase();
         const modes = arrayOrEmpty(launcherModesModel);
@@ -605,21 +594,6 @@ ShellRoot {
             return "Local";
         }
         return value ? value : "Global";
-    }
-
-    function modeChipLabel(mode) {
-        return modeLabel(mode);
-    }
-
-    function modeAccentColor(mode) {
-        const value = stringOrEmpty(mode).toLowerCase();
-        if (value === "ssh") {
-            return colors.teal;
-        }
-        if (value === "local") {
-            return colors.blue;
-        }
-        return colors.subtle;
     }
 
     // The bottom-bar context chip is keyed off the focused Herdr space (the repo
@@ -1095,16 +1069,6 @@ ShellRoot {
         return sessions;
     }
 
-    function groupHasCurrentSession(group) {
-        const sessions = arrayOrEmpty(group && group.sessions);
-        for (let i = 0; i < sessions.length; i += 1) {
-            if (sessionIsCurrent(sessions[i])) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     function projectGroupFor(projectName, targetHost) {
         const projects = arrayOrEmpty(dashboard.projects);
         const project = stringOrEmpty(projectName);
@@ -1127,10 +1091,6 @@ ShellRoot {
         const focusedWindow = windows.find(windowData => windowIsFocused(windowData));
         focusWindow(focusedWindow || windows[0]);
         return true;
-    }
-
-    function compactSessions() {
-        return panelSessions().slice(0, 10);
     }
 
     function primaryOutputCandidates() {
@@ -1514,15 +1474,6 @@ ShellRoot {
     function closeDisplaySelector() {
         displaySelectorVisible = false;
         displaySelectorOutputName = "";
-    }
-
-    function toggleDisplaySelector(outputName) {
-        const targetOutput = stringOrEmpty(outputName) || primaryOutputName || focusedOutputName() || "";
-        if (displaySelectorVisible && stringOrEmpty(displaySelectorOutputName) === targetOutput) {
-            closeDisplaySelector();
-            return;
-        }
-        openDisplaySelector(targetOutput);
     }
 
     function applyDisplayLayout(layoutName) {
@@ -2148,35 +2099,6 @@ ShellRoot {
         return active ? activeText : neutralChipText(hovered);
     }
 
-    function sidebarRowFill(windowData, hovered) {
-        if (windowIsFocused(windowData)) {
-            return colors.blueWash;
-        }
-        if (hovered) {
-            return boolOrFalse(windowData && windowData.hidden) ? colors.cardAlt : colors.card;
-        }
-        return boolOrFalse(windowData && windowData.hidden) ? colors.cardAlt : colors.bg;
-    }
-
-    function sidebarRowBorder(windowData, hovered) {
-        if (windowIsFocused(windowData)) {
-            return colors.blueMuted;
-        }
-        return hovered ? colors.borderStrong : "transparent";
-    }
-
-    function sidebarRowText(windowData, hovered) {
-        return windowIsFocused(windowData) || hovered ? colors.text : colors.textDim;
-    }
-
-    function chooserRowFill(hovered) {
-        return hovered ? colors.panelAlt : colors.cardAlt;
-    }
-
-    function chooserRowBorder(hovered) {
-        return hovered ? colors.borderStrong : colors.lineSoft;
-    }
-
     function workspaceNameValue(workspace) {
         if (typeof workspace === "string" || typeof workspace === "number") {
             return stringOrEmpty(workspace);
@@ -2192,33 +2114,6 @@ ShellRoot {
         }
         const currentWorkspace = stringOrEmpty(dashboardFocusState().current_workspace_name);
         return workspaceName !== "" && currentWorkspace !== "" && workspaceName === currentWorkspace;
-    }
-
-    function workspaceChipFill(workspace, hovered) {
-        if (workspaceIsFocused(workspace)) {
-            return colors.blue;
-        }
-        if (hovered) {
-            return colors.card;
-        }
-        return boolOrFalse(workspace && workspace.active) ? colors.card : colors.cardAlt;
-    }
-
-    function workspaceChipBorder(workspace, hovered) {
-        if (workspaceIsFocused(workspace)) {
-            return colors.blue;
-        }
-        if (boolOrFalse(workspace && workspace.urgent)) {
-            return colors.red;
-        }
-        return hovered ? colors.borderStrong : colors.border;
-    }
-
-    function workspaceChipText(workspace, hovered) {
-        if (workspaceIsFocused(workspace)) {
-            return colors.bg;
-        }
-        return hovered ? colors.text : colors.textDim;
     }
 
     function audioNode() {
@@ -2431,15 +2326,6 @@ ShellRoot {
         return brightnessDeviceLabel(target) + "  •  " + String(brightnessPercent(target)) + "%";
     }
 
-    function clearBrightnessActionState() {
-        brightnessActionTarget = "";
-        brightnessQueuedTarget = "";
-        brightnessQueuedPercent = -1;
-        brightnessActionStdout = "";
-        brightnessActionStderr = "";
-        brightnessActionError = "";
-    }
-
     function beginBrightnessAction(target, percent) {
         brightnessActionTarget = target;
         brightnessActionStdout = "";
@@ -2464,12 +2350,6 @@ ShellRoot {
         if (queuedTarget && queuedPercent >= 0 && brightnessAvailable(queuedTarget) && brightnessActionProcess && !brightnessActionProcess.running) {
             beginBrightnessAction(queuedTarget, Math.max(0, Math.min(100, Math.round(queuedPercent))));
         }
-    }
-
-    function brightnessActionPending(target) {
-        return stringOrEmpty(target) !== ""
-            && stringOrEmpty(target) === stringOrEmpty(brightnessActionTarget)
-            && !!(brightnessActionProcess && brightnessActionProcess.running);
     }
 
     function setBrightness(target, percent) {
@@ -2696,20 +2576,6 @@ ShellRoot {
 
     function batteryLow() {
         return batteryIsDischarging() && batteryPercentValue() <= 30;
-    }
-
-    function batteryTooltip() {
-        const device = batteryDevice();
-        if (!batteryReady()) {
-            return "";
-        }
-
-        const bits = [batteryLabel()];
-        const duration = batteryDurationLabel();
-        if (duration) {
-            bits.push(duration);
-        }
-        return bits.join(" • ");
     }
 
     function batteryIconSource() {
@@ -3143,20 +3009,6 @@ ShellRoot {
         return "Mem " + String(systemStatsMemoryPercentValue()) + "%";
     }
 
-    function systemStatsMemoryTooltip() {
-        const bits = [
-            String(Number(systemStatsState.memory_used_gb || 0).toFixed(1)) + " / " + String(Number(systemStatsState.memory_total_gb || 0).toFixed(1)) + " GB",
-            "load " + String(Number(systemStatsState.load1 || 0).toFixed(2))
-        ];
-        if (Number(systemStatsState.swap_total_gb || 0) > 0) {
-            bits.push("swap " + String(Number(systemStatsState.swap_used_gb || 0).toFixed(1)) + " GB");
-        }
-        if (systemStatsState.temperature_c !== null && systemStatsState.temperature_c !== undefined) {
-            bits.push(String(systemStatsState.temperature_c) + "°C");
-        }
-        return bits.join(" • ");
-    }
-
     function systemStatsDiskPercentValue() {
         return Math.round(Math.max(0, Number(systemStatsState.disk_percent || 0)));
     }
@@ -3303,46 +3155,6 @@ ShellRoot {
         return "Notif";
     }
 
-    function notificationDetail() {
-        if (boolOrFalse(notificationState.dnd)) {
-            return "Do not disturb enabled";
-        }
-        if (boolOrFalse(notificationState.visible)) {
-            return "Notification center open";
-        }
-        if (boolOrFalse(notificationState.has_unread)) {
-            return stringOrEmpty(notificationState.display_count || "0") + " unread notifications";
-        }
-        return "No unread notifications";
-    }
-
-    function sessionViewportWidth() {
-        return Math.max(0, panelWindow.width - 44);
-    }
-
-    function sessionColumnCountForWidth(width) {
-        return width >= 240 ? 2 : 1;
-    }
-
-    function sessionCardWidthForWidth(width) {
-        const columns = sessionColumnCountForWidth(width);
-        const available = Math.max(0, width);
-        const spacing = 8 * Math.max(0, columns - 1);
-        return Math.floor((available - spacing) / columns);
-    }
-
-    function sessionRowCountForWidth(width) {
-        const columns = Math.max(1, sessionColumnCountForWidth(width));
-        return Math.ceil(compactSessions().length / columns);
-    }
-
-    function sessionRailHeightForWidth(width) {
-        const rows = Math.max(1, sessionRowCountForWidth(width));
-        const visibleRows = Math.min(2, rows);
-        const cardHeight = 58;
-        const spacing = 8;
-        return 16 + (visibleRows * cardHeight) + (Math.max(0, visibleRows - 1) * spacing);
-    }
 function normalizeLauncherMode(mode) {
         const value = stringOrEmpty(mode).toLowerCase();
         const modes = arrayOrEmpty(launcherModesModel);
@@ -3589,51 +3401,6 @@ function normalizeLauncherMode(mode) {
                 return false;
             }
         }
-        return true;
-    }
-
-    function launcherProjectSubtitle(item) {
-        if (!item) {
-            return "";
-        }
-        if (stringOrEmpty(item.kind) === "global") {
-            return "Return to global context";
-        }
-
-        const bits = [];
-        const path = stringOrEmpty(item.path);
-        if (path) {
-            bits.push(path);
-        }
-        if (Number(item.dirty_count || 0) > 0) {
-            bits.push("dirty:" + String(Number(item.dirty_count || 0)));
-        }
-        if (Number(item.visible_window_count || 0) > 0) {
-            bits.push("visible:" + String(Number(item.visible_window_count || 0)));
-        }
-        if (Number(item.scoped_window_count || 0) > Number(item.visible_window_count || 0)) {
-            bits.push("scoped:" + String(Number(item.scoped_window_count || 0)));
-        }
-        return bits.join("  •  ");
-    }
-
-    function launcherProjectMatches(entry, query) {
-        const trimmed = stringOrEmpty(query).trim().toLowerCase();
-        if (!trimmed) {
-            return true;
-        }
-
-        const tokens = trimmed.split(/\s+/).filter(function (token) {
-            return !!token;
-        });
-        const haystack = [stringOrEmpty(entry.qualified_name), stringOrEmpty(entry.repo_display), stringOrEmpty(entry.repo_name), stringOrEmpty(entry.account), stringOrEmpty(entry.branch), stringOrEmpty(entry.path), stringOrEmpty(entry.target_host), stringOrEmpty(entry.text), stringOrEmpty(entry.subtext)].join(" ").toLowerCase();
-
-        for (let i = 0; i < tokens.length; i += 1) {
-            if (haystack.indexOf(tokens[i]) === -1) {
-                return false;
-            }
-        }
-
         return true;
     }
 
@@ -3938,14 +3705,6 @@ function normalizeLauncherMode(mode) {
         return bits.join("  •  ");
     }
 
-    function sessionPreviewSemanticBits() {
-        return [herdrStatusLabel(sessionPreview)];
-    }
-
-    function sessionPreviewSemanticSummary() {
-        return sessionPreviewSemanticBits().join("  •  ");
-    }
-
     function sessionPreviewBody() {
         const content = stringOrEmpty(sessionPreview.content);
         if (content) {
@@ -4039,41 +3798,6 @@ function normalizeLauncherMode(mode) {
         }
 
         return compareAscending(sessionIdentityKey(left), sessionIdentityKey(right));
-    }
-
-    function launcherSessionGroups(query) {
-        const tokens = launcherQueryTokens(query);
-        const groups = groupedSessionBands();
-        if (!tokens.length) {
-            return groups;
-        }
-
-        const filteredGroups = [];
-        for (let i = 0; i < groups.length; i += 1) {
-            const group = groups[i];
-            const nextGroup = Object.assign({}, group, {
-                sessions: [],
-                project_groups: []
-            });
-            const projectGroups = arrayOrEmpty(group && group.project_groups);
-            for (let j = 0; j < projectGroups.length; j += 1) {
-                const projectGroup = projectGroups[j];
-                const matchedSessions = arrayOrEmpty(projectGroup && projectGroup.sessions).filter(function (session) {
-                    return launcherSessionMatches(session, tokens);
-                });
-                if (!matchedSessions.length) {
-                    continue;
-                }
-                nextGroup.project_groups.push(Object.assign({}, projectGroup, {
-                    sessions: matchedSessions
-                }));
-                nextGroup.sessions = nextGroup.sessions.concat(matchedSessions);
-            }
-            if (nextGroup.project_groups.length) {
-                filteredGroups.push(nextGroup);
-            }
-        }
-        return filteredGroups;
     }
 
     function launcherSessionEntries(query) {
@@ -4624,82 +4348,6 @@ function normalizeLauncherMode(mode) {
         }
     }
 
-    function panelWindowItems() {
-        const items = [];
-        const projects = arrayOrEmpty(dashboard.projects);
-
-        const addGroup = function (sectionTitle, projectGroup, emphasize) {
-            if (!projectGroup) {
-                return;
-            }
-
-            const windows = arrayOrEmpty(projectGroup.windows);
-            if (!windows.length) {
-                return;
-            }
-
-            const groupFocused = windows.some(windowData => windowIsFocused(windowData));
-
-            items.push({
-                kind: "section",
-                title: sectionTitle,
-                project: stringOrEmpty(projectGroup.project),
-                execution_mode: stringOrEmpty(projectGroup.execution_mode),
-                focused: groupFocused,
-                window_count: Number(projectGroup.window_count || windows.length),
-                visible_window_count: Number(projectGroup.visible_window_count || 0),
-                hidden_window_count: Number(projectGroup.hidden_window_count || 0),
-                emphasized: !!emphasize
-            });
-
-            for (let j = 0; j < windows.length; j += 1) {
-                const windowData = windows[j];
-                items.push({
-                    kind: "window",
-                    id: windowData.id,
-                    title: windowData.title,
-                    app_key: windowData.app_key,
-                    app_name: windowData.app_name,
-                    icon_path: windowData.icon_path,
-                    project: windowData.project,
-                    execution_mode: windowData.execution_mode,
-                    connection_key: windowData.connection_key,
-                    workspace: windowData.workspace,
-                    output: windowData.output,
-                    focused: windowIsFocused(windowData),
-                    visible: !!windowData.visible,
-                    hidden: !!windowData.hidden,
-                    floating: !!windowData.floating,
-                    scope: windowData.scope,
-                });
-            }
-
-            items.push({
-                kind: "spacer"
-            });
-        };
-
-        for (let i = 0; i < projects.length; i += 1) {
-            const projectGroup = projects[i];
-            if (!projectGroup) {
-                continue;
-            }
-            const project = stringOrEmpty(projectGroup.project);
-            addGroup(project === "global" ? "Shared Windows" : shortProject(project), projectGroup, !!projectGroup.is_active);
-        }
-
-        if (!items.length) {
-            items.push({
-                kind: "empty",
-                title: "No tracked project windows"
-            });
-        } else if (items[items.length - 1].kind === "spacer") {
-            items.pop();
-        }
-
-        return items;
-    }
-
     function herdrDashboard() {
         const herdr = dashboard && typeof dashboard.herdr === "object" ? dashboard.herdr : {};
         return herdr || {};
@@ -4827,19 +4475,6 @@ function normalizeLauncherMode(mode) {
             return herdrAggregateStatusForGroup(herdrSpaceGroupKey(space));
         }
         return herdrSpaceStatus(space);
-    }
-
-    function visibleHerdrSpaces() {
-        const spaces = herdrSpaces();
-        const visible = [];
-        for (let i = 0; i < spaces.length; i += 1) {
-            const space = spaces[i];
-            const groupKey = herdrSpaceGroupKey(space);
-            if (!root.boolOrFalse(space && space.is_linked_worktree) || !herdrSpaceGroupCollapsed(groupKey) || herdrSpaceIsFocused(space)) {
-                visible.push(space);
-            }
-        }
-        return visible;
     }
 
     function runtimePanelDefaultExpandedSection() {
@@ -5113,18 +4748,6 @@ function normalizeLauncherMode(mode) {
         runFocusTarget(target);
     }
 
-    function runtimePanelSectionPreferredHeight(section) {
-        if (!runtimePanelSectionHasContent(section)) {
-            return 0;
-        }
-
-        const activeSection = runtimePanelExpandedSectionValue();
-        if (activeSection === section) {
-            return section === "sessions" ? 360 : 320;
-        }
-        return 60;
-    }
-
     function toggleRuntimePanelSection(section) {
         if (!runtimePanelSectionHasContent(section)) {
             return;
@@ -5178,20 +4801,6 @@ function normalizeLauncherMode(mode) {
         return false;
     }
 
-    function windowSectionSubtitle(item) {
-        if (!item) {
-            return "";
-        }
-
-        if (stringOrEmpty(item.project) === "global") {
-            return "Shared across contexts";
-        }
-
-        const visibleCount = Number(item.visible_window_count || 0);
-        const bits = [];
-        bits.push(String(visibleCount) + (visibleCount === 1 ? " window" : " windows"));
-        return bits.join(" • ");
-    }
    function worktreeStatusLabel(item) {
         if (!item || stringOrEmpty(item.kind) === "global") {
             return "";
@@ -5222,34 +4831,6 @@ function normalizeLauncherMode(mode) {
             return colors.blue;
         }
         return colors.accent;
-    }
-
-    function stageColor(session) {
-        const tool = stringOrEmpty(session.tool).toLowerCase();
-        if (tool === "codex") {
-            return colors.accent;
-        }
-        if (tool === "claude-code" || tool === "claude") {
-            return colors.blue;
-        }
-        if (tool === "gemini" || tool === "gemini-cli" || tool === "antigravity" || tool === "antigravity-cli" || tool === "agy") {
-            return colors.amber;
-        }
-        return colors.violet;
-    }
-
-    function stageBackground(session) {
-        const tool = stringOrEmpty(session.tool).toLowerCase();
-        if (tool === "codex") {
-            return colors.accentBg;
-        }
-        if (tool === "claude-code" || tool === "claude") {
-            return colors.blueBg;
-        }
-        if (tool === "gemini" || tool === "gemini-cli" || tool === "antigravity" || tool === "antigravity-cli" || tool === "agy") {
-            return colors.amberBg;
-        }
-        return colors.violetBg;
     }
 
     function toolIconSource(session) {
@@ -5292,29 +4873,6 @@ function normalizeLauncherMode(mode) {
             return colors.panelAlt;
         }
         return colors.cardAlt;
-    }
-
-    function sessionGroupHeaderFill(group, hovered, expanded) {
-        if (boolOrFalse(group && group.is_current_host)) {
-            return expanded ? colors.blueWash : "#13202d";
-        }
-        return hovered ? colors.card : (expanded ? colors.card : colors.bg);
-    }
-
-    function sessionGroupHeaderTextColor(group) {
-        return boolOrFalse(group && group.is_current_host) ? colors.text : colors.textDim;
-    }
-
-    function sessionGroupChevronColor(group) {
-        return boolOrFalse(group && group.is_current_host) ? colors.blue : colors.subtle;
-    }
-
-    function sessionGroupMetaLabel(group) {
-        const projectCount = arrayOrEmpty(group && group.project_groups).length;
-        if (projectCount <= 0) {
-            return "";
-        }
-        return String(projectCount) + (projectCount === 1 ? " repo" : " repos");
     }
 
     function titleCaseWord(value) {
@@ -5429,20 +4987,6 @@ function normalizeLauncherMode(mode) {
         return hostToken(stringOrEmpty(windowData && windowData.execution_mode), "", stringOrEmpty(windowData && windowData.connection_key));
     }
 
-    function projectHeaderFill(projectGroup) {
-        const project = stringOrEmpty(projectGroup && projectGroup.project);
-        const mode = stringOrEmpty(projectGroup && projectGroup.execution_mode).toLowerCase();
-        const active = !!(projectGroup && projectGroup.is_active);
-
-        if (project === "global") {
-            return active ? colors.blueWash : colors.panel;
-        }
-        if (mode === "ssh") {
-            return active ? "#14232b" : colors.panel;
-        }
-        return active ? colors.blueWash : colors.panel;
-    }
-
     function herdrStatusState(value) {
         const raw = stringOrEmpty(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
         if (["blocked", "needs_input", "needsinput", "waiting_input", "waiting_for_input"].indexOf(raw) >= 0) {
@@ -5494,29 +5038,8 @@ function normalizeLauncherMode(mode) {
         return colors.muted;
     }
 
-    function sessionTint(session) {
-        const phase = sessionPhase(session);
-        if (phase === "blocked") {
-            return colors.redBg;
-        }
-        if (phase === "done") {
-            return colors.tealBg;
-        }
-        if (phase === "working") {
-            return colors.amberBg;
-        }
-        if (phase === "idle") {
-            return colors.greenBg;
-        }
-        return colors.panelAlt;
-    }
-
     function boolOrFalse(value) {
         return value === true;
-    }
-
-    function sessionNeedsAttention(session) {
-        return sessionPhase(session) === "blocked";
     }
 
     function sessionIsIdle(session) {
@@ -5529,65 +5052,6 @@ function normalizeLauncherMode(mode) {
 
     function sessionHasMotion(session) {
         return sessionIsActivelyProcessing(session);
-    }
-
-    function sessionNeedsReview(session) {
-        return sessionPhase(session) === "blocked";
-    }
-
-    function sessionUserInputPending(session) {
-        return false;
-    }
-
-    function sessionIdleRowOpacity(session) {
-        if (!sessionIsIdle(session)) {
-            return 1;
-        }
-        return sessionIsCurrent(session) ? 0.9 : 0.76;
-    }
-
-    function sessionIdleTextOpacity(session) {
-        if (!sessionIsIdle(session)) {
-            return 1;
-        }
-        return sessionIsCurrent(session) ? 0.86 : 0.72;
-    }
-
-    function sessionIdleChipOpacity(session) {
-        if (!sessionIsIdle(session)) {
-            return 1;
-        }
-        return sessionIsCurrent(session) ? 0.9 : 0.76;
-    }
-
-    function sessionToolIconOpacity(session) {
-        if (sessionHasMotion(session)) {
-            return 0.96;
-        }
-        if (sessionIsIdle(session)) {
-            return sessionIsCurrent(session) ? 0.64 : 0.5;
-        }
-        return 0.92;
-    }
-
-    function sessionCompactIconOpacity(session) {
-        if (sessionHasMotion(session)) {
-            return sessionIsCurrent(session) ? 1 : 0.94;
-        }
-        if (sessionIsIdle(session)) {
-            return sessionIsCurrent(session) ? 0.68 : 0.54;
-        }
-        return sessionIsCurrent(session) ? 1 : 0.94;
-    }
-
-    function sessionCompactBadgeOpacity(session) {
-        if (sessionHasMotion(session)) {
-            return 1;
-        }
-        if (sessionIsIdle(session)) {
-            return sessionIsCurrent(session) ? 0.58 : 0.46;
-        }
-        return 0.85;
     }
 
     function sessionBadgeState(session) {
@@ -5945,21 +5409,6 @@ function normalizeLauncherMode(mode) {
         return "AI";
     }
 
-    function sessionCardFill(session) {
-        if (sessionIsCurrent(session)) {
-            return sessionTint(session);
-        }
-        return colors.panelAlt;
-    }
-
-    function sessionCardBorder(session) {
-        return "transparent";
-    }
-
-    function sessionTextColor(session) {
-        return sessionIsCurrent(session) ? colors.text : colors.textDim;
-    }
-
     function sessionIsCurrent(session) {
         const localPendingHerdrFocus = localPendingFocusIntentFor("herdr_pane_focus");
         if (localPendingHerdrFocus) {
@@ -5995,22 +5444,6 @@ function normalizeLauncherMode(mode) {
 
     function sessionCurrentOverride(session) {
         return sessionIsCurrent(session);
-    }
-
-    function sessionHasConflict(session) {
-        return stringOrEmpty(session.conflict_state).length > 0;
-    }
-
-    function sessionPillLabel(session) {
-        const alias = sessionAlias(session);
-        if (alias.length > 0) {
-            return alias;
-        }
-        const pane = sessionPaneLabel(session);
-        if (pane) {
-            return pane;
-        }
-        return compactSessionStateLabel(session);
     }
 
     function sessionPrimaryLabel(session) {
@@ -6172,112 +5605,8 @@ function normalizeLauncherMode(mode) {
         return null;
     }
 
-    function groupedSessionBands() {
-        const sessions = panelSessions();
-        const groups = [];
-        const index = {};
-
-        for (let i = 0; i < sessions.length; i += 1) {
-            const session = sessions[i];
-            const project = stringOrEmpty(session.project_name || session.project || "global");
-            const hostKey = sessionHostGroupKey(session);
-            const groupKey = hostKey || "unknown";
-
-            let group = index[groupKey];
-            if (!group) {
-                group = {
-                    group_key: groupKey,
-                    host_label: stringOrEmpty(sessionHostToken(session).label),
-                    host_name: sessionHostLabel(session),
-                    raw_host_name: stringOrEmpty(session.host_name),
-                    execution_mode: stringOrEmpty(session.execution_mode),
-                    is_current_host: sessionIsCurrentHost(session),
-                    focus_mode: stringOrEmpty(session.focus_mode),
-                    sessions: [],
-                    project_groups: []
-                };
-                group.project_index = {};
-                index[groupKey] = group;
-                groups.push(group);
-            }
-
-            group.sessions.push(session);
-            const projectKey = project || "global";
-            let projectGroup = group.project_index[projectKey];
-            if (!projectGroup) {
-                const parentWindow = findWindowById(Number(session.window_id || 0));
-                projectGroup = {
-                    project_key: projectKey,
-                    display_name: shortProject(project || "global"),
-                    project_name: project,
-                    execution_mode: stringOrEmpty(session.execution_mode),
-                    is_current_host: sessionIsCurrentHost(session),
-                    focus_mode: stringOrEmpty(session.focus_mode),
-                    workspace_name: parentWindow ? stringOrEmpty(parentWindow.workspace) : "",
-                    window_title: parentWindow ? stringOrEmpty(displayTitle(parentWindow)) : "",
-                    sessions: []
-                };
-                group.project_index[projectKey] = projectGroup;
-                group.project_groups.push(projectGroup);
-            }
-            projectGroup.sessions.push(session);
-        }
-
-        for (let i = 0; i < groups.length; i += 1) {
-            delete groups[i].project_index;
-        }
-
-        return groups;
-    }
-
-    function sessionGroupTitle(group) {
-        return stringOrEmpty(group && group.host_label) || displayHostName(group.host_name || group.raw_host_name || "Unknown");
-    }
-
-    function sessionGroupExpanded(group) {
-        const key = stringOrEmpty(group && group.group_key);
-        if (!key.length) {
-            return true;
-        }
-        if (expandedSessionGroups[key] !== undefined) {
-            return !!expandedSessionGroups[key];
-        }
-        return true;
-    }
-
-    function toggleSessionGroup(group) {
-        const key = stringOrEmpty(group && group.group_key);
-        if (!key.length) {
-            return;
-        }
-        const next = Object.assign({}, expandedSessionGroups);
-        next[key] = !sessionGroupExpanded(group);
-        expandedSessionGroups = next;
-    }
-
     function workspaceLabel(workspace) {
         return stringOrEmpty(workspace.name || workspace.number || workspace.num);
-    }
-
-    function workspaceSnapshot(workspaceName) {
-        const outputs = arrayOrEmpty(dashboard.outputs);
-        const target = stringOrEmpty(workspaceName);
-        for (let i = 0; i < outputs.length; i += 1) {
-            const workspaces = arrayOrEmpty(outputs[i].workspaces);
-            for (let j = 0; j < workspaces.length; j += 1) {
-                const workspace = workspaces[j];
-                if (stringOrEmpty(workspace.name) === target) {
-                    return workspace;
-                }
-            }
-        }
-        return null;
-    }
-
-    function workspaceWindowCount(workspaceName) {
-        const workspace = workspaceSnapshot(workspaceName);
-        const windows = arrayOrEmpty(workspace ? workspace.windows : []);
-        return windows.length;
     }
 
     function workspaceIconSourcesForWindows(workspaceWindows) {
@@ -6316,11 +5645,6 @@ function normalizeLauncherMode(mode) {
         }
 
         return icons;
-    }
-
-    function workspaceIconSources(workspaceName) {
-        const workspace = workspaceSnapshot(workspaceName);
-        return workspaceIconSourcesForWindows(workspace ? workspace.windows : []);
     }
 
     function appLabel(windowData) {
@@ -7353,16 +6677,6 @@ function normalizeLauncherMode(mode) {
         }
         const next = Object.assign({}, sessionClosePendingMap);
         next[key] = Date.now();
-        sessionClosePendingMap = next;
-    }
-
-    function clearSessionClosePending(sessionKey) {
-        const key = stringOrEmpty(sessionKey);
-        if (!key || !Object.prototype.hasOwnProperty.call(sessionClosePendingMap, key)) {
-            return;
-        }
-        const next = Object.assign({}, sessionClosePendingMap);
-        delete next[key];
         sessionClosePendingMap = next;
     }
 
