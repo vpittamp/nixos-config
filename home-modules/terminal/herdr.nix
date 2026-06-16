@@ -87,6 +87,17 @@ in
     navigate_pane_up = "k"
     navigate_pane_right = "l"
 
+    # Unbind the built-in pane-swap actions. Their defaults are
+    # prefix+shift+h / prefix+shift+l, and prefix+shift+h collides with the
+    # btop launcher below — herdr resolves the clash by keeping swap_pane_left
+    # and silently disabling the command (logged as "config diagnostic
+    # prefix+shift+h: kept keys.swap_pane_left, disabled keys.command[1].key").
+    # We don't use pane-swap (focus_pane/navigate_pane/cycle_pane cover pane
+    # management), so unbind both to free the prefix+shift launcher row and
+    # clear the warning. Bind them to real keys here if pane-swap is wanted.
+    swap_pane_left = ""
+    swap_pane_right = ""
+
     [[keys.command]]
     key = "prefix+shift+g"
     type = "pane"
