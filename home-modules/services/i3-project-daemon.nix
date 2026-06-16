@@ -224,6 +224,11 @@ in
         # Limit restart frequency to prevent loops
         StartLimitIntervalSec = 60;
         StartLimitBurst = 5;
+        # Always restart (not reload) the daemon when its code changes, so a
+        # switch never leaves a stale process running pre-update logic. The
+        # PYTHONPATH below already encodes daemonPackage, but making the trigger
+        # explicit guarantees sd-switch cycles the unit on any code change.
+        X-Restart-Triggers = [ daemonPackage daemonWrapper ];
       };
 
       Service = {
@@ -307,6 +312,24 @@ in
     # Ensure data directories exist (via home.activation instead of tmpfiles)
     home.activation.createI3pmDataDirs = lib.hm.dag.entryAfter ["writeBoundary"] ''
       $DRY_RUN_CMD mkdir -p $HOME/.local/share/i3pm/layouts
+    '';
+
+    # Belt-and-suspenders: guarantee the running daemon matches the deployed
+    # build. sd-switch normally restarts it (see X-Restart-Triggers above), but
+    # home-manager activation can be interrupted before reloadSystemd runs
+    # (e.g. an earlier step like openshellRyzenGateway hanging), leaving the
+    # daemon serving stale code. Runs after reloadSystemd: if the live process's
+    # environment doesn't reference the deployed daemonPackage, restart it.
+    # Idempotent — a no-op on switches that already cycled the daemon, and it
+    # self-heals on the next switch if a prior one left a stale process.
+    home.activation.cycleI3pmDaemonIfStale = lib.hm.dag.entryAfter ["reloadSystemd"] ''
+      _i3pm_pid=$(${pkgs.systemd}/bin/systemctl --user show i3-project-daemon.service -p MainPID --value 2>/dev/null || echo 0)
+      if [ "''${_i3pm_pid:-0}" -gt 0 ] \
+         && [ -r "/proc/''${_i3pm_pid}/environ" ] \
+         && ! ${pkgs.gnugrep}/bin/grep -qaF "${daemonPackage}" "/proc/''${_i3pm_pid}/environ"; then
+        $VERBOSE_ECHO "i3-project-daemon: running process is stale; restarting onto deployed build"
+        $DRY_RUN_CMD ${pkgs.systemd}/bin/systemctl --user restart i3-project-daemon.service || true
+      fi
     '';
   };
 }
