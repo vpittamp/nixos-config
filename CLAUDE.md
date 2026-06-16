@@ -31,10 +31,7 @@ home-modules/       # User environment
 | `Meta+D` / `Alt+Space` | Elephant launcher |
 | `Mod+M` | Monitoring panel |
 | `Mod+Shift+M` | Toggle dock mode (overlay ↔ docked) |
-| `Win+P` | Project switcher |
-| `Win+Shift+P` | Clear project (global) |
-| `Win+Return` | Scratchpad terminal |
-| `Win+C/G/Y` | VS Code / Lazygit / Yazi |
+| `Win+C/G/Y` | VS Code / Lazygit / Yazi (global, open in $HOME) |
 | `CapsLock` (M1) / `Ctrl+0` | Workspace mode |
 | `Mod+Tab` | Workspace overview |
 
@@ -51,7 +48,6 @@ home-modules/       # User environment
 | `@` | Websearch | Web search |
 | `>` | Runner | Shell commands |
 | `?` | Help | List all providers |
-| `;p ` | Projects | Project switcher |
 | `;s ` | Sesh | Tmux session switcher |
 | `;m ` | Monitors | Monitor profile switcher |
 | `;h ` | History | Browser history |
@@ -73,34 +69,25 @@ systemctl --user restart quickshell-runtime-shell  # Restart
 journalctl --user -u quickshell-runtime-shell -f   # Logs
 ```
 
-## Project Management (i3pm)
+## i3pm Runtime Daemon
+
+The project-scoping system (project switch, scoped-app hide/show, per-project
+scratchpad/layouts, worktree discovery) was **retired** — herdr now owns the
+terminal/AI-session workflow. The i3pm daemon remains as the runtime backbone:
+it builds the dashboard snapshot that powers the QuickShell bottom bar + herdr
+panel, routes focus, aggregates local + remote herdr, and manages monitors/
+display. All apps are global (no hide-on-switch); the bottom-bar context chip
+shows the focused herdr space's `repo[:branch]` + git status.
 
 ```bash
-i3pm project {switch|create|list|current}  # pswitch/pclear/plist aliases
-i3pm worktree {list|create|remove} <repo>
 i3pm daemon {status|events}
 i3pm diagnose {health|window <id>|validate|events|socket-health}
 i3pm monitors {status|reassign|config}
-i3pm layout {save|restore|list|delete} <name>
-i3pm scratchpad {toggle|status|cleanup}
+i3pm dashboard {snapshot|watch}
+i3pm herdr-proxy {snapshot|events|focus}
+i3pm context {current|clear}            # pclear/pcurrent aliases
+i3pm health
 ```
-
-**Scoped apps** (hidden on switch): Ghostty, VS Code, Yazi, Lazygit
-**Global apps** (always visible): Firefox, PWAs, K9s
-
-### Remote Projects (Feature 087)
-
-```bash
-i3pm project create-remote <name> \
-  --local-dir ~/projects/foo --remote-host hetzner.tailnet \
-  --remote-user vpittamp --remote-dir /home/vpittamp/dev/foo
-```
-
-Terminal apps auto-wrap with SSH. GUI apps not supported in remote projects.
-
-### Worktree Environment (Feature 098)
-
-Environment variables in launched apps: `I3PM_IS_WORKTREE`, `I3PM_PARENT_PROJECT`, `I3PM_BRANCH_NUMBER`, `I3PM_BRANCH_TYPE`, `I3PM_GIT_*`
 
 ## Sway Configuration (Feature 047)
 
@@ -140,15 +127,6 @@ pwa-list          # List configured
 
 **Workspaces**: Regular apps 1-50, PWAs 50+
 Edit `home-modules/tools/firefox-pwas-declarative.nix` → rebuild → `pwa-install-all`
-
-## Session & Layout (Features 074, 076)
-
-```bash
-i3pm layout save my-layout     # Save
-i3pm layout restore my-layout  # Restore (idempotent via marks)
-```
-
-**Mark format**: `i3pm_app:name`, `i3pm_project:name`, `i3pm_ws:N`, `i3pm_scope:scoped`
 
 ## Multi-Monitor (Features 083, 084)
 

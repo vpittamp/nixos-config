@@ -248,9 +248,7 @@ in
       plasma-diff-summary = "${scriptWrappers.plasma-diff}/bin/plasma-diff --summary";
 
       # Short aliases for common commands (Feature 027: Using Deno CLI)
-      pswitch = "i3pm worktree switch";
       pclear = "i3pm context clear";
-      plist = "i3pm worktree list";
       pcurrent = "i3pm context current --json 2>/dev/null | jq -r '.qualified_name // \"global\"' 2>/dev/null || echo global";
 
       # Additional i3pm aliases
