@@ -203,7 +203,7 @@ let
       # The daemon-owned launcher replaces this with a deterministic managed tmux
       # launch flow for local project terminals.
       parameters = "-e bash -lc true";
-      scope = "scoped";
+      scope = "global";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 1;
       preferred_monitor_role = "primary";
@@ -220,8 +220,8 @@ let
       name = "code";
       display_name = "VS Code";
       command = "code";
-      parameters = "--disable-gpu --disable-software-rasterizer --new-window $PROJECT_DIR";
-      scope = "scoped";
+      parameters = "--disable-gpu --disable-software-rasterizer --new-window $HOME";
+      scope = "global";
       expected_class = "Code";
       preferred_workspace = 2;
       preferred_monitor_role = "secondary";
@@ -255,8 +255,8 @@ let
       display_name = "Neovim";
       command = "ghostty";
       # Launch Neovim directly in the active project directory
-      parameters = "-e nvim $PROJECT_DIR";
-      scope = "scoped";
+      parameters = "-e nvim $HOME";
+      scope = "global";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 4;
       preferred_monitor_role = "secondary";
@@ -357,8 +357,8 @@ let
       name = "lazygit";
       display_name = "Lazygit";
       command = "ghostty";
-      parameters = "-e lazygit --path $PROJECT_DIR";
-      scope = "scoped";
+      parameters = "-e lazygit --path $HOME";
+      scope = "global";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 5;
       preferred_monitor_role = "tertiary";
@@ -375,8 +375,8 @@ let
       name = "lazyworktree";
       display_name = "LazyWorktree";
       command = "ghostty";
-      parameters = "-e lazyworktree -w $PROJECT_DIR";
-      scope = "scoped";
+      parameters = "-e lazyworktree -w $HOME";
+      scope = "global";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 24;
       preferred_monitor_role = "tertiary";
@@ -464,8 +464,8 @@ let
       name = "gittyup";
       display_name = "Gittyup";
       command = "gittyup";
-      parameters = "$PROJECT_DIR";
-      scope = "scoped";
+      parameters = "$HOME";
+      scope = "global";
       expected_class = "Gittyup";
       preferred_workspace = 17;  # Was 5 (duplicate with Lazygit)
       preferred_monitor_role = "tertiary";
@@ -481,8 +481,8 @@ let
       name = "gitkraken";
       display_name = "GitKraken";
       command = "gitkraken";
-      parameters = "--path $PROJECT_DIR";
-      scope = "scoped";
+      parameters = "--path $HOME";
+      scope = "global";
       expected_class = "GitKraken";
       preferred_workspace = 14;
       preferred_monitor_role = "secondary";
@@ -498,8 +498,8 @@ let
       name = "thunar";
       display_name = "Thunar";
       command = "thunar";
-      parameters = "$PROJECT_DIR";
-      scope = "scoped";
+      parameters = "$HOME";
+      scope = "global";
       expected_class = "Thunar";
       preferred_workspace = 6;
       icon = iconPath "thunar.svg";
@@ -545,8 +545,8 @@ let
       name = "yazi";
       display_name = "Yazi File Manager";
       command = "ghostty";
-      parameters = "-e yazi $PROJECT_DIR";
-      scope = "scoped";
+      parameters = "-e yazi $HOME";
+      scope = "global";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 8;
       icon = iconPath "yazi.png";
@@ -562,8 +562,8 @@ let
       name = "television";
       display_name = "Television";
       command = "ghostty";
-      parameters = "-e tv $PROJECT_DIR";
-      scope = "scoped";
+      parameters = "-e tv $HOME";
+      scope = "global";
       expected_class = "com.mitchellh.ghostty";
       preferred_workspace = 27;
       preferred_monitor_role = "tertiary";
@@ -840,7 +840,7 @@ let
       # Actual launch command (via daemon): ghostty -e bash -c 'tmux new-session -A -s scratchpad-{project} -c {working_dir}'
       # This creates/attaches to project-specific tmux session named "scratchpad-{project}"
       parameters = "-e bash -c 'tmux new-session -A -s scratchpad-PROJECT -c PROJECT_DIR'";
-      scope = "scoped";
+      scope = "global";
       expected_class = "com.mitchellh.ghostty";
       # Feature 101: Workspace 0 = scratchpad home (not a real workspace)
       # Used for deterministic tracking - scratchpad windows always have workspace_number=0
