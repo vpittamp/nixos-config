@@ -905,7 +905,21 @@ in
       } else if isHybrid then {
         "eDP-1" = {
           scale = "1.25";
-          position = "1920,0";
+          # Right of a scale-1.25 DP-7 (logical width 1536); the profile daemon
+          # repositions eDP-1 for VNC layouts, so this is just the docked default.
+          position = "1536,0";
+        };
+        # Physical external monitor (e.g. DP-7) sits to the LEFT of the laptop
+        # panel. It renders at native 1080p (sharp) but uses scale 1.25 so UI
+        # elements are ~25% larger for a monitor placed further away, while
+        # keeping enough vertical room (logical 1536x864) on the 16:9 panel. At
+        # scale 1.25 the logical width is 1920/1.25 = 1536, so eDP-1 begins at
+        # x=1536 to stay edge-to-edge. Without this directive sway auto-places a
+        # hot-plugged external to the right at scale 1.0.
+        "DP-7" = {
+          mode = "1920x1080@60Hz";
+          position = "0,0";
+          scale = "1.25";
         };
         "HEADLESS-1" = {
           mode = "1920x1200@60Hz";
@@ -1357,7 +1371,37 @@ in
           eDP-1
         '';
       "sway/workspace-assignments.json".text = builtins.toJSON workspaceAssignments;
-    };
+    }
+    # Physical external-monitor profile for the ThinkPad (hybrid host). DP-7 is a
+    # real DisplayPort/USB-C output, so it cannot live in the daemon's hybrid
+    # profile model (that one is locked to eDP-1 + HEADLESS-[12] for VNC). It is
+    # instead a *standard* MonitorProfile (full ProfileOutput entries, no "type"
+    # key) whose explicit position+scale the daemon applies verbatim. External
+    # sits to the LEFT at native 1080p; the panel is adjacent on the right.
+    // (lib.optionalAttrs isHybrid {
+      "sway/monitor-profiles/extended.json".text = builtins.toJSON {
+        name = "extended";
+        description = "ThinkPad panel plus external display (external on the LEFT)";
+        outputs = [
+          {
+            name = "DP-7";
+            enabled = true;
+            # Native 1920x1080 mode (sharp) zoomed via scale 1.25 -> logical
+            # 1536x864, so items appear ~25% larger for a more distant monitor
+            # while keeping enough vertical room on the 16:9 panel.
+            scale = 1.25;
+            position = { x = 0; y = 0; width = 1920; height = 1080; };
+          }
+          {
+            name = "eDP-1";
+            enabled = true;
+            scale = 1.25;
+            # x = DP-7 logical width (1920/1.25 = 1536) -> edge-to-edge, no gap.
+            position = { x = 1536; y = 0; width = 1920; height = 1200; };
+          }
+        ];
+      };
+    });
 
   # Ensure default monitor profile is recorded for new systems
   home.activation.ensureMonitorProfileCurrent = lib.mkIf hasManagedMonitorProfiles (lib.hm.dag.entryAfter [ "writeBoundary" ] ''
