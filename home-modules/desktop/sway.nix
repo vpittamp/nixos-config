@@ -1408,9 +1408,9 @@ in
         # opaque for readability. (wvkbd's exclusive-zone "push windows" mode does
         # not render here — the Quickshell bottom bar already owns the bottom
         # exclusive zone — so transparency is how we avoid hiding content.)
-        "--bg 0d1117a0 --fg 161f2ccc --fg-sp 111827cc"
-        "--text e7edf5ff --text-sp cbd5e1ff"
-        "--press 2dd4bfe0 --press-sp 334155e0"
+        "--bg 0d111766 --fg 161f2c99 --fg-sp 11182799"
+        "--text e7edf5ff --text-sp e2e8f0ff"
+        "--press 2dd4bfcc --press-sp 334155cc"
       ];
       Restart = "on-failure";
       RestartSec = "2";
