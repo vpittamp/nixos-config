@@ -140,6 +140,12 @@ let
   isHybrid = swayProfileMode == "hybrid";
   # Detect Ryzen multi-monitor desktop (Feature 001 extension for 4-tier system)
   isRyzen = swayProfileMode == "desktop4";
+  # A laptop with a lid + built-in panel (eDP-1) — covers both the "laptop" and
+  # "hybrid" profiles (the ThinkPad runs "hybrid": physical panel + virtual VNC
+  # outputs). Gates the lid/clamshell display automation (lid bindswitch,
+  # exec_always re-layout, monitor-layout-watch). Excluded: Ryzen's "desktop4"
+  # (no lid/eDP-1; the handler would mis-tile its monitors) and headless.
+  isLaptop = !isHeadless && !isRyzen;
   # Virtual outputs are supported in both fully headless and hybrid modes.
   hasVirtualOutputs = isHeadless || isHybrid;
   tailscaleAudioCfg = if osConfig != null then lib.attrByPath [ "services" "tailscaleAudio" ] { } osConfig else { };
@@ -1202,13 +1208,14 @@ in
       ] ++ [
         # sov workspace overview daemon
         { command = "systemctl --user start sov"; }
-      ] ++ lib.optionals (!isHeadless) [
+      ] ++ lib.optionals isLaptop [
         # Re-apply the display layout on EVERY sway reload (exec_always). A reload
         # re-runs the static output config, which pins eDP-1 at 0,0 and leaves a
         # connected external also at 0,0 — i.e. mirrored. home-manager switch
         # reloads sway, so without this a rebuild silently reverts extended ->
         # duplicate. `auto` picks open/clamshell from the live lid state. The
         # hot-plug watcher (below) handles connect/disconnect separately.
+        # Laptop-only — see isLaptop.
         { command = "~/.local/bin/lid-clamshell auto"; always = true; }
       ];
       # NOTE: login-time + hot-plug display layout is handled by the
@@ -1221,16 +1228,18 @@ in
 
     # Extra Sway config for features not exposed by home-manager
     extraConfig = ''
-      ${lib.optionalString (!isHeadless) ''
+      ${lib.optionalString isLaptop ''
         # Lid close/open -> clamshell handler. On close with an external display
         # connected AND power plugged in, the external becomes the sole/primary
         # monitor (laptop panel disabled, machine stays awake); on battery it
         # suspends; with no external the hidden panel is dropped and logind's lid
         # policy governs. On open the dual-monitor layout is restored. --locked so
-        # it still runs while the session is locked.
+        # it still runs while the session is locked. Laptop-only: a desktop has no
+        # lid and the handler would mis-tile its monitors.
         bindswitch --locked lid:on exec ~/.local/bin/lid-clamshell close
         bindswitch --locked lid:off exec ~/.local/bin/lid-clamshell open
-
+      ''}
+      ${lib.optionalString (!isHeadless) ''
         # Dictation trigger reachable from the Magic Trackpad in clamshell mode
         # (laptop keyboard / Copilot key are closed). HOLDING 4 fingers still
         # toggles voxtype recording — a distinct gesture type (not a swipe, not a
@@ -1473,8 +1482,10 @@ in
 
   # Watches sway output events and re-applies the display layout on monitor
   # hot-plug/unplug (so a newly-connected external is tiled, not mirrored at 0,0).
-  # Also lays out the initial monitor set at login.
-  systemd.user.services.monitor-layout-watch = lib.mkIf (!isHeadless) {
+  # Also lays out the initial monitor set at login. Laptop-only: it drives the
+  # lid-clamshell handler (eDP-1 panel + externals), which would mis-tile a
+  # desktop's monitors.
+  systemd.user.services.monitor-layout-watch = lib.mkIf isLaptop {
     Unit = {
       Description = "Re-apply display layout on monitor hot-plug (connector-agnostic)";
       PartOf = [ "graphical-session.target" ];
