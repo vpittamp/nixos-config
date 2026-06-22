@@ -710,6 +710,45 @@ PanelWindow {
                 }
 
                 Rectangle {
+                    id: keyboardChip
+                    radius: 8
+                    color: root.neutralChipFill(keyboardMouse.containsMouse)
+                    border.color: root.neutralChipBorder(keyboardMouse.containsMouse)
+                    border.width: 1
+                    implicitWidth: keyboardIcon.implicitWidth + 18
+                    implicitHeight: parent.height
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Behavior on border.color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Text {
+                        id: keyboardIcon
+                        anchors.centerIn: parent
+                        text: "\uf11c"
+                        color: root.neutralChipText(keyboardMouse.containsMouse)
+                        font.family: "FiraCode Nerd Font"
+                        font.pixelSize: 12
+                    }
+
+                    MouseArea {
+                        id: keyboardMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.runDetached([topBarWindow.runtimeConfig.oskToggleBin])
+                    }
+                }
+
+                Rectangle {
                     id: batteryChip
                     visible: root.batteryReady()
                     Layout.preferredWidth: implicitWidth

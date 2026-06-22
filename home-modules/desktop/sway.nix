@@ -101,6 +101,25 @@ let
   # Feature 125: Pass hostName for host-specific parameterization
   hostName = if osConfig ? networking && osConfig.networking ? hostName then osConfig.networking.hostName else "";
 
+  # wvkbd with a backtick key added to the main QWERTY layers. Backtick is the
+  # tmux/herdr prefix, so it must be reachable without switching to the symbols
+  # layer. We add a 1.0-wide grave key left of the spacebar and shrink the
+  # spacebar 4.0 -> 3.0 so each affected row's total width is unchanged.
+  wvkbdWithBacktick = pkgs.wvkbd.overrideAttrs (old: {
+    postPatch = (old.postPatch or "") + ''
+      # Portrait main layers (full/full_wide/special) use a 4.0-wide spacebar;
+      # the landscape layers (shown on a wide external monitor) use 5.0. Patch
+      # both: insert a backtick key and shrink the spacebar by 1.0 so each row's
+      # total width is unchanged.
+      substituteInPlace layout.mobintl.h \
+        --replace-fail '{"", "Tab", 4.0, Code, KEY_SPACE},' \
+          '{"`", "~", 1.0, Code, KEY_GRAVE},  {"", "Tab", 3.0, Code, KEY_SPACE},'
+      substituteInPlace layout.mobintl.h \
+        --replace-fail '{"", "Tab", 5.0, Code, KEY_SPACE},' \
+          '{"`", "~", 1.0, Code, KEY_GRAVE},  {"", "Tab", 4.0, Code, KEY_SPACE},'
+    '';
+  });
+
   # Sway runtime profile mode:
   # - auto: infer from host
   # - headless: force virtual/headless setup
@@ -1216,6 +1235,10 @@ in
         # Jabra mic when connected. Works on any touchpad, so it also works with
         # the lid open as a hands-free alternative to the Copilot key.
         bindgesture swipe:4:up exec ~/.local/bin/dictation toggle
+
+        # On-screen keyboard toggle for clamshell typing with the trackpad
+        # (4-finger swipe down; the Quickshell bar also has a keyboard button).
+        bindgesture swipe:4:down exec ~/.local/bin/osk-toggle
       ''}
 
       # Application menu launcher - QuickShell primary launcher, Walker fallback on Alt+Space
@@ -1310,6 +1333,7 @@ in
     swaylock         # Screen locker
     swayidle         # Idle management
     sov              # Workspace overview
+    wvkbdWithBacktick  # On-screen keyboard (wlroots/Wayland) for clamshell typing
     lxqt.lxqt-policykit  # Polkit authentication agent for fingerprint/password prompts
     # sway-easyfocus now managed by home-manager module (desktop/sway-easyfocus.nix)
   ] ++ lib.optionals (!nativeQuickshellNotifications) [
@@ -1351,6 +1375,47 @@ in
   home.file.".local/bin/dictation" = {
     source = ./scripts/dictation.sh;
     executable = true;
+  };
+  # On-screen keyboard toggle (wvkbd) for clamshell typing with the trackpad.
+  home.file.".local/bin/osk-toggle" = {
+    source = ./scripts/osk-toggle.sh;
+    executable = true;
+  };
+
+  # wvkbd on-screen keyboard, started hidden and toggled via SIGRTMIN. Themed to
+  # match the dark Quickshell palette; landscape height tuned for the external
+  # monitor. Pointer-driven, so every key is clickable with the Magic Trackpad.
+  systemd.user.services.wvkbd = {
+    Unit = {
+      Description = "wvkbd on-screen keyboard (hidden until toggled)";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" ];
+    };
+    Service = {
+      Type = "simple";
+      ExecStart = lib.concatStringsSep " " [
+        "${wvkbdWithBacktick}/bin/wvkbd-mobintl"
+        "--hidden"
+        # Overlay instead of requesting an exclusive zone: the Quickshell bottom
+        # bar already owns the bottom exclusive zone, which otherwise collapses
+        # wvkbd to zero height so it never renders. Non-exclusive floats it over
+        # the bottom of the screen, which is what we want for an OSK anyway.
+        "--non-exclusive"
+        "-L 300 -H 320 -R 6"
+        "--fn 'FiraCode Nerd Font 16'"
+        # Colors are rrggbbaa: the background and key fills are semi-transparent
+        # so the window underneath shows through, while key text stays fully
+        # opaque for readability. (wvkbd's exclusive-zone "push windows" mode does
+        # not render here — the Quickshell bottom bar already owns the bottom
+        # exclusive zone — so transparency is how we avoid hiding content.)
+        "--bg 0d1117a0 --fg 161f2ccc --fg-sp 111827cc"
+        "--text e7edf5ff --text-sp cbd5e1ff"
+        "--press 2dd4bfe0 --press-sp 334155e0"
+      ];
+      Restart = "on-failure";
+      RestartSec = "2";
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
   };
   # Feature 084: Cycle monitor profiles with Mod+Shift+M
   home.file.".local/bin/cycle-monitor-profile" = {
