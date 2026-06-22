@@ -321,5 +321,65 @@ PanelWindow {
                 }
             }
         }
+
+        // Prominent dictation toggle, centered on the bar for one-tap access.
+        // Reflects voxtype state (idle / recording / transcribing) and clicks
+        // through to the same `dictation toggle` the gesture and headset use.
+        Rectangle {
+            id: dictateButton
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
+            height: parent.height - 10
+            implicitWidth: dictateRow.implicitWidth + 24
+            radius: 10
+            color: root.voxtypeClass() === "recording" ? colors.redBg
+                : (dictateMouse.containsMouse ? colors.card : colors.cardAlt)
+            border.width: root.voxtypeActive() ? 2 : 1
+            border.color: root.voxtypeActive() ? root.voxtypeIconColor()
+                : (dictateMouse.containsMouse ? colors.borderStrong : colors.border)
+
+            Behavior on color { ColorAnimation { duration: root.fastColorMs } }
+            Behavior on border.color { ColorAnimation { duration: root.fastColorMs } }
+
+            RowLayout {
+                id: dictateRow
+                anchors.centerIn: parent
+                spacing: 7
+
+                Text {
+                    id: dictateIcon
+                    text: root.voxtypeIcon()
+                    color: root.voxtypeActive() ? root.voxtypeIconColor() : colors.muted
+                    font.family: "FiraCode Nerd Font"
+                    font.pixelSize: 15
+
+                    // Pulse while recording. alwaysRunToEnd leaves opacity at 1.0
+                    // when it stops, so the icon never gets stuck dimmed.
+                    SequentialAnimation on opacity {
+                        running: root.voxtypeClass() === "recording"
+                        loops: Animation.Infinite
+                        alwaysRunToEnd: true
+                        NumberAnimation { from: 1.0; to: 0.3; duration: 600 }
+                        NumberAnimation { from: 0.3; to: 1.0; duration: 600 }
+                    }
+                }
+
+                Text {
+                    text: root.voxtypeClass() === "recording" ? "Recording…"
+                        : (root.voxtypeClass() === "transcribing" ? "Transcribing…" : "Dictate")
+                    color: root.voxtypeActive() ? root.voxtypeIconColor() : colors.text
+                    font.pixelSize: 11
+                    font.weight: Font.DemiBold
+                }
+            }
+
+            MouseArea {
+                id: dictateMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.runDetached([runtimeConfig.dictationBin, "toggle"])
+            }
+        }
     }
 }
