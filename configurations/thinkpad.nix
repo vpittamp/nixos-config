@@ -955,6 +955,50 @@ in
           }
         ];
       };
+
+      # Jabra Evolve2 85 over BLUETOOTH - prioritize its output/input so that,
+      # when the headset exposes a mic (HFP mode), it becomes the default source
+      # for dictation without any script forcing a profile switch. (Forcing HFP
+      # collapses A2DP stereo to mono and leaves the headset stuck/"muted".)
+      "55-jabra-bluetooth" = {
+        "monitor.bluez.rules" = [
+          {
+            matches = [
+              { "device.name" = "~bluez_card.*Jabra.*"; }
+            ];
+            actions = {
+              update-props = {
+                "device.description" = "Jabra Evolve2 85";
+                "bluez5.auto-connect" = [ "a2dp_sink" "hfp_hf" ];
+              };
+            };
+          }
+          {
+            matches = [
+              { "node.name" = "~bluez_output.*Jabra.*"; }
+            ];
+            actions = {
+              update-props = {
+                "node.description" = "Jabra Evolve2 85 Output";
+                "priority.driver" = 2000;
+                "priority.session" = 2000;
+              };
+            };
+          }
+          {
+            matches = [
+              { "node.name" = "~bluez_input.*Jabra.*"; }
+            ];
+            actions = {
+              update-props = {
+                "node.description" = "Jabra Evolve2 85 Mic";
+                "priority.driver" = 2000;
+                "priority.session" = 2000;
+              };
+            };
+          }
+        ];
+      };
     };
   };
 

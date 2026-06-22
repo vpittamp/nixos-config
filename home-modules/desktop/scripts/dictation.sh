@@ -21,30 +21,23 @@ cmd="${1:-toggle}"
 pick_jabra_mic() {
   command -v pactl >/dev/null 2>&1 || return 0
 
-  # 1. A Jabra/Bluetooth mic source already exposed -> just make it default.
+  # Prefer a Jabra/Bluetooth mic ONLY if it is already exposed as a source (i.e.
+  # the headset is already in a mic-capable HFP mode, or connected via the USB
+  # dongle). We deliberately do NOT force the headset's card into HFP: that
+  # collapses A2DP stereo to mono and, with no restore, leaves the headset stuck
+  # in call mode afterwards — which is what made the headset seem "muted". When
+  # the Jabra mic is available, WirePlumber's priority rules already make it the
+  # default source, so usually there is nothing to switch here.
   local src
   src="$(pactl list sources short 2>/dev/null | awk '{print $2}' \
         | grep -iE 'jabra|bluez_input' | head -1 || true)"
-
-  # 2. Jabra connected but only in A2DP (no source): switch its card to the
-  #    HFP head-unit profile (prefer wideband mSBC) to expose the mic.
-  if [ -z "$src" ]; then
-    local card
-    card="$(pactl list cards short 2>/dev/null | awk '{print $2}' \
-          | grep -iE 'jabra|bluez_card' | head -1 || true)"
-    if [ -n "$card" ]; then
-      pactl set-card-profile "$card" headset-head-unit-msbc 2>/dev/null \
-        || pactl set-card-profile "$card" headset-head-unit 2>/dev/null || true
-      sleep 0.3
-      src="$(pactl list sources short 2>/dev/null | awk '{print $2}' \
-            | grep -iE 'jabra|bluez_input' | head -1 || true)"
-    fi
-  fi
-
-  # 3. Found a Jabra mic -> prefer it. Otherwise leave the default (built-in).
   if [ -n "$src" ]; then
     pactl set-default-source "$src" 2>/dev/null || true
   fi
+
+  # Never dictate into a muted mic: unmute the source we are about to record
+  # from (does not touch any playback/output sink).
+  pactl set-source-mute @DEFAULT_SOURCE@ 0 2>/dev/null || true
 }
 
 case "$cmd" in
