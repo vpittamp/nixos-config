@@ -91,6 +91,10 @@ ShellRoot {
             uptime: 0,
             issues: ""
         })
+    // Voxtype dictation state, fed by `voxtype status --follow --format json`.
+    property var voxtypeState: ({
+            "class": "idle"
+        })
     property string lastDashboardInvariantWarning: ""
 
     property var systemStatsState: ({
@@ -7091,6 +7095,53 @@ function normalizeLauncherMode(mode) {
         } catch (error) {
             console.warn("Failed to parse network payload", error, raw);
         }
+    }
+
+    function parseVoxtype(payload) {
+        const raw = stringOrEmpty(payload).trim();
+        if (!raw || raw.indexOf("{") !== 0) {
+            return;
+        }
+        try {
+            voxtypeState = JSON.parse(raw);
+        } catch (error) {
+            console.warn("Failed to parse voxtype payload", error, raw);
+        }
+    }
+
+    function voxtypeClass() {
+        return stringOrEmpty((voxtypeState && voxtypeState.class) || "idle");
+    }
+
+    function voxtypeActive() {
+        return voxtypeClass() !== "idle";
+    }
+
+    // FiraCode Nerd Font glyphs: mic (recording/idle), hourglass (transcribing).
+    function voxtypeIcon() {
+        return voxtypeClass() === "transcribing" ? "" : "";
+    }
+
+    function voxtypeIconColor() {
+        const c = voxtypeClass();
+        if (c === "recording") {
+            return colors.red;
+        }
+        if (c === "transcribing") {
+            return colors.amber;
+        }
+        return colors.muted;
+    }
+
+    function voxtypeLabel() {
+        const c = voxtypeClass();
+        if (c === "recording") {
+            return "REC";
+        }
+        if (c === "transcribing") {
+            return "…";
+        }
+        return "";
     }
 
     function parseBrightness(payload) {

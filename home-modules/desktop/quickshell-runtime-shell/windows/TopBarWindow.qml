@@ -638,6 +638,78 @@ PanelWindow {
                 }
 
                 Rectangle {
+                    id: dictationChip
+                    radius: 8
+                    color: root.neutralChipFill(dictationMouse.containsMouse)
+                    border.color: root.voxtypeActive() ? root.voxtypeIconColor() : root.neutralChipBorder(dictationMouse.containsMouse)
+                    border.width: 1
+                    implicitWidth: dictationRow.implicitWidth + 18
+                    implicitHeight: parent.height
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Behavior on border.color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    RowLayout {
+                        id: dictationRow
+                        anchors.centerIn: parent
+                        spacing: 4
+
+                        Text {
+                            id: dictationIcon
+                            Layout.alignment: Qt.AlignVCenter
+                            text: root.voxtypeIcon()
+                            color: root.voxtypeActive() ? root.voxtypeIconColor() : root.neutralChipText(dictationMouse.containsMouse)
+                            font.family: "FiraCode Nerd Font"
+                            font.pixelSize: 11
+
+                            // Pulse while recording for a clear "live" cue. alwaysRunToEnd
+                            // makes the sequence finish at opacity 1.0 when recording stops,
+                            // so the icon never gets stuck dimmed.
+                            SequentialAnimation on opacity {
+                                running: root.voxtypeClass() === "recording"
+                                loops: Animation.Infinite
+                                alwaysRunToEnd: true
+                                NumberAnimation { from: 1.0; to: 0.3; duration: 600 }
+                                NumberAnimation { from: 0.3; to: 1.0; duration: 600 }
+                            }
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignVCenter
+                            visible: root.voxtypeActive()
+                            text: root.voxtypeLabel()
+                            color: root.voxtypeIconColor()
+                            font.pixelSize: 10
+                            font.weight: Font.Medium
+                        }
+                    }
+
+                    MouseArea {
+                        id: dictationMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: function (mouse) {
+                            if (mouse.button === Qt.RightButton) {
+                                root.runDetached([topBarWindow.runtimeConfig.dictationBin, "cancel"]);
+                                return;
+                            }
+                            root.runDetached([topBarWindow.runtimeConfig.dictationBin, "toggle"]);
+                        }
+                    }
+                }
+
+                Rectangle {
                     id: batteryChip
                     visible: root.batteryReady()
                     Layout.preferredWidth: implicitWidth

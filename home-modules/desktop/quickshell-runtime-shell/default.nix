@@ -20,6 +20,9 @@ let
     then inputs.quickshell.packages.${pkgs.stdenv.hostPlatform.system}.default
     else pkgs.quickshell;
 
+  # voxtype binary, for the dictation status indicator watcher.
+  voxtypePkg = pkgs.callPackage ../../../packages/voxtype.nix { };
+
   # Build shell.qml with accent color substitution
   accentShellQml = pkgs.runCommandLocal "quickshell-accent-shell-qml" { } ''
     ${pkgs.gnused}/bin/sed \
@@ -64,6 +67,8 @@ QtObject {
   readonly property string networkStatusBin: "${networkStatusScript}/bin/quickshell-network-status"
   readonly property string systemStatsBin: "${systemStatsScript}/bin/quickshell-system-stats"
   readonly property string brightnessStatusBin: "${brightnessStatusScript}/bin/quickshell-brightness-status"
+  readonly property string voxtypeStatusBin: "${voxtypePkg}/bin/voxtype"
+  readonly property string dictationBin: "${config.home.homeDirectory}/.local/bin/dictation"
   readonly property string brightnessActionBin: "${brightnessActionScript}/bin/quickshell-brightness-action"
   readonly property string lidPolicyStatusBin: "${lidPolicyStatusScript}/bin/quickshell-lid-policy-status"
   readonly property string lidPolicyApplyBin: "${lidPolicyApplyScript}/bin/quickshell-lid-policy-apply"

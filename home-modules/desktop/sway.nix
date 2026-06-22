@@ -1209,6 +1209,13 @@ in
         # it still runs while the session is locked.
         bindswitch --locked lid:on exec ~/.local/bin/lid-clamshell close
         bindswitch --locked lid:off exec ~/.local/bin/lid-clamshell open
+
+        # Dictation trigger reachable from the Magic Trackpad in clamshell mode
+        # (laptop keyboard / Copilot key are closed). A deliberate 4-finger
+        # swipe up toggles voxtype recording; the dictation script prefers the
+        # Jabra mic when connected. Works on any touchpad, so it also works with
+        # the lid open as a hands-free alternative to the Copilot key.
+        bindgesture swipe:4:up exec ~/.local/bin/dictation toggle
       ''}
 
       # Application menu launcher - QuickShell primary launcher, Walker fallback on Alt+Space
@@ -1338,6 +1345,11 @@ in
   # Lid open/close handler: clamshell on AC + external, suspend on battery.
   home.file.".local/bin/lid-clamshell" = {
     source = ./scripts/lid-clamshell.sh;
+    executable = true;
+  };
+  # Mic-aware voxtype front-end (prefers Jabra mic; trackpad/bar trigger).
+  home.file.".local/bin/dictation" = {
+    source = ./scripts/dictation.sh;
     executable = true;
   };
   # Feature 084: Cycle monitor profiles with Mod+Shift+M

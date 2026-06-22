@@ -305,6 +305,13 @@ Item {
     }
 
     Timer {
+        id: voxtypeRestartTimer
+        interval: 2000
+        repeat: false
+        onTriggered: voxtypeWatcher.running = true
+    }
+
+    Timer {
         id: launcherFocusTimer
         interval: 40
         repeat: false
@@ -454,6 +461,30 @@ Item {
         }
         onExited: function () {
             networkRefreshTimer.restart();
+        }
+    }
+
+    // Voxtype dictation status stream (idle/recording/transcribing) -> bar chip.
+    Process {
+        id: voxtypeWatcher
+        command: [runtimeConfig.voxtypeStatusBin, "status", "--follow", "--format", "json"]
+        running: true
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                shellRoot.parseVoxtype(data);
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                if (data && data.trim()) {
+                    console.warn("voxtype.watch:", data);
+                }
+            }
+        }
+        onExited: function () {
+            voxtypeRestartTimer.restart();
         }
     }
 
