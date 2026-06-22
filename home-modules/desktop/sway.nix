@@ -1254,6 +1254,16 @@ in
         # to libinput as scroll; 3-finger is the free gesture slot on this pad.
         bindgesture swipe:3:right exec ~/.local/bin/browser-nav back
         bindgesture swipe:3:left exec ~/.local/bin/browser-nav forward
+
+        # 4-finger horizontal swipe = window focus history (across windows),
+        # mirroring the 3-finger browser history: swipe right -> previous (last)
+        # window, swipe left -> forward again. Driven by the focus-history daemon.
+        bindgesture swipe:4:right exec ~/.local/bin/focus-history back
+        bindgesture swipe:4:left exec ~/.local/bin/focus-history forward
+
+        # 3-finger swipe down = press Enter, to submit dictated text (or any
+        # focused prompt/field) with no physical keyboard in clamshell mode.
+        bindgesture swipe:3:down exec ~/.local/bin/tap-key enter
       ''}
 
       # Application menu launcher - QuickShell primary launcher, Walker fallback on Alt+Space
@@ -1408,6 +1418,22 @@ in
     source = ./scripts/browser-nav.sh;
     executable = true;
   };
+  # Window focus-history back/forward (4-finger swipe). Daemon tracks focus
+  # order; the CLI front-end signals it via a FIFO.
+  home.file.".local/bin/focus-history-daemon" = {
+    source = ./scripts/focus-history-daemon.sh;
+    executable = true;
+  };
+  home.file.".local/bin/focus-history" = {
+    source = ./scripts/focus-history.sh;
+    executable = true;
+  };
+  # Inject keys via dotool for gestures (e.g. submit dictated text with `enter`
+  # when there's no physical keyboard in clamshell mode).
+  home.file.".local/bin/tap-key" = {
+    source = ./scripts/tap-key.sh;
+    executable = true;
+  };
 
   # wvkbd on-screen keyboard, started hidden and toggled via SIGRTMIN. Themed to
   # match the dark Quickshell palette; landscape height tuned for the external
@@ -1467,6 +1493,25 @@ in
       ExecStart = "${config.home.homeDirectory}/.local/bin/monitor-layout-watch";
       Restart = "on-failure";
       RestartSec = "3";
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+
+  # Tracks window focus order so a 4-finger swipe can jump back/forward through
+  # focus history (sway has no native focus history). Exits on EOF if its sway
+  # subscription dies (e.g. sway restart); Restart=always brings it back fresh.
+  systemd.user.services.focus-history = lib.mkIf (!isHeadless) {
+    Unit = {
+      Description = "Window focus history (back/forward navigation)";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" ];
+      X-Restart-Triggers = [ "${./scripts/focus-history-daemon.sh}" ];
+    };
+    Service = {
+      Type = "simple";
+      ExecStart = "${config.home.homeDirectory}/.local/bin/focus-history-daemon";
+      Restart = "always";
+      RestartSec = "2";
     };
     Install.WantedBy = [ "graphical-session.target" ];
   };
