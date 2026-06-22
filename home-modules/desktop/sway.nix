@@ -1201,9 +1201,14 @@ in
     # Extra Sway config for features not exposed by home-manager
     extraConfig = ''
       ${lib.optionalString (!isHeadless) ''
-        # Disable laptop lid close action (keep running when closed)
-        bindswitch lid:on output eDP-1 disable
-        bindswitch lid:off output eDP-1 enable
+        # Lid close/open -> clamshell handler. On close with an external display
+        # connected AND power plugged in, the external becomes the sole/primary
+        # monitor (laptop panel disabled, machine stays awake); on battery it
+        # suspends; with no external the hidden panel is dropped and logind's lid
+        # policy governs. On open the dual-monitor layout is restored. --locked so
+        # it still runs while the session is locked.
+        bindswitch --locked lid:on exec ~/.local/bin/lid-clamshell close
+        bindswitch --locked lid:off exec ~/.local/bin/lid-clamshell open
       ''}
 
       # Application menu launcher - QuickShell primary launcher, Walker fallback on Alt+Space
@@ -1330,6 +1335,11 @@ in
     source = ./scripts/set-monitor-profile.sh;
     executable = true;
   };
+  # Lid open/close handler: clamshell on AC + external, suspend on battery.
+  home.file.".local/bin/lid-clamshell" = {
+    source = ./scripts/lid-clamshell.sh;
+    executable = true;
+  };
   # Feature 084: Cycle monitor profiles with Mod+Shift+M
   home.file.".local/bin/cycle-monitor-profile" = {
     source = ./scripts/cycle-monitor-profile.sh;
@@ -1398,6 +1408,28 @@ in
             scale = 1.25;
             # x = DP-7 logical width (1920/1.25 = 1536) -> edge-to-edge, no gap.
             position = { x = 1536; y = 0; width = 1920; height = 1200; };
+          }
+        ];
+      };
+      # Clamshell: lid closed while docked on AC. The external (DP-7) is the sole
+      # display at 0,0; the laptop panel is disabled so the daemon migrates every
+      # workspace onto DP-7, making it the only/primary monitor. Applied by the
+      # lid-clamshell handler; restored to `extended` on lid open.
+      "sway/monitor-profiles/clamshell.json".text = builtins.toJSON {
+        name = "clamshell";
+        description = "Lid closed on AC: external (DP-7) is the sole/primary display";
+        outputs = [
+          {
+            name = "DP-7";
+            enabled = true;
+            scale = 1.25;
+            position = { x = 0; y = 0; width = 1920; height = 1080; };
+          }
+          {
+            name = "eDP-1";
+            enabled = false;
+            scale = 1.25;
+            position = { x = 0; y = 0; width = 1920; height = 1200; };
           }
         ];
       };
