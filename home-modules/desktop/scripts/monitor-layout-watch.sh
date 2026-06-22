@@ -20,12 +20,22 @@ current_set() {
     | jq -r '[.[] | select(.active) | .name] | sort | join(",")'
 }
 
+# True when two active outputs' horizontal ranges overlap — i.e. the displays
+# are mirrored/stacked instead of tiled side-by-side. This is the signature of
+# the "reverted to duplicate" state: a sway reload (or anything that re-runs the
+# static output config) drops every output to position 0,0. Edges that merely
+# touch (extended layout) do NOT count as overlap.
+mirrored() {
+  swaymsg -t get_outputs 2>/dev/null | jq -e '
+    [ .[] | select(.active) | {a: .rect.x, b: (.rect.x + .rect.width)} ]
+    | sort_by(.a) as $r
+    | [ range(0; ($r | length) - 1) as $i | ($r[$i].b > $r[$i+1].a) ]
+    | any
+  ' >/dev/null 2>&1
+}
+
 apply_layout() {
-  if grep -qi closed $LID_GLOB 2>/dev/null; then
-    "$HOME/.local/bin/lid-clamshell" close
-  else
-    "$HOME/.local/bin/lid-clamshell" open
-  fi
+  "$HOME/.local/bin/lid-clamshell" auto
 }
 
 # Settle, record the initial monitor set, and lay it out once (covers login).
@@ -33,11 +43,14 @@ sleep 1
 last="$(current_set)"
 apply_layout
 
-# React to subsequent monitor connect/disconnect events.
+# React to subsequent output events: a changed monitor set (hot-plug/unplug) OR
+# a mirrored/overlapping layout (e.g. a sway reload reset every output to 0,0).
+# Re-applying changes positions, which emits more output events — but by then the
+# set is stable and the layout is no longer mirrored, so it converges (no loop).
 swaymsg -t subscribe -m '["output"]' 2>/dev/null | while read -r _; do
-  sleep 0.4                      # let the new output settle / debounce bursts
+  sleep 0.4                      # let outputs settle / debounce bursts
   cur="$(current_set)"
-  if [ "$cur" != "$last" ]; then
+  if [ "$cur" != "$last" ] || mirrored; then
     last="$cur"
     apply_layout
   fi

@@ -6560,11 +6560,91 @@ function normalizeLauncherMode(mode) {
     }
 
     function refreshExposeEntries() {
-        const entries = normalizeLauncherEntries(exposeWindowEntries(stringOrEmpty(exposeQuery)));
-        exposeEntries = entries;
-        if (exposeSelectedIndex >= entries.length) {
-            exposeSelectedIndex = Math.max(0, entries.length - 1);
+        const raw = normalizeLauncherEntries(exposeWindowEntries(stringOrEmpty(exposeQuery)));
+        // Group windows by monitor in physical left-to-right order so the panels,
+        // Tab order and arrow nav all line up. Stable within each monitor. Each
+        // entry gets a global index (_gi) used for selection from the per-panel
+        // grids.
+        const panels = exposePanelOutputsFromEntries(raw);
+        const grouped = [];
+        for (let p = 0; p < panels.length; p += 1) {
+            for (let i = 0; i < raw.length; i += 1) {
+                if ((stringOrEmpty(raw[i].output) || "?") === panels[p]) {
+                    grouped.push(raw[i]);
+                }
+            }
         }
+        for (let i = 0; i < grouped.length; i += 1) {
+            grouped[i]._gi = i;
+        }
+        exposeEntries = grouped;
+        if (exposeSelectedIndex >= grouped.length) {
+            exposeSelectedIndex = Math.max(0, grouped.length - 1);
+        }
+    }
+
+    // Distinct monitor names present in a set of window entries, ordered by the
+    // monitor's physical x position (left-to-right).
+    function exposePanelOutputsFromEntries(entries) {
+        const seen = {};
+        const list = [];
+        const es = arrayOrEmpty(entries);
+        for (let i = 0; i < es.length; i += 1) {
+            const o = stringOrEmpty(es[i].output) || "?";
+            if (!seen[o]) {
+                seen[o] = true;
+                list.push(o);
+            }
+        }
+        const xmap = exposeOutputX || {};
+        list.sort(function (a, b) {
+            const xa = (a in xmap) ? Number(xmap[a]) : 99999;
+            const xb = (b in xmap) ? Number(xmap[b]) : 99999;
+            return xa - xb;
+        });
+        return list;
+    }
+
+    // Live monitor x-positions (name -> logical x), filled from `swaymsg -t
+    // get_outputs` when the exposé opens. The daemon dashboard geometry is stale,
+    // so we read sway directly to order the panels left-to-right correctly.
+    property var exposeOutputX: ({})
+
+    function parseExposeOutputX(jsonText) {
+        try {
+            const arr = JSON.parse(stringOrEmpty(jsonText));
+            const m = {};
+            for (let i = 0; i < arr.length; i += 1) {
+                const o = arr[i];
+                if (o && o.active && o.rect) {
+                    m[stringOrEmpty(o.name)] = Number(o.rect.x || 0);
+                }
+            }
+            exposeOutputX = m;
+            if (exposeVisible) {
+                refreshExposeEntries();
+            }
+        } catch (e) {
+            // leave the previous map in place
+        }
+    }
+
+    function exposePanelOutputs() {
+        return exposePanelOutputsFromEntries(exposeEntries);
+    }
+
+    function exposeWindowsForOutput(name) {
+        const n = stringOrEmpty(name);
+        return arrayOrEmpty(exposeEntries).filter(function (e) {
+            return (stringOrEmpty(e.output) || "?") === n;
+        });
+    }
+
+    // Monitors a window could be moved TO (every active monitor except its own).
+    function exposeMoveTargets(entry) {
+        const cur = stringOrEmpty(entry && entry.output) || "?";
+        const all = exposeOutputs();
+        return all.filter(function (o) { return o !== cur; });
     }
 
     function exposeFocusedIndex() {
@@ -6649,25 +6729,41 @@ function normalizeLauncherMode(mode) {
         }
     }
 
+    // Grouped-by-monitor nav: Up/Down move within the current monitor's window
+    // list; Left/Right jump to the adjacent monitor (keeping the vertical slot).
     function moveExposeSelectionSpatial(dir) {
         const entries = arrayOrEmpty(exposeEntries);
         if (!entries.length) {
             return;
         }
-        const cols = Math.max(1, exposeColumns);
-        let idx = exposeSelectedIndex;
-        if (dir === "left") {
-            idx = Math.max(0, idx - 1);
-        } else if (dir === "right") {
-            idx = Math.min(entries.length - 1, idx + 1);
-        } else if (dir === "up") {
-            idx = (idx - cols >= 0) ? idx - cols : idx;
-        } else if (dir === "down") {
-            idx = (idx + cols < entries.length) ? idx + cols : idx;
+        const panels = exposePanelOutputs();
+        const sel = exposeSelectedIndex;
+        const curOut = (sel >= 0 && sel < entries.length)
+            ? (stringOrEmpty(entries[sel].output) || "?")
+            : (panels.length ? panels[0] : "?");
+        const outIdx = Math.max(0, panels.indexOf(curOut));
+        const wins = exposeWindowsForOutput(curOut);
+        let winIdx = 0;
+        for (let i = 0; i < wins.length; i += 1) {
+            if (wins[i]._gi === sel) {
+                winIdx = i;
+                break;
+            }
         }
-        exposeSelectedIndex = idx;
-        if (exposeGrid) {
-            exposeGrid.positionViewAtIndex(idx, GridView.Contain);
+        if (dir === "up" || dir === "down") {
+            let wi = winIdx + (dir === "down" ? 1 : -1);
+            wi = Math.max(0, Math.min(wins.length - 1, wi));
+            if (wins.length) {
+                exposeSelectedIndex = wins[wi]._gi;
+            }
+        } else {
+            let oi = outIdx + (dir === "right" ? 1 : -1);
+            oi = Math.max(0, Math.min(panels.length - 1, oi));
+            const w2 = exposeWindowsForOutput(panels[oi]);
+            if (w2.length) {
+                const wi = Math.max(0, Math.min(w2.length - 1, winIdx));
+                exposeSelectedIndex = w2[wi]._gi;
+            }
         }
     }
 

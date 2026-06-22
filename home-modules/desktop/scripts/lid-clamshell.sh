@@ -83,27 +83,41 @@ layout_extended() {
   swaymsg "output $PANEL enable mode 1920x1200 position $x 0 scale 1.25" >/dev/null 2>&1 || true
 }
 
-case "$action" in
-  close)
-    if [ -n "$(external_outputs)" ]; then
-      if plugged_in; then
-        layout_clamshell
-      else
-        systemctl suspend
-      fi
+run_close() {
+  if [ -n "$(external_outputs)" ]; then
+    if plugged_in; then
+      layout_clamshell
     else
-      swaymsg "output $PANEL disable" >/dev/null 2>&1 || true
+      systemctl suspend
     fi
-    ;;
-  open)
-    if [ -n "$(external_outputs)" ]; then
-      layout_extended
+  else
+    swaymsg "output $PANEL disable" >/dev/null 2>&1 || true
+  fi
+}
+
+run_open() {
+  if [ -n "$(external_outputs)" ]; then
+    layout_extended
+  else
+    swaymsg "output $PANEL enable position 0 0 scale 1.25" >/dev/null 2>&1 || true
+  fi
+}
+
+case "$action" in
+  close) run_close ;;
+  open)  run_open ;;
+  auto)
+    # Re-apply the correct layout for the current lid state. Used by sway's
+    # exec_always (every reload re-runs the static output config, which would
+    # otherwise stack all outputs at 0,0 = mirrored) and by the hot-plug watcher.
+    if grep -qi closed /proc/acpi/button/lid/*/state 2>/dev/null; then
+      run_close
     else
-      swaymsg "output $PANEL enable position 0 0 scale 1.25" >/dev/null 2>&1 || true
+      run_open
     fi
     ;;
   *)
-    echo "usage: lid-clamshell {close|open}" >&2
+    echo "usage: lid-clamshell {close|open|auto}" >&2
     exit 1
     ;;
 esac

@@ -1202,6 +1202,14 @@ in
       ] ++ [
         # sov workspace overview daemon
         { command = "systemctl --user start sov"; }
+      ] ++ lib.optionals (!isHeadless) [
+        # Re-apply the display layout on EVERY sway reload (exec_always). A reload
+        # re-runs the static output config, which pins eDP-1 at 0,0 and leaves a
+        # connected external also at 0,0 — i.e. mirrored. home-manager switch
+        # reloads sway, so without this a rebuild silently reverts extended ->
+        # duplicate. `auto` picks open/clamshell from the live lid state. The
+        # hot-plug watcher (below) handles connect/disconnect separately.
+        { command = "~/.local/bin/lid-clamshell auto"; always = true; }
       ];
       # NOTE: login-time + hot-plug display layout is handled by the
       # monitor-layout-watch user service (connector-agnostic), not a startup
@@ -1239,6 +1247,13 @@ in
         # 3-finger swipe up opens the full-screen window-switcher exposé (stays
         # open until click/Enter/Esc, since a gesture can't be "held").
         bindgesture swipe:3:up exec show-window-switcher-action open
+
+        # 3-finger horizontal swipe = browser history navigation (macOS-style:
+        # swipe right -> back, swipe left -> forward). Scoped to browser windows
+        # by browser-nav, so it's a no-op in terminals/editors. 2-finger is left
+        # to libinput as scroll; 3-finger is the free gesture slot on this pad.
+        bindgesture swipe:3:right exec ~/.local/bin/browser-nav back
+        bindgesture swipe:3:left exec ~/.local/bin/browser-nav forward
       ''}
 
       # Application menu launcher - QuickShell primary launcher, Walker fallback on Alt+Space
@@ -1387,6 +1402,12 @@ in
     source = ./scripts/osk-toggle.sh;
     executable = true;
   };
+  # Trackpad browser history navigation (3-finger swipe -> Alt+Left/Right),
+  # scoped to browser windows so it's a no-op elsewhere.
+  home.file.".local/bin/browser-nav" = {
+    source = ./scripts/browser-nav.sh;
+    executable = true;
+  };
 
   # wvkbd on-screen keyboard, started hidden and toggled via SIGRTMIN. Themed to
   # match the dark Quickshell palette; landscape height tuned for the external
@@ -1432,6 +1453,14 @@ in
       Description = "Re-apply display layout on monitor hot-plug (connector-agnostic)";
       PartOf = [ "graphical-session.target" ];
       After = [ "graphical-session.target" ];
+      # Restart the watcher whenever its logic changes, so a rebuild re-runs its
+      # initial apply_layout (re-extending the displays). The ExecStart points at
+      # a stable ~/.local/bin symlink, so without this the unit text is unchanged
+      # and home-manager would leave the old watcher running.
+      X-Restart-Triggers = [
+        "${./scripts/monitor-layout-watch.sh}"
+        "${./scripts/lid-clamshell.sh}"
+      ];
     };
     Service = {
       Type = "simple";
