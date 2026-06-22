@@ -364,5 +364,66 @@ PanelWindow {
                 }
             }
         }
+
+        // Small dictation toggle in the top-right corner — same action as the
+        // bottom-bar button and the trackpad gesture. Closes the switcher first
+        // so dictation operates on the underlying window, not this overlay.
+        Rectangle {
+            id: exposeDictate
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.margins: 28
+            height: 40
+            implicitWidth: exposeDictateRow.implicitWidth + 24
+            radius: 12
+            color: root.voxtypeClass() === "recording" ? colors.redBg
+                : (exposeDictateMouse.containsMouse ? colors.card : colors.cardAlt)
+            border.width: root.voxtypeActive() ? 2 : 1
+            border.color: root.voxtypeActive() ? root.voxtypeIconColor()
+                : (exposeDictateMouse.containsMouse ? colors.borderStrong : colors.border)
+
+            Behavior on color { ColorAnimation { duration: root.fastColorMs } }
+            Behavior on border.color { ColorAnimation { duration: root.fastColorMs } }
+
+            RowLayout {
+                id: exposeDictateRow
+                anchors.centerIn: parent
+                spacing: 7
+
+                Text {
+                    text: root.voxtypeIcon()
+                    color: root.voxtypeActive() ? root.voxtypeIconColor() : colors.muted
+                    font.family: "FiraCode Nerd Font"
+                    font.pixelSize: 15
+
+                    SequentialAnimation on opacity {
+                        running: root.voxtypeClass() === "recording"
+                        loops: Animation.Infinite
+                        alwaysRunToEnd: true
+                        NumberAnimation { from: 1.0; to: 0.3; duration: 600 }
+                        NumberAnimation { from: 0.3; to: 1.0; duration: 600 }
+                    }
+                }
+
+                Text {
+                    text: root.voxtypeClass() === "recording" ? "Recording…"
+                        : (root.voxtypeClass() === "transcribing" ? "Transcribing…" : "Dictate")
+                    color: root.voxtypeActive() ? root.voxtypeIconColor() : colors.text
+                    font.pixelSize: 11
+                    font.weight: Font.DemiBold
+                }
+            }
+
+            MouseArea {
+                id: exposeDictateMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    root.closeExpose();
+                    root.runDetached([runtimeConfig.dictationBin, "toggle"]);
+                }
+            }
+        }
     }
 }
