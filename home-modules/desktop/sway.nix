@@ -922,23 +922,14 @@ in
           scale = "1.0";
         };
       } else if isHybrid then {
+        # External monitors are configured dynamically by the lid-clamshell
+        # handler (connector-agnostic — the dock/port assigns DP-5/6/7/HDMI
+        # unpredictably), so no external is hardcoded here. eDP-1 defaults to the
+        # origin; the handler tiles externals and repositions the panel on lid
+        # open/close.
         "eDP-1" = {
           scale = "1.25";
-          # Right of a scale-1.25 DP-7 (logical width 1536); the profile daemon
-          # repositions eDP-1 for VNC layouts, so this is just the docked default.
-          position = "1536,0";
-        };
-        # Physical external monitor (e.g. DP-7) sits to the LEFT of the laptop
-        # panel. It renders at native 1080p (sharp) but uses scale 1.25 so UI
-        # elements are ~25% larger for a monitor placed further away, while
-        # keeping enough vertical room (logical 1536x864) on the 16:9 panel. At
-        # scale 1.25 the logical width is 1920/1.25 = 1536, so eDP-1 begins at
-        # x=1536 to stay edge-to-edge. Without this directive sway auto-places a
-        # hot-plugged external to the right at scale 1.0.
-        "DP-7" = {
-          mode = "1920x1080@60Hz";
           position = "0,0";
-          scale = "1.25";
         };
         "HEADLESS-1" = {
           mode = "1920x1200@60Hz";
@@ -1211,6 +1202,13 @@ in
       ] ++ [
         # sov workspace overview daemon
         { command = "systemctl --user start sov"; }
+      ] ++ lib.optionals (!isHeadless) [
+        # Apply the correct physical-display layout for the current lid state at
+        # login (connector-agnostic clamshell/extended). The bindswitch only
+        # fires on lid *changes*, so without this a boot-into-clamshell would
+        # leave the panel on and the external unplaced. Delayed so it runs after
+        # the i3pm daemon applies its boot monitor profile and takes the last word.
+        { command = "sh -c 'sleep 4; if grep -qi closed /proc/acpi/button/lid/*/state 2>/dev/null; then ~/.local/bin/lid-clamshell close; else ~/.local/bin/lid-clamshell open; fi'"; }
       ];
 
       # Bar configuration will be provided by swaybar.nix
@@ -1462,59 +1460,11 @@ in
           eDP-1
         '';
       "sway/workspace-assignments.json".text = builtins.toJSON workspaceAssignments;
-    }
-    # Physical external-monitor profile for the ThinkPad (hybrid host). DP-7 is a
-    # real DisplayPort/USB-C output, so it cannot live in the daemon's hybrid
-    # profile model (that one is locked to eDP-1 + HEADLESS-[12] for VNC). It is
-    # instead a *standard* MonitorProfile (full ProfileOutput entries, no "type"
-    # key) whose explicit position+scale the daemon applies verbatim. External
-    # sits to the LEFT at native 1080p; the panel is adjacent on the right.
-    // (lib.optionalAttrs isHybrid {
-      "sway/monitor-profiles/extended.json".text = builtins.toJSON {
-        name = "extended";
-        description = "ThinkPad panel plus external display (external on the LEFT)";
-        outputs = [
-          {
-            name = "DP-7";
-            enabled = true;
-            # Native 1920x1080 mode (sharp) zoomed via scale 1.25 -> logical
-            # 1536x864, so items appear ~25% larger for a more distant monitor
-            # while keeping enough vertical room on the 16:9 panel.
-            scale = 1.25;
-            position = { x = 0; y = 0; width = 1920; height = 1080; };
-          }
-          {
-            name = "eDP-1";
-            enabled = true;
-            scale = 1.25;
-            # x = DP-7 logical width (1920/1.25 = 1536) -> edge-to-edge, no gap.
-            position = { x = 1536; y = 0; width = 1920; height = 1200; };
-          }
-        ];
-      };
-      # Clamshell: lid closed while docked on AC. The external (DP-7) is the sole
-      # display at 0,0; the laptop panel is disabled so the daemon migrates every
-      # workspace onto DP-7, making it the only/primary monitor. Applied by the
-      # lid-clamshell handler; restored to `extended` on lid open.
-      "sway/monitor-profiles/clamshell.json".text = builtins.toJSON {
-        name = "clamshell";
-        description = "Lid closed on AC: external (DP-7) is the sole/primary display";
-        outputs = [
-          {
-            name = "DP-7";
-            enabled = true;
-            scale = 1.25;
-            position = { x = 0; y = 0; width = 1920; height = 1080; };
-          }
-          {
-            name = "eDP-1";
-            enabled = false;
-            scale = 1.25;
-            position = { x = 0; y = 0; width = 1920; height = 1200; };
-          }
-        ];
-      };
-    });
+    };
+    # NOTE: the ThinkPad's physical external-monitor layout (clamshell + extended)
+    # is handled at runtime by the connector-agnostic lid-clamshell script, not by
+    # static profiles — the dock/port assigns the external's connector name
+    # (DP-5/6/7/HDMI) unpredictably, so hardcoding it broke on every re-dock.
 
   # Ensure default monitor profile is recorded for new systems
   home.activation.ensureMonitorProfileCurrent = lib.mkIf hasManagedMonitorProfiles (lib.hm.dag.entryAfter [ "writeBoundary" ] ''

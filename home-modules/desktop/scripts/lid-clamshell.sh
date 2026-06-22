@@ -1,37 +1,38 @@
 #!/usr/bin/env bash
 # lid-clamshell - manage displays/power when the ThinkPad lid opens or closes.
 #
-# Clamshell policy (matches the user's intent):
-#   close + plugged in + external connected -> external becomes the sole/primary
-#                                              display (laptop panel disabled),
-#                                              machine stays awake.
-#   close + on battery + external connected -> suspend (only run on the external
-#                                              when power is plugged in).
-#   close + no external                     -> drop the now-hidden laptop panel;
-#                                              logind's lid policy (suspend on
-#                                              battery / lock on AC) governs.
-#   open                                    -> restore the extended dual-monitor
-#                                              layout, or laptop-only.
+# Connector-agnostic: it operates on "the built-in panel" (eDP-1, a stable name)
+# vs "every connected external" (whatever the dock/port assigns — DP-5, DP-6,
+# DP-7, HDMI-A-1, ...). It does NOT rely on a fixed monitor profile, because the
+# external's connector name changes across docks/ports.
 #
-# Display changes go through the i3pm daemon (single owner) so the active profile
-# stays consistent and the daemon never fights the change by re-applying a stale
-# profile. logind keeps HandleLidSwitchDocked=ignore so it does not suspend out
-# from under us while an external display is connected; this script owns the
-# battery-vs-AC suspend decision instead.
+# Policy:
+#   close + plugged in + external -> clamshell: disable the panel, tile all
+#                                     externals left-to-right (stays awake).
+#   close + on battery + external -> suspend (only run on the external on AC).
+#   close + no external           -> drop the now-hidden panel; logind governs.
+#   open  + external              -> extended: tile externals, panel to the right.
+#   open  + no external           -> just the panel.
+#
+# logind keeps HandleLidSwitchDocked=ignore so it won't suspend while an external
+# is connected; this script owns the battery-vs-AC suspend decision.
 set -euo pipefail
 
 action="${1:-close}"
+EXTERNAL_SCALE="1.25"
+PANEL="eDP-1"
 
-# True when any active output other than the built-in panel is present.
-ext_present() {
-  swaymsg -t get_outputs \
-    | jq -e 'any(.[]; .name != "eDP-1" and .active and (.name | test("^(DP|HDMI)-")))' \
-    >/dev/null 2>&1
+# Names of currently-connected external physical outputs (not the built-in
+# panel, not a virtual VNC HEADLESS output).
+external_outputs() {
+  swaymsg -t get_outputs 2>/dev/null | jq -r --arg panel "$PANEL" '
+    .[] | select(.name != $panel
+                 and (.name | test("^HEADLESS") | not)
+                 and (.name | test("^(DP|HDMI|DVI|VGA)"))) | .name'
 }
 
 # True when mains or USB-C PD power is supplying the machine (any non-battery
-# power supply reporting online=1). A USB-C dock charges via a ucsi-source PSY,
-# so checking only /sys/.../AC/online would miss dock power.
+# power supply reporting online=1; a USB-C dock charges via a ucsi-source PSY).
 plugged_in() {
   local online type dir
   for online in /sys/class/power_supply/*/online; do
@@ -44,24 +45,61 @@ plugged_in() {
   return 1
 }
 
+# Echo "<native_width> <native_height>" for an output (current mode, else largest).
+output_mode() {
+  swaymsg -t get_outputs 2>/dev/null | jq -r --arg o "$1" '
+    .[] | select(.name == $o)
+        | (.current_mode // (.modes | max_by(.width * .height)))
+        | "\(.width) \(.height)"'
+}
+
+logical_width() { awk "BEGIN { printf \"%d\", $1 / $2 }"; }
+
+# Enable + tile every connected external left-to-right at EXTERNAL_SCALE.
+# Echoes the next free x coordinate (right edge of the last external).
+tile_externals() {
+  local x=0 out w h lw
+  while read -r out; do
+    [ -n "$out" ] || continue
+    read -r w h <<<"$(output_mode "$out")"
+    [ -n "${w:-}" ] && [ "$w" != "null" ] || continue
+    swaymsg "output $out enable mode ${w}x${h} position $x 0 scale $EXTERNAL_SCALE" >/dev/null 2>&1 || true
+    lw="$(logical_width "$w" "$EXTERNAL_SCALE")"
+    x=$((x + lw))
+  done < <(external_outputs)
+  echo "$x"
+}
+
+layout_clamshell() {
+  # Externals own the screen; panel off so workspaces migrate onto an external.
+  tile_externals >/dev/null
+  swaymsg "output $PANEL disable" >/dev/null 2>&1 || true
+}
+
+layout_extended() {
+  # Externals left-to-right, then the panel to their right.
+  local x
+  x="$(tile_externals)"
+  swaymsg "output $PANEL enable mode 1920x1200 position $x 0 scale 1.25" >/dev/null 2>&1 || true
+}
+
 case "$action" in
   close)
-    if ext_present; then
+    if [ -n "$(external_outputs)" ]; then
       if plugged_in; then
-        i3pm display apply clamshell >/dev/null 2>&1
+        layout_clamshell
       else
         systemctl suspend
       fi
     else
-      swaymsg 'output eDP-1 disable' >/dev/null 2>&1 || true
+      swaymsg "output $PANEL disable" >/dev/null 2>&1 || true
     fi
     ;;
   open)
-    if ext_present; then
-      i3pm display apply extended >/dev/null 2>&1
+    if [ -n "$(external_outputs)" ]; then
+      layout_extended
     else
-      swaymsg 'output eDP-1 enable' >/dev/null 2>&1 || true
-      i3pm display apply local-only >/dev/null 2>&1 || true
+      swaymsg "output $PANEL enable position 0 0 scale 1.25" >/dev/null 2>&1 || true
     fi
     ;;
   *)
