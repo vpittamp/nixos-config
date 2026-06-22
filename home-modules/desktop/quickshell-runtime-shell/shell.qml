@@ -38,6 +38,7 @@ ShellRoot {
     readonly property var windowSwitcherFocusItem: windowSwitcherWindow ? windowSwitcherWindow.focusItemRef : null
     readonly property var exposeFocusTimer: runtimeServices ? runtimeServices.exposeFocusTimerRef : null
     readonly property var exposeOpenTimer: runtimeServices ? runtimeServices.exposeOpenTimerRef : null
+    readonly property var exposeRefreshTimer: runtimeServices ? runtimeServices.exposeRefreshTimerRef : null
     readonly property var sessionPreviewDebounce: runtimeServices ? runtimeServices.sessionPreviewDebounceRef : null
     readonly property var settingsFocusTimer: runtimeServices ? runtimeServices.settingsFocusTimerRef : null
     readonly property var settingsCommandQueryDebounce: runtimeServices ? runtimeServices.settingsCommandQueryDebounceRef : null
@@ -6724,6 +6725,66 @@ function normalizeLauncherMode(mode) {
         exposeSwitcherActive = false;
         exposePendingDelta = 0;
         exposeQuery = "";
+    }
+
+    // ----- Per-window monitor display + move-to-output (exposé) -----
+    // Active output (monitor) names, from the daemon dashboard snapshot.
+    function exposeOutputs() {
+        const outs = arrayOrEmpty(dashboard.outputs);
+        const names = [];
+        for (let i = 0; i < outs.length; i += 1) {
+            const o = outs[i];
+            if (o && o.active !== false) {
+                const n = stringOrEmpty(o.name);
+                if (n && names.indexOf(n) === -1) {
+                    names.push(n);
+                }
+            }
+        }
+        return names;
+    }
+
+    // Friendly short label for a monitor chip.
+    function exposeOutputLabel(name) {
+        const n = stringOrEmpty(name);
+        if (n === "eDP-1") {
+            return "Laptop";
+        }
+        return n;
+    }
+
+    // Laptop panel gets a laptop glyph; everything else a monitor glyph.
+    function exposeOutputGlyph(name) {
+        return stringOrEmpty(name) === "eDP-1" ? "" : "";
+    }
+
+    function exposeEntryIsRemote(entry) {
+        const ht = entry && entry.host_token ? entry.host_token : null;
+        if (ht && ht.is_remote) {
+            return true;
+        }
+        return stringOrEmpty(entry && entry.execution_mode) === "ssh";
+    }
+
+    // Move a window's WHOLE WORKSPACE to a monitor, so the workspace number
+    // travels with it and the window fills the destination — rather than
+    // detaching the window onto the destination's current workspace. entry.id is
+    // the Sway con_id (the daemon's window actions address windows as
+    // [con_id=<id>]). Focus the window first so `move workspace to output` acts
+    // on its workspace. Refresh the grid shortly after so badges update.
+    function moveExposeWindowToOutput(entry, outputName) {
+        const id = Number(entry && (entry.id || entry.window_id) || 0);
+        const out = stringOrEmpty(outputName);
+        if (!id || !out || exposeEntryIsRemote(entry)) {
+            return;
+        }
+        if (stringOrEmpty(entry.output) === out) {
+            return;
+        }
+        runDetached(["swaymsg", "[con_id=" + id + "] focus; move workspace to output " + out]);
+        if (exposeRefreshTimer) {
+            exposeRefreshTimer.restart();
+        }
     }
 
     function focusLastSession() {

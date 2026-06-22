@@ -252,12 +252,13 @@ PanelWindow {
                         ColumnLayout {
                             anchors.fill: parent
                             anchors.margins: 14
+                            anchors.bottomMargin: 34   // room for the monitor chip row
                             spacing: 8
 
                             IconImage {
                                 Layout.alignment: Qt.AlignHCenter
                                 Layout.topMargin: 4
-                                implicitSize: 60
+                                implicitSize: 56
                                 source: root.iconSourceFor(cell.entry)
                                 mipmap: true
                                 asynchronous: true
@@ -358,6 +359,72 @@ PanelWindow {
                                 }
                                 root.updateExposePointerSelection(cell.index);
                                 root.activateExposeSelection();
+                            }
+                        }
+
+                        // Monitor indicator + move-to-display selector. One chip per
+                        // active monitor; the window's current monitor is highlighted.
+                        // Declared AFTER tileMouse so a chip click moves the window
+                        // (sends its whole workspace to that monitor) instead of
+                        // activating it; clicks on the current chip fall through to
+                        // activate. Hidden for remote windows.
+                        Row {
+                            id: monitorChips
+                            anchors.bottom: parent.bottom
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.bottomMargin: 9
+                            spacing: 4
+                            visible: !root.exposeEntryIsRemote(cell.entry)
+
+                            Repeater {
+                                model: root.exposeOutputs()
+
+                                delegate: Rectangle {
+                                    required property string modelData
+                                    readonly property string outName: modelData
+                                    readonly property bool isHere: root.stringOrEmpty(cell.entry && cell.entry.output) === outName
+                                    height: 20
+                                    width: monChipRow.implicitWidth + 14
+                                    radius: 6
+                                    color: isHere ? cell.accentColor
+                                        : (monChipMouse.containsMouse ? colors.panelAlt : Qt.rgba(0, 0, 0, 0.4))
+                                    border.width: 1
+                                    border.color: isHere ? cell.accentColor
+                                        : (monChipMouse.containsMouse ? colors.borderStrong : colors.border)
+
+                                    Behavior on color { ColorAnimation { duration: root.fastColorMs } }
+                                    Behavior on border.color { ColorAnimation { duration: root.fastColorMs } }
+
+                                    Row {
+                                        id: monChipRow
+                                        anchors.centerIn: parent
+                                        spacing: 4
+
+                                        Text {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: root.exposeOutputGlyph(outName)
+                                            font.family: "FiraCode Nerd Font"
+                                            font.pixelSize: 10
+                                            color: isHere ? colors.bg : colors.muted
+                                        }
+                                        Text {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: root.exposeOutputLabel(outName)
+                                            font.pixelSize: 9
+                                            font.weight: Font.DemiBold
+                                            color: isHere ? colors.bg : colors.textDim
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: monChipMouse
+                                        anchors.fill: parent
+                                        enabled: !isHere
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.moveExposeWindowToOutput(cell.entry, outName)
+                                    }
+                                }
                             }
                         }
                     }

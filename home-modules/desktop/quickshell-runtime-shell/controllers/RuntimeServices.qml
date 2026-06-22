@@ -24,6 +24,7 @@ Item {
     property alias launcherWindowSwitcherOpenTimerRef: launcherWindowSwitcherOpenTimer
     property alias exposeFocusTimerRef: exposeFocusTimer
     property alias exposeOpenTimerRef: exposeOpenTimer
+    property alias exposeRefreshTimerRef: exposeRefreshTimer
     property alias sessionPreviewDebounceRef: sessionPreviewDebounce
     property alias settingsFocusTimerRef: settingsFocusTimer
     property alias settingsCommandQueryDebounceRef: settingsCommandQueryDebounce
@@ -363,6 +364,13 @@ Item {
         interval: 0
         repeat: false
         onTriggered: shellRoot.finalizeExposeOpen()
+    }
+
+    Timer {
+        id: exposeRefreshTimer
+        interval: 250
+        repeat: false
+        onTriggered: shellRoot.refreshExposeEntries()
     }
 
     Timer {
