@@ -22,6 +22,8 @@ Item {
     property alias launcherQueryDebounceRef: launcherQueryDebounce
     property alias launcherSessionSwitcherOpenTimerRef: launcherSessionSwitcherOpenTimer
     property alias launcherWindowSwitcherOpenTimerRef: launcherWindowSwitcherOpenTimer
+    property alias exposeFocusTimerRef: exposeFocusTimer
+    property alias exposeOpenTimerRef: exposeOpenTimer
     property alias sessionPreviewDebounceRef: sessionPreviewDebounce
     property alias settingsFocusTimerRef: settingsFocusTimer
     property alias settingsCommandQueryDebounceRef: settingsCommandQueryDebounce
@@ -343,6 +345,24 @@ Item {
         interval: 0
         repeat: false
         onTriggered: shellRoot.finalizeLauncherWindowSwitcherOpen()
+    }
+
+    Timer {
+        id: exposeFocusTimer
+        interval: 40
+        repeat: false
+        onTriggered: {
+            if (shellRoot.windowSwitcherFocusItem) {
+                shellRoot.windowSwitcherFocusItem.forceActiveFocus();
+            }
+        }
+    }
+
+    Timer {
+        id: exposeOpenTimer
+        interval: 0
+        repeat: false
+        onTriggered: shellRoot.finalizeExposeOpen()
     }
 
     Timer {
@@ -994,15 +1014,19 @@ Item {
         }
 
         function nextLauncherWindow() {
-            shellRoot.cycleLauncherWindows("next");
+            shellRoot.cycleExposeWindows("next");
         }
 
         function prevLauncherWindow() {
-            shellRoot.cycleLauncherWindows("prev");
+            shellRoot.cycleExposeWindows("prev");
         }
 
         function commitLauncherWindow() {
-            shellRoot.commitLauncherWindowSwitch();
+            shellRoot.commitExposeSwitch();
+        }
+
+        function openWindowSwitcher() {
+            shellRoot.openExpose();
         }
 
         function focusLastSession() {

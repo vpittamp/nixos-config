@@ -34,6 +34,10 @@ ShellRoot {
     readonly property var launcherQueryDebounce: runtimeServices ? runtimeServices.launcherQueryDebounceRef : null
     readonly property var launcherSessionSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherSessionSwitcherOpenTimerRef : null
     readonly property var launcherWindowSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherWindowSwitcherOpenTimerRef : null
+    readonly property var exposeGrid: windowSwitcherWindow ? windowSwitcherWindow.gridRef : null
+    readonly property var windowSwitcherFocusItem: windowSwitcherWindow ? windowSwitcherWindow.focusItemRef : null
+    readonly property var exposeFocusTimer: runtimeServices ? runtimeServices.exposeFocusTimerRef : null
+    readonly property var exposeOpenTimer: runtimeServices ? runtimeServices.exposeOpenTimerRef : null
     readonly property var sessionPreviewDebounce: runtimeServices ? runtimeServices.sessionPreviewDebounceRef : null
     readonly property var settingsFocusTimer: runtimeServices ? runtimeServices.settingsFocusTimerRef : null
     readonly property var settingsCommandQueryDebounce: runtimeServices ? runtimeServices.settingsCommandQueryDebounceRef : null
@@ -180,6 +184,14 @@ ShellRoot {
     property int launcherSessionSwitcherPendingDelta: 0
     property bool launcherWindowSwitcherActive: false
     property int launcherWindowSwitcherPendingDelta: 0
+    // Full-screen window-switcher exposé state (separate from the launcher).
+    property bool exposeVisible: false
+    property var exposeEntries: []
+    property int exposeSelectedIndex: 0
+    property bool exposeSwitcherActive: false
+    property int exposePendingDelta: 0
+    property string exposeQuery: ""
+    property int exposeColumns: 1
     property string launcherQuery: ""
     property string launcherError: ""
     property int launcherSelectedIndex: 0
@@ -405,22 +417,11 @@ ShellRoot {
             label: "Herdr",
             title: "Herdr Monitor",
             placeholder: "Filter AI sessions",
-            help: "Mod+Tab cycle  •  Release Mod to focus  •  Enter focus  •  Ctrl+6 Windows",
+            help: "Mod+Tab cycle  •  Release Mod to focus  •  Enter focus",
             iconFile: shellConfig.aiFallbackIcon,
             fallbackGlyph: "AI",
             accentColorKey: "violet",
             accentBgKey: "violetBg"
-        },
-        {
-            id: "windows",
-            label: "Windows",
-            title: "Windows",
-            placeholder: "Filter windows",
-            help: "Alt+Tab cycle  •  Release Alt to focus  •  Enter focus  •  Ctrl+W close",
-            icon: "preferences-desktop-window",
-            fallbackGlyph: "W",
-            accentColorKey: "blueMuted",
-            accentBgKey: "blueWash"
         }
     ]
     readonly property var launcherAppFiltersModel: [
@@ -6504,6 +6505,227 @@ function normalizeLauncherMode(mode) {
         activateLauncherEntry(entry);
     }
 
+    // ===== Full-screen window-switcher exposé =====
+    // Like launcherWindowProjects but INCLUDES the focused window (tagged so the
+    // grid can draw a "current" ring); the exposé is a full overview, not a
+    // next-only Alt+Tab list.
+    function exposeWindowProjects(query) {
+        const tokens = launcherQueryTokens(query);
+        const allProjects = arrayOrEmpty(dashboard.projects);
+        const projects = [];
+        for (let p = 0; p < allProjects.length; p += 1) {
+            const projectGroup = allProjects[p];
+            const windows = arrayOrEmpty(projectGroup && projectGroup.windows);
+            if (!windows.length) {
+                continue;
+            }
+            projects.push(Object.assign({}, projectGroup, { windows: windows }));
+        }
+        if (!tokens.length) {
+            return projects;
+        }
+        const filtered = [];
+        for (let i = 0; i < projects.length; i += 1) {
+            const projectGroup = projects[i];
+            const matched = arrayOrEmpty(projectGroup && projectGroup.windows).filter(function (windowData) {
+                return launcherWindowMatches(windowData, tokens);
+            });
+            if (!matched.length) {
+                continue;
+            }
+            filtered.push(Object.assign({}, projectGroup, { windows: matched }));
+        }
+        return filtered;
+    }
+
+    function exposeWindowEntries(query) {
+        const entries = [];
+        const projects = exposeWindowProjects(query);
+        for (let i = 0; i < projects.length; i += 1) {
+            const windows = arrayOrEmpty(projects[i] && projects[i].windows);
+            for (let j = 0; j < windows.length; j += 1) {
+                const windowData = windows[j];
+                entries.push(Object.assign({}, windowData, {
+                    kind: "window",
+                    identifier: String(Number(windowData && (windowData.id || windowData.window_id) || 0)),
+                    text: displayTitle(windowData),
+                    subtext: displayMeta(windowData),
+                    host_token: windowHostToken(windowData),
+                    focused: windowIsFocused(windowData)
+                }));
+            }
+        }
+        return entries;
+    }
+
+    function refreshExposeEntries() {
+        const entries = normalizeLauncherEntries(exposeWindowEntries(stringOrEmpty(exposeQuery)));
+        exposeEntries = entries;
+        if (exposeSelectedIndex >= entries.length) {
+            exposeSelectedIndex = Math.max(0, entries.length - 1);
+        }
+    }
+
+    function exposeFocusedIndex() {
+        const entries = arrayOrEmpty(exposeEntries);
+        for (let i = 0; i < entries.length; i += 1) {
+            if (entries[i] && entries[i].focused) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    // Alt+Tab path: open (held) and pre-select the next window relative to the
+    // focused one; further taps advance; Alt-release commits.
+    function cycleExposeWindows(direction) {
+        const delta = direction === "prev" ? -1 : 1;
+        if (!exposeVisible) {
+            exposeSwitcherActive = true;
+            exposePendingDelta = delta;
+            exposeQuery = "";
+            exposeVisible = true;
+            if (exposeOpenTimer) {
+                exposeOpenTimer.restart();
+            }
+            if (exposeFocusTimer) {
+                exposeFocusTimer.restart();
+            }
+            return;
+        }
+        exposePendingDelta = 0;
+        cycleExposeSelection(delta);
+        if (exposeFocusTimer) {
+            exposeFocusTimer.restart();
+        }
+    }
+
+    function finalizeExposeOpen() {
+        if (!exposeVisible || exposePendingDelta === 0) {
+            return;
+        }
+        const delta = exposePendingDelta;
+        exposePendingDelta = 0;
+        refreshExposeEntries();
+        const entries = arrayOrEmpty(exposeEntries);
+        if (!entries.length) {
+            return;
+        }
+        const focusedIdx = exposeFocusedIndex();
+        if (focusedIdx < 0) {
+            exposeSelectedIndex = delta < 0 ? entries.length - 1 : 0;
+        } else {
+            exposeSelectedIndex = (focusedIdx + delta + entries.length) % entries.length;
+        }
+        if (exposeGrid) {
+            exposeGrid.positionViewAtIndex(exposeSelectedIndex, GridView.Contain);
+        }
+    }
+
+    // One-shot path (3-finger swipe): open and stay until click/Enter/Esc.
+    function openExpose() {
+        exposeSwitcherActive = false;
+        exposePendingDelta = 0;
+        exposeQuery = "";
+        exposeVisible = true;
+        refreshExposeEntries();
+        const focusedIdx = exposeFocusedIndex();
+        exposeSelectedIndex = focusedIdx >= 0 ? focusedIdx : 0;
+        if (exposeFocusTimer) {
+            exposeFocusTimer.restart();
+        }
+    }
+
+    function cycleExposeSelection(delta) {
+        const entries = arrayOrEmpty(exposeEntries);
+        if (!entries.length) {
+            exposeSelectedIndex = 0;
+            return;
+        }
+        exposeSelectedIndex = (exposeSelectedIndex + delta + entries.length) % entries.length;
+        if (exposeGrid) {
+            exposeGrid.positionViewAtIndex(exposeSelectedIndex, GridView.Contain);
+        }
+    }
+
+    function moveExposeSelectionSpatial(dir) {
+        const entries = arrayOrEmpty(exposeEntries);
+        if (!entries.length) {
+            return;
+        }
+        const cols = Math.max(1, exposeColumns);
+        let idx = exposeSelectedIndex;
+        if (dir === "left") {
+            idx = Math.max(0, idx - 1);
+        } else if (dir === "right") {
+            idx = Math.min(entries.length - 1, idx + 1);
+        } else if (dir === "up") {
+            idx = (idx - cols >= 0) ? idx - cols : idx;
+        } else if (dir === "down") {
+            idx = (idx + cols < entries.length) ? idx + cols : idx;
+        }
+        exposeSelectedIndex = idx;
+        if (exposeGrid) {
+            exposeGrid.positionViewAtIndex(idx, GridView.Contain);
+        }
+    }
+
+    function updateExposePointerSelection(index) {
+        const entryIndex = Number(index);
+        if (isNaN(entryIndex) || entryIndex < 0 || entryIndex >= arrayOrEmpty(exposeEntries).length) {
+            return;
+        }
+        if (exposeSelectedIndex !== entryIndex) {
+            exposeSelectedIndex = entryIndex;
+        }
+    }
+
+    function activeExposeEntry() {
+        const entries = arrayOrEmpty(exposeEntries);
+        if (!entries.length) {
+            return null;
+        }
+        if (exposeSelectedIndex >= 0 && exposeSelectedIndex < entries.length) {
+            return entries[exposeSelectedIndex];
+        }
+        return entries[0];
+    }
+
+    function activateExposeSelection() {
+        const entry = activeExposeEntry();
+        closeExpose();
+        if (entry) {
+            focusWindow(entry);
+        }
+    }
+
+    function commitExposeSwitch() {
+        if (!exposeVisible || !exposeSwitcherActive) {
+            return;
+        }
+        const entry = activeExposeEntry();
+        exposeSwitcherActive = false;
+        exposePendingDelta = 0;
+        closeExpose();
+        if (entry) {
+            focusWindow(entry);
+        }
+    }
+
+    function closeExposeWindowEntry(entry) {
+        if (entry) {
+            closeWindow(entry);
+        }
+        Qt.callLater(refreshExposeEntries);
+    }
+
+    function closeExpose() {
+        exposeVisible = false;
+        exposeSwitcherActive = false;
+        exposePendingDelta = 0;
+        exposeQuery = "";
+    }
+
     function focusLastSession() {
         if (lastFocusedSessionKey) {
             focusSession(lastFocusedSessionKey);
@@ -7435,6 +7657,13 @@ function normalizeLauncherMode(mode) {
     }
 
     Windows.RuntimePanelWindow {
+        shellRoot: shellRootRef
+        runtimeConfig: shellConfig
+        colors: shellRootRef.colors
+    }
+
+    Windows.WindowSwitcherWindow {
+        id: windowSwitcherWindow
         shellRoot: shellRootRef
         runtimeConfig: shellConfig
         colors: shellRootRef.colors

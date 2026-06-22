@@ -1240,8 +1240,9 @@ in
         # (4-finger swipe down; the Quickshell bar also has a keyboard button).
         bindgesture swipe:4:down exec ~/.local/bin/osk-toggle
 
-        # 3-finger swipe up opens the Alt+Tab window switcher (cycle windows).
-        bindgesture swipe:3:up exec show-window-switcher-action next
+        # 3-finger swipe up opens the full-screen window-switcher exposé (stays
+        # open until click/Enter/Esc, since a gesture can't be "held").
+        bindgesture swipe:3:up exec show-window-switcher-action open
       ''}
 
       # Application menu launcher - QuickShell primary launcher, Walker fallback on Alt+Space

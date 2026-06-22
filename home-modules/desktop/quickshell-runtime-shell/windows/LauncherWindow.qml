@@ -199,11 +199,6 @@ PanelWindow {
                             event.accepted = true;
                             return;
                         }
-                        if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_6) {
-                            root.setLauncherMode("windows");
-                            event.accepted = true;
-                            return;
-                        }
                         if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_1) {
                             root.setLauncherMode("apps");
                             event.accepted = true;

@@ -2624,6 +2624,7 @@ PY
     set -euo pipefail
     case "''${1:-next}" in
       prev) exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell prevLauncherWindow ;;
+      open) exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell openWindowSwitcher ;;
       *) exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell nextLauncherWindow ;;
     esac
   '';
