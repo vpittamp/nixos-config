@@ -2066,6 +2066,42 @@ let
       preferred_monitor_role = "secondary";
       routing_domains = [ "portal.azure.com" ];
     }
+
+    # MinIO Console (Dev)
+    {
+      name = "MinIO Dev";
+      url = "https://minio-console-dev.tail286401.ts.net";
+      domain = "minio-console-dev.tail286401.ts.net";
+      icon = iconPath "minio-dev.png";
+      description = "MinIO object storage console - Dev environment";
+      categories = "Network;Development;";
+      keywords = "minio;s3;object-storage;storage;console;bucket;kubernetes;dev;";
+      scope = "https://minio-console-dev.tail286401.ts.net/";
+      ulid = "6FZH9QHAWTTJPEWCA48J97K8QF";  # Generated 2026-06-22
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 166;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "minio-console-dev.tail286401.ts.net" ];
+    }
+
+    # MinIO Console (Ryzen)
+    {
+      name = "MinIO Ryzen";
+      url = "https://minio-console-ryzen.tail286401.ts.net";
+      domain = "minio-console-ryzen.tail286401.ts.net";
+      icon = iconPath "minio-ryzen.png";
+      description = "MinIO object storage console - Ryzen environment";
+      categories = "Network;Development;";
+      keywords = "minio;s3;object-storage;storage;console;bucket;kubernetes;ryzen;";
+      scope = "https://minio-console-ryzen.tail286401.ts.net/";
+      ulid = "1GF555AA7ETWCWA9JXP8J3FAM3";  # Generated 2026-06-22
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 167;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "minio-console-ryzen.tail286401.ts.net" ];
+    }
   ];
 
   # Filter and format sites

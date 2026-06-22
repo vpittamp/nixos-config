@@ -51,8 +51,17 @@ BORDER_WIDTH=6
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-# Step 1: Convert SVG to 512x512 PNG (centered, preserving aspect ratio)
-rsvg-convert -w "$SIZE" -h "$SIZE" --keep-aspect-ratio "$SOURCE_SVG" -o "$TMPDIR/base.png"
+# Step 1: Rasterize source to 512x512 PNG (centered, preserving aspect ratio).
+# SVG via rsvg-convert; raster sources (PNG/etc.) via magick, for services whose
+# authoritative icon is only available as a colored PNG (e.g. an app's logo512).
+case "${SOURCE_SVG,,}" in
+  *.svg)
+    rsvg-convert -w "$SIZE" -h "$SIZE" --keep-aspect-ratio "$SOURCE_SVG" -o "$TMPDIR/base.png"
+    ;;
+  *)
+    magick "$SOURCE_SVG" -background none -resize "${SIZE}x${SIZE}" "$TMPDIR/base.png"
+    ;;
+esac
 
 # Ensure exactly 512x512 with transparent background (rsvg may output smaller)
 magick "$TMPDIR/base.png" -background none -gravity center -extent "${SIZE}x${SIZE}" "$TMPDIR/base_sized.png"
