@@ -1401,7 +1401,7 @@ in
         # wvkbd to zero height so it never renders. Non-exclusive floats it over
         # the bottom of the screen, which is what we want for an OSK anyway.
         "--non-exclusive"
-        "-L 300 -H 320 -R 6"
+        "-L 240 -H 260 -R 6"
         "--fn 'FiraCode Nerd Font 16'"
         # Colors are rrggbbaa: the background and key fills are semi-transparent
         # so the window underneath shows through, while key text stays fully
