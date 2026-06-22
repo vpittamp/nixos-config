@@ -1202,14 +1202,10 @@ in
       ] ++ [
         # sov workspace overview daemon
         { command = "systemctl --user start sov"; }
-      ] ++ lib.optionals (!isHeadless) [
-        # Apply the correct physical-display layout for the current lid state at
-        # login (connector-agnostic clamshell/extended). The bindswitch only
-        # fires on lid *changes*, so without this a boot-into-clamshell would
-        # leave the panel on and the external unplaced. Delayed so it runs after
-        # the i3pm daemon applies its boot monitor profile and takes the last word.
-        { command = "sh -c 'sleep 4; if grep -qi closed /proc/acpi/button/lid/*/state 2>/dev/null; then ~/.local/bin/lid-clamshell close; else ~/.local/bin/lid-clamshell open; fi'"; }
       ];
+      # NOTE: login-time + hot-plug display layout is handled by the
+      # monitor-layout-watch user service (connector-agnostic), not a startup
+      # exec — see systemd.user.services.monitor-layout-watch below.
 
       # Bar configuration will be provided by swaybar.nix
       bars = [];
@@ -1375,6 +1371,12 @@ in
     source = ./scripts/lid-clamshell.sh;
     executable = true;
   };
+  # Re-applies the display layout on monitor hot-plug/unplug (sway has no
+  # on-output hook; the lid switch only fires on lid changes).
+  home.file.".local/bin/monitor-layout-watch" = {
+    source = ./scripts/monitor-layout-watch.sh;
+    executable = true;
+  };
   # Mic-aware voxtype front-end (prefers Jabra mic; trackpad/bar trigger).
   home.file.".local/bin/dictation" = {
     source = ./scripts/dictation.sh;
@@ -1418,6 +1420,24 @@ in
       ];
       Restart = "on-failure";
       RestartSec = "2";
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+
+  # Watches sway output events and re-applies the display layout on monitor
+  # hot-plug/unplug (so a newly-connected external is tiled, not mirrored at 0,0).
+  # Also lays out the initial monitor set at login.
+  systemd.user.services.monitor-layout-watch = lib.mkIf (!isHeadless) {
+    Unit = {
+      Description = "Re-apply display layout on monitor hot-plug (connector-agnostic)";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" ];
+    };
+    Service = {
+      Type = "simple";
+      ExecStart = "${config.home.homeDirectory}/.local/bin/monitor-layout-watch";
+      Restart = "on-failure";
+      RestartSec = "3";
     };
     Install.WantedBy = [ "graphical-session.target" ];
   };
