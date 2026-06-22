@@ -1228,13 +1228,13 @@ in
         bindswitch --locked lid:off exec ~/.local/bin/lid-clamshell open
 
         # Dictation trigger reachable from the Magic Trackpad in clamshell mode
-        # (laptop keyboard / Copilot key are closed). A 3-finger PINCH IN toggles
-        # voxtype recording — deliberately a pinch (not a swipe) so it can't be
-        # confused with the swipe gestures (keyboard / window switcher). The
-        # dictation script prefers the Jabra mic when connected. Works on any
-        # touchpad, so it also works with the lid open as a hands-free
-        # alternative to the Copilot key.
-        bindgesture pinch:3:inward exec ~/.local/bin/dictation toggle
+        # (laptop keyboard / Copilot key are closed). HOLDING 4 fingers still
+        # toggles voxtype recording — a distinct gesture type (not a swipe, not a
+        # pinch) so it can't be confused with the swipe gestures (keyboard /
+        # window switcher). The dictation script prefers the Jabra mic when
+        # connected. Works on any touchpad, so it also works with the lid open as
+        # a hands-free alternative to the Copilot key.
+        bindgesture hold:4 exec ~/.local/bin/dictation toggle
 
         # On-screen keyboard toggle for clamshell typing with the trackpad
         # (4-finger swipe down; the Quickshell bar also has a keyboard button).
