@@ -19,7 +19,11 @@
     "rtsx_pci_sdmmc" # Realtek PCI SD card reader (common in ThinkPads)
   ];
   boot.initrd.kernelModules = [ ];
-  boot.kernelModules = [ "kvm-intel" ];
+  # hid_magicmouse: driver for the Apple Magic Trackpad 2 (Bluetooth, 004C:0265).
+  # Without it the trackpad bonds and connects but no input device is created.
+  # Declared explicitly so it is guaranteed at boot rather than relying on
+  # udev MODALIAS autoload when the Bluetooth HID device reconnects.
+  boot.kernelModules = [ "kvm-intel" "hid_magicmouse" ];
   boot.extraModulePackages = [ ];
 
   # File systems
