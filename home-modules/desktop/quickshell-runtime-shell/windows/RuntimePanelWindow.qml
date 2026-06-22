@@ -16,7 +16,7 @@ PanelWindow {
     id: panelWindow
     property var runtimeSessions: []
     property var runtimeHerdrSpaces: []
-    screen: root.primaryScreen
+    screen: root.activeScreen
     visible: root.panelVisible
     onVisibleChanged: {
         if (visible) {

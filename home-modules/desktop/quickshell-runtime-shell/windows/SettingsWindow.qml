@@ -13,7 +13,7 @@ PanelWindow {
     property alias settingsCommandQueryFieldRef: settingsCommandQueryField
     property alias settingsCommandsListRef: settingsCommandsList
     id: settingsWindow
-    screen: root.primaryScreen
+    screen: root.activeScreen
     visible: root.settingsVisible
     color: "transparent"
     anchors.left: true

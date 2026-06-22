@@ -268,6 +268,14 @@ ShellRoot {
         })
     readonly property var primaryScreen: resolvePrimaryScreen()
     readonly property string primaryOutputName: screenOutputName(primaryScreen)
+    // Screen the floating side panel and launcher should appear on. Normally the
+    // configured primary, but when no configured primary output is currently
+    // active (e.g. clamshell mode, where eDP-1 is disabled), follow the focused
+    // monitor so they show on the active screen instead of the dead one.
+    readonly property var activeScreen: configuredPrimaryActive()
+        ? primaryScreen
+        : (findScreenByOutputName(focusedOutputName())
+            || (arrayOrEmpty(Quickshell.screens)[0] || primaryScreen))
     readonly property bool hasQuickshellScreens: arrayOrEmpty(Quickshell.screens).length > 0
     readonly property bool useFallbackScreenWindows: !hasQuickshellScreens
     readonly property string fallbackOutputName:
@@ -1099,6 +1107,19 @@ ShellRoot {
 
     function primaryOutputCandidates() {
         return arrayOrEmpty(shellConfig.primaryOutputs).map(value => stringOrEmpty(value)).filter(value => value);
+    }
+
+    // True when at least one configured primary output is currently an active
+    // screen. False in clamshell mode (eDP-1 disabled, external not a candidate),
+    // which is the cue to fall back to the focused monitor for floating windows.
+    function configuredPrimaryActive() {
+        const candidates = primaryOutputCandidates();
+        for (let i = 0; i < candidates.length; i += 1) {
+            if (findScreenByOutputName(candidates[i])) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function findScreenByOutputName(outputName) {

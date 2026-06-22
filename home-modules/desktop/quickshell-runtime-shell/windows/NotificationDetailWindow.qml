@@ -12,7 +12,7 @@ PanelWindow {
     required property var colors
     readonly property QtObject root: shellRoot
     id: notificationDetailWindow
-    screen: root.primaryScreen
+    screen: root.activeScreen
     visible: root.notificationDetailVisible && root.notificationDetailItem !== null && root.primaryScreen !== null
     color: "transparent"
     anchors.left: true

@@ -16,7 +16,7 @@ PanelWindow {
     property alias launcherListRef: launcherList
     property alias sessionPreviewFlickRef: sessionPreviewFlick
     id: launcherWindow
-    screen: root.primaryScreen
+    screen: root.activeScreen
     visible: root.launcherVisible
     color: "transparent"
     anchors.left: true
