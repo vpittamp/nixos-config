@@ -1239,6 +1239,9 @@ in
         # On-screen keyboard toggle for clamshell typing with the trackpad
         # (4-finger swipe down; the Quickshell bar also has a keyboard button).
         bindgesture swipe:4:down exec ~/.local/bin/osk-toggle
+
+        # 3-finger swipe up opens the Alt+Tab window switcher (cycle windows).
+        bindgesture swipe:3:up exec show-window-switcher-action next
       ''}
 
       # Application menu launcher - QuickShell primary launcher, Walker fallback on Alt+Space
