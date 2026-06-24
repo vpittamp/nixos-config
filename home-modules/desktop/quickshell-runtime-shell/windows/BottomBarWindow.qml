@@ -240,10 +240,10 @@ PanelWindow {
                 }
             }
 
-            // Dictation toggle as a real layout item: it reserves its own slot,
-            // with the workspace area filling the space to its left and a fill
-            // spacer to its right, so it sits ~centered and workspace buttons can
-            // never collide with it. (Was an absolute-centered overlay on top.)
+            // Dictation toggle, right-aligned next to the status group. The
+            // workspace area (fillWidth, to its left) takes the whole middle, so
+            // the button neither overlaps nor squeezes the workspace buttons.
+            // (Was an absolute-centered overlay that sat on top of them.)
             Rectangle {
                 id: dictateButton
                 Layout.preferredWidth: dictateRow.implicitWidth + 24
@@ -298,14 +298,6 @@ PanelWindow {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.runDetached([runtimeConfig.dictationBin, "toggle"])
                 }
-            }
-
-            // Fill spacer to the right of the dictate button so the two fill
-            // items (workspaces + this) split the leftover space, keeping the
-            // dictate button roughly centered.
-            Item {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
             }
 
             Rectangle {
