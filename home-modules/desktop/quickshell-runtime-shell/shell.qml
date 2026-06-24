@@ -100,6 +100,10 @@ ShellRoot {
     property var voxtypeState: ({
             "class": "idle"
         })
+    // Live mic input level (0-100) of the default source while recording, fed by
+    // dictationLevelBin. Drives the dictation overlay's capture meter so you can
+    // see the system is actually hearing speech (not just armed).
+    property int dictationLevel: 0
     property string lastDashboardInvariantWarning: ""
 
     property var systemStatsState: ({
@@ -7509,6 +7513,22 @@ function normalizeLauncherMode(mode) {
         }
     }
 
+    function parseDictationLevel(payload) {
+        const raw = stringOrEmpty(payload).trim();
+        if (!raw) {
+            return;
+        }
+        const v = parseInt(raw, 10);
+        if (isNaN(v)) {
+            return;
+        }
+        dictationLevel = Math.max(0, Math.min(100, v));
+    }
+
+    function resetDictationLevel() {
+        dictationLevel = 0;
+    }
+
     function voxtypeClass() {
         return stringOrEmpty((voxtypeState && voxtypeState.class) || "idle");
     }
@@ -7821,6 +7841,12 @@ function normalizeLauncherMode(mode) {
 
     Windows.WindowSwitcherWindow {
         id: windowSwitcherWindow
+        shellRoot: shellRootRef
+        runtimeConfig: shellConfig
+        colors: shellRootRef.colors
+    }
+
+    Windows.DictationOverlay {
         shellRoot: shellRootRef
         runtimeConfig: shellConfig
         colors: shellRootRef.colors

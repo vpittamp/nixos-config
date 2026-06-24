@@ -23,6 +23,13 @@ let
   # voxtype binary, for the dictation status indicator watcher.
   voxtypePkg = pkgs.callPackage ../../../packages/voxtype.nix { };
 
+  # Live mic-level meter for the dictation overlay: reads the PipeWire default
+  # source and prints a 0-100 level ~20x/sec. Quickshell runs it only while
+  # recording. Uses absolute tool paths so it works under the bare service PATH.
+  dictationLevelScript = pkgs.writeShellScriptBin "quickshell-dictation-level" ''
+    exec ${pkgs.python3}/bin/python3 ${../scripts/dictation-level.py} ${pkgs.pipewire}/bin/pw-record
+  '';
+
   # Build shell.qml with accent color substitution
   accentShellQml = pkgs.runCommandLocal "quickshell-accent-shell-qml" { } ''
     ${pkgs.gnused}/bin/sed \
@@ -69,6 +76,7 @@ QtObject {
   readonly property string brightnessStatusBin: "${brightnessStatusScript}/bin/quickshell-brightness-status"
   readonly property string voxtypeStatusBin: "${voxtypePkg}/bin/voxtype"
   readonly property string dictationBin: "${config.home.homeDirectory}/.local/bin/dictation"
+  readonly property string dictationLevelBin: "${dictationLevelScript}/bin/quickshell-dictation-level"
   readonly property string oskToggleBin: "${config.home.homeDirectory}/.local/bin/osk-toggle"
   readonly property string brightnessActionBin: "${brightnessActionScript}/bin/quickshell-brightness-action"
   readonly property string lidPolicyStatusBin: "${lidPolicyStatusScript}/bin/quickshell-lid-policy-status"
