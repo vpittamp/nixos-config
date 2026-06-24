@@ -240,6 +240,74 @@ PanelWindow {
                 }
             }
 
+            // Dictation toggle as a real layout item: it reserves its own slot,
+            // with the workspace area filling the space to its left and a fill
+            // spacer to its right, so it sits ~centered and workspace buttons can
+            // never collide with it. (Was an absolute-centered overlay on top.)
+            Rectangle {
+                id: dictateButton
+                Layout.preferredWidth: dictateRow.implicitWidth + 24
+                Layout.fillHeight: true
+                Layout.alignment: Qt.AlignVCenter
+                radius: 10
+                color: root.voxtypeClass() === "recording" ? colors.redBg
+                    : (dictateMouse.containsMouse ? colors.card : colors.cardAlt)
+                border.width: root.voxtypeActive() ? 2 : 1
+                border.color: root.voxtypeActive() ? root.voxtypeIconColor()
+                    : (dictateMouse.containsMouse ? colors.borderStrong : colors.border)
+
+                Behavior on color { ColorAnimation { duration: root.fastColorMs } }
+                Behavior on border.color { ColorAnimation { duration: root.fastColorMs } }
+
+                RowLayout {
+                    id: dictateRow
+                    anchors.centerIn: parent
+                    spacing: 7
+
+                    Text {
+                        id: dictateIcon
+                        text: root.voxtypeIcon()
+                        color: root.voxtypeActive() ? root.voxtypeIconColor() : colors.muted
+                        font.family: "FiraCode Nerd Font"
+                        font.pixelSize: 15
+
+                        // Pulse while recording. alwaysRunToEnd leaves opacity at
+                        // 1.0 when it stops, so the icon never gets stuck dimmed.
+                        SequentialAnimation on opacity {
+                            running: root.voxtypeClass() === "recording"
+                            loops: Animation.Infinite
+                            alwaysRunToEnd: true
+                            NumberAnimation { from: 1.0; to: 0.3; duration: 600 }
+                            NumberAnimation { from: 0.3; to: 1.0; duration: 600 }
+                        }
+                    }
+
+                    Text {
+                        text: root.voxtypeClass() === "recording" ? "Recording…"
+                            : (root.voxtypeClass() === "transcribing" ? "Transcribing…" : "Dictate")
+                        color: root.voxtypeActive() ? root.voxtypeIconColor() : colors.text
+                        font.pixelSize: 11
+                        font.weight: Font.DemiBold
+                    }
+                }
+
+                MouseArea {
+                    id: dictateMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.runDetached([runtimeConfig.dictationBin, "toggle"])
+                }
+            }
+
+            // Fill spacer to the right of the dictate button so the two fill
+            // items (workspaces + this) split the leftover space, keeping the
+            // dictate button roughly centered.
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+            }
+
             Rectangle {
                 Layout.preferredWidth: 214
                 Layout.fillHeight: true
@@ -319,66 +387,6 @@ PanelWindow {
                         }
                     }
                 }
-            }
-        }
-
-        // Prominent dictation toggle, centered on the bar for one-tap access.
-        // Reflects voxtype state (idle / recording / transcribing) and clicks
-        // through to the same `dictation toggle` the gesture and headset use.
-        Rectangle {
-            id: dictateButton
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.verticalCenter: parent.verticalCenter
-            height: parent.height - 10
-            implicitWidth: dictateRow.implicitWidth + 24
-            radius: 10
-            color: root.voxtypeClass() === "recording" ? colors.redBg
-                : (dictateMouse.containsMouse ? colors.card : colors.cardAlt)
-            border.width: root.voxtypeActive() ? 2 : 1
-            border.color: root.voxtypeActive() ? root.voxtypeIconColor()
-                : (dictateMouse.containsMouse ? colors.borderStrong : colors.border)
-
-            Behavior on color { ColorAnimation { duration: root.fastColorMs } }
-            Behavior on border.color { ColorAnimation { duration: root.fastColorMs } }
-
-            RowLayout {
-                id: dictateRow
-                anchors.centerIn: parent
-                spacing: 7
-
-                Text {
-                    id: dictateIcon
-                    text: root.voxtypeIcon()
-                    color: root.voxtypeActive() ? root.voxtypeIconColor() : colors.muted
-                    font.family: "FiraCode Nerd Font"
-                    font.pixelSize: 15
-
-                    // Pulse while recording. alwaysRunToEnd leaves opacity at 1.0
-                    // when it stops, so the icon never gets stuck dimmed.
-                    SequentialAnimation on opacity {
-                        running: root.voxtypeClass() === "recording"
-                        loops: Animation.Infinite
-                        alwaysRunToEnd: true
-                        NumberAnimation { from: 1.0; to: 0.3; duration: 600 }
-                        NumberAnimation { from: 0.3; to: 1.0; duration: 600 }
-                    }
-                }
-
-                Text {
-                    text: root.voxtypeClass() === "recording" ? "Recording…"
-                        : (root.voxtypeClass() === "transcribing" ? "Transcribing…" : "Dictate")
-                    color: root.voxtypeActive() ? root.voxtypeIconColor() : colors.text
-                    font.pixelSize: 11
-                    font.weight: Font.DemiBold
-                }
-            }
-
-            MouseArea {
-                id: dictateMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.runDetached([runtimeConfig.dictationBin, "toggle"])
             }
         }
     }
