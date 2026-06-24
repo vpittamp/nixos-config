@@ -32,7 +32,7 @@ PanelWindow {
     color: "transparent"
     anchors.left: true
     anchors.right: true
-    anchors.bottom: true
+    anchors.top: true
     implicitHeight: 120
     exclusiveZone: 0
     focusable: false
@@ -80,12 +80,13 @@ PanelWindow {
         }
     }
 
-    // Centred pill, floating above the bottom bar.
+    // Centred pill, floating just below the top bar — kept away from the bottom
+    // bar entirely so it can never overlap the workspace tabs.
     Rectangle {
         id: pill
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: runtimeConfig.barHeight + 16
+        anchors.top: parent.top
+        anchors.topMargin: runtimeConfig.topBarHeight + 16
         height: 64
         width: contentRow.implicitWidth + 36
         radius: 16
