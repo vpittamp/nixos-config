@@ -1080,7 +1080,7 @@ PanelWindow {
                                             Text {
                                                 Layout.fillWidth: true
                                                 visible: root.displayLayoutOptions().length === 0
-                                                text: "No daemon-backed display layouts are configured for this host."
+                                                text: "Use the per-monitor controls below to enable, disable, or scale each display. On the lid being closed, disabled externals stay off."
                                                 color: colors.subtle
                                                 font.pixelSize: 9
                                                 wrapMode: Text.WordWrap

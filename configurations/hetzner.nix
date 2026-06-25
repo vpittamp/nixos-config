@@ -29,7 +29,6 @@
 
     # Phase 2: Wayland/Sway Desktop Environment (Feature 045 modules reused)
     ../modules/desktop/sway.nix       # Sway compositor (from Feature 045)
-    ../modules/desktop/wayvnc.nix     # VNC server for headless Wayland (from Feature 045)
     ../modules/desktop/sunshine.nix   # Sunshine streaming (software encoding for headless)
     ../modules/desktop/firefox-1password.nix  # Firefox with 1Password (consolidated, with PWA support)
 

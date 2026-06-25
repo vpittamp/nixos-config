@@ -180,18 +180,6 @@ EOF
       criteria = { app_id = "com.moonlight_stream.Moonlight"; };
       command = "border pixel 0, fullscreen enable";
     }
-    {
-      criteria = { app_id = "ryzen-hdmi-viewer"; };
-      command = "move container to output HEADLESS-1";
-    }
-    {
-      criteria = { app_id = "ryzen-hdmi-viewer"; };
-      command = "fullscreen enable";
-    }
-    {
-      criteria = { app_id = "ryzen-hdmi-viewer"; };
-      command = "border pixel 0";
-    }
   ];
 
   # These bindings remain available while Moonlight inhibits local system shortcuts.

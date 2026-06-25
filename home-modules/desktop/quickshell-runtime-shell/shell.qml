@@ -1382,9 +1382,12 @@ ShellRoot {
     }
 
     function allDisplayOutputs() {
+        // Every connected output, including ones currently disabled (active: false)
+        // so they stay toggleable from the dialog — disabling a monitor must not
+        // remove its own re-enable control.
         const outputs = arrayOrEmpty(displayLayoutState().outputs);
         return outputs.filter(function (output) {
-            return !!(output && output.active);
+            return !!(output && stringOrEmpty(output.name));
         });
     }
 
@@ -1490,7 +1493,11 @@ ShellRoot {
     }
 
     function openDisplaySelector(outputName) {
-        if (displayLayoutOptions().length === 0) {
+        // Open the popup as long as there's anything to control — either layout
+        // presets or per-output enable/scale toggles. (After the VNC/iPad profile
+        // removal there are no presets on the ThinkPad; the popup is purely the
+        // per-monitor enable/disable + scale controls.)
+        if (displayLayoutOptions().length === 0 && allDisplayOutputs().length === 0) {
             openSettings("devices");
             return;
         }

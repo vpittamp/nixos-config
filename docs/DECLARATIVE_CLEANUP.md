@@ -5,7 +5,7 @@
 Home-manager creates backup files when it encounters conflicts:
 - `.backup` files when a regular file exists
 - `.backup-before-home-manager` for files managed by other tools
-- Stale runtime sockets (e.g., wayvnc control socket)
+- Stale runtime sockets
 - Old systemd service files
 
 These backups prevent subsequent home-manager activations from succeeding, requiring manual cleanup.
@@ -20,7 +20,7 @@ We use a **home-manager activation script** that runs *before* home-manager appl
 
 **What it cleans**:
 1. Home-manager backup files (`.backup`, `.backup-before-home-manager`)
-2. Stale runtime sockets (`/run/user/$UID/wayvncctl`)
+2. Stale runtime sockets
 3. Old `.desktop` file backups in i3pm-applications
 4. Systemd service backup files
 5. Stale lock files (older than 7 days)

@@ -801,7 +801,6 @@ in
     rustdesk
     remmina
     rustdesk-flutter  # Open-source remote desktop
-    wayvnc  # VNC server for Wayland remote access
     sunshinePrimaryMonitorEnsure
 
     # 1Password GUI

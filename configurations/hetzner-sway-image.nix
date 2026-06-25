@@ -22,7 +22,6 @@
 
     # Phase 2: Wayland/Sway Desktop Environment
     ../modules/desktop/sway.nix
-    ../modules/desktop/wayvnc.nix
     ../modules/desktop/firefox-1password.nix  # Firefox with 1Password (consolidated, with PWA support)
 
     # Services

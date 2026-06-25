@@ -16,9 +16,6 @@ let
     focusedInactive.text = "#a6adc8";
   };
 
-  # Detect headless Sway configuration (Feature 046)
-  isHeadless = osConfig != null && (osConfig.networking.hostName or "") == "hetzner";
-
   # Top bar: Enhanced system status (Feature 052)
   # Uses Python-based status generator with D-Bus integration
   # Falls back to legacy shell script if swaybar-enhanced is disabled
@@ -77,16 +74,10 @@ in
         };
 
       # Feature 057: Binding mode indicator disabled (Option 1 UX - workspace mode feedback in preview dialog)
-      headlessBars = [
-        { output = "HEADLESS-1"; trayOutput = "HEADLESS-1"; bindingModeIndicator = false; }
-        { output = "HEADLESS-2"; }
-        { output = "HEADLESS-3"; }
-      ];
-
       laptopBars = [
         { output = "eDP-1"; trayOutput = "eDP-1"; }
         { output = "HDMI-A-1"; }
       ];
     in
-      map mkTopBar (if isHeadless then headlessBars else laptopBars);
+      map mkTopBar laptopBars;
 }

@@ -1123,7 +1123,7 @@ PanelWindow {
                 Text {
                     Layout.fillWidth: true
                     visible: root.displayLayoutOptions().length === 0
-                    text: "No daemon-backed display layouts are configured for this host yet."
+                    text: "Toggle each monitor on/off above. Disabled externals stay off in clamshell (lid closed)."
                     color: colors.subtle
                     font.pixelSize: 9
                     wrapMode: Text.WordWrap

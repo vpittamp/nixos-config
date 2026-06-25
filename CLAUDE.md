@@ -49,7 +49,6 @@ home-modules/       # User environment
 | `>` | Runner | Shell commands |
 | `?` | Help | List all providers |
 | `;s ` | Sesh | Tmux session switcher |
-| `;m ` | Monitors | Monitor profile switcher |
 | `;h ` | History | Browser history |
 
 **1Password Integration**: Requires 1Password GUI running and `op` CLI authenticated.
@@ -127,15 +126,6 @@ pwa-list          # List configured
 
 **Workspaces**: Regular apps 1-50, PWAs 50+
 Edit `home-modules/tools/firefox-pwas-declarative.nix` → rebuild → `pwa-install-all`
-
-## Multi-Monitor (Features 083, 084)
-
-```bash
-set-monitor-profile single/dual/triple     # Hetzner
-set-monitor-profile local-only/local+1vnc/local+2vnc  # M1
-```
-
-**VNC**: `vnc://<tailscale-ip>:{5900|5901|5902}`
 
 ## AI CLI Sessions
 
