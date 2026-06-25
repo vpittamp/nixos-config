@@ -132,53 +132,6 @@ in
     };
   };
 
-  # WayVNC configuration for remote access over Tailscale
-  # Desktop typically uses DP-1 or HDMI-A-1 - adjust based on your setup
-  xdg.configFile."wayvnc/config".text = ''
-    # WayVNC configuration for Ryzen Desktop
-    # Access via: vnc://<tailscale-ip>:5900 (Tailscale IP)
-    address=0.0.0.0
-    enable_auth=false
-  '';
-
-  # WayVNC systemd user services - one per physical output for remote access
-  # DP-1 (primary, center) on port 5900, HDMI-A-1 (secondary, left) on port 5901
-  # Access via: vnc://<ryzen-tailscale-ip>:5900 (DP-1) or :5901 (HDMI-A-1)
-  systemd.user.services.wayvnc-dp1 = {
-    Unit = {
-      Description = "WayVNC - VNC server for DP-1 (Ryzen Desktop)";
-      Documentation = "man:wayvnc(1)";
-      After = [ "sway-session.target" ];
-      BindsTo = [ "sway-session.target" ];
-    };
-    Service = {
-      Type = "simple";
-      ExecStart = "${pkgs.wayvnc}/bin/wayvnc -o DP-1 -S /run/user/1000/wayvnc-dp1.sock -g 0.0.0.0 5900";
-      Restart = "on-failure";
-      RestartSec = "5s";
-    };
-    Install = {
-      WantedBy = [ "sway-session.target" ];
-    };
-  };
-  systemd.user.services.wayvnc-hdmi = {
-    Unit = {
-      Description = "WayVNC - VNC server for HDMI-A-1 (Ryzen Desktop)";
-      Documentation = "man:wayvnc(1)";
-      After = [ "sway-session.target" ];
-      BindsTo = [ "sway-session.target" ];
-    };
-    Service = {
-      Type = "simple";
-      ExecStart = "${pkgs.wayvnc}/bin/wayvnc -o HDMI-A-1 -S /run/user/1000/wayvnc-hdmi.sock -g 0.0.0.0 5901";
-      Restart = "on-failure";
-      RestartSec = "5s";
-    };
-    Install = {
-      WantedBy = [ "sway-session.target" ];
-    };
-  };
-
   # Sunshine NVENC drop-in configuration
   # Adds NVIDIA library path for CUDA/NVENC hardware encoding
   xdg.configFile."systemd/user/sunshine.service.d/nvidia.conf".text = ''
