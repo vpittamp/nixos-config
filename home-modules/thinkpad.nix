@@ -155,8 +155,10 @@ EOF
     ];
   };
 
-  # Use the shared hybrid display path so the ThinkPad can expose a virtual second monitor.
-  programs.sway-profile.mode = "hybrid";
+  # Plain laptop profile: the built-in panel plus EDID-recognized physical
+  # externals (managed by lid-clamshell). The old "hybrid" mode existed only for
+  # the virtual VNC second monitor, which has been removed.
+  programs.sway-profile.mode = "laptop";
 
   programs.disk-guardrails.enable = true;
 
