@@ -29,6 +29,12 @@ set -euo pipefail
 action="${1:-close}"
 PANEL="eDP-1"
 
+# Per-output enable/disable preferences, written by the Quickshell displays
+# dialog via `i3pm display toggle-output`. An external marked disabled here is
+# turned off and excluded from the layout — even with the lid closed — so you
+# can choose which externals are live in clamshell from the UI.
+STATE_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/sway/output-states.json"
+
 # Scale applied to unrecognized externals (fallback path).
 EXTERNAL_SCALE="1.25"
 
@@ -81,6 +87,19 @@ output_edid() {
 is_verbatim() { output_edid "$1" | grep -qiE 'verbatim|MT17'; }
 is_samsung()  { output_edid "$1" | grep -qi  'samsung'; }
 
+# False (returns 1) only when output-states.json explicitly disables this output;
+# unknown or missing outputs default to enabled.
+output_enabled() {
+  [ -r "$STATE_FILE" ] || return 0
+  local v
+  # NB: don't use jq's `//` here — it treats `false` as absent, so
+  # `.enabled // empty` would swallow an explicit disable. Read the raw value
+  # ("true"/"false"/"null") and only treat an explicit "false" as disabled.
+  v="$(jq -r --arg o "$1" '.outputs[$o].enabled' "$STATE_FILE" 2>/dev/null)"
+  [ "$v" = "false" ] && return 1
+  return 0
+}
+
 # Integer division (value / scale), used for logical width and height.
 logical_width() { awk "BEGIN { printf \"%d\", $1 / $2 }"; }
 
@@ -94,6 +113,12 @@ place_externals() {
   local out verb="" sam="" others=() w h
   while read -r out; do
     [ -n "$out" ] || continue
+    # Honor the UI enable/disable preference: a disabled external is turned off
+    # and dropped from the layout (so the others retile to fill the gap).
+    if ! output_enabled "$out"; then
+      swaymsg "output $out disable" >/dev/null 2>&1 || true
+      continue
+    fi
     if   is_verbatim "$out"; then verb="$out"
     elif is_samsung  "$out"; then sam="$out"
     else others+=("$out"); fi

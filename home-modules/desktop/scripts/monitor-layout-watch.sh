@@ -14,6 +14,7 @@
 set -uo pipefail
 
 LID_GLOB='/proc/acpi/button/lid/*/state'
+STATE_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/sway/output-states.json"
 
 current_set() {
   swaymsg -t get_outputs 2>/dev/null \
@@ -37,6 +38,24 @@ mirrored() {
 apply_layout() {
   "$HOME/.local/bin/lid-clamshell" auto
 }
+
+# Re-apply when the per-output enable/disable preferences change. The Quickshell
+# displays dialog writes output-states.json (via `i3pm display toggle-output`);
+# lid-clamshell reads it to decide which externals stay live. No inotify is
+# available here, so poll the file's mtime. The first observation only records
+# the baseline (no apply), so this never double-applies at startup.
+watch_output_states() {
+  local last_mtime="" cur_mtime
+  while :; do
+    cur_mtime="$(stat -c %Y "$STATE_FILE" 2>/dev/null || echo "")"
+    if [ -n "$cur_mtime" ] && [ "$cur_mtime" != "$last_mtime" ]; then
+      [ -n "$last_mtime" ] && apply_layout
+      last_mtime="$cur_mtime"
+    fi
+    sleep 1
+  done
+}
+watch_output_states &
 
 # Settle, record the initial monitor set, and lay it out once (covers login).
 sleep 1
