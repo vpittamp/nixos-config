@@ -51,6 +51,27 @@ let
       auth_domains = [ "accounts.google.com" ];
     }
 
+    # YouTube TV
+    {
+      name = "YouTube TV";
+      url = "https://tv.youtube.com/watch";
+      domain = "tv.youtube.com";
+      icon = iconPath "youtube-tv.svg";
+      description = "YouTube TV - live TV streaming";
+      categories = "AudioVideo;Video;";
+      keywords = "tv;live;streaming;youtube;television;cable;";
+      scope = "https://tv.youtube.com/";
+      ulid = "0J2N10N52Z8F3HHE6CTKFVS3RM";  # Generated 2026-06-27
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 74;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing domains
+      routing_domains = [ "tv.youtube.com" ];
+      # Feature 118: Auth domains
+      auth_domains = [ "accounts.google.com" ];
+    }
+
     # Google AI (AI Mode Search)
     {
       name = "Google AI";
