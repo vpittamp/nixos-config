@@ -88,7 +88,7 @@ PanelWindow {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.togglePanelVisibility()
+                        onClicked: root.togglePanelVisibility(topBarWindow.topOutputName)
                     }
                 }
             }

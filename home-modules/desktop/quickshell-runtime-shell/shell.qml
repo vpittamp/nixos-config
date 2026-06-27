@@ -151,6 +151,10 @@ ShellRoot {
         })
     readonly property var moonlightStatusState: moonlightStatus()
     property bool panelVisible: true
+    // Output name of the monitor whose bar button opened the runtime panel.
+    // Empty string falls the panel back to the focused monitor (activeScreen),
+    // e.g. when opened via keybinding/IPC which carry no monitor context.
+    property string panelOutputName: ""
     property string panelSection: "runtime"
     property string runtimePanelExpandedSection: "sessions"
     property bool dockedMode: true
@@ -4798,9 +4802,9 @@ function normalizeLauncherMode(mode) {
         runtimePanelExpandedSection = runtimePanelExpandedSectionValue();
     }
 
-    function showRuntimePanelSection(section) {
+    function showRuntimePanelSection(section, outputName) {
         const requested = stringOrEmpty(section);
-        showRuntimePanel();
+        showRuntimePanel(outputName);
         if (runtimePanelSectionHasContent(requested)) {
             runtimePanelExpandedSection = requested;
             return;
@@ -4808,12 +4812,12 @@ function normalizeLauncherMode(mode) {
         ensureRuntimePanelExpandedSection();
     }
 
-    function togglePanelVisibility() {
+    function togglePanelVisibility(outputName) {
         if (panelVisible) {
             panelVisible = false;
             return;
         }
-        showRuntimePanel();
+        showRuntimePanel(outputName);
     }
 
     function currentSessionKey() {
@@ -6351,7 +6355,11 @@ function normalizeLauncherMode(mode) {
         Quickshell.execDetached(command);
     }
 
-    function showRuntimePanel() {
+    function showRuntimePanel(outputName) {
+        // Pin the panel to the monitor that requested it (bar button click).
+        // When empty (keybinding/IPC, no monitor context) the panel falls back
+        // to root.activeScreen via RuntimePanelWindow's screen binding.
+        panelOutputName = stringOrEmpty(outputName);
         panelVisible = true;
         panelSection = "runtime";
         worktreePickerVisible = false;

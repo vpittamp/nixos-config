@@ -16,7 +16,7 @@ PanelWindow {
     id: panelWindow
     property var runtimeSessions: []
     property var runtimeHerdrSpaces: []
-    screen: root.activeScreen
+    screen: root.findScreenByOutputName(root.panelOutputName) || root.activeScreen
     visible: root.panelVisible
     onVisibleChanged: {
         if (visible) {
@@ -150,7 +150,7 @@ PanelWindow {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.showRuntimePanel()
+                        onClicked: root.showRuntimePanel(panelWindow.screen ? panelWindow.screen.name : "")
                     }
                 }
 
