@@ -738,7 +738,8 @@ class I3ProjectDaemon:
             partial(
                 on_output,
                 state_manager=self.state_manager,
-                event_buffer=self.event_buffer
+                event_buffer=self.event_buffer,
+                ipc_server=self.ipc_server
             )
         )
         logger.info("Subscribed to output events for monitor connect/disconnect detection")

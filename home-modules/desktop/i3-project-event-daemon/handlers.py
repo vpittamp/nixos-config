@@ -2379,6 +2379,7 @@ async def on_output(
     event: OutputEvent,
     state_manager: StateManager,
     event_buffer: Optional["EventBuffer"] = None,
+    ipc_server=None,
 ) -> None:
     """Handle output events - monitor connect/disconnect (Feature 024: R012, Feature 001: US2).
 
@@ -2458,6 +2459,17 @@ async def on_output(
                 )
             else:
                 logger.debug(f"  Inactive output: {output.name} (sway_active={output.active}, state_enabled={is_enabled})")
+
+        # Push the refreshed display layout to dashboard subscribers (QuickShell
+        # display dialog/bars). Without this, a physical monitor hot-plug never
+        # ships the `display_layout` key — that delta is only carried by a
+        # `display.changed` notification, which previously fired only on profile
+        # or output-states.json file changes, not on the Sway `output` event.
+        # The result: the display dialog kept rendering the last-pushed layout
+        # (often just the built-in panel) until an unrelated file change. The
+        # notification coalesces downstream, so emitting it on every output
+        # event is safe.
+        await _invalidate_cache_and_notify(ipc_server, "display_layout_changed")
 
     except Exception as e:
         error_msg = str(e)
