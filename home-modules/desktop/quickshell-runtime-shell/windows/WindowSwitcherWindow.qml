@@ -75,13 +75,27 @@ PanelWindow {
             readonly property var moveTargets: root.exposeMoveTargets(entry)
             width: 214
             height: 178
+            // Staggered entrance (opacity + scale only — `y` is owned by the Flow
+            // layout). Stagger is capped so large window counts stay snappy under
+            // the software render backend.
+            opacity: 0
+            scale: 0.92
+            transformOrigin: Item.Center
+            SequentialAnimation {
+                running: true
+                PauseAnimation { duration: Math.min(cell.gi * 14, 200) }
+                ParallelAnimation {
+                    NumberAnimation { target: cell; property: "opacity"; to: 1; duration: 130; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: cell; property: "scale"; to: 1; duration: 150; easing.type: Easing.OutCubic }
+                }
+            }
 
             Rectangle {
                 anchors.fill: tile
                 anchors.margins: -3
                 radius: 18
                 color: cell.accentColor
-                opacity: cell.selected ? 0.28 : (tileMouse.containsMouse ? 0.14 : 0)
+                opacity: cell.selected ? 0.30 : (tileMouse.containsMouse ? 0.15 : 0)
                 Behavior on opacity { NumberAnimation { duration: root.fastColorMs } }
             }
 
@@ -89,7 +103,7 @@ PanelWindow {
                 id: tile
                 anchors.fill: parent
                 anchors.margins: 7
-                radius: 14
+                radius: 16
                 color: cell.selected ? colors.cardAlt : (tileMouse.containsMouse ? colors.panelAlt : colors.card)
                 border.width: (cell.focusedWindow || cell.selected) ? 2 : 1
                 border.color: cell.focusedWindow ? colors.green
@@ -100,6 +114,19 @@ PanelWindow {
                 Behavior on color { ColorAnimation { duration: root.fastColorMs } }
                 Behavior on border.color { ColorAnimation { duration: root.fastColorMs } }
                 Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+
+                // Accent top-strip emphasising the selected / focused tile (inset
+                // past the corner radius so its ends stay on the flat top edge).
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.topMargin: 1
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: parent.width - 36
+                    height: 3
+                    radius: 2
+                    visible: cell.selected || cell.focusedWindow
+                    color: cell.focusedWindow ? colors.green : cell.accentColor
+                }
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -273,6 +300,10 @@ PanelWindow {
     Rectangle {
         anchors.fill: parent
         color: "#cc070b12"
+        // Fade the dark backdrop in when the overlay maps (entrance-only; the
+        // window unmaps immediately on close so there's no exit tween to show).
+        opacity: root.exposeVisible ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
         MouseArea {
             anchors.fill: parent
@@ -281,10 +312,15 @@ PanelWindow {
         }
 
         ColumnLayout {
+            id: exposeStage
             anchors.centerIn: parent
             width: Math.min(parent.width - 100, 2200)
             height: Math.min(parent.height - 100, 1200)
             spacing: 14
+            // Subtle scale-in of the whole overview as it appears.
+            scale: root.exposeVisible ? 1 : 0.965
+            transformOrigin: Item.Center
+            Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
 
             TextField {
                 id: exposeField
