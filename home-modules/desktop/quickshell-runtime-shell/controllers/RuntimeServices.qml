@@ -43,6 +43,7 @@ Item {
     property alias displayApplyProcessRef: displayApplyProcess
     property alias displayToggleOutputProcessRef: displayToggleOutputProcess
     property alias displayScaleProcessRef: displayScaleProcess
+    property alias displayPresetProcessRef: displayPresetProcess
     property int daemonActionRequestId: 0
 
     function sendDaemonAction(method, params) {
@@ -806,6 +807,27 @@ Item {
     }
 
     Process {
+        id: displayPresetProcess
+        // Applies a display preset by EDID role via lid-clamshell. The resulting
+        // output changes push a fresh display_layout snapshot, so the map and the
+        // active-preset highlight refresh on their own.
+        command: [runtimeConfig.lidClamshellBin, "preset", ""]
+        running: false
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                const message = data && data.trim();
+                if (message) {
+                    console.warn("display.preset:", message);
+                }
+            }
+        }
+        onExited: function () {
+            shellRoot.displayPresetTarget = "";
+        }
+    }
+
+    Process {
         id: displayToggleOutputProcess
         command: [runtimeConfig.i3pmBin, "display", "toggle-output", ""]
         running: false
@@ -1081,6 +1103,14 @@ Item {
 
         function showSettings(section: string) {
             shellRoot.openSettings(section);
+        }
+
+        function toggleDisplaySelector() {
+            if (shellRoot.displaySelectorVisible) {
+                shellRoot.closeDisplaySelector();
+                return;
+            }
+            shellRoot.openDisplaySelector("");
         }
 
         function toggleNotifications() {

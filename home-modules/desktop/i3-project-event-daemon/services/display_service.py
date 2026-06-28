@@ -183,6 +183,11 @@ class DisplayService:
                     enabled = active
             active_outputs.append({
                 "name": name,
+                # EDID identity so the UI can show friendly names (Verbatim,
+                # Samsung, ThinkPad) and resolve role-based presets instead of
+                # exposing unstable DP-x connector names.
+                "make": str(getattr(output, "make", "") or ""),
+                "model": str(getattr(output, "model", "") or ""),
                 "active": active,
                 "enabled": enabled,
                 "focused": focused,

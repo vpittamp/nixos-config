@@ -78,6 +78,7 @@ QtObject {
   readonly property string dictationBin: "${config.home.homeDirectory}/.local/bin/dictation"
   readonly property string dictationLevelBin: "${dictationLevelScript}/bin/quickshell-dictation-level"
   readonly property string oskToggleBin: "${config.home.homeDirectory}/.local/bin/osk-toggle"
+  readonly property string lidClamshellBin: "${config.home.homeDirectory}/.local/bin/lid-clamshell"
   readonly property string brightnessActionBin: "${brightnessActionScript}/bin/quickshell-brightness-action"
   readonly property string lidPolicyStatusBin: "${lidPolicyStatusScript}/bin/quickshell-lid-policy-status"
   readonly property string lidPolicyApplyBin: "${lidPolicyApplyScript}/bin/quickshell-lid-policy-apply"

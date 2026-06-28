@@ -48,6 +48,7 @@ ShellRoot {
     readonly property var displayApplyProcess: runtimeServices ? runtimeServices.displayApplyProcessRef : null
     readonly property var displayToggleOutputProcess: runtimeServices ? runtimeServices.displayToggleOutputProcessRef : null
     readonly property var displayScaleProcess: runtimeServices ? runtimeServices.displayScaleProcessRef : null
+    readonly property var displayPresetProcess: runtimeServices ? runtimeServices.displayPresetProcessRef : null
     readonly property var brightnessActionProcess: runtimeServices ? runtimeServices.brightnessActionProcessRef : null
     readonly property var lidPolicyApplyProcess: runtimeServices ? runtimeServices.lidPolicyApplyProcessRef : null
     readonly property var lidInhibitActionProcess: runtimeServices ? runtimeServices.lidInhibitActionProcessRef : null
@@ -231,6 +232,7 @@ ShellRoot {
     property string displayApplyStdout: ""
     property string displayApplyStderr: ""
     property string displayApplyError: ""
+    property string displayPresetTarget: ""
     property string displayToggleTarget: ""
     property string displayToggleStdout: ""
     property string displayToggleStderr: ""
@@ -1395,6 +1397,175 @@ ShellRoot {
         });
     }
 
+    function displayHasGeometry(output) {
+        return !!(output && output.rect
+            && Number(output.rect.width) > 0
+            && Number(output.rect.height) > 0);
+    }
+
+    function displayMapOutputs() {
+        // Connected outputs that currently occupy space (enabled + positioned).
+        return allDisplayOutputs().filter(function (output) {
+            return displayHasGeometry(output);
+        });
+    }
+
+    function displayOffOutputs() {
+        // Connected but disabled outputs (no geometry) — shown as re-enable chips.
+        return allDisplayOutputs().filter(function (output) {
+            return !displayHasGeometry(output);
+        });
+    }
+
+    function enabledDisplayCount() {
+        return displayMapOutputs().length;
+    }
+
+    function displayMapBoxes(cw, ch) {
+        // Project the enabled outputs' real pixel rects into a uniformly-scaled,
+        // centered mini-map of size cw x ch, so the popup shows the true physical
+        // arrangement (the same coordinates lid-clamshell lays out).
+        const outs = displayMapOutputs();
+        const boxes = [];
+        if (!outs.length || cw <= 0 || ch <= 0) {
+            return boxes;
+        }
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (let i = 0; i < outs.length; i += 1) {
+            const r = outs[i].rect;
+            const x = Number(r.x) || 0, y = Number(r.y) || 0;
+            const w = Number(r.width) || 0, h = Number(r.height) || 0;
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x + w > maxX) maxX = x + w;
+            if (y + h > maxY) maxY = y + h;
+        }
+        const spanX = Math.max(1, maxX - minX);
+        const spanY = Math.max(1, maxY - minY);
+        const pad = 6;
+        const scale = Math.min((cw - 2 * pad) / spanX, (ch - 2 * pad) / spanY);
+        const offX = pad + ((cw - 2 * pad) - spanX * scale) / 2;
+        const offY = pad + ((ch - 2 * pad) - spanY * scale) / 2;
+        for (let i = 0; i < outs.length; i += 1) {
+            const o = outs[i];
+            const r = o.rect;
+            boxes.push({
+                name: stringOrEmpty(o.name),
+                label: displayFriendlyName(o),
+                enabled: o.enabled !== false,
+                primary: !!o.primary,
+                resolution: (Number(r.width) || 0) + "×" + (Number(r.height) || 0),
+                x: offX + ((Number(r.x) || 0) - minX) * scale,
+                y: offY + ((Number(r.y) || 0) - minY) * scale,
+                w: Math.max(12, (Number(r.width) || 0) * scale - 2),
+                h: Math.max(12, (Number(r.height) || 0) * scale - 2)
+            });
+        }
+        return boxes;
+    }
+
+    function displayFriendlyName(output) {
+        const name = stringOrEmpty(output && output.name);
+        const make = stringOrEmpty(output && output.make).toLowerCase();
+        const model = stringOrEmpty(output && output.model).toLowerCase();
+        if (name === "eDP-1" || make.indexOf("boe") !== -1) {
+            return "ThinkPad";
+        }
+        if (model.indexOf("verbatim") !== -1 || model.indexOf("mt17") !== -1) {
+            return "Verbatim";
+        }
+        if (make.indexOf("samsung") !== -1 || model.indexOf("samsung") !== -1) {
+            return "Samsung";
+        }
+        return name;
+    }
+
+    function displayRoleOfOutput(output) {
+        const make = stringOrEmpty(output && output.make).toLowerCase();
+        const model = stringOrEmpty(output && output.model).toLowerCase();
+        if (model.indexOf("verbatim") !== -1 || model.indexOf("mt17") !== -1) {
+            return "verbatim";
+        }
+        if (make.indexOf("samsung") !== -1 || model.indexOf("samsung") !== -1) {
+            return "samsung";
+        }
+        return "";
+    }
+
+    function displayPresets() {
+        // Role-based presets, resolved deterministically by lid-clamshell.
+        return [
+            { id: "all", label: "All" },
+            { id: "verbatim", label: "+ Verbatim" },
+            { id: "samsung", label: "+ Samsung" },
+            { id: "laptop", label: "Laptop only" }
+        ];
+    }
+
+    function displayRolesPresent(outputs) {
+        let verb = false, sam = false;
+        for (let i = 0; i < outputs.length; i += 1) {
+            const role = displayRoleOfOutput(outputs[i]);
+            if (role === "verbatim") {
+                verb = true;
+            } else if (role === "samsung") {
+                sam = true;
+            }
+        }
+        return { verbatim: verb, samsung: sam };
+    }
+
+    function activeDisplayPresetId() {
+        // Which preset matches the currently enabled (positioned) outputs.
+        const roles = displayRolesPresent(displayMapOutputs());
+        if (roles.verbatim && roles.samsung) {
+            return "all";
+        }
+        if (roles.verbatim) {
+            return "verbatim";
+        }
+        if (roles.samsung) {
+            return "samsung";
+        }
+        return "laptop";
+    }
+
+    function displayPresetAvailable(presetId) {
+        // Only offer presets whose monitor is actually connected.
+        const roles = displayRolesPresent(allDisplayOutputs());
+        if (presetId === "verbatim") {
+            return roles.verbatim;
+        }
+        if (presetId === "samsung") {
+            return roles.samsung;
+        }
+        if (presetId === "all") {
+            return roles.verbatim || roles.samsung;
+        }
+        return true; // "laptop" is always available
+    }
+
+    function displayPresetPending(presetId) {
+        const target = stringOrEmpty(displayPresetTarget);
+        return target !== "" && target === stringOrEmpty(presetId);
+    }
+
+    function applyDisplayPreset(presetId) {
+        const target = stringOrEmpty(presetId);
+        if (!target) {
+            return;
+        }
+        if (!displayPresetProcess || displayPresetProcess.running) {
+            return;
+        }
+        if (activeDisplayPresetId() === target) {
+            return;
+        }
+        displayPresetTarget = target;
+        displayPresetProcess.command = [shellConfig.lidClamshellBin, "preset", target];
+        displayPresetProcess.running = true;
+    }
+
     function toggleDisplayOutput(outputName) {
         if (!displayToggleOutputProcess || displayToggleOutputProcess.running) {
             return;
@@ -1493,7 +1664,10 @@ ShellRoot {
         if (displayApplyTarget) {
             return "Applying " + displayApplyTarget + "...";
         }
-        return "Choose a named display layout.";
+        if (displayPresetTarget) {
+            return "Switching to " + displayPresetTarget + "...";
+        }
+        return "Pick a configuration, or tap a screen to toggle it.";
     }
 
     function openDisplaySelector(outputName) {

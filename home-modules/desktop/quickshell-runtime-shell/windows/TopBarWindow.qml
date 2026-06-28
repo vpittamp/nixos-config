@@ -361,7 +361,10 @@ PanelWindow {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.openSettings("displays")
+                        // Open the display selector popup on this bar's own monitor
+                        // (the popup is gated to topOutputName). The popup's
+                        // "Displays" button still drops into full Settings.
+                        onClicked: root.openDisplaySelector(topBarWindow.topOutputName)
                     }
 
                 }
@@ -974,53 +977,158 @@ PanelWindow {
                     }
                 }
 
-                Text {
-                    Layout.fillWidth: true
-                    text: "Outputs: " + root.activeDisplaySummary()
-                    color: colors.subtle
-                    font.pixelSize: 9
-                    wrapMode: Text.WordWrap
-                }
-
+                // Quick configuration presets (role-based, resolved by EDID).
                 Flow {
                     Layout.fillWidth: true
                     spacing: 6
-                    visible: root.allDisplayOutputs().length > 0
 
                     Repeater {
-                        model: root.allDisplayOutputs()
+                        model: root.displayPresets()
 
                         delegate: Rectangle {
                             required property var modelData
-                            readonly property var output: modelData
-                            readonly property bool outputEnabled: !!(output && output.enabled !== false)
-                            readonly property bool pending: root.displayTogglePending(root.stringOrEmpty(output && output.name))
+                            readonly property string presetId: root.stringOrEmpty(modelData && modelData.id)
+                            readonly property bool current: root.activeDisplayPresetId() === presetId
+                            readonly property bool available: root.displayPresetAvailable(presetId)
+                            readonly property bool pending: root.displayPresetPending(presetId)
+                            visible: available
                             radius: 7
-                            color: output && output.primary ? colors.blueBg : (outputEnabled ? colors.cardAlt : colors.panel)
-                            border.color: output && output.primary ? colors.blue : (outputEnabled ? colors.border : colors.lineSoft)
+                            color: current ? colors.blueBg : colors.cardAlt
+                            border.color: current ? colors.blue : colors.border
                             border.width: 1
-                            opacity: outputEnabled ? 1.0 : 0.5
-                            implicitWidth: outputToggleRow.implicitWidth + 14
-                            implicitHeight: outputToggleRow.implicitHeight + 8
+                            implicitWidth: presetLabel.implicitWidth + 16
+                            implicitHeight: presetLabel.implicitHeight + 10
+
+                            Text {
+                                id: presetLabel
+                                anchors.centerIn: parent
+                                text: pending ? "..." : root.stringOrEmpty(modelData && modelData.label)
+                                color: current ? colors.blue : colors.text
+                                font.pixelSize: 9
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                enabled: !current && !pending
+                                onClicked: root.applyDisplayPreset(presetId)
+                            }
+                        }
+                    }
+                }
+
+                // Live visual map of the physical arrangement (real rect geometry).
+                Rectangle {
+                    id: displayMapArea
+                    Layout.fillWidth: true
+                    implicitHeight: 124
+                    radius: 8
+                    color: colors.bg
+                    border.color: colors.lineSoft
+                    border.width: 1
+
+                    Repeater {
+                        model: root.displayMapBoxes(displayMapArea.width, displayMapArea.height)
+
+                        delegate: Rectangle {
+                            required property var modelData
+                            x: modelData.x
+                            y: modelData.y
+                            width: modelData.w
+                            height: modelData.h
+                            radius: 5
+                            color: modelData.primary ? colors.blueBg : colors.cardAlt
+                            border.color: modelData.primary ? colors.blue : colors.border
+                            border.width: modelData.primary ? 2 : 1
+
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: 1
+
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    text: root.stringOrEmpty(modelData.label)
+                                    color: modelData.primary ? colors.blue : colors.text
+                                    font.pixelSize: 9
+                                    font.weight: Font.DemiBold
+                                }
+
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    visible: modelData.h > 30
+                                    text: root.stringOrEmpty(modelData.resolution)
+                                    color: colors.subtle
+                                    font.pixelSize: 8
+                                }
+
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    visible: modelData.primary && modelData.h > 44
+                                    text: "● primary"
+                                    color: colors.blue
+                                    font.pixelSize: 7
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                enabled: root.enabledDisplayCount() > 1 && !root.displayTogglePending(modelData.name)
+                                onClicked: root.toggleDisplayOutput(modelData.name)
+                            }
+                        }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        visible: root.displayMapOutputs().length === 0
+                        text: "No active displays"
+                        color: colors.subtle
+                        font.pixelSize: 10
+                    }
+                }
+
+                // Connected-but-off displays — tap to turn back on.
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: 6
+                    visible: root.displayOffOutputs().length > 0
+
+                    Repeater {
+                        model: root.displayOffOutputs()
+
+                        delegate: Rectangle {
+                            required property var modelData
+                            readonly property string outName: root.stringOrEmpty(modelData && modelData.name)
+                            readonly property bool pending: root.displayTogglePending(outName)
+                            radius: 7
+                            color: colors.panel
+                            border.color: colors.lineSoft
+                            border.width: 1
+                            opacity: 0.75
+                            implicitWidth: offChipRow.implicitWidth + 14
+                            implicitHeight: offChipRow.implicitHeight + 8
 
                             Row {
-                                id: outputToggleRow
+                                id: offChipRow
                                 anchors.centerIn: parent
                                 spacing: 4
 
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    text: root.stringOrEmpty(output && output.name)
-                                    color: output && output.primary ? colors.blue : colors.text
+                                    text: root.displayFriendlyName(modelData)
+                                    color: colors.subtle
                                     font.pixelSize: 9
                                     font.weight: Font.DemiBold
-                                    font.strikeout: !outputEnabled
+                                    font.strikeout: true
                                 }
 
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    text: pending ? "..." : (outputEnabled ? "ON" : "OFF")
-                                    color: pending ? colors.subtle : (outputEnabled ? colors.teal : colors.red)
+                                    text: pending ? "..." : "OFF"
+                                    color: pending ? colors.subtle : colors.red
                                     font.pixelSize: 8
                                     font.weight: Font.Bold
                                 }
@@ -1029,92 +1137,7 @@ PanelWindow {
                             MouseArea {
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: root.toggleDisplayOutput(root.stringOrEmpty(output && output.name))
-                            }
-                        }
-                    }
-                }
-
-                Repeater {
-                    model: root.displayLayoutOptions()
-
-                    delegate: Rectangle {
-                        required property var modelData
-                        readonly property string layoutName: root.displayOptionName(modelData)
-                        readonly property bool current: !!(modelData && modelData.current)
-                        readonly property bool pending: root.displayApplyPending(layoutName)
-                        readonly property var outputNames: root.displayOptionOutputs(modelData)
-                        Layout.fillWidth: true
-                        implicitHeight: layoutOptionColumn.implicitHeight + 20
-                        radius: 10
-                        color: current ? colors.blueBg : colors.cardAlt
-                        border.color: current ? colors.blue : colors.lineSoft
-                        border.width: 1
-
-                        // Keep pointer handling on the MouseArea. A direct Rectangle cursor
-                        // property can make the entire TopBarWindow fail to load on some hosts.
-                        ColumnLayout {
-                            id: layoutOptionColumn
-                            anchors.fill: parent
-                            anchors.margins: 10
-                            spacing: 8
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 8
-
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 2
-
-                                    Text {
-                                        text: root.displayOptionLabel(modelData)
-                                        color: current ? colors.blue : colors.text
-                                        font.pixelSize: 10
-                                        font.weight: Font.DemiBold
-                                    }
-
-                                    Text {
-                                        text: root.displayOptionDescription(modelData)
-                                        color: colors.subtle
-                                        font.pixelSize: 9
-                                        wrapMode: Text.WordWrap
-                                    }
-                                }
-
-                                Rectangle {
-                                    visible: current
-                                    radius: 7
-                                    color: colors.panel
-                                    border.color: colors.blue
-                                    border.width: 1
-                                    implicitWidth: currentBadgeText.implicitWidth + 12
-                                    implicitHeight: currentBadgeText.implicitHeight + 8
-
-                                    Text {
-                                        id: currentBadgeText
-                                        anchors.centerIn: parent
-                                        text: "Current"
-                                        color: colors.blue
-                                        font.pixelSize: 8
-                                        font.weight: Font.DemiBold
-                                    }
-                                }
-
-                                Button {
-                                    text: pending ? "Applying" : (current ? "Active" : "Apply")
-                                    enabled: !pending && !current && !(root.displayApplyProcess && root.displayApplyProcess.running)
-                                    onClicked: root.applyDisplayLayout(layoutName)
-                                }
-                            }
-
-                            Text {
-                                Layout.fillWidth: true
-                                visible: outputNames.length > 0
-                                text: outputNames.join("  •  ")
-                                color: colors.subtle
-                                font.pixelSize: 9
-                                wrapMode: Text.WordWrap
+                                onClicked: root.toggleDisplayOutput(outName)
                             }
                         }
                     }
@@ -1122,8 +1145,7 @@ PanelWindow {
 
                 Text {
                     Layout.fillWidth: true
-                    visible: root.displayLayoutOptions().length === 0
-                    text: "Toggle each monitor on/off above. Disabled externals stay off in clamshell (lid closed)."
+                    text: "Tap a screen to turn it off; tap an off chip to turn it on. Presets pick which externals are active."
                     color: colors.subtle
                     font.pixelSize: 9
                     wrapMode: Text.WordWrap

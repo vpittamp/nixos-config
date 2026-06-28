@@ -264,21 +264,73 @@ run_open() {
   fi
 }
 
+run_auto() {
+  # Re-apply the correct layout for the current lid state. Used by sway's
+  # exec_always (every reload re-runs the static output config, which would
+  # otherwise stack all outputs at 0,0 = mirrored) and by the hot-plug watcher.
+  if grep -qi closed /proc/acpi/button/lid/*/state 2>/dev/null; then
+    run_close
+  else
+    run_open
+  fi
+}
+
+# Apply a named display preset: set each connected output's enabled flag in
+# output-states.json by EDID role (connector names are unstable, so presets are
+# expressed in roles, not DP-x names), then re-apply the layout. The built-in
+# panel always stays enabled here — the lid governs whether it is actually on.
+#   all      -> Verbatim + Samsung on
+#   verbatim -> Verbatim on, Samsung off
+#   samsung  -> Samsung on, Verbatim off
+#   laptop   -> both externals off (built-in panel only)
+apply_preset() {
+  local preset="${1:-}" want_verb want_sam
+  case "$preset" in
+    all)      want_verb=true;  want_sam=true ;;
+    verbatim) want_verb=true;  want_sam=false ;;
+    samsung)  want_verb=false; want_sam=true ;;
+    laptop)   want_verb=false; want_sam=false ;;
+    *) echo "unknown preset: '$preset' (want all|verbatim|samsung|laptop)" >&2; return 1 ;;
+  esac
+
+  local pairs out enabled
+  pairs="$PANEL true"$'\n'
+  while read -r out; do
+    [ -n "$out" ] || continue
+    if   is_verbatim "$out"; then enabled="$want_verb"
+    elif is_samsung  "$out"; then enabled="$want_sam"
+    else enabled="true"; fi   # leave unrecognized externals on
+    pairs+="$out $enabled"$'\n'
+  done < <(external_outputs)
+
+  local existing='{}'
+  [ -r "$STATE_FILE" ] && existing="$(cat "$STATE_FILE" 2>/dev/null || echo '{}')"
+  mkdir -p "$(dirname "$STATE_FILE")"
+  if printf '%s' "$pairs" | jq -R -s --argjson existing "$existing" '
+        (split("\n") | map(select(length > 0))) as $lines
+        | reduce $lines[] as $line
+            ( ($existing.outputs // {});
+              ($line | split(" ")) as $kv
+              | .[$kv[0]] = { enabled: ($kv[1] == "true") } )
+        | { version: "1.0", outputs: . }
+      ' > "$STATE_FILE.tmp" 2>/dev/null; then
+    mv "$STATE_FILE.tmp" "$STATE_FILE"
+  else
+    rm -f "$STATE_FILE.tmp"
+    echo "failed to write $STATE_FILE" >&2
+    return 1
+  fi
+
+  run_auto
+}
+
 case "$action" in
-  close) run_close ;;
-  open)  run_open ;;
-  auto)
-    # Re-apply the correct layout for the current lid state. Used by sway's
-    # exec_always (every reload re-runs the static output config, which would
-    # otherwise stack all outputs at 0,0 = mirrored) and by the hot-plug watcher.
-    if grep -qi closed /proc/acpi/button/lid/*/state 2>/dev/null; then
-      run_close
-    else
-      run_open
-    fi
-    ;;
+  close)  run_close ;;
+  open)   run_open ;;
+  auto)   run_auto ;;
+  preset) apply_preset "${2:-}" ;;
   *)
-    echo "usage: lid-clamshell {close|open|auto}" >&2
+    echo "usage: lid-clamshell {close|open|auto|preset <all|verbatim|samsung|laptop>}" >&2
     exit 1
     ;;
 esac
