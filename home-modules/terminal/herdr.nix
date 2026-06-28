@@ -133,7 +133,13 @@ in
     [ui]
     agent_panel_scope = "all"
     show_agent_labels_on_pane_borders = true
-    mouse_capture = true
+    # Let the outer terminal (Ghostty) handle normal clicks/drags so a click-drag
+    # does native terminal text selection (and URL clicking), instead of herdr
+    # capturing the mouse and starting its own pane selection. Pane apps that
+    # request the mouse (lazygit, btop, agent TUIs) still receive it. Trade-off:
+    # herdr's own chrome (panes/tabs/sidebar) is no longer mouse-clickable; herdr
+    # navigation stays keyboard-driven via the prefix bindings.
+    mouse_capture = false
     mouse_scroll_lines = 1
     prompt_new_tab_name = false
     accent = "cyan"
