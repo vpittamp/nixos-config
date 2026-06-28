@@ -203,6 +203,17 @@ ShellRoot {
     // Output name of the monitor where the exposé was activated, so the overlay
     // maps on that monitor. Empty falls back to root.activeScreen.
     property string exposeOutputName: ""
+    // Client-side MRU recency for windows (the daemon exposes no focus order):
+    // each focused-window change stamps an increasing seq, so the exposé can
+    // order tiles most-recently-used first within each monitor panel.
+    property var exposeRecency: ({})
+    property int exposeRecencySeq: 0
+    readonly property int exposeCurrentWindowId: Number((dashboardFocusState() || {}).current_window_id || 0)
+    onExposeCurrentWindowIdChanged: {
+        if (exposeCurrentWindowId > 0) {
+            exposeRecency[exposeCurrentWindowId] = ++exposeRecencySeq;
+        }
+    }
     property string launcherQuery: ""
     property string launcherError: ""
     property int launcherSelectedIndex: 0
@@ -6755,25 +6766,104 @@ function normalizeLauncherMode(mode) {
 
     function refreshExposeEntries() {
         const raw = normalizeLauncherEntries(exposeWindowEntries(stringOrEmpty(exposeQuery)));
-        // Group windows by monitor in physical left-to-right order so the panels,
-        // Tab order and arrow nav all line up. Stable within each monitor. Each
-        // entry gets a global index (_gi) used for selection from the per-panel
-        // grids.
+        const tokens = launcherQueryTokens(stringOrEmpty(exposeQuery));
+        const hasQuery = tokens.length > 0;
+        // Stable daemon order is the final tiebreak.
+        for (let i = 0; i < raw.length; i += 1) {
+            raw[i]._do = i;
+        }
+        // Group by monitor (physical left-to-right) so panels, Tab order and arrow
+        // nav line up. Within each monitor: focused-first, then search-match score
+        // (when filtering) or MRU recency, then the daemon's stable order. Each
+        // entry gets a global index (_gi) used for selection.
         const panels = exposePanelOutputsFromEntries(raw);
         const grouped = [];
         for (let p = 0; p < panels.length; p += 1) {
-            for (let i = 0; i < raw.length; i += 1) {
-                if ((stringOrEmpty(raw[i].output) || "?") === panels[p]) {
-                    grouped.push(raw[i]);
+            const inPanel = raw.filter(function (e) {
+                return (stringOrEmpty(e.output) || "?") === panels[p];
+            });
+            inPanel.sort(function (a, b) {
+                const fa = a.focused ? 1 : 0;
+                const fb = b.focused ? 1 : 0;
+                if (fa !== fb) {
+                    return fb - fa;
                 }
+                if (hasQuery) {
+                    const sa = exposeMatchScore(a, tokens);
+                    const sb = exposeMatchScore(b, tokens);
+                    if (sa !== sb) {
+                        return sb - sa;
+                    }
+                } else {
+                    const ra = Number(exposeRecency[windowIdValue(a)] || 0);
+                    const rb = Number(exposeRecency[windowIdValue(b)] || 0);
+                    if (ra !== rb) {
+                        return rb - ra;
+                    }
+                }
+                return a._do - b._do;
+            });
+            for (let i = 0; i < inPanel.length; i += 1) {
+                grouped.push(inPanel[i]);
             }
         }
         for (let i = 0; i < grouped.length; i += 1) {
             grouped[i]._gi = i;
         }
         exposeEntries = grouped;
+        // Prune recency only when showing the full set (no filter), so windows
+        // hidden by a query don't lose their recency stamp.
+        if (!hasQuery) {
+            pruneExposeRecency(grouped);
+        }
         if (exposeSelectedIndex >= grouped.length) {
             exposeSelectedIndex = Math.max(0, grouped.length - 1);
+        }
+    }
+
+    // Search relevance for the exposé filter: title-prefix > title-substring >
+    // app name/key > project/workspace/output.
+    function exposeMatchScore(entry, tokens) {
+        if (!tokens || !tokens.length) {
+            return 0;
+        }
+        const title = stringOrEmpty(entry && entry.title).toLowerCase();
+        const app = (stringOrEmpty(entry && entry.app_name) + " " + stringOrEmpty(entry && entry.app_key)).toLowerCase();
+        const ctx = (stringOrEmpty(entry && entry.project) + " " + stringOrEmpty(entry && entry.workspace) + " " + stringOrEmpty(entry && entry.output)).toLowerCase();
+        let score = 0;
+        for (let i = 0; i < tokens.length; i += 1) {
+            const t = stringOrEmpty(tokens[i]);
+            if (!t) {
+                continue;
+            }
+            if (title.indexOf(t) === 0) {
+                score += 100;
+            } else if (title.indexOf(t) >= 0) {
+                score += 60;
+            } else if (app.indexOf(t) >= 0) {
+                score += 40;
+            } else if (ctx.indexOf(t) >= 0) {
+                score += 20;
+            }
+        }
+        return score;
+    }
+
+    // Drop recency stamps for windows that no longer exist (called with the full
+    // window set so live windows aren't pruned).
+    function pruneExposeRecency(entries) {
+        const live = {};
+        for (let i = 0; i < entries.length; i += 1) {
+            const id = windowIdValue(entries[i]);
+            if (id) {
+                live[id] = true;
+            }
+        }
+        const m = exposeRecency;
+        for (const k in m) {
+            if (!live[k]) {
+                delete m[k];
+            }
         }
     }
 

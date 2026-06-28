@@ -423,7 +423,12 @@ PanelWindow {
                 Keys.onPressed: function (event) {
                     switch (event.key) {
                     case Qt.Key_Escape:
-                        root.closeExpose();
+                        // First Esc clears an active filter; a second Esc closes.
+                        if (exposeField.text.length > 0) {
+                            exposeField.text = "";
+                        } else {
+                            root.closeExpose();
+                        }
                         event.accepted = true;
                         break;
                     case Qt.Key_Left:
@@ -485,14 +490,33 @@ PanelWindow {
                 font.pixelSize: 11
             }
 
-            Text {
+            ColumnLayout {
                 visible: root.exposeEntries.length === 0
                 Layout.alignment: Qt.AlignHCenter
                 Layout.fillHeight: true
-                verticalAlignment: Text.AlignVCenter
-                text: root.stringOrEmpty(root.exposeQuery) ? "No windows match “" + root.exposeQuery + "”" : "No open windows"
-                color: colors.muted
-                font.pixelSize: 16
+                spacing: 6
+
+                Item { Layout.fillHeight: true }
+
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: root.stringOrEmpty(root.exposeQuery)
+                        ? "No windows match “" + root.exposeQuery + "”"
+                        : "No open windows"
+                    color: colors.muted
+                    font.pixelSize: 17
+                    font.weight: Font.DemiBold
+                }
+
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    visible: root.stringOrEmpty(root.exposeQuery).length > 0
+                    text: "Press Esc or ✕ to clear the filter"
+                    color: colors.subtle
+                    font.pixelSize: 12
+                }
+
+                Item { Layout.fillHeight: true }
             }
 
             // One panel per monitor, ordered left-to-right by physical position.
