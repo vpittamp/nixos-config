@@ -570,6 +570,7 @@ PanelWindow {
                             }
                             root.displaySelectorVisible = false;
                             root.bluetoothPopupVisible = false;
+                            root.barPopupOutputName = topBarWindow.topOutputName;
                             root.audioPopupVisible = !root.audioPopupVisible;
                         }
                         onWheel: function (wheel) {
@@ -635,6 +636,7 @@ PanelWindow {
                             }
                             root.displaySelectorVisible = false;
                             root.audioPopupVisible = false;
+                            root.barPopupOutputName = topBarWindow.topOutputName;
                             root.bluetoothPopupVisible = !root.bluetoothPopupVisible;
                         }
                     }
@@ -805,7 +807,9 @@ PanelWindow {
 
                 RowLayout {
                     id: systemTrayRow
-                    visible: topBarWindow.isPrimaryBar && root.arrayOrEmpty(SystemTray.items ? SystemTray.items.values : []).length > 0
+                    // Show on the focused monitor's bar (not the configured primary,
+                    // which may be off) so the tray is reachable on the active screen.
+                    visible: topBarWindow.isFocusedBar && root.arrayOrEmpty(SystemTray.items ? SystemTray.items.values : []).length > 0
                     spacing: 4
 
                     // Tray items that should always be visible even when Status.Passive
@@ -878,7 +882,8 @@ PanelWindow {
 
                 Rectangle {
                     id: powerChip
-                    visible: topBarWindow.isPrimaryBar
+                    // On the focused monitor's bar (was configured-primary only).
+                    visible: topBarWindow.isFocusedBar
                     radius: 8
                     color: root.powerChipFill(powerMouse.containsMouse)
                     border.color: root.powerChipBorder(powerMouse.containsMouse)
@@ -914,6 +919,7 @@ PanelWindow {
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
                             root.displaySelectorVisible = false;
+                            root.barPopupOutputName = topBarWindow.topOutputName;
                             root.powerMenuVisible = !root.powerMenuVisible;
                         }
                     }
@@ -1158,7 +1164,7 @@ PanelWindow {
     }
 
     PopupWindow {
-        visible: topBarWindow.isPrimaryBar && root.audioPopupVisible
+        visible: root.audioPopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName
         color: "transparent"
         implicitWidth: 280
         implicitHeight: audioPopupCard.implicitHeight + 16
@@ -1403,7 +1409,7 @@ PanelWindow {
     }
 
     PopupWindow {
-        visible: topBarWindow.isPrimaryBar && root.bluetoothPopupVisible
+        visible: root.bluetoothPopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName
         color: "transparent"
         implicitWidth: 300
         implicitHeight: bluetoothPopupCard.implicitHeight + 16
@@ -1555,7 +1561,7 @@ PanelWindow {
     }
 
     PopupWindow {
-        visible: topBarWindow.isPrimaryBar && root.powerMenuVisible
+        visible: root.powerMenuVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName
         color: "transparent"
         implicitWidth: 188
         implicitHeight: powerMenuContent.implicitHeight + 16

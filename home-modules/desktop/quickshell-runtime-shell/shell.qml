@@ -173,6 +173,10 @@ ShellRoot {
         objects: Pipewire.nodes ? Pipewire.nodes.values : []
     }
     property bool bluetoothPopupVisible: false
+    // Output name of the bar whose chip opened the audio/bluetooth/power popup, so
+    // it appears on the monitor where it was clicked (not the configured primary,
+    // which may be off). One shared name: these popups are mutually exclusive.
+    property string barPopupOutputName: ""
     property bool displaySelectorVisible: false
     property string displaySelectorOutputName: ""
     property bool worktreePickerVisible: false
@@ -6972,13 +6976,27 @@ function normalizeLauncherMode(mode) {
         try {
             const arr = JSON.parse(stringOrEmpty(jsonText));
             const m = {};
+            let focusedName = "";
             for (let i = 0; i < arr.length; i += 1) {
                 const o = arr[i];
                 if (o && o.active && o.rect) {
                     m[stringOrEmpty(o.name)] = Number(o.rect.x || 0);
+                    if (o.focused) {
+                        focusedName = stringOrEmpty(o.name);
+                    }
                 }
             }
             exposeOutputX = m;
+            // Pin the overlay to the LIVE focused output (sway is authoritative;
+            // I3.focusedMonitor can be stale, which lands the exposé on the wrong
+            // monitor). Only override when we resolved a real screen for it.
+            if (exposeVisible && focusedName && findScreenByOutputName(focusedName)) {
+                exposeOutputName = focusedName;
+                const fIdx = exposeFocusedIndex();
+                if (fIdx < 0) {
+                    exposeSelectedIndex = exposeFirstIndexForOutput(focusedName);
+                }
+            }
             if (exposeVisible) {
                 refreshExposeEntries();
             }
