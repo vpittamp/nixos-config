@@ -73,8 +73,8 @@ PanelWindow {
             readonly property bool focusedWindow: entry && entry.focused === true
             readonly property color accentColor: root.launcherEntryAccentColor(entry)
             readonly property var moveTargets: root.exposeMoveTargets(entry)
-            width: 214
-            height: 178
+            width: 224
+            height: 190
             // Staggered entrance (opacity + scale only — `y` is owned by the Flow
             // layout). Stagger is capped so large window counts stay snappy under
             // the software render backend.
@@ -131,7 +131,7 @@ PanelWindow {
                 ColumnLayout {
                     anchors.fill: parent
                     anchors.margins: 12
-                    anchors.bottomMargin: cell.moveTargets.length > 0 && !root.exposeEntryIsRemote(cell.entry) ? 30 : 12
+                    anchors.bottomMargin: cell.moveTargets.length > 0 && !root.exposeEntryIsRemote(cell.entry) ? 42 : 12
                     spacing: 6
 
                     IconImage {
@@ -239,6 +239,37 @@ PanelWindow {
                     }
                 }
 
+                // Close-window affordance (touch-reachable; middle-click also works).
+                // Layered above tileMouse so its tap closes the window, not focuses it.
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.margins: 8
+                    width: 24
+                    height: 24
+                    radius: 12
+                    color: closeMouse.containsMouse ? colors.redBg : Qt.rgba(0, 0, 0, 0.45)
+                    border.color: closeMouse.containsMouse ? colors.red : colors.border
+                    border.width: 1
+                    opacity: closeMouse.containsMouse ? 1.0 : (cell.selected ? 0.9 : 0.5)
+                    Behavior on opacity { NumberAnimation { duration: root.fastColorMs } }
+                    Behavior on color { ColorAnimation { duration: root.fastColorMs } }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "✕"
+                        font.pixelSize: 11
+                        font.weight: Font.Bold
+                        color: closeMouse.containsMouse ? colors.red : colors.textDim
+                    }
+                    MouseArea {
+                        id: closeMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.closeExposeWindowEntry(cell.entry)
+                    }
+                }
+
                 // "Move to <other monitor>" chips, layered above tileMouse so a
                 // chip click moves the window's whole workspace there. Hidden for
                 // remote windows / single-monitor setups.
@@ -255,9 +286,9 @@ PanelWindow {
                         delegate: Rectangle {
                             required property string modelData
                             readonly property string outName: modelData
-                            height: 19
-                            width: moveRow.implicitWidth + 12
-                            radius: 6
+                            height: 28
+                            width: moveRow.implicitWidth + 18
+                            radius: 8
                             color: moveMouse.containsMouse ? colors.blueBg : Qt.rgba(0, 0, 0, 0.4)
                             border.width: 1
                             border.color: moveMouse.containsMouse ? colors.blue : colors.border
@@ -266,18 +297,18 @@ PanelWindow {
                             Row {
                                 id: moveRow
                                 anchors.centerIn: parent
-                                spacing: 3
+                                spacing: 4
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: ""        // arrow-right-circle
                                     font.family: "FiraCode Nerd Font"
-                                    font.pixelSize: 9
+                                    font.pixelSize: 11
                                     color: moveMouse.containsMouse ? colors.blue : colors.muted
                                 }
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: root.exposeOutputLabel(outName)
-                                    font.pixelSize: 8
+                                    font.pixelSize: 10
                                     font.weight: Font.DemiBold
                                     color: moveMouse.containsMouse ? colors.blue : colors.textDim
                                 }
@@ -331,7 +362,7 @@ PanelWindow {
                 color: colors.text
                 font.pixelSize: 15
                 leftPadding: 16
-                rightPadding: 16
+                rightPadding: exposeField.text.length > 0 ? 40 : 16
                 topPadding: 10
                 bottomPadding: 10
                 horizontalAlignment: TextInput.AlignHCenter
@@ -341,6 +372,35 @@ PanelWindow {
                     color: colors.card
                     border.color: exposeField.activeFocus ? colors.blue : colors.border
                     border.width: 1
+                }
+
+                // Clear-filter affordance (touch-friendly), shown when filtering.
+                Rectangle {
+                    visible: exposeField.text.length > 0
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.rightMargin: 8
+                    width: 24
+                    height: 24
+                    radius: 12
+                    color: clearMouse.containsMouse ? colors.cardAlt : "transparent"
+                    Behavior on color { ColorAnimation { duration: root.fastColorMs } }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "✕"
+                        font.pixelSize: 12
+                        color: clearMouse.containsMouse ? colors.text : colors.textDim
+                    }
+                    MouseArea {
+                        id: clearMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            exposeField.text = "";
+                            exposeField.forceActiveFocus();
+                        }
+                    }
                 }
 
                 onTextChanged: {
