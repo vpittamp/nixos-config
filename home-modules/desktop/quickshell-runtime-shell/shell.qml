@@ -195,6 +195,10 @@ ShellRoot {
     property int launcherWindowSwitcherPendingDelta: 0
     // Full-screen window-switcher exposé state (separate from the launcher).
     property bool exposeVisible: false
+    // Timestamp of the last open, used to ignore a stray second swipe right after
+    // opening (so the gesture-toggle doesn't open-then-instantly-close).
+    property double exposeOpenedAtMs: 0
+    readonly property int exposeReopenGuardMs: 300
     property var exposeEntries: []
     property int exposeSelectedIndex: 0
     property bool exposeSwitcherActive: false
@@ -6997,12 +7001,27 @@ function normalizeLauncherMode(mode) {
     }
 
     // One-shot path (3-finger swipe): open and stay until click/Enter/Esc.
+    // Gesture-toggle: the same 3-finger swipe-up that opens the exposé also
+    // dismisses it. Decided here in QML where exposeVisible is authoritative, so
+    // the sway-exec'd wrapper needs no overlay-state getter.
+    function toggleExpose() {
+        if (exposeVisible) {
+            if (Date.now() - exposeOpenedAtMs < exposeReopenGuardMs) {
+                return; // ignore an open-bounce double swipe
+            }
+            closeExpose();
+            return;
+        }
+        openExpose();
+    }
+
     function openExpose() {
         exposeOutputName = focusedOutputName();
         exposeSwitcherActive = false;
         exposePendingDelta = 0;
         exposeQuery = "";
         exposeVisible = true;
+        exposeOpenedAtMs = Date.now();
         refreshExposeEntries();
         const focusedIdx = exposeFocusedIndex();
         // Pre-select the focused window if any; otherwise a tile on the monitor

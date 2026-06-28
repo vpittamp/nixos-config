@@ -793,9 +793,11 @@ in
         # (4-finger swipe down; the Quickshell bar also has a keyboard button).
         bindgesture swipe:4:down exec ~/.local/bin/osk-toggle
 
-        # 3-finger swipe up opens the full-screen window-switcher exposé (stays
-        # open until click/Enter/Esc, since a gesture can't be "held").
-        bindgesture swipe:3:up exec show-window-switcher-action open
+        # 3-finger swipe up toggles the full-screen window-switcher exposé: swipe
+        # up to open, swipe up again to dismiss (plus the on-overlay Done pill,
+        # Esc, and click-outside). Touchpad-only — the on-screen Done pill covers
+        # the glass touchscreen, which sway bindgesture does not see.
+        bindgesture swipe:3:up exec show-window-switcher-action toggle
 
         # 3-finger horizontal swipe = browser history navigation (macOS-style:
         # swipe right -> back, swipe left -> forward). Scoped to browser windows

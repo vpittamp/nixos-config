@@ -1078,6 +1078,10 @@ Item {
             shellRoot.openExpose();
         }
 
+        function toggleWindowSwitcher() {
+            shellRoot.toggleExpose();
+        }
+
         function focusLastSession() {
             shellRoot.focusLastSession();
         }

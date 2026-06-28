@@ -490,6 +490,15 @@ PanelWindow {
                 font.pixelSize: 11
             }
 
+            // Teach every dismiss path (gesture is touchpad-only; Done covers touch).
+            Text {
+                Layout.alignment: Qt.AlignHCenter
+                text: "Swipe up, tap Done, or Esc to close"
+                color: colors.subtle
+                font.pixelSize: 11
+                opacity: 0.7
+            }
+
             ColumnLayout {
                 visible: root.exposeEntries.length === 0
                 Layout.alignment: Qt.AlignHCenter
@@ -674,6 +683,50 @@ PanelWindow {
                     root.closeExpose();
                     root.runDetached([runtimeConfig.dictationBin, "toggle"]);
                 }
+            }
+        }
+
+        // Dismiss affordance in the top-left corner — a pure "leave the overview"
+        // (neutral, NOT the red per-tile ✕ which closes a window). This is the
+        // touchscreen-complete path, since sway bindgesture only sees the touchpad.
+        Rectangle {
+            id: exposeDone
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.margins: 28
+            height: 40
+            implicitWidth: exposeDoneRow.implicitWidth + 24
+            radius: 12
+            color: exposeDoneMouse.containsMouse ? colors.card : colors.cardAlt
+            border.width: 1
+            border.color: exposeDoneMouse.containsMouse ? colors.borderStrong : colors.border
+            Behavior on color { ColorAnimation { duration: root.fastColorMs } }
+            Behavior on border.color { ColorAnimation { duration: root.fastColorMs } }
+
+            RowLayout {
+                id: exposeDoneRow
+                anchors.centerIn: parent
+                spacing: 7
+                Text {
+                    text: "✕"
+                    color: exposeDoneMouse.containsMouse ? colors.text : colors.muted
+                    font.pixelSize: 13
+                    font.weight: Font.Bold
+                }
+                Text {
+                    text: "Done"
+                    color: colors.text
+                    font.pixelSize: 11
+                    font.weight: Font.DemiBold
+                }
+            }
+
+            MouseArea {
+                id: exposeDoneMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.closeExpose()
             }
         }
     }
