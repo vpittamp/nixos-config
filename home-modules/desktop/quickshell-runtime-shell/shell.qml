@@ -7955,6 +7955,46 @@ function normalizeLauncherMode(mode) {
     }
 
 
+    // Click-away scrim for the top-bar display selector popup. Declared BEFORE
+    // the bars so its layer surface is created first and therefore sits BELOW the
+    // bars and the bar's popup (the card stays clickable, on top). It is always
+    // mapped but only captures input while the popup is open — otherwise its mask
+    // is empty, so it renders nothing and clicks pass straight through to the
+    // windows underneath. Clicking anywhere outside the card closes the popup.
+    Variants {
+        model: shellRootRef.useFallbackScreenWindows ? [] : Quickshell.screens
+        delegate: PanelWindow {
+            required property var modelData
+            screen: modelData
+            visible: true
+            color: "transparent"
+            exclusiveZone: 0
+            WlrLayershell.namespace: "i3pm-display-scrim"
+            WlrLayershell.layer: WlrLayer.Top
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+            anchors.top: true
+            anchors.bottom: true
+            anchors.left: true
+            anchors.right: true
+            mask: shellRootRef.displaySelectorVisible ? scrimFullRegion : scrimEmptyRegion
+
+            Region {
+                id: scrimEmptyRegion
+            }
+            Region {
+                id: scrimFullRegion
+                item: scrimCatcher
+            }
+
+            MouseArea {
+                id: scrimCatcher
+                anchors.fill: parent
+                enabled: shellRootRef.displaySelectorVisible
+                onClicked: shellRootRef.closeDisplaySelector()
+            }
+        }
+    }
+
     Variants {
         model: shellRootRef.useFallbackScreenWindows ? [] : Quickshell.screens
         delegate: Windows.TopBarWindow {
