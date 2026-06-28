@@ -21,7 +21,9 @@ PanelWindow {
     readonly property QtObject root: shellRoot
     property alias focusItemRef: exposeField
     id: switcherWindow
-    screen: root.activeScreen
+    // Map on the monitor where the exposé was activated (falls back to the
+    // focused/primary monitor when no output was captured). Mirrors RuntimePanelWindow.
+    screen: root.findScreenByOutputName(root.exposeOutputName) || root.activeScreen
     visible: root.exposeVisible
     color: "transparent"
     anchors.left: true
@@ -411,13 +413,17 @@ PanelWindow {
                         required property string modelData
                         readonly property string panelOut: modelData
                         readonly property var panelWindows: root.exposeWindowsForOutput(panelOut)
+                        // The monitor where the exposé was activated ("you are here").
+                        readonly property bool activePanel: panelOut === root.stringOrEmpty(root.exposeOutputName)
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         Layout.preferredWidth: 1     // equal share among panels
                         radius: 18
-                        color: Qt.rgba(1, 1, 1, 0.025)
-                        border.color: colors.border
-                        border.width: 1
+                        color: activePanel ? Qt.rgba(0.20, 0.52, 0.95, 0.08) : Qt.rgba(1, 1, 1, 0.025)
+                        border.color: activePanel ? colors.blue : colors.border
+                        border.width: activePanel ? 2 : 1
+                        Behavior on border.color { ColorAnimation { duration: root.fastColorMs } }
+                        Behavior on color { ColorAnimation { duration: root.fastColorMs } }
 
                         ColumnLayout {
                             anchors.fill: parent

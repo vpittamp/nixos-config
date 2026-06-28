@@ -34,7 +34,6 @@ ShellRoot {
     readonly property var launcherQueryDebounce: runtimeServices ? runtimeServices.launcherQueryDebounceRef : null
     readonly property var launcherSessionSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherSessionSwitcherOpenTimerRef : null
     readonly property var launcherWindowSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherWindowSwitcherOpenTimerRef : null
-    readonly property var exposeGrid: windowSwitcherWindow ? windowSwitcherWindow.gridRef : null
     readonly property var windowSwitcherFocusItem: windowSwitcherWindow ? windowSwitcherWindow.focusItemRef : null
     readonly property var exposeFocusTimer: runtimeServices ? runtimeServices.exposeFocusTimerRef : null
     readonly property var exposeOpenTimer: runtimeServices ? runtimeServices.exposeOpenTimerRef : null
@@ -201,7 +200,9 @@ ShellRoot {
     property bool exposeSwitcherActive: false
     property int exposePendingDelta: 0
     property string exposeQuery: ""
-    property int exposeColumns: 1
+    // Output name of the monitor where the exposé was activated, so the overlay
+    // maps on that monitor. Empty falls back to root.activeScreen.
+    property string exposeOutputName: ""
     property string launcherQuery: ""
     property string launcherError: ""
     property int launcherSelectedIndex: 0
@@ -6850,11 +6851,23 @@ function normalizeLauncherMode(mode) {
         return -1;
     }
 
+    // Lowest global selection index (_gi) of a window on the given output, so the
+    // exposé pre-selects a tile on the monitor where it was activated. Falls back
+    // to 0 when that output has no windows.
+    function exposeFirstIndexForOutput(name) {
+        const wins = exposeWindowsForOutput(name);
+        if (wins.length && typeof wins[0]._gi === "number") {
+            return wins[0]._gi;
+        }
+        return 0;
+    }
+
     // Alt+Tab path: open (held) and pre-select the next window relative to the
     // focused one; further taps advance; Alt-release commits.
     function cycleExposeWindows(direction) {
         const delta = direction === "prev" ? -1 : 1;
         if (!exposeVisible) {
+            exposeOutputName = focusedOutputName();
             exposeSwitcherActive = true;
             exposePendingDelta = delta;
             exposeQuery = "";
@@ -6891,20 +6904,20 @@ function normalizeLauncherMode(mode) {
         } else {
             exposeSelectedIndex = (focusedIdx + delta + entries.length) % entries.length;
         }
-        if (exposeGrid) {
-            exposeGrid.positionViewAtIndex(exposeSelectedIndex, GridView.Contain);
-        }
     }
 
     // One-shot path (3-finger swipe): open and stay until click/Enter/Esc.
     function openExpose() {
+        exposeOutputName = focusedOutputName();
         exposeSwitcherActive = false;
         exposePendingDelta = 0;
         exposeQuery = "";
         exposeVisible = true;
         refreshExposeEntries();
         const focusedIdx = exposeFocusedIndex();
-        exposeSelectedIndex = focusedIdx >= 0 ? focusedIdx : 0;
+        // Pre-select the focused window if any; otherwise a tile on the monitor
+        // where the exposé was activated.
+        exposeSelectedIndex = focusedIdx >= 0 ? focusedIdx : exposeFirstIndexForOutput(exposeOutputName);
         if (exposeFocusTimer) {
             exposeFocusTimer.restart();
         }
@@ -6917,9 +6930,6 @@ function normalizeLauncherMode(mode) {
             return;
         }
         exposeSelectedIndex = (exposeSelectedIndex + delta + entries.length) % entries.length;
-        if (exposeGrid) {
-            exposeGrid.positionViewAtIndex(exposeSelectedIndex, GridView.Contain);
-        }
     }
 
     // Grouped-by-monitor nav: Up/Down move within the current monitor's window
