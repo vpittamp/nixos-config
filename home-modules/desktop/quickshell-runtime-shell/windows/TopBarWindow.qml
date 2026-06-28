@@ -1038,9 +1038,12 @@ PanelWindow {
                             width: modelData.w
                             height: modelData.h
                             radius: 5
-                            color: modelData.primary ? colors.blueBg : colors.cardAlt
-                            border.color: modelData.primary ? colors.blue : colors.border
-                            border.width: modelData.primary ? 2 : 1
+                            // Every box in the map is an enabled/active display, so
+                            // all get an "on" highlight; the primary (focused) output
+                            // is distinguished in blue, the rest in teal.
+                            color: modelData.primary ? colors.blueBg : colors.tealBg
+                            border.color: modelData.primary ? colors.blue : colors.teal
+                            border.width: 2
 
                             Column {
                                 anchors.centerIn: parent
@@ -1049,7 +1052,7 @@ PanelWindow {
                                 Text {
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     text: root.stringOrEmpty(modelData.label)
-                                    color: modelData.primary ? colors.blue : colors.text
+                                    color: modelData.primary ? colors.blue : colors.teal
                                     font.pixelSize: 9
                                     font.weight: Font.DemiBold
                                 }
@@ -1064,9 +1067,9 @@ PanelWindow {
 
                                 Text {
                                     anchors.horizontalCenter: parent.horizontalCenter
-                                    visible: modelData.primary && modelData.h > 44
-                                    text: "● primary"
-                                    color: colors.blue
+                                    visible: modelData.h > 44
+                                    text: modelData.primary ? "● primary" : "● on"
+                                    color: modelData.primary ? colors.blue : colors.teal
                                     font.pixelSize: 7
                                     font.weight: Font.DemiBold
                                 }
