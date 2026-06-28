@@ -483,9 +483,7 @@ PanelWindow {
             Text {
                 Layout.alignment: Qt.AlignHCenter
                 visible: root.exposeEntries.length > 0
-                text: root.exposeEntries.length + (root.exposeEntries.length === 1 ? " window across "
-                    : " windows across ") + root.exposePanelOutputs().length
-                    + (root.exposePanelOutputs().length === 1 ? " monitor" : " monitors")
+                text: root.exposeSummaryText()
                 color: colors.subtle
                 font.pixelSize: 11
             }
@@ -542,6 +540,8 @@ PanelWindow {
                         required property string modelData
                         readonly property string panelOut: modelData
                         readonly property var panelWindows: root.exposeWindowsForOutput(panelOut)
+                        // The synthetic herdr "AI Agents" panel (vs a real monitor).
+                        readonly property bool panelIsAgents: panelOut === root.exposeAgentsOutput
                         // The monitor where the exposé was activated ("you are here").
                         readonly property bool activePanel: panelOut === root.stringOrEmpty(root.exposeOutputName)
                         Layout.fillWidth: true
@@ -601,23 +601,53 @@ PanelWindow {
                                 color: colors.lineSoft
                             }
 
-                            // Tiles for this monitor (wrap + scroll if many).
+                            // Content: window tiles for a monitor, or a list of
+                            // agent-session rows for the synthetic Agents panel
+                            // (wrap + scroll if many).
                             Flickable {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 clip: true
                                 contentWidth: width
-                                contentHeight: tileFlow.implicitHeight
+                                contentHeight: panelIsAgents ? agentCol.implicitHeight : tileFlow.implicitHeight
                                 boundsBehavior: Flickable.StopAtBounds
 
                                 Flow {
                                     id: tileFlow
+                                    visible: !panelIsAgents
                                     width: parent.width
                                     spacing: 4
 
                                     Repeater {
-                                        model: panelWindows
+                                        model: panelIsAgents ? [] : panelWindows
                                         delegate: windowTile
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    id: agentCol
+                                    visible: panelIsAgents
+                                    width: parent.width
+                                    spacing: 6
+
+                                    Repeater {
+                                        model: panelIsAgents ? panelWindows : []
+
+                                        delegate: RootComponents.SessionRow {
+                                            required property var modelData
+                                            Layout.fillWidth: true
+                                            rootObject: root
+                                            colorsObject: colors
+                                            session: modelData
+                                            selected: Number((modelData && modelData._gi) || 0) === root.exposeSelectedIndex
+                                            interactive: true
+                                            showCloseAction: false
+                                            showHostToken: true
+                                            onClicked: {
+                                                root.updateExposePointerSelection(Number((modelData && modelData._gi) || 0));
+                                                root.activateExposeSelection();
+                                            }
+                                        }
                                     }
                                 }
                             }

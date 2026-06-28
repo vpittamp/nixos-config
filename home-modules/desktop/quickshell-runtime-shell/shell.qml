@@ -199,6 +199,8 @@ ShellRoot {
     // opening (so the gesture-toggle doesn't open-then-instantly-close).
     property double exposeOpenedAtMs: 0
     readonly property int exposeReopenGuardMs: 300
+    // Synthetic panel key for the herdr "AI Agents" section in the exposé.
+    readonly property string exposeAgentsOutput: "__agents__"
     property var exposeEntries: []
     property int exposeSelectedIndex: 0
     property bool exposeSwitcherActive: false
@@ -3430,6 +3432,14 @@ function normalizeLauncherMode(mode) {
         launcherQueryDebounce.stop();
         restartLauncherQuery();
         launcherFocusTimer.restart();
+    }
+
+    function toggleLauncher() {
+        if (launcherVisible) {
+            closeLauncher();
+            return;
+        }
+        showLauncher("apps", "");
     }
 
     function cycleLauncherMode(delta) {
@@ -6768,8 +6778,48 @@ function normalizeLauncherMode(mode) {
         return entries;
     }
 
+    // herdr agent sessions (local + remote) surfaced in the exposé as a synthetic
+    // "AI Agents" panel. Each entry is the raw session plus the fields the exposé
+    // grouping/selection/match expect; SessionRow renders it from the raw session.
+    function exposeAgentEntries(query) {
+        const sessions = activeSessions();
+        const tokens = launcherQueryTokens(stringOrEmpty(query));
+        const out = [];
+        for (let i = 0; i < sessions.length; i += 1) {
+            const s = sessions[i];
+            if (!s) {
+                continue;
+            }
+            const title = sessionPrimaryLabel(s);
+            const sub = sessionSecondaryLabel(s);
+            if (tokens.length) {
+                const hay = (title + " " + sub + " " + stringOrEmpty(s.agent) + " "
+                    + stringOrEmpty(s.display_tool) + " " + stringOrEmpty(s.project)).toLowerCase();
+                let ok = true;
+                for (let t = 0; t < tokens.length; t += 1) {
+                    if (hay.indexOf(tokens[t]) < 0) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (!ok) {
+                    continue;
+                }
+            }
+            out.push(Object.assign({}, s, {
+                kind: "session",
+                output: exposeAgentsOutput,
+                title: title,
+                app_name: stringOrEmpty(s.agent),
+                focused: sessionIsCurrent(s)
+            }));
+        }
+        return out;
+    }
+
     function refreshExposeEntries() {
-        const raw = normalizeLauncherEntries(exposeWindowEntries(stringOrEmpty(exposeQuery)));
+        const raw = normalizeLauncherEntries(exposeWindowEntries(stringOrEmpty(exposeQuery)))
+            .concat(exposeAgentEntries(stringOrEmpty(exposeQuery)));
         const tokens = launcherQueryTokens(stringOrEmpty(exposeQuery));
         const hasQuery = tokens.length > 0;
         // Stable daemon order is the final tiebreak.
@@ -6871,6 +6921,24 @@ function normalizeLauncherMode(mode) {
         }
     }
 
+    // "N windows · M agents" summary for the exposé header.
+    function exposeSummaryText() {
+        const entries = arrayOrEmpty(exposeEntries);
+        let w = 0, a = 0;
+        for (let i = 0; i < entries.length; i += 1) {
+            if (stringOrEmpty(entries[i].kind) === "session") {
+                a += 1;
+            } else {
+                w += 1;
+            }
+        }
+        const parts = [w + (w === 1 ? " window" : " windows")];
+        if (a > 0) {
+            parts.push(a + (a === 1 ? " agent" : " agents"));
+        }
+        return parts.join("  ·  ");
+    }
+
     // Distinct monitor names present in a set of window entries, ordered by the
     // monitor's physical x position (left-to-right).
     function exposePanelOutputsFromEntries(entries) {
@@ -6885,9 +6953,11 @@ function normalizeLauncherMode(mode) {
             }
         }
         const xmap = exposeOutputX || {};
+        // The synthetic "AI Agents" panel sorts to the far left; real monitors
+        // order by physical x position.
         list.sort(function (a, b) {
-            const xa = (a in xmap) ? Number(xmap[a]) : 99999;
-            const xb = (b in xmap) ? Number(xmap[b]) : 99999;
+            const xa = (a === exposeAgentsOutput) ? -1 : ((a in xmap) ? Number(xmap[a]) : 99999);
+            const xb = (b === exposeAgentsOutput) ? -1 : ((b in xmap) ? Number(xmap[b]) : 99999);
             return xa - xb;
         });
         return list;
@@ -7103,7 +7173,18 @@ function normalizeLauncherMode(mode) {
     function activateExposeSelection() {
         const entry = activeExposeEntry();
         closeExpose();
-        if (entry) {
+        exposeActivateEntry(entry);
+    }
+
+    // Activate an exposé entry: agent sessions focus their herdr pane, windows
+    // focus the window.
+    function exposeActivateEntry(entry) {
+        if (!entry) {
+            return;
+        }
+        if (stringOrEmpty(entry.kind) === "session") {
+            focusSession(entry);
+        } else {
             focusWindow(entry);
         }
     }
@@ -7116,9 +7197,7 @@ function normalizeLauncherMode(mode) {
         exposeSwitcherActive = false;
         exposePendingDelta = 0;
         closeExpose();
-        if (entry) {
-            focusWindow(entry);
-        }
+        exposeActivateEntry(entry);
     }
 
     function closeExposeWindowEntry(entry) {
@@ -7155,15 +7234,22 @@ function normalizeLauncherMode(mode) {
     // Friendly short label for a monitor chip.
     function exposeOutputLabel(name) {
         const n = stringOrEmpty(name);
+        if (n === exposeAgentsOutput) {
+            return "AI Agents";
+        }
         if (n === "eDP-1") {
             return "Laptop";
         }
         return n;
     }
 
-    // Laptop panel gets a laptop glyph; everything else a monitor glyph.
+    // Agents panel gets a terminal glyph; laptop a laptop glyph; else a monitor.
     function exposeOutputGlyph(name) {
-        return stringOrEmpty(name) === "eDP-1" ? "" : "";
+        const n = stringOrEmpty(name);
+        if (n === exposeAgentsOutput) {
+            return "";
+        }
+        return n === "eDP-1" ? "" : "";
     }
 
     function exposeEntryIsRemote(entry) {
