@@ -38,6 +38,14 @@ STATE_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/sway/output-states.json"
 # Scale applied to unrecognized externals (fallback path).
 EXTERNAL_SCALE="1.25"
 
+# Built-in panel scale (eDP-1, native 1920x1200 -> logical 1536x960).
+PANEL_SCALE="1.25"
+
+# In extended mode the Verbatim sits parallel to (left of) the built-in panel
+# but a little higher: its top edge is raised this many logical px above the
+# panel's top edge.
+VERBATIM_RAISE="120"
+
 # Verbatim portable monitor: native mode, comfortable scale.
 VERBATIM_SCALE="1.25"
 
@@ -102,6 +110,15 @@ output_enabled() {
 
 # Integer division (value / scale), used for logical width and height.
 logical_width() { awk "BEGIN { printf \"%d\", $1 / $2 }"; }
+
+# Echo "<logical_w> <logical_h>" for an output at a given scale (current/native
+# mode divided by scale). Returns non-zero if the output has no usable mode.
+logical_dims() {
+  local w h
+  read -r w h <<<"$(output_mode "$1")"
+  [ -n "${w:-}" ] && [ "$w" != "null" ] || return 1
+  echo "$(logical_width "$w" "$2") $(logical_width "$h" "$2")"
+}
 
 # Lay out every connected external, recognizing the Verbatim and Samsung by EDID:
 #   Verbatim -> top-left origin.
@@ -169,10 +186,62 @@ layout_clamshell() {
 }
 
 layout_extended() {
-  # Lay out the externals, then place the panel (below the Samsung if present).
-  local px py
-  read -r px py <<<"$(place_externals)"
-  swaymsg "output $PANEL enable mode 1920x1200 position ${px:-0} ${py:-0} scale 1.25" >/dev/null 2>&1 || true
+  # Built-in panel is the anchor (lid open). Recognized externals are placed
+  # relative to it by EDID:
+  #   Samsung  -> directly above the panel (same x, top-aligned column).
+  #   Verbatim -> parallel to the panel on its left, raised VERBATIM_RAISE px.
+  #   others   -> tiled left-to-right to the right of the panel, panel-top aligned.
+  # Connector-agnostic: identity is by EDID, never by DP-x connector name.
+  local out verb="" sam="" others=()
+  while read -r out; do
+    [ -n "$out" ] || continue
+    # Honor the UI enable/disable preference.
+    if ! output_enabled "$out"; then
+      swaymsg "output $out disable" >/dev/null 2>&1 || true
+      continue
+    fi
+    if   is_verbatim "$out"; then verb="$out"
+    elif is_samsung  "$out"; then sam="$out"
+    else others+=("$out"); fi
+  done < <(external_outputs)
+
+  # Logical sizes (used to compute origins so nothing lands at negative coords).
+  local pw ph; read -r pw ph <<<"$(logical_dims "$PANEL" "$PANEL_SCALE")" || { pw=1536; ph=960; }
+  local vw=0; [ -n "$verb" ] && vw="$(logical_dims "$verb" "$VERBATIM_SCALE" | cut -d' ' -f1)"
+  local sh=0; [ -n "$sam" ] && sh="$(logical_width "$SAMSUNG_H" "$SAMSUNG_SCALE")"
+
+  # Panel origin: reserve room above it (Samsung column and/or the Verbatim
+  # raise) and to its left (the Verbatim).
+  local top_gap=0
+  [ -n "$sam" ] && top_gap="$sh"
+  [ -n "$verb" ] && [ "$VERBATIM_RAISE" -gt "$top_gap" ] && top_gap="$VERBATIM_RAISE"
+  local panel_x=0; [ -n "$verb" ] && panel_x="$vw"
+  local panel_y="$top_gap"
+
+  swaymsg "output $PANEL enable mode 1920x1200 position $panel_x $panel_y scale $PANEL_SCALE" >/dev/null 2>&1 || true
+
+  # Samsung directly above the panel.
+  if [ -n "$sam" ]; then
+    swaymsg "output $sam enable mode $SAMSUNG_MODE position $panel_x $(( panel_y - sh )) scale $SAMSUNG_SCALE" >/dev/null 2>&1 || true
+  fi
+
+  # Verbatim parallel to the panel on its left, sitting VERBATIM_RAISE px higher.
+  if [ -n "$verb" ]; then
+    local vnw vnh; read -r vnw vnh <<<"$(output_mode "$verb")"
+    if [ -n "${vnw:-}" ] && [ "$vnw" != "null" ]; then
+      swaymsg "output $verb enable mode ${vnw}x${vnh} position $(( panel_x - vw )) $(( panel_y - VERBATIM_RAISE )) scale $VERBATIM_SCALE" >/dev/null 2>&1 || true
+    fi
+  fi
+
+  # Any other externals tile to the right of the panel, aligned with its top.
+  local edge=$(( panel_x + pw )) ow oh
+  for out in "${others[@]:-}"; do
+    [ -n "$out" ] || continue
+    read -r ow oh <<<"$(output_mode "$out")"
+    [ -n "${ow:-}" ] && [ "$ow" != "null" ] || continue
+    swaymsg "output $out enable mode ${ow}x${oh} position $edge $panel_y scale $EXTERNAL_SCALE" >/dev/null 2>&1 || true
+    edge=$(( edge + $(logical_width "$ow" "$EXTERNAL_SCALE") ))
+  done
 }
 
 run_close() {
