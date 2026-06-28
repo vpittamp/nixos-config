@@ -25,6 +25,13 @@ let
     if hasWorktreeApp
     then lib.listToAttrs (map (key: lib.nameValuePair key "exec ${worktreeAppCfg.toggleCommandName}") (lib.unique worktreeToggleKeyList))
     else {};
+  # Minimalist AI-agents monitor strip (e.g. watch the TV PWA fullscreen while
+  # keeping an eye on agents). Keybind because a bar chip is hidden under a
+  # fullscreen app.
+  agentMonitorBindings =
+    if hasRuntimeShell
+    then { "${modifier}+Shift+a" = "exec toggle-agent-monitor"; }
+    else {};
   primaryLauncherCommand = if hasRuntimeShell then "exec toggle-app-launcher" else "exec walker";
 in
 {
@@ -193,5 +200,6 @@ in
 
   }
   // monitoringPanelBindings
-  // worktreeAppBindings);
+  // worktreeAppBindings
+  // agentMonitorBindings);
 }

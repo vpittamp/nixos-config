@@ -2591,6 +2591,7 @@ PY
 
   togglePowerMenuScript = mkIpcScript "toggle-runtime-power-menu" "togglePowerMenu" "";
   toggleLauncherScript = mkIpcScript "toggle-app-launcher" "toggleLauncher" "";
+  toggleAgentMonitorScript = mkIpcScript "toggle-agent-monitor" "toggleAgentMonitor" "";
   toggleSettingsScript = mkIpcScript "toggle-runtime-settings" "toggleSettings" "";
   showRuntimeDevicesScript = pkgs.writeShellScriptBin "show-runtime-devices" ''
     set -euo pipefail
@@ -2794,6 +2795,7 @@ in
       toggleDockScript
       togglePowerMenuScript
       toggleLauncherScript
+      toggleAgentMonitorScript
       toggleSettingsScript
       showRuntimeDevicesScript
       showRuntimeDisplaysScript

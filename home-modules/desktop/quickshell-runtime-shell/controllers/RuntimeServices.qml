@@ -1082,6 +1082,10 @@ Item {
             shellRoot.toggleExpose();
         }
 
+        function toggleAgentMonitor() {
+            shellRoot.toggleAgentMonitor("");
+        }
+
         function focusLastSession() {
             shellRoot.focusLastSession();
         }
@@ -1091,10 +1095,7 @@ Item {
         }
 
         function toggleLauncher() {
-            if (!shellRoot.launcherVisible) {
-                shellRoot.settingsVisible = false;
-            }
-            shellRoot.launcherVisible = !shellRoot.launcherVisible;
+            shellRoot.toggleLauncher();
         }
 
         function toggleSettings() {

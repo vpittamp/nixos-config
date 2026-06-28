@@ -179,6 +179,11 @@ ShellRoot {
     property string barPopupOutputName: ""
     property bool displaySelectorVisible: false
     property string displaySelectorOutputName: ""
+    // Minimalist always-on-top AI-agents monitor strip: lets you watch a
+    // fullscreen app (e.g. the TV PWA) while keeping an eye on agent sessions.
+    // Overlay layer, no keyboard grab, narrow side strip.
+    property bool agentMonitorVisible: false
+    property string agentMonitorOutputName: ""
     property bool worktreePickerVisible: false
     property bool launcherVisible: false
     property bool launcherLoading: false
@@ -7089,6 +7094,21 @@ function normalizeLauncherMode(mode) {
     }
 
     // One-shot path (3-finger swipe): open and stay until click/Enter/Esc.
+    // Minimalist agent-monitor side strip toggle. Captures the focused output so
+    // it appears on the monitor you're watching (e.g. the TV's Samsung).
+    function toggleAgentMonitor(outputName) {
+        if (agentMonitorVisible) {
+            agentMonitorVisible = false;
+            return;
+        }
+        agentMonitorOutputName = stringOrEmpty(outputName) || focusedOutputName();
+        agentMonitorVisible = true;
+    }
+
+    function closeAgentMonitor() {
+        agentMonitorVisible = false;
+    }
+
     // Gesture-toggle: the same 3-finger swipe-up that opens the exposé also
     // dismisses it. Decided here in QML where exposeVisible is authoritative, so
     // the sway-exec'd wrapper needs no overlay-state getter.
@@ -8266,6 +8286,12 @@ function normalizeLauncherMode(mode) {
     }
 
     Windows.NotificationDetailWindow {
+        shellRoot: shellRootRef
+        runtimeConfig: shellConfig
+        colors: shellRootRef.colors
+    }
+
+    Windows.AgentMonitorWindow {
         shellRoot: shellRootRef
         runtimeConfig: shellConfig
         colors: shellRootRef.colors
