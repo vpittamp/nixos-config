@@ -627,16 +627,21 @@ class LaunchService:
         if live_window is not None:
             return candidate
 
-        logger.warning(
-            "Discarding stale tracked terminal window %s for %s (%s)",
+        # The candidate is only REUSED when _find_live_window confirms it in the
+        # full raw Sway tree (above), so reuse is always correct. On a miss, just
+        # skip reuse — do NOT delete it from the tracking map. get_tree can
+        # transiently miss a live window during a monitor hotplug / lid / output
+        # reconfiguration; deleting here permanently dropped the window with no
+        # re-add, so the NEXT click found no candidate and launched ANOTHER
+        # duplicate, never recovering until restart (the herdr duplicate-launch
+        # loop). window::close (and the periodic reconcile) own removal.
+        logger.debug(
+            "No live window for tracked terminal %s (%s/%s); skipping reuse without "
+            "dropping it from tracking",
             candidate_window_id,
             project_name,
             context_key,
         )
-        if self._remove_window is not None and candidate_window_id > 0:
-            await self._remove_window(candidate_window_id)
-        if self._invalidate_window_tree_cache is not None:
-            self._invalidate_window_tree_cache()
         return None
 
     def find_context_app_window_candidates(
@@ -716,26 +721,18 @@ class LaunchService:
         if self._find_live_window is None:
             return candidates[0] if candidates else None
 
-        stale_window_ids: List[int] = []
         for candidate in candidates:
             candidate_window_id = int(getattr(candidate, "window_id", 0) or 0)
             live_window = await self._find_live_window(candidate_window_id)
             if live_window is not None:
                 return candidate
-            if candidate_window_id > 0:
-                stale_window_ids.append(candidate_window_id)
 
-        for stale_window_id in stale_window_ids:
-            logger.warning(
-                "Discarding stale tracked app window %s for %s",
-                stale_window_id,
-                getattr(app, "name", ""),
-            )
-            if self._remove_window is not None:
-                await self._remove_window(stale_window_id)
-
-        if stale_window_ids and self._invalidate_window_tree_cache is not None:
-            self._invalidate_window_tree_cache()
+        # No live candidate this call. Do NOT delete the non-live candidates from
+        # the tracking map: each was liveness-checked against the full raw Sway
+        # tree, so a miss is either a genuinely-gone window (window::close /
+        # reconcile removes it) or a transient get_tree gap during output
+        # reconfiguration — deleting here permanently dropped a live window and made
+        # the next click launch a duplicate, never recovering until restart.
         return None
 
     def build_launch_open_response(

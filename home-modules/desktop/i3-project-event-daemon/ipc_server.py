@@ -3168,6 +3168,19 @@ class IPCServer:
         outputs = []
         total_windows = 0
 
+        # Index workspace containers by name in a single pass over the tree, so the
+        # per-workspace lookup below is O(1) instead of a fresh full-tree DFS per
+        # workspace (was O(workspaces * tree_nodes) via _find_workspace_container).
+        workspace_containers: Dict[str, Any] = {}
+
+        def _index_workspace_containers(node: Any) -> None:
+            if getattr(node, "type", None) == "workspace" and node.name:
+                workspace_containers.setdefault(node.name, node)
+            for child in (node.nodes + node.floating_nodes):
+                _index_workspace_containers(child)
+
+        _index_workspace_containers(tree)
+
         for output in outputs_list:
             if not output.active or output.name.startswith("__"):
                 continue  # Skip inactive and special outputs
@@ -3203,8 +3216,8 @@ class IPCServer:
                     "windows": [],
                 }
 
-                # Find windows in this workspace
-                ws_con = self._find_workspace_container(tree, ws.name)
+                # Find windows in this workspace (O(1) lookup from the index above)
+                ws_con = workspace_containers.get(ws.name)
                 if ws_con:
                     windows = self._extract_windows_from_container(
                         ws_con,
@@ -3223,9 +3236,9 @@ class IPCServer:
         # Add scratchpad windows as a special workspace on first output
         # This ensures ALL windows are visible by default (Feature 025 enhancement)
         if outputs and self.workspace_tracker:
-            scratchpad_windows_list = await window_filtering.get_scratchpad_windows(
-                self.i3_connection.conn
-            )
+            # Reuse the tree already fetched above instead of a second full get_tree()
+            # (the __i3_scratch workspace is part of this same tree).
+            scratchpad_windows_list = window_filtering.extract_scratchpad_windows(tree)
 
             if scratchpad_windows_list:
                 scratchpad_windows = []
@@ -3547,6 +3560,22 @@ class IPCServer:
                     workspace_index[workspace_key]["source"] = workspace_slot.get("source", "")
                     continue
                 projected_workspace = dict(workspace_slot)
+                # Don't inject empty configured-workspace placeholders. There are
+                # ~150 static `workspace N output X` assignments; emitting them all
+                # on every full snapshot (each copied, validated, serialized into a
+                # ~35KB outputs blob and broadcast to every UI subscriber, then
+                # filtered straight back out) is pure waste — every consumer drops
+                # workspaces with no windows that aren't focused/visible (e.g. the
+                # bar's dashboardWorkspacesForOutput). Real/active configured
+                # workspaces are annotated in the `if` branch above, so the
+                # `configured`/`monitor_role`/`app_name` info is preserved where it
+                # actually matters.
+                if (
+                    not projected_workspace.get("windows")
+                    and not projected_workspace.get("focused")
+                    and not projected_workspace.get("visible")
+                ):
+                    continue
                 projected_output["workspaces"].append(projected_workspace)
                 workspace_index[workspace_key] = projected_workspace
 
@@ -3726,15 +3755,20 @@ class IPCServer:
                 # Get window class (X11 uses window_class, Wayland uses app_id)
                 window_class = node.window_class if hasattr(node, 'window_class') and node.window_class else (node.app_id if hasattr(node, 'app_id') else "")
 
-                # Read I3PM_* environment for app_id and worktree metadata.
-                # Read directly from the window process when available. Runtime
-                # identity for managed windows comes from daemon state, not
-                # parent-process traversal.
+                # Read I3PM_* environment for app_id and worktree metadata via the
+                # 10s-TTL per-PID cache (read_process_environ_with_fallback) instead
+                # of an uncached /proc read. This runs per-window on every snapshot;
+                # the cache turns a repeated blocking /proc/<pid>/environ read into
+                # at most one read per PID per 10s. Process env is immutable after
+                # exec, so caching is correct. The fallback returns the window's own
+                # env when it carries I3PM markers (same as before) and only walks
+                # parents otherwise — no data loss, and it recovers env that a
+                # direct-only read would miss.
                 env = {}
                 if hasattr(node, 'pid') and node.pid:
                     try:
-                        from .services.window_filter import read_process_environ
-                        env = read_process_environ(node.pid)
+                        from .services.window_filter import read_process_environ_with_fallback
+                        env = read_process_environ_with_fallback(node.pid)
                     except (FileNotFoundError, PermissionError) as e:
                         # Process may have exited or we don't have permission
                         logger.debug(f"Failed to read environ for window {node.id if hasattr(node,'id') else node.window} PID {node.pid}: {e}")
@@ -5796,6 +5830,13 @@ class IPCServer:
         stale_bound_window_ids: List[int] = []
         ssh_tracked_window_count = 0
         scoped_tracked_window_count = 0
+        # Authoritative focused window (con_id), updated synchronously on every
+        # window::focus event (state.currently_focused_window). Stamp `focused`
+        # from this rather than the window-tree snapshot so the flag is correct
+        # even when the tree cache is intentionally NOT invalidated on focus
+        # events (Phase 2: focus changes no tree STRUCTURE, so keeping the cache
+        # warm is safe — but the per-window focused flag must not go stale).
+        focused_con_id = int(getattr(self.state_manager.state, "currently_focused_window", 0) or 0)
         for window_info in tracked_windows.values():
             app_key = str(getattr(window_info, "app_identifier", "") or "")
             window_class = str(getattr(window_info, "window_class", "") or "")
@@ -5892,7 +5933,7 @@ class IPCServer:
                         or getattr(window_info, "context_key", "")
                         or ""
                     ),
-                    "focused": bool(visible_window.get("focused", False)),
+                    "focused": (window_id == focused_con_id) if focused_con_id else bool(visible_window.get("focused", False)),
                     "visible": visible,
                     "hidden": hidden,
                     "binding_state": binding_state,
@@ -5910,17 +5951,27 @@ class IPCServer:
             )
 
         if stale_bound_window_ids:
-            stale_ids = sorted(set(stale_bound_window_ids))
-            logger.info(
-                "Pruning %s stale bound workspace window(s) absent from Sway tree: %s",
-                len(stale_ids),
-                stale_ids,
+            # These tracked windows are absent from the active-output view, so they
+            # are already OMITTED from this snapshot (the `continue` above). We must
+            # NOT delete them from the tracking map here. Snapshot building is a
+            # READ path; the only authoritative "window is gone" signal is the
+            # window::close event (handled in on_window_close). Both the active-
+            # output view AND a full get_tree can TRANSIENTLY miss a live window
+            # during a monitor hotplug / lid open-close / output reconfiguration,
+            # and a destructive prune here permanently drops it with no re-add
+            # (rebuild_from_marks only runs at startup). Observed fallout: herdr
+            # session windows vanished from tracking, so clicking a session in the
+            # panel launched a DUPLICATE instead of focusing the existing window,
+            # and the bar lost its workspace buttons (tracking collapsed to ~1
+            # window). A window absent from the tree is simply not shown until it
+            # reappears — no deletion required.
+            logger.debug(
+                "Omitting %d tracked bound window(s) absent from the active-output "
+                "view this snapshot (not pruning; window::close is the authoritative "
+                "remover): %s",
+                len(set(stale_bound_window_ids)),
+                sorted(set(stale_bound_window_ids)),
             )
-            for stale_window_id in stale_ids:
-                try:
-                    await self.state_manager.remove_window(stale_window_id)
-                except Exception as exc:
-                    logger.debug("Failed to prune stale window %s: %s", stale_window_id, exc)
 
         outputs = self._project_outputs_from_tracked_windows(outputs, tracked_window_list)
 

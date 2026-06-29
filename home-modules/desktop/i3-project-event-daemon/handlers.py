@@ -128,7 +128,7 @@ async def _record_trace_event_by_id(
 # Feature 123: Window Tree Cache Invalidation Helper
 # ============================================================================
 
-async def _invalidate_cache_and_notify(ipc_server, event_type: str) -> None:
+async def _invalidate_cache_and_notify(ipc_server, event_type: str, *, invalidate_tree: bool = True) -> None:
     """Invalidate window tree cache and notify state change subscribers.
 
     Feature 123: Called by event handlers to trigger monitoring panel updates
@@ -137,13 +137,23 @@ async def _invalidate_cache_and_notify(ipc_server, event_type: str) -> None:
     Args:
         ipc_server: IPC server instance (may be None during daemon startup)
         event_type: Type of event that triggered the invalidation (for logging)
+        invalidate_tree: Whether to drop the window-tree cache. Pure FOCUS events
+            (window::focus / workspace::focus) change no tree STRUCTURE — only
+            which window is focused — yet they are the highest-frequency events,
+            so invalidating on them kept the 15s tree cache permanently cold and
+            forced a full multi-IPC rebuild on the next structural event. Pass
+            False for focus events: the snapshot stamps `focused` from the
+            authoritative state.currently_focused_window, so a warm cache cannot
+            make the focus flag stale.
     """
     if ipc_server is None:
         return
 
     try:
         # Invalidate the window tree cache so next query gets fresh data
-        ipc_server.invalidate_window_tree_cache()
+        # (skipped for pure-focus events that don't alter tree structure).
+        if invalidate_tree:
+            ipc_server.invalidate_window_tree_cache()
 
         # Notify any subscribed monitoring panel instances without blocking the
         # Sway event handler path.
@@ -2009,7 +2019,7 @@ async def on_window_focus(
             # Note: event_buffer.add_event() broadcasts via broadcast_event_entry()
 
         # Feature 123: Invalidate window tree cache and notify subscribers
-        await _invalidate_cache_and_notify(ipc_server, "window::focus")
+        await _invalidate_cache_and_notify(ipc_server, "window::focus", invalidate_tree=False)
 
 
 async def on_window_move(
@@ -2366,7 +2376,7 @@ async def on_workspace_focus(
         logger.error(f"Error handling workspace::focus event: {e}")
         await state_manager.increment_error_count()
     finally:
-        await _invalidate_cache_and_notify(ipc_server, "workspace::focus")
+        await _invalidate_cache_and_notify(ipc_server, "workspace::focus", invalidate_tree=False)
 
 
 # ============================================================================
@@ -2415,6 +2425,23 @@ async def on_output(
                     logger.info(f"[Feature 102] Output {diff.output_name} disconnected")
                 elif diff.event_type == OutputEventType.PROFILE_CHANGED:
                     logger.info(f"[Feature 102] Output {diff.output_name} profile changed: {diff.changed_properties}")
+
+        # Coalesce no-op / duplicate output events. Sway emits several `output`
+        # events for a single logical change, and the Samsung 4K TV's adaptive-
+        # refresh / VRR fires them repeatedly while video plays (e.g. a hovered
+        # YouTube thumbnail preview) — none of which alter resolution, scale,
+        # position, transform or active state, so detect_change reports them as
+        # UNSPECIFIED-only. Doing the full re-query + window-tree-cache invalidation
+        # + dashboard notify on each one storms the UI (observed ~4-5 snapshot
+        # rebuilds/sec, hundreds per minute) and reads as constant flicker/"signals"
+        # while hovering. Only do that work when an actual connect / disconnect /
+        # profile change occurred. detect_change has already refreshed its cache
+        # above, so the next real change is still diffed correctly. (If the service
+        # is somehow unavailable we fall through and do the full work, unchanged.)
+        if output_service and all(
+            diff.event_type == OutputEventType.UNSPECIFIED for diff in output_diffs
+        ):
+            return
 
         # Re-query monitor/output configuration
         outputs = await conn.get_outputs()

@@ -229,7 +229,11 @@ class WorkspaceTracker:
         current_window_ids = set()
 
         def collect_window_ids(con):
-            if con.window:
+            # Native Wayland windows have con.window == None (only X11 windows set
+            # it); they expose app_id instead. Gating on con.window alone would omit
+            # every Wayland window from the live set, so all Wayland entries below
+            # would be judged "not in tree" and wrongly purged. Match on either.
+            if con.window or getattr(con, "app_id", None):
                 current_window_ids.add(con.id)
             for child in con.nodes:
                 collect_window_ids(child)
@@ -396,16 +400,19 @@ async def get_window_i3pm_env(window_id: int, pid: Optional[int] = None, window_
         return {}
 
 
-async def get_scratchpad_windows(i3_conn) -> List:
-    """Query i3 IPC for all scratchpad windows.
+def extract_scratchpad_windows(tree) -> List:
+    """Collect scratchpad windows from an ALREADY-FETCHED i3 tree (no extra IPC).
+
+    Use this when the caller already has a get_tree() result in hand to avoid a
+    redundant full-tree round-trip (every Sway query is serialized behind a
+    per-connection lock, so each extra get_tree directly adds snapshot latency).
 
     Args:
-        i3_conn: i3 IPC connection
+        tree: Root container from a prior get_tree()
 
     Returns:
-        List of i3 Con objects in scratchpad
+        List of i3 Con objects in the scratchpad
     """
-    tree = await i3_conn.get_tree()
     scratchpad_windows = []
 
     def find_scratchpad(con):
@@ -422,6 +429,19 @@ async def get_scratchpad_windows(i3_conn) -> List:
     find_scratchpad(tree)
 
     return scratchpad_windows
+
+
+async def get_scratchpad_windows(i3_conn) -> List:
+    """Query i3 IPC for all scratchpad windows.
+
+    Args:
+        i3_conn: i3 IPC connection
+
+    Returns:
+        List of i3 Con objects in scratchpad
+    """
+    tree = await i3_conn.get_tree()
+    return extract_scratchpad_windows(tree)
 
 
 async def validate_workspace_exists(i3_conn, workspace_number: int) -> bool:

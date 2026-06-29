@@ -617,8 +617,11 @@ class ResilientI3Connection:
         async def collect_windows(container: aio.Con) -> None:
             nonlocal scanned_count
 
-            # Check if this is a window (has window_id)
-            if container.window:
+            # Check if this is a window. Native Wayland windows have
+            # container.window == None (only X11/XWayland set it) and expose app_id
+            # instead; gating on container.window alone skips every Wayland window
+            # from the startup mark scan (the rest of this fn already uses container.id).
+            if container.window or getattr(container, "app_id", None):
                 scanned_count += 1
 
                 # Skip windows that already have project marks
@@ -722,30 +725,39 @@ class ResilientI3Connection:
             # before we mark the next window (prevents race conditions during startup scan)
             await asyncio.sleep(0.05)  # 50ms
 
-            # Add to state tracking
-            window_info = WindowInfo(
-                window_id=container.window,
-                con_id=container.id,
-                window_class=window_class,  # Feature 045: Already computed above
-                window_title=container.name or "",
-                window_instance=container.window_instance or "",
-                app_identifier=window_class,  # Feature 045: Use computed window_class
-                project=project_name,
-                marks=([mark, f"ctx:{context_key}"] if context_key else [mark]) + list(container.marks),
-                scope="global" if project_name == "global" else ("scoped" if project_name else "global"),
-                workspace=container.workspace().name if container.workspace() else "",
-                output=(
-                    container.workspace().ipc_data.get("output", "")
-                    if container.workspace()
-                    else ""
-                ),
-                is_floating=container.floating == "user_on",
-                created=datetime.now(),
-                context_key=context_key,
-            )
-
-            await self.state_manager.add_window(window_info)
-            marked_count += 1
+            # Add to state tracking. Key by container.id (con.id) like every other
+            # path — NOT container.window, which is None for native Wayland windows
+            # (WindowInfo.__post_init__ raises on window_id<=0/None). Guard per
+            # window so one bad container can't abort the rest of the startup scan.
+            try:
+                window_info = WindowInfo(
+                    window_id=container.id,
+                    con_id=container.id,
+                    window_class=window_class,  # Feature 045: Already computed above
+                    window_title=container.name or "",
+                    window_instance=container.window_instance or "",
+                    app_identifier=window_class,  # Feature 045: Use computed window_class
+                    project=project_name,
+                    marks=([mark, f"ctx:{context_key}"] if context_key else [mark]) + list(container.marks),
+                    scope="global" if project_name == "global" else ("scoped" if project_name else "global"),
+                    workspace=container.workspace().name if container.workspace() else "",
+                    output=(
+                        container.workspace().ipc_data.get("output", "")
+                        if container.workspace()
+                        else ""
+                    ),
+                    is_floating=container.floating == "user_on",
+                    created=datetime.now(),
+                    context_key=context_key,
+                )
+                await self.state_manager.add_window(window_info)
+                marked_count += 1
+            except Exception as exc:
+                logger.warning(
+                    "Startup scan: failed to track window con_id=%s (%s); continuing: %s",
+                    getattr(container, "id", "?"), window_class, exc,
+                )
+                continue
 
         logger.info(f"Startup scan complete: marked {marked_count} windows out of {scanned_count} scanned")
 
