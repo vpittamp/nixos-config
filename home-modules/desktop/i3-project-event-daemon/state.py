@@ -234,152 +234,233 @@ class StateManager:
             else:
                 logger.warning(f"Attempted to remove non-existent workspace {name}")
 
+    # Fields the live tree is authoritative for and that reconcile may refresh on
+    # an existing entry. Everything else (project/scope/correlation_*/terminal_*/
+    # execution/connection/context/created/last_focus) is daemon-managed and is
+    # NEVER clobbered by reconcile — only set when a window is first ADDED.
+    _RECONCILE_TREE_FIELDS = ("workspace", "output", "is_floating", "marks", "window_title")
+
+    def _window_info_from_marked_container(self, container: aio.Con) -> Optional["WindowInfo"]:
+        """Build a WindowInfo from a marked tree container, or None if unbuildable.
+
+        No locking and no window_map mutation — pure construction (may read
+        /proc/<pid>/environ). Shared by rebuild_from_marks and reconcile_from_tree
+        so both produce identical entries. Caller must have already confirmed the
+        container carries a scoped:/global: mark.
+        """
+        try:
+            project_marks = [
+                mark for mark in container.marks if mark.startswith("scoped:") or mark.startswith("global:")
+            ]
+            if not (project_marks and container.id):
+                return None
+            tracked_window_id = int(container.id)
+
+            # Feature 045 parity: native Wayland windows only expose app_id/con_id.
+            window_class = (
+                getattr(container, "app_id", None)
+                or getattr(container, "window_class", None)
+                or "unknown"
+            )
+
+            window_env = None
+            pid = getattr(container, "pid", None)
+            if pid:
+                try:
+                    window_env = parse_window_environment(read_process_environ(int(pid)))
+                except (PermissionError, FileNotFoundError, ProcessLookupError, ValueError):
+                    window_env = None
+
+            # Feature 101: Use centralized mark parser against the tracked con_id.
+            project_name = extract_project_from_mark(
+                project_marks[0], tracked_window_id
+            )
+            raw_context_key = next(
+                (
+                    str(mark).split("ctx:", 1)[1]
+                    for mark in container.marks
+                    if str(mark).startswith("ctx:")
+                ),
+                "",
+            )
+            context_key = canonicalize_context_key(
+                raw_context_key,
+                project_name=project_name,
+            )
+            parsed_connection_key = str(window_env.connection_key or "").strip() if window_env else ""
+            parsed_execution_mode = ""
+            if parsed_connection_key:
+                parsed_execution_mode = (
+                    "local"
+                    if parsed_connection_key.startswith("local@")
+                    else "ssh"
+                )
+            if not parsed_execution_mode and "i3pm_exec:ssh" in container.marks:
+                parsed_execution_mode = "ssh"
+            parsed_target_host = target_host_from_connection_key(parsed_connection_key)
+
+            from datetime import datetime
+
+            workspace = container.workspace()
+            window_info = WindowInfo(
+                window_id=tracked_window_id,
+                con_id=container.id,
+                window_class=window_class,
+                window_title=container.name or "",
+                window_instance=container.window_instance or "",
+                app_identifier=(
+                    window_env.app_name
+                    if window_env and window_env.app_name
+                    else window_class
+                ),
+                project=project_name,
+                marks=list(container.marks),
+                scope=(
+                    window_env.scope
+                    if window_env and window_env.scope in {"scoped", "global"}
+                    else ("global" if project_name == "global" else ("scoped" if project_name else "global"))
+                ),
+                workspace=workspace.name if workspace else "",
+                output=(
+                    workspace.ipc_data.get("output", "")
+                    if workspace and getattr(workspace, "ipc_data", None)
+                    else ""
+                ),
+                is_floating=container.floating == "user_on",
+                created=datetime.now(),
+                terminal_anchor_id=(
+                    window_env.terminal_anchor_id
+                    if window_env and window_env.terminal_anchor_id
+                    else None
+                ),
+                terminal_role=(
+                    str(window_env.terminal_role or "")
+                    if window_env and str(window_env.terminal_role or "").strip()
+                    else ""
+                ),
+                tmux_session_name=(
+                    str(window_env.tmux_session_name or "")
+                    if window_env and str(window_env.tmux_session_name or "").strip()
+                    else ""
+                ),
+                execution_mode=(
+                    parsed_execution_mode
+                    or (
+                        "ssh"
+                        if window_env and str(window_env.connection_key or "").strip() and not str(window_env.connection_key or "").startswith("local@")
+                        else "local"
+                    )
+                ),
+                connection_key=(
+                    str(window_env.connection_key or "")
+                    if window_env and str(window_env.connection_key or "").strip()
+                    else parsed_connection_key
+                ),
+                context_key=(
+                    str(window_env.context_key or "")
+                    if window_env and str(window_env.context_key or "").strip()
+                    else context_key
+                ),
+                remote_enabled=bool(
+                    (window_env and str(window_env.connection_key or "").strip() and not str(window_env.connection_key or "").startswith("local@"))
+                    or parsed_execution_mode == "ssh"
+                    or bool(parsed_target_host and parsed_execution_mode == "ssh")
+                ),
+            )
+            _normalize_window_runtime(window_info)
+            return window_info
+        except Exception as exc:
+            logger.warning(
+                "Failed to build WindowInfo from marked container %s: %s",
+                getattr(container, "id", "?"), exc,
+            )
+            return None
+
+    def _scan_marked_into_map(self, tree: aio.Con, *, allow_subtract: bool) -> Dict[str, int]:
+        """Walk the tree and reconcile window_map against marked windows.
+
+        Caller MUST hold self._lock. ADDs marked windows missing from the map,
+        refreshes only _RECONCILE_TREE_FIELDS on existing entries (never clobbering
+        daemon-managed metadata), and — only when allow_subtract — removes tracked
+        entries no longer present anywhere in the tree. Returns counts.
+        """
+        seen: set = set()
+        added = 0
+        updated = 0
+        removed = 0
+
+        def scan(container: aio.Con) -> None:
+            nonlocal added, updated
+            project_marks = [
+                mark for mark in container.marks if mark.startswith("scoped:") or mark.startswith("global:")
+            ]
+            if project_marks and container.id:
+                cid = int(container.id)
+                seen.add(cid)
+                existing = self.state.window_map.get(cid)
+                if existing is None:
+                    info = self._window_info_from_marked_container(container)
+                    if info is not None:
+                        self.state.window_map[cid] = info
+                        added += 1
+                else:
+                    workspace = container.workspace()
+                    existing.workspace = workspace.name if workspace else existing.workspace
+                    existing.output = (
+                        workspace.ipc_data.get("output", "")
+                        if workspace and getattr(workspace, "ipc_data", None)
+                        else existing.output
+                    )
+                    existing.is_floating = container.floating == "user_on"
+                    existing.marks = list(container.marks)
+                    if container.name:
+                        existing.window_title = container.name
+                    updated += 1
+            for child in container.nodes + container.floating_nodes:
+                scan(child)
+
+        scan(tree)
+
+        if allow_subtract:
+            for cid in [c for c in self.state.window_map.keys() if c not in seen]:
+                self.state.window_map.pop(cid, None)
+                removed += 1
+
+        return {"added": added, "updated": updated, "removed": removed, "seen": len(seen)}
+
     async def rebuild_from_marks(self, tree: aio.Con) -> None:
         """Rebuild window_map from i3 tree by scanning for project marks.
 
-        This is used during daemon startup/reconnection to restore state from marks.
+        Used during daemon startup/reconnection to restore state from marks:
+        clear then re-add every marked window.
 
         Args:
             tree: Root container from i3 GET_TREE (async)
         """
         async with self._lock:
-            # Clear existing state
             self.state.window_map.clear()
-            count = 0
+            stats = self._scan_marked_into_map(tree, allow_subtract=False)
+        logger.info(f"Rebuilt state: found {stats['added']} windows with project marks")
 
-            # Recursively scan tree for windows with project marks
-            def scan_container(container: aio.Con) -> None:
-                nonlocal count
+    async def reconcile_from_tree(self, tree: aio.Con, *, allow_subtract: bool = False) -> Dict[str, int]:
+        """Non-destructive reconcile of window_map against the live tree.
 
-                project_marks = [
-                    mark for mark in container.marks if mark.startswith("scoped:") or mark.startswith("global:")
-                ]
-                if project_marks and container.id:
-                    tracked_window_id = int(container.id)
-
-                    # Feature 045 parity: native Wayland windows only expose app_id/con_id.
-                    window_class = (
-                        getattr(container, "app_id", None)
-                        or getattr(container, "window_class", None)
-                        or "unknown"
-                    )
-
-                    window_env = None
-                    pid = getattr(container, "pid", None)
-                    if pid:
-                        try:
-                            window_env = parse_window_environment(read_process_environ(int(pid)))
-                        except (PermissionError, FileNotFoundError, ProcessLookupError, ValueError):
-                            window_env = None
-
-                    # Feature 101: Use centralized mark parser against the tracked con_id.
-                    project_name = extract_project_from_mark(
-                        project_marks[0], tracked_window_id
-                    )
-                    raw_context_key = next(
-                        (
-                            str(mark).split("ctx:", 1)[1]
-                            for mark in container.marks
-                            if str(mark).startswith("ctx:")
-                        ),
-                        "",
-                    )
-                    context_key = canonicalize_context_key(
-                        raw_context_key,
-                        project_name=project_name,
-                    )
-                    parsed_connection_key = str(window_env.connection_key or "").strip() if window_env else ""
-                    parsed_execution_mode = ""
-                    if parsed_connection_key:
-                        parsed_execution_mode = (
-                            "local"
-                            if parsed_connection_key.startswith("local@")
-                            else "ssh"
-                        )
-                    if not parsed_execution_mode and "i3pm_exec:ssh" in container.marks:
-                        parsed_execution_mode = "ssh"
-                    parsed_target_host = target_host_from_connection_key(parsed_connection_key)
-
-                    # Create WindowInfo
-                    from datetime import datetime
-
-                    workspace = container.workspace()
-                    window_info = WindowInfo(
-                        window_id=tracked_window_id,
-                        con_id=container.id,
-                        window_class=window_class,
-                        window_title=container.name or "",
-                        window_instance=container.window_instance or "",
-                        app_identifier=(
-                            window_env.app_name
-                            if window_env and window_env.app_name
-                            else window_class
-                        ),
-                        project=project_name,
-                        marks=list(container.marks),
-                        scope=(
-                            window_env.scope
-                            if window_env and window_env.scope in {"scoped", "global"}
-                            else ("global" if project_name == "global" else ("scoped" if project_name else "global"))
-                        ),
-                        workspace=workspace.name if workspace else "",
-                        output=(
-                            workspace.ipc_data.get("output", "")
-                            if workspace and getattr(workspace, "ipc_data", None)
-                            else ""
-                        ),
-                        is_floating=container.floating == "user_on",
-                        created=datetime.now(),
-                        terminal_anchor_id=(
-                            window_env.terminal_anchor_id
-                            if window_env and window_env.terminal_anchor_id
-                            else None
-                        ),
-                        terminal_role=(
-                            str(window_env.terminal_role or "")
-                            if window_env and str(window_env.terminal_role or "").strip()
-                            else ""
-                        ),
-                        tmux_session_name=(
-                            str(window_env.tmux_session_name or "")
-                            if window_env and str(window_env.tmux_session_name or "").strip()
-                            else ""
-                        ),
-                        execution_mode=(
-                            parsed_execution_mode
-                            or (
-                                "ssh"
-                                if window_env and str(window_env.connection_key or "").strip() and not str(window_env.connection_key or "").startswith("local@")
-                                else "local"
-                            )
-                        ),
-                        connection_key=(
-                            str(window_env.connection_key or "")
-                            if window_env and str(window_env.connection_key or "").strip()
-                            else parsed_connection_key
-                        ),
-                        context_key=(
-                            str(window_env.context_key or "")
-                            if window_env and str(window_env.context_key or "").strip()
-                            else context_key
-                        ),
-                        remote_enabled=bool(
-                            (window_env and str(window_env.connection_key or "").strip() and not str(window_env.connection_key or "").startswith("local@"))
-                            or parsed_execution_mode == "ssh"
-                            or bool(parsed_target_host and parsed_execution_mode == "ssh")
-                        ),
-                    )
-                    _normalize_window_runtime(window_info)
-
-                    self.state.window_map[tracked_window_id] = window_info
-                    count += 1
-
-                # Recursively scan children
-                for child in container.nodes + container.floating_nodes:
-                    scan_container(child)
-
-            scan_container(tree)
-            logger.info(f"Rebuilt state: found {count} windows with project marks")
+        ADDs marked windows missing from the map (self-heals a window dropped by a
+        missed/misfired event or whose window::new was lost — without waiting for a
+        daemon restart) and refreshes tree-authoritative fields on existing entries.
+        It does NOT clear the map and NOT clobber daemon-managed metadata. Removal
+        is gated behind allow_subtract (default off) and intended to be enabled only
+        after a drift gauge proves it safe; even then the caller must pass the FULL
+        raw tree (never the active-output-filtered view).
+        """
+        async with self._lock:
+            stats = self._scan_marked_into_map(tree, allow_subtract=allow_subtract)
+        if stats["added"] or stats["removed"]:
+            logger.info(
+                "reconcile_from_tree: +%d added, ~%d refreshed, -%d removed (%d marked in tree)",
+                stats["added"], stats["updated"], stats["removed"], stats["seen"],
+            )
+        return stats
 
     async def increment_event_count(self) -> None:
         """Increment the total event counter."""

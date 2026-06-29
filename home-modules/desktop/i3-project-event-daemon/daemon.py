@@ -813,6 +813,34 @@ class I3ProjectDaemon:
             socket_validation_task = asyncio.create_task(run_socket_validation())
             logger.info("Socket validation task started (30s interval)")
 
+        # Window-map self-heal: periodically reconcile the tracked window_map
+        # against the live Sway tree. This is ADDITIVE (re-adds marked windows
+        # missing from the map because a window::new/move was missed or an entry
+        # was wrongly dropped, and refreshes their workspace/output) — it never
+        # clears the map and never clobbers daemon-managed metadata, and removal
+        # stays OFF until a drift gauge proves it safe. Before this, window_map
+        # only reconciled with reality at startup/reconnect, so any drift
+        # persisted until a daemon restart. The on_output UNSPECIFIED coalescing
+        # already throttles output storms, so a steady 10s cadence is cheap.
+        reconcile_task = None
+        if self.connection and self.state_manager:
+            async def run_window_reconcile():
+                """Periodically self-heal window_map drift against the live tree."""
+                while True:
+                    try:
+                        await asyncio.sleep(10)
+                        conn = self.connection.conn if self.connection else None
+                        if conn and not self.connection.is_shutting_down:
+                            tree = await conn.get_tree()
+                            await self.state_manager.reconcile_from_tree(tree, allow_subtract=False)
+                    except asyncio.CancelledError:
+                        break
+                    except Exception as e:
+                        logger.debug(f"Window reconcile tick failed: {e}")
+
+            reconcile_task = asyncio.create_task(run_window_reconcile())
+            logger.info("Window-map reconcile task started (10s interval, additive-only)")
+
         try:
             # Run i3 event loop (blocks until shutdown)
             if self.connection:
@@ -831,6 +859,15 @@ class I3ProjectDaemon:
                 except asyncio.CancelledError:
                     pass
                 logger.info("Socket validation stopped")
+
+            # Stop window-map reconcile task
+            if reconcile_task:
+                reconcile_task.cancel()
+                try:
+                    await reconcile_task
+                except asyncio.CancelledError:
+                    pass
+                logger.info("Window-map reconcile stopped")
 
             # Stop watchdog thread
             if self.health_monitor:
