@@ -666,8 +666,10 @@ PanelWindow {
             height: 40
             implicitWidth: exposeDictateRow.implicitWidth + 24
             radius: 12
-            color: root.voxtypeClass() === "recording" ? colors.redBg
+            color: root.voxtypeListening() ? colors.redBg
+                : (root.voxtypeClass() === "stopping" ? colors.amberBg
                 : (exposeDictateMouse.containsMouse ? colors.card : colors.cardAlt)
+                )
             border.width: root.voxtypeActive() ? 2 : 1
             border.color: root.voxtypeActive() ? root.voxtypeIconColor()
                 : (exposeDictateMouse.containsMouse ? colors.borderStrong : colors.border)
@@ -687,7 +689,7 @@ PanelWindow {
                     font.pixelSize: 15
 
                     SequentialAnimation on opacity {
-                        running: root.voxtypeClass() === "recording"
+                        running: root.voxtypeListening()
                         loops: Animation.Infinite
                         alwaysRunToEnd: true
                         NumberAnimation { from: 1.0; to: 0.3; duration: 600 }
@@ -696,8 +698,10 @@ PanelWindow {
                 }
 
                 Text {
-                    text: root.voxtypeClass() === "recording" ? "Recording…"
-                        : (root.voxtypeClass() === "transcribing" ? "Transcribing…" : "Dictate")
+                    text: root.voxtypeClass() === "streaming" ? "Streaming…"
+                        : (root.voxtypeClass() === "recording" ? "Recording…"
+                            : (root.voxtypeClass() === "stopping" ? "Stopping…"
+                                : (root.voxtypeClass() === "transcribing" ? "Transcribing…" : "Dictate")))
                     color: root.voxtypeActive() ? root.voxtypeIconColor() : colors.text
                     font.pixelSize: 11
                     font.weight: Font.DemiBold
@@ -711,7 +715,7 @@ PanelWindow {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
                     root.closeExpose();
-                    root.runDetached([runtimeConfig.dictationBin, "toggle"]);
+                    root.runDictationAction("toggle");
                 }
             }
         }

@@ -534,12 +534,16 @@ PanelWindow {
                                             font.weight: Font.Bold
                                         }
 
-                                        MouseArea { id: spaceHostChipMouse; anchors.fill: parent; hoverEnabled: true }
-                                        ToolTip {
-                                            visible: spaceHostChipMouse.containsMouse
-                                            text: (spaceHostChip.hostTok.is_remote ? "remote · " : "local · ") + spaceHostChip.hostTok.label
-                                            delay: 400
-                                        }
+                                        // No hover ToolTip here: a QtQuick.Controls
+                                        // ToolTip is a Popup, and inside this focusable
+                                        // (keyboardFocus OnDemand) panel its overlay
+                                        // grabbed the pointer, flipping containsMouse
+                                        // on/off so the row "pulsated" and ate clicks
+                                        // (needed a double-click to register). The host
+                                        // monogram already shows local/remote at a
+                                        // glance. The previous hover-only MouseArea was
+                                        // also removed so clicks on the chip fall through
+                                        // to the row (focus the space).
                                     }
 
                                     ColumnLayout {
@@ -600,11 +604,14 @@ PanelWindow {
                                     onClicked: root.focusHerdrSpace(space)
                                 }
 
-                                ToolTip {
-                                    visible: spaceMouse.containsMouse && herdrSpaceRow.gitTooltip.length > 0
-                                    text: herdrSpaceRow.gitTooltip
-                                    delay: 500
-                                }
+                                // No hover ToolTip here: a QtQuick.Controls ToolTip is a
+                                // Popup whose overlay grabbed the pointer inside this
+                                // focusable panel, flipping spaceMouse.containsMouse on/off
+                                // so the row "pulsated as if clicked" and ate real clicks
+                                // (focusHerdrSpace only landed on a double-click). The git
+                                // chip in the row already shows the status; the full
+                                // tooltip detail is dropped to keep the row reliably
+                                // clickable.
                             }
                         }
 

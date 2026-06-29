@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Services.SystemTray
 import Quickshell.Wayland
 import Quickshell.Widgets
+import ".." as RootComponents
 
 PanelWindow {
     required property QtObject shellRoot
@@ -201,10 +202,12 @@ PanelWindow {
                         hoverEnabled: true
                     }
 
-                    ToolTip {
-                        visible: daemonHealthMouse.containsMouse
+                    RootComponents.BarTooltip {
+                        anchorWindow: topBarWindow
+                        anchorItem: daemonHealthMouse
+                        active: daemonHealthMouse.containsMouse
                         text: root.daemonHealthTooltip()
-                        delay: 500
+                        colors: topBarWindow.colors
                     }
                 }
 
@@ -318,10 +321,12 @@ PanelWindow {
                         hoverEnabled: true
                     }
 
-                    ToolTip {
-                        visible: diskMouse.containsMouse
+                    RootComponents.BarTooltip {
+                        anchorWindow: topBarWindow
+                        anchorItem: diskMouse
+                        active: diskMouse.containsMouse
                         text: root.systemStatsDiskTooltip()
-                        delay: 400
+                        colors: topBarWindow.colors
                     }
                 }
 
@@ -406,10 +411,12 @@ PanelWindow {
                         hoverEnabled: true
                     }
 
-                    ToolTip {
-                        visible: moonlightMouse.containsMouse
+                    RootComponents.BarTooltip {
+                        anchorWindow: topBarWindow
+                        anchorItem: moonlightMouse
+                        active: moonlightMouse.containsMouse
                         text: root.moonlightChipTooltip()
-                        delay: 400
+                        colors: topBarWindow.colors
                     }
                 }
 
@@ -676,11 +683,11 @@ PanelWindow {
                             font.family: "FiraCode Nerd Font"
                             font.pixelSize: 11
 
-                            // Pulse while recording for a clear "live" cue. alwaysRunToEnd
-                            // makes the sequence finish at opacity 1.0 when recording stops,
+                            // Pulse while listening for a clear "live" cue. alwaysRunToEnd
+                            // makes the sequence finish at opacity 1.0 when listening stops,
                             // so the icon never gets stuck dimmed.
                             SequentialAnimation on opacity {
-                                running: root.voxtypeClass() === "recording"
+                                running: root.voxtypeListening()
                                 loops: Animation.Infinite
                                 alwaysRunToEnd: true
                                 NumberAnimation { from: 1.0; to: 0.3; duration: 600 }
@@ -706,10 +713,10 @@ PanelWindow {
                         cursorShape: Qt.PointingHandCursor
                         onClicked: function (mouse) {
                             if (mouse.button === Qt.RightButton) {
-                                root.runDetached([topBarWindow.runtimeConfig.dictationBin, "cancel"]);
+                                root.runDictationAction("cancel");
                                 return;
                             }
-                            root.runDetached([topBarWindow.runtimeConfig.dictationBin, "toggle"]);
+                            root.runDictationAction("toggle");
                         }
                     }
                 }
@@ -1166,7 +1173,7 @@ PanelWindow {
     PopupWindow {
         visible: root.audioPopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName
         color: "transparent"
-        implicitWidth: 280
+        implicitWidth: 340
         implicitHeight: audioPopupCard.implicitHeight + 16
         anchor.window: topBarWindow
         anchor.item: audioChip
@@ -1176,7 +1183,7 @@ PanelWindow {
 
         Rectangle {
             id: audioPopupCard
-            implicitWidth: 280
+            implicitWidth: 340
             implicitHeight: audioPopupColumn.implicitHeight + 20
             radius: 12
             color: colors.panel
@@ -1276,31 +1283,58 @@ PanelWindow {
                         required property var modelData
                         readonly property var sink: modelData
                         readonly property bool activeSink: root.audioSinkIsActive(sink)
+                        readonly property string sinkKind: root.audioSinkKind(sink)
                         Layout.fillWidth: true
-                        implicitHeight: 34
+                        implicitHeight: 48
                         radius: 8
-                        color: activeSink ? colors.blueBg : colors.cardAlt
+                        color: activeSink ? colors.blueBg : (rowHover.containsMouse ? colors.cardAlt : colors.card)
                         border.color: activeSink ? colors.blue : colors.border
                         border.width: 1
+                        Behavior on color { ColorAnimation { duration: root.fastColorMs } }
 
                         RowLayout {
                             anchors.fill: parent
                             anchors.leftMargin: 10
                             anchors.rightMargin: 10
-                            spacing: 8
+                            spacing: 9
 
-                            Text {
+                            // Selection dot — clear active vs inactive at a glance.
+                            Rectangle {
+                                Layout.alignment: Qt.AlignVCenter
+                                width: 9
+                                height: 9
+                                radius: 5
+                                color: activeSink ? colors.blue : colors.muted
+                                opacity: activeSink ? 1.0 : 0.3
+                            }
+
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                text: root.audioSinkLabel(sink)
-                                color: activeSink ? colors.blue : colors.text
-                                font.pixelSize: 9
-                                font.weight: Font.Medium
-                                elide: Text.ElideRight
+                                spacing: 1
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: root.audioSinkLabel(sink)
+                                    color: activeSink ? colors.blue : colors.text
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    visible: sinkKind !== ""
+                                    text: sinkKind
+                                    color: colors.subtle
+                                    font.pixelSize: 8
+                                    elide: Text.ElideRight
+                                }
                             }
 
                             Text {
+                                Layout.alignment: Qt.AlignVCenter
                                 visible: activeSink
-                                text: "Live"
+                                text: "Active"
                                 color: colors.blue
                                 font.pixelSize: 8
                                 font.weight: Font.DemiBold
@@ -1308,6 +1342,7 @@ PanelWindow {
                         }
 
                         MouseArea {
+                            id: rowHover
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor

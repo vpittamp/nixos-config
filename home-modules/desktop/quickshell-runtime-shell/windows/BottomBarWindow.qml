@@ -4,8 +4,10 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Widgets
+import ".." as RootComponents
 
 PanelWindow {
+    id: bottomBarWindow
     required property QtObject shellRoot
     required property QtObject runtimeConfig
     required property var colors
@@ -61,31 +63,69 @@ PanelWindow {
             spacing: 8
 
             Rectangle {
-                Layout.preferredWidth: Math.max(184, contextTitleText.implicitWidth + contextOutputText.implicitWidth + (contextGitChip.visible ? contextGitText.implicitWidth + 18 : 0) + 40)
+                id: launcherButton
+                readonly property bool hovered: launcherMouse.containsMouse
+                Layout.preferredWidth: Math.min(320, Math.max(198, launcherContextTitle.implicitWidth + contextOutputText.implicitWidth + (contextGitChip.visible ? contextGitText.implicitWidth + 18 : 0) + 92))
                 Layout.fillHeight: true
                 radius: 8
-                color: colors.card
-                border.color: colors.border
+                color: root.launcherVisible ? colors.blue : (hovered ? colors.card : colors.cardAlt)
+                border.color: root.launcherVisible ? colors.blue : (hovered ? colors.borderStrong : colors.border)
                 border.width: 1
+
+                Behavior on color { ColorAnimation { duration: root.fastColorMs } }
+                Behavior on border.color { ColorAnimation { duration: root.fastColorMs } }
 
                 RowLayout {
                     anchors.fill: parent
                     anchors.leftMargin: 8
                     anchors.rightMargin: 8
-                    spacing: 6
+                    spacing: 8
 
                     Rectangle {
-                        width: 7
-                        height: 7
-                        radius: 4
-                        color: root.currentContextExecutionMode() === "ssh" ? colors.teal : colors.accent
+                        width: 26
+                        height: 26
+                        radius: 7
+                        color: root.launcherVisible ? colors.bg : (launcherButton.hovered ? colors.blueWash : colors.card)
+                        border.color: root.launcherVisible ? colors.bg : (launcherButton.hovered ? colors.blueMuted : colors.border)
+                        border.width: 1
+
+                        Grid {
+                            anchors.centerIn: parent
+                            columns: 2
+                            rows: 2
+                            spacing: 3
+
+                            Repeater {
+                                model: 4
+
+                                delegate: Rectangle {
+                                    width: 6
+                                    height: 6
+                                    radius: 2
+                                    color: root.launcherVisible ? colors.blue : (root.currentContextExecutionMode() === "ssh" ? colors.teal : colors.accent)
+                                }
+                            }
+                        }
                     }
 
                     Text {
-                        id: contextTitleText
+                        text: "Launch"
+                        color: root.launcherVisible ? colors.bg : colors.text
+                        font.pixelSize: 12
+                        font.weight: Font.DemiBold
+                    }
+
+                    Rectangle {
+                        width: 1
+                        height: 18
+                        color: root.launcherVisible ? Qt.rgba(0.05, 0.07, 0.09, 0.45) : colors.border
+                    }
+
+                    Text {
+                        id: launcherContextTitle
                         Layout.fillWidth: true
                         text: root.currentContextTitle()
-                        color: colors.text
+                        color: root.launcherVisible ? colors.bg : colors.textDim
                         font.pixelSize: 12
                         font.weight: Font.DemiBold
                         elide: Text.ElideRight
@@ -114,23 +154,28 @@ PanelWindow {
                     Text {
                         id: contextOutputText
                         text: barOutputName || root.modeLabel((dashboard.active_context || {}).execution_mode)
-                        color: colors.muted
+                        color: root.launcherVisible ? colors.bg : colors.muted
                         font.pixelSize: 10
                         elide: Text.ElideRight
                     }
                 }
 
                 MouseArea {
-                    id: contextMouse
+                    id: launcherMouse
                     anchors.fill: parent
                     hoverEnabled: true
-                    acceptedButtons: Qt.NoButton
+                    acceptedButtons: Qt.LeftButton
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.toggleLauncher()
                 }
 
-                ToolTip {
-                    visible: contextMouse.containsMouse && root.currentContextGitTooltip().length > 0
-                    text: root.currentContextGitTooltip()
-                    delay: 500
+                RootComponents.BarTooltip {
+                    anchorWindow: bottomBarWindow
+                    anchorItem: launcherMouse
+                    above: true
+                    active: launcherMouse.containsMouse
+                    text: root.currentContextGitTooltip().length > 0 ? ("Open launcher (Meta+D)\n" + root.currentContextGitTooltip()) : "Open launcher (Meta+D)"
+                    colors: bottomBarWindow.colors
                 }
             }
 
@@ -250,8 +295,10 @@ PanelWindow {
                 Layout.fillHeight: true
                 Layout.alignment: Qt.AlignVCenter
                 radius: 10
-                color: root.voxtypeClass() === "recording" ? colors.redBg
+                color: root.voxtypeListening() ? colors.redBg
+                    : (root.voxtypeClass() === "stopping" ? colors.amberBg
                     : (dictateMouse.containsMouse ? colors.card : colors.cardAlt)
+                    )
                 border.width: root.voxtypeActive() ? 2 : 1
                 border.color: root.voxtypeActive() ? root.voxtypeIconColor()
                     : (dictateMouse.containsMouse ? colors.borderStrong : colors.border)
@@ -271,10 +318,10 @@ PanelWindow {
                         font.family: "FiraCode Nerd Font"
                         font.pixelSize: 15
 
-                        // Pulse while recording. alwaysRunToEnd leaves opacity at
+                        // Pulse while listening. alwaysRunToEnd leaves opacity at
                         // 1.0 when it stops, so the icon never gets stuck dimmed.
                         SequentialAnimation on opacity {
-                            running: root.voxtypeClass() === "recording"
+                            running: root.voxtypeListening()
                             loops: Animation.Infinite
                             alwaysRunToEnd: true
                             NumberAnimation { from: 1.0; to: 0.3; duration: 600 }
@@ -283,8 +330,10 @@ PanelWindow {
                     }
 
                     Text {
-                        text: root.voxtypeClass() === "recording" ? "Recording…"
-                            : (root.voxtypeClass() === "transcribing" ? "Transcribing…" : "Dictate")
+                        text: root.voxtypeClass() === "streaming" ? "Streaming…"
+                            : (root.voxtypeClass() === "recording" ? "Recording…"
+                                : (root.voxtypeClass() === "stopping" ? "Stopping…"
+                                    : (root.voxtypeClass() === "transcribing" ? "Transcribing…" : "Dictate")))
                         color: root.voxtypeActive() ? root.voxtypeIconColor() : colors.text
                         font.pixelSize: 11
                         font.weight: Font.DemiBold
@@ -296,7 +345,7 @@ PanelWindow {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.runDetached([runtimeConfig.dictationBin, "toggle"])
+                    onClicked: root.runDictationAction("toggle")
                 }
             }
 

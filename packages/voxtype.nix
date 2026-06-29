@@ -1,21 +1,23 @@
 # Voxtype - Push-to-talk speech-to-text for Wayland
 # https://github.com/peteonrails/voxtype
-# Rust-based, GPU-accelerated (Vulkan), injects text via wtype/dotool/clipboard
+# Rust-based speech-to-text, injects text via wtype/dotool/clipboard
 # Designed for Wayland compositors - works in tmux/CLI sessions
 { lib, stdenv, fetchurl, autoPatchelfHook, makeWrapper,
   vulkan-loader, alsa-lib, pipewire,
-  wtype, dotool, wl-clipboard }:
+  wtype, dotool, wl-clipboard,
+  variant ? "vulkan",
+  hash ? "sha256-ZGJtB/Oq4oJd24LqZoePcIyKggo/0+znbZn/mEd/Ey0=" }:
 
 let
   pname = "voxtype";
-  version = "0.6.3";
+  version = "0.7.5";
 in
 stdenv.mkDerivation {
   inherit pname version;
 
   src = fetchurl {
-    url = "https://github.com/peteonrails/voxtype/releases/download/v${version}/voxtype-${version}-linux-x86_64-vulkan";
-    sha256 = "sha256-WvRpADps5OiiRxZ1dYdzDOwEMeaiz18J/HhkpUJBzEk=";
+    url = "https://github.com/peteonrails/voxtype/releases/download/v${version}/voxtype-${version}-linux-x86_64-${variant}";
+    sha256 = hash;
   };
 
   # Binary download, no unpack needed
@@ -30,7 +32,7 @@ stdenv.mkDerivation {
     # C++ runtime (libstdc++.so.6, libgcc_s.so.1)
     stdenv.cc.cc.lib
 
-    # GPU-accelerated inference
+    # GPU-accelerated Whisper inference.
     vulkan-loader
 
     # Audio capture
@@ -43,12 +45,13 @@ stdenv.mkDerivation {
 
     install -Dm755 $src $out/bin/voxtype
 
-    # Wrap with runtime deps for text injection chain:
-    # 1. wtype (native Wayland text input)
-    # 2. dotool (fallback input automation)
-    # 3. wl-clipboard (clipboard paste fallback)
+    # Wrap with runtime deps for text injection chain. The --run hook prepends
+    # a runtime HOME-relative path so the Home Manager dictation module can
+    # install a tiny wtype tap that persists dictated text before delegating to
+    # the real wtype.
     wrapProgram $out/bin/voxtype \
-      --prefix PATH : ${lib.makeBinPath [ wtype dotool wl-clipboard ]}
+      --prefix PATH : ${lib.makeBinPath [ wtype dotool wl-clipboard ]} \
+      --run 'if [ -n "''${HOME:-}" ] && [ -d "$HOME/.local/share/voxtype/bin" ]; then export PATH="$HOME/.local/share/voxtype/bin:$PATH"; fi'
 
     runHook postInstall
   '';

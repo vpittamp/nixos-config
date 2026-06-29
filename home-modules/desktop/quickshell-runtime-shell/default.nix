@@ -46,6 +46,7 @@ let
     cp -r ${./controllers} "$out/controllers"
     cp -r ${./windows} "$out/windows"
     cp ${./SessionRow.qml} "$out/SessionRow.qml"
+    cp ${./BarTooltip.qml} "$out/BarTooltip.qml"
     cp ${./NotificationToast.qml} "$out/NotificationToast.qml"
     cp ${./NotificationRailCard.qml} "$out/NotificationRailCard.qml"
     cp ${./AssistantPanel.qml} "$out/AssistantPanel.qml"

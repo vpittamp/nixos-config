@@ -458,11 +458,14 @@ in
       # Focus behavior - must be in config block to override home-manager defaults
       # (extraConfig settings come after home-manager defaults and don't override them)
       focus = {
-        # Follow the mouse so that pointer-driven actions (notably the swipe-up
-        # window exposé and other Quickshell overlays) appear on the monitor the
-        # cursor is on. Wayland exposes no passive cursor-output query, so making
-        # hover focus the output is what lets "open where my mouse is" work.
-        followMouse = "yes";
+        # Focus only changes on mouse click, not hover. follow-mouse ("yes") was
+        # tried in commit fecea752 to make pointer-driven overlays (swipe-up
+        # exposé, launcher) open on the cursor's monitor, but with the Quickshell
+        # Top-layer bars it caused hover "pulsation": the cursor over a bar drove
+        # rapid pointer enter/leave churn, flipping each chip's containsMouse on
+        # and off so buttons flickered "as if clicked" and ate real clicks.
+        # Reverted to "no".
+        followMouse = "no";
         mouseWarping = "output";  # Move cursor to output center on keyboard focus change
       };
 

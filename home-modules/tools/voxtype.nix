@@ -1,7 +1,9 @@
 # Voxtype - toggle speech-to-text configuration
 # Uses evdev hotkey (KEY_COMPOSE = ThinkPad Copilot key, remapped F23->Compose
-# by keyd; see modules/services/keyd.nix). Output mode is "type" — injects text
-# via wtype directly, no clipboard.
+# by keyd; see modules/services/keyd.nix). Output mode is "type" and still
+# injects through wtype, but the wtype path is tapped so every dictated text run
+# is recoverable from ~/.local/share/voxtype/transcripts/latest.txt and, after a
+# short idle debounce, the Wayland clipboard / Elephant history.
 #
 # Triggering: the daemon runs in TOGGLE mode (`--toggle`), so every trigger
 # behaves the same — press to start, press to stop:
@@ -14,16 +16,134 @@
 # recording holds until you stop it.
 #
 # Accuracy notes:
-# - whisper.cpp runs GPU-accelerated on the Intel iGPU (Vulkan); the daemon log
-#   shows `whisper_backend_init_gpu: using Vulkan0 backend`. That headroom lets
-#   us run large-v3-turbo (~4% WER) instead of base.en (~8% WER) at low latency.
+# - The default packaged binary is the Vulkan build, so whisper.cpp runs
+#   GPU-accelerated on the Intel iGPU. That headroom lets us run
+#   large-v3-turbo instead of a smaller/faster but less accurate model.
+# - The model file itself is runtime data managed by voxtype under
+#   ~/.local/share/voxtype/models; only the engine/model selection is
+#   declarative here.
 # - VAD (`--vad`) filters silence before transcription so a held toggle doesn't
-#   feed silence/noise into whisper (fewer hallucinations / spurious words).
-# - The model file itself is a runtime download managed by voxtype
-#   (`voxtype setup --download --model large-v3-turbo`), stored under
-#   ~/.local/share/voxtype/models; only the selection is declarative here.
+#   feed silence/noise into the engine (fewer hallucinations / spurious words).
 # - [text].replacements deterministically fixes domain terms whisper mis-hears.
-{ ... }:
+{ pkgs, ... }:
+let
+  dictationSessionScript = pkgs.writeShellScriptBin "dictation-session" ''
+    set -euo pipefail
+
+    cmd="''${1:-}"
+    runtime_base="''${XDG_RUNTIME_DIR:-/tmp}"
+    state_dir="$runtime_base/voxtype"
+    data_home="''${XDG_DATA_HOME:-$HOME/.local/share}"
+    transcript_dir="$data_home/voxtype/transcripts"
+    current_file="$state_dir/transcript-current.txt"
+    seq_file="$state_dir/transcript-seq"
+    finalized_seq_file="$state_dir/transcript-finalized-seq"
+    latest_file="$transcript_dir/latest.txt"
+    history_file="$transcript_dir/history.jsonl"
+
+    mkdir -p "$state_dir" "$transcript_dir"
+
+    read_seq() {
+      if [ -f "$seq_file" ]; then
+        read -r seq < "$seq_file" || seq=0
+      else
+        seq=0
+      fi
+      case "$seq" in
+        ""|*[!0-9]*) seq=0 ;;
+      esac
+      printf '%s' "$seq"
+    }
+
+    write_latest() {
+      [ -f "$current_file" ] || : > "$current_file"
+      ${pkgs.coreutils}/bin/cp "$current_file" "$latest_file"
+    }
+
+    finalize() {
+      [ -s "$current_file" ] || exit 0
+
+      seq="$(read_seq)"
+      last_finalized=""
+      if [ -f "$finalized_seq_file" ]; then
+        read -r last_finalized < "$finalized_seq_file" || last_finalized=""
+      fi
+      if [ "$last_finalized" = "$seq" ]; then
+        exit 0
+      fi
+
+      text="$(${pkgs.coreutils}/bin/cat "$current_file")"
+      printf '%s' "$text" > "$latest_file"
+      printf '%s\n' "$seq" > "$finalized_seq_file"
+
+      if [ -n "''${WAYLAND_DISPLAY:-}" ] || [ -n "''${XDG_RUNTIME_DIR:-}" ]; then
+        printf '%s' "$text" | ${pkgs.wl-clipboard}/bin/wl-copy --type text/plain >/dev/null 2>&1 || true
+      fi
+
+      timestamp="$(${pkgs.coreutils}/bin/date --iso-8601=seconds)"
+      ${pkgs.jq}/bin/jq -cn \
+        --arg timestamp "$timestamp" \
+        --arg text "$text" \
+        '{timestamp: $timestamp, source: "voxtype", text: $text}' >> "$history_file" || true
+    }
+
+    case "$cmd" in
+      start)
+        : > "$current_file"
+        printf '0\n' > "$seq_file"
+        : > "$finalized_seq_file"
+        ;;
+      append)
+        shift || true
+        text="''${1:-}"
+        [ -n "$text" ] || exit 0
+        printf '%s' "$text" >> "$current_file"
+        write_latest
+        seq="$(read_seq)"
+        seq=$((seq + 1))
+        printf '%s\n' "$seq" > "$seq_file"
+        ("$0" finalize-later "$seq" >/dev/null 2>&1 &)
+        ;;
+      finalize-later)
+        expected="''${2:-}"
+        ${pkgs.coreutils}/bin/sleep 2
+        actual="$(read_seq)"
+        [ "$actual" = "$expected" ] || exit 0
+        finalize
+        ;;
+      finalize)
+        finalize
+        ;;
+      *)
+        echo "usage: dictation-session {start|append TEXT|finalize}" >&2
+        exit 2
+        ;;
+    esac
+  '';
+
+  dictationWtypeTap = pkgs.writeShellScriptBin "wtype" ''
+    set -euo pipefail
+
+    text=""
+    capture_next=0
+    for arg in "$@"; do
+      if [ "$capture_next" = 1 ]; then
+        text="$arg"
+        capture_next=0
+        continue
+      fi
+      if [ "$arg" = "--" ]; then
+        capture_next=1
+      fi
+    done
+
+    if [ -n "$text" ]; then
+      ${dictationSessionScript}/bin/dictation-session append "$text" || true
+    fi
+
+    exec ${pkgs.wtype}/bin/wtype "$@"
+  '';
+in
 {
   # Daemon service (declarative — replaces the stale hand-installed unit). The
   # --toggle / --vad behaviour is set here via flags (CLI flags override config).
@@ -45,11 +165,14 @@
   };
 
   xdg.configFile."voxtype/config.toml".text = ''
+    engine = "whisper"
+    state_file = "auto"
+
     [hotkey]
     key = "EVTEST_127"
     # Daemon is launched with --toggle (see systemd service above), which is
-    # authoritative; this value is the inactive fallback.
-    mode = "push_to_talk"
+    # authoritative and keeps external triggers consistent.
+    mode = "toggle"
 
     [audio]
     device = "default"
@@ -59,13 +182,17 @@
     [audio.feedback]
     enabled = true
 
+    [osd]
+    enabled = false
+
     [whisper]
     model = "large-v3-turbo"
     language = "en"
 
     [output]
     mode = "type"
-    fallback_to_clipboard = true
+    driver_order = ["wtype", "clipboard"]
+    pre_recording_command = "${dictationSessionScript}/bin/dictation-session start"
 
     [text]
     # Say "period", "comma", "new line", etc. and get punctuation/newlines.
@@ -100,4 +227,14 @@
     "i 3 pm" = "i3pm"
     "i3 pm" = "i3pm"
   '';
+
+  home.file.".local/bin/dictation-session" = {
+    source = "${dictationSessionScript}/bin/dictation-session";
+    executable = true;
+  };
+
+  home.file.".local/share/voxtype/bin/wtype" = {
+    source = "${dictationWtypeTap}/bin/wtype";
+    executable = true;
+  };
 }

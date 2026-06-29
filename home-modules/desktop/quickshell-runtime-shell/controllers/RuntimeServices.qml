@@ -517,12 +517,12 @@ Item {
         }
     }
 
-    // Live mic-level meter — runs ONLY while voxtype is recording, so the mic is
+    // Live mic-level meter — runs ONLY while voxtype is listening, so the mic is
     // tapped only during dictation. Emits 0-100 per line; resets to 0 on stop.
     Process {
         id: dictationLevelWatcher
         command: [runtimeConfig.dictationLevelBin]
-        running: shellRoot.voxtypeClass() === "recording"
+        running: shellRoot.voxtypeListening()
         stdout: SplitParser {
             splitMarker: "\n"
             onRead: function (data) {

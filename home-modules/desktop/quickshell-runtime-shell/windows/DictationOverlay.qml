@@ -17,15 +17,17 @@ PanelWindow {
 
     readonly property string vclass: root.voxtypeClass()
     readonly property bool recording: vclass === "recording"
+    readonly property bool streaming: vclass === "streaming"
     readonly property bool transcribing: vclass === "transcribing"
-    readonly property color accent: recording ? colors.red : colors.amber
+    readonly property bool stopping: vclass === "stopping"
+    readonly property color accent: (recording || streaming) ? colors.red : colors.amber
 
     readonly property int barCount: 21
     readonly property real minBar: 4
     readonly property real maxBar: 46
     property real phase: 0
     property real lowMs: 0
-    readonly property bool noAudio: recording && lowMs > 2500
+    readonly property bool noAudio: (recording || streaming) && lowMs > 2500
 
     screen: root.activeScreen
     visible: root.voxtypeActive()
@@ -55,7 +57,7 @@ PanelWindow {
         const center = (barCount - 1) / 2;
         const dist = Math.abs(i - center) / center;
         const weight = 1.0 - 0.6 * dist;
-        if (transcribing) {
+        if (transcribing || stopping) {
             const sweep = 0.5 + 0.5 * Math.sin(phase * 0.6 + i * 0.7);
             return minBar + sweep * (maxBar - minBar) * 0.55;
         }
@@ -72,7 +74,7 @@ PanelWindow {
         running: overlay.visible
         onTriggered: {
             overlay.phase += 1;
-            if (overlay.recording) {
+            if (overlay.recording || overlay.streaming) {
                 overlay.lowMs = root.dictationLevel < 6 ? overlay.lowMs + interval : 0;
             } else {
                 overlay.lowMs = 0;
@@ -121,7 +123,7 @@ PanelWindow {
                 font.family: "FiraCode Nerd Font"
                 font.pixelSize: 22
                 SequentialAnimation on opacity {
-                    running: overlay.recording
+                    running: overlay.recording || overlay.streaming
                     loops: Animation.Infinite
                     alwaysRunToEnd: true
                     NumberAnimation { from: 1.0; to: 0.35; duration: 600 }
@@ -154,8 +156,10 @@ PanelWindow {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 1
                 Text {
-                    text: overlay.recording ? "Listening…"
-                        : (overlay.transcribing ? "Transcribing…" : "")
+                    text: overlay.streaming ? "Streaming…"
+                        : (overlay.recording ? "Listening…"
+                            : (overlay.stopping ? "Stopping…"
+                                : (overlay.transcribing ? "Transcribing…" : "")))
                     color: colors.text
                     font.pixelSize: 14
                     font.weight: Font.DemiBold

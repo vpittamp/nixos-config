@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dictation - mic-aware front-end for voxtype push-to-talk transcription.
+# dictation - mic-aware front-end for voxtype toggle/streaming transcription.
 #
 # Why this exists:
 #   - voxtype records from the PipeWire *default* source. We want to prefer a
@@ -17,6 +17,60 @@
 set -euo pipefail
 
 cmd="${1:-toggle}"
+
+# voxtype creates a transient "...voxtype-wrapped" playback sink during a
+# dictation session and makes it the PipeWire default; when the session ends the
+# wrapper disappears but the *configured* default still points at it, so
+# WirePlumber falls back to the highest-priority device (the USB-C dock) and the
+# user's chosen output (Jabra / TV / headphones) is silently lost. We work around
+# this generically — independent of whatever voxtype does internally — by saving
+# the real default output sink when dictation starts and restoring it when it
+# stops. Uses pw-metadata (pactl is not installed here); no-ops if unavailable.
+DICT_SINK_STATE="${XDG_RUNTIME_DIR:-/tmp}/dictation-prev-default-sink"
+
+# Extract a sink name for a metadata key, but only when it is a REAL output
+# (bluez_output/alsa_output) — never voxtype's own alsa_playback wrapper.
+_default_sink_for_key() {
+  pw-metadata -n default 2>/dev/null \
+    | grep -F "'$1'" \
+    | grep -oE '(bluez_output|alsa_output)[^"]+' \
+    | head -1
+}
+
+save_default_sink() {
+  command -v pw-metadata >/dev/null 2>&1 || return 0
+  local name
+  name="$(_default_sink_for_key default.configured.audio.sink)"
+  # Fall back to the active sink if the configured one is already a wrapper/empty.
+  [ -n "$name" ] || name="$(_default_sink_for_key default.audio.sink)"
+  [ -n "$name" ] || return 0
+  printf '%s' "$name" > "$DICT_SINK_STATE" 2>/dev/null || true
+}
+
+restore_default_sink() {
+  command -v pw-metadata >/dev/null 2>&1 || return 0
+  [ -r "$DICT_SINK_STATE" ] || return 0
+  local saved cur
+  saved="$(cat "$DICT_SINK_STATE" 2>/dev/null || true)"
+  [ -n "$saved" ] || return 0
+  cur="$(_default_sink_for_key default.audio.sink)"
+  # Only act if voxtype left a different (or wrapped/empty) sink as the default.
+  if [ "$cur" != "$saved" ]; then
+    pw-metadata 0 default.configured.audio.sink "{\"name\":\"$saved\"}" >/dev/null 2>&1 || true
+    pw-metadata 0 default.audio.sink "{\"name\":\"$saved\"}" >/dev/null 2>&1 || true
+  fi
+}
+
+voxtype_class() {
+  local status cls
+  status="$(voxtype status --format json 2>/dev/null || true)"
+  if command -v jq >/dev/null 2>&1; then
+    cls="$(printf '%s' "$status" | jq -r '.class // ""' 2>/dev/null || true)"
+  else
+    cls="$(printf '%s' "$status" | sed -n 's/.*"class"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+  fi
+  printf '%s' "$cls"
+}
 
 pick_jabra_mic() {
   command -v pactl >/dev/null 2>&1 || return 0
@@ -40,13 +94,49 @@ pick_jabra_mic() {
   pactl set-source-mute @DEFAULT_SOURCE@ 0 2>/dev/null || true
 }
 
+stop_dictation() {
+  voxtype record stop || true
+
+  # Parakeet streaming sometimes logs that SIGUSR2 closed capture but keeps
+  # reporting "streaming" for a long time. Fall back to cancel only for that
+  # stale streaming state; do not cancel normal Whisper "transcribing" work.
+  sleep 1.25
+  case "$(voxtype_class)" in
+    streaming)
+      voxtype record cancel || true
+      ;;
+  esac
+
+  # Undo any default-output-sink change voxtype made during the session.
+  restore_default_sink
+}
+
 case "$cmd" in
-  toggle|start)
+  toggle)
+    # If Voxtype is already listening, this toggle is a stop request. Avoid the
+    # mic-selection path here so ending a streaming session feels immediate.
+    case "$(voxtype_class)" in
+      recording|streaming)
+        stop_dictation
+        ;;
+      *)
+        save_default_sink
+        pick_jabra_mic
+        voxtype record toggle
+        ;;
+    esac
+    ;;
+  start)
+    save_default_sink
     pick_jabra_mic
     voxtype record "$cmd"
     ;;
   stop|cancel)
-    voxtype record "$cmd"
+    if [ "$cmd" = "stop" ]; then
+      stop_dictation
+    else
+      voxtype record cancel || true
+    fi
     ;;
   status)
     voxtype status --format json

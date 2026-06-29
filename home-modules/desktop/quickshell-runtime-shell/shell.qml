@@ -100,6 +100,7 @@ ShellRoot {
     property var voxtypeState: ({
             "class": "idle"
         })
+    property bool voxtypeStopRequested: false
     // Live mic input level (0-100) of the default source while recording, fed by
     // dictationLevelBin. Drives the dictation overlay's capture meter so you can
     // see the system is actually hearing speech (not just armed).
@@ -529,6 +530,13 @@ ShellRoot {
             violetBg: "#241b43"
         })
     readonly property int fastColorMs: 90
+
+    Timer {
+        id: voxtypeStopIntentTimer
+        interval: 8000
+        repeat: false
+        onTriggered: root.voxtypeStopRequested = false
+    }
 
     onLauncherAppFilterChanged: {
         if (launcherVisible && launcherMode === "apps") {
@@ -1719,6 +1727,31 @@ ShellRoot {
         displaySelectorOutputName = "";
     }
 
+    // Close every top-bar chip popup (volume / bluetooth / power / displays).
+    // Used by the click-away backdrop so any of them dismisses on an outside click.
+    function closeBarPopups() {
+        audioPopupVisible = false;
+        bluetoothPopupVisible = false;
+        powerMenuVisible = false;
+        displaySelectorVisible = false;
+        displaySelectorOutputName = "";
+    }
+
+    // Whether any top-bar chip popup is currently open on the given output (drives
+    // the per-monitor click-away backdrop's visibility). audio/bluetooth/power use
+    // barPopupOutputName; the display selector tracks its own output.
+    function anyBarPopupOpenOnOutput(outputName) {
+        const o = stringOrEmpty(outputName);
+        if ((audioPopupVisible || bluetoothPopupVisible || powerMenuVisible)
+            && stringOrEmpty(barPopupOutputName) === o) {
+            return true;
+        }
+        if (displaySelectorVisible && stringOrEmpty(displaySelectorOutputName) === o) {
+            return true;
+        }
+        return false;
+    }
+
     function applyDisplayLayout(layoutName) {
         const target = stringOrEmpty(layoutName);
         if (!target) {
@@ -2402,7 +2435,43 @@ ShellRoot {
     }
 
     function audioSinkLabel(node) {
-        return stringOrEmpty(node && (node.description || node.nickname || node.name || "Audio output"));
+        let s = stringOrEmpty(node && (node.description || node.nickname || node.name));
+        if (!s) {
+            return "Audio output";
+        }
+        // Drop the controller prefix shared by every internal output (e.g.
+        // "Meteor Lake-P HD Audio Controller HDMI / DisplayPort 3 Output") and the
+        // trailing " Output" so the meaningful part is readable in a narrow row.
+        s = s.replace(/^.*HD Audio Controller\s+/, "");
+        s = s.replace(/\s+Output$/, "");
+        return s || "Audio output";
+    }
+
+    // Friendly category for an output, shown as a secondary tag so the otherwise
+    // cryptic "HDMI / DisplayPort N" entries (and which port is a TV/monitor) are
+    // identifiable at a glance.
+    function audioSinkKind(node) {
+        const name = stringOrEmpty(node && node.name).toLowerCase();
+        const hay = (name + " " + stringOrEmpty(node && node.description)).toLowerCase();
+        if (name.indexOf("bluez") === 0 || hay.indexOf("bluetooth") >= 0) {
+            return "Bluetooth";
+        }
+        if (hay.indexOf("hdmi") >= 0 || hay.indexOf("displayport") >= 0) {
+            return "TV / external display";
+        }
+        if (hay.indexOf("dock") >= 0) {
+            return "USB-C dock";
+        }
+        if (hay.indexOf("headphone") >= 0) {
+            return "Headphones";
+        }
+        if (hay.indexOf("usb") >= 0) {
+            return "USB audio";
+        }
+        if (hay.indexOf("analog") >= 0 || hay.indexOf("speaker") >= 0) {
+            return "Built-in speakers";
+        }
+        return "";
     }
 
     function audioSourceLabel(node) {
@@ -2509,6 +2578,19 @@ ShellRoot {
             return;
         }
         Pipewire.preferredDefaultAudioSink = node;
+        const name = stringOrEmpty(node.name);
+        if (name) {
+            const value = "{\"name\":\"" + name + "\"}";
+            // Pin BOTH the configured (persistent preference) AND the active default
+            // to the chosen real sink. Setting only the active sink is not enough:
+            // if the CONFIGURED default points at a stale/transient node — e.g. the
+            // voxtype dictation tool leaves a "...voxtype-wrapped" sink that no
+            // longer exists — WirePlumber can't honor it and reverts the active sink
+            // to the highest-priority device (the USB-C dock), so the click "doesn't
+            // hold". Forcing configured to a valid sink makes the selection stick.
+            runDetached(["pw-metadata", "0", "default.configured.audio.sink", value]);
+            runDetached(["pw-metadata", "0", "default.audio.sink", value]);
+        }
     }
 
     function setPreferredAudioSource(node) {
@@ -7939,7 +8021,12 @@ function normalizeLauncherMode(mode) {
             return;
         }
         try {
-            voxtypeState = JSON.parse(raw);
+            const next = JSON.parse(raw);
+            voxtypeState = next;
+            const cls = stringOrEmpty((next && next.class) || "idle");
+            if (voxtypeStopRequested && cls !== "recording" && cls !== "streaming") {
+                clearVoxtypeStopRequest();
+            }
         } catch (error) {
             console.warn("Failed to parse voxtype payload", error, raw);
         }
@@ -7961,25 +8048,51 @@ function normalizeLauncherMode(mode) {
         dictationLevel = 0;
     }
 
-    function voxtypeClass() {
+    function voxtypeRawClass() {
         return stringOrEmpty((voxtypeState && voxtypeState.class) || "idle");
+    }
+
+    function voxtypeRawListening() {
+        const c = voxtypeRawClass();
+        return c === "recording" || c === "streaming";
+    }
+
+    function voxtypeClass() {
+        const c = voxtypeRawClass();
+        if (voxtypeStopRequested && (c === "recording" || c === "streaming")) {
+            return "stopping";
+        }
+        return c;
     }
 
     function voxtypeActive() {
         return voxtypeClass() !== "idle";
     }
 
-    // FiraCode Nerd Font glyphs: mic (recording/idle), hourglass (transcribing).
+    function voxtypeListening() {
+        const c = voxtypeClass();
+        return c === "recording" || c === "streaming";
+    }
+
+    // FiraCode Nerd Font glyphs: mic/listen, broadcast tower (streaming),
+    // hourglass (transcribing).
     function voxtypeIcon() {
-        return voxtypeClass() === "transcribing" ? "" : "";
+        const c = voxtypeClass();
+        if (c === "transcribing" || c === "stopping") {
+            return "";
+        }
+        if (c === "streaming") {
+            return "";
+        }
+        return "";
     }
 
     function voxtypeIconColor() {
         const c = voxtypeClass();
-        if (c === "recording") {
+        if (c === "recording" || c === "streaming") {
             return colors.red;
         }
-        if (c === "transcribing") {
+        if (c === "transcribing" || c === "stopping") {
             return colors.amber;
         }
         return colors.muted;
@@ -7990,10 +8103,47 @@ function normalizeLauncherMode(mode) {
         if (c === "recording") {
             return "REC";
         }
+        if (c === "streaming") {
+            return "LIVE";
+        }
+        if (c === "stopping") {
+            return "STOP";
+        }
         if (c === "transcribing") {
             return "…";
         }
         return "";
+    }
+
+    function markVoxtypeStopRequested() {
+        voxtypeStopRequested = true;
+        voxtypeStopIntentTimer.restart();
+    }
+
+    function clearVoxtypeStopRequest() {
+        voxtypeStopRequested = false;
+        voxtypeStopIntentTimer.stop();
+    }
+
+    function runDictationAction(action) {
+        const requested = stringOrEmpty(action || "toggle") || "toggle";
+        let commandAction = requested;
+        const listening = voxtypeRawListening();
+
+        if (requested === "toggle" && listening) {
+            commandAction = "stop";
+        }
+
+        if ((commandAction === "stop" || commandAction === "cancel") && listening) {
+            if (voxtypeStopRequested) {
+                return;
+            }
+            markVoxtypeStopRequested();
+        } else if (commandAction === "start" || requested === "toggle") {
+            clearVoxtypeStopRequest();
+        }
+
+        runDetached([shellConfig.dictationBin, commandAction]);
     }
 
     function parseBrightness(payload) {
@@ -8244,6 +8394,40 @@ function normalizeLauncherMode(mode) {
             shellRoot: shellRootRef
             runtimeConfig: shellConfig
             colors: shellRootRef.colors
+        }
+    }
+
+    // Click-away backdrop for the top-bar chip popups (volume / bluetooth / power
+    // / displays). QuickShell's PopupWindow has no built-in dismiss-on-click-
+    // outside, so this transparent layer covers the screen BELOW the bar whenever a
+    // popup is open on that monitor; a press anywhere on it closes the popup. It is
+    // pointer-only (focusable:false, keyboardFocus None) so it never grabs the
+    // keyboard or steals focus, and it leaves the top bar strip uncovered so the
+    // chips stay clickable (re-click to toggle, click another chip to switch).
+    Variants {
+        model: shellRootRef.useFallbackScreenWindows ? [] : Quickshell.screens
+        delegate: PanelWindow {
+            required property var modelData
+            readonly property string backdropOutputName: shellRootRef.screenOutputName(modelData)
+            screen: modelData
+            visible: shellRootRef.anyBarPopupOpenOnOutput(backdropOutputName)
+            color: "transparent"
+            anchors.left: true
+            anchors.right: true
+            anchors.bottom: true
+            implicitHeight: Math.max(0, (modelData ? modelData.height : 1080) - shellConfig.barHeight)
+            exclusiveZone: 0
+            focusable: false
+            aboveWindows: true
+            WlrLayershell.namespace: "i3pm-bar-popup-backdrop"
+            WlrLayershell.layer: WlrLayer.Top
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                onPressed: shellRootRef.closeBarPopups()
+            }
         }
     }
 
