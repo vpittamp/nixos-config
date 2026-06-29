@@ -11,7 +11,12 @@ let
     QT_ENABLE_HIGHDPI_SCALING = "1"; # Enable HiDPI support
     PLASMA_USE_QT_SCALING = "1"; # Let Plasma handle Qt scaling
 
-    # Cursor size
+    # Cursor theme + base size. The Bibata theme (vs the bare unscaled default) is
+    # what fixes the previously-tiny/blurry cursor; sway then scales it by each
+    # output's scale, so this 24px base is ~60px on the Samsung 4K TV (scale 2.5)
+    # and ~30px on the 1.25x panels — proportional without being oversized. Keep in
+    # sync with the `seat * xcursor_theme` line in sway.nix.
+    XCURSOR_THEME = "Bibata-Modern-Classic";
     XCURSOR_SIZE = "24";
 
     # UV (Python package manager) configuration for NixOS

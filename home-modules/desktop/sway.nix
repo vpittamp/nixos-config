@@ -458,7 +458,11 @@ in
       # Focus behavior - must be in config block to override home-manager defaults
       # (extraConfig settings come after home-manager defaults and don't override them)
       focus = {
-        followMouse = "no";  # Focus only changes on mouse click, not hover
+        # Follow the mouse so that pointer-driven actions (notably the swipe-up
+        # window exposé and other Quickshell overlays) appear on the monitor the
+        # cursor is on. Wayland exposes no passive cursor-output query, so making
+        # hover focus the output is what lets "open where my mouse is" work.
+        followMouse = "yes";
         mouseWarping = "output";  # Move cursor to output center on keyboard focus change
       };
 
@@ -832,6 +836,14 @@ in
       # NOTE: focus_follows_mouse and mouse_warping are now set in config.focus block
       # to properly override home-manager defaults (see lines 415-420)
 
+      # Cursor theme + base size. sway renders the cursor scaled by the scale of
+      # whichever output it is currently over, so this 24px base becomes ~60px on
+      # the Samsung 55" 4K TV (scale 2.5) and ~30px on the 1.25x panels — i.e. the
+      # cursor is automatically proportional to each display. The explicit theme is
+      # the real fix for the previously tiny/blurry default cursor; the 24px base
+      # keeps it from being oversized. Keep in sync with XCURSOR_THEME/SIZE in env.
+      seat * xcursor_theme Bibata-Modern-Classic 24
+
       # Workspace names - numbers only for clean display
       set $ws1 "1"
       set $ws2 "2"
@@ -903,6 +915,7 @@ in
 
   # Install Wayland-specific utilities
   home.packages = with pkgs; [
+    bibata-cursors   # Crisp HiDPI cursor theme (Bibata-Modern-Classic); scales per-output
     wl-clipboard     # Clipboard utilities (wl-copy, wl-paste)
     grim             # Screenshot tool
     slurp            # Screen area selection
