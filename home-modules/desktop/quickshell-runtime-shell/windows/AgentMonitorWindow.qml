@@ -1,13 +1,20 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
+import ".." as RootComponents
 
-// Minimalist always-on-top AI-agents monitor strip. Designed to sit on the side
-// of a fullscreen app (e.g. the YouTube TV PWA) so agent progress can be watched
-// without switching apps. On the Overlay layer (renders above fullscreen
-// windows), narrow, and NON-focusable + exclusiveZone 0 so the underlying app
-// keeps keyboard focus and the rest of the screen.
+// Always-on-top AI-agents monitor strip. Designed to sit on the side of a
+// fullscreen app (e.g. the YouTube / YouTube TV PWA) so agent progress can be
+// watched WHILE the video plays. On the Overlay layer (renders above fullscreen
+// windows), narrow, and exclusiveZone 0 so it reserves no space and leaves the
+// rest of the screen — including the video — clickable.
+//
+// keyboardFocus is OnDemand (not None): the strip is mouse-interactive (click a
+// row to jump to that session, wheel to scroll) but only grabs the keyboard when
+// you explicitly click it. So passively watching and scrolling never steal the
+// video's space/seek/fullscreen keys.
 PanelWindow {
     required property QtObject shellRoot
     required property QtObject runtimeConfig
@@ -15,37 +22,19 @@ PanelWindow {
     readonly property QtObject root: shellRoot
     id: monitorWindow
 
-    readonly property var sessions: root.activeSessions()
-
-    function statusColor(s) {
-        const st = root.stringOrEmpty(s && s.agent_status);
-        if (st === "working") {
-            return colors.teal;
-        }
-        if (st === "blocked") {
-            return colors.red;
-        }
-        if (st === "done") {
-            return colors.green;
-        }
-        return colors.muted;
+    // The same rich, stable-sorted/filtered session list the side panel shows,
+    // refreshed on every dashboard update (mirrors RuntimePanelWindow so the two
+    // stay consistent and delegates keep stable identity via ScriptModel).
+    property var sessions: []
+    function refreshAgentSessions() {
+        sessions = root.panelSessions();
     }
-
-    function statusLabel(s) {
-        const st = root.stringOrEmpty(s && s.agent_status);
-        if (st === "working") {
-            return "Working";
+    Component.onCompleted: refreshAgentSessions()
+    Connections {
+        target: root
+        function onDashboardChanged() {
+            monitorWindow.refreshAgentSessions();
         }
-        if (st === "blocked") {
-            return "Blocked";
-        }
-        if (st === "done") {
-            return "Done";
-        }
-        if (st === "idle") {
-            return "Idle";
-        }
-        return st ? st : "—";
     }
 
     screen: root.findScreenByOutputName(root.agentMonitorOutputName) || root.activeScreen
@@ -54,20 +43,21 @@ PanelWindow {
     anchors.top: true
     anchors.bottom: true
     anchors.right: true
-    implicitWidth: 300
+    implicitWidth: 360
     exclusiveZone: 0
-    focusable: false
+    focusable: true
     aboveWindows: true
     WlrLayershell.namespace: "i3pm-agent-monitor"
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
     Rectangle {
         anchors.fill: parent
         anchors.margins: 8
         radius: 14
-        // Semi-transparent so the TV faintly shows through the strip edges.
-        color: Qt.rgba(0.03, 0.05, 0.08, 0.80)
+        // Dark glass: agent text stays readable while the video shows faintly
+        // through the strip (idle SessionRows are transparent).
+        color: Qt.rgba(0.03, 0.05, 0.08, 0.82)
         border.color: colors.borderStrong
         border.width: 1
 
@@ -120,103 +110,57 @@ PanelWindow {
                 color: colors.lineSoft
             }
 
-            Flickable {
+            ScriptModel {
+                id: agentSessionsModel
+                values: monitorWindow.sessions
+                objectProp: "modelData"
+            }
+
+            ListView {
+                id: agentList
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                visible: monitorWindow.sessions.length > 0
                 clip: true
-                contentWidth: width
-                contentHeight: rowsCol.implicitHeight
+                spacing: 4
+                model: agentSessionsModel
                 boundsBehavior: Flickable.StopAtBounds
+                cacheBuffer: 1200
 
-                ColumnLayout {
-                    id: rowsCol
-                    width: parent.width
-                    spacing: 4
+                ScrollBar.vertical: ScrollBar {
+                    policy: agentList.contentHeight > agentList.height ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
+                }
 
-                    Repeater {
-                        model: monitorWindow.sessions
-
-                        delegate: Rectangle {
-                            required property var modelData
-                            readonly property var session: modelData
-                            Layout.fillWidth: true
-                            implicitHeight: 44
-                            radius: 9
-                            color: rowMouse.containsMouse ? colors.cardAlt : Qt.rgba(1, 1, 1, 0.02)
-                            Behavior on color { ColorAnimation { duration: root.fastColorMs } }
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 10
-                                anchors.rightMargin: 10
-                                spacing: 9
-
-                                Rectangle {
-                                    Layout.alignment: Qt.AlignVCenter
-                                    width: 9
-                                    height: 9
-                                    radius: 5
-                                    color: monitorWindow.statusColor(session)
-                                    // Pulse while the agent is actively working.
-                                    SequentialAnimation on opacity {
-                                        running: root.stringOrEmpty(session && session.agent_status) === "working"
-                                        loops: Animation.Infinite
-                                        alwaysRunToEnd: true
-                                        NumberAnimation { from: 1.0; to: 0.35; duration: 700 }
-                                        NumberAnimation { from: 0.35; to: 1.0; duration: 700 }
-                                    }
-                                }
-
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 1
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: root.sessionPrimaryLabel(session)
-                                        color: colors.text
-                                        font.pixelSize: 11
-                                        font.weight: Font.DemiBold
-                                        elide: Text.ElideRight
-                                    }
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: root.sessionSecondaryLabel(session)
-                                        color: colors.subtle
-                                        font.pixelSize: 9
-                                        elide: Text.ElideRight
-                                    }
-                                }
-
-                                Text {
-                                    Layout.alignment: Qt.AlignVCenter
-                                    text: monitorWindow.statusLabel(session)
-                                    color: monitorWindow.statusColor(session)
-                                    font.pixelSize: 9
-                                    font.weight: Font.DemiBold
-                                }
-                            }
-
-                            MouseArea {
-                                id: rowMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.focusSession(session)
-                            }
-                        }
-                    }
+                delegate: RootComponents.SessionRow {
+                    required property var modelData
+                    width: agentList.width
+                    rootObject: root
+                    colorsObject: colors
+                    session: modelData
+                    selected: false
+                    currentOverrideSet: true
+                    currentOverride: root.sessionCurrentOverride(modelData)
+                    interactive: true
+                    compact: true
+                    showHostToken: true
+                    showCurrentChip: false
+                    closePending: root.sessionClosePending(modelData)
+                    onClicked: root.focusSession(modelData)
+                    onCloseRequested: root.closeSession(modelData)
                 }
             }
 
-            Text {
-                visible: monitorWindow.sessions.length === 0
+            Item {
                 Layout.fillWidth: true
-                Layout.topMargin: 8
-                horizontalAlignment: Text.AlignHCenter
-                text: "No active agents"
-                color: colors.subtle
-                font.pixelSize: 11
+                Layout.fillHeight: true
+                visible: monitorWindow.sessions.length === 0
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "No active agents"
+                    color: colors.subtle
+                    font.pixelSize: 11
+                }
             }
         }
     }

@@ -150,7 +150,6 @@ ShellRoot {
             inhibitActive: false,
             inhibitPid: 0
         })
-    readonly property var moonlightStatusState: moonlightStatus()
     property bool panelVisible: true
     // Output name of the monitor whose bar button opened the runtime panel.
     // Empty string falls the panel back to the focused monitor (activeScreen),
@@ -8251,7 +8250,7 @@ function normalizeLauncherMode(mode) {
     }
 
     function moonlightChipLabel() {
-        const status = moonlightStatusState;
+        const status = moonlightStatus();
         if (!boolOrFalse(status && status.present)) {
             return "";
         }
@@ -8265,7 +8264,7 @@ function normalizeLauncherMode(mode) {
     }
 
     function moonlightChipFill(hovered) {
-        const status = moonlightStatusState;
+        const status = moonlightStatus();
         if (boolOrFalse(status.captureInferred)) {
             return hovered ? Qt.lighter(colors.blueBg, 1.12) : colors.blueBg;
         }
@@ -8276,7 +8275,7 @@ function normalizeLauncherMode(mode) {
     }
 
     function moonlightChipBorder(hovered) {
-        const status = moonlightStatusState;
+        const status = moonlightStatus();
         if (boolOrFalse(status.captureInferred)) {
             return colors.blue;
         }
@@ -8287,7 +8286,7 @@ function normalizeLauncherMode(mode) {
     }
 
     function moonlightChipText(hovered) {
-        const status = moonlightStatusState;
+        const status = moonlightStatus();
         if (boolOrFalse(status.captureInferred)) {
             return colors.blue;
         }
@@ -8298,7 +8297,7 @@ function normalizeLauncherMode(mode) {
     }
 
     function moonlightChipTooltip() {
-        const status = moonlightStatusState;
+        const status = moonlightStatus();
         const bits = [
             "Running: " + (boolOrFalse(status && status.present) ? "yes" : "no")
         ];

@@ -61,7 +61,7 @@ PanelWindow {
                     border.color: root.stateChipBorder(root.panelVisible, panelToggleMouse.containsMouse, colors.blue)
                     border.width: 1
                     implicitWidth: panelToggleLabel.implicitWidth + 20
-                    implicitHeight: parent.height
+                    Layout.fillHeight: true
 
                     Behavior on color {
                         ColorAnimation {
@@ -92,6 +92,87 @@ PanelWindow {
                         onClicked: root.togglePanelVisibility(topBarWindow.topOutputName)
                     }
                 }
+
+                // Toggle the translucent AI-agents overlay (the see-through strip
+                // for watching agents over a fullscreen video). Same action as
+                // Mod+Shift+A; opens on this bar's monitor. The dot reflects the
+                // worst current agent status so it's a live indicator even closed.
+                Rectangle {
+                    id: agentMonitorChip
+                    readonly property var agentSessionsList: root.activeSessions()
+                    readonly property int agentSessionsCount: agentSessionsList.length
+                    readonly property bool anyBlocked: agentSessionsList.some(function (s) { return root.stringOrEmpty(s && s.agent_status) === "blocked"; })
+                    readonly property bool anyDone: agentSessionsList.some(function (s) { return root.stringOrEmpty(s && s.agent_status) === "done"; })
+                    readonly property bool anyWorking: agentSessionsList.some(function (s) { return root.stringOrEmpty(s && s.agent_status) === "working"; })
+                    radius: 8
+                    color: root.stateChipFill(root.agentMonitorVisible, agentMonitorMouse.containsMouse, colors.blueBg)
+                    border.color: root.stateChipBorder(root.agentMonitorVisible, agentMonitorMouse.containsMouse, colors.blue)
+                    border.width: 1
+                    implicitWidth: agentMonitorRow.implicitWidth + 20
+                    Layout.fillHeight: true
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Behavior on border.color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    RowLayout {
+                        id: agentMonitorRow
+                        anchors.centerIn: parent
+                        spacing: 6
+
+                        Rectangle {
+                            Layout.alignment: Qt.AlignVCenter
+                            visible: agentMonitorChip.agentSessionsCount > 0
+                            width: 7
+                            height: 7
+                            radius: 4
+                            color: agentMonitorChip.anyBlocked ? colors.red
+                                : (agentMonitorChip.anyDone ? colors.green
+                                    : (agentMonitorChip.anyWorking ? colors.teal : colors.muted))
+                            SequentialAnimation on opacity {
+                                running: agentMonitorChip.anyWorking || agentMonitorChip.anyBlocked
+                                loops: Animation.Infinite
+                                alwaysRunToEnd: true
+                                NumberAnimation { from: 1.0; to: 0.35; duration: 700 }
+                                NumberAnimation { from: 0.35; to: 1.0; duration: 700 }
+                            }
+                        }
+
+                        Text {
+                            id: agentMonitorLabel
+                            text: agentMonitorChip.agentSessionsCount > 0
+                                ? ("Agents " + agentMonitorChip.agentSessionsCount)
+                                : "Agents"
+                            color: root.stateChipText(root.agentMonitorVisible, agentMonitorMouse.containsMouse, colors.blue)
+                            font.pixelSize: 10
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
+                    MouseArea {
+                        id: agentMonitorMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.toggleAgentMonitor(topBarWindow.topOutputName)
+                    }
+
+                    RootComponents.BarTooltip {
+                        anchorWindow: topBarWindow
+                        anchorItem: agentMonitorMouse
+                        active: agentMonitorMouse.containsMouse
+                        text: "AI agents overlay · Mod+Shift+A"
+                        colors: topBarWindow.colors
+                    }
+                }
             }
 
             Rectangle {
@@ -101,7 +182,7 @@ PanelWindow {
                 border.color: colors.border
                 border.width: 1
                 implicitWidth: centerRow.implicitWidth + 20
-                implicitHeight: parent.height
+                Layout.fillHeight: true
 
                 RowLayout {
                     id: centerRow
@@ -157,7 +238,7 @@ PanelWindow {
                     border.color: root.daemonHealthBorderColor(daemonHealthMouse.containsMouse)
                     border.width: 1
                     implicitWidth: daemonHealthRow.implicitWidth + 18
-                    implicitHeight: parent.height
+                    Layout.fillHeight: true
                     visible: root.daemonHealthState.status === "degraded"
                         || root.daemonHealthState.status === "unhealthy"
                         || root.daemonHealthState.status === "critical"
@@ -218,7 +299,7 @@ PanelWindow {
                     border.color: root.neutralChipBorder(generationMouse.containsMouse)
                     border.width: 1
                     implicitWidth: generationLabel.implicitWidth + 18
-                    implicitHeight: parent.height
+                    Layout.fillHeight: true
 
                     Behavior on color {
                         ColorAnimation {
@@ -255,7 +336,7 @@ PanelWindow {
                     border.color: root.neutralChipBorder(memoryMouse.containsMouse)
                     border.width: 1
                     implicitWidth: memoryLabel.implicitWidth + 18
-                    implicitHeight: parent.height
+                    Layout.fillHeight: true
 
                     Behavior on color {
                         ColorAnimation {
@@ -292,7 +373,7 @@ PanelWindow {
                     border.color: root.diskChipBorder(diskMouse.containsMouse)
                     border.width: 1
                     implicitWidth: diskLabel.implicitWidth + 18
-                    implicitHeight: parent.height
+                    Layout.fillHeight: true
 
                     Behavior on color {
                         ColorAnimation {
@@ -338,7 +419,7 @@ PanelWindow {
                     border.color: root.stateChipBorder(displaySettingsActive, layoutMouse.containsMouse, colors.blue)
                     border.width: 1
                     implicitWidth: layoutLabel.implicitWidth + 18
-                    implicitHeight: parent.height
+                    Layout.fillHeight: true
 
                     Behavior on color {
                         ColorAnimation {
@@ -381,8 +462,8 @@ PanelWindow {
                     border.color: root.moonlightChipBorder(moonlightMouse.containsMouse)
                     border.width: 1
                     implicitWidth: moonlightLabel.implicitWidth + 18
-                    implicitHeight: parent.height
-                    visible: root.boolOrFalse(root.moonlightStatusState && root.moonlightStatusState.present)
+                    Layout.fillHeight: true
+                    visible: root.boolOrFalse(root.moonlightStatus() && root.moonlightStatus().present)
 
                     Behavior on color {
                         ColorAnimation {
@@ -427,7 +508,7 @@ PanelWindow {
                     border.color: root.neutralChipBorder(networkMouse.containsMouse)
                     border.width: 1
                     implicitWidth: networkLabel.implicitWidth + 18
-                    implicitHeight: parent.height
+                    Layout.fillHeight: true
 
                     Behavior on color {
                         ColorAnimation {
@@ -473,7 +554,7 @@ PanelWindow {
                     border.color: root.notificationChipBorder(notificationMouse.containsMouse)
                     border.width: 1
                     implicitWidth: notificationLabel.implicitWidth + 18
-                    implicitHeight: parent.height
+                    Layout.fillHeight: true
 
                     Behavior on color {
                         ColorAnimation {
@@ -527,7 +608,7 @@ PanelWindow {
                     border.color: root.audioChipBorder(audioMouse.containsMouse)
                     border.width: 1
                     implicitWidth: audioRow.implicitWidth + 18
-                    implicitHeight: parent.height
+                    Layout.fillHeight: true
 
                     Behavior on color {
                         ColorAnimation {
@@ -593,7 +674,7 @@ PanelWindow {
                     border.color: root.neutralChipBorder(bluetoothMouse.containsMouse)
                     border.width: 1
                     implicitWidth: bluetoothRow.implicitWidth + 18
-                    implicitHeight: parent.height
+                    Layout.fillHeight: true
 
                     Behavior on color {
                         ColorAnimation {
@@ -656,7 +737,7 @@ PanelWindow {
                     border.color: root.voxtypeActive() ? root.voxtypeIconColor() : root.neutralChipBorder(dictationMouse.containsMouse)
                     border.width: 1
                     implicitWidth: dictationRow.implicitWidth + 18
-                    implicitHeight: parent.height
+                    Layout.fillHeight: true
 
                     Behavior on color {
                         ColorAnimation {
@@ -728,7 +809,7 @@ PanelWindow {
                     border.color: root.neutralChipBorder(keyboardMouse.containsMouse)
                     border.width: 1
                     implicitWidth: keyboardIcon.implicitWidth + 18
-                    implicitHeight: parent.height
+                    Layout.fillHeight: true
 
                     Behavior on color {
                         ColorAnimation {
@@ -770,7 +851,7 @@ PanelWindow {
                     border.color: root.batteryChipBorder(batteryMouse.containsMouse)
                     border.width: 1
                     implicitWidth: batteryRow.implicitWidth + 16
-                    implicitHeight: parent.height
+                    Layout.fillHeight: true
 
                     Behavior on color {
                         ColorAnimation {
@@ -896,7 +977,7 @@ PanelWindow {
                     border.color: root.powerChipBorder(powerMouse.containsMouse)
                     border.width: 1
                     implicitWidth: powerLabel.implicitWidth + 18
-                    implicitHeight: parent.height
+                    Layout.fillHeight: true
 
                     Behavior on color {
                         ColorAnimation {
