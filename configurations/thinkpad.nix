@@ -1054,12 +1054,15 @@ in
   services.udisks2.enable = true;
   services.gvfs.enable = true;  # For GUI file managers
 
-  # ========== LIBRECHAT AI CHAT PLATFORM ==========
+  # ========== LIBRECHAT AI CHAT PLATFORM (DISABLED) ==========
   # Open-source AI chat UI with MongoDB backend
-  # Access at http://localhost:3080
+  # Disabled 2026-06-29: the service was crash-looping (Failed to load
+  # environment files; systemd restart counter in the hundreds, ~every 10s),
+  # matching the ryzen decision (2026-05-28). LLM access is via the hub MLflow
+  # AI Gateway now; this also stops the orphaned node + mongodb churn.
   services.librechat = {
-    enable = true;
-    enableLocalDB = true;  # Auto-provisions MongoDB
+    enable = false;
+    enableLocalDB = false;
 
     # Credentials file with secrets (CREDS_KEY, CREDS_IV, JWT_SECRET, JWT_REFRESH_SECRET)
     # Generate with: for v in CREDS_KEY JWT_SECRET JWT_REFRESH_SECRET; do echo "$v=$(openssl rand -hex 32)"; done; echo "CREDS_IV=$(openssl rand -hex 16)"
