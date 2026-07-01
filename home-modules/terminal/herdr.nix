@@ -133,13 +133,12 @@ in
     [ui]
     agent_panel_scope = "all"
     show_agent_labels_on_pane_borders = true
-    # Let the outer terminal (Ghostty) handle normal clicks/drags so a click-drag
-    # does native terminal text selection (and URL clicking), instead of herdr
-    # capturing the mouse and starting its own pane selection. Pane apps that
-    # request the mouse (lazygit, btop, agent TUIs) still receive it. Trade-off:
-    # herdr's own chrome (panes/tabs/sidebar) is no longer mouse-clickable; herdr
-    # navigation stays keyboard-driven via the prefix bindings.
-    mouse_capture = false
+    # Capture normal mouse input in Herdr so wheel events scroll pane history
+    # instead of being forwarded to agent TUIs. Codex treats forwarded wheel
+    # events as prompt-history navigation, which makes review of long sessions
+    # effectively impossible. Use Shift+mouse for the outer terminal's native
+    # selection/context-menu behavior when needed.
+    mouse_capture = true
     mouse_scroll_lines = 1
     prompt_new_tab_name = false
     accent = "cyan"

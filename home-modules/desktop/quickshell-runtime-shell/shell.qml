@@ -8048,7 +8048,11 @@ function normalizeLauncherMode(mode) {
     }
 
     function voxtypeRawClass() {
-        return stringOrEmpty((voxtypeState && voxtypeState.class) || "idle");
+        const c = stringOrEmpty((voxtypeState && voxtypeState.class) || "idle");
+        if (c === "recording" || c === "streaming" || c === "transcribing") {
+            return c;
+        }
+        return "idle";
     }
 
     function voxtypeRawListening() {
@@ -8065,7 +8069,8 @@ function normalizeLauncherMode(mode) {
     }
 
     function voxtypeActive() {
-        return voxtypeClass() !== "idle";
+        const c = voxtypeClass();
+        return c === "recording" || c === "streaming" || c === "transcribing" || c === "stopping";
     }
 
     function voxtypeListening() {

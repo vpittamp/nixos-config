@@ -711,17 +711,16 @@ in
   users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" "input" "incus-admin" "onepassword" ];
 
   # ========== BLUETOOTH SUPPORT ==========
-  # Realtek RTL8850 USB adapter (0bda:b850) + Jabra Evolve2 85
+  # TP-Link UB500 adapter + Jabra Evolve2 85.
+  # Keep the onboard Realtek radio disabled below so BlueZ has one stable
+  # controller for paired audio devices.
   hardware.bluetooth = {
     enable = true;
     powerOnBoot = true;
     settings = {
       General = {
-        Enable = "Source,Sink,Media,Socket";
         Experimental = true;
         FastConnectable = true;
-        ReconnectAttempts = 7;
-        ReconnectIntervals = "1,2,4,8,16,32,64";
       };
       Policy = {
         AutoEnable = true;
@@ -729,9 +728,12 @@ in
     };
   };
 
-  # Disable USB autosuspend for Realtek BT adapter — prevents intermittent drops
+  # Disable USB autosuspend for the TP-Link UB500 and disable the duplicate
+  # onboard Realtek Bluetooth radio. Two active controllers make BlueZ choose a
+  # different default adapter than the one holding the Jabra pairing.
   services.udev.extraRules = ''
-    ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="0bda", ATTR{idProduct}=="b850", ATTR{power/autosuspend_delay_ms}="-1", ATTR{power/control}="on"
+    SUBSYSTEM=="usb", ATTR{idVendor}=="2357", ATTR{idProduct}=="0604", ATTR{power/autosuspend_delay_ms}="-1", ATTR{power/control}="on"
+    SUBSYSTEM=="usb", ATTR{idVendor}=="0bda", ATTR{idProduct}=="b850", ATTR{authorized}="0"
   '';
 
   # Bluetooth manager GUI
@@ -913,12 +915,18 @@ in
 
     # WirePlumber configuration for Bluetooth audio
     wireplumber.extraConfig = {
+      "05-bluetooth-headset-policy" = {
+        "wireplumber.settings" = {
+          "bluetooth.autoswitch-to-headset-profile" = false;
+        };
+      };
+
       "10-bluez" = {
         "monitor.bluez.properties" = {
+          "bluez5.roles" = [ "a2dp_sink" "a2dp_source" ];
           "bluez5.enable-sbc-xq" = true;
-          "bluez5.enable-msbc" = true;
           "bluez5.enable-hw-volume" = true;
-          "bluez5.codecs" = [ "sbc" "sbc_xq" "aac" "ldac" "aptx" "aptx_hd" ];
+          "bluez5.codecs" = [ "sbc" "sbc_xq" ];
         };
       };
 
@@ -932,7 +940,7 @@ in
             actions = {
               update-props = {
                 "device.description" = "Jabra Evolve2 85";
-                "bluez5.auto-connect" = [ "a2dp_sink" "hfp_hf" ];
+                "bluez5.auto-connect" = [ "a2dp_sink" ];
               };
             };
           }
@@ -1019,6 +1027,53 @@ in
         if ${pkgs.pulseaudio}/bin/pactl list short sources 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'alsa_input.pci-0000_11_00.6.pro-input-0'; then
           ${pkgs.pulseaudio}/bin/pactl set-default-source alsa_input.pci-0000_11_00.6.pro-input-0 || true
         fi
+      '';
+    };
+  };
+
+  systemd.user.services.jabra-a2dp-keepalive = {
+    description = "Keep Jabra Evolve2 85 A2DP transport open";
+    wantedBy = [ "sway-session.target" ];
+    partOf = [ "sway-session.target" ];
+    after = [ "pipewire.service" "wireplumber.service" "sway-session.target" ];
+
+    serviceConfig = {
+      Restart = "always";
+      RestartSec = 5;
+      ExecStart = pkgs.writeShellScript "jabra-a2dp-keepalive" ''
+        set -euo pipefail
+
+        export XDG_RUNTIME_DIR="/run/user/$(${pkgs.coreutils}/bin/id -u)"
+        export PULSE_SERVER="unix:$XDG_RUNTIME_DIR/pulse/native"
+
+        headset_mac="70:BF:92:F4:7E:5D"
+        sink_name="bluez_output.70_BF_92_F4_7E_5D.1"
+
+        while true; do
+          if ! ${pkgs.bluez}/bin/bluetoothctl info "$headset_mac" 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'Connected: yes'; then
+            ${pkgs.bluez}/bin/bluetoothctl connect "$headset_mac" >/dev/null 2>&1 || true
+          fi
+
+          if ${pkgs.wireplumber}/bin/wpctl status 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'Jabra Evolve2 85'; then
+            ${pkgs.wireplumber}/bin/wpctl set-default "$sink_name" >/dev/null 2>&1 || true
+            ${pkgs.wireplumber}/bin/wpctl set-mute "$sink_name" 0 >/dev/null 2>&1 || true
+
+            # A silent stream keeps BlueZ from suspending the A2DP transport,
+            # which is where this headset/controller pair times out.
+            ${pkgs.coreutils}/bin/dd if=/dev/zero bs=19200 status=none \
+              | ${pkgs.pipewire}/bin/pw-cat \
+                  --playback \
+                  --target "$sink_name" \
+                  --raw \
+                  --format s16 \
+                  --rate 48000 \
+                  --channels 2 \
+                  --volume 0.001 \
+                  -
+          fi
+
+          sleep 2
+        done
       '';
     };
   };

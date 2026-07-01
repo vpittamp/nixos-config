@@ -14,6 +14,7 @@ let
     && osConfig.services."power-profiles-daemon".enable;
   supportsLidPolicyControls = hostName == "thinkpad";
   lidPolicyFragmentPath = "/etc/nixos/configurations/thinkpad-lid-policy.nix";
+  clipboardHistoryFile = "${config.home.homeDirectory}/.cache/i3pm/clipboard-history.json";
   quickshellPackage =
     if inputs != null
       && lib.hasAttrByPath [ "quickshell" "packages" pkgs.stdenv.hostPlatform.system "default" ] inputs
@@ -2512,13 +2513,44 @@ PY
 
     query="''${1:-}"
     min_score="''${2:-30}"
+    history_file=${lib.escapeShellArg clipboardHistoryFile}
 
     if ! [[ "$min_score" =~ ^[0-9]+$ ]]; then
       min_score=30
     fi
 
-    elephant query "clipboard;''${query};''${min_score};false" --json 2>/dev/null \
-      | ${lib.getExe pkgs.jq} -cs '
+    local_json="$(
+      if [[ -f "$history_file" ]]; then
+        ${lib.getExe pkgs.jq} -c --arg query "$query" '
+          def matches($query; $text):
+            ($query | length) == 0
+            or (($text // "") | ascii_downcase | contains($query | ascii_downcase));
+
+          (if type == "array" then . else [] end)
+          | map(select((.id? // "") | startswith("i3pm:")))
+          | map(select(matches($query; .text // "")))
+          | map({
+              kind: "clipboard",
+              identifier: .id,
+              text: (.text // ""),
+              subtext: (.timestamp // ""),
+              preview: (.text // ""),
+              preview_type: "text",
+              icon: "edit-paste",
+              state: [],
+              actions: ["copy", "remove"],
+              provider: "i3pm-clipboard"
+            })
+          | .[:30]
+        ' "$history_file" 2>/dev/null || printf '[]\n'
+      else
+        printf '[]\n'
+      fi
+    )"
+
+    elephant_json="$(
+      elephant query "clipboard;''${query};''${min_score};false" --json 2>/dev/null \
+        | ${lib.getExe pkgs.jq} -cs '
           map(select(.item? and (.item.identifier? // "") != ""))
           | map(.item | {
               kind: "clipboard",
@@ -2536,7 +2568,20 @@ PY
               actions: (.actions // []),
               provider: (.provider // "clipboard")
             })
-        '
+        ' 2>/dev/null || printf '[]\n'
+    )"
+
+    ${lib.getExe pkgs.jq} -cn --argjson local "$local_json" --argjson elephant "$elephant_json" '
+      ($local + $elephant)
+      | reduce .[] as $item (
+          {items: [], seen: {}};
+          ($item.text // "") as $text
+          | if $text == "" or .seen[$text] then .
+            else .seen[$text] = true | .items += [$item]
+            end
+        )
+      | .items[:30]
+    '
   '';
 
   clipboardActionScript = pkgs.writeShellScriptBin "quickshell-clipboard-action" ''
@@ -2544,9 +2589,10 @@ PY
 
     action="''${1:-copy}"
     identifier="''${2:-}"
+    history_file=${lib.escapeShellArg clipboardHistoryFile}
 
     case "$action" in
-      copy|remove) ;;
+      copy|remove|delete) ;;
       *)
         echo "unsupported clipboard action: $action" >&2
         exit 1
@@ -2556,6 +2602,34 @@ PY
     if [[ -z "$identifier" ]]; then
       echo "missing clipboard identifier" >&2
       exit 1
+    fi
+
+    if [[ "$identifier" == i3pm:* ]]; then
+      case "$action" in
+        copy)
+          ${lib.getExe pkgs.jq} -r --arg identifier "$identifier" '
+            (if type == "array" then . else [] end)
+            | map(select(.id == $identifier))
+            | .[0].text // empty
+          ' "$history_file" 2>/dev/null | ${pkgs.wl-clipboard}/bin/wl-copy --type text/plain
+          ;;
+        remove|delete)
+          if [[ -f "$history_file" ]]; then
+            tmp="$(${pkgs.coreutils}/bin/mktemp -p "$(${pkgs.coreutils}/bin/dirname "$history_file")" .clipboard-history.XXXXXX)"
+            ${lib.getExe pkgs.jq} --arg identifier "$identifier" '
+              (if type == "array" then . else [] end)
+              | map(select(.id != $identifier))
+            ' "$history_file" >"$tmp"
+            ${pkgs.coreutils}/bin/chmod 600 "$tmp"
+            ${pkgs.coreutils}/bin/mv "$tmp" "$history_file"
+          fi
+          ;;
+      esac
+      exit 0
+    fi
+
+    if [[ "$action" == "delete" ]]; then
+      action="remove"
     fi
 
     exec elephant activate "clipboard;''${identifier};''${action};;"

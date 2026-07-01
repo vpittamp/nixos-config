@@ -755,6 +755,10 @@ in
 
         # sov workspace overview daemon
         { command = "systemctl --user start sov"; }
+      ] ++ lib.optionals isRyzen [
+        # Re-apply the selected daemon monitor profile after sway reloads. Ryzen
+        # uses static desktop profiles, not the ThinkPad lid/clamshell handler.
+        { command = "~/.local/bin/monitor-profile-reconcile --once"; always = true; }
       ] ++ lib.optionals isLaptop [
         # Re-apply the display layout on EVERY sway reload (exec_always). A reload
         # re-runs the static output config, which pins eDP-1 at 0,0 and leaves a
@@ -945,6 +949,12 @@ in
     source = ./scripts/monitor-layout-watch.sh;
     executable = true;
   };
+  # Reconciles profile-managed desktop displays (Ryzen) after sway reload or
+  # output hot-plug drift. This is intentionally separate from lid-clamshell.
+  home.file.".local/bin/monitor-profile-reconcile" = {
+    source = ./scripts/monitor-profile-reconcile.sh;
+    executable = true;
+  };
   # Mic-aware voxtype front-end (prefers Jabra mic; trackpad/bar trigger).
   home.file.".local/bin/dictation" = {
     source = ./scripts/dictation.sh;
@@ -1042,6 +1052,28 @@ in
     Install.WantedBy = [ "graphical-session.target" ];
   };
 
+  # Watches sway output events and reapplies the selected daemon monitor profile
+  # for desktop profile-managed hosts. This replaces the accidental use of the
+  # ThinkPad lid/clamshell watcher on Ryzen.
+  systemd.user.services.monitor-profile-reconcile = lib.mkIf isRyzen {
+    Unit = {
+      Description = "Reconcile Sway outputs with selected monitor profile";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" "i3-project-daemon.service" ];
+      Wants = [ "i3-project-daemon.service" ];
+      X-Restart-Triggers = [
+        "${./scripts/monitor-profile-reconcile.sh}"
+      ];
+    };
+    Service = {
+      Type = "simple";
+      ExecStart = "${config.home.homeDirectory}/.local/bin/monitor-profile-reconcile --watch";
+      Restart = "on-failure";
+      RestartSec = "3";
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+
   # Tracks window focus order so a 4-finger swipe can jump back/forward through
   # focus history (sway has no native focus history). Exits on EOF if its sway
   # subscription dies (e.g. sway restart); Restart=always brings it back fresh.
@@ -1068,9 +1100,15 @@ in
       "sway/monitor-profile.default".text = "${managedProfileDefault}\n";
     })
     // {
-      "sway/active-outputs".text = ''
-        eDP-1
-      '';
+      "sway/active-outputs".text =
+        if isRyzen then ''
+          HDMI-A-1
+          DP-1
+          DP-2
+        ''
+        else ''
+          eDP-1
+        '';
       "sway/workspace-assignments.json".text = builtins.toJSON workspaceAssignments;
     };
     # NOTE: the ThinkPad's physical external-monitor layout (clamshell + extended)
@@ -1088,15 +1126,36 @@ in
 
     mkdir -p "$profile_dir/monitor-profiles"
 
-    if [ ! -f "$current_file" ]; then
-      if [ -f "$default_file" ]; then
-        install -m600 "$default_file" "$current_file"
-      else
-        echo "${managedProfileDefault}" > "$current_file"
-        chmod 600 "$current_file"
-      fi
-    else
+    available_profiles='${lib.concatStringsSep " " (builtins.attrNames managedMonitorProfiles)}'
+    default_profile="${managedProfileDefault}"
+
+    if [ -f "$default_file" ]; then
+      default_profile="$(tr -d '\r[:space:]' < "$default_file" | head -n1)"
+    fi
+
+    current_profile=""
+    if [ -f "$current_file" ]; then
+      current_profile="$(tr -d '\r[:space:]' < "$current_file" | head -n1)"
       chmod u+rw "$current_file" >/dev/null 2>&1 || true
+    fi
+
+    current_valid=0
+    for profile in $available_profiles; do
+      if [ "$current_profile" = "$profile" ]; then
+        current_valid=1
+        break
+      fi
+    done
+
+    if [ "$current_valid" -ne 1 ]; then
+      if [ -z "$default_profile" ]; then
+        default_profile="${managedProfileDefault}"
+      fi
+      echo "$default_profile" > "$current_file"
+      chmod 600 "$current_file"
+      if [ -n "$current_profile" ]; then
+        echo "[sway] Replaced invalid monitor profile '$current_profile' with '$default_profile'" >&2
+      fi
     fi
   '');
 

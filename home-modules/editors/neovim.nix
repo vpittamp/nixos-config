@@ -162,6 +162,20 @@
       },
     })
 
+    require("config.options")
+
+    local function enable_system_clipboard()
+      if vim.fn.has("clipboard") == 1 then
+        vim.opt.clipboard = "unnamedplus"
+      end
+    end
+
+    enable_system_clipboard()
+    vim.api.nvim_create_autocmd("User", {
+      pattern = "VeryLazy",
+      callback = enable_system_clipboard,
+    })
+
     -- Disable mouse to prevent escape sequence leakage
     vim.opt.mouse = ""
 
@@ -177,6 +191,7 @@
 
     -- Add any additional options here
     vim.opt.colorcolumn = "80"
+    vim.opt.clipboard = "unnamedplus"
   '';
 
   # LazyVim config: keymaps

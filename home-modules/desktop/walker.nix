@@ -187,6 +187,123 @@ let
 
   clipboardSyncScript = "${scriptWrappers.clipboard-sync}/bin/clipboard-sync";
 
+  clipboardHistoryScript = pkgs.writeShellScriptBin "i3pm-clipboard-history" ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    state_dir="''${XDG_CACHE_HOME:-$HOME/.cache}/i3pm"
+    history_file="''${I3PM_CLIPBOARD_HISTORY_FILE:-$state_dir/clipboard-history.json}"
+    state_file="$state_dir/clipboard-history.last.sha256"
+    max_bytes="''${I3PM_CLIPBOARD_HISTORY_MAX_BYTES:-2097152}"
+
+    ${pkgs.coreutils}/bin/mkdir -p "$state_dir"
+
+    record_clipboard() {
+      local tmp hash previous_hash size
+
+      case "''${CLIPBOARD_STATE:-data}" in
+        data) ;;
+        sensitive|nil|clear)
+          ${pkgs.coreutils}/bin/rm -f "$state_file"
+          exit 0
+          ;;
+        *)
+          exit 0
+          ;;
+      esac
+
+      tmp="$(${pkgs.coreutils}/bin/mktemp -t i3pm-clipboard-history-XXXXXX)"
+      trap '${pkgs.coreutils}/bin/rm -f "''${tmp:-}"' EXIT
+
+      ${pkgs.coreutils}/bin/cat >"$tmp"
+
+      if [[ ! -s "$tmp" ]]; then
+        exit 0
+      fi
+
+      size="$(${pkgs.coreutils}/bin/stat --format='%s' "$tmp" 2>/dev/null || ${pkgs.coreutils}/bin/wc -c <"$tmp")"
+      if [[ "$size" -gt "$max_bytes" ]]; then
+        exit 0
+      fi
+
+      hash="$(${pkgs.coreutils}/bin/sha256sum "$tmp" | ${pkgs.gawk}/bin/awk '{print $1}')"
+      previous_hash=""
+      if [[ -f "$state_file" ]]; then
+        previous_hash="$(<"$state_file")"
+      fi
+
+      if [[ "$hash" == "$previous_hash" ]]; then
+        exit 0
+      fi
+
+      printf '%s\n' "$hash" >"$state_file"
+
+      ${pkgs.python3}/bin/python3 - "$history_file" "$tmp" "$hash" <<'PY'
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+history_path = Path(sys.argv[1])
+content_path = Path(sys.argv[2])
+digest = sys.argv[3]
+
+raw = content_path.read_bytes()
+text = raw.decode("utf-8", errors="replace")
+if not text.strip():
+    raise SystemExit(0)
+
+history_path.parent.mkdir(parents=True, exist_ok=True)
+try:
+    with history_path.open("r", encoding="utf-8") as handle:
+        existing = json.load(handle)
+except Exception:
+    existing = []
+
+if not isinstance(existing, list):
+    existing = []
+
+entry_id = f"i3pm:{digest}"
+entry = {
+    "id": entry_id,
+    "text": text,
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+    "bytes": len(raw),
+}
+
+items = [item for item in existing if isinstance(item, dict) and item.get("id") != entry_id]
+items.insert(0, entry)
+items = items[:500]
+
+fd, tmp_name = tempfile.mkstemp(prefix=".clipboard-history-", suffix=".json", dir=str(history_path.parent))
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(items, handle, ensure_ascii=False)
+        handle.write("\n")
+    os.chmod(tmp_name, 0o600)
+    os.replace(tmp_name, history_path)
+finally:
+    if os.path.exists(tmp_name):
+        os.unlink(tmp_name)
+PY
+    }
+
+    case "''${1:-}" in
+      --handle-watch-event)
+        record_clipboard
+        ;;
+      --record-current)
+        ${pkgs.wl-clipboard}/bin/wl-paste --type text/plain 2>/dev/null | "$0" --handle-watch-event || true
+        ;;
+      *)
+        "$0" --record-current || true
+        exec ${pkgs.wl-clipboard}/bin/wl-paste --type text/plain --watch "$0" --handle-watch-event
+        ;;
+    esac
+  '';
+
   # Smart paste script for clipboard provider
   # Copies to clipboard, then auto-pastes for regular apps only.
   # For terminals, content is copied to clipboard but NOT auto-pasted,
@@ -972,6 +1089,7 @@ in
     snippetRun
     nixosRebuildScript
     aiCliStatusScript
+    clipboardHistoryScript
     walkerOpenInNvim
     walkerOnePasswordCacheRefresh
     walkerOnePasswordList
@@ -1872,6 +1990,26 @@ PY
 
   # Feature 035/046: Elephant service - conditional for Wayland (Sway) vs X11 (i3)
   # Uses standard Elephant binary instead of isolated wrapper
+  systemd.user.services.i3pm-clipboard-history = lib.mkIf isWaylandMode {
+    Unit = {
+      Description = "QuickShell clipboard history recorder";
+      PartOf = [ "sway-session.target" ];
+      After = [ "sway-session.target" ];
+    };
+    Service = {
+      Type = "simple";
+      ExecStart = "${clipboardHistoryScript}/bin/i3pm-clipboard-history";
+      Restart = "on-failure";
+      RestartSec = 1;
+      Environment = [
+        "XDG_CACHE_HOME=${config.home.homeDirectory}/.cache"
+        "XDG_RUNTIME_DIR=%t"
+      ];
+      PassEnvironment = [ "WAYLAND_DISPLAY" ];
+    };
+    Install.WantedBy = [ "sway-session.target" ];
+  };
+
   systemd.user.services.elephant = lib.mkForce {
     Unit = {
       Description = if isWaylandMode then "Elephant launcher backend (Wayland)" else "Elephant launcher backend (X11)";

@@ -303,6 +303,18 @@ class MonitorProfileService:
                 profile_name,
                 list(self._profiles.keys()),
             )
+            if DEFAULT_PROFILE_FILE.exists():
+                try:
+                    default_profile = DEFAULT_PROFILE_FILE.read_text().strip()
+                    if default_profile in self._profiles:
+                        logger.warning(
+                            "Falling back from invalid current profile '%s' to default profile '%s'",
+                            profile_name,
+                            default_profile,
+                        )
+                        return default_profile
+                except Exception as e:
+                    logger.error(f"Failed to read default profile: {e}")
             return None
         except Exception as e:
             logger.error(f"Failed to read current profile: {e}")

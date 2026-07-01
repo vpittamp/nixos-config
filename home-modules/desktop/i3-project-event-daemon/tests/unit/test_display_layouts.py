@@ -85,6 +85,30 @@ def test_monitor_profile_accepts_hdmi_output_alias():
     assert profile.get_enabled_outputs() == ["HDMI-1", "DP-1"]
 
 
+def test_monitor_profile_service_falls_back_from_stale_current_profile(monkeypatch, tmp_path):
+    current_file = tmp_path / "monitor-profile.current"
+    default_file = tmp_path / "monitor-profile.default"
+    current_file.write_text("clamshell\n", encoding="utf-8")
+    default_file.write_text("default\n", encoding="utf-8")
+
+    monkeypatch.setattr(monitor_profile_service_module, "CURRENT_PROFILE_FILE", current_file)
+    monkeypatch.setattr(monitor_profile_service_module, "DEFAULT_PROFILE_FILE", default_file)
+
+    service = MonitorProfileService.__new__(MonitorProfileService)
+    service._profiles = {
+        "default": MonitorProfile(**{
+            "name": "default",
+            "description": "Full Ryzen desktop layout",
+            "outputs": [
+                {"name": "DP-1", "enabled": True},
+                {"name": "HDMI-A-1", "enabled": True},
+            ],
+        }),
+    }
+
+    assert service._read_current_profile() == "default"
+
+
 @pytest.mark.asyncio
 async def test_display_snapshot_exposes_layout_options(monkeypatch):
     server = IPCServer(DummyStateManager())
