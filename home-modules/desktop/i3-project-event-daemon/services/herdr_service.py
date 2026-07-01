@@ -448,6 +448,56 @@ class HerdrService:
             "connection_key": connection_key,
         }
 
+    def apply_status_event_cache(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply a local Herdr status event to cached pane/session rows."""
+        data = event.get("data")
+        if not isinstance(data, dict):
+            return {"applied": False, "cache_updated": False}
+        pane_id = str(data.get("pane_id") or "").strip()
+        raw_status = str(data.get("agent_status") or "").strip()
+        if not pane_id or not raw_status:
+            return {"applied": False, "cache_updated": False}
+
+        updates: Dict[str, Any] = {
+            "agent_status": self.normalize_agent_status(raw_status),
+            "agent_status_state": self.agent_status_state(raw_status),
+        }
+        for key in ("custom_status", "display_agent"):
+            if key in data:
+                updates[key] = self.normalize_text_field(data.get(key))
+        if "state_labels" in data:
+            updates["state_labels"] = self.normalize_state_labels(data.get("state_labels"))
+
+        cache_updated = False
+
+        def update_rows(rows: Any) -> bool:
+            updated = False
+            if not isinstance(rows, list):
+                return False
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                if str(row.get("pane_id") or "").strip() != pane_id:
+                    continue
+                row.update(updates)
+                updated = True
+            return updated
+
+        for collection_name in ("sessions", "agents", "panes"):
+            cache_updated = update_rows(self.snapshot_cache.get(collection_name)) or cache_updated
+
+        remote_snapshots = self.snapshot_cache.get("remote_snapshots")
+        if isinstance(remote_snapshots, list):
+            for remote_snapshot in remote_snapshots:
+                if not isinstance(remote_snapshot, dict):
+                    continue
+                for collection_name in ("sessions", "agents", "panes"):
+                    cache_updated = update_rows(remote_snapshot.get(collection_name)) or cache_updated
+
+        if cache_updated:
+            self.touch_snapshot_cache(now=time.time())
+        return {"applied": True, "cache_updated": cache_updated}
+
     def remote_target_matcher(
         self,
         target: Dict[str, str],
@@ -488,6 +538,7 @@ class HerdrService:
         pane_id = str(normalized.get("pane_id") or "").strip()
         session_key = self.session_key(normalized, host_key)
         focused = bool(normalized.get("focused", normalized.get("is_current_window", False)))
+        agent_status = self.normalize_agent_status(normalized.get("agent_status"))
         normalized.update({
             "schema": "herdr.ai_session.v1",
             "source": "herdr",
@@ -495,6 +546,11 @@ class HerdrService:
             "session_key": session_key,
             "render_session_key": session_key,
             "focused": focused,
+            "agent_status": agent_status,
+            "agent_status_state": self.agent_status_state(agent_status),
+            "state_labels": self.normalize_state_labels(normalized.get("state_labels")),
+            "custom_status": self.normalize_text_field(normalized.get("custom_status")),
+            "display_agent": self.normalize_text_field(normalized.get("display_agent")),
             "is_current_window": focused,
             "window_active": focused,
             "pane_active": focused,
@@ -994,14 +1050,9 @@ class HerdrService:
 
     @staticmethod
     def normalize_agent_status(value: Any, *, preserve_raw: bool = False) -> str:
-        """Normalize Herdr agent status while preserving raw labels when requested."""
+        """Return Herdr's status label without collapsing it to a local bucket."""
         raw = str(value or "").strip()
-        if preserve_raw:
-            return raw or "unknown"
-        status = raw.lower()
-        if status in {"working", "blocked", "done", "idle", "unknown"}:
-            return status
-        return HerdrService.agent_status_state(status)
+        return raw or "unknown"
 
     @staticmethod
     def agent_status_state(value: Any) -> str:
@@ -1057,14 +1108,14 @@ class HerdrService:
 
     @classmethod
     def normalize_state_labels(cls, value: Any) -> Dict[str, str]:
-        """Normalize Herdr state label maps by canonical status state."""
+        """Preserve Herdr state label maps with trimmed string keys and values."""
         if not isinstance(value, dict):
             return {}
         labels: Dict[str, str] = {}
         for key, label in value.items():
-            state = cls.agent_status_state(key)
+            state = cls.normalize_text_field(key)
             text = cls.normalize_text_field(label)
-            if state == "unknown" or not text:
+            if not state or not text:
                 continue
             labels[state] = text
         return labels
@@ -1163,6 +1214,7 @@ class HerdrService:
             else normalize_connection_key(f"local@{self.normalize_host_key(local_host)}")
         )
         agent_status = self.normalize_agent_status(row.get("agent_status"))
+        agent_status_state = self.agent_status_state(agent_status)
         display_agent = self.normalize_text_field(row.get("display_agent"))
         custom_status = self.normalize_text_field(row.get("custom_status"))
         state_labels = self.normalize_state_labels(row.get("state_labels"))
@@ -1182,6 +1234,7 @@ class HerdrService:
             "custom_status": custom_status,
             "state_labels": state_labels,
             "agent_status": agent_status,
+            "agent_status_state": agent_status_state,
             "focused": bool(row.get("focused", False)),
             "is_current_window": bool(row.get("focused", False)),
             "window_active": bool(row.get("focused", False)),
@@ -2122,6 +2175,7 @@ class HerdrService:
                     "label": label,
                     "focused": bool(focused),
                     "agent_status": "unknown",
+                    "agent_status_state": "unknown",
                     "agent_count": 0,
                     "pane_count": 0,
                     "tab_count": 0,
@@ -2236,10 +2290,12 @@ class HerdrService:
                 label_source="session",
                 worktree_metadata=metadata,
             )
-            current_status = str(space.get("agent_status") or "unknown").strip()
-            candidate_status = self.agent_status_state(session.get("agent_status"))
-            if self.agent_status_rank(candidate_status) > self.agent_status_rank(current_status):
+            current_status = str(space.get("agent_status_state") or space.get("agent_status") or "unknown").strip()
+            candidate_status = str(session.get("agent_status") or "unknown").strip() or "unknown"
+            candidate_status_state = self.agent_status_state(session.get("agent_status_state") or candidate_status)
+            if self.agent_status_rank(candidate_status_state) > self.agent_status_rank(current_status):
                 space["agent_status"] = candidate_status
+                space["agent_status_state"] = candidate_status_state
             copy_git_fields(space, session, prefer=bool(session.get("focused", False)))
             if bool(session.get("focused", False)) or str(space.get("project_name") or "global") == "global":
                 space["project_name"] = project_name
@@ -2931,7 +2987,12 @@ class HerdrService:
         elif event_name in {"pane.created", "pane_created", "pane.agent_detected", "pane_agent_detected"}:
             self.ensure_status_subscription(pane_id)
         self.bump_local_generation()
-        self.invalidate_snapshot_cache()
+        applied_status_cache = False
+        if event_name in {HERDR_STATUS_EVENT_TYPE, "pane_agent_status_changed"}:
+            result = self.apply_status_event_cache(event)
+            applied_status_cache = bool(result.get("applied", False) and result.get("cache_updated", False))
+        if not applied_status_cache:
+            self.invalidate_snapshot_cache()
         self.schedule_state_change_notification()
 
     def schedule_state_change_notification(self) -> None:

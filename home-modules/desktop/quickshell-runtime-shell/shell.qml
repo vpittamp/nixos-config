@@ -3968,6 +3968,7 @@ function normalizeLauncherMode(mode) {
             pane_title: stringOrEmpty(entry.pane_title),
             surface_key: stringOrEmpty(entry.surface_key),
             agent_status: stringOrEmpty(entry.agent_status),
+            agent_status_state: stringOrEmpty(entry.agent_status_state),
             cwd: stringOrEmpty(entry.cwd),
             foreground_cwd: stringOrEmpty(entry.foreground_cwd),
             workspace_id: stringOrEmpty(entry.workspace_id),
@@ -4834,7 +4835,7 @@ function normalizeLauncherMode(mode) {
     }
 
     function herdrSpaceStatus(space) {
-        return herdrStatusState(space && space.agent_status);
+        return herdrStatusStateFor(space);
     }
 
     function herdrSpaceStatusColor(space) {
@@ -5336,12 +5337,61 @@ function normalizeLauncherMode(mode) {
         return "unknown";
     }
 
+    function herdrStatusStateFor(item) {
+        const explicit = stringOrEmpty(item && item.agent_status_state);
+        if (explicit.length > 0) {
+            return herdrStatusState(explicit);
+        }
+        return herdrStatusState(item && item.agent_status);
+    }
+
+    function herdrStateLabel(labels, rawStatus, state) {
+        if (!labels || typeof labels !== "object") {
+            return "";
+        }
+        const raw = stringOrEmpty(rawStatus);
+        if (raw.length > 0) {
+            const exact = stringOrEmpty(labels[raw]);
+            if (exact.length > 0) {
+                return exact;
+            }
+        }
+        const visualState = stringOrEmpty(state);
+        if (visualState.length > 0) {
+            const direct = stringOrEmpty(labels[visualState]);
+            if (direct.length > 0) {
+                return direct;
+            }
+        }
+        const rawNormalized = raw.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+        const keys = Object.keys(labels);
+        for (let i = 0; i < keys.length; i += 1) {
+            const key = keys[i];
+            const keyNormalized = stringOrEmpty(key).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+            if (keyNormalized === rawNormalized || keyNormalized === visualState) {
+                const value = stringOrEmpty(labels[key]);
+                if (value.length > 0) {
+                    return value;
+                }
+            }
+        }
+        return "";
+    }
+
     function herdrStatusLabel(session) {
-        const state = herdrStatusState(session && session.agent_status);
+        const rawStatus = stringOrEmpty(session && session.agent_status);
+        const state = herdrStatusStateFor(session);
         const labels = session && session.state_labels && typeof session.state_labels === "object" ? session.state_labels : {};
-        const override = stringOrEmpty(labels[state]);
+        const customStatus = stringOrEmpty(session && session.custom_status);
+        if (customStatus.length > 0) {
+            return customStatus;
+        }
+        const override = herdrStateLabel(labels, rawStatus, state);
         if (override.length > 0) {
             return override;
+        }
+        if (rawStatus.length > 0 && rawStatus !== "unknown") {
+            return rawStatus;
         }
         if (state === "unknown") {
             return "Unknown";
@@ -5350,7 +5400,7 @@ function normalizeLauncherMode(mode) {
     }
 
     function sessionPhase(session) {
-        return herdrStatusState(session && session.agent_status);
+        return herdrStatusStateFor(session);
     }
 
     function sessionAccentColor(session) {
@@ -5812,7 +5862,7 @@ function normalizeLauncherMode(mode) {
     function sessionSecondaryLabel(session) {
         const bits = [];
         const project = shortProject(stringOrEmpty(session && (session.project_name || session.project || "")));
-        const herdrStatus = stringOrEmpty(session && session.agent_status).toLowerCase();
+        const herdrStatus = stringOrEmpty(session && session.agent_status);
         const customStatus = stringOrEmpty(session && session.custom_status);
         if (stringOrEmpty(session && session.source) === "herdr" || stringOrEmpty(session && session.pane_id)) {
             const agent = toolLabel(session);
@@ -5826,9 +5876,12 @@ function normalizeLauncherMode(mode) {
             }
         }
         if (herdrStatus) {
-            bits.push(herdrStatusLabel(session));
+            const statusLabel = herdrStatusLabel(session);
+            if (statusLabel.length > 0) {
+                bits.push(statusLabel);
+            }
         }
-        if (customStatus) {
+        if (customStatus && customStatus !== bits[bits.length - 1]) {
             bits.push(customStatus);
         }
         const foregroundCwd = stringOrEmpty(session && session.foreground_cwd);

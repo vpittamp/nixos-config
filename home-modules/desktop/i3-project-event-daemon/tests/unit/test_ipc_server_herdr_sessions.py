@@ -143,9 +143,13 @@ def test_herdr_rows_preserve_status_and_targets(server, tmp_path, monkeypatch):
     row = rows[0]
     assert row["source"] == "herdr"
     assert row["agent_status"] == "blocked"
+    assert row["agent_status_state"] == "blocked"
     assert row["display_agent"] == "Codex auth"
     assert row["custom_status"] == "reviewing diff"
-    assert row["state_labels"] == {"blocked": "waiting for approval"}
+    assert row["state_labels"] == {
+        "blocked": "waiting for approval",
+        "invalid-state": "ignored",
+    }
     assert row["session_key"] == "herdr:pane:w123-1"
     assert row["workspace_id"] == "w123"
     assert row["tab_id"] == "w123:1"
@@ -419,7 +423,8 @@ def test_herdr_spaces_group_by_host_workspace_and_prioritize_status(server):
     remote_space = spaces[0]
     local_space = spaces[1]
     assert remote_space["focused"] is True
-    assert remote_space["agent_status"] == "blocked"
+    assert remote_space["agent_status"] == "NeedsInput"
+    assert remote_space["agent_status_state"] == "blocked"
     assert remote_space["agent_count"] == 2
     assert remote_space["pane_count"] == 2
     assert remote_space["tab_count"] == 1
@@ -635,6 +640,7 @@ async def test_dashboard_snapshot_includes_herdr_spaces(server, monkeypatch):
         "label": "nixos",
         "focused": True,
         "agent_status": "working",
+        "agent_status_state": "working",
         "agent_count": 1,
         "pane_count": 1,
         "tab_count": 1,
@@ -1093,8 +1099,10 @@ async def test_herdr_snapshot_merges_local_and_remote_rows(server, monkeypatch):
     local_row = rows[0]
     remote_row = rows[1]
     assert local_row["agent_status"] == "blocked"
+    assert local_row["agent_status_state"] == "blocked"
     assert local_row["close_target"]["method"] == "herdr.pane.close"
-    assert remote_row["agent_status"] == "blocked"
+    assert remote_row["agent_status"] == "NeedsInput"
+    assert remote_row["agent_status_state"] == "blocked"
     assert remote_row["herdr_host"] == "ryzen"
     assert remote_row["ssh_target"] == "ryzen"
     assert remote_row["is_remote_herdr"] is True
@@ -1482,8 +1490,12 @@ async def test_herdr_subscription_event_does_not_collect_remote_snapshots(server
 
 
 @pytest.mark.asyncio
-async def test_herdr_agent_status_event_invalidates_cache_without_remote_snapshot(server, monkeypatch):
-    server.herdr_service.snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
+async def test_herdr_agent_status_event_updates_cached_rows_without_remote_snapshot(server, monkeypatch):
+    server.herdr_service.snapshot_cache = {
+        "sessions": [{"pane_id": "stale", "agent_status": "working", "agent_status_state": "working"}],
+        "agents": [{"pane_id": "stale", "agent_status": "working", "agent_status_state": "working"}],
+        "panes": [{"pane_id": "stale", "agent_status": "working", "agent_status_state": "working"}],
+    }
     server.herdr_service.notify_delay = 0.0
     notify_state_change = AsyncMock()
     server.herdr_service._notify_state_change = notify_state_change
@@ -1500,8 +1512,30 @@ async def test_herdr_agent_status_event_invalidates_cache_without_remote_snapsho
         },
     })
 
-    assert server.herdr_service.snapshot_cache == {}
+    for collection_name in ("sessions", "agents", "panes"):
+        row = server.herdr_service.snapshot_cache[collection_name][0]
+        assert row["agent_status"] == "done"
+        assert row["agent_status_state"] == "done"
+        assert row["custom_status"] == "ready for review"
+        assert row["state_labels"] == {"done": "ready"}
     load_remote_targets.assert_not_called()
+    await asyncio.sleep(0)
+    notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
+
+
+@pytest.mark.asyncio
+async def test_herdr_agent_status_event_invalidates_cache_when_payload_is_incomplete(server):
+    server.herdr_service.snapshot_cache = {"sessions": [{"pane_id": "stale"}]}
+    server.herdr_service.notify_delay = 0.0
+    notify_state_change = AsyncMock()
+    server.herdr_service._notify_state_change = notify_state_change
+
+    await server.herdr_service.handle_subscription_event({
+        "event": "pane.agent_status_changed",
+        "data": {"pane_id": "stale"},
+    })
+
+    assert server.herdr_service.snapshot_cache == {}
     await asyncio.sleep(0)
     notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
 

@@ -612,7 +612,7 @@ def test_herdr_service_normalizes_result_arrays_and_status_labels():
         "branch_label": "main",
     }]
 
-    assert service.normalize_agent_status("NeedsInput") == "blocked"
+    assert service.normalize_agent_status("NeedsInput") == "NeedsInput"
     assert service.normalize_agent_status("NeedsInput", preserve_raw=True) == "NeedsInput"
     assert service.agent_status_state("NeedsInput") == "blocked"
     assert service.agent_status_state("tool-running") == "working"
@@ -623,8 +623,9 @@ def test_herdr_service_normalizes_result_arrays_and_status_labels():
         "mystery": "ignored",
         "done": "",
     }) == {
-        "blocked": "waiting",
+        "NeedsInput": "waiting",
         "working": "running",
+        "mystery": "ignored",
     }
 
 
@@ -671,6 +672,7 @@ def test_herdr_service_strips_retired_tmux_and_lifecycle_fields_from_sessions():
     assert session["session_key"] == "herdr:pane:pane-1"
     assert session["pane_id"] == "pane-1"
     assert session["agent_status"] == "working"
+    assert session["agent_status_state"] == "working"
     for retired_field in (
         "session_phase",
         "turn_owner",
@@ -866,7 +868,8 @@ def test_herdr_service_normalizes_local_and_remote_sessions(monkeypatch):
 
     assert len(local_rows) == 1
     assert local_rows[0]["session_key"] == "herdr:pane:pane-a"
-    assert local_rows[0]["agent_status"] == "blocked"
+    assert local_rows[0]["agent_status"] == "NeedsInput"
+    assert local_rows[0]["agent_status_state"] == "blocked"
     for retired_field in ("session_phase", "turn_owner", "activity_substate", "status_reason"):
         assert retired_field not in local_rows[0]
     assert local_rows[0]["focus_target"] == {
@@ -907,7 +910,8 @@ def test_herdr_service_normalizes_local_and_remote_sessions(monkeypatch):
     )
 
     assert remote_row["session_key"] == "herdr:ryzen:pane:pane-r"
-    assert remote_row["agent_status"] == "blocked"
+    assert remote_row["agent_status"] == "NeedsInput"
+    assert remote_row["agent_status_state"] == "blocked"
     for retired_field in (
         "session_phase",
         "session_phase_label",
@@ -994,7 +998,8 @@ def test_herdr_service_builds_spaces_with_worktree_groups():
     assert by_workspace["feature-ws"]["group_key"] == "thinkpad:vpittamp/nixos-config"
     assert by_workspace["feature-ws"]["is_linked_worktree"] is True
     assert by_workspace["feature-ws"]["focused"] is True
-    assert by_workspace["feature-ws"]["agent_status"] == "blocked"
+    assert by_workspace["feature-ws"]["agent_status"] == "NeedsInput"
+    assert by_workspace["feature-ws"]["agent_status_state"] == "blocked"
     assert by_workspace["feature-ws"]["agent_count"] == 1
     assert by_workspace["feature-ws"]["pane_count"] == 1
     assert by_workspace["feature-ws"]["tab_count"] == 1
@@ -1072,7 +1077,8 @@ async def test_herdr_service_builds_remote_snapshot(monkeypatch):
     assert snapshot["agents"][0]["execution_mode"] == "ssh"
     assert snapshot["agents"][0]["connection_key"] == "vpittamp@ryzen:22"
     assert snapshot["sessions"][0]["session_key"] == "herdr:ryzen:pane:pane-r"
-    assert snapshot["sessions"][0]["agent_status"] == "blocked"
+    assert snapshot["sessions"][0]["agent_status"] == "NeedsInput"
+    assert snapshot["sessions"][0]["agent_status_state"] == "blocked"
     assert snapshot["sessions"][0]["focus_target"]["method"] == "herdr.remote.pane.focus"
     assert snapshot["sessions"][0]["is_remote_herdr"] is True
     assert snapshot["errors"] == []

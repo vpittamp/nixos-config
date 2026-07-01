@@ -101,9 +101,9 @@ PanelWindow {
                     id: agentMonitorChip
                     readonly property var agentSessionsList: root.activeSessions()
                     readonly property int agentSessionsCount: agentSessionsList.length
-                    readonly property bool anyBlocked: agentSessionsList.some(function (s) { return root.stringOrEmpty(s && s.agent_status) === "blocked"; })
-                    readonly property bool anyDone: agentSessionsList.some(function (s) { return root.stringOrEmpty(s && s.agent_status) === "done"; })
-                    readonly property bool anyWorking: agentSessionsList.some(function (s) { return root.stringOrEmpty(s && s.agent_status) === "working"; })
+                    readonly property bool anyBlocked: agentSessionsList.some(function (s) { return root.sessionPhase(s) === "blocked"; })
+                    readonly property bool anyDone: agentSessionsList.some(function (s) { return root.sessionPhase(s) === "done"; })
+                    readonly property bool anyWorking: agentSessionsList.some(function (s) { return root.sessionPhase(s) === "working"; })
                     radius: 8
                     color: root.stateChipFill(root.agentMonitorVisible, agentMonitorMouse.containsMouse, colors.blueBg)
                     border.color: root.stateChipBorder(root.agentMonitorVisible, agentMonitorMouse.containsMouse, colors.blue)

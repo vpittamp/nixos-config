@@ -1547,6 +1547,7 @@ class FocusService:
                 "terminal_id": str(active_session.get("terminal_id") or "").strip(),
                 "agent": str(active_session.get("agent") or "").strip(),
                 "agent_status": str(active_session.get("agent_status") or "").strip(),
+                "agent_status_state": str(active_session.get("agent_status_state") or "").strip(),
                 "focused": bool(active_session.get("focused", False)),
                 "window_id": int(active_session.get("window_id") or 0),
                 "project_name": str(active_session.get("project_name") or active_session.get("project") or "").strip(),

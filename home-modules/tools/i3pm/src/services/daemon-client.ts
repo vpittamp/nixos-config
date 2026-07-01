@@ -156,7 +156,7 @@ export class DaemonClient {
 
     while (true) {
       const readPromise = this.conn.read(buffer);
-      let timeoutHandle: number | null = null;
+      let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutHandle = setTimeout(
           () => reject(new DaemonError(`Daemon response timeout after ${TIMEOUT_MS}ms`)),

@@ -36,6 +36,21 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function nonEmptyString(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function hasHerdrFocusPayload(payload: Record<string, unknown>): boolean {
+  const focusState = asRecord(payload.focus_state);
+  if (nonEmptyString(focusState.current_herdr_pane_id) || nonEmptyString(focusState.current_session_key)) {
+    return true;
+  }
+  const activeSession = asRecord(focusState.active_session);
+  return nonEmptyString(activeSession.herdr_session) ||
+    nonEmptyString(activeSession.pane_id) ||
+    activeSession.source === "herdr";
+}
+
 function showHelp(): void {
   console.log(`i3pm herdr-proxy <snapshot|events|focus> [--json|--jsonl]
 
@@ -58,16 +73,17 @@ export function buildHerdrProxyEvent(
     ? event.changed_keys.map((key) => String(key)).filter(Boolean)
     : [];
   const eventType = String(event.event_type || "");
+  const sourcePayload = asRecord(event.payload);
+  const isFocusOnly = changedKeys.length > 0 && changedKeys.every((key) => key === "focus_state");
   const isHerdrEvent = eventType === "herdr.changed" ||
     eventType === "session.changed" ||
     changedKeys.includes("herdr") ||
     changedKeys.includes("active_ai_sessions") ||
-    changedKeys.includes("focus_state");
+    (changedKeys.includes("focus_state") && (!isFocusOnly || hasHerdrFocusPayload(sourcePayload)));
   if (!isHerdrEvent) {
     return null;
   }
 
-  const sourcePayload = asRecord(event.payload);
   const payload: Record<string, unknown> = {};
   for (const key of HERDR_PROXY_PAYLOAD_KEYS) {
     if (sourcePayload[key] !== undefined) {

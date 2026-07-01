@@ -740,6 +740,8 @@ async def test_focus_state_reports_current_session_and_window(server, monkeypatc
             "host_name": "thinkpad",
             "is_current_host": True,
             "pane_id": "pane-1",
+            "agent_status": "NeedsInput",
+            "agent_status_state": "blocked",
         }
     ]
     server._load_reconciled_session_runtime = AsyncMock(return_value=(runtime_snapshot, sessions, {}))
@@ -754,6 +756,8 @@ async def test_focus_state_reports_current_session_and_window(server, monkeypatc
     assert "focused_window_id" not in result
     assert result["current_herdr_pane_id"] == "pane-1"
     assert result["active_session"]["pane_id"] == "pane-1"
+    assert result["active_session"]["agent_status"] == "NeedsInput"
+    assert result["active_session"]["agent_status_state"] == "blocked"
     assert "tmux_session" not in result["active_session"]
     assert "tmux_window" not in result["active_session"]
     assert "tmux_pane" not in result["active_session"]

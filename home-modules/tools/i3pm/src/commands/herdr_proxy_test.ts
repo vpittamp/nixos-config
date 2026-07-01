@@ -57,6 +57,42 @@ Deno.test("buildHerdrProxyEvent filters unrelated dashboard events", () => {
   assertEquals(event, null);
 });
 
+Deno.test("buildHerdrProxyEvent filters unrelated focus-only window events", () => {
+  const event = buildHerdrProxyEvent({
+    event_type: "focus.changed",
+    generation: 12,
+    changed_keys: ["focus_state"],
+    payload: {
+      focus_state: {
+        current_window_id: 1001,
+        focused_workspace: "2",
+      },
+    },
+  });
+
+  assertEquals(event, null);
+});
+
+Deno.test("buildHerdrProxyEvent keeps focus-only Herdr events", () => {
+  const event = buildHerdrProxyEvent({
+    event_type: "focus.changed",
+    generation: 12,
+    changed_keys: ["focus_state"],
+    timestamp: 123.5,
+    payload: {
+      focus_state: {
+        current_herdr_pane_id: "pane-a",
+      },
+    },
+  });
+
+  assertEquals(event?.payload, {
+    focus_state: {
+      current_herdr_pane_id: "pane-a",
+    },
+  });
+});
+
 Deno.test("buildHerdrProxyEvent tolerates missing daemon payload", () => {
   const event = buildHerdrProxyEvent({
     event_type: "session.changed",
