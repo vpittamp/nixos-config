@@ -133,12 +133,10 @@ in
     [ui]
     agent_panel_scope = "all"
     show_agent_labels_on_pane_borders = true
-    # Capture normal mouse input in Herdr so wheel events scroll pane history
-    # instead of being forwarded to agent TUIs. Codex treats forwarded wheel
-    # events as prompt-history navigation, which makes review of long sessions
-    # effectively impossible. Use Shift+mouse for the outer terminal's native
-    # selection/context-menu behavior when needed.
-    mouse_capture = true
+    # Let the terminal own normal mouse gestures. Capturing them in Herdr made
+    # text selection/highlighting feel broken and introduced another pointer
+    # grab layer while using the QuickShell session panels.
+    mouse_capture = false
     mouse_scroll_lines = 1
     prompt_new_tab_name = false
     accent = "cyan"

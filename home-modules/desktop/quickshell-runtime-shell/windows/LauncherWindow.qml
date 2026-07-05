@@ -419,6 +419,7 @@ PanelWindow {
                                 preferredHighlightEnd: Math.max(6, height - 68)
                                 highlightRangeMode: root.launcherSelectionMode === "initial" ? ListView.NoHighlightRange : ListView.StrictlyEnforceRange
                                 highlightMoveDuration: 0
+                                interactive: root.launcherPointerInputReady
                                 model: launcherEntriesModel
 
                                 delegate: Rectangle {
@@ -931,10 +932,10 @@ PanelWindow {
                                         id: entryMouse
                                         anchors.fill: parent
                                         hoverEnabled: true
+                                        preventStealing: true
                                         cursorShape: Qt.PointingHandCursor
-                                        onPositionChanged: root.updateLauncherPointerSelection(itemIndex)
                                         onEntered: {
-                                            if (root.launcherPointerSelectionEnabled) {
+                                            if (root.launcherPointerInputReady && root.launcherPointerSelectionEnabled) {
                                                 root.updateLauncherPointerSelection(itemIndex);
                                             }
                                         }
@@ -1059,7 +1060,7 @@ PanelWindow {
                                         contentWidth: width
                                         contentHeight: Math.max(height, sessionPreviewText.paintedHeight + 4)
                                         boundsBehavior: Flickable.StopAtBounds
-                                        interactive: contentHeight > height
+                                        interactive: root.launcherPointerInputReady && contentHeight > height
                                         ScrollBar.vertical: ScrollBar {
                                             policy: ScrollBar.AsNeeded
                                         }

@@ -235,6 +235,7 @@ ShellRoot {
     property var launcherEntries: []
     property var launcherSessionEntryOrder: []
     property bool launcherPointerSelectionEnabled: true
+    property bool launcherPointerInputReady: true
     property string launcherSelectionMode: "initial"
     property bool launcherViewportPrimed: false
     property bool snippetEditorBusy: false
@@ -6507,6 +6508,10 @@ function normalizeLauncherMode(mode) {
     }
 
     function updateLauncherPointerSelection(index) {
+        if (!launcherPointerInputReady) {
+            return;
+        }
+
         const entryIndex = Number(index);
         if (isNaN(entryIndex) || entryIndex < 0 || entryIndex >= launcherEntries.length) {
             return;

@@ -95,6 +95,7 @@ Item {
                 shellRoot.launcherSelectedIndex = 0;
                 shellRoot.launcherAppFilter = "all";
                 shellRoot.launcherPointerSelectionEnabled = true;
+                shellRoot.launcherPointerInputReady = false;
                 shellRoot.launcherSelectionMode = "initial";
                 shellRoot.launcherViewportPrimed = false;
                 shellRoot.launcherNormalizingInput = true;
@@ -105,6 +106,7 @@ Item {
                 shellRoot.resetLauncherListViewport();
                 launcherQueryDebounce.restart();
                 launcherFocusTimer.restart();
+                launcherPointerInputTimer.restart();
                 sessionPreviewDebounce.restart();
                 return;
             }
@@ -120,6 +122,7 @@ Item {
             shellRoot.launcherSessionEntryOrder = [];
             shellRoot.launcherSelectedIndex = 0;
             shellRoot.launcherPointerSelectionEnabled = true;
+            shellRoot.launcherPointerInputReady = true;
             shellRoot.launcherSelectionMode = "initial";
             shellRoot.launcherViewportPrimed = false;
             shellRoot.resetSnippetEditor();
@@ -139,6 +142,7 @@ Item {
             shellRoot.launcherError = "";
             shellRoot.launcherSelectedIndex = 0;
             shellRoot.launcherPointerSelectionEnabled = true;
+            shellRoot.launcherPointerInputReady = false;
             if (shellRoot.launcherMode !== "sessions") {
                 shellRoot.launcherSessionSwitcherActive = false;
                 shellRoot.launcherSessionSwitcherPendingDelta = 0;
@@ -153,6 +157,7 @@ Item {
             if (shellRoot.launcherVisible) {
                 launcherQueryDebounce.restart();
                 launcherFocusTimer.restart();
+                launcherPointerInputTimer.restart();
                 if (shellRoot.launcherMode === "sessions") {
                     sessionPreviewDebounce.restart();
                 }
@@ -326,6 +331,13 @@ Item {
             shellRoot.launcherField.forceActiveFocus();
             shellRoot.launcherField.selectAll();
         }
+    }
+
+    Timer {
+        id: launcherPointerInputTimer
+        interval: 220
+        repeat: false
+        onTriggered: shellRoot.launcherPointerInputReady = shellRoot.launcherVisible
     }
 
     Timer {

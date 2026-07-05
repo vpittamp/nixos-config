@@ -11,10 +11,9 @@ import ".." as RootComponents
 // windows), narrow, and exclusiveZone 0 so it reserves no space and leaves the
 // rest of the screen — including the video — clickable.
 //
-// keyboardFocus is OnDemand (not None): the strip is mouse-interactive (click a
-// row to jump to that session, wheel to scroll) but only grabs the keyboard when
-// you explicitly click it. So passively watching and scrolling never steal the
-// video's space/seek/fullscreen keys.
+// The strip is mouse-interactive (click a row to jump to that session, wheel to
+// scroll), but it must not take keyboard focus from the terminal/video surface
+// underneath. Pointer-only focus keeps Herdr selection and key routing stable.
 PanelWindow {
     required property QtObject shellRoot
     required property QtObject runtimeConfig
@@ -45,11 +44,11 @@ PanelWindow {
     anchors.right: true
     implicitWidth: 360
     exclusiveZone: 0
-    focusable: true
+    focusable: false
     aboveWindows: true
     WlrLayershell.namespace: "i3pm-agent-monitor"
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
     Rectangle {
         anchors.fill: parent
