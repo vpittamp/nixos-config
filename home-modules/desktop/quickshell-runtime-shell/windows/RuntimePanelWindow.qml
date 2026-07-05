@@ -16,6 +16,7 @@ PanelWindow {
     id: panelWindow
     property var runtimeSessions: []
     property var runtimeHerdrSpaces: []
+    property bool herdrSpacesExpanded: false
     screen: root.findScreenByOutputName(root.panelOutputName) || root.activeScreen
     visible: root.panelVisible
     onVisibleChanged: {
@@ -377,40 +378,64 @@ PanelWindow {
                         visible: panelWindow.runtimePanelLocalExpanded("sessions")
                         spacing: 10
 
-                        RowLayout {
+                        Rectangle {
+                            id: herdrSpacesHeader
                             Layout.fillWidth: true
-                            spacing: 8
+                            visible: herdrSessionContent.spaceCount > 0
+                            Layout.preferredHeight: 24
+                            color: "transparent"
 
-                            Text {
-                                text: "spaces"
-                                color: colors.text
-                                font.pixelSize: 11
-                                font.weight: Font.DemiBold
-                            }
-
-                            Rectangle {
-                                width: spacesCountText.implicitWidth + 10
-                                height: 18
-                                radius: 6
-                                color: colors.bg
-                                border.color: "transparent"
-                                border.width: 0
+                            RowLayout {
+                                anchors.fill: parent
+                                spacing: 8
 
                                 Text {
-                                    id: spacesCountText
-                                    anchors.centerIn: parent
-                                    text: String(panelWindow.runtimeVisibleHerdrSpaces().length)
-                                    color: colors.muted
-                                    font.pixelSize: 8
+                                    Layout.preferredWidth: 12
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: panelWindow.herdrSpacesExpanded ? "▾" : "▸"
+                                    color: colors.textDim
+                                    font.pixelSize: 11
                                     font.weight: Font.DemiBold
+                                }
+
+                                Text {
+                                    text: "spaces"
+                                    color: colors.text
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                }
+
+                                Rectangle {
+                                    width: spacesCountText.implicitWidth + 10
+                                    height: 18
+                                    radius: 6
+                                    color: colors.bg
+                                    border.color: "transparent"
+                                    border.width: 0
+
+                                    Text {
+                                        id: spacesCountText
+                                        anchors.centerIn: parent
+                                        text: String(panelWindow.runtimeVisibleHerdrSpaces().length)
+                                        color: colors.muted
+                                        font.pixelSize: 8
+                                        font.weight: Font.DemiBold
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    radius: 1
+                                    color: colors.lineSoft
                                 }
                             }
 
-                            Rectangle {
-                                Layout.fillWidth: true
-                                height: 1
-                                radius: 1
-                                color: colors.lineSoft
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: panelWindow.herdrSpacesExpanded = !panelWindow.herdrSpacesExpanded
                             }
                         }
 
@@ -426,12 +451,12 @@ PanelWindow {
                             Layout.preferredHeight: Math.min(contentHeight, herdrSessionContent.spacesMaxHeight)
                             Layout.maximumHeight: herdrSessionContent.spacesMaxHeight
                             Layout.minimumHeight: visible ? Math.min(contentHeight, 96) : 0
-                            visible: count > 0
                             clip: true
                             spacing: herdrSessionContent.rowSpacing
                             model: herdrSpacesModel
                             boundsBehavior: Flickable.StopAtBounds
                             cacheBuffer: 900
+                            visible: count > 0 && panelWindow.herdrSpacesExpanded
 
                             ScrollBar.vertical: ScrollBar {
                                 policy: herdrSpacesList.contentHeight > herdrSpacesList.height ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded

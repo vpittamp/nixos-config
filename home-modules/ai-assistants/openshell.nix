@@ -145,16 +145,16 @@ let
 
   # NVIDIA OpenShell - sandboxed runtime for autonomous AI agents
   # https://github.com/NVIDIA/OpenShell
-  # Latest release: v0.0.16
+  # Latest release: v0.0.42
   # Requires Docker running for sandbox operations
   openshellPkg = pkgs.python3Packages.buildPythonPackage rec {
     pname = "openshell";
-    version = "0.0.16";
+    version = "0.0.42";
     format = "wheel";
 
     src = pkgs.fetchurl {
-      url = "https://files.pythonhosted.org/packages/16/7c/7c37b65dd7945d88aaf1311fa94713292a5070ad48c33892ec72a50d3d6c/openshell-${version}-py3-none-manylinux_2_39_x86_64.whl";
-      hash = "sha256-kv+FmC48z5Hg8FgbmHw2raj001DfPNxGZ5qrH62EUxc=";
+      url = "https://files.pythonhosted.org/packages/14/e3/28d060f02932c64cd3aa25877c16e995f9cff3212d5b18eb3ab8f005b6f3/openshell-${version}-py3-none-manylinux_2_39_x86_64.whl";
+      hash = "sha256-PYN1Wk28ZYFSUNDTPl0q7hpN3k+eM1pgoSdTO2GsMe0=";
     };
 
     nativeBuildInputs = [

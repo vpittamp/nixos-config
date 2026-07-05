@@ -91,6 +91,10 @@ class DashboardService:
             sessions,
             generation=int(self.focus_generation or self.snapshot_version or 0),
         )
+        sessions = self._sessions_with_authoritative_focus(
+            sessions,
+            current_session_key=str(focus_state.get("current_session_key") or "").strip(),
+        )
         payload = build_dashboard_snapshot_payload(
             runtime_snapshot=runtime_snapshot,
             display_snapshot=display_snapshot,
@@ -112,6 +116,30 @@ class DashboardService:
         )
         self._last_snapshot = payload
         return payload
+
+    @staticmethod
+    def _sessions_with_authoritative_focus(
+        sessions: List[Dict[str, Any]],
+        *,
+        current_session_key: str,
+    ) -> List[Dict[str, Any]]:
+        current_key = str(current_session_key or "").strip()
+        normalized: List[Dict[str, Any]] = []
+        for row in sessions:
+            if not isinstance(row, dict):
+                continue
+            session = dict(row)
+            is_current = bool(
+                current_key
+                and str(session.get("session_key") or "").strip() == current_key
+            )
+            session["is_current_window"] = is_current
+            if str(session.get("source") or "").strip() == "herdr":
+                session["focused"] = is_current
+                session["pane_active"] = is_current
+                session["window_active"] = is_current
+            normalized.append(session)
+        return normalized
 
     async def validate(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return dashboard invariant status without exposing validation internals."""

@@ -34,6 +34,10 @@ Rectangle {
     readonly property color accentColor: rootObject.launcherEntryAccentColor(session)
     readonly property color currentAccentColor: colorsObject.blue
     readonly property bool closableSurface: showCloseAction && rootObject.sessionHasClosableSurface(session)
+    readonly property bool closeActionHovered: interactive
+        && closableSurface
+        && sessionRowMouse.containsMouse
+        && pointInsideItem(Qt.point(sessionRowMouse.mouseX, sessionRowMouse.mouseY), closeActionHitbox)
     readonly property bool isIdle: rootObject.sessionIsIdle(session)
     readonly property real idleRowOpacity: isIdle ? (isCurrent ? 0.9 : 0.76) : 1
     readonly property real idleTextOpacity: isIdle ? (isCurrent ? 0.86 : 0.72) : 1
@@ -74,6 +78,17 @@ Rectangle {
     function resetMotionVisuals() {
         sessionToolIconWrap.opacity = toolIconOpacity;
         sessionToolIconWrap.scale = 1;
+    }
+
+    function pointInsideItem(point, item) {
+        if (!item || !item.visible) {
+            return false;
+        }
+        const localPoint = item.mapFromItem(sessionRow, point.x, point.y);
+        return localPoint.x >= 0
+            && localPoint.y >= 0
+            && localPoint.x <= item.width
+            && localPoint.y <= item.height;
     }
 
     onHasMotionChanged: resetMotionVisuals()
@@ -370,6 +385,7 @@ Rectangle {
         }
 
         Item {
+            id: closeActionHitbox
             visible: closableSurface
             width: 28
             height: 28
@@ -381,17 +397,17 @@ Rectangle {
                 width: 22
                 height: 22
                 radius: 6
-                color: closePending ? colorsObject.redBg : (closeMouse.containsMouse ? colorsObject.redBg : colorsObject.bg)
-                border.color: closePending ? colorsObject.red : (closeMouse.containsMouse ? colorsObject.red : colorsObject.lineSoft)
+                color: closePending ? colorsObject.redBg : (closeActionHovered ? colorsObject.redBg : colorsObject.bg)
+                border.color: closePending ? colorsObject.red : (closeActionHovered ? colorsObject.red : colorsObject.lineSoft)
                 border.width: 1
 
                 Text {
                     visible: !closePending
                     anchors.centerIn: parent
                     text: "×"
-                    color: closeMouse.containsMouse ? colorsObject.red : (selected ? colorsObject.muted : colorsObject.subtle)
-                    font.pixelSize: closeMouse.containsMouse ? 11 : 10
-                    font.weight: closeMouse.containsMouse ? Font.Bold : Font.DemiBold
+                    color: closeActionHovered ? colorsObject.red : (selected ? colorsObject.muted : colorsObject.subtle)
+                    font.pixelSize: closeActionHovered ? 11 : 10
+                    font.weight: closeActionHovered ? Font.Bold : Font.DemiBold
                 }
 
                 Text {
@@ -421,28 +437,26 @@ Rectangle {
                 }
             }
 
-            MouseArea {
-                id: closeMouse
-                anchors.fill: parent
-                z: 2
-                enabled: !closePending
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    mouse.accepted = true;
-                    sessionRow.closeRequested();
-                }
-            }
         }
     }
 
     MouseArea {
         id: sessionRowMouse
-        z: 0
+        z: 10
         anchors.fill: parent
         enabled: interactive
+        acceptedButtons: Qt.LeftButton
         hoverEnabled: interactive
-        cursorShape: interactive ? Qt.PointingHandCursor : Qt.ArrowCursor
-        onClicked: sessionRow.clicked()
+        preventStealing: true
+        cursorShape: closeActionHovered || interactive ? Qt.PointingHandCursor : Qt.ArrowCursor
+        onClicked: function(mouse) {
+            if (pointInsideItem(Qt.point(mouse.x, mouse.y), closeActionHitbox)) {
+                if (!closePending) {
+                    sessionRow.closeRequested();
+                }
+                return;
+            }
+            sessionRow.clicked();
+        }
     }
 }

@@ -624,7 +624,15 @@ async def test_dashboard_snapshot_includes_herdr_spaces(server, monkeypatch):
 
     dashboard = await server._dashboard_snapshot({})
 
-    assert dashboard["active_ai_sessions"] == sessions
+    assert len(dashboard["active_ai_sessions"]) == 1
+    active_session = dashboard["active_ai_sessions"][0]
+    assert active_session | {
+        "pane_active": True,
+        "window_active": True,
+    } == sessions[0] | {
+        "pane_active": True,
+        "window_active": True,
+    }
     assert "current_ai_session_key" not in dashboard
     assert dashboard["focus_state"]["current_session_key"] == "herdr:pane:local-pane"
     assert dashboard["herdr"]["herdr_generation"] == 7

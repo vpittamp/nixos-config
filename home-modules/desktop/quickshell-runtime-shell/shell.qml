@@ -6702,6 +6702,7 @@ function normalizeLauncherMode(mode) {
         // Pin the panel to the monitor that requested it (bar button click).
         // When empty (keybinding/IPC, no monitor context) the panel falls back
         // to root.activeScreen via RuntimePanelWindow's screen binding.
+        agentMonitorVisible = false;
         panelOutputName = stringOrEmpty(outputName);
         panelVisible = true;
         panelSection = "runtime";
@@ -7235,6 +7236,12 @@ function normalizeLauncherMode(mode) {
             agentMonitorVisible = false;
             return;
         }
+        panelVisible = false;
+        worktreePickerVisible = false;
+        audioPopupVisible = false;
+        bluetoothPopupVisible = false;
+        displaySelectorVisible = false;
+        notificationCenterVisible = false;
         agentMonitorOutputName = stringOrEmpty(outputName) || focusedOutputName();
         agentMonitorVisible = true;
     }
@@ -7912,7 +7919,7 @@ function normalizeLauncherMode(mode) {
         if (!snapshot || typeof snapshot !== "object") {
             return;
         }
-        dashboard = snapshot;
+        dashboard = dashboardWithReconciledSessionFocus(snapshot);
         afterDashboardApplied();
     }
 
@@ -7929,6 +7936,33 @@ function normalizeLauncherMode(mode) {
             return [];
         }
         return arrayOrEmpty(event.changed_keys).map(key => stringOrEmpty(key)).filter(key => key.length > 0);
+    }
+
+    function dashboardWithReconciledSessionFocus(state) {
+        if (!state || typeof state !== "object") {
+            return state;
+        }
+        const sessions = arrayOrEmpty(state.active_ai_sessions);
+        if (sessions.length === 0) {
+            return state;
+        }
+        const focus = state.focus_state && typeof state.focus_state === "object" ? state.focus_state : {};
+        const current = stringOrEmpty(focus.current_session_key);
+        const reconciledSessions = sessions.map(function(session) {
+            if (!session || typeof session !== "object") {
+                return session;
+            }
+            const next = Object.assign({}, session);
+            const isCurrent = current.length > 0 && sessionMatchesKey(next, current);
+            next.is_current_window = isCurrent;
+            if (stringOrEmpty(next.source) === "herdr" || stringOrEmpty(next.pane_id)) {
+                next.focused = isCurrent;
+                next.pane_active = isCurrent;
+                next.window_active = isCurrent;
+            }
+            return next;
+        });
+        return Object.assign({}, state, { active_ai_sessions: reconciledSessions });
     }
 
     function applyEvent(event) {
@@ -7959,12 +7993,12 @@ function normalizeLauncherMode(mode) {
             return;
         }
 
-        dashboard = Object.assign({}, dashboard, payload, {
+        dashboard = dashboardWithReconciledSessionFocus(Object.assign({}, dashboard, payload, {
             snapshot_version: eventGeneration >= 0 ? eventGeneration : (payload.snapshot_version || dashboard.snapshot_version || 0),
             session_generation: event.session_generation !== undefined ? event.session_generation : (payload.session_generation || dashboard.session_generation || 0),
             display_generation: event.display_generation !== undefined ? event.display_generation : (payload.display_generation || dashboard.display_generation || 0),
             focus_generation: event.focus_generation !== undefined ? event.focus_generation : (payload.focus_generation || dashboard.focus_generation || 0),
-        });
+        }));
         afterDashboardApplied();
     }
 
