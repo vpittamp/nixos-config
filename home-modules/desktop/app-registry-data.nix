@@ -875,7 +875,23 @@ let
     })
   ];
 
-  nonOwningLaunchables = floatingUtilityApplications;
+  globalNonOwningLaunchables = [
+    (mkApp {
+      name = "pittampalli-vscode-workspace";
+      display_name = "Pittampalli VS Code Workspace";
+      command = "code";
+      parameters = "--new-window /home/vpittamp/.config/Code/User/workspaces/PittampalliOrg.code-workspace";
+      scope = "global";
+      expected_class = "Code";
+      icon = "vscode";
+      nix_package = "pkgs.vscode";
+      multi_instance = true;
+      fallback_behavior = "skip";
+      description = "Open the PittampalliOrg stacks, workflow-builder, and claude-code-src multi-root VS Code workspace";
+    })
+  ];
+
+  nonOwningLaunchables = floatingUtilityApplications ++ globalNonOwningLaunchables;
 
   applications = workspaceOwningApplications ++ nonOwningLaunchables;
 

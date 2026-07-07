@@ -549,6 +549,35 @@ let
       rm -rf $out/share/applications
     '';
   });
+
+  pittampalliOrgWorkspace = {
+    folders = [
+      {
+        name = "stacks";
+        path = "${config.home.homeDirectory}/repos/PittampalliOrg/stacks";
+      }
+      {
+        name = "workflow-builder";
+        path = "${config.home.homeDirectory}/repos/PittampalliOrg/workflow-builder";
+      }
+      {
+        name = "claude-code-src";
+        path = "${config.home.homeDirectory}/repos/PittampalliOrg/claude-code-src";
+      }
+    ];
+    settings = {
+      "git.autoRepositoryDetection" = "subFolders";
+      "search.followSymlinks" = false;
+      "files.watcherExclude" = {
+        "**/.git/objects/**" = true;
+        "**/.git/subtree-cache/**" = true;
+        "**/node_modules/**" = true;
+        "**/.direnv/**" = true;
+        "**/.devenv/**" = true;
+        "**/.venv/**" = true;
+      };
+    };
+  };
 in
 {
   options.modules.tools.vscode = {
@@ -578,6 +607,10 @@ in
   # Create VSCode settings directory and SSH config for 1Password
   # Pre-create globalStorage directories for all profiles to prevent SQLITE_CANTOPEN errors
   home.file = {
+    ".config/Code/User/workspaces/PittampalliOrg.code-workspace" = {
+      text = builtins.toJSON pittampalliOrgWorkspace;
+    };
+
     ".vscode-server/data/Machine/settings.json" = {
       text = builtins.toJSON config.programs.vscode.profiles.${primaryProfile}.userSettings;
     };
