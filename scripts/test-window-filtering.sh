@@ -102,7 +102,7 @@ main() {
     sleep 2
 
     log_info "Launching VS Code..."
-    ~/.local/bin/app-launcher-wrapper.sh vscode &
+    i3pm launch open code &
     sleep 3
 
     PROJECT1_WINDOWS=$(get_windows_by_project "$TEST_PROJECT_1")

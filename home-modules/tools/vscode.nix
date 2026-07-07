@@ -342,6 +342,7 @@ let
     # Auto-save configuration
     "files.autoSave" = "afterDelay";
     "files.autoSaveDelay" = 1000;
+    "files.hotExit" = "off";
 
     # File associations
     "files.associations" = {
@@ -367,6 +368,7 @@ let
     "workbench.colorTheme" = "Material Theme Darker";
     "workbench.iconTheme" = "material-icon-theme";
     "workbench.startupEditor" = "none";
+    "window.restoreWindows" = "none";
 
     # Vim settings (if using VSCodeVim)
     "vim.useSystemClipboard" = true;
@@ -506,9 +508,10 @@ let
   defaultProfile = {
     extensions = baseExtensions;
 
-    # Enable extension and VSCode update checks (only works for default profile)
-    enableExtensionUpdateCheck = true;
-    enableUpdateCheck = true;
+    # Updates are managed through Nix/Home Manager. Letting VS Code update
+    # declarative extensions causes startup-time signature/install errors.
+    enableExtensionUpdateCheck = false;
+    enableUpdateCheck = false;
 
     userSettings = baseUserSettings // {
       # Only sync GitHub-centric extensions; other tooling stays local to this machine
@@ -523,9 +526,9 @@ let
         "remote.SSH.configFile"
       ];
 
-      # Extension auto-update settings
-      "extensions.autoUpdate" = true;
-      "extensions.autoCheckUpdates" = true;
+      # Extension updates are applied by changing Nix pins and rebuilding.
+      "extensions.autoUpdate" = false;
+      "extensions.autoCheckUpdates" = false;
 
       # GitHub Codespaces settings
       "github.codespaces.defaultExtensions" = baseExtensionIds;
@@ -537,7 +540,11 @@ let
 
   # Override standard vscode package to remove desktop files
   vscodeNoDesktop = vscode.overrideAttrs (oldAttrs: {
+    nativeBuildInputs = (oldAttrs.nativeBuildInputs or [ ]) ++ [ pkgs.makeWrapper ];
     postFixup = (oldAttrs.postFixup or "") + ''
+      wrapProgram $out/bin/code \
+        --run 'for f in "$HOME"/.config/Code/User/globalStorage/github.copilot-chat/copilotCli/copilotCLIShim.js "$HOME"/.config/Code/User/globalStorage/github.copilot-chat/debugCommand/copilotDebugCommand.js; do [ ! -e "$f" ] || chmod u+w "$f" 2>/dev/null || true; done'
+
       # Remove desktop files to prevent duplicate entries
       rm -rf $out/share/applications
     '';
@@ -583,6 +590,31 @@ in
       })
       (builtins.attrNames config.programs.vscode.profiles)
   );
+
+    # Home Manager generates VS Code settings from Nix, but VS Code and its
+    # extensions still write to User/settings.json at runtime. Remove the prior
+    # mutable materialized copy before link checks, then materialize the freshly
+    # generated symlink as writable after activation. This avoids both Home
+    # Manager clobber checks on rebuild and VS Code EROFS save failures.
+    home.activation.prepareMutableVSCodeUserSettings = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
+      settings_path="$HOME/.config/Code/User/settings.json"
+      if [ -e "$settings_path" ] && [ ! -L "$settings_path" ]; then
+        settings_backup="$settings_path.pre-home-manager"
+        ${pkgs.coreutils}/bin/cp "$settings_path" "$settings_backup" 2>/dev/null || true
+        ${pkgs.coreutils}/bin/rm -f "$settings_path"
+      fi
+    '';
+
+    home.activation.materializeMutableVSCodeUserSettings = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      settings_path="$HOME/.config/Code/User/settings.json"
+      if [ -L "$settings_path" ]; then
+        settings_target="$(${pkgs.coreutils}/bin/readlink -f "$settings_path")"
+        settings_tmp="$settings_path.tmp.$$"
+        ${pkgs.coreutils}/bin/cp "$settings_target" "$settings_tmp"
+        ${pkgs.coreutils}/bin/chmod u+rw "$settings_tmp"
+        ${pkgs.coreutils}/bin/mv "$settings_tmp" "$settings_path"
+      fi
+    '';
 
     # Environment variables for VSCode
     home.sessionVariables = {

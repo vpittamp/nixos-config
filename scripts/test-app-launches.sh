@@ -160,7 +160,7 @@ test_app() {
 # Format: test_app "name" "command" "parameters" "expected_class" "scope"
 
 echo "=== Development Tools ===" | tee -a "$LOG_FILE"
-test_app "vscode" "code" "--new-window" "Code" "scoped"
+test_app "code" "code" "--new-window" "Code" "global"
 test_app "neovim" "ghostty" "-e nvim /etc/nixos/home-vpittamp.nix" "com.mitchellh.ghostty" "scoped"
 
 echo "=== Browsers ===" | tee -a "$LOG_FILE"

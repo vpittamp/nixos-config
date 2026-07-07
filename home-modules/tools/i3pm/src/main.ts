@@ -86,7 +86,7 @@ EXAMPLES:
   i3pm monitors reassign               Redistribute workspaces
   i3pm monitor                         Launch monitoring dashboard
   i3pm apps list                       List all applications
-  i3pm launch open vscode             Launch VS Code with runtime context
+  i3pm launch open code               Launch VS Code
   i3pm trace start --class ghostty     Start tracing Ghostty windows
   i3pm trace list                      List active traces
 

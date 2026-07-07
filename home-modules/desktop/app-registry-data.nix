@@ -217,7 +217,7 @@ let
       name = "code";
       display_name = "VS Code";
       command = "code";
-      parameters = "--disable-gpu --disable-software-rasterizer --new-window $HOME";
+      parameters = "--new-window";
       scope = "global";
       expected_class = "Code";
       preferred_workspace = 2;
@@ -226,7 +226,7 @@ let
       nix_package = "pkgs.vscode";
       multi_instance = true;
       fallback_behavior = "skip";
-      description = "Visual Studio Code editor with project context";
+      description = "Visual Studio Code editor";
     })
 
     # NOTE: Antigravity disabled - x86_64 only (no ARM64/aarch64 build available)

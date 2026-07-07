@@ -9,7 +9,7 @@ format (version + rules + defaults with typed actions).
 Legacy Format (Array):
     [
       {
-        "pattern_rule": {"pattern": "Code", "scope": "scoped", "priority": 250},
+        "pattern_rule": {"pattern": "Ghostty", "scope": "scoped", "priority": 250},
         "workspace": 2,
         "command": "layout tabbed"
       }
@@ -236,7 +236,7 @@ def migrate_rule_v1_to_v2(old_rule: Dict[str, Any]) -> Dict[str, Any]:
 
     Example:
         >>> old_rule = {
-        ...     "pattern_rule": {"pattern": "Code", "scope": "scoped", "priority": 250},
+        ...     "pattern_rule": {"pattern": "Ghostty", "scope": "scoped", "priority": 250},
         ...     "workspace": 2,
         ...     "command": "layout tabbed"
         ... }

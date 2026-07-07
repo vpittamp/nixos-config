@@ -257,7 +257,7 @@ class I3ProjectDaemon:
         except Exception as e:
             logger.error(f"Failed to load application classification: {e}")
             # Use defaults
-            self.state_manager.state.scoped_classes = {"Code", "ghostty", "Alacritty", "Yazi"}
+            self.state_manager.state.scoped_classes = {"ghostty", "Alacritty", "Yazi"}
             self.state_manager.state.global_classes = {"firefox", "chromium-browser", "k9s"}
 
         # Feature 037 T027: Load application registry for workspace assignment

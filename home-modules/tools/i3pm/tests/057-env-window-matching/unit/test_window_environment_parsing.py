@@ -40,8 +40,8 @@ class TestWindowEnvironmentParsing:
     def test_parse_all_fields(self):
         """Test parsing with all fields present."""
         env = {
-            "I3PM_APP_ID": "vscode-nixos-12345-1234567890",
-            "I3PM_APP_NAME": "vscode",
+            "I3PM_APP_ID": "editor-nixos-12345-1234567890",
+            "I3PM_APP_NAME": "editor",
             "I3PM_SCOPE": "scoped",
             "I3PM_PROJECT_NAME": "nixos",
             "I3PM_PROJECT_DIR": "/etc/nixos",
@@ -58,8 +58,8 @@ class TestWindowEnvironmentParsing:
         window_env = WindowEnvironment.from_env_dict(env)
 
         assert window_env is not None
-        assert window_env.app_id == "vscode-nixos-12345-1234567890"
-        assert window_env.app_name == "vscode"
+        assert window_env.app_id == "editor-nixos-12345-1234567890"
+        assert window_env.app_name == "editor"
         assert window_env.scope == "scoped"
         assert window_env.project_name == "nixos"
         assert window_env.project_dir == "/etc/nixos"

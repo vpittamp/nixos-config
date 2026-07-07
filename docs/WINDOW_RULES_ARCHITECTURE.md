@@ -21,7 +21,7 @@ Window rules are generated from three independent sources and merged together:
         │                  │                  │
 ┌───────▼───────┐  ┌──────▼──────┐  ┌────────▼────────┐
 │  PWA Rules    │  │   Browser   │  │  Activity Rules │
-│ (9 PWAs)      │  │   Rules     │  │  (VS Code,      │
+│ (9 PWAs)      │  │   Rules     │  │  (project editor,      │
 │               │  │ (Firefox,   │  │   Konsole,      │
 │ Auto-generated│  │  Chromium)  │  │   Dolphin)      │
 │ from          │  │             │  │                 │
@@ -107,7 +107,7 @@ Browser rules are manually maintained because they don't follow the PWA pattern:
 
 Rules are automatically generated for application windows that should be assigned to specific activities based on the folder they're viewing:
 
-- **VS Code**: Matches window title containing folder basename (e.g., "nixos")
+- **project editor**: Matches window title containing folder basename (e.g., "nixos")
 - **Konsole**: Matches terminal prompt showing folder name
 - **Dolphin**: Matches file manager showing folder path
 
@@ -122,8 +122,8 @@ nixos = {
 };
 
 # Auto-generated rules in project-activities/window-rules.nix
-"vscode-nixos" = {
-  Description = "VS Code - NixOS (Profile)";
+"editor-nixos" = {
+  Description = "project editor - NixOS (Profile)";
   wmclass = "code-nixos";  # From --profile flag
   wmclassmatch = 2;  # Exact match
   title = "nixos";  # Folder basename, not full path
@@ -132,9 +132,9 @@ nixos = {
   activityrule = 2;  # Force
 };
 
-"vscode-nixos-fallback" = {
-  Description = "VS Code - NixOS (Legacy)";
-  wmclass = "code";  # Generic VS Code
+"editor-nixos-fallback" = {
+  Description = "project editor - NixOS (Legacy)";
+  wmclass = "code";  # Generic project editor
   wmclassmatch = 2;
   wmclasscomplete = true;
   title = "nixos";
@@ -200,7 +200,7 @@ nixos = {
    ```
 
 3. **Done!** Six window rules are automatically generated:
-   - `vscode-myproject` + fallback (2 rules)
+   - `editor-myproject` + fallback (2 rules)
    - `konsole-myproject` (1 rule)
    - `dolphin-myproject` (1 rule)
 

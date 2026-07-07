@@ -173,11 +173,11 @@ def load_application_registry(config_file: Path) -> Dict[str, Dict]:
 
     Example:
         {
-            "vscode": {
-                "name": "vscode",
+            "code": {
+                "name": "code",
                 "display_name": "VS Code",
                 "preferred_workspace": 2,
-                "scope": "scoped",
+                "scope": "global",
                 ...
             }
         }

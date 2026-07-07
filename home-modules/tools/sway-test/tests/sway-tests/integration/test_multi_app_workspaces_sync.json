@@ -1,6 +1,6 @@
 {
   "name": "Multiple apps launch on different workspaces",
-  "description": "Validates that 3 different apps launch via wrapper and each appears on its configured preferred_workspace (Firefox→WS3, VS Code→WS2, Thunar→WS6) (migrated to sync pattern - eliminates race conditions and arbitrary timeouts)",
+  "description": "Validates that 3 different apps launch via wrapper and each appears on its configured preferred_workspace (Firefox→WS3, project editor→WS2, Thunar→WS6) (migrated to sync pattern - eliminates race conditions and arbitrary timeouts)",
   "tags": [
     "integration",
     "workspace-assignment",
@@ -28,14 +28,14 @@
     {
       "type": "launch_app_sync",
       "params": {
-        "app_name": "vscode",
+        "app_name": "editor",
         "sync": true
       }
     },
     {
       "type": "validate_workspace_assignment",
       "params": {
-        "app_name": "vscode",
+        "app_name": "editor",
         "expected_workspace": 2
       }
     },

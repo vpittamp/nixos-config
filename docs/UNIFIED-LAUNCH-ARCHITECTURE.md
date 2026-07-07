@@ -133,11 +133,11 @@ Executes: firefoxpwa site launch 01JCYF8Z2M7R4N6QW9XKPHVTB5
 **Example Entry (VS Code):**
 ```json
 {
-  "name": "vscode",
+  "name": "code",
   "display_name": "VS Code",
   "command": "code",
-  "parameters": ["--disable-gpu", "--disable-software-rasterizer", "--new-window", "$PROJECT_DIR"],
-  "scope": "scoped",
+  "parameters": ["--new-window"],
+  "scope": "global",
   "expected_class": "Code",
   "preferred_workspace": 2,
   "icon": "vscode",
@@ -222,8 +222,8 @@ The wrapper supports dynamic variable substitution in parameters:
 **Example:**
 ```json
 {
-  "name": "vscode",
-  "parameters": ["--new-window", "$PROJECT_DIR"]
+  "name": "code",
+  "parameters": ["--new-window"]
 }
 ```
 
@@ -284,7 +284,7 @@ Error: No project active and fallback behavior is 'error'
 
 ### Enable debug logging:
 ```bash
-DEBUG=1 app-launcher-wrapper.sh vscode
+i3pm launch open code
 ```
 
 ### Check launch logs:

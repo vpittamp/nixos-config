@@ -35,7 +35,7 @@ class TestPendingLaunchValidation:
         """Test creating a valid PendingLaunch instance."""
         now = time.time()
         launch = PendingLaunch(
-            app_name="vscode",
+            app_name="editor",
             project_name="nixos",
             project_directory=Path("/etc/nixos"),
             launcher_pid=12345,
@@ -45,7 +45,7 @@ class TestPendingLaunchValidation:
             terminal_anchor_id="terminal-nixos-12345-1",
         )
 
-        assert launch.app_name == "vscode"
+        assert launch.app_name == "editor"
         assert launch.project_name == "nixos"
         assert launch.project_directory == Path("/etc/nixos").resolve()
         assert launch.launcher_pid == 12345
@@ -60,7 +60,7 @@ class TestPendingLaunchValidation:
 
         with pytest.raises(ValidationError) as exc_info:
             PendingLaunch(
-                app_name="vscode",
+                app_name="editor",
                 project_name="nixos",
                 project_directory=Path("/etc/nixos"),
                 launcher_pid=12345,
@@ -79,7 +79,7 @@ class TestPendingLaunchValidation:
 
         with pytest.raises(ValidationError) as exc_info:
             PendingLaunch(
-                app_name="vscode",
+                app_name="editor",
                 project_name="nixos",
                 project_directory=Path("/etc/nixos"),
                 launcher_pid=12345,
@@ -98,7 +98,7 @@ class TestPendingLaunchValidation:
 
         # Test minimum boundary (1)
         launch_min = PendingLaunch(
-            app_name="vscode",
+            app_name="editor",
             project_name="nixos",
             project_directory=Path("/etc/nixos"),
             launcher_pid=12345,
@@ -111,7 +111,7 @@ class TestPendingLaunchValidation:
 
         # Test extended maximum boundary (200)
         launch_max = PendingLaunch(
-            app_name="vscode",
+            app_name="editor",
             project_name="nixos",
             project_directory=Path("/etc/nixos"),
             launcher_pid=12345,
@@ -128,7 +128,7 @@ class TestPendingLaunchValidation:
 
         with pytest.raises(ValidationError) as exc_info:
             PendingLaunch(
-                app_name="vscode",
+                app_name="editor",
                 project_name="nixos",
                 project_directory=Path("/etc/nixos"),
                 launcher_pid=0,  # Invalid: must be positive
@@ -147,7 +147,7 @@ class TestPendingLaunchValidation:
 
         with pytest.raises(ValidationError) as exc_info:
             PendingLaunch(
-                app_name="vscode",
+                app_name="editor",
                 project_name="nixos",
                 project_directory=Path("/etc/nixos"),
                 launcher_pid=12345,
@@ -167,7 +167,7 @@ class TestPendingLaunchValidation:
         near_future = time.time() + 0.5
 
         launch = PendingLaunch(
-            app_name="vscode",
+            app_name="editor",
             project_name="nixos",
             project_directory=Path("/etc/nixos"),
             launcher_pid=12345,
@@ -199,7 +199,7 @@ class TestPendingLaunchMethods:
         """Test age() method calculates time since launch correctly."""
         launch_time = time.time()
         launch = PendingLaunch(
-            app_name="vscode",
+            app_name="editor",
             project_name="nixos",
             project_directory=Path("/etc/nixos"),
             launcher_pid=12345,
@@ -225,7 +225,7 @@ class TestPendingLaunchMethods:
         """Test age() with a launch from the past."""
         five_seconds_ago = time.time() - 5.0
         launch = PendingLaunch(
-            app_name="vscode",
+            app_name="editor",
             project_name="nixos",
             project_directory=Path("/etc/nixos"),
             launcher_pid=12345,
@@ -243,7 +243,7 @@ class TestPendingLaunchMethods:
         """Test is_expired() with default 5-second timeout."""
         launch_time = time.time()
         launch = PendingLaunch(
-            app_name="vscode",
+            app_name="editor",
             project_name="nixos",
             project_directory=Path("/etc/nixos"),
             launcher_pid=12345,
@@ -272,7 +272,7 @@ class TestPendingLaunchMethods:
         """Test is_expired() with custom timeout values."""
         launch_time = time.time()
         launch = PendingLaunch(
-            app_name="vscode",
+            app_name="editor",
             project_name="nixos",
             project_directory=Path("/etc/nixos"),
             launcher_pid=12345,
@@ -296,7 +296,7 @@ class TestPendingLaunchMethods:
         """Test is_expired() with zero timeout (immediate expiration)."""
         launch_time = time.time()
         launch = PendingLaunch(
-            app_name="vscode",
+            app_name="editor",
             project_name="nixos",
             project_directory=Path("/etc/nixos"),
             launcher_pid=12345,
@@ -315,7 +315,7 @@ class TestPendingLaunchMethods:
     def test_matched_field_default_and_update(self):
         """Test matched field defaults to False and can be updated."""
         launch = PendingLaunch(
-            app_name="vscode",
+            app_name="editor",
             project_name="nixos",
             project_directory=Path("/etc/nixos"),
             launcher_pid=12345,
@@ -350,7 +350,7 @@ class TestPendingLaunchPathHandling:
         """Test project_directory is resolved to absolute path."""
         # Relative path should be resolved
         launch = PendingLaunch(
-            app_name="vscode",
+            app_name="editor",
             project_name="nixos",
             project_directory=Path("."),  # Current directory
             launcher_pid=12345,
@@ -366,7 +366,7 @@ class TestPendingLaunchPathHandling:
     def test_project_directory_string_conversion(self):
         """Test project_directory accepts string paths."""
         launch = PendingLaunch(
-            app_name="vscode",
+            app_name="editor",
             project_name="nixos",
             project_directory="/etc/nixos",  # String path
             launcher_pid=12345,
@@ -388,7 +388,7 @@ class TestPendingLaunchStringRepresentation:
         """Test __str__ produces readable output with key fields."""
         launch_time = time.time()
         launch = PendingLaunch(
-            app_name="vscode",
+            app_name="editor",
             project_name="nixos",
             project_directory=Path("/etc/nixos"),
             launcher_pid=12345,
@@ -401,7 +401,7 @@ class TestPendingLaunchStringRepresentation:
         str_repr = str(launch)
 
         # Should include key identifying information
-        assert "vscode" in str_repr
+        assert "editor" in str_repr
         assert "nixos" in str_repr
         assert "workspace=2" in str_repr or "2" in str_repr
         assert "age=" in str_repr

@@ -2017,13 +2017,12 @@ rm -f -- "$0" >/dev/null 2>&1 || true
             workdir = Path(local_project_dir)
 
         resolved_command = self._which(command) or command
-        direct_pwa_launch = (
+        direct_sway_launch = (
             execution_mode == "local"
             and not terminal_mode
-            and Path(resolved_command).name == "launch-pwa-by-name"
         )
 
-        if direct_pwa_launch:
+        if direct_sway_launch:
             env_prefix = [
                 "env",
                 *[
@@ -2052,7 +2051,7 @@ rm -f -- "$0" >/dev/null 2>&1 || true
                         error_code="launch_start_failed",
                         error_message=detail or "swaymsg exec error",
                     )
-                raise RuntimeError(f"Detached PWA launch failed: {detail or 'swaymsg exec error'}")
+                raise RuntimeError(f"Detached GUI launch failed: {detail or 'swaymsg exec error'}")
             if launch_id:
                 self.write_status(
                     launch_id=launch_id,

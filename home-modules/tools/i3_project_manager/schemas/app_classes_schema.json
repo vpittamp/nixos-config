@@ -64,8 +64,8 @@
   "additionalProperties": false,
   "examples": [
     {
-      "scoped_classes": ["Ghostty", "Code", "neovide"],
-      "global_classes": ["firefox", "Google-chrome", "mpv"],
+      "scoped_classes": ["Ghostty", "neovide"],
+      "global_classes": ["Code", "firefox", "Google-chrome", "mpv"],
       "class_patterns": [
         {
           "pattern": "glob:pwa-*",

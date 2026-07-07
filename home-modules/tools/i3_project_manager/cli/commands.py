@@ -350,7 +350,7 @@ async def cmd_create(args: argparse.Namespace) -> int:
         # Prepare values
         display_name = args.display_name if hasattr(args, 'display_name') and args.display_name else args.name
         icon = args.icon if hasattr(args, 'icon') and args.icon else "📁"
-        scoped_classes = args.scoped_classes.split(',') if hasattr(args, 'scoped_classes') and args.scoped_classes else ["Ghostty", "Code"]
+        scoped_classes = args.scoped_classes.split(',') if hasattr(args, 'scoped_classes') and args.scoped_classes else ["Ghostty"]
 
         # Dry-run mode
         if dry_run:

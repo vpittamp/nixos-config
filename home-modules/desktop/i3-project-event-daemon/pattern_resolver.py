@@ -85,7 +85,7 @@ def classify_window(
 
     Examples:
         >>> # Project match (priority 1000)
-        >>> cls = classify_window("Code", active_project_scoped_classes=["Code"])
+        >>> cls = classify_window("Ghostty", active_project_scoped_classes=["Ghostty"])
         >>> cls.scope
         'scoped'
         >>> cls.source

@@ -120,7 +120,7 @@ class Project:
         ...     display_name="NixOS Config",
         ...     icon="❄️"
         ... )
-        >>> project.scoped_classes.add("Code")
+        >>> project.scoped_classes.add("Ghostty")
         >>> project.save()
 
     T021: Project model implementation

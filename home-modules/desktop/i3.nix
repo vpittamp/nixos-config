@@ -133,7 +133,7 @@ in
 
     # Project-aware application launchers (Feature 035: Registry-based with environment injection)
     # All app names must match the "name" field in app-registry-data.nix
-    bindsym $mod+c exec i3pm launch open vscode
+    bindsym $mod+c exec i3pm launch open code
     bindsym $mod+Return exec ${pkgs.alacritty}/bin/alacritty
     bindsym $mod+g exec i3pm launch open lazygit
     bindsym $mod+y exec i3pm launch open yazi

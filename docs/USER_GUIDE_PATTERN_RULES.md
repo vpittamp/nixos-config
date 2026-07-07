@@ -117,9 +117,9 @@ i3pm app-classes add-pattern "glob:terminal-*" scoped
 i3pm app-classes add-pattern "glob:pwa-*" global --priority 10
 
 # With description
-i3pm app-classes add-pattern "regex:^Code.*$" scoped \
+i3pm app-classes add-pattern "regex:^Ghostty$" scoped \
   --priority 5 \
-  --description "VS Code and variants"
+  --description "Ghostty terminal"
 
 # Preview with dry-run
 i3pm app-classes add-pattern "glob:test-*" scoped --dry-run

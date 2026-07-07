@@ -81,8 +81,8 @@ class IntegrationTestFramework:
 
         # Create app-classes.json
         app_classes = {
-            "scoped_classes": ["Ghostty", "Code", "neovide", "Alacritty"],
-            "global_classes": ["firefox", "Firefox", "chromium", "Chromium"]
+            "scoped_classes": ["Ghostty", "neovide", "Alacritty"],
+            "global_classes": ["Code", "firefox", "Firefox", "chromium", "Chromium"]
         }
         import json
         with open(config_dir / "app-classes.json", "w") as f:

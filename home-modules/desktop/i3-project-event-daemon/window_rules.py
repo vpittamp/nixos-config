@@ -36,14 +36,14 @@ class WindowRule:
     Examples:
         Legacy format (still works):
         >>> from i3_project_manager.models.pattern import PatternRule
-        >>> pattern = PatternRule("Code", "scoped", priority=250)
+        >>> pattern = PatternRule("Ghostty", "scoped", priority=250)
         >>> rule = WindowRule(pattern, workspace=2, command="floating disable")
-        >>> rule.matches("Code")
+        >>> rule.matches("Ghostty")
         True
 
         New format (Feature 024):
         >>> from .rule_action import WorkspaceAction, LayoutAction
-        >>> pattern = PatternRule("Code", "scoped", priority=250)
+        >>> pattern = PatternRule("Ghostty", "scoped", priority=250)
         >>> actions = [WorkspaceAction(target=2), LayoutAction(mode="tabbed")]
         >>> rule = WindowRule(pattern, actions=actions)
         >>> rule.actions

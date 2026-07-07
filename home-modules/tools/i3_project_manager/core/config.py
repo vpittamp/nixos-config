@@ -19,8 +19,8 @@ class AppClassConfig:
     windows are scoped to projects or global across all projects.
     """
 
-    DEFAULT_SCOPED_CLASSES = ["Ghostty", "Code", "neovide", "Alacritty"]
-    DEFAULT_GLOBAL_CLASSES = ["firefox", "Google-chrome", "mpv", "vlc"]
+    DEFAULT_SCOPED_CLASSES = ["Ghostty", "neovide", "Alacritty"]
+    DEFAULT_GLOBAL_CLASSES = ["Code", "firefox", "Google-chrome", "mpv", "vlc"]
 
     def __init__(self, config_file: Optional[Path] = None):
         """Initialize app classification config.

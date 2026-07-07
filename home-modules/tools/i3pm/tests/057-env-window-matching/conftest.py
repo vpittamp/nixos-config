@@ -70,7 +70,7 @@ def app_registry():
         Dict with registered application information
     """
     return {
-        "vscode": {"name": "vscode", "scope": "scoped", "command": "code"},
+        "code": {"name": "code", "scope": "global", "command": "code"},
         "terminal": {"name": "terminal", "scope": "scoped", "command": "ghostty"},
         "firefox": {"name": "firefox", "scope": "global", "command": "firefox"},
         "claude-pwa": {"name": "claude-pwa", "scope": "scoped", "command": "launch-pwa-by-name"},

@@ -403,7 +403,7 @@ exit 1
             "ide",
             "development",
         }
-        scoped_keywords = ["terminal", "editor", "vim", "emacs", "code", "vscode"]
+        scoped_keywords = ["terminal", "editor", "vim", "emacs"]
 
         if categories & scoped_categories:
             return "scoped"

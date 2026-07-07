@@ -29,29 +29,29 @@ pytestmark = pytest.mark.asyncio
 class TestDeterministicWindowIdentification:
     """Test suite for deterministic window identification via environment variables."""
 
-    @pytest.mark.skip(reason="Requires VS Code to be installed and Sway running")
-    async def test_vscode_with_project_context(self, sway_connection, launch_test_process):
+    @pytest.mark.skip(reason="Requires Ghostty to be installed and Sway running")
+    async def test_terminal_with_project_context(self, sway_connection, launch_test_process):
         """
-        Test launching VS Code with project context.
+        Test launching a terminal with project context.
 
         Verifies:
         - I3PM_PROJECT_NAME is present in /proc/<pid>/environ
         - I3PM_APP_NAME matches expected value
         - I3PM_APP_ID is present and non-empty
         """
-        # Define environment variables for VS Code launch
+        # Define environment variables for terminal launch
         env_vars = {
-            "I3PM_APP_ID": "vscode-nixos-test-123456",
-            "I3PM_APP_NAME": "vscode",
+            "I3PM_APP_ID": "terminal-nixos-test-123456",
+            "I3PM_APP_NAME": "terminal",
             "I3PM_SCOPE": "scoped",
             "I3PM_PROJECT_NAME": "nixos",
             "I3PM_PROJECT_DIR": "/etc/nixos",
             "I3PM_TARGET_WORKSPACE": "52"
         }
 
-        # Launch VS Code with environment
+        # Launch terminal with environment
         proc = launch_test_process(
-            ["code", "/etc/nixos"],
+            ["ghostty"],
             env_vars=env_vars
         )
 
@@ -59,9 +59,9 @@ class TestDeterministicWindowIdentification:
         await asyncio.sleep(2)
 
         try:
-            # Find VS Code window via Sway IPC
-            windows = await find_windows_by_class(sway_connection, "Code")
-            assert len(windows) > 0, "VS Code window not found"
+            # Find terminal window via Sway IPC
+            windows = await find_windows_by_class(sway_connection, "com.mitchellh.ghostty")
+            assert len(windows) > 0, "terminal window not found"
 
             window = windows[0]
             assert window.pid is not None, "Window has no PID"
@@ -71,13 +71,13 @@ class TestDeterministicWindowIdentification:
 
             # Verify I3PM_* variables present
             assert "I3PM_APP_NAME" in env
-            assert env["I3PM_APP_NAME"] == "vscode"
+            assert env["I3PM_APP_NAME"] == "terminal"
 
             assert "I3PM_PROJECT_NAME" in env
             assert env["I3PM_PROJECT_NAME"] == "nixos"
 
             assert "I3PM_APP_ID" in env
-            assert env["I3PM_APP_ID"] == "vscode-nixos-test-123456"
+            assert env["I3PM_APP_ID"] == "terminal-nixos-test-123456"
             assert len(env["I3PM_APP_ID"]) > 0
 
         finally:

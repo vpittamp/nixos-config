@@ -92,7 +92,7 @@ export interface Enrichment {
     LAUNCH_CONTEXT?: string; // "daemon" | "manual"
   };
 
-  /** Sway window marks (e.g., ["project:nixos", "app:vscode"]) */
+  /** Sway window marks (e.g., ["project:nixos", "app:editor"]) */
   marks?: string[];
 
   /** Launch context metadata */

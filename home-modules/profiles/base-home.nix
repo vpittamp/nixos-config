@@ -142,6 +142,10 @@ in
 
   # Enable XDG base directories and desktop entries
   xdg.enable = true;
+  services.gnome-keyring = {
+    enable = true;
+    components = [ "secrets" ];
+  };
   # MIME associations are fully managed in firefox.nix when Firefox is enabled
   # No need for duplicate configuration here
 

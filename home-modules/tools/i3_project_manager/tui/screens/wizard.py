@@ -135,7 +135,7 @@ class ProjectWizardScreen(Screen):
                 directory=Path(self._wizard_data["directory"]).expanduser(),
                 display_name=self._wizard_data["display_name"] or None,
                 icon=self._wizard_data["icon"] or None,
-                scoped_classes=["Ghostty", "Code"],  # Default scoped classes
+                scoped_classes=["Ghostty"],  # Default scoped classes
                 workspace_preferences={},
                 auto_launch=[],
                 saved_layouts=[],

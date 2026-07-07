@@ -91,8 +91,8 @@ The inspector has a 3-panel layout:
 │   Property         Value     │  Current: SCOPED             │
 │   ─────────────────────────  │  Source: pattern             │
 │   Window ID        94489280  │                              │
-│   WM_CLASS         Code      │  Suggested: scoped (95%)     │
-│   Title            file.py   │  Reasoning: Code editor...   │
+│   WM_CLASS         Ghostty   │  Suggested: scoped (95%)     │
+│   Title            shell     │  Reasoning: terminal...      │
 │   Workspace        1         │                              │
 │   ...                        ├──────────────────────────────┤
 │                              │                              │
@@ -235,10 +235,10 @@ Adds window class to `scoped_classes` list.
 - Automatically marked with project context
 
 **Example**:
-1. Inspect a Code window
+1. Inspect a terminal window
 2. Press `s`
-3. Result: `Code` added to scoped_classes
-4. All VS Code windows now project-specific
+3. Result: the terminal class is added to scoped_classes
+4. All matching terminal windows now project-specific
 
 ### Mark as Global (g)
 

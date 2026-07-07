@@ -20,7 +20,7 @@ from test_utils import read_process_environ, find_windows_by_class, launch_test_
 def test_apps():
     """List of test applications to validate coverage."""
     return [
-        {"name": "vscode", "command": "code", "scope": "scoped"},
+        {"name": "code", "command": "code", "scope": "global"},
         {"name": "terminal", "command": "ghostty", "scope": "scoped"},
         {"name": "firefox", "command": "firefox", "scope": "global"},
         {"name": "claude-pwa", "command": "launch-pwa-by-name 01JCYF8Z2M7R4N6QW9XKPHVTB5", "scope": "scoped"},
@@ -30,7 +30,7 @@ def test_apps():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("app_name,app_command,expected_scope", [
-    ("vscode", "code --skip-release-notes --skip-welcome /tmp/test-workspace", "scoped"),
+    ("code", "code --skip-release-notes --skip-welcome /tmp/test-workspace", "global"),
     ("terminal", "ghostty", "scoped"),
     ("firefox", "firefox --new-window about:blank", "global"),
 ])

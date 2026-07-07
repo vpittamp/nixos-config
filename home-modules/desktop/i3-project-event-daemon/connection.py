@@ -600,8 +600,7 @@ class ResilientI3Connection:
         """Scan all windows and mark unmarked ones based on I3PM environment variables.
 
         This is called during startup to mark windows that were created before the daemon started.
-        Windows are marked in a specific order to avoid race conditions: VSCode windows are marked
-        LAST because marking other windows after VSCode causes VSCode's marks to be cleared.
+        Windows are collected before marking so the startup scan operates on a stable tree snapshot.
 
         Args:
             tree: Root container from i3 GET_TREE
@@ -649,29 +648,6 @@ class ResilientI3Connection:
                     target_host=i3pm_env.get('I3PM_TARGET_HOST'),
                 )
                 if project_name and app_name:
-                    # Feature 038 ENHANCEMENT: VSCode-specific project detection from window title
-                    # VSCode windows share a single process, so I3PM environment doesn't distinguish
-                    # between multiple workspaces. Parse title to get the actual project directory.
-                    window_class = get_window_class(container)  # Feature 045: Sway-compatible
-                    if window_class == "Code" and container.name:
-                        import re
-                        logger.debug(f"VSCode window {container.window} title: '{container.name}'")
-                        # Match either "Code - PROJECT -" or just "PROJECT - hostname -" format
-                        match = re.match(r"(?:Code - )?([^-]+) -", container.name)
-                        if match:
-                            title_project = match.group(1).strip().lower()
-                            logger.debug(f"VSCode title match: '{title_project}', known projects: {list(self.state_manager.state.projects.keys())}")
-                            # Check if this matches a known project name
-                            if title_project in self.state_manager.state.projects:
-                                if project_name != title_project:
-                                    logger.info(
-                                        f"VSCode window {container.window}: Overriding project from I3PM "
-                                        f"({project_name}) to title-based ({title_project})"
-                                    )
-                                    project_name = title_project
-                        else:
-                            logger.debug(f"VSCode title '{container.name}' didn't match regex pattern")
-
                     windows_to_mark.append((container, project_name, app_name, scope, context_key))
 
             # Recursively scan children
@@ -680,10 +656,6 @@ class ResilientI3Connection:
 
         logger.info("Scanning for unmarked windows with I3PM environment variables...")
         await collect_windows(tree)
-
-        # Sort windows: VSCode (class="Code") windows last to avoid mark clearing race condition
-        # (marking other windows after VSCode causes VSCode's marks to disappear)
-        windows_to_mark.sort(key=lambda x: 1 if get_window_class(x[0]) == "Code" else 0)
 
         # Mark windows in the sorted order
         for container, project_name, app_name, scope, context_key in windows_to_mark:

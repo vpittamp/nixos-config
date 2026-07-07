@@ -1092,6 +1092,33 @@ def test_execute_launch_spec_local_pwa_uses_sway_exec(tmp_path: Path) -> None:
     assert service.read_status("launch-pwa")["status"] == "waiting_window"
 
 
+def test_execute_launch_spec_local_gui_app_uses_sway_exec(tmp_path: Path) -> None:
+    commands: List[List[str]] = []
+    service = make_service(
+        tmp_path,
+        transport="local_helper",
+        run_commands=commands,
+        which_map={"code": "/usr/bin/code"},
+    )
+
+    result = service.execute_launch_spec({
+        "app_name": "code",
+        "command": "code",
+        "args": ["--new-window"],
+        "execution_mode": "local",
+        "local_project_directory": "",
+        "environment": {"I3PM_CONTEXT_KEY": "ctx"},
+        "launch": {"launch_id": "launch-code"},
+    })
+
+    assert result["success"] is True
+    assert result["pid"] == 0
+    assert commands[0][:2] == ["swaymsg", "--quiet"]
+    assert "exec env I3PM_CONTEXT_KEY=ctx /usr/bin/code --new-window" in commands[0][2]
+    assert not any(command and command[0] == "systemd-run" for command in commands)
+    assert service.read_status("launch-code")["status"] == "waiting_window"
+
+
 def test_managed_tmux_session_probe_accepts_matching_metadata(tmp_path: Path) -> None:
     def fake_run(cmd: List[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         if cmd[-3:] == ["has-session", "-t", "i3pm-main"]:

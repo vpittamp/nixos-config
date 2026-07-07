@@ -649,7 +649,7 @@ in
       #         "${mod}+Shift+p" = "exec i3pm project clear";
       # 
       #         # Project-aware application launchers (Feature 035: Registry-based)
-      #         "${mod}+c" = "exec ~/.local/bin/app-launcher-wrapper.sh vscode";
+      #         "${mod}+c" = "exec i3pm launch open code";
       #         "${mod}+g" = "exec ~/.local/bin/app-launcher-wrapper.sh lazygit";
       #         "${mod}+y" = "exec ~/.local/bin/app-launcher-wrapper.sh yazi";
       #         "${mod}+b" = "exec ~/.local/bin/app-launcher-wrapper.sh btop";

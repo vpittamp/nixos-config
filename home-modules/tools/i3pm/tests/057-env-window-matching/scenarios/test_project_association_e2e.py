@@ -49,10 +49,10 @@ async def test_mixed_app_project_association(launch_test_process):
     test_apps = [
         # Scoped apps in "nixos" project
         {
-            "name": "vscode-nixos",
+            "name": "editor-nixos",
             "env": {
-                "I3PM_APP_ID": "vscode-nixos-e2e-1",
-                "I3PM_APP_NAME": "vscode",
+                "I3PM_APP_ID": "editor-nixos-e2e-1",
+                "I3PM_APP_NAME": "editor",
                 "I3PM_SCOPE": "scoped",
                 "I3PM_PROJECT_NAME": "nixos",
                 "I3PM_PROJECT_DIR": "/etc/nixos",
@@ -74,10 +74,10 @@ async def test_mixed_app_project_association(launch_test_process):
         },
         # Scoped apps in "stacks" project
         {
-            "name": "vscode-stacks",
+            "name": "editor-stacks",
             "env": {
-                "I3PM_APP_ID": "vscode-stacks-e2e-3",
-                "I3PM_APP_NAME": "vscode",
+                "I3PM_APP_ID": "editor-stacks-e2e-3",
+                "I3PM_APP_NAME": "editor",
                 "I3PM_SCOPE": "scoped",
                 "I3PM_PROJECT_NAME": "stacks",
                 "I3PM_PROJECT_DIR": "/home/vpittamp/stacks",
@@ -145,33 +145,33 @@ async def test_mixed_app_project_association(launch_test_process):
         # Test project switch scenarios
         project_switches = [
             ("nixos", {
-                "vscode-nixos": True,
+                "editor-nixos": True,
                 "terminal-nixos": True,
-                "vscode-stacks": False,
+                "editor-stacks": False,
                 "lazygit-stacks": False,
                 "firefox-global": True,
                 "youtube-pwa-global": True,
             }),
             ("stacks", {
-                "vscode-nixos": False,
+                "editor-nixos": False,
                 "terminal-nixos": False,
-                "vscode-stacks": True,
+                "editor-stacks": True,
                 "lazygit-stacks": True,
                 "firefox-global": True,
                 "youtube-pwa-global": True,
             }),
             ("nixos", {
-                "vscode-nixos": True,
+                "editor-nixos": True,
                 "terminal-nixos": True,
-                "vscode-stacks": False,
+                "editor-stacks": False,
                 "lazygit-stacks": False,
                 "firefox-global": True,
                 "youtube-pwa-global": True,
             }),
             (None, {
-                "vscode-nixos": False,
+                "editor-nixos": False,
                 "terminal-nixos": False,
-                "vscode-stacks": False,
+                "editor-stacks": False,
                 "lazygit-stacks": False,
                 "firefox-global": True,
                 "youtube-pwa-global": True,

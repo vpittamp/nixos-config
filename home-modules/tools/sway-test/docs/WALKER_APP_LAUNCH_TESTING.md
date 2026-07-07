@@ -275,13 +275,13 @@ When Firefox window appears:
 }
 ```
 
-### Test 2: VS Code with Project Context (Scoped App)
+### Test 2: Project Editor with Project Context (Scoped App)
 
 ```json
 {
-  "name": "Launch VS Code in project context",
+  "name": "Launch project editor in project context",
   "description": "Test scoped app with project directory",
-  "tags": ["walker", "scoped", "vscode"],
+  "tags": ["walker", "scoped", "editor"],
   "timeout": 15000,
   "actions": [
     {
@@ -294,7 +294,7 @@ When Firefox window appears:
       "type": "launch_app",
       "params": {
         "command": "bash",
-        "args": ["-c", "~/.local/bin/app-launcher-wrapper.sh vscode"]
+        "args": ["-c", "i3pm launch open code"]
       }
     },
     {

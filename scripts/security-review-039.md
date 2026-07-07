@@ -236,7 +236,7 @@ Diagnostic commands output:
   "i3pm_env": {
     "I3PM_PROJECT_NAME": "secret-project",  // ⚠️ May be sensitive
     "I3PM_PROJECT_DIR": "/home/user/projects/secret-project",  // ⚠️ Path exposure
-    "I3PM_APP_NAME": "vscode"  // ✅ Generic app name
+    "I3PM_APP_NAME": "editor"  // ✅ Generic app name
   }
 }
 ```

@@ -93,8 +93,8 @@ async def test_no_registry_iteration_on_environment_match():
     - Do fuzzy matching
     """
     mock_env_vars = {
-        "I3PM_APP_ID": "vscode-test-123",
-        "I3PM_APP_NAME": "vscode",
+        "I3PM_APP_ID": "editor-test-123",
+        "I3PM_APP_NAME": "editor",
         "I3PM_SCOPE": "scoped",
         "I3PM_PROJECT_NAME": "nixos",
     }
@@ -108,7 +108,7 @@ async def test_no_registry_iteration_on_environment_match():
 
         # Should find environment without registry
         assert result.environment is not None
-        assert result.environment.app_name == "vscode"
+        assert result.environment.app_name == "editor"
 
         # The key point: we got the answer directly from environment
         # without needing to consult any registry or do class matching
@@ -211,17 +211,17 @@ async def test_multiple_instances_distinguished_by_app_id():
     Legacy approach: Same window class → ambiguity
     Environment approach: Unique APP_ID per instance → deterministic
     """
-    # Two VS Code instances with different APP_IDs
+    # Two scoped editor instances with different APP_IDs
     env_instance1 = {
-        "I3PM_APP_ID": "vscode-nixos-1001-1234567890",
-        "I3PM_APP_NAME": "vscode",
+        "I3PM_APP_ID": "editor-nixos-1001-1234567890",
+        "I3PM_APP_NAME": "editor",
         "I3PM_SCOPE": "scoped",
         "I3PM_PROJECT_NAME": "nixos",
     }
 
     env_instance2 = {
-        "I3PM_APP_ID": "vscode-stacks-1002-1234567891",
-        "I3PM_APP_NAME": "vscode",
+        "I3PM_APP_ID": "editor-stacks-1002-1234567891",
+        "I3PM_APP_NAME": "editor",
         "I3PM_SCOPE": "scoped",
         "I3PM_PROJECT_NAME": "stacks",
     }
@@ -230,8 +230,8 @@ async def test_multiple_instances_distinguished_by_app_id():
     instance1 = WindowEnvironment.from_env_dict(env_instance1)
     instance2 = WindowEnvironment.from_env_dict(env_instance2)
 
-    # Same app_name (both VS Code)
-    assert instance1.app_name == instance2.app_name == "vscode"
+    # Same app_name (both editor)
+    assert instance1.app_name == instance2.app_name == "editor"
 
     # Different app_ids (unique instances)
     assert instance1.app_id != instance2.app_id, \

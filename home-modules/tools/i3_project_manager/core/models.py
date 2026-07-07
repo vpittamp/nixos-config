@@ -538,8 +538,8 @@ class AppClassification:
         if not config_file.exists():
             # Return default classification
             return cls(
-                scoped_classes=["Ghostty", "Code", "neovide"],
-                global_classes=["firefox", "Google-chrome", "mpv", "vlc"],
+                scoped_classes=["Ghostty", "neovide"],
+                global_classes=["Code", "firefox", "Google-chrome", "mpv", "vlc"],
                 class_patterns={"pwa-": "global", "terminal": "scoped", "editor": "scoped"},
             )
 
@@ -592,7 +592,7 @@ class WindowState:
     workspace_number: int  # Workspace where window was/should be (1-70)
     floating: bool  # True if floating, False if tiled
     project_name: str  # Project this window belongs to
-    app_name: str  # Application name from registry (e.g., "vscode")
+    app_name: str  # Application name from registry (e.g., "editor")
     window_class: str  # X11 window class (e.g., "Code")
     last_seen: float  # Unix timestamp of last state update
 

@@ -171,7 +171,7 @@ class DryRunContext:
 
     Usage:
         >>> with DryRunContext() as ctx:
-        ...     ctx.add_change("add", "scoped_classes", new_value="Code")
+        ...     ctx.add_change("add", "scoped_classes", new_value="Ghostty")
         ...     ctx.add_change("update", "config_file", old_value="old", new_value="new")
         >>> print(ctx.result)
     """

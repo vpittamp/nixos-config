@@ -35,7 +35,7 @@ async def test_window_identification_across_app_types(launch_test_process):
     via environment variables WITHOUT calling legacy class matching functions.
 
     Application types tested:
-    1. Regular GUI apps (VS Code, terminal)
+    1. Regular GUI apps (editor, terminal)
     2. Firefox PWAs (Claude, YouTube)
     3. Electron apps
     4. Native Wayland apps
@@ -44,10 +44,10 @@ async def test_window_identification_across_app_types(launch_test_process):
     # Define 10 test applications with diverse types
     test_apps = [
         {
-            "name": "vscode",
+            "name": "editor",
             "env": {
-                "I3PM_APP_ID": "vscode-e2e-1",
-                "I3PM_APP_NAME": "vscode",
+                "I3PM_APP_ID": "editor-e2e-1",
+                "I3PM_APP_NAME": "editor",
                 "I3PM_SCOPE": "scoped",
                 "I3PM_PROJECT_NAME": "nixos",
             }

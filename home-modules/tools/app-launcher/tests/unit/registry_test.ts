@@ -22,11 +22,11 @@ const sampleRegistry: ApplicationRegistry = {
   version: "1.0.0",
   applications: [
     {
-      name: "vscode",
+      name: "code",
       display_name: "VS Code",
       command: "code",
-      parameters: "$PROJECT_DIR",
-      scope: "scoped",
+      parameters: "--new-window",
+      scope: "global",
       expected_class: "Code",
       preferred_workspace: 1,
       icon: "vscode",
@@ -64,7 +64,7 @@ Deno.test("loadRegistry - loads valid registry from file", async () => {
 
   assertEquals(registry.version, "1.0.0");
   assertEquals(registry.applications.length, 4);
-  assertEquals(registry.applications[0].name, "vscode");
+  assertEquals(registry.applications[0].name, "code");
 });
 
 Deno.test("loadRegistry - throws on missing file", async () => {
@@ -76,9 +76,9 @@ Deno.test("loadRegistry - throws on missing file", async () => {
 });
 
 Deno.test("findApplication - finds application by name", () => {
-  const app = findApplication(sampleRegistry, "vscode");
+  const app = findApplication(sampleRegistry, "code");
 
-  assertEquals(app?.name, "vscode");
+  assertEquals(app?.name, "code");
   assertEquals(app?.display_name, "VS Code");
   assertEquals(app?.command, "code");
 });
@@ -92,16 +92,16 @@ Deno.test("findApplication - returns null for unknown application", () => {
 Deno.test("filterByScope - filters scoped applications", () => {
   const scoped = filterByScope(sampleRegistry, "scoped");
 
-  assertEquals(scoped.length, 2);
-  assertEquals(scoped[0].name, "vscode");
-  assertEquals(scoped[1].name, "ghostty");
+  assertEquals(scoped.length, 1);
+  assertEquals(scoped[0].name, "ghostty");
 });
 
 Deno.test("filterByScope - filters global applications", () => {
   const global = filterByScope(sampleRegistry, "global");
 
-  assertEquals(global.length, 1);
-  assertEquals(global[0].name, "firefox");
+  assertEquals(global.length, 2);
+  assertEquals(global[0].name, "code");
+  assertEquals(global[1].name, "firefox");
 });
 
 Deno.test("filterByScope - returns all when scope is 'all'", () => {
@@ -114,7 +114,7 @@ Deno.test("filterByWorkspace - filters by workspace number", () => {
   const ws1 = filterByWorkspace(sampleRegistry, 1);
 
   assertEquals(ws1.length, 2);
-  assertEquals(ws1[0].name, "vscode");
+  assertEquals(ws1[0].name, "code");
   assertEquals(ws1[1].name, "ghostty");
 });
 
@@ -127,7 +127,7 @@ Deno.test("filterByWorkspace - returns empty for unused workspace", () => {
 Deno.test("getApplicationNames - returns all application names", () => {
   const names = getApplicationNames(sampleRegistry);
 
-  assertEquals(names, ["vscode", "firefox", "ghostty"]);
+  assertEquals(names, ["code", "firefox", "ghostty"]);
 });
 
 Deno.test("validateRegistry - validates version format", () => {

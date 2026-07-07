@@ -15,7 +15,7 @@ export type EnvironmentScope = "scoped" | "global";
 export interface ProcessEnvironment {
   // Application instance identification
   I3PM_APP_ID: string; // Unique instance ID: "${app}-${project}-${pid}-${timestamp}"
-  I3PM_APP_NAME: string; // Registry application name (e.g., "vscode")
+  I3PM_APP_NAME: string; // Registry application name (e.g., "editor")
 
   // Project context
   I3PM_PROJECT_NAME: string; // Project name (e.g., "nixos") or empty for global
@@ -48,7 +48,7 @@ export interface GlobalEnvironment extends Partial<ProcessEnvironment> {
  * Generate unique application instance ID
  *
  * Format: ${APP_NAME}-${PROJECT_NAME}-${PID}-${TIMESTAMP}
- * Example: "vscode-nixos-12345-1730000000"
+ * Example: "editor-nixos-12345-1730000000"
  *
  * @param appName - Registry application name
  * @param projectName - Project name or null for global

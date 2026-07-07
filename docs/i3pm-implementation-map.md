@@ -1126,7 +1126,7 @@ i3_project_monitor/
   "display_name": "NixOS Configuration",
   "icon": "❄️",
   "directory": "/etc/nixos",
-  "scoped_classes": ["Ghostty", "Code"],
+  "scoped_classes": ["Ghostty"],
   "created_at": 1725436800,
   "last_used_at": 1725437000
 }
@@ -1395,4 +1395,3 @@ The i3pm system is a **mature, well-architected project management platform** fo
 - Error recovery and resilience
 
 **Estimated Production Readiness: 80-85%** with addressing of known issues bringing it to 95%+.
-

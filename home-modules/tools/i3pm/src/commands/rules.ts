@@ -65,7 +65,7 @@ EXAMPLES:
   i3pm rules discover --scan --compare                 # Compare with existing rules
   i3pm rules discover --scan --compare --verbose       # Show all rules including correct ones
   i3pm rules discover --app pavucontrol
-  i3pm rules discover --app vscode --workspace 1 --scope scoped
+  i3pm rules discover --app editor --workspace 1 --scope scoped
   i3pm rules discover --registry
 `);
   Deno.exit(0);

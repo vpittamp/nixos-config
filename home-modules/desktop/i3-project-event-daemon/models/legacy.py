@@ -745,7 +745,7 @@ class I3PMEnvironment(BaseModel):
 
     # Application Identity
     app_id: str = Field(..., description="Unique instance ID: {app}-{project}-{pid}-{timestamp}")
-    app_name: str = Field(..., description="Registry application name (e.g., 'vscode', 'terminal')")
+    app_name: str = Field(..., description="Registry application name (e.g., 'editor', 'terminal')")
 
     # Workspace Assignment (Feature 039)
     target_workspace: Optional[int] = Field(None, description="Direct workspace assignment from launcher (1-10)")
@@ -1041,7 +1041,7 @@ class PendingLaunch(BaseModel):
     )
     app_name: str = Field(
         ...,
-        description="Application name from registry (e.g., 'vscode', 'terminal')"
+        description="Application name from registry (e.g., 'editor', 'terminal')"
     )
     project_name: str = Field(
         ...,

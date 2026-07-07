@@ -41,8 +41,8 @@ class WorkspaceTracker:
             "123456": {
                 "workspace_number": 2,
                 "floating": false,
-                "project_name": "nixos",
-                "app_name": "vscode",
+                "project_name": null,
+                "app_name": "code",
                 "window_class": "Code",
                 "last_seen": 1730000000.123,
                 "geometry": null,

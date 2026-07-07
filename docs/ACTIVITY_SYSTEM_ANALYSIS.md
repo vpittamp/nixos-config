@@ -236,7 +236,7 @@ git show 0c5562d:home-modules/desktop/project-activities/panels.nix | grep -A 10
 
 **Replace**:
 - `konsole-activity` → Desktop folder + "Open Terminal Here"
-- `code-activity` → VS Code jumplist (already have this!)
+- `code-activity` → global editor launcher
 - `dolphin-activity` → Desktop folder widget itself
 
 **Benefits**:
@@ -247,7 +247,7 @@ git show 0c5562d:home-modules/desktop/project-activities/panels.nix | grep -A 10
 **Trade-offs**:
 - ❌ Lose Ctrl+Alt+T magic shortcut
 - ✅ But gain: Right-click folder → Open Terminal
-- ✅ And have: VS Code jumplist
+- ✅ And keep: global editor launcher
 
 **Effort**: Medium (4-6 hours)
 **Risk**: Medium (workflow change)
@@ -270,9 +270,9 @@ git show 0c5562d:home-modules/desktop/project-activities/panels.nix | grep -A 10
 
 **Alternative Workflow**:
 1. Click desktop folder → Opens in Dolphin
-2. Right-click folder → Open Terminal / VS Code
+2. Right-click folder → Open Terminal / editor
 3. Windows assigned to activity via window rules
-4. VS Code jumplist for quick project access
+4. Editor launcher stays global for quick access
 
 **Benefits**:
 - ✅ ~700 lines less code
@@ -354,7 +354,7 @@ git show 0c5562d:home-modules/desktop/project-activities/panels.nix | grep -A 10
 **Questions to Answer**:
 1. How often do you actually use activity-aware shortcuts?
 2. Could desktop folder + right-click replace them?
-3. Is VS Code jumplist sufficient for most cases?
+3. Is the global editor launcher sufficient for most cases?
 4. Do window rules already handle 90% of the value?
 
 ---

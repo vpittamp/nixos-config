@@ -101,7 +101,7 @@ class ProjectManager:
             directory=directory,
             display_name=display_name,
             icon=icon,
-            scoped_classes=scoped_classes or ["Ghostty", "Code"],
+            scoped_classes=scoped_classes or ["Ghostty"],
             **kwargs,
         )
 

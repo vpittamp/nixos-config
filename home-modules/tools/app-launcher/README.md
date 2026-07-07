@@ -95,11 +95,11 @@ Applications can use these variables in their parameters:
 Example registry entry:
 ```json
 {
-  "name": "vscode",
+  "name": "code",
   "display_name": "VS Code",
   "command": "code",
-  "parameters": "$PROJECT_DIR",
-  "scope": "scoped",
+  "parameters": "--new-window",
+  "scope": "global",
   "expected_class": "Code",
   "preferred_workspace": 1
 }
@@ -128,9 +128,8 @@ i3pm apps list --format=json
 Launch an application with project context:
 
 ```bash
-i3pm apps launch vscode
-i3pm apps launch vscode --dry-run
-i3pm apps launch vscode --project=nixos
+i3pm apps launch code
+i3pm apps launch code --dry-run
 ```
 
 ### i3pm apps info
@@ -138,9 +137,9 @@ i3pm apps launch vscode --project=nixos
 Show application details:
 
 ```bash
-i3pm apps info vscode
-i3pm apps info vscode --resolve
-i3pm apps info vscode --format=json
+i3pm apps info code
+i3pm apps info code --resolve
+i3pm apps info code --format=json
 ```
 
 ### i3pm apps edit
@@ -175,8 +174,8 @@ i3pm apps add --non-interactive --name=custom-app ...
 Remove application:
 
 ```bash
-i3pm apps remove vscode
-i3pm apps remove vscode --force
+i3pm apps remove code
+i3pm apps remove code --force
 ```
 
 ## Testing

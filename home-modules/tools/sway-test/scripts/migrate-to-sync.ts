@@ -330,7 +330,7 @@ async function migrateAll(dryRun = false): Promise<void> {
     "tests/sway-tests/basic/test_walker_app_launch.json",
     "tests/sway-tests/integration/test_env_validation.json",
     "tests/sway-tests/integration/test_firefox_simple.json",
-    "tests/sway-tests/integration/test_vscode_scoped.json",
+    "tests/sway-tests/integration/test_editor_scoped.json",
     "tests/sway-tests/integration/test_pwa_workspace.json",
     "tests/sway-tests/basic/test_app_workspace_launch.json",
     "tests/sway-tests/integration/test_multi_app_workspaces.json",
