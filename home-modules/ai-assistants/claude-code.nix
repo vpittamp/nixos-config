@@ -232,12 +232,44 @@ lib.mkIf enableClaudeCode {
         # Use a Nix-managed script that reads stdin (JSON) and environment variables
         command = "${pkgs.writeShellScript "claude-statusline.sh" ''
           input=$(cat)
-          MODEL=$(${pkgs.jq}/bin/jq -r '.model.display_name' <<< \"$input\")
-          PERCENT=$(${pkgs.jq}/bin/jq -r '.context_window.usage_percentage' <<< \"$input\")
-          COST=$(${pkgs.jq}/bin/jq -r '.session_cost.total_cost' <<< \"$input\")
-          PROJECT=\"''${I3PM_PROJECT_NAME:-''${PWD##*/}}\"
-          TMUX_STR=\"''${TMUX_PANE:+ | Tmux: ''$TMUX_PANE}\"
-          echo -e \"\\e[34m[Proj: $PROJECT$TMUX_STR]\\e[0m | \\e[32m$MODEL\\e[0m | Ctx: $PERCENT% | \\$$COST\"
+          MODEL=$(${pkgs.jq}/bin/jq -r '.model.display_name // .model.id // "Unknown Model"' <<< "$input")
+          PERCENT=$(${pkgs.jq}/bin/jq -r '.context_window.used_percentage // .context_window.usage_percentage // 0 | if type == "number" then round else . end' <<< "$input")
+          COST_RAW=$(${pkgs.jq}/bin/jq -r '.session_cost.total_cost // .cost.total_cost_usd // 0' <<< "$input")
+          COST=$(printf "%.1f" "$COST_RAW" 2>/dev/null || printf "%.1f" 0)
+          PROJECT="''${I3PM_PROJECT_NAME:-''${PWD##*/}}"
+          TMUX_STR="''${TMUX_PANE:+ | Tmux: ''$TMUX_PANE}"
+
+          # Git status helper
+          if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+            MODIFIED=$(git diff --name-only 2>/dev/null | wc -l)
+            UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null | wc -l)
+            STAGED=$(git diff --cached --name-only 2>/dev/null | wc -l)
+
+            GIT_STR=" | ⎇ $BRANCH"
+            if [ "$STAGED" -gt 0 ] || [ "$MODIFIED" -gt 0 ] || [ "$UNTRACKED" -gt 0 ]; then
+              GIT_STR="$GIT_STR ("
+              first=1
+              if [ "$STAGED" -gt 0 ]; then
+                GIT_STR="$GIT_STR+$STAGED"
+                first=0
+              fi
+              if [ "$MODIFIED" -gt 0 ]; then
+                if [ $first -eq 0 ]; then GIT_STR="$GIT_STR "; fi
+                GIT_STR="$GIT_STR~$MODIFIED"
+                first=0
+              fi
+              if [ "$UNTRACKED" -gt 0 ]; then
+                if [ $first -eq 0 ]; then GIT_STR="$GIT_STR "; fi
+                GIT_STR="$GIT_STR?$UNTRACKED"
+              fi
+              GIT_STR="$GIT_STR)"
+            fi
+          else
+            GIT_STR=""
+          fi
+
+          echo -e "\e[34m[Proj: $PROJECT$TMUX_STR$GIT_STR]\e[0m | \e[32m$MODEL\e[0m | Ctx: $PERCENT% | \$$COST"
         ''}";
       };
 

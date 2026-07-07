@@ -21,19 +21,14 @@ PanelWindow {
     readonly property QtObject root: shellRoot
     id: monitorWindow
 
-    // The same rich, stable-sorted/filtered session list the side panel shows,
-    // refreshed on every dashboard update (mirrors RuntimePanelWindow so the two
-    // stay consistent and delegates keep stable identity via ScriptModel).
-    property var sessions: []
-    function refreshAgentSessions() {
-        sessions = root.panelSessions();
-    }
-    Component.onCompleted: refreshAgentSessions()
-    Connections {
-        target: root
-        function onDashboardChanged() {
-            monitorWindow.refreshAgentSessions();
-        }
+    // Derive rows directly from the current daemon dashboard. Herdr already owns
+    // subprocess/subagent detection; keeping no copied session cache here avoids
+    // the monitor strip lagging behind a pane.agent_status_changed event.
+    readonly property int dashboardGeneration: root.dashboardGeneration(root.dashboard)
+    readonly property var sessions: sessionsForGeneration(dashboardGeneration)
+
+    function sessionsForGeneration(_generation) {
+        return root.panelSessions();
     }
 
     screen: root.findScreenByOutputName(root.agentMonitorOutputName) || root.activeScreen

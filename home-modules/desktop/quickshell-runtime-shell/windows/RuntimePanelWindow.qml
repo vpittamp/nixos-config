@@ -14,59 +14,52 @@ PanelWindow {
     required property var colors
     readonly property QtObject root: shellRoot
     id: panelWindow
-    property var runtimeSessions: []
-    property var runtimeHerdrSpaces: []
+    readonly property int dashboardGeneration: root.dashboardGeneration(root.dashboard)
+    readonly property var runtimeSessions: runtimeSessionsForGeneration(dashboardGeneration)
+    readonly property var runtimeHerdrSpaces: runtimeHerdrSpacesForGeneration(dashboardGeneration)
+    readonly property var runtimeVisibleSpaces: runtimeVisibleHerdrSpacesForState(runtimeHerdrSpaces, root.collapsedHerdrSpaceGroups, root.dashboard.focus_state)
     property bool herdrSpacesExpanded: false
     screen: root.findScreenByOutputName(root.panelOutputName) || root.activeScreen
     visible: root.panelVisible
-    onVisibleChanged: {
-        if (visible) {
-            refreshRuntimePanelData();
-        }
-    }
     color: "transparent"
     implicitWidth: runtimeConfig.panelWidth
     anchors.top: true
     anchors.bottom: true
     anchors.right: true
     exclusiveZone: root.dockedMode ? implicitWidth : 0
-    focusable: true
+    focusable: false
     aboveWindows: root.dockedMode
     WlrLayershell.namespace: "i3pm-runtime-panel"
     WlrLayershell.layer: root.dockedMode ? WlrLayer.Top : WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-    function refreshRuntimePanelData() {
-        runtimeSessions = root.panelSessions();
-        runtimeHerdrSpaces = root.herdrSpaces();
+    function runtimeSessionsForGeneration(_generation) {
+        return root.panelSessions();
     }
 
-    Component.onCompleted: refreshRuntimePanelData()
-
-    Connections {
-        target: root
-
-        function onDashboardChanged() {
-            if (panelWindow.visible) {
-                refreshRuntimePanelData();
-            }
-        }
+    function runtimeHerdrSpacesForGeneration(_generation) {
+        return root.herdrSpaces();
     }
 
     function runtimePanelHasSessions() {
         return runtimeSessions.length > 0 || runtimeHerdrSpaces.length > 0;
     }
 
-    function runtimeVisibleHerdrSpaces() {
+    function runtimeVisibleHerdrSpacesForState(spaces, _collapsedGroups, _focusState) {
         const visibleSpaces = [];
-        for (let i = 0; i < runtimeHerdrSpaces.length; i += 1) {
-            const space = runtimeHerdrSpaces[i];
+        const sourceSpaces = root.arrayOrEmpty(spaces);
+        for (let i = 0; i < sourceSpaces.length; i += 1) {
+            const space = sourceSpaces[i];
             const groupKey = root.herdrSpaceGroupKey(space);
             if (!root.boolOrFalse(space && space.is_linked_worktree) || !root.herdrSpaceGroupCollapsed(groupKey) || root.herdrSpaceIsFocused(space)) {
                 visibleSpaces.push(space);
             }
         }
         return visibleSpaces;
+    }
+
+    function runtimeVisibleHerdrSpaces() {
+        return runtimeVisibleSpaces;
     }
 
     function runtimePanelSessionSummary() {
@@ -472,24 +465,15 @@ PanelWindow {
                                 readonly property bool canFocus: root.herdrSpaceFocusTarget(space) !== null
                                 readonly property bool spaceFocused: root.herdrSpaceIsFocused(space)
                                 readonly property bool hovered: spaceMouse.containsMouse
-                                readonly property bool hasStatusMotion: root.herdrSpaceEffectiveStatus(space) === "working"
                                 readonly property string metaLabel: root.herdrSpaceMetaLabel(space)
                                 readonly property string gitChipText: root.herdrSpaceGitChipText(space)
                                 readonly property string gitTooltip: root.herdrSpaceGitTooltip(space)
-                                property int statusSpinnerFrame: 0
                                 width: herdrSpacesList.width
                                 implicitHeight: herdrSessionContent.rowHeight
                                 radius: herdrSessionContent.rowRadius
                                 color: root.herdrSpaceFill(space, hovered)
                                 border.color: root.herdrSpaceBorder(space, hovered)
                                 border.width: 1
-
-                                Timer {
-                                    running: herdrSpaceRow.hasStatusMotion
-                                    repeat: true
-                                    interval: 95
-                                    onTriggered: herdrSpaceRow.statusSpinnerFrame = (herdrSpaceRow.statusSpinnerFrame + 1) % 10
-                                }
 
                                 Rectangle {
                                     anchors.left: parent.left
@@ -531,7 +515,7 @@ PanelWindow {
                                     Text {
                                         Layout.preferredWidth: 12
                                         horizontalAlignment: Text.AlignHCenter
-                                        text: root.herdrSpaceStatusDot(space, herdrSpaceRow.statusSpinnerFrame)
+                                        text: root.herdrSpaceStatusDot(space)
                                         color: root.herdrSpaceStatusColor(space)
                                         font.pixelSize: 12
                                         font.weight: Font.DemiBold
@@ -560,11 +544,10 @@ PanelWindow {
                                         }
 
                                         // No hover ToolTip here: a QtQuick.Controls
-                                        // ToolTip is a Popup, and inside this focusable
-                                        // (keyboardFocus OnDemand) panel its overlay
-                                        // grabbed the pointer, flipping containsMouse
-                                        // on/off so the row "pulsated" and ate clicks
-                                        // (needed a double-click to register). The host
+                                        // ToolTip is a Popup whose overlay grabbed the
+                                        // pointer, flipping containsMouse on/off so the
+                                        // row "pulsated" and ate clicks (needed a
+                                        // double-click to register). The host
                                         // monogram already shows local/remote at a
                                         // glance. The previous hover-only MouseArea was
                                         // also removed so clicks on the chip fall through
@@ -631,7 +614,7 @@ PanelWindow {
 
                                 // No hover ToolTip here: a QtQuick.Controls ToolTip is a
                                 // Popup whose overlay grabbed the pointer inside this
-                                // focusable panel, flipping spaceMouse.containsMouse on/off
+                                // panel, flipping spaceMouse.containsMouse on/off
                                 // so the row "pulsated as if clicked" and ate real clicks
                                 // (focusHerdrSpace only landed on a double-click). The git
                                 // chip in the row already shows the status; the full

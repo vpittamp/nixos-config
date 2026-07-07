@@ -1064,12 +1064,17 @@ ShellRoot {
         return windowIsFocused(windowData);
     }
 
+    function sessionIsHerdrSession(session) {
+        return stringOrEmpty(session && session.source) === "herdr"
+            || stringOrEmpty(session && session.pane_id).length > 0;
+    }
+
     function sessionIsDisplayEligible(session) {
         if (!session || typeof session !== "object") {
             return false;
         }
 
-        if (stringOrEmpty(session.source) === "herdr" || stringOrEmpty(session.pane_id)) {
+        if (sessionIsHerdrSession(session)) {
             return stringOrEmpty(session.pane_id).length > 0;
         }
 
@@ -1081,7 +1086,7 @@ ShellRoot {
             return false;
         }
 
-        if (stringOrEmpty(session.source) === "herdr" || stringOrEmpty(session.pane_id)) {
+        if (sessionIsHerdrSession(session)) {
             return stringOrEmpty(session.pane_id).length > 0;
         }
 
@@ -4856,28 +4861,26 @@ function normalizeLauncherMode(mode) {
         return colors.muted;
     }
 
-    function herdrStatusIcon(state, spinnerFrame) {
+    function herdrSpaceStaticStatusIcon(state) {
         const normalized = herdrStatusState(state);
         if (normalized === "blocked") {
-            return "◉";
+            return "●";
         }
         if (normalized === "working") {
-            const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-            const frame = Number(spinnerFrame || 0);
-            return frames[Math.max(0, Math.trunc(frame)) % frames.length];
+            return "●";
         }
         if (normalized === "done") {
             return "●";
         }
         if (normalized === "idle") {
-            return "✓";
+            return "○";
         }
-        return "○";
+        return "·";
     }
 
-    function herdrSpaceStatusDot(space, spinnerFrame) {
+    function herdrSpaceStatusDot(space) {
         const state = herdrSpaceEffectiveStatus(space);
-        return herdrStatusIcon(state, spinnerFrame);
+        return herdrSpaceStaticStatusIcon(state);
     }
 
     function herdrSpaceFill(space, hovered) {
@@ -5339,11 +5342,19 @@ function normalizeLauncherMode(mode) {
     }
 
     function herdrStatusStateFor(item) {
+        const rawStatus = stringOrEmpty(item && item.agent_status);
+        if (rawStatus.length > 0) {
+            const rawState = herdrStatusState(rawStatus);
+            if (rawState !== "unknown" || rawStatus.toLowerCase() === "unknown") {
+                return rawState;
+            }
+        }
+
         const explicit = stringOrEmpty(item && item.agent_status_state);
         if (explicit.length > 0) {
             return herdrStatusState(explicit);
         }
-        return herdrStatusState(item && item.agent_status);
+        return "unknown";
     }
 
     function herdrStateLabel(labels, rawStatus, state) {
@@ -5832,7 +5843,7 @@ function normalizeLauncherMode(mode) {
     function sessionPrimaryLabel(session) {
         const agent = toolLabel(session);
         const project = shortProject(stringOrEmpty(session && (session.project_name || session.project || "")));
-        if (stringOrEmpty(session && session.source) === "herdr" || stringOrEmpty(session && session.pane_id)) {
+        if (sessionIsHerdrSession(session)) {
             const sidebarTitle = herdrSessionSidebarTitle(session);
             if (sidebarTitle.length > 0) {
                 return sidebarTitle;
@@ -5865,7 +5876,7 @@ function normalizeLauncherMode(mode) {
         const project = shortProject(stringOrEmpty(session && (session.project_name || session.project || "")));
         const herdrStatus = stringOrEmpty(session && session.agent_status);
         const customStatus = stringOrEmpty(session && session.custom_status);
-        if (stringOrEmpty(session && session.source) === "herdr" || stringOrEmpty(session && session.pane_id)) {
+        if (sessionIsHerdrSession(session)) {
             const agent = toolLabel(session);
             const host = displayHostName(stringOrEmpty(session && (session.herdr_host || session.host_name)));
             const isRemote = boolOrFalse(session && session.is_remote_herdr);
@@ -5894,7 +5905,7 @@ function normalizeLauncherMode(mode) {
                 bits.push(parts[parts.length - 1]);
             }
         }
-        if (bits.length > 0 && (stringOrEmpty(session && session.source) === "herdr" || stringOrEmpty(session && session.pane_id))) {
+        if (bits.length > 0 && sessionIsHerdrSession(session)) {
             return bits.join(" • ");
         }
         const availability = sessionAvailabilityLabel(session);

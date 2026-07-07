@@ -141,6 +141,18 @@ export async function herdrProxyCommand(args: string[], _flags: CommandOptions):
 
     if (subcommand === "events") {
       await client.connect();
+
+      // Prevent orphaned processes when ssh session or parent dies
+      const initialPpid = Deno.ppid;
+      const ppidInterval = setInterval(() => {
+        if (Deno.ppid !== initialPpid) {
+          clearInterval(ppidInterval);
+          client.disconnect();
+          Deno.exit(0);
+        }
+      }, 5000);
+      Deno.unrefTimer(ppidInterval);
+
       for await (const event of client.subscribeToStateChanges()) {
         const proxyEvent = buildHerdrProxyEvent(event);
         if (!proxyEvent) {
