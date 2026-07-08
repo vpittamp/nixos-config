@@ -46,8 +46,7 @@ let
 
     exec "${nodeNpx}" -y mcp-remote "${workflowBuilderMcp.url}" \
       --header "X-Wfb-Session-Id: ''${CODEX_THREAD_ID}" \
-      --transport http-only \
-      --silent
+      --transport http-only
   '';
 
   chromiumConfig = lib.optionalAttrs enableBrowserMcpServers {
