@@ -191,6 +191,9 @@ experimental_use_rmcp_client = true
 startup_timeout_sec = 30
 tool_timeout_sec = 300
 url = "${workflowBuilderMcp.url}"
+
+[mcp_servers.workflow-builder.env_http_headers]
+X-Wfb-Session-Id = "CODEX_THREAD_ID"
 ''}
 
 ${lib.optionalString enableBrowserMcpServers ''
