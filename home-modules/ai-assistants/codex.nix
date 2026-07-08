@@ -36,6 +36,19 @@ let
   playwrightProfileDir = sharedBrowserMcp.codexPlaywrightProfileDir;
   playwrightOutputDir = "${codexMcpStateRoot}/playwright";
   chromeDevtoolsBrowserUrl = sharedBrowserMcp.chromeDevtoolsBrowserUrl;
+  workflowBuilderMcpProxy = pkgs.writeShellScript "workflow-builder-mcp-proxy" ''
+    set -euo pipefail
+
+    if [ -z "''${CODEX_THREAD_ID:-}" ]; then
+      echo "CODEX_THREAD_ID is required for workflow-builder MCP session attribution" >&2
+      exit 64
+    fi
+
+    exec "${nodeNpx}" -y mcp-remote "${workflowBuilderMcp.url}" \
+      --header "X-Wfb-Session-Id: ''${CODEX_THREAD_ID}" \
+      --transport http-only \
+      --silent
+  '';
 
   chromiumConfig = lib.optionalAttrs enableBrowserMcpServers {
     chromiumBin = "${pkgs.chromium}/bin/chromium";
@@ -186,14 +199,11 @@ MLFLOW_TRACKING_URI = "${mlflowTrackingUri}"
 
 ${lib.optionalString workflowBuilderMcp.enable ''
 [mcp_servers.workflow-builder]
+args = []
+command = "${workflowBuilderMcpProxy}"
 enabled = true
-experimental_use_rmcp_client = true
 startup_timeout_sec = 30
 tool_timeout_sec = 300
-url = "${workflowBuilderMcp.url}"
-
-[mcp_servers.workflow-builder.env_http_headers]
-X-Wfb-Session-Id = "CODEX_THREAD_ID"
 ''}
 
 ${lib.optionalString enableBrowserMcpServers ''
