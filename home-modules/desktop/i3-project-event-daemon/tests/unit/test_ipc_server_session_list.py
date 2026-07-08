@@ -687,6 +687,57 @@ async def test_session_list_strips_retired_ui_state_fields(server, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_session_list_normalizes_herdr_current_flags(server, monkeypatch):
+    runtime_snapshot = make_runtime_snapshot()
+    local_session = make_runtime_session({
+        "session_key": "herdr:pane:w1:p6",
+        "render_session_key": "herdr:pane:w1:p6",
+        "source": "herdr",
+        "pane_id": "w1:p6",
+        "host_name": "thinkpad",
+        "is_current_host": True,
+        "focused": True,
+        "pane_active": True,
+        "window_active": True,
+        "is_current_window": True,
+    })
+    remote_session = make_runtime_session({
+        "session_key": "herdr:ryzen:pane:w4:p2",
+        "render_session_key": "herdr:ryzen:pane:w4:p2",
+        "source": "herdr",
+        "pane_id": "w4:p2",
+        "host_name": "ryzen",
+        "is_current_host": False,
+        "focused": True,
+        "pane_active": True,
+        "window_active": True,
+        "is_current_window": True,
+    })
+    runtime_snapshot["sessions"] = [local_session, remote_session]
+    runtime_snapshot["current_session_key"] = remote_session["session_key"]
+
+    async def fake_runtime_snapshot(_params):
+        return runtime_snapshot
+
+    monkeypatch.setattr(server, "_runtime_snapshot", fake_runtime_snapshot)
+    monkeypatch.setattr(server, "_flatten_runtime_windows", lambda snapshot: list(snapshot.get("tracked_windows", [])))
+    monkeypatch.setattr(server, "_local_host_alias", lambda: "thinkpad")
+
+    result = await server._session_list({})
+
+    rows = {row["session_key"]: row for row in result["sessions"]}
+    assert result["current_session_key"] == remote_session["session_key"]
+    assert rows[local_session["session_key"]]["is_current_window"] is False
+    assert rows[local_session["session_key"]]["focused"] is False
+    assert rows[local_session["session_key"]]["pane_active"] is False
+    assert rows[local_session["session_key"]]["window_active"] is False
+    assert rows[remote_session["session_key"]]["is_current_window"] is True
+    assert rows[remote_session["session_key"]]["focused"] is True
+    assert rows[remote_session["session_key"]]["pane_active"] is True
+    assert rows[remote_session["session_key"]]["window_active"] is True
+
+
+@pytest.mark.asyncio
 async def test_remote_herdr_session_uses_focus_only_attach_mode(server, monkeypatch):
     runtime_snapshot = make_runtime_snapshot()
     runtime_snapshot["active_context"].update({

@@ -543,6 +543,18 @@ in
           repeat_delay = "300";
           repeat_rate = "50";
         };
+      } // lib.optionalAttrs (hostName == "thinkpad") {
+        # Sunshine exposes uinput mouse passthrough devices while the host
+        # service is running. On the local ThinkPad session those virtual
+        # pointers can race the real touchpad/TrackPoint and make client hover
+        # state oscillate, especially in Wayland Chrome and layer-shell UI.
+        # Keep keyboard passthrough available, but quarantine the mouse sources.
+        "48879:57005:Mouse_passthrough" = {
+          events = "disabled";
+        };
+        "48879:57005:Mouse_passthrough_(absolute)" = {
+          events = "disabled";
+        };
       };
 
       # Feature 001: Declarative workspace-to-monitor assignments

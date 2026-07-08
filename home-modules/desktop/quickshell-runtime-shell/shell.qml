@@ -4077,6 +4077,7 @@ function normalizeLauncherMode(mode) {
 
     function sessionLauncherEntry(session) {
         const parentWindow = findWindowById(Number(session && session.window_id || 0));
+        const current = sessionIsCurrent(session);
         return Object.assign({}, session, {
             kind: "session",
             identifier: stringOrEmpty(session && session.session_key),
@@ -4086,7 +4087,12 @@ function normalizeLauncherMode(mode) {
             host_label: sessionHostLabel(session),
             host_token: sessionHostToken(session),
             project_label: shortProject(stringOrEmpty(session && (session.project_name || session.project || "global"))),
-            window_title: parentWindow ? stringOrEmpty(displayTitle(parentWindow)) : ""
+            window_title: parentWindow ? stringOrEmpty(displayTitle(parentWindow)) : "",
+            row_current: current,
+            focused: current,
+            pane_active: current,
+            window_active: current,
+            is_current_window: current
         });
     }
 
@@ -6966,12 +6972,17 @@ function normalizeLauncherMode(mode) {
                     continue;
                 }
             }
+            const current = sessionIsCurrent(s);
             out.push(Object.assign({}, s, {
                 kind: "session",
                 output: exposeAgentsOutput,
                 title: title,
                 app_name: stringOrEmpty(s.agent),
-                focused: sessionIsCurrent(s)
+                row_current: current,
+                focused: current,
+                pane_active: current,
+                window_active: current,
+                is_current_window: current
             }));
         }
         return out;

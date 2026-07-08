@@ -21,7 +21,11 @@ PanelWindow {
     readonly property QtObject root: shellRoot
     id: monitorWindow
 
-    property var sessions: []
+    // Keep the ListView model keyed by stable session identity. The row content
+    // still resolves live dashboard data by key, but status/focus ticks no longer
+    // reset delegates under the pointer and drop click releases.
+    readonly property int dashboardGeneration: root.dashboardGeneration(root.dashboard)
+    property var sessionEntries: []
     property bool monitorReady: false
 
     function clampListContentY(list, value) {
@@ -42,9 +46,44 @@ PanelWindow {
         });
     }
 
-    function refreshAgentSessions(preserveViewport) {
+    function buildSessionEntries() {
+        const sessions = root.panelSessions();
+        const entries = [];
+        for (let i = 0; i < sessions.length; i += 1) {
+            const session = sessions[i];
+            const key = root.sessionIdentityKey(session);
+            if (!key) {
+                continue;
+            }
+            entries.push({
+                "identity_key": key,
+                "session_key": root.stringOrEmpty(session && session.session_key),
+                "snapshot": session,
+            });
+        }
+        return entries;
+    }
+
+    function sameSessionEntries(left, right) {
+        const a = root.arrayOrEmpty(left);
+        const b = root.arrayOrEmpty(right);
+        if (a.length !== b.length) {
+            return false;
+        }
+        for (let i = 0; i < a.length; i += 1) {
+            if (root.stringOrEmpty(a[i] && a[i].identity_key) !== root.stringOrEmpty(b[i] && b[i].identity_key)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function refreshSessionEntries(preserveViewport) {
         const savedContentY = preserveViewport && monitorWindow.monitorReady ? Number(agentList.contentY || 0) : 0;
-        sessions = root.panelSessions();
+        const next = buildSessionEntries();
+        if (!sameSessionEntries(sessionEntries, next)) {
+            sessionEntries = next;
+        }
         if (preserveViewport && monitorWindow.monitorReady) {
             Qt.callLater(function() {
                 monitorWindow.restoreAgentListContentY(savedContentY);
@@ -52,14 +91,35 @@ PanelWindow {
         }
     }
 
+    function liveSessionForEntry(entry, _generation) {
+        const sessionKey = root.stringOrEmpty(entry && entry.session_key);
+        if (sessionKey) {
+            const session = root.sessionByKey(sessionKey);
+            if (session) {
+                return session;
+            }
+        }
+
+        const identityKey = root.stringOrEmpty(entry && entry.identity_key);
+        const sessions = root.panelSessions();
+        for (let i = 0; i < sessions.length; i += 1) {
+            const session = sessions[i];
+            if (root.sessionIdentityKey(session) === identityKey) {
+                return session;
+            }
+        }
+
+        return entry && entry.snapshot ? entry.snapshot : null;
+    }
+
     Component.onCompleted: {
         monitorReady = true;
-        refreshAgentSessions(false);
+        refreshSessionEntries(false);
     }
 
     onVisibleChanged: {
         if (visible) {
-            refreshAgentSessions(false);
+            refreshSessionEntries(false);
         }
     }
 
@@ -67,7 +127,7 @@ PanelWindow {
         target: root
 
         function onDashboardChanged() {
-            monitorWindow.refreshAgentSessions(true);
+            monitorWindow.refreshSessionEntries(true);
         }
     }
 
@@ -112,7 +172,7 @@ PanelWindow {
                 }
                 Item { Layout.fillWidth: true }
                 Text {
-                    text: monitorWindow.sessions.length
+                    text: monitorWindow.sessionEntries.length
                     color: colors.muted
                     font.pixelSize: 11
                     font.weight: Font.DemiBold
@@ -146,7 +206,7 @@ PanelWindow {
 
             ScriptModel {
                 id: agentSessionsModel
-                values: monitorWindow.sessions
+                values: monitorWindow.sessionEntries
                 objectProp: "modelData"
             }
 
@@ -154,7 +214,7 @@ PanelWindow {
                 id: agentList
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                visible: monitorWindow.sessions.length > 0
+                visible: monitorWindow.sessionEntries.length > 0
                 clip: true
                 spacing: 4
                 model: agentSessionsModel
@@ -167,27 +227,28 @@ PanelWindow {
 
                 delegate: RootComponents.SessionRow {
                     required property var modelData
+                    readonly property var liveSession: monitorWindow.liveSessionForEntry(modelData, monitorWindow.dashboardGeneration)
                     width: agentList.width
                     rootObject: root
                     colorsObject: colors
-                    session: modelData
+                    session: liveSession
                     selected: false
                     currentOverrideSet: true
-                    currentOverride: root.sessionCurrentOverride(modelData)
+                    currentOverride: root.sessionCurrentOverride(liveSession)
                     interactive: true
                     compact: true
                     showHostToken: true
                     showCurrentChip: false
-                    closePending: root.sessionClosePending(modelData)
-                    onClicked: root.focusSession(modelData)
-                    onCloseRequested: root.closeSession(modelData)
+                    closePending: root.sessionClosePending(liveSession)
+                    onClicked: root.focusSession(liveSession)
+                    onCloseRequested: root.closeSession(liveSession)
                 }
             }
 
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                visible: monitorWindow.sessions.length === 0
+                visible: monitorWindow.sessionEntries.length === 0
 
                 Text {
                     anchors.centerIn: parent

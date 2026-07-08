@@ -229,6 +229,12 @@ in
 
       # Mouse
       mouse-hide-while-typing = true;
+      # Herdr captures normal mouse input so tab/chrome clicks work and wheel
+      # events scroll pane history instead of changing Codex prompt history.
+      # Keep Shift+mouse reserved for Ghostty-native text selection regardless
+      # of what the terminal app requests.
+      mouse-shift-capture = "never";
+      selection-clear-on-copy = true;
 
       # Scroll sensitivity - reduce for more precise scrolling
       # Default multiplier is 1.0, reduce to 0.3 for finer control

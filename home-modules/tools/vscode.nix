@@ -304,7 +304,7 @@ let
     };
 
     # SSH configuration for 1Password
-    "remote.SSH.configFile" = "~/.ssh/config";
+    "remote.SSH.configFile" = "${config.home.homeDirectory}/.ssh/config";
     "remote.SSH.showLoginTerminal" = true;
     "remote.SSH.useLocalServer" = false;
 

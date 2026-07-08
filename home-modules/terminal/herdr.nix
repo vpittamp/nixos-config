@@ -133,10 +133,14 @@ in
     [ui]
     agent_panel_scope = "all"
     show_agent_labels_on_pane_borders = true
-    # Let the terminal own normal mouse gestures. Capturing them in Herdr made
-    # text selection/highlighting feel broken and introduced another pointer
-    # grab layer while using the QuickShell session panels.
-    mouse_capture = false
+    # Let Herdr own normal mouse gestures. With this off, Ghostty receives plain
+    # drag selection, but agent TUIs that request mouse reporting also receive
+    # wheel events; Codex then treats scrolling as prompt-history navigation
+    # instead of scrolling the Herdr pane history. Herdr 0.7.1 exposes this as a
+    # single switch, so keep it on for correct tab/chrome clicks and scrolling.
+    # Use Shift+mouse for Ghostty-native selection; ghostty.nix pins Shift to
+    # selection even when the terminal app asks to capture it.
+    mouse_capture = true
     mouse_scroll_lines = 1
     prompt_new_tab_name = false
     accent = "cyan"

@@ -458,8 +458,8 @@ PanelWindow {
                 Rectangle {
                     id: moonlightChip
                     radius: 8
-                    color: root.moonlightChipFill(moonlightMouse.containsMouse)
-                    border.color: root.moonlightChipBorder(moonlightMouse.containsMouse)
+                    color: root.moonlightChipFill(false)
+                    border.color: root.moonlightChipBorder(false)
                     border.width: 1
                     implicitWidth: moonlightLabel.implicitWidth + 18
                     Layout.fillHeight: true
@@ -481,7 +481,7 @@ PanelWindow {
                         id: moonlightLabel
                         anchors.centerIn: parent
                         text: root.moonlightChipLabel()
-                        color: root.moonlightChipText(moonlightMouse.containsMouse)
+                        color: root.moonlightChipText(false)
                         font.pixelSize: 10
                         font.weight: Font.Medium
                     }

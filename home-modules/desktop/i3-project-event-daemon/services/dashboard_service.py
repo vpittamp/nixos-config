@@ -91,7 +91,7 @@ class DashboardService:
             sessions,
             generation=int(self.focus_generation or self.snapshot_version or 0),
         )
-        sessions = self._sessions_with_authoritative_focus(
+        sessions = self.sessions_with_authoritative_focus(
             sessions,
             current_session_key=str(focus_state.get("current_session_key") or "").strip(),
         )
@@ -118,7 +118,7 @@ class DashboardService:
         return payload
 
     @staticmethod
-    def _sessions_with_authoritative_focus(
+    def sessions_with_authoritative_focus(
         sessions: List[Dict[str, Any]],
         *,
         current_session_key: str,

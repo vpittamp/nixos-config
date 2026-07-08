@@ -5159,6 +5159,10 @@ class IPCServer:
         )
         focused_window_id = int(runtime_snapshot.get("focused_window_id") or 0)
         current_session_key = str(runtime_snapshot.get("current_session_key") or "").strip()
+        sessions = self.dashboard_service.sessions_with_authoritative_focus(
+            sessions,
+            current_session_key=current_session_key,
+        )
         return {
             "sessions": sessions,
             "total": len(sessions),

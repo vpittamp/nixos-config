@@ -259,6 +259,22 @@ in
   # Enable Sway Wayland compositor
   services.sway.enable = true;
 
+  # VS Code Remote SSH downloads its own server runtime, whose bundled node
+  # expects the conventional Linux dynamic linker path.
+  programs.nix-ld = {
+    enable = true;
+    libraries = with pkgs; [
+      stdenv.cc.cc
+      zlib
+      openssl
+      curl
+      icu
+      xz
+      libgcc
+      gcc-unwrapped.lib
+    ];
+  };
+
   # ========== BARE METAL FEATURES ==========
   # These are NOT possible on Hetzner VM, M1/Asahi, or WSL2
   services.bare-metal = {

@@ -269,11 +269,10 @@ in
       # Uses fzf for selection, xdg-open to launch in default browser (or PWA via pwa-url-router)
       bind o run-shell "tmux capture-pane -J -p -S - > /tmp/tmux-url-buffer.txt && tmux display-popup -E -h 95% -w 95% tmux-url-open"
 
-      # Mouse scroll sensitivity - reduce scroll speed for precision
-      # By default, tmux scrolls too fast (3 lines per wheel event)
-      # Reduce to 1 line per event for more precise scrolling
-      bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'select-pane -t=; copy-mode -e; send-keys -M'"
-      bind -n WheelDownPane select-pane -t= \; send-keys -M
+      # Keep wheel events in tmux scrollback. Codex enables mouse reporting, and
+      # forwarding WheelUpPane to the app makes it navigate prompt history.
+      bind -n WheelUpPane if-shell -F -t = '#{pane_in_mode}' 'send-keys -M' 'select-pane -t=; copy-mode -e; send-keys -X -N 5 scroll-up'
+      bind -n WheelDownPane if-shell -F -t = '#{pane_in_mode}' 'send-keys -M' 'select-pane -t='
 
       # In copy mode, scroll 5 lines at a time for faster scrolling
       bind -T copy-mode-vi WheelUpPane send-keys -X -N 5 scroll-up

@@ -640,6 +640,8 @@ PanelWindow {
                                             colorsObject: colors
                                             session: modelData
                                             selected: Number((modelData && modelData._gi) || 0) === root.exposeSelectedIndex
+                                            currentOverrideSet: true
+                                            currentOverride: root.boolOrFalse(modelData && modelData.row_current)
                                             interactive: true
                                             showCloseAction: false
                                             showHostToken: true

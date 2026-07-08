@@ -471,6 +471,8 @@ PanelWindow {
                                         session: entry
                                         selected: parent.selected
                                         hovered: entryMouse.containsMouse
+                                        currentOverrideSet: true
+                                        currentOverride: root.boolOrFalse(entry && entry.row_current)
                                         interactive: false
                                         showHostToken: false
                                     }
