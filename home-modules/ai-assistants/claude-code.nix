@@ -5,6 +5,7 @@ let
 
   # MLflow tracking server (Tailscale ingress fronting mlflow.mlflow:5000 in K8s hub).
   mlflowTrackingUri = "https://mlflow-hub.tail286401.ts.net";
+  workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
 
   # Use claude-code from the dedicated flake for latest version
   # Fall back to nixpkgs-unstable if flake not available
@@ -334,6 +335,9 @@ lib.mkIf enableClaudeCode {
 
           # MCP Server permissions
           "mcp__claude-in-chrome"  # Claude-in-Chrome browser automation (built-in via --chrome)
+          "mcp__workflow-builder__get_workflow_script_spec"
+          "mcp__workflow-builder__validate_workflow_script"
+          "mcp__workflow-builder__run_workflow_script"
         ];
       };
 
@@ -515,6 +519,11 @@ lib.mkIf enableClaudeCode {
         env = {
           MLFLOW_TRACKING_URI = mlflowTrackingUri;
         };
+      };
+    } // lib.optionalAttrs workflowBuilderMcp.enable {
+      workflow-builder = {
+        type = "http";
+        url = workflowBuilderMcp.url;
       };
     };
   };

@@ -12,6 +12,7 @@ Rectangle {
     property bool currentOverride: false
     property bool currentOverrideSet: false
     property bool hovered: false
+    property bool rowHoverLatched: false
     property bool interactive: false
     property bool compact: false
     property bool closePending: false
@@ -22,7 +23,7 @@ Rectangle {
     signal clicked
     signal closeRequested
 
-    readonly property bool effectiveHovered: interactive ? sessionRowMouse.containsMouse : hovered
+    readonly property bool effectiveHovered: interactive ? rowHoverLatched : hovered
     readonly property bool isCurrent: currentOverrideSet ? currentOverride : rootObject.sessionIsCurrent(session)
     readonly property string primaryLabel: rootObject.sessionPrimaryLabel(session)
     readonly property string secondaryLabel: rootObject.sessionSecondaryLabel(session)
@@ -36,7 +37,7 @@ Rectangle {
     readonly property bool closableSurface: showCloseAction && rootObject.sessionHasClosableSurface(session)
     readonly property bool closeActionHovered: interactive
         && closableSurface
-        && sessionRowMouse.containsMouse
+        && rowHoverLatched
         && pointInsideItem(Qt.point(sessionRowMouse.mouseX, sessionRowMouse.mouseY), closeActionHitbox)
     readonly property bool isIdle: rootObject.sessionIsIdle(session)
     readonly property real idleRowOpacity: isIdle ? (isCurrent ? 0.9 : 0.76) : 1
@@ -47,7 +48,7 @@ Rectangle {
     property int activitySpinnerFrame: 0
     readonly property var activitySpinnerFrames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
     readonly property int rowHeight: compact ? 48 : 62
-    readonly property int railHeight: compact ? (selected ? 30 : (effectiveHovered ? 26 : 22)) : (selected ? 38 : (effectiveHovered ? 32 : 28))
+    readonly property int railHeight: compact ? (selected ? 30 : 24) : (selected ? 38 : 30)
     readonly property int iconWrapSize: compact ? 28 : 34
     readonly property int iconGlyphSize: compact ? 14 : 16
     readonly property int chipHeight: compact ? 18 : 20
@@ -92,7 +93,20 @@ Rectangle {
     }
 
     onHasMotionChanged: resetMotionVisuals()
+    onInteractiveChanged: {
+        if (!interactive) {
+            rowHoverLatched = false;
+            hoverReleaseTimer.stop();
+        }
+    }
     Component.onCompleted: resetMotionVisuals()
+
+    Timer {
+        id: hoverReleaseTimer
+        interval: 120
+        repeat: false
+        onTriggered: rowHoverLatched = false
+    }
 
     Timer {
         running: hasMotion
@@ -448,7 +462,14 @@ Rectangle {
         acceptedButtons: Qt.LeftButton
         hoverEnabled: interactive
         preventStealing: true
+        scrollGestureEnabled: false
         cursorShape: closeActionHovered || interactive ? Qt.PointingHandCursor : Qt.ArrowCursor
+        onEntered: {
+            hoverReleaseTimer.stop();
+            rowHoverLatched = true;
+        }
+        onExited: hoverReleaseTimer.restart()
+        onCanceled: hoverReleaseTimer.restart()
         onClicked: function(mouse) {
             if (pointInsideItem(Qt.point(mouse.x, mouse.y), closeActionHitbox)) {
                 if (!closePending) {

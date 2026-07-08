@@ -21,14 +21,54 @@ PanelWindow {
     readonly property QtObject root: shellRoot
     id: monitorWindow
 
-    // Derive rows directly from the current daemon dashboard. Herdr already owns
-    // subprocess/subagent detection; keeping no copied session cache here avoids
-    // the monitor strip lagging behind a pane.agent_status_changed event.
-    readonly property int dashboardGeneration: root.dashboardGeneration(root.dashboard)
-    readonly property var sessions: sessionsForGeneration(dashboardGeneration)
+    property var sessions: []
+    property bool monitorReady: false
 
-    function sessionsForGeneration(_generation) {
-        return root.panelSessions();
+    function clampListContentY(list, value) {
+        if (!list) {
+            return;
+        }
+        const maxY = Math.max(0, Number(list.contentHeight || 0) - Number(list.height || 0));
+        list.contentY = Math.max(0, Math.min(Number(value || 0), maxY));
+    }
+
+    function restoreAgentListContentY(value) {
+        if (!monitorWindow.monitorReady) {
+            return;
+        }
+        clampListContentY(agentList, value);
+        Qt.callLater(function() {
+            clampListContentY(agentList, value);
+        });
+    }
+
+    function refreshAgentSessions(preserveViewport) {
+        const savedContentY = preserveViewport && monitorWindow.monitorReady ? Number(agentList.contentY || 0) : 0;
+        sessions = root.panelSessions();
+        if (preserveViewport && monitorWindow.monitorReady) {
+            Qt.callLater(function() {
+                monitorWindow.restoreAgentListContentY(savedContentY);
+            });
+        }
+    }
+
+    Component.onCompleted: {
+        monitorReady = true;
+        refreshAgentSessions(false);
+    }
+
+    onVisibleChanged: {
+        if (visible) {
+            refreshAgentSessions(false);
+        }
+    }
+
+    Connections {
+        target: root
+
+        function onDashboardChanged() {
+            monitorWindow.refreshAgentSessions(true);
+        }
     }
 
     screen: root.findScreenByOutputName(root.agentMonitorOutputName) || root.activeScreen

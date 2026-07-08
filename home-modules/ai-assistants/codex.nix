@@ -6,6 +6,7 @@ let
 
   # MLflow tracking server (Tailscale ingress fronting mlflow.mlflow:5000 in K8s hub).
   mlflowTrackingUri = "https://mlflow-hub.tail286401.ts.net";
+  workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
 
   sharedSkillsDir = repoRoot + "/shared-skills";
   sharedSkillEntries = if builtins.pathExists sharedSkillsDir then builtins.readDir sharedSkillsDir else {};
@@ -182,6 +183,15 @@ tool_timeout_sec = 120
 
 [mcp_servers.mlflow.env]
 MLFLOW_TRACKING_URI = "${mlflowTrackingUri}"
+
+${lib.optionalString workflowBuilderMcp.enable ''
+[mcp_servers.workflow-builder]
+enabled = true
+experimental_use_rmcp_client = true
+startup_timeout_sec = 30
+tool_timeout_sec = 300
+url = "${workflowBuilderMcp.url}"
+''}
 
 ${lib.optionalString enableBrowserMcpServers ''
 [mcp_servers.chrome-devtools]

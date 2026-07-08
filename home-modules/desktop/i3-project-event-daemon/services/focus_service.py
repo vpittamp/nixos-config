@@ -1399,11 +1399,11 @@ class FocusService:
           * ``"<host>"``    — focus is on the remote herdr-<host> window.
           * ``None``        — focus is not on a herdr window.
 
-        There are NO fallbacks: if focus is not on a herdr window, or the focused
-        instance reports no active pane, the result is "" (nothing focused). Click
-        responsiveness is handled client-side via optimistic pending-focus intents,
-        so no daemon-side click override is consulted here — the rendered current
-        session is always a pure function of where sway focus actually is.
+        If focus is not on a herdr window, the result is "" (nothing focused).
+        When focus is on a herdr window but the remote snapshot has not yet
+        caught up with a confirmed pane-focus action, a valid daemon override
+        may fill the gap, but only if that session belongs to the focused Herdr
+        instance.
         """
         candidates = self._sessions_for_focused_herdr_instance(
             sessions,
@@ -1411,7 +1411,7 @@ class FocusService:
         )
         if not candidates:
             return ""
-        return next(
+        focused_key = next(
             (
                 str(session.get("session_key") or "").strip()
                 for session in candidates
@@ -1420,6 +1420,10 @@ class FocusService:
             ),
             "",
         )
+        if focused_key:
+            return focused_key
+
+        return self.current_session_override_key(candidates)
 
     @staticmethod
     def _sessions_for_focused_herdr_instance(

@@ -97,6 +97,7 @@ in
     ../tools/voxtype.nix  # Push-to-talk speech-to-text config (Sway handles keybinding)
 
     # AI Assistant configurations
+    ../ai-assistants/workflow-builder-mcp.nix
     ../ai-assistants/claude-code.nix
     ../ai-assistants/claude-code-glm.nix
     ../ai-assistants/codex.nix
@@ -127,6 +128,7 @@ in
   modules.tools.docker.enable = true; # Docker with 1Password integration
   modules.tools.remoteKubeconfig.enable = true;
   modules.tools.fleetKubeconfigs.enable = true;  # `sync-fleet-kubeconfigs` → token-free fleet kubectl over Tailscale
+  modules.aiAssistants.workflowBuilderMcp.enable = builtins.elem hostName [ "ryzen" "thinkpad" ];
   programs.pwa-url-router.enable = false;  # Feature 113: DISABLED - using Chrome as default browser
 
   # VSCode profile configuration

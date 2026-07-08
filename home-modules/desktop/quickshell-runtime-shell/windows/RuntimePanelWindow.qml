@@ -14,10 +14,10 @@ PanelWindow {
     required property var colors
     readonly property QtObject root: shellRoot
     id: panelWindow
-    readonly property int dashboardGeneration: root.dashboardGeneration(root.dashboard)
-    readonly property var runtimeSessions: runtimeSessionsForGeneration(dashboardGeneration)
-    readonly property var runtimeHerdrSpaces: runtimeHerdrSpacesForGeneration(dashboardGeneration)
-    readonly property var runtimeVisibleSpaces: runtimeVisibleHerdrSpacesForState(runtimeHerdrSpaces, root.collapsedHerdrSpaceGroups, root.dashboard.focus_state)
+    property var runtimeSessions: []
+    property var runtimeHerdrSpaces: []
+    property var runtimeVisibleSpaces: []
+    property bool panelReady: false
     property bool herdrSpacesExpanded: false
     screen: root.findScreenByOutputName(root.panelOutputName) || root.activeScreen
     visible: root.panelVisible
@@ -33,19 +33,11 @@ PanelWindow {
     WlrLayershell.layer: root.dockedMode ? WlrLayer.Top : WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-    function runtimeSessionsForGeneration(_generation) {
-        return root.panelSessions();
-    }
-
-    function runtimeHerdrSpacesForGeneration(_generation) {
-        return root.herdrSpaces();
-    }
-
     function runtimePanelHasSessions() {
         return runtimeSessions.length > 0 || runtimeHerdrSpaces.length > 0;
     }
 
-    function runtimeVisibleHerdrSpacesForState(spaces, _collapsedGroups, _focusState) {
+    function runtimeVisibleHerdrSpacesForState(spaces) {
         const visibleSpaces = [];
         const sourceSpaces = root.arrayOrEmpty(spaces);
         for (let i = 0; i < sourceSpaces.length; i += 1) {
@@ -60,6 +52,64 @@ PanelWindow {
 
     function runtimeVisibleHerdrSpaces() {
         return runtimeVisibleSpaces;
+    }
+
+    function clampListContentY(list, value) {
+        if (!list) {
+            return;
+        }
+        const maxY = Math.max(0, Number(list.contentHeight || 0) - Number(list.height || 0));
+        list.contentY = Math.max(0, Math.min(Number(value || 0), maxY));
+    }
+
+    function restoreRuntimeListContentY(saved) {
+        if (!panelWindow.panelReady || !saved) {
+            return;
+        }
+        clampListContentY(herdrSpacesList, saved.spaces);
+        clampListContentY(herdrAgentsList, saved.agents);
+        Qt.callLater(function() {
+            clampListContentY(herdrSpacesList, saved.spaces);
+            clampListContentY(herdrAgentsList, saved.agents);
+        });
+    }
+
+    function refreshRuntimePanelData(preserveViewport) {
+        const saved = preserveViewport && panelWindow.panelReady ? ({
+            spaces: Number(herdrSpacesList.contentY || 0),
+            agents: Number(herdrAgentsList.contentY || 0)
+        }) : null;
+        runtimeHerdrSpaces = root.herdrSpaces();
+        runtimeVisibleSpaces = runtimeVisibleHerdrSpacesForState(runtimeHerdrSpaces);
+        runtimeSessions = root.panelSessions();
+        if (saved) {
+            Qt.callLater(function() {
+                panelWindow.restoreRuntimeListContentY(saved);
+            });
+        }
+    }
+
+    Component.onCompleted: {
+        panelReady = true;
+        refreshRuntimePanelData(false);
+    }
+
+    onVisibleChanged: {
+        if (visible) {
+            refreshRuntimePanelData(false);
+        }
+    }
+
+    Connections {
+        target: root
+
+        function onDashboardChanged() {
+            panelWindow.refreshRuntimePanelData(true);
+        }
+
+        function onCollapsedHerdrSpaceGroupsChanged() {
+            panelWindow.refreshRuntimePanelData(true);
+        }
     }
 
     function runtimePanelSessionSummary() {

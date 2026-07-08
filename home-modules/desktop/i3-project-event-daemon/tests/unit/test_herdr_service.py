@@ -456,7 +456,11 @@ def test_herdr_service_applies_remote_focus_cache():
     assert service.snapshot_cache["panes"][1]["focused"] is True
     remote_sessions = service.snapshot_cache["remote_snapshots"][0]["sessions"]
     assert remote_sessions[0]["focused"] is False
+    assert remote_sessions[0]["is_current_window"] is False
+    assert remote_sessions[0]["pane_active"] is False
     assert remote_sessions[1]["focused"] is True
+    assert remote_sessions[1]["is_current_window"] is True
+    assert remote_sessions[1]["pane_active"] is True
 
 
 def test_herdr_service_loads_remote_targets_from_env(monkeypatch):
@@ -1652,3 +1656,4 @@ async def test_herdr_service_remote_pane_focus_owns_transport_cache_and_launch(m
     assert result["success"] is True
     assert service.snapshot_cache["sessions"][0]["focused"] is False
     assert service.snapshot_cache["sessions"][1]["focused"] is True
+    assert service.snapshot_cache["sessions"][1]["pane_active"] is True

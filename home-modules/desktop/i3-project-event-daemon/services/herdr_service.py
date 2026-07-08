@@ -397,6 +397,13 @@ class HerdrService:
 
         focused_session_key = ""
         updated = False
+
+        def apply_focus_fields(row: Dict[str, Any], *, focused: bool) -> None:
+            row["focused"] = focused
+            row["is_current_window"] = focused
+            row["window_active"] = focused
+            row["pane_active"] = focused
+
         for collection_name in ("sessions", "panes", "agents"):
             rows = self.snapshot_cache.get(collection_name)
             if not isinstance(rows, list):
@@ -405,10 +412,7 @@ class HerdrService:
                 if not isinstance(row, dict) or not matches_remote(row):
                     continue
                 focused = str(row.get("pane_id") or "").strip() == pane_key
-                row["focused"] = focused
-                row["is_current_window"] = focused
-                row["window_active"] = focused
-                row["pane_active"] = focused
+                apply_focus_fields(row, focused=focused)
                 updated = True
                 if focused and collection_name == "sessions":
                     focused_session_key = str(
@@ -436,7 +440,14 @@ class HerdrService:
                     for row in rows:
                         if not isinstance(row, dict):
                             continue
-                        row["focused"] = str(row.get("pane_id") or "").strip() == pane_key
+                        focused = str(row.get("pane_id") or "").strip() == pane_key
+                        apply_focus_fields(row, focused=focused)
+                        if focused and collection_name == "sessions" and not focused_session_key:
+                            focused_session_key = str(
+                                row.get("session_key")
+                                or row.get("herdr_session")
+                                or self.session_key(row, host)
+                            ).strip()
                         updated = True
 
         if updated:
@@ -1895,11 +1906,20 @@ class HerdrService:
                 now=time.time(),
             )
             focused_session_key = str(cache_result.get("focused_session_key") or "").strip()
+            if not focused_session_key:
+                focused_session_key = self.session_key(
+                    {"pane_id": pane_id},
+                    self.normalize_host_key(target.get("host") or target.get("ssh_target")),
+                )
             if focused_session_key:
                 set_focus_overrides(
                     session_key=focused_session_key,
                     window_id=0,
-                    connection_key=str(cache_result.get("connection_key") or "").strip(),
+                    connection_key=str(
+                        cache_result.get("connection_key")
+                        or target.get("connection_key")
+                        or ""
+                    ).strip(),
                 )
                 await self._notify_state_change("focus_changed")
 

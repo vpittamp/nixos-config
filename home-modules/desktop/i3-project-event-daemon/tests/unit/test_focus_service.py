@@ -44,6 +44,63 @@ def make_service() -> FocusService:
     return FocusService(normalize_connection_key=normalize_connection_key)
 
 
+def test_select_current_session_uses_override_for_focused_herdr_instance() -> None:
+    service = make_service()
+    sessions = [
+        {
+            "source": "herdr",
+            "session_key": "herdr:ryzen:pane:a",
+            "pane_id": "a",
+            "herdr_host": "ryzen",
+            "focused": False,
+            "pane_active": False,
+        },
+        {
+            "source": "herdr",
+            "session_key": "herdr:ryzen:pane:b",
+            "pane_id": "b",
+            "herdr_host": "ryzen",
+            "focused": False,
+            "pane_active": False,
+        },
+    ]
+    service.set_focus_overrides(
+        session_key="herdr:ryzen:pane:b",
+        window_id=0,
+        connection_key="vpittamp@ryzen:22",
+    )
+
+    assert service.select_current_session_key(
+        sessions,
+        focused_herdr_host="ryzen",
+    ) == "herdr:ryzen:pane:b"
+
+
+def test_select_current_session_does_not_use_override_outside_focused_instance() -> None:
+    service = make_service()
+    sessions = [
+        {
+            "source": "herdr",
+            "session_key": "herdr:ryzen:pane:b",
+            "pane_id": "b",
+            "herdr_host": "ryzen",
+            "focused": False,
+            "pane_active": False,
+        },
+    ]
+    service.set_focus_overrides(
+        session_key="herdr:ryzen:pane:b",
+        window_id=0,
+        connection_key="vpittamp@ryzen:22",
+    )
+
+    assert service.select_current_session_key(sessions, focused_herdr_host=None) == ""
+    assert service.select_current_session_key(
+        sessions,
+        focused_herdr_host="thinkpad",
+    ) == ""
+
+
 def make_action_service(
     *,
     sway_available=True,

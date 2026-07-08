@@ -1311,7 +1311,10 @@ async def test_herdr_remote_pane_focus_switches_pane_then_reuses_herdr_app(serve
         "__intent_epoch": 12,
         "focus_fast": True,
     })
-    notify_state_change.assert_awaited_once_with("ai_session_herdr_changed")
+    assert [call.args[0] for call in notify_state_change.await_args_list] == [
+        "focus_changed",
+        "ai_session_herdr_changed",
+    ]
     assert server.herdr_service.remote_generation_for("ryzen") == 1
     assert result["success"] is True
     assert result["launch"]["launch"]["reused_existing"] is True
@@ -1412,7 +1415,11 @@ async def test_herdr_remote_pane_focus_updates_cached_remote_rows(server, monkey
     assert panes[0]["focused"] is False
     assert panes[1]["focused"] is True
     assert remote_sessions[0]["focused"] is False
+    assert remote_sessions[0]["is_current_window"] is False
+    assert remote_sessions[0]["pane_active"] is False
     assert remote_sessions[1]["focused"] is True
+    assert remote_sessions[1]["is_current_window"] is True
+    assert remote_sessions[1]["pane_active"] is True
     assert server.focus_service.session_override_key == "herdr:ryzen:pane:remote-b"
 
 
