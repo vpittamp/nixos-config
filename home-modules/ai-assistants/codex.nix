@@ -39,14 +39,20 @@ let
   workflowBuilderMcpProxy = pkgs.writeShellScript "workflow-builder-mcp-proxy" ''
     set -euo pipefail
 
-    if [ -z "''${CODEX_THREAD_ID:-}" ]; then
-      echo "CODEX_THREAD_ID is required for workflow-builder MCP session attribution" >&2
-      exit 64
+    session_id="''${WFB_MCP_SESSION_ID:-''${CODEX_THREAD_ID:-}}"
+    if [ -z "$session_id" ] && [ -n "''${XDG_RUNTIME_DIR:-}" ] && [ -f "''${XDG_RUNTIME_DIR}/workflow-builder-mcp-session-id" ]; then
+      session_id="$(${pkgs.coreutils}/bin/head -n1 "''${XDG_RUNTIME_DIR}/workflow-builder-mcp-session-id" | ${pkgs.gnused}/bin/sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    fi
+    if [ -z "$session_id" ] && [ -f "''${HOME}/.cache/workflow-builder/mcp-session-id" ]; then
+      session_id="$(${pkgs.coreutils}/bin/head -n1 "''${HOME}/.cache/workflow-builder/mcp-session-id" | ${pkgs.gnused}/bin/sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     fi
 
-    exec "${nodeNpx}" -y mcp-remote "${workflowBuilderMcp.url}" \
-      --header "X-Wfb-Session-Id: ''${CODEX_THREAD_ID}" \
-      --transport http-only
+    args=(-y mcp-remote "${workflowBuilderMcp.url}" --transport http-only)
+    if [ -n "$session_id" ]; then
+      args+=(--header "X-Wfb-Session-Id: $session_id")
+    fi
+
+    exec "${nodeNpx}" "''${args[@]}"
   '';
 
   chromiumConfig = lib.optionalAttrs enableBrowserMcpServers {
