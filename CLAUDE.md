@@ -150,7 +150,7 @@ Unified telemetry collection via Grafana Alloy, exporting to the hub K8s cluster
 
 **Architecture**:
 ```
-Clients → Alloy :4318 → [batch] → otel-collector-hub-1.tail286401.ts.net:4318
+Clients → Alloy :4318 → [batch] → otel-collector-hub.tail286401.ts.net:4318
                               → K8s otel-collector (hub observability ns)
                                 → otel-clickhouse-tailnet (hub)         (durable storage)
                                 → otlphttp/mlflow                       (per-CLI MLflow experiments)
@@ -181,7 +181,7 @@ curl -sk http://clickhouse-hub.tail286401.ts.net:8123/ping   # ClickHouse reacha
 ```nix
 services.grafana-alloy = {
   enable = true;
-  # k8sEndpoint default = http://otel-collector-hub-1.tail286401.ts.net:4318 (Tailscale LoadBalancer on hub; "-1" suffix is from a stale Service entry that needs Tailscale admin cleanup)
+  # k8sEndpoint default = http://otel-collector-hub.tail286401.ts.net:4318 (Tailscale LoadBalancer on hub)
   # NOTE: lokiEndpoint/mimirEndpoint still default to legacy *.cnoe.localtest.me:8443 URLs
   # and silently fail (Loki/Mimir aren't deployed; observability is hub-side). Logs/metrics
   # flow through the K8s otel-collector on hub instead.

@@ -29,9 +29,13 @@ let
           timeoutSeconds = 300;
           strictArgumentValidation = true;
           enabledTools = [
+            "list_workflow_targets"
+            "get_workflow_target_health"
+            "get_workflow_target_resources"
             "get_workflow_script_spec"
             "validate_workflow_script"
             "run_workflow_script"
+            "save_workflow_script"
           ];
         };
       };

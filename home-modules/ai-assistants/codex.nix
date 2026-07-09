@@ -47,7 +47,8 @@ let
       session_id="$(${pkgs.coreutils}/bin/head -n1 "''${HOME}/.cache/workflow-builder/mcp-session-id" | ${pkgs.gnused}/bin/sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     fi
 
-    args=(-y mcp-remote "${workflowBuilderMcp.url}" --transport http-only)
+    mcp_url="''${WFB_MCP_URL:-${workflowBuilderMcp.url}}"
+    args=(-y mcp-remote "$mcp_url" --transport http-only)
     if [ -n "$session_id" ]; then
       args+=(--header "X-Wfb-Session-Id: $session_id")
     fi

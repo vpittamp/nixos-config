@@ -15,11 +15,10 @@ Add to your host configuration (e.g., `configurations/thinkpad.nix`):
 {
   services.grafana-alloy = {
     enable = true;
-    # Canonical post-A6 endpoint: hub-side Tailscale Ingress for the central
-    # otel-collector. Dev/ryzen spoke Ingresses for observability were retired
-    # (stacks 389291160 dropped ryzen; the dev one was unstable after the
-    # Tailscale-native-secrets migration). The hub is the canonical sink.
-    k8sEndpoint = "http://otel-collector-hub-1.tail286401.ts.net:4318";
+    # Canonical post-A6 endpoint: hub-side Tailscale LoadBalancer Service for
+    # the central otel-collector. Dev/ryzen spoke Ingresses for observability
+    # were retired. The hub is the canonical sink.
+    k8sEndpoint = "http://otel-collector-hub.tail286401.ts.net:4318";
   };
 
   # Optional: eBPF auto-instrumentation

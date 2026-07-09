@@ -517,14 +517,10 @@ in
       #
       # See stacks: packages/components/addons/observability-clickhouse-shared/manifests/otel-collector-tailnet/Service-otel-collector-hub-tailnet.yaml
       #
-      # The "-1" suffix is because the canonical "otel-collector-hub" name
-      # is still held by a stale Tailscale Service registration from the
-      # earlier Ingress attempt (the tailnet-device-sweeper only cleans
-      # offline spoke devices, not stale Service entries). To collapse to
-      # the canonical name, delete the stale Service via the Tailscale
-      # admin UI/CLI, then on the operator's next reconcile the
-      # LoadBalancer Service will re-register as "otel-collector-hub".
-      default = "http://otel-collector-hub-1.tail286401.ts.net:4318";
+      # The stale Tailscale Service registration that previously forced an
+      # "otel-collector-hub-1" suffix was removed on 2026-07-09; the
+      # LoadBalancer Service now owns the canonical name again.
+      default = "http://otel-collector-hub.tail286401.ts.net:4318";
       description = "Kubernetes OTEL collector endpoint (Tailscale LoadBalancer Service on hub).";
     };
 
