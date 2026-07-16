@@ -63,13 +63,6 @@ let
   # Widgets should reference roles, not hardcoded output names
   # 4-tier system: primary (WS 1-2), secondary (WS 3-4), tertiary (WS 5-6), quaternary (WS 7+)
   monitorConfig = {
-    "hetzner" = {
-      outputs = [ "HEADLESS-1" "HEADLESS-2" "HEADLESS-3" ];
-      primary = "HEADLESS-1";
-      secondary = "HEADLESS-2";
-      tertiary = "HEADLESS-3";
-      quaternary = "HEADLESS-3";  # Fallback to tertiary (headless has 3 virtual displays)
-    };
     "thinkpad" = {
       outputs = [ "eDP-1" "HDMI-A-1" "DP-1" ];
       primary = "eDP-1";
@@ -154,24 +147,5 @@ in
         # Add Home Manager integration
         home-manager.nixosModules.home-manager
       ];
-    };
-
-  # Create a standalone Home Manager configuration
-  # Used for non-NixOS systems (macOS, other Linux distros)
-  mkHomeConfiguration = { system, modules, username ? "vpittamp" }:
-    let
-      pkgs = mkPkgs system;
-      pkgs-unstable = mkPkgsUnstable system;
-      # Feature 106: Create assets package for this system
-      assetsPackage = mkAssetsPackage pkgs;
-    in
-    home-manager.lib.homeManagerConfiguration {
-      inherit pkgs;
-      extraSpecialArgs = {
-        inherit inputs self pkgs-unstable monitorConfig assetsPackage;
-        # Note: osConfig intentionally omitted for standalone configs
-        # to avoid circular dependencies
-      };
-      modules = modules;
     };
 }

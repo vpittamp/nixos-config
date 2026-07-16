@@ -421,8 +421,6 @@ in
       };
     })
     ./sway-keybindings.nix
-    ./unified-bar-theme.nix  # Feature 057: Centralized Catppuccin Mocha theme
-    ./swaync.nix  # Feature 057: SwayNC notification center with unified theming
   ];
   # Sway window manager configuration via home-manager
   wayland.windowManager.sway = {
@@ -537,9 +535,6 @@ in
         # Keyboard configuration
         "type:keyboard" = {
           xkb_layout = "us";
-          # Disable CapsLock toggle behavior - makes it act like a regular key
-          # This prevents the sticky LED when using CapsLock for workspace mode
-          xkb_options = "caps:none";
           repeat_delay = "300";
           repeat_rate = "50";
         };
@@ -746,6 +741,30 @@ in
           command = "floating enable";
         }
 
+        # System-UI floating rules — migrated from the retired sway-config-manager
+        # daemon (which applied them at window::new via a JSON rules file). Static
+        # for_window rules apply at map time, so no tile-then-float jump.
+        {
+          criteria = { app_id = "^1[Pp]assword$"; title = "^1Password$"; };
+          command = "move container to workspace number 22, floating enable, resize set width 900 px height 600 px, move position center";
+        }
+        {
+          criteria = { app_id = "^1[Pp]assword$"; title = "^Quick Access"; };
+          command = "floating enable, sticky enable, move position center";
+        }
+        {
+          criteria = { app_id = "^1[Pp]assword$"; title = "^Unlock"; };
+          command = "floating enable, sticky enable, move position center, focus";
+        }
+        {
+          criteria = { app_id = "^lxqt-policykit-agent$"; };
+          command = "floating enable, sticky enable, move position center, focus";
+        }
+        {
+          criteria = { app_id = "^scratchpad-terminal(-[a-z0-9-]+)?$"; };
+          command = "floating enable, resize set width 1200 px height 600 px, move position center, move scratchpad";
+        }
+
       ];
 
       # Startup commands (FR-015)
@@ -764,9 +783,6 @@ in
         { command = "${pkgs.tmux}/bin/tmux set-environment -g WAYLAND_DISPLAY \"$WAYLAND_DISPLAY\" 2>/dev/null || true"; }
         { command = "${pkgs.tmux}/bin/tmux set-environment -g XDG_RUNTIME_DIR \"$XDG_RUNTIME_DIR\" 2>/dev/null || true"; }
         { command = "${pkgs.tmux}/bin/tmux set-environment -g SWAYSOCK \"$SWAYSOCK\" 2>/dev/null || true"; }
-
-        # sov workspace overview daemon
-        { command = "systemctl --user start sov"; }
       ] ++ lib.optionals isRyzen [
         # Re-apply the selected daemon monitor profile after sway reloads. Ryzen
         # uses static desktop profiles, not the ThinkPad lid/clamshell handler.
@@ -913,10 +929,6 @@ in
       # See: /etc/nixos/specs/053-workspace-assignment-enhancement/
       # ═══════════════════════════════════════════════════════════════════════════
 
-      # Feature 047: Include dynamically generated appearance from sway-config-manager
-      # Note: Keybindings are now static (defined in sway-keybindings.nix)
-      include ~/.config/sway/appearance-generated.conf
-
       # Feature 062: Project-Scoped Scratchpad Terminal
       # Window rule for floating scratchpad terminal (sizing handled by daemon)
       # Matches by app_id (com.mitchellh.ghostty) AND title "Scratchpad Terminal"
@@ -940,12 +952,9 @@ in
     slurp            # Screen area selection
     swaylock         # Screen locker
     swayidle         # Idle management
-    sov              # Workspace overview
     wvkbdWithBacktick  # On-screen keyboard (wlroots/Wayland) for clamshell typing
     lxqt.lxqt-policykit  # Polkit authentication agent for fingerprint/password prompts
     # sway-easyfocus now managed by home-manager module (desktop/sway-easyfocus.nix)
-  ] ++ lib.optionals (!nativeQuickshellNotifications) [
-    pkgs.swaynotificationcenter  # Notification daemon with action button support
   ] ++ lib.optionals isHeadless [
     pkgs.wireplumber  # Provides wpctl for default sink adjustments
   ];
@@ -1248,62 +1257,4 @@ in
     };
   };
 
-  # SwayNC (Sway Notification Center) systemd service
-  # Notification daemon for Sway (replaces Dunst which is used for i3)
-  systemd.user.services.swaync = lib.mkIf (!nativeQuickshellNotifications) {
-    Unit = {
-      Description = "Sway Notification Center";
-      Documentation = "https://github.com/ErikReider/SwayNotificationCenter";
-      PartOf = [ "graphical-session.target" ];
-      After = [ "graphical-session.target" ];
-    };
-
-    Service = {
-      Type = "dbus";
-      BusName = "org.freedesktop.Notifications";
-      ExecStart = "${pkgs.swaynotificationcenter}/bin/swaync";
-      ExecReload = "${pkgs.coreutils}/bin/kill -SIGUSR2 $MAINPID";
-      Restart = "on-failure";
-      RestartSec = 1;
-      TimeoutStopSec = 10;
-    };
-
-    Install = {
-      WantedBy = [ "graphical-session.target" ];
-    };
-  };
-
-  # sov workspace overview service
-  systemd.user.services.sov = {
-    Unit = {
-      Description = "Sway Overview - Workspace Overview";
-      Documentation = "https://github.com/milgra/sov";
-      After = [ "sway-session.target" ];
-      Requires = [ "sway-session.target" ];
-      PartOf = [ "sway-session.target" ];
-    };
-
-    Service = {
-      Type = "simple";
-      ExecStartPre = "${pkgs.writeShellScript "sov-setup-pipe" ''
-        rm -f /tmp/sovpipe
-        mkfifo /tmp/sovpipe
-      ''}";
-      ExecStart = "${pkgs.writeShellScript "sov-daemon" ''
-        # sov options:
-        # -c 3: 3 columns for multi-monitor layout
-        # -a lc: anchor to left-center
-        # -m 20: 20px margin from screen edges
-        # -r 0.15: 15% of screen size for thumbnails
-        # -t 200: 200ms delay before overlay appears
-        tail -f /tmp/sovpipe | ${pkgs.sov}/bin/sov -c 3 -a lc -m 20 -r 0.15 -t 200
-      ''}";
-      Restart = "on-failure";
-      RestartSec = "1";
-    };
-
-    Install = {
-      WantedBy = [ "sway-session.target" ];
-    };
-  };
 }

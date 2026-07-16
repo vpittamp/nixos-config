@@ -4,26 +4,13 @@ let
   modifier = config.wayland.windowManager.sway.config.modifier;
   runtimeShellCfg = config.programs.quickshell-runtime-shell or null;
   hasRuntimeShell = runtimeShellCfg != null && (runtimeShellCfg.enable or false);
-  worktreeAppCfg = config.programs.quickshell-worktree-app or null;
-  hasWorktreeApp = worktreeAppCfg != null && (worktreeAppCfg.enable or false);
-  nativeNotifications =
-    hasRuntimeShell
-    && ((lib.attrByPath [ "notifications" "backend" ] "native" runtimeShellCfg) == "native");
   rawToggleKey = if hasRuntimeShell then runtimeShellCfg.toggleKey else "$mod+m";
   toggleKeyList =
     let keys = if lib.isList rawToggleKey then rawToggleKey else [ rawToggleKey ];
     in map (key: lib.replaceStrings ["$mod"] [modifier] key) keys;
-  rawWorktreeToggleKey = if hasWorktreeApp then worktreeAppCfg.toggleKey else "$mod+g";
-  worktreeToggleKeyList =
-    let keys = if lib.isList rawWorktreeToggleKey then rawWorktreeToggleKey else [ rawWorktreeToggleKey ];
-    in map (key: lib.replaceStrings ["$mod"] [modifier] key) keys;
   monitoringPanelBindings =
     if hasRuntimeShell
     then lib.listToAttrs (map (key: lib.nameValuePair key "exec toggle-runtime-panel") (lib.unique toggleKeyList))
-    else {};
-  worktreeAppBindings =
-    if hasWorktreeApp
-    then lib.listToAttrs (map (key: lib.nameValuePair key "exec ${worktreeAppCfg.toggleCommandName}") (lib.unique worktreeToggleKeyList))
     else {};
   # Minimalist AI-agents monitor strip (e.g. watch the TV PWA fullscreen while
   # keeping an eye on agents). Keybind because a bar chip is hidden under a
@@ -142,10 +129,10 @@ in
     # ========== APP SHORTCUTS (via i3pm app registry) ==========
     "${modifier}+y" = "exec i3pm run yazi";
 
-    # ========== NOTIFICATIONS (SwayNC) ==========
-    "${modifier}+i" = if hasRuntimeShell then "exec show-runtime-devices" else "exec swaync-client -t";
-    "${modifier}+Shift+i" = if nativeNotifications then "exec toggle-runtime-notifications" else "exec toggle-swaync";
-    "${modifier}+Ctrl+Shift+i" = if nativeNotifications then "exec toggle-runtime-notification-dnd" else "exec swaync-client -d -sw";
+    # ========== DEVICES & NOTIFICATIONS (QuickShell native) ==========
+    "${modifier}+i" = "exec show-runtime-devices";
+    "${modifier}+Shift+i" = "exec toggle-runtime-notifications";
+    "${modifier}+Ctrl+Shift+i" = "exec toggle-runtime-notification-dnd";
 
     # ========== ADDITIONAL UTILITIES ==========
     # Screenshots (Wayland with grim + slurp)
@@ -200,6 +187,5 @@ in
 
   }
   // monitoringPanelBindings
-  // worktreeAppBindings
   // agentMonitorBindings);
 }

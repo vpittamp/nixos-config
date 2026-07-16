@@ -257,7 +257,7 @@ lib.mkIf enableClaudeCode {
           PERCENT=$(${pkgs.jq}/bin/jq -r '.context_window.used_percentage // .context_window.usage_percentage // 0 | if type == "number" then round else . end' <<< "$input")
           COST_RAW=$(${pkgs.jq}/bin/jq -r '.session_cost.total_cost // .cost.total_cost_usd // 0' <<< "$input")
           COST=$(printf "%.1f" "$COST_RAW" 2>/dev/null || printf "%.1f" 0)
-          PROJECT="''${I3PM_PROJECT_NAME:-''${PWD##*/}}"
+          PROJECT="''${PWD##*/}"
           TMUX_STR="''${TMUX_PANE:+ | Tmux: ''$TMUX_PANE}"
 
           # Git status helper
@@ -440,22 +440,10 @@ lib.mkIf enableClaudeCode {
 
             ### Examples of User Aliases That Require Interactive Bash
 
-            From `home-modules/shell/bash.nix`, these aliases are available:
-
-            **NixOS Rebuild Aliases:**
-            - `nh-hetzner` → `nh os switch --hostname hetzner -- --option eval-cache false`
-            - `nh-hetzner-fresh` → `nh os switch --hostname hetzner --refresh -- --option eval-cache false`
-            - `nh-m1` → `nh os switch --hostname m1 --impure -- --option eval-cache false`
-            - `nh-m1-fresh` → `nh os switch --hostname m1 --impure --refresh -- --option eval-cache false`
-            - `nh-wsl` → `nh os switch --hostname wsl -- --option eval-cache false`
-            - `nh-wsl-fresh` → `nh os switch --hostname wsl --refresh -- --option eval-cache false`
-
-            **Other Useful Aliases:**
-            - `ll` → `ls -alF`
-            - `la` → `ls -A`
-            - `l` → `ls -CF`
-            - `grep` → `grep --color=auto`
-            - `plasma-export` → `/etc/nixos/scripts/plasma-rc2nix.sh`
+            Rebuilds use `sudo nixos-rebuild switch --flake .#thinkpad` (or
+            `.#ryzen`) — the two maintained hosts. Standard aliases like `ll`,
+            `la`, `grep`, and git shortcuts also come from the interactive shell
+            (defined in `home-modules/shell/bash.nix`).
 
             ### When to Use Interactive Bash
 
@@ -493,13 +481,13 @@ lib.mkIf enableClaudeCode {
 
             ❌ **WRONG** (won't work for aliases):
             ```bash
-            nh-hetzner-fresh
+            my-alias
             ```
             Result: `command not found`
 
             ✅ **CORRECT**:
             ```bash
-            bash -i -c "nh-hetzner-fresh"
+            bash -i -c "my-alias"
             ```
             Result: Alias expands and runs successfully
 

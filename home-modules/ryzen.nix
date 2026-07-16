@@ -35,16 +35,11 @@ in
     # Desktop Environment: Sway (Wayland)
     ./desktop/python-environment.nix
     ./desktop/sway.nix
-    ./desktop/unified-bar-theme.nix
     ./desktop/quickshell-runtime-shell.nix
-    ./desktop/quickshell-worktree-app.nix
-    ./desktop/swaync.nix
-    ./desktop/sway-config-manager.nix
 
     # Project management (works with Sway via IPC)
     # Feature 117: i3-project-daemon now runs as user service
     ./services/i3-project-daemon.nix
-    ./services/ryzen-stacks-watch.nix
     ./tools/i3pm-deno.nix
     ./tools/i3pm-diagnostic.nix
     ./tools/disk-guardrails.nix
@@ -78,15 +73,6 @@ in
 
   programs.disk-guardrails.enable = true;
 
-  services.ryzen-stacks-watch.enable = true;
-
-  # Sway Dynamic Configuration Management
-  programs.sway-config-manager = {
-    enable = true;
-    enableFileWatcher = true;
-    debounceMs = 500;
-  };
-
   # Declarative PWA Installation
 
 
@@ -98,8 +84,6 @@ in
     accentWash = "#1e1639";
     notifications.toastMaxPerOutput = 0;
   };
-
-  programs.quickshell-worktree-app.enable = true;
 
   # sway-easyfocus - Keyboard-driven window hints
   programs.sway-easyfocus = {

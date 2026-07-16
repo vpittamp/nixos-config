@@ -308,10 +308,7 @@ in
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
-    ../modules/services/grafana-alloy.nix      # Feature 129: Unified OTEL collector
-    ../modules/services/arize-phoenix.nix      # Feature 129 Enhancement: GenAI tracing
-    ../modules/services/pyroscope-agent.nix    # Feature 129: Continuous profiling
-    ../modules/services/litellm-proxy.nix      # Feature 123: LiteLLM proxy for full OTEL traces
+    ../modules/services/grafana-alloy.nix      # Feature 129: OTLP collector → hub K8s otel-collector
     # Feature 117: System service removed - now runs as home-manager user service
 
     # Bare metal optimizations (KVM, Podman, printing, TPM, etc.)
@@ -366,8 +363,8 @@ in
       });
 
       # Chrome 146 beta/dev channel (for testing features behind newer flags)
-      google-chrome-beta = prev.callPackage ../pkgs/google-chrome-beta.nix { };
-      google-chrome-unstable = prev.callPackage ../pkgs/google-chrome-unstable.nix { };
+      google-chrome-beta = prev.callPackage ../packages/google-chrome-beta.nix { };
+      google-chrome-unstable = prev.callPackage ../packages/google-chrome-unstable.nix { };
     })
   ];
 
@@ -401,67 +398,22 @@ in
     enableGaming = false;
   };
 
-  # ========== SUNSHINE REMOTE DESKTOP (Quick Sync) ==========
-  # Hardware-accelerated game streaming with Intel Arc Quick Sync encoder
-  # Client: Moonlight (available on all platforms)
-  # Access: moonlight://<tailscale-ip>
-  services.sunshine-streaming = {
-    enable = true;
-    hardwareType = "intel";
-    captureMethod = "kms";  # Direct KMS capture for lowest latency
-    tailscaleOnly = true;   # Only allow via Tailscale for security
-    extraSettings = {
-      # Intel Arc supports HEVC but not AV1 in Sunshine yet
-      av1_mode = 0;
-      # Moderate bitrate for laptop (balance quality/bandwidth)
-      bitrate = 30000;
-    };
-  };
+  # Sunshine host removed on this laptop: it was never paired with any client
+  # (no sunshine_state.json after weeks of uptime) yet ran 24/7 with
+  # cap_sys_admin + uinput and open tailnet ports. The ThinkPad is a Moonlight
+  # *client* of the ryzen Sunshine host (see the Moonlight.conf activation and
+  # keybindings above); re-add services.sunshine-streaming here only to stream
+  # FROM the laptop.
 
   # Feature 117: i3 Project Daemon now runs as home-manager user service
   # Daemon lifecycle managed by graphical-session.target (see home-vpittamp.nix)
 
-  # Feature 129: Grafana Alloy - Unified Telemetry Collector
-  # Provides comprehensive observability:
-  # - OTLP receiver on 4318
-  # - System metrics via node exporter → Mimir
-  # - Journald logs → Loki
-  # - All telemetry exported to K8s LGTM stack via cnoe.localtest.me:8443
-  services.grafana-alloy = {
-    enable = true;
-    # Endpoints default to *.cnoe.localtest.me:8443 (local K8s cluster)
-    enableNodeExporter = true;
-    enableJournald = true;
-    journaldUnits = [
-      "grafana-alloy.service"
-      "i3pm-daemon.service"
-    ];
-
-    # MLflow trace export: route per-CLI traces to the hub MLflow tracking
-    # server. Experiment IDs are bootstrapped by the stacks Job
-    # Job-mlflow-llm-cli-experiment-bootstrap.yaml; after it runs once,
-    # capture the IDs and paste them below:
-    #   kubectl -n observability get cm mlflow-llm-cli-experiments -o yaml
-    mlflow = {
-      enable = true;
-      endpoint = "https://mlflow-hub.tail286401.ts.net";
-      experiments = {
-        claudeCode = "9";
-        codex      = "10";
-      };
-      batchTimeout = "10s";
-      batchSize = 100;
-    };
-  };
-
-  # Arize Phoenix - GenAI Observability (Local)
-  services.arize-phoenix.enable = false;  # Disabled: port 4317 conflicts with Alloy
-
-  # Feature 123: LiteLLM Proxy for full OTEL tracing of Claude API calls
-  # DISABLED: Incompatible with Claude Code Max subscription (OAuth authentication)
-  # LiteLLM requires API keys, but Max uses OAuth tokens
-  # Native Claude Code telemetry does not support Max subscription OAuth routing.
-  services.litellm-proxy.enable = false;
+  # Feature 129: Grafana Alloy — forwards OTLP telemetry to the hub K8s
+  # otel-collector over Tailscale. node-exporter/journald stay off (mimir/loki
+  # endpoints unset); the hub otel-collector is the canonical sink. The
+  # per-CLI MLflow trace routing was retired with the OTEL interceptor —
+  # AI-session state is now tracked natively via herdr.
+  services.grafana-alloy.enable = true;
 
   # Display manager - greetd for Wayland/Sway login
   services.greetd = {
@@ -702,7 +654,6 @@ in
   # Firefox with 1Password and PWA support
   programs.firefox-1password = {
     enable = true;
-    enablePWA = true;
   };
 
   # Cachix Deploy Agent - Auto-deploy on git push
@@ -786,8 +737,6 @@ in
     # Brightness control
     brightnessctl
 
-    # Firefox PWA support
-    firefoxpwa
     imagemagick
     librsvg
 
@@ -856,7 +805,6 @@ in
   # Firefox configuration with PWA support
   programs.firefox = {
     enable = lib.mkDefault true;
-    nativeMessagingHosts.packages = [ pkgs.firefoxpwa ];
   };
 
   # Tailscale VPN

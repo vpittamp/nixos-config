@@ -4,7 +4,7 @@
 { inputs, self, lib, ... }:
 
 let
-  inherit (inputs) nixpkgs nixpkgs-bleeding home-manager disko;
+  inherit (inputs) nixpkgs nixpkgs-bleeding home-manager;
   helpers = import ../lib/helpers.nix { inherit inputs self; };
 in
 {
@@ -40,42 +40,6 @@ in
         system = "x86_64-linux";
         user = "vpittamp";
         modules = [ ../home-modules/ryzen.nix ];
-      })
-    ];
-  };
-
-  # KubeVirt Sway Desktop
-  # Full Sway desktop for KubeVirt VMs (no hardware-specific bloat)
-  # Build: sudo nixos-rebuild switch --flake .#kubevirt-sway
-  kubevirt-sway = helpers.mkSystem {
-    hostname = "kubevirt-sway";
-    system = "x86_64-linux";
-    modules = [
-      ../configurations/kubevirt-sway.nix
-
-      # Home Manager integration
-      (helpers.mkHomeManagerConfig {
-        system = "x86_64-linux";
-        user = "vpittamp";
-        modules = [ ../home-vpittamp.nix ];
-      })
-    ];
-  };
-
-  # Incus Sway Lite VM
-  # Lightweight headless Sway image with i3pm/worktree/tmux + local AI monitoring
-  # Build: sudo nixos-rebuild switch --flake .#incus-sway-lite
-  incus-sway-lite = helpers.mkSystem {
-    hostname = "incus-sway-lite";
-    system = "x86_64-linux";
-    modules = [
-      ../configurations/incus-sway-lite.nix
-
-      # Home Manager integration
-      (helpers.mkHomeManagerConfig {
-        system = "x86_64-linux";
-        user = "vpittamp";
-        modules = [ ../home-modules/incus-sway-lite.nix ];
       })
     ];
   };

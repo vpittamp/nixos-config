@@ -2452,7 +2452,24 @@ class HerdrService:
     @staticmethod
     def ssh_command_prefix(ssh_target: str) -> List[str]:
         """Return the deterministic SSH transport prefix for remote Herdr calls."""
-        return [
+        raw = ssh_target.strip()
+        if raw.startswith("ssh://"):
+            raw = raw[6:]
+        user_part = ""
+        host_port = raw
+        if "@" in raw:
+            user_part, host_port = raw.split("@", 1)
+        host = host_port
+        port = None
+        if ":" in host_port:
+            host, port_text = host_port.rsplit(":", 1)
+            try:
+                port = int(port_text)
+            except ValueError:
+                pass
+        destination = f"{user_part}@{host}" if user_part else host
+
+        cmd = [
             "ssh",
             "-o", "BatchMode=yes",
             "-o", "ConnectTimeout=1",
@@ -2462,8 +2479,11 @@ class HerdrService:
             "-o", "ControlMaster=auto",
             "-o", "ControlPersist=30s",
             "-o", "ControlPath=/tmp/i3pm-herdr-ssh-%C",
-            ssh_target,
         ]
+        if port is not None:
+            cmd.extend(["-p", str(port)])
+        cmd.append(destination)
+        return cmd
 
     @staticmethod
     def _json_payload_from_completed_process(
