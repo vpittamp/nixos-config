@@ -443,6 +443,56 @@ in
     "kernel.sysrq" = 244;
   };
 
+  # Early warning for the kmalloc-64 unreclaimable-slab leak (incident 2026-07-13).
+  # The leak builds silently over weeks; this converts "sudden OOM crisis" into a
+  # heads-up while there is still ~20 GiB of headroom. Logs to the journal at
+  # warning/err (scraped by grafana-alloy -> Loki) and best-effort desktop
+  # notification into vpittamp's graphical session.
+  systemd.services.slab-leak-watch = {
+    description = "Warn on unreclaimable-slab growth / low memory (kmalloc-64 leak watch)";
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = pkgs.writeShellScript "slab-leak-watch" ''
+        set -u
+        kb() { ${pkgs.gawk}/bin/awk -v k="$1:" '$1==k{print $2}' /proc/meminfo; }
+        sunreclaim=$(kb SUnreclaim)
+        memavail=$(kb MemAvailable)
+        warn_kb=$((  8 * 1024 * 1024 ))   # 8 GiB unreclaimable slab
+        crit_kb=$(( 16 * 1024 * 1024 ))   # 16 GiB unreclaimable slab
+        low_kb=$((   3 * 1024 * 1024 ))   # 3 GiB MemAvailable
+        msg=""; prio="info"
+        if [ "''${sunreclaim:-0}" -ge "$crit_kb" ]; then
+          prio=err
+          msg="CRITICAL: unreclaimable slab $((sunreclaim/1024)) MiB (>16 GiB). kmalloc-64 leak — plan a reboot soon. Attribute with: cat /sys/kernel/slab/kmalloc-rnd-*-64/alloc_calls | sort -rn | head"
+        elif [ "''${sunreclaim:-0}" -ge "$warn_kb" ]; then
+          prio=warning
+          msg="WARNING: unreclaimable slab $((sunreclaim/1024)) MiB (>8 GiB) and climbing — kmalloc-64 leak recurring."
+        elif [ "''${memavail:-999999999}" -le "$low_kb" ]; then
+          prio=warning
+          msg="WARNING: MemAvailable $((memavail/1024)) MiB (<3 GiB)."
+        fi
+        if [ -n "$msg" ]; then
+          printf '%s\n' "$msg" | ${pkgs.systemd}/bin/systemd-cat -t slab-leak-watch -p "$prio"
+          uid=$(${pkgs.coreutils}/bin/id -u vpittamp 2>/dev/null || echo "")
+          if [ -n "$uid" ] && [ -S "/run/user/$uid/bus" ]; then
+            urg=normal; [ "$prio" = err ] && urg=critical
+            ${pkgs.sudo}/bin/sudo -u vpittamp \
+              DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+              ${pkgs.libnotify}/bin/notify-send -u "$urg" "Kernel slab leak" "$msg" || true
+          fi
+        fi
+      '';
+    };
+  };
+  systemd.timers.slab-leak-watch = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnBootSec = "15min";
+      OnUnitActiveSec = "30min";
+      Persistent = true;
+    };
+  };
+
   # Boot configuration for standard x86_64 UEFI
   boot.loader.systemd-boot.enable = true;
   boot.loader.systemd-boot.configurationLimit = 10;
@@ -458,6 +508,24 @@ in
     # Performance settings for desktop
     "mitigations=off"             # Optional: disable CPU mitigations for max performance
                                   # Remove this line if security is priority
+
+    # SLUB allocation-site tracking for the 64-byte kmalloc family.
+    #
+    # Incident 2026-07-13: after 26 days uptime the host wedged with ~26 GiB of
+    # UNRECLAIMABLE kernel slab (SUnreclaim) — ~323M objects in the kmalloc-64
+    # cache. Unreclaimable slab is not swappable/reclaimable, so only a reboot
+    # cleared it. The leaking call site could not be attributed retroactively
+    # because CONFIG_RANDOM_KMALLOC_CACHES spreads 64-byte allocs across
+    # kmalloc-rnd-{01..15}-64 and this kernel had no SLUB user-tracking enabled.
+    #
+    # The `U` flag adds SLAB_STORE_USER (alloc/free stack per object) so that on
+    # recurrence the culprit is readable via:
+    #   cat /sys/kernel/slab/kmalloc-rnd-*-64/alloc_calls | sort -rn | head
+    # The glob covers the whole 64-byte family because the rnd bucket a call
+    # site maps to is reseeded each boot. Scoped to *64 so the per-object track
+    # overhead stays bounded to this family (it does NOT track every cache).
+    # Remove once the leak is attributed and fixed upstream.
+    "slub_debug=U,kmalloc-*64"
   ];
 
   # Feature 117: i3-project-daemon now runs as home-manager user service
@@ -884,10 +952,23 @@ in
 
       "10-bluez" = {
         "monitor.bluez.properties" = {
-          "bluez5.roles" = [ "a2dp_sink" "a2dp_source" ];
+          # A2DP gives high-quality stereo *output only* (no mic). The HFP
+          # (headset) roles are what expose the Jabra's microphone as an input
+          # source, offering a "Headset" profile switched manually (autoswitch
+          # is off in the policy block above) to avoid silently dropping output
+          # to mono call quality.
+          #
+          # Only HFP is enabled (not the legacy HSP): with both hsp_ag and
+          # hfp_ag active the Jabra negotiates the inferior HSP link, which
+          # blocks clean headset-profile creation. This matches PipeWire's own
+          # default (hfp_hf hfp_ag) and forces the modern mSBC headset path.
+          "bluez5.roles" = [ "hfp_hf" "hfp_ag" "a2dp_sink" "a2dp_source" ];
           "bluez5.enable-sbc-xq" = true;
           "bluez5.enable-hw-volume" = true;
-          "bluez5.codecs" = [ "sbc" "sbc_xq" ];
+          "bluez5.enable-msbc" = true;
+          # sbc/sbc_xq = A2DP output codecs; msbc/cvsd = HFP mic codecs
+          # (msbc is wideband speech for a noticeably clearer headset mic).
+          "bluez5.codecs" = [ "sbc" "sbc_xq" "msbc" "cvsd" ];
         };
       };
 
