@@ -60,10 +60,34 @@ let
     chromiumBin = "${pkgs.chromium}/bin/chromium";
   };
 
-  codexPackage = inputs.codex-cli-nix.packages.${pkgs.system}.default or pkgs-unstable.codex or pkgs.codex;
+  codexBasePackage = inputs.codex-cli-nix.packages.${pkgs.system}.default or pkgs-unstable.codex or pkgs.codex;
+  codexNodePackage = inputs.codex-cli-nix.packages.${pkgs.system}.codex-node or null;
+  codexCodeModeHostTarget = {
+    "x86_64-linux" = "x86_64-unknown-linux-musl";
+    "aarch64-linux" = "aarch64-unknown-linux-musl";
+  }.${pkgs.system} or null;
+  codexCodeModeHost =
+    if codexNodePackage != null && codexCodeModeHostTarget != null then
+      "${codexNodePackage}/lib/node_modules/@openai/codex-linux-${if pkgs.system == "x86_64-linux" then "x64" else "arm64"}/vendor/${codexCodeModeHostTarget}/bin/codex-code-mode-host"
+    else
+      null;
+  # Codex locates its code-mode executor via $CODEX_CODE_MODE_HOST_PATH (read
+  # directly by codex-raw). Copying the binary into the package bin does NOT
+  # work: the codex-cli-nix wrapper sets CODEX_EXECUTABLE_PATH=~/.local/bin/codex
+  # (a path that does not exist here), so Codex's relative-to-binary lookup
+  # misses. We point the env var at the vendored musl host binary instead — see
+  # home.sessionVariables below.
+  codexPackage = codexBasePackage;
 in
 
 {
+  # Point Codex at its code-mode executor. herdr launches codex through
+  # `bash -lc`, so this session variable (sourced from hm-session-vars.sh)
+  # reaches codex-raw. Without it, code-mode fails to spawn its host process.
+  home.sessionVariables = lib.mkIf (codexCodeModeHost != null) {
+    CODEX_CODE_MODE_HOST_PATH = codexCodeModeHost;
+  };
+
   # Install Codex skills into ~/.codex/skills/
   # Only shared-skills entries are declared here.
   home.file = sharedSkillHomeFiles;
