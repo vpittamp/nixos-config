@@ -402,22 +402,45 @@ in
     };
   };
 
-  # Swap configuration - 16GB swap (desktop with 32GB RAM, no hibernation needed)
+  # Swap: zram-first, small disk swapfile as overflow. The old 16GB disk-only
+  # swapfile let memory pressure thrash into a hard freeze (2026-07-16): the
+  # kernel OOM killer never fires while swap remains, and paging to disk
+  # livelocked the whole host (no hibernation needed, so no resumeDevice).
+  zramSwap = {
+    enable = true;
+    memoryPercent = 50; # up to ~15GB compressed swap in RAM, priority 5 > disk
+  };
   swapDevices = [
     {
       device = "/var/lib/swapfile";
-      size = 16384; # 16GB swap
+      size = 8192; # 8GB overflow only; zram is exhausted first
     }
   ];
 
+  # Kill the largest process before swap exhaustion livelocks the machine.
+  # Kernel OOM killer alone is not enough (see freeze above).
+  services.earlyoom = {
+    enable = true;
+    freeMemThreshold = 5;
+    freeSwapThreshold = 10;
+    extraArgs = [
+      # comm names are truncated to 15 chars: ".claude-unwrapp" = claude-code
+      "--avoid" "^(\\.claude-unwrapp|claude|codex-raw|codex|sshd|tailscaled)$"
+      "--prefer" "^(chrome|chromium)"
+    ];
+  };
+
   # Memory management tweaks for desktop workstation
   boot.kernel.sysctl = {
-    "vm.swappiness" = 10;
+    "vm.swappiness" = 100; # zram swap is cheap; swap early instead of dropping file cache
     "vm.vfs_cache_pressure" = 50;
     "vm.dirty_background_ratio" = 5;
     "vm.dirty_ratio" = 10;
     # Higher max memory map count for development workloads
     "vm.max_map_count" = 1048576;
+    # 4+16+32+64+128: SysRq sync/remount-ro/signal(oom-kill)/reboot from the
+    # physical keyboard, so a future freeze doesn't require a raw power cut
+    "kernel.sysrq" = 244;
   };
 
   # Boot configuration for standard x86_64 UEFI
