@@ -2571,8 +2571,13 @@ PY
         ' 2>/dev/null || printf '[]\n'
     )"
 
-    ${lib.getExe pkgs.jq} -cn --argjson local "$local_json" --argjson elephant "$elephant_json" '
-      ($local + $elephant)
+    # Merge via stdin, NOT --argjson: a single argv element is capped at
+    # MAX_ARG_STRLEN (128 KiB), so passing the clipboard JSON as an argument
+    # fails with "Argument list too long" the moment a large entry is copied.
+    # Piping both arrays and slurping (-s) has no size limit; `add` concatenates
+    # them in the same order as the previous `$local + $elephant`.
+    printf '%s\n%s\n' "$local_json" "$elephant_json" | ${lib.getExe pkgs.jq} -cs '
+      add
       | reduce .[] as $item (
           {items: [], seen: {}};
           ($item.text // "") as $text
