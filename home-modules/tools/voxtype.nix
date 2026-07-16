@@ -27,6 +27,38 @@
 # - [text].replacements deterministically fixes domain terms whisper mis-hears.
 { pkgs, ... }:
 let
+  # Whisper model selection. Shared between the config.toml below and the
+  # ExecStartPre bootstrap so the declared model and the auto-downloaded file
+  # can never drift. voxtype stores it as ggml-<model>.bin under the models dir.
+  whisperModel = "large-v3-turbo";
+
+  # Model files are runtime data (not declaratively managed by Nix), so a fresh
+  # machine or a wiped ~/.local/share has no model and the daemon would
+  # crash-loop preloading it. This pre-start hook downloads any missing model
+  # before ExecStart. It is best-effort: it always exits 0 so a transient
+  # network failure never blocks the daemon, and ExecStart still surfaces a
+  # clear "Model not found" error if the download genuinely failed.
+  modelBootstrap = pkgs.writeShellScript "voxtype-model-bootstrap" ''
+    set -u
+    models_dir="''${XDG_DATA_HOME:-$HOME/.local/share}/voxtype/models"
+    voxtype=/run/current-system/sw/bin/voxtype
+
+    if [ ! -f "$models_dir/ggml-${whisperModel}.bin" ]; then
+      echo "voxtype: whisper model '${whisperModel}' missing, downloading..." >&2
+      # `setup` also tries to rewrite the home-manager-managed (read-only)
+      # config.toml and exits non-zero on that; the model file itself is still
+      # saved, so we tolerate the failure.
+      "$voxtype" setup --download --model ${whisperModel} --quiet || true
+    fi
+
+    if [ ! -f "$models_dir/ggml-silero-vad.bin" ]; then
+      echo "voxtype: VAD model missing, downloading..." >&2
+      "$voxtype" setup vad || true
+    fi
+
+    exit 0
+  '';
+
   dictationSessionScript = pkgs.writeShellScriptBin "dictation-session" ''
     set -euo pipefail
 
@@ -156,9 +188,15 @@ in
     };
     Service = {
       Type = "simple";
+      # Download any missing whisper/VAD model before the daemon starts (see
+      # modelBootstrap). Best-effort: always exits 0 so it can't block startup.
+      ExecStartPre = "${modelBootstrap}";
       ExecStart = "/run/current-system/sw/bin/voxtype --toggle --vad daemon";
       Restart = "on-failure";
       RestartSec = 5;
+      # First run may fetch a ~1.5 GB model in ExecStartPre; keep the start
+      # timeout well above the default 90s so a slow download isn't killed.
+      TimeoutStartSec = 1200;
       Environment = "XDG_RUNTIME_DIR=%t";
     };
     Install.WantedBy = [ "graphical-session.target" ];
@@ -186,7 +224,7 @@ in
     enabled = false
 
     [whisper]
-    model = "large-v3-turbo"
+    model = "${whisperModel}"
     language = "en"
 
     [output]
