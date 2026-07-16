@@ -2472,12 +2472,20 @@ class HerdrService:
         cmd = [
             "ssh",
             "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=1",
+            # Interactive remote pane-focus goes through this prefix. The old
+            # values (ConnectTimeout=1, ConnectionAttempts=1, ServerAlive 1/1)
+            # made a cold connect or a single ~1s tailnet blip drop the command,
+            # producing "every other click works" laggy focus. Soften them so a
+            # cold connect has room to complete and a transient stall does not
+            # tear down the session, while still failing within a few seconds
+            # when a host is genuinely unreachable. ControlPersist=300s keeps the
+            # master warm across the daemon's poll interval so focus stays hot.
+            "-o", "ConnectTimeout=3",
             "-o", "ConnectionAttempts=1",
-            "-o", "ServerAliveInterval=1",
-            "-o", "ServerAliveCountMax=1",
+            "-o", "ServerAliveInterval=5",
+            "-o", "ServerAliveCountMax=3",
             "-o", "ControlMaster=auto",
-            "-o", "ControlPersist=30s",
+            "-o", "ControlPersist=300s",
             "-o", "ControlPath=/tmp/i3pm-herdr-ssh-%C",
         ]
         if port is not None:
