@@ -1,20 +1,21 @@
 # Feature 129: Grafana Alloy - Unified OpenTelemetry Collector
-# MLflow integration - per-CLI trace export to the hub MLflow tracking server.
 #
-# This module provides Grafana Alloy as the unified telemetry collector that:
-# - Receives OTLP telemetry on port 4318
-# - Exports all telemetry to Kubernetes LGTM stack via Tailscale
-# - Exports traces to MLflow with per-service experiment routing (routes spans by
-#   resource.service.name to claude-code/codex/idpbuilder experiments). Experiment
-#   IDs are bootstrapped in the hub via the LLM CLI bootstrap Job in stacks.
-# - Collects system metrics via built-in node exporter
-# - Collects journald logs and forwards to Loki
+# Receives OTLP telemetry on port 4318 and forwards it to the hub Kubernetes
+# observability stack (otel-collector) over Tailscale. Optional node-exporter
+# metrics and journald logs can be forwarded to Mimir/Loki when those endpoints
+# are configured (both default empty — the hub K8s otel-collector is the
+# canonical sink).
+#
+# NOTE: The per-CLI MLflow trace routing, Arize Phoenix export, Beyla span
+# filtering, and spanmetrics connector were removed in 2026-07 — they had no
+# producers after the OTEL interceptor retirement (commit 9093519b) and the
+# spanmetrics connector was erroring every 60s into an empty metrics sink.
+# AI-session state is now tracked natively via herdr, not OTEL.
 #
 # Architecture:
-#   Clients → Alloy :4318 → [batch processor] → K8s OTEL Collector (remote)
-#                                      → MLflow /v1/traces (per-CLI experiments)
-#   System → node exporter → Alloy → Mimir (K8s)
-#   Journald → Alloy → Loki (K8s)
+#   Clients → Alloy :4318 → [batch] → hub K8s OTEL Collector (Tailscale)
+#   System  → node exporter → Alloy → Mimir (when mimirEndpoint set)
+#   Journald → Alloy → Loki (when lokiEndpoint set)
 #
 { config, lib, pkgs, ... }:
 
@@ -58,7 +59,7 @@ let
     }
 
     // =============================================================================
-    // OTLP Receiver - Receives telemetry from AI CLIs and other apps
+    // OTLP Receiver - Receives telemetry from apps and other OTLP producers
     // =============================================================================
 
     otelcol.receiver.otlp "default" {
@@ -74,7 +75,7 @@ let
     }
 
     // =============================================================================
-    // Transform Processor - Enrich spans with better names/attributes
+    // Transform Processor - Backfill host.name so the hub can discriminate hosts
     // =============================================================================
 
     otelcol.processor.transform "enrich_spans" {
@@ -84,118 +85,12 @@ let
         context = "resource"
         statements = [
           // Backfill host.name resource attribute when the emitter omitted it.
-          // CLI wrappers (claude-code, codex) set this from $HOSTNAME, but a
-          // server-side default makes the future K8s session-aggregator able
-          // to discriminate hosts reliably even for future/forgetful emitters.
           "set(attributes[\"host.name\"], \"${config.networking.hostName}\") where attributes[\"host.name\"] == nil",
         ]
       }
 
-      trace_statements {
-        context = "span"
-        statements = [
-          // If span name is generic "api.request" but has tool name, rename it
-          "set(name, Concat([name, \" (\", attributes[\"tool.name\"], \")\"], \"\")) where attributes[\"tool.name\"] != nil",
-
-          // Claude Code tool spans: tool.read -> Read, tool.write -> Write
-          "set(name, \"Read\") where name == \"tool.read\"",
-          "set(name, \"Write\") where name == \"tool.write\"",
-          "set(name, \"Edit\") where name == \"tool.edit\"",
-          "set(name, \"Bash\") where name == \"tool.bash\"",
-          "set(name, \"Grep\") where name == \"tool.grep\"",
-          "set(name, \"Glob\") where name == \"tool.glob\"",
-
-          // Payload interceptor LLM spans: LLM -> Claude API Call (for better visibility)
-          "set(name, \"Claude API Call\") where name == \"LLM\" and attributes[\"llm.provider\"] == \"anthropic\"",
-          "set(name, \"Claude API Call\") where name == \"Claude Interaction (Payload)\"",
-
-          // Enrich Claude Session root spans (multi-span trace support)
-          "set(name, \"Claude Code Session\") where name == \"Claude Session\" and attributes[\"openinference.span.kind\"] == \"CHAIN\"",
-        ]
-      }
-
       output {
-        traces = [otelcol.processor.filter.drop_beyla.input]
-      }
-    }
-
-    // =============================================================================
-    // Filter Processor - Drop Beyla auto-instrumentation traces
-    //
-    // Beyla generates HTTP/gRPC spans via eBPF that aren't LLM-specific.
-    // Filter them out before sending to AI-focused backends (MLflow, local monitor).
-    // =============================================================================
-
-    otelcol.processor.filter "drop_beyla" {
-      error_mode = "ignore"
-
-      traces {
-        // Drop spans from Beyla (telemetry.sdk.name is a resource attribute)
-        span = ["resource.attributes[\"telemetry.sdk.name\"] == \"beyla\""]
-      }
-
-      output {
-        traces = [
-          otelcol.processor.batch.default.input,
-          otelcol.connector.spanmetrics.ai.input,
-        ]
-      }
-    }
-
-    // =============================================================================
-    // Span Metrics - Derive metrics (+ exemplars) from spans
-    //
-    // Uses the spanmetrics connector to generate RED metrics from traces and attach
-    // exemplars that link back to Tempo traces in Grafana.
-    //
-    // IMPORTANT: We exclude `span.name` to avoid high-cardinality series from
-    // Turn/tool span names (which may include prompt/file previews).
-    // =============================================================================
-
-    // Dedicated batch processor to avoid cycles (spanmetrics consumes traces, emits metrics).
-    otelcol.processor.batch "spanmetrics" {
-      send_batch_size     = 1000
-      timeout             = "10s"
-      send_batch_max_size = 2000
-
-      output {
-        metrics = [${optionalString (cfg.mimirEndpoint != "") "otelcol.exporter.prometheus.mimir.input"}]
-      }
-    }
-
-    otelcol.connector.spanmetrics "ai" {
-      // Keep the resource key stable across runs (avoid process.pid / cwd churn).
-      resource_metrics_key_attributes = ["service.name", "host.name"]
-
-      // Avoid high-cardinality series by excluding span.name.
-      exclude_dimensions = ["span.name"]
-
-      // Useful low-cardinality dimensions for AI traces.
-      dimension {
-        name = "openinference.span.kind"
-      }
-
-      dimension {
-        name = "gen_ai.request.model"
-      }
-
-      dimension {
-        name = "gen_ai.tool.name"
-      }
-
-      histogram {
-        explicit {
-          buckets = ["10ms", "50ms", "100ms", "250ms", "500ms", "1s", "2s", "5s", "10s", "30s", "60s"]
-        }
-      }
-
-      exemplars {
-        enabled            = true
-        max_per_data_point = 1
-      }
-
-      output {
-        metrics = [otelcol.processor.batch.spanmetrics.input]
+        traces = [otelcol.processor.batch.default.input]
       }
     }
 
@@ -217,32 +112,18 @@ let
         ]
         traces = [
           otelcol.exporter.otlphttp.k8s.input,
-          ${optionalString ((config.services ? arize-phoenix) && (config.services.arize-phoenix.enable or false)) "otelcol.exporter.otlphttp.phoenix.input,"}
-          ${optionalString cfg.mlflow.enable "otelcol.processor.batch.mlflow.input,"}
         ]
       }
     }
 
     // =============================================================================
-    // Exporters - Send to remote K8s and optional local sinks
+    // Exporters - Send to remote K8s and optional metrics sink
     // =============================================================================
 
     ${optionalString (cfg.mimirEndpoint != "") ''
     // Bridge: OTLP Metrics -> Prometheus Remote Write
     otelcol.exporter.prometheus "mimir" {
       forward_to = [prometheus.remote_write.k8s.receiver]
-    }
-    ''}
-
-    // Local: Arize Phoenix for GenAI tracing
-    ${optionalString ((config.services ? arize-phoenix) && (config.services.arize-phoenix.enable or false)) ''
-    otelcol.exporter.otlphttp "phoenix" {
-      client {
-        endpoint = "${cfg.phoenixEndpoint}"
-        tls {
-          insecure = true
-        }
-      }
     }
     ''}
 
@@ -269,136 +150,6 @@ let
       }
     }
 
-    ${optionalString cfg.mlflow.enable ''
-    // =============================================================================
-    // MLflow Tracing - per-CLI experiment routing
-    //
-    // Routes each LLM CLI's trace stream to its own MLflow experiment via the
-    // x-mlflow-experiment-id header. Experiment IDs are bootstrapped in the hub
-    // cluster by the stacks Job-mlflow-llm-cli-experiment-bootstrap.yaml and
-    // pinned per-host in services.grafana-alloy.mlflow.experiments.
-    //
-    // The routing connector keys on the resource attribute `service.name`.
-    // =============================================================================
-
-    otelcol.exporter.otlphttp "mlflow_claude_code" {
-      client {
-        endpoint = "${cfg.mlflow.endpoint}"
-        headers = {
-          "x-mlflow-experiment-id" = "${cfg.mlflow.experiments.claudeCode}",
-        }
-      }
-
-      retry_on_failure {
-        enabled          = true
-        initial_interval = "5s"
-        max_interval     = "30s"
-        max_elapsed_time = "5m"
-      }
-
-      sending_queue {
-        enabled       = true
-        num_consumers = 4
-        queue_size    = ${toString cfg.mlflow.queueSize}
-      }
-    }
-
-    otelcol.exporter.otlphttp "mlflow_codex" {
-      client {
-        endpoint = "${cfg.mlflow.endpoint}"
-        headers = {
-          "x-mlflow-experiment-id" = "${cfg.mlflow.experiments.codex}",
-        }
-      }
-
-      retry_on_failure {
-        enabled          = true
-        initial_interval = "5s"
-        max_interval     = "30s"
-        max_elapsed_time = "5m"
-      }
-
-      sending_queue {
-        enabled       = true
-        num_consumers = 4
-        queue_size    = ${toString cfg.mlflow.queueSize}
-      }
-    }
-
-    otelcol.exporter.otlphttp "mlflow_idpbuilder" {
-      client {
-        endpoint = "${cfg.mlflow.endpoint}"
-        headers = {
-          "x-mlflow-experiment-id" = "${cfg.mlflow.experiments.idpbuilder}",
-        }
-      }
-
-      retry_on_failure {
-        enabled          = true
-        initial_interval = "5s"
-        max_interval     = "30s"
-        max_elapsed_time = "5m"
-      }
-
-      sending_queue {
-        enabled       = true
-        num_consumers = 4
-        queue_size    = ${toString cfg.mlflow.queueSize}
-      }
-    }
-
-    // Per-CLI filter processors. Each drops spans whose `service.name` is
-    // not the target CLI, so only matching spans reach the corresponding
-    // exporter. (Alloy doesn't ship `otelcol.connector.routing`, so we
-    // fan out the batch to three filters instead.)
-    otelcol.processor.filter "mlflow_claude_code" {
-      error_mode = "ignore"
-      traces {
-        span = ["resource.attributes[\"service.name\"] != \"claude-code\""]
-      }
-      output {
-        traces = [otelcol.exporter.otlphttp.mlflow_claude_code.input]
-      }
-    }
-
-    otelcol.processor.filter "mlflow_codex" {
-      error_mode = "ignore"
-      traces {
-        span = ["resource.attributes[\"service.name\"] != \"codex\""]
-      }
-      output {
-        traces = [otelcol.exporter.otlphttp.mlflow_codex.input]
-      }
-    }
-
-    otelcol.processor.filter "mlflow_idpbuilder" {
-      error_mode = "ignore"
-      traces {
-        span = ["resource.attributes[\"service.name\"] != \"idpbuilder\""]
-      }
-      output {
-        traces = [otelcol.exporter.otlphttp.mlflow_idpbuilder.input]
-      }
-    }
-
-    // MLflow-specific batch processor for optimized trace export.
-    // Fans the batched stream out to all three per-CLI filters; each filter
-    // drops everything not matching its service.name.
-    otelcol.processor.batch "mlflow" {
-      send_batch_size     = ${toString cfg.mlflow.batchSize}
-      timeout             = "${cfg.mlflow.batchTimeout}"
-      send_batch_max_size = ${toString (cfg.mlflow.batchSize * 2)}
-
-      output {
-        traces = [
-          otelcol.processor.filter.mlflow_claude_code.input,
-          otelcol.processor.filter.mlflow_codex.input,
-          otelcol.processor.filter.mlflow_idpbuilder.input,
-        ]
-      }
-    }
-    ''}
-
     ${optionalString (cfg.enableNodeExporter && cfg.mimirEndpoint != "") ''
     // =============================================================================
     // Node Exporter - System metrics (CPU, memory, disk, network)
@@ -420,7 +171,6 @@ let
     prometheus.remote_write "k8s" {
       endpoint {
         url = "${cfg.mimirEndpoint}/api/v1/push"
-        // Ensure exemplars (trace IDs) are forwarded when present (e.g. from spanmetrics).
         send_exemplars = true
         headers = {
           "X-Scope-OrgID" = "anonymous",
@@ -474,18 +224,6 @@ in
       description = "Grafana Alloy package to use";
     };
 
-    # Feature 125: Parameterized cluster targeting for multi-cluster observability
-    # DEPRECATED: Use cnoe.localtest.me endpoints instead (same for all local clusters)
-    targetCluster = mkOption {
-      type = types.str;
-      default = "";
-      example = "ryzen";
-      description = ''
-        DEPRECATED: No longer used. Endpoints now default to cnoe.localtest.me:8443.
-        Kept for backwards compatibility.
-      '';
-    };
-
     configFile = mkOption {
       type = types.nullOr types.path;
       default = null;
@@ -504,30 +242,11 @@ in
       # central otel-collector + otel-clickhouse + grafana + tempo stack
       # that spokes already forward to via clickhouse-hub-egress. Routing
       # host Alloy at the hub-side Tailscale LoadBalancer bypasses the
-      # spokes entirely and avoids the dev-spoke endpoint churn that
-      # followed the 2026-05-28 Tailscale-native secrets migration. Spokes'
-      # own collectors continue handling in-cluster K8s telemetry
-      # independently.
-      #
-      # Plain HTTP on port 4318: this is a Tailscale LoadBalancer Service
-      # (mirroring otel-clickhouse-tailnet), not an Ingress — the
-      # tailnet-ca ClusterIssuer is spoke-only so hub Tailscale Ingresses
-      # can't acquire TLS certs. Tailscale's WireGuard transport already
-      # encrypts the link, so HTTPS termination is redundant.
-      #
-      # See stacks: packages/components/addons/observability-clickhouse-shared/manifests/otel-collector-tailnet/Service-otel-collector-hub-tailnet.yaml
-      #
-      # The stale Tailscale Service registration that previously forced an
-      # "otel-collector-hub-1" suffix was removed on 2026-07-09; the
-      # LoadBalancer Service now owns the canonical name again.
+      # spokes entirely. Plain HTTP on 4318 because this is a Tailscale
+      # LoadBalancer Service (WireGuard already encrypts the link), not an
+      # Ingress.
       default = "http://otel-collector-hub.tail286401.ts.net:4318";
       description = "Kubernetes OTEL collector endpoint (Tailscale LoadBalancer Service on hub).";
-    };
-
-    phoenixEndpoint = mkOption {
-      type = types.str;
-      default = "http://localhost:6006";
-      description = "Arize Phoenix OTLP HTTP endpoint";
     };
 
     lokiEndpoint = mkOption {
@@ -535,10 +254,8 @@ in
       default = "";
       description = ''
         Loki push endpoint for journald log forwarding. Empty default means
-        logs are collected (via enableJournald) but not forwarded — set this
-        explicitly when a reachable Loki is available on the tailnet (e.g.
-        the hub LGTM stack). The legacy *.cnoe.localtest.me:8443 default
-        never worked after the Talos migration; it resolved to ::1.
+        logs are not forwarded — set explicitly when a reachable Loki is
+        available on the tailnet (e.g. the hub LGTM stack).
       '';
     };
 
@@ -546,124 +263,45 @@ in
       type = types.str;
       default = "";
       description = ''
-        Mimir remote_write endpoint for node-exporter metrics + spanmetrics.
-        Empty default means metrics are not forwarded. Set this explicitly
-        when a reachable Mimir is available on the tailnet. The legacy
-        *.cnoe.localtest.me:8443 default never worked after the Talos
-        migration; it resolved to ::1.
+        Mimir remote_write endpoint for node-exporter metrics. Empty default
+        means metrics are not forwarded. Set explicitly when a reachable Mimir
+        is available on the tailnet.
       '';
     };
 
     enableNodeExporter = mkOption {
       type = types.bool;
       default = true;
-      description = "Enable system metrics collection via node exporter";
+      description = "Enable system metrics collection via node exporter (only renders when mimirEndpoint is set)";
     };
 
     enableJournald = mkOption {
       type = types.bool;
       default = true;
-      description = "Enable journald log collection";
+      description = "Enable journald log collection (only renders when lokiEndpoint is set)";
     };
 
     journaldUnits = mkOption {
       type = types.listOf types.str;
       default = [
-        "i3pm-daemon.service"
+        "i3-project-daemon.service"
         "grafana-alloy.service"
       ];
-      description = "Systemd units to collect logs from";
+      description = "Systemd units to collect logs from (when lokiEndpoint is set)";
     };
 
     stopTimeout = mkOption {
       type = types.str;
       default = "10s";
       description = ''
-        Maximum time to wait for Alloy to shutdown gracefully.
-        Telemetry collectors may try to flush buffered data on shutdown,
-        which can delay reboot/shutdown. A shorter timeout (10-30s) is
-        recommended since data loss on shutdown is generally acceptable.
+        Maximum time to wait for Alloy to shutdown gracefully. A shorter
+        timeout (10-30s) is recommended since data loss on shutdown is
+        generally acceptable.
       '';
-    };
-
-    # MLflow trace export - per-CLI experiment routing.
-    # Three exporters (one per LLM CLI) routed on resource.service.name; each
-    # ships traces to MLflow's /v1/traces with x-mlflow-experiment-id headers.
-    # Experiments are bootstrapped in the hub by the stacks Job
-    # Job-mlflow-llm-cli-experiment-bootstrap.yaml.
-    mlflow = {
-      enable = mkEnableOption "MLflow trace export for LLM CLI observability";
-
-      endpoint = mkOption {
-        type = types.str;
-        default = "https://mlflow-hub.tail286401.ts.net";
-        example = "http://mlflow-hub-egress.tailscale.svc.cluster.local:5000";
-        description = ''
-          MLflow tracking server base URL. The OTLP receiver lives at
-          `<endpoint>/v1/traces`; Alloy's otlphttp exporter appends the path
-          automatically.
-        '';
-      };
-
-      experiments = mkOption {
-        type = types.submodule {
-          options = {
-            claudeCode = mkOption {
-              type = types.str;
-              default = "";
-              example = "12";
-              description = ''
-                MLflow experiment ID for Claude Code traces (service.name="claude-code").
-                Capture after running the stacks bootstrap Job:
-                kubectl -n observability get cm mlflow-llm-cli-experiments -o yaml
-              '';
-            };
-            codex = mkOption {
-              type = types.str;
-              default = "";
-              example = "13";
-              description = "MLflow experiment ID for Codex traces (service.name=\"codex\").";
-            };
-            idpbuilder = mkOption {
-              type = types.str;
-              default = "";
-              example = "36";
-              description = "MLflow experiment ID for idpbuilder stacks traces (service.name=\"idpbuilder\").";
-            };
-          };
-        };
-        default = {};
-        description = ''
-          Numeric MLflow experiment IDs per LLM CLI. Pinned at config time
-          rather than auto-fetched because Alloy needs them at module render
-          time; the values are stable (MLflow create-by-name is idempotent).
-        '';
-      };
-
-      batchTimeout = mkOption {
-        type = types.str;
-        default = "10s";
-        description = "Batch timeout for MLflow export (traces sent after this duration)";
-      };
-
-      batchSize = mkOption {
-        type = types.int;
-        default = 100;
-        description = "Maximum batch size for MLflow export";
-      };
-
-      queueSize = mkOption {
-        type = types.int;
-        default = 1000;
-        description = "Per-exporter sending queue size (traces buffered when endpoint unavailable)";
-      };
     };
   };
 
   config = mkIf cfg.enable {
-    # Endpoints now use cnoe.localtest.me:8443 by default (same for all local clusters)
-    # Can be overridden via explicit config if needed
-
     # Ensure package is available
     environment.systemPackages = [ cfg.package ];
 

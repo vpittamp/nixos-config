@@ -42,10 +42,6 @@ let
     set -euo pipefail
 
     primary_output="DP-1"
-    target_output_index="0"
-    runtime_conf="$HOME/.config/sunshine/sunshine-runtime.conf"
-    override_dir="$HOME/.config/systemd/user/sunshine.service.d"
-    override_file="$override_dir/override.conf"
 
     log() {
       printf 'sunshine-primary-monitor-ensure: %s\n' "$*" >&2
@@ -78,57 +74,12 @@ let
       fail "Primary monitor $primary_output is not active"
     fi
 
-    base_conf="$(
-      ${pkgs.systemd}/bin/systemctl --user cat sunshine 2>/dev/null \
-        | ${pkgs.gnused}/bin/sed -n 's/^ExecStart="\/run\/wrappers\/bin\/sunshine" "\([^"]*\)"$/\1/p' \
-        | ${pkgs.coreutils}/bin/head -n1
-    )"
-
-    if [ -z "$base_conf" ]; then
-      fail "Unable to resolve Sunshine ExecStart config"
-    fi
-
-    if [ ! -f "$base_conf" ]; then
-      fail "Sunshine config file not found: $base_conf"
-    fi
-
-    ${pkgs.coreutils}/bin/mkdir -p "$HOME/.config/sunshine" "$override_dir"
-
-    tmp_conf="$(${pkgs.coreutils}/bin/mktemp)"
-    tmp_override="$(${pkgs.coreutils}/bin/mktemp)"
-    trap '${pkgs.coreutils}/bin/rm -f "$tmp_conf" "$tmp_override"' EXIT
-
-    ${pkgs.gnused}/bin/sed "s/^output_name=.*/output_name=$target_output_index/" "$base_conf" > "$tmp_conf"
-    cat > "$tmp_override" <<EOF
-[Service]
-ExecStart=
-ExecStart=/run/wrappers/bin/sunshine $runtime_conf
-EOF
-
-    needs_restart=0
-
-    if [ ! -f "$runtime_conf" ] || ! ${pkgs.diffutils}/bin/cmp -s "$tmp_conf" "$runtime_conf"; then
-      ${pkgs.coreutils}/bin/mv "$tmp_conf" "$runtime_conf"
-      needs_restart=1
-    fi
-
-    if [ ! -f "$override_file" ] || ! ${pkgs.diffutils}/bin/cmp -s "$tmp_override" "$override_file"; then
-      ${pkgs.coreutils}/bin/mv "$tmp_override" "$override_file"
-      needs_restart=1
-    fi
-
-    current_exec="$(${pkgs.systemd}/bin/systemctl --user show sunshine -p ExecStart --value 2>/dev/null || true)"
-    if ! printf '%s' "$current_exec" | ${pkgs.gnugrep}/bin/grep -F "$runtime_conf" >/dev/null 2>&1; then
-      needs_restart=1
-    fi
-
+    # output_name=0 is set declaratively in services.sunshine-streaming.extraSettings,
+    # so there is no per-run config rewrite: the previous runtime-conf/override.conf
+    # machinery generated a byte-identical shadow copy for no effect. This is now a
+    # pure health gate — ensure the service is up and did not fail on a stale monitor.
     if ! ${pkgs.systemd}/bin/systemctl --user is-active --quiet sunshine; then
-      needs_restart=1
-    fi
-
-    if [ "$needs_restart" -eq 1 ]; then
       log "restarting Sunshine for $primary_output"
-      ${pkgs.systemd}/bin/systemctl --user daemon-reload
       ${pkgs.systemd}/bin/systemctl --user restart sunshine
       ${pkgs.coreutils}/bin/sleep 2
     fi
@@ -227,8 +178,8 @@ in
       });
 
       # Chrome 146 beta/dev channel (for testing features behind newer flags)
-      google-chrome-beta = prev.callPackage ../pkgs/google-chrome-beta.nix { };
-      google-chrome-unstable = prev.callPackage ../pkgs/google-chrome-unstable.nix { };
+      google-chrome-beta = prev.callPackage ../packages/google-chrome-beta.nix { };
+      google-chrome-unstable = prev.callPackage ../packages/google-chrome-unstable.nix { };
     })
     # Disable flaky tests for i3ipc Python package
     # The test_scratchpad test fails with ConnectionResetError in sandboxed builds
@@ -421,38 +372,12 @@ in
   # Feature 117: i3 Project Daemon now runs as home-manager user service
   # Daemon lifecycle managed by graphical-session.target (see home-vpittamp.nix)
 
-  # Feature 129: Grafana Alloy - Unified Telemetry Collector
-  # - OTLP receiver on 4318
-  # - System metrics via node exporter → Mimir
-  # - Journald logs → Loki
-  # - All telemetry exported to K8s LGTM stack via cnoe.localtest.me:8443
-  services.grafana-alloy = {
-    enable = true;
-    # Endpoints default to *.cnoe.localtest.me:8443 (local K8s cluster)
-    enableNodeExporter = true;
-    enableJournald = true;
-    journaldUnits = [
-      "grafana-alloy.service"
-      "i3pm-daemon.service"
-    ];
-
-    # MLflow trace export: route per-CLI traces to the hub MLflow tracking
-    # server. Experiment IDs are bootstrapped by the stacks Job
-    # Job-mlflow-llm-cli-experiment-bootstrap.yaml; after it runs once,
-    # capture the IDs and paste them below:
-    #   kubectl -n observability get cm mlflow-llm-cli-experiments -o yaml
-    mlflow = {
-      enable = true;
-      endpoint = "https://mlflow-hub.tail286401.ts.net";
-      experiments = {
-        claudeCode = "9";
-        codex      = "10";
-        idpbuilder = "36";
-      };
-      batchTimeout = "10s";
-      batchSize = 100;
-    };
-  };
+  # Feature 129: Grafana Alloy — forwards OTLP telemetry to the hub K8s
+  # otel-collector over Tailscale. node-exporter/journald stay off (mimir/loki
+  # endpoints unset); the hub otel-collector is the canonical sink. The
+  # per-CLI MLflow trace routing was retired with the OTEL interceptor —
+  # AI-session state is now tracked natively via herdr.
+  services.grafana-alloy.enable = true;
 
   # Display manager - greetd for Wayland/Sway login
   services.greetd = {
@@ -707,7 +632,6 @@ in
   # Firefox with 1Password and PWA support
   programs.firefox-1password = {
     enable = true;
-    enablePWA = true;
   };
 
   # Cachix Deploy Agent - Auto-deploy on git push
@@ -809,8 +733,6 @@ in
     # Voxtype - Push-to-talk speech-to-text (Vulkan, works in tmux/CLI)
     (callPackage ../packages/voxtype.nix { })
 
-    # Firefox PWA support
-    firefoxpwa
     imagemagick
     librsvg
 
@@ -893,10 +815,10 @@ in
   # Firewall configuration
   networking.firewall = {
     enable = true;
-    allowedTCPPorts = [ 22 5900 5901 ];  # SSH, VNC DP-1, VNC HDMI-A-1
+    allowedTCPPorts = [ 22 ];  # SSH (VNC 5900/5901 dropped with the retired wayvnc stack)
     # Phase 4: OTEL remote-session sink (port 4320) retired — cross-host
     # sessions now flow through the K8s session-aggregator instead.
-    interfaces."tailscale0".allowedTCPPorts = lib.mkAfter [ 21116 21118 11434 ];  # RustDesk direct IP, Ollama (services.ollama)
+    interfaces."tailscale0".allowedTCPPorts = lib.mkAfter [ 21116 21118 ];  # RustDesk direct IP (Ollama 11434 dropped: services.ollama disabled)
     interfaces."tailscale0".allowedUDPPorts = lib.mkAfter [ 21116 21119 ];  # RustDesk direct access transport
     extraInputRules = ''
       iifname "tailscale0" tcp dport { 21116, 21118 } accept comment "RustDesk over Tailscale"

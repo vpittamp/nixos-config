@@ -38,14 +38,9 @@ in
     ../terminal/sesh.nix
     ../terminal/herdr.nix
     ../terminal/ghostty.nix    # Ghostty terminal (default)
-    # ../terminal/alacritty.nix  # Alacritty terminal - DISABLED: Using Ghostty as default, uncomment to re-enable if needed
-    ../terminal/xresources.nix # XTerm styling (for fzf-launcher)
 
     # Desktop configurations
-    ../desktop/dunst.nix       # Notification daemon for i3
     # Event-driven daemon now managed by system service (Feature 037) - see configurations/thinkpad.nix
-    ../tools/i3-project-monitor.nix  # Terminal monitoring tool for i3 project system (Feature 017)
-    ../tools/i3-project-test.nix     # Test framework for i3 project system (Feature 018)
     ../tools/window-env.nix          # Helper to query window PIDs and environment variables
 
     # Editor configurations
@@ -76,9 +71,7 @@ in
     ../tools/pwa-helpers.nix  # PWA validation and helper commands (manual installation via Firefox GUI)
     ../tools/pwa-launcher.nix  # Dynamic PWA launcher with cross-machine compatibility
     ../tools/pwa-url-router.nix  # Feature 113: Route external URLs to PWAs by domain
-    # ../tools/web-apps-declarative.nix  # Chromium-based web app launcher - DISABLED (using Firefox PWAs instead)
     ../tools/clipcat.nix  # Clipboard history manager with X11 support (Feature 007)
-    ../tools/screenshot-ocr.nix  # Screenshot (Spectacle) and OCR (gImageReader) tools
     ../tools/lazygit.nix  # Terminal UI for Git and Docker
     ../tools/lazyworktree.nix  # Terminal UI for git worktree management
     ../tools/lazydocker.nix  # Lazydocker config with Gitea push commands
@@ -92,7 +85,6 @@ in
     ../tools/kubernetes-apps.nix
     ../tools/remote-kubeconfig.nix
     ../tools/fleet-kubeconfigs.nix  # token-free tailnet kubectl access to fleet clusters
-    ../tools/konsole-profiles.nix
     ../tools/walker-commands.nix  # Dynamic command management for Walker (Feature 050)
     ../tools/voxtype.nix  # Push-to-talk speech-to-text config (Sway handles keybinding)
 
@@ -104,9 +96,7 @@ in
     ../ai-assistants/browser-mcp-lifecycle.nix
     ../ai-assistants/copilot-cli.nix
     ../ai-assistants/antigravity-cli.nix
-    ../ai-assistants/holmesgpt.nix
     ../ai-assistants/nix-ai-help.nix
-    ../ai-assistants/opencode.nix
     ../ai-assistants/openshell.nix
 
     # External modules
@@ -119,9 +109,8 @@ in
   home.packages =
     let
       userPackages = import ../../user/packages.nix { inherit pkgs lib inputs; };
-      packageConfig = import ../../shared/package-lists.nix { inherit pkgs lib inputs; };
     in
-    packageConfig.getProfile.user ++ [ pkgs.papirus-icon-theme ];
+    userPackages.all ++ [ pkgs.papirus-icon-theme ];
 
   modules.tools.yazi.enable = true;
   modules.tools.fzf-file-search.enable = true;  # Floating fzf file search

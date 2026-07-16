@@ -19,11 +19,7 @@ in
     # Desktop Environment: Sway (Wayland)
     ./desktop/python-environment.nix
     ./desktop/sway.nix
-    ./desktop/unified-bar-theme.nix
     ./desktop/quickshell-runtime-shell.nix
-    ./desktop/quickshell-worktree-app.nix
-    ./desktop/swaync.nix
-    ./desktop/sway-config-manager.nix
 
     # Project management (works with Sway via IPC)
     # Feature 117: i3-project-daemon now runs as user service
@@ -162,12 +158,6 @@ EOF
 
   programs.disk-guardrails.enable = true;
 
-  # Sway Dynamic Configuration Management
-  programs.sway-config-manager = {
-    enable = true;
-    enableFileWatcher = true;
-    debounceMs = 500;
-  };
 
   # Declarative PWA Installation
 
@@ -189,8 +179,6 @@ EOF
     bindsym --inhibited Mod4+Escape [app_id="com.moonlight_stream.Moonlight"] fullscreen disable
     bindsym --inhibited Mod4+Shift+Escape [app_id="com.moonlight_stream.Moonlight"] kill
   '';
-
-  programs.quickshell-worktree-app.enable = true;
 
   # sway-easyfocus - Keyboard-driven window hints
   programs.sway-easyfocus = {

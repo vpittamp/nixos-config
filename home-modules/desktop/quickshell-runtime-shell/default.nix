@@ -2817,7 +2817,10 @@ in
 
     notifications = {
       backend = lib.mkOption {
-        type = lib.types.enum [ "native" "swaync" ];
+        # SwayNC was retired 2026-07: QuickShell owns org.freedesktop.Notifications
+        # natively (Quickshell.Services.Notifications in shell.qml). Kept as a
+        # single-value enum so the nativeQuickshellNotifications guards still resolve.
+        type = lib.types.enum [ "native" ];
         default = "native";
         description = "Notification backend owned by the runtime shell.";
       };

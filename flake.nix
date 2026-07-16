@@ -1,14 +1,10 @@
 {
-  description = "Unified NixOS Configuration - Hetzner, M1, and Containers";
+  description = "NixOS configuration for the thinkpad and ryzen Sway workstations";
 
   inputs = {
     # Core
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     nixpkgs-bleeding.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-
-    # Pinned nixpkgs for sunshine — v2025.924.154138 crashes as user service
-    # https://github.com/NixOS/nixpkgs/issues/475181
-    nixpkgs-sunshine.url = "github:NixOS/nixpkgs/b5ad8986fecea232ef2e1ee9eecce5b972dc4114";
 
     # Fresh nixpkgs purely to pin the jesseduffield "lazy" TUI family
     # (lazygit, lazydocker) at latest without bumping the main channel.
@@ -62,17 +58,6 @@
       url = "github:k3d3/claude-desktop-linux-flake";
     };
 
-    disko = {
-      url = "github:nix-community/disko";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    # VM image generation
-    nixos-generators = {
-      url = "github:nix-community/nixos-generators";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     # Walker application launcher
     elephant = {
       url = "github:abenz1267/elephant";
@@ -123,11 +108,9 @@
 
   outputs = inputs @ { self, flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
-      # Define supported systems
+      # Both maintained machines are x86_64-linux.
       systems = [
         "x86_64-linux"
-        "aarch64-linux"
-        "aarch64-darwin"
       ];
 
       # Import flake modules
@@ -143,11 +126,6 @@
         nixosConfigurations = import ./nixos {
           inherit inputs self;
           lib = inputs.nixpkgs.lib;
-        };
-
-        # Standalone Home Manager configurations (for non-NixOS systems)
-        homeConfigurations = import ./home {
-          inherit inputs self;
         };
       };
     };

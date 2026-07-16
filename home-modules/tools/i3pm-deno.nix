@@ -54,10 +54,6 @@ exec ${pkgs.deno}/bin/deno run \\
   $out/share/i3pm/src/main.ts "\$@"
 EOF
       chmod +x $out/bin/i3pm
-
-      # Feature 048: Monitor detection for multi-display VNC setup
-      cp ${./i3pm/i3pm-monitors} $out/bin/i3pm-monitors
-      chmod +x $out/bin/i3pm-monitors
     '';
 
     meta = with lib; {
