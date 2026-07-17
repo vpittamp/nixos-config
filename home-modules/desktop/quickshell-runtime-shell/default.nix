@@ -13,6 +13,15 @@ let
     && osConfig.services ? "power-profiles-daemon"
     && osConfig.services."power-profiles-daemon".enable;
   supportsLidPolicyControls = hostName == "thinkpad";
+  # NVIDIA's Qt6/Wayland EGL buffer import is unstable, so those hosts fall back
+  # to the software Qt Quick backend. Intel/AMD hosts must NOT — software
+  # rendering of the animated shell there produces glitchy/stuttering UI.
+  # Gate on the actual NVIDIA X/Wayland driver being selected. Note
+  # hardware.nvidia.modesetting.enable defaults to true everywhere and is NOT a
+  # reliable signal; services.xserver.videoDrivers is ["nvidia"] only on hosts
+  # that actually drive NVIDIA (ryzen), vs ["modesetting"] on Intel (thinkpad).
+  usesNvidia = osConfig != null
+    && lib.elem "nvidia" (lib.attrByPath [ "services" "xserver" "videoDrivers" ] [ ] osConfig);
   lidPolicyFragmentPath = "/etc/nixos/configurations/thinkpad-lid-policy.nix";
   clipboardHistoryFile = "${config.home.homeDirectory}/.cache/i3pm/clipboard-history.json";
   quickshellPackage =
@@ -2964,8 +2973,11 @@ in
           "QT_QUICK_CONTROLS_STYLE=Fusion"
           "QT_QPA_PLATFORM=wayland"
           "QS_DISABLE_FILE_WATCHER=1"
-          # NVIDIA/Qt6 Wayland buffer import is unstable on ryzen; software
-          # Quick rendering keeps the shell alive until the EGL path is fixed.
+        ] ++ lib.optionals usesNvidia [
+          # NVIDIA/Qt6 Wayland buffer import is unstable; software Quick
+          # rendering keeps the shell alive until the EGL path is fixed. Gated
+          # to NVIDIA hosts — Intel/AMD render in hardware (software there is
+          # the source of glitchy/stuttering shell UI, e.g. on thinkpad).
           "QT_QUICK_BACKEND=software"
         ];
       };
