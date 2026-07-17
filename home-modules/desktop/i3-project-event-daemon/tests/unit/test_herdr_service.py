@@ -1578,6 +1578,81 @@ async def test_herdr_service_local_focus_falls_back_to_cli_when_socket_unavailab
 
 
 @pytest.mark.asyncio
+async def test_herdr_service_pane_focus_falls_back_to_tab_when_agent_not_found(monkeypatch):
+    """A pane with no live agent binding must still switch via tab.focus.
+
+    ``agent.focus`` reports ``agent_not_found`` for panes Herdr no longer binds
+    to an agent (idle/exited). Without the tab fallback the click is silently
+    swallowed, which is the "clicking doesn't switch reliably" bug.
+    """
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    socket_calls = []
+
+    async def fake_run_socket_json(*, method, params=None, timeout=0.5):
+        socket_calls.append((method, params))
+        if method == "agent.focus":
+            return {"success": False, "socket": True, "error": "agent_not_found"}
+        if method == "pane.get":
+            return {
+                "success": True,
+                "socket": True,
+                "result": {"pane": {"pane_id": "pane-a", "tab_id": "tab-a"}},
+            }
+        if method == "tab.focus":
+            return {"success": True, "socket": True, "result": {"ok": True}}
+        raise AssertionError(f"unexpected method {method}")
+
+    monkeypatch.setattr(service, "run_socket_json", fake_run_socket_json)
+    service.store_snapshot({"sessions": [{"pane_id": "stale"}]}, now=100.0)
+
+    result = await service.pane_focus({"pane_id": "pane-a"})
+
+    assert socket_calls == [
+        ("agent.focus", {"target": "pane-a"}),
+        ("pane.get", {"pane_id": "pane-a"}),
+        ("tab.focus", {"tab_id": "tab-a"}),
+    ]
+    assert result["success"] is True
+    assert result["focus_via"] == "tab"
+    # Success via the fallback still bumps the generation and clears the cache.
+    assert service.local_herdr_generation == 1
+    assert service.snapshot_cache == {}
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_pane_focus_keeps_agent_failure_when_tab_unresolved(monkeypatch):
+    """When the tab_id can't be resolved, keep the original agent.focus failure."""
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    socket_calls = []
+
+    async def fake_run_socket_json(*, method, params=None, timeout=0.5):
+        socket_calls.append((method, params))
+        if method == "agent.focus":
+            return {"success": False, "socket": True, "error": "agent_not_found"}
+        if method == "pane.get":
+            return {"success": True, "socket": True, "result": {"pane": {}}}
+        raise AssertionError(f"unexpected method {method}")
+
+    monkeypatch.setattr(service, "run_socket_json", fake_run_socket_json)
+
+    result = await service.pane_focus({"pane_id": "pane-a"})
+
+    assert socket_calls == [
+        ("agent.focus", {"target": "pane-a"}),
+        ("pane.get", {"pane_id": "pane-a"}),
+    ]
+    assert result["success"] is False
+    assert result["focus_via"] == "agent"
+    assert service.local_herdr_generation == 0
+
+
+@pytest.mark.asyncio
 async def test_herdr_service_remote_pane_focus_owns_transport_cache_and_launch(monkeypatch):
     notifications = []
     service = HerdrService(

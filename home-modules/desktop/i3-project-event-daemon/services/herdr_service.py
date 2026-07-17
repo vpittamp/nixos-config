@@ -1733,13 +1733,53 @@ class HerdrService:
         ))
         return self.store_snapshot(snapshot, now=now)
 
+    async def _resolve_pane_tab_id(self, pane_id: str) -> str:
+        """Resolve a pane's tab_id via the Herdr socket (CLI fallback)."""
+        info = await self.run_socket_json(
+            method="pane.get",
+            params={"pane_id": pane_id},
+        )
+        if bool(info.get("transport_error", False)):
+            info = await self.run_json(["pane", "get", pane_id])
+        result = info.get("result") if isinstance(info, dict) else None
+        pane = result.get("pane") if isinstance(result, dict) else None
+        if not isinstance(pane, dict):
+            return ""
+        return str(pane.get("tab_id") or "").strip()
+
+    async def _focus_pane_via_tab(self, pane_id: str) -> Optional[Dict[str, Any]]:
+        """Focus a pane's tab as an agent-independent fallback for pane_focus.
+
+        ``agent.focus`` only resolves panes that Herdr currently binds to an
+        agent, so a pane whose agent has gone ``unknown`` (exited/restarted)
+        reports ``agent_not_found`` and the click is silently swallowed.
+        ``tab.focus`` switches to the pane's tab regardless of agent state.
+        Returns ``None`` when the tab_id can't be resolved so the caller keeps
+        the original ``agent.focus`` failure.
+        """
+        tab_id = await self._resolve_pane_tab_id(pane_id)
+        if not tab_id:
+            return None
+        result = await self.run_socket_json(
+            method="tab.focus",
+            params={"tab_id": tab_id},
+        )
+        if bool(result.get("transport_error", False)):
+            result = await self.run_json(["tab", "focus", tab_id])
+        return result
+
     async def pane_focus(
         self,
         params: Dict[str, Any],
         *,
         launch_open: Optional[Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]] = None,
     ) -> Dict[str, Any]:
-        """Focus a local Herdr pane, raise its Ghostty window, invalidate state."""
+        """Focus a local Herdr pane, raise its Ghostty window, invalidate state.
+
+        Prefers ``agent.focus`` for precise pane targeting, but falls back to
+        ``tab.focus`` when the pane has no live agent binding so a row whose
+        agent has gone idle/unknown still reliably switches.
+        """
         pane_id = str(params.get("pane_id") or "").strip()
         if not pane_id:
             raise ValueError("pane_id is required")
@@ -1758,6 +1798,12 @@ class HerdrService:
         )
         if bool(result.get("transport_error", False)):
             result = await self.run_json(["agent", "focus", pane_id])
+        focus_via = "agent"
+        if not bool(result.get("success", False)):
+            tab_result = await self._focus_pane_via_tab(pane_id)
+            if tab_result is not None:
+                focus_via = "tab"
+                result = tab_result
         if bool(result.get("success", False)):
             self.bump_local_generation()
             self.invalidate_snapshot_cache()
@@ -1765,6 +1811,7 @@ class HerdrService:
         return {
             "success": bool(result.get("success", False)),
             "pane_id": pane_id,
+            "focus_via": focus_via,
             "herdr": result,
             "launch": launch_result,
         }
