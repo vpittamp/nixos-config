@@ -5214,6 +5214,9 @@ function normalizeLauncherMode(mode) {
         if (tool === "gemini" || tool === "gemini-cli" || tool === "antigravity" || tool === "antigravity-cli" || tool === "agy") {
             return "file://" + shellConfig.geminiIcon;
         }
+        if (tool === "kimi" || tool === "kimi-code") {
+            return "file://" + shellConfig.kimiIcon;
+        }
         return "file://" + shellConfig.aiFallbackIcon;
     }
 
@@ -5806,7 +5809,7 @@ function normalizeLauncherMode(mode) {
         if (tool === "amp") {
             return "Amp";
         }
-        if (tool === "kimi") {
+        if (tool === "kimi" || tool === "kimi-code") {
             return "Kimi";
         }
         if (tool === "kiro") {

@@ -84,6 +84,14 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Hunk review-first terminal diff viewer for agent-authored changesets.
+    # Pinned to the release tag: upstream's main branch lags releases (main is
+    # 0.17.0 while v0.17.1 is released), so tracking main misses versions.
+    hunk = {
+      url = "github:modem-dev/hunk/v0.17.1";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # QuickShell runtime shell. Pin upstream for reliability fixes ahead of the
     # nixpkgs channel package used by the persistent desktop panel.
     quickshell = {

@@ -27,6 +27,9 @@ in
     if [ -d "$HOME/.config/opencode" ]; then
       run ${herdrPackage}/bin/herdr integration install opencode || true
     fi
+    if [ -d "$HOME/.kimi-code" ]; then
+      run ${herdrPackage}/bin/herdr integration install kimi || true
+    fi
   '';
 
   xdg.configFile."herdr/config.toml" = {

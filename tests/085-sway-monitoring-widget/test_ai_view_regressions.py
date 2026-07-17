@@ -1313,8 +1313,11 @@ def test_optional_herdr_integrations_are_guarded_by_existing_app_config_dirs():
     assert 'herdr integration install copilot' in text
     assert 'if [ -d "$HOME/.config/opencode" ]; then' in text
     assert 'herdr integration install opencode' in text
+    assert 'if [ -d "$HOME/.kimi-code" ]; then' in text
+    assert 'herdr integration install kimi' in text
     assert 'mkdir -p "$HOME/.copilot"' not in text
     assert 'mkdir -p "$HOME/.config/opencode"' not in text
+    assert 'mkdir -p "$HOME/.kimi-code"' not in text
 
 
 def test_antigravity_short_tool_id_uses_gemini_visual_family():
@@ -1325,6 +1328,15 @@ def test_antigravity_short_tool_id_uses_gemini_visual_family():
     assert text.count(agy_family) >= 4
     assert agy_family + ") {\n            return \"file://\" + shellConfig.geminiIcon;" in text
     assert 'readonly property string geminiIcon: "${../../../assets/icons/gemini.png}"' in config_text
+
+
+def test_kimi_tool_id_uses_kimi_visual_family():
+    """Kimi Code sessions should render with the Kimi icon instead of the AI fallback."""
+    text = SHELL_QML.read_text()
+    config_text = QUICKSHELL_DEFAULT_NIX.read_text()
+    assert 'tool === "kimi" || tool === "kimi-code") {\n            return "file://" + shellConfig.kimiIcon;' in text
+    assert 'readonly property string kimiIcon: "${../../../assets/icons/kimi.svg}"' in config_text
+    assert (REPO_ROOT / "assets" / "icons" / "kimi.svg").exists()
 
 
 def test_legacy_agent_action_toast_path_is_removed():

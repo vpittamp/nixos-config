@@ -121,6 +121,7 @@ QtObject {
   readonly property string codexIcon: "${../../../assets/icons/codex.svg}"
   readonly property string claudeIcon: "${../../../assets/icons/claude.svg}"
   readonly property string geminiIcon: "${../../../assets/icons/gemini.png}"
+  readonly property string kimiIcon: "${../../../assets/icons/kimi.svg}"
   readonly property string aiFallbackIcon: "${../../../assets/icons/ai-chatbot.svg}"
   readonly property string tailscaleIcon: "${../../../assets/icons/tailscale.svg}"
   readonly property bool supportsPowerProfiles: ${if supportsPowerProfiles then "true" else "false"}

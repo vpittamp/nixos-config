@@ -19,6 +19,10 @@ let
   # GitHub Copilot - agent-native desktop app (github/app AppImage; x86_64 + aarch64)
   github-copilot = pkgs.callPackage ../packages/github-copilot.nix { };
 
+  # Kimi Code CLI (`kimi`) - MoonshotAI coding agent, packaged from the
+  # self-contained npm bundle (@moonshot-ai/kimi-code). See packages/kimi-code.nix.
+  kimi-code = pkgs.callPackage ../packages/kimi-code.nix { };
+
   # talosctl pinned to v1.13.x — nixpkgs lags at 1.12.x (as of Jan 2026) and
   # the ryzen Talos OS + Kubernetes 1.36 upgrade flow needs v1.13+ (pruning
   # support + 1.36 awareness). Remove this override once nixpkgs catches up.
@@ -44,6 +48,10 @@ let
       ../patches/herdr-codex-raw-agent-detection.patch
     ];
   });
+
+  # Hunk review-first terminal diff viewer for agent-authored changesets,
+  # sourced from its upstream flake (built from source via bun2nix).
+  hunk = inputs.hunk.packages.${pkgs.stdenv.hostPlatform.system}.default;
 
   # Text editors and IDEs (from nixpkgs)
   editors = with pkgs; [
@@ -84,8 +92,11 @@ let
   # AI and LLM tools
   aiTools = [
     herdr
+    hunk # Hunk review-first terminal diff viewer (upstream flake)
     github-copilot # GitHub Copilot agent-native desktop app (custom package)
+    kimi-code # Kimi Code CLI (`kimi`) — MoonshotAI coding agent (custom package)
   ] ++ (with pkgs; [
+    agent-browser # Vercel Labs browser automation CLI for AI agents (Rust, CDP)
     goose-cli # Goose AI Agent CLI (from nixpkgs)
     openai # OpenAI Python CLI
     playwright-test # Playwright CLI (codegen, test, inspector)
