@@ -538,6 +538,29 @@ ShellRoot {
         onTriggered: root.voxtypeStopRequested = false
     }
 
+    // Owns expiry of localFocusIntent. The intent getters treat >5s-old intents
+    // as absent but never write the property (side-effecting getters inside
+    // bindings caused binding loops → shimmering chips/rows and rapid cursor
+    // state churn). This timer performs the actual clear in event context.
+    Timer {
+        id: localFocusIntentExpiryTimer
+        interval: 5200
+        repeat: false
+        onTriggered: {
+            if (root.localFocusIntent) {
+                root.localFocusIntent = null;
+            }
+        }
+    }
+
+    onLocalFocusIntentChanged: {
+        if (localFocusIntent) {
+            localFocusIntentExpiryTimer.restart();
+        } else {
+            localFocusIntentExpiryTimer.stop();
+        }
+    }
+
     onLauncherAppFilterChanged: {
         if (launcherVisible && launcherMode === "apps") {
             launcherQueryDebounce.restart();
@@ -923,7 +946,10 @@ ShellRoot {
         if (localFocusIntent && stringOrEmpty(localFocusIntent.state) === "pending") {
             const createdAt = Number(localFocusIntent.created_at || 0);
             if (createdAt > 0 && (Date.now() / 1000) - createdAt > 5) {
-                localFocusIntent = null;
+                // Expired: treat as absent but do NOT clear here — this getter
+                // runs inside bindings, and writing localFocusIntent mid-eval
+                // creates binding loops (chips/rows restyle in a feedback loop,
+                // hover/cursor churn). localFocusIntentExpiryTimer owns cleanup.
                 return null;
             }
             return localFocusIntent;
@@ -942,7 +968,8 @@ ShellRoot {
         }
         const createdAt = Number(localFocusIntent.created_at || 0);
         if (createdAt > 0 && (Date.now() / 1000) - createdAt > 5) {
-            localFocusIntent = null;
+            // Expired: pure read only — see pendingFocusIntent(); the expiry
+            // timer clears the property outside binding evaluation.
             return null;
         }
         return stringOrEmpty(localFocusIntent.kind) === stringOrEmpty(kind) ? localFocusIntent : null;
