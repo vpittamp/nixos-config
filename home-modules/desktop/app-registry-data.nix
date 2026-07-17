@@ -439,6 +439,26 @@ let
       description = "Terminal diff navigator with GitHub-style file tree";
     })
 
+    # WS38: GitHub Copilot desktop (github/app) — agent-native GUI.
+    # Tauri/WebKitGTK AppImage; forces GDK_BACKEND=x11 so under Sway it renders
+    # via XWayland with X11 WM class "Github" (app_id is null for XWayland).
+    (mkApp {
+      name = "github-copilot";
+      display_name = "GitHub Copilot";
+      command = "github-copilot";
+      parameters = "";
+      scope = "global";
+      expected_class = "Github";
+      preferred_workspace = 38;
+      preferred_monitor_role = "primary";
+      icon = iconPath "github-copilot.png";
+      nix_package = "pkgs.github-copilot";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      aliases = [ "copilot" "github" "ghc" ];
+      description = "GitHub Copilot agent-native desktop app for running and landing work across GitHub repositories";
+    })
+
     # WS13: Docker Tools (lazydocker)
     (mkApp {
       name = "lazydocker";

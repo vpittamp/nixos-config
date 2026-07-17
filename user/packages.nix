@@ -16,6 +16,9 @@ let
   # Goose Desktop - AI Agent Desktop Application (x86_64 only)
   goose-desktop = pkgs.callPackage ../packages/goose-desktop.nix { };
 
+  # GitHub Copilot - agent-native desktop app (github/app AppImage; x86_64 + aarch64)
+  github-copilot = pkgs.callPackage ../packages/github-copilot.nix { };
+
   # talosctl pinned to v1.13.x — nixpkgs lags at 1.12.x (as of Jan 2026) and
   # the ryzen Talos OS + Kubernetes 1.36 upgrade flow needs v1.13+ (pruning
   # support + 1.36 awareness). Remove this override once nixpkgs catches up.
@@ -81,6 +84,7 @@ let
   # AI and LLM tools
   aiTools = [
     herdr
+    github-copilot # GitHub Copilot agent-native desktop app (custom package)
   ] ++ (with pkgs; [
     goose-cli # Goose AI Agent CLI (from nixpkgs)
     openai # OpenAI Python CLI
