@@ -21,16 +21,27 @@ current_set() {
     | jq -r '[.[] | select(.active) | .name] | sort | join(",")'
 }
 
-# True when two active outputs' horizontal ranges overlap — i.e. the displays
-# are mirrored/stacked instead of tiled side-by-side. This is the signature of
+# True when two active outputs' RECTANGLES overlap — i.e. the displays are
+# genuinely mirrored/stacked at the same coordinates. This is the signature of
 # the "reverted to duplicate" state: a sway reload (or anything that re-runs the
-# static output config) drops every output to position 0,0. Edges that merely
-# touch (extended layout) do NOT count as overlap.
+# static output config) drops every output to position 0,0.
+#
+# The overlap test must be 2D. lid-clamshell's extended layout deliberately
+# places the Samsung directly ABOVE the built-in panel (same x-range, disjoint
+# y-ranges); a horizontal-only check reads that intended column as "mirrored"
+# and re-applies the layout on every output event — an infinite re-apply loop
+# (constant output reconfiguration: glitchy UI, cursor state churn, and any
+# manual `swaymsg output` change instantly reverted). Edges that merely touch
+# do NOT count as overlap.
 mirrored() {
   swaymsg -t get_outputs 2>/dev/null | jq -e '
-    [ .[] | select(.active) | {a: .rect.x, b: (.rect.x + .rect.width)} ]
-    | sort_by(.a) as $r
-    | [ range(0; ($r | length) - 1) as $i | ($r[$i].b > $r[$i+1].a) ]
+    [ .[] | select(.active)
+      | {x: .rect.x, y: .rect.y,
+         X: (.rect.x + .rect.width), Y: (.rect.y + .rect.height)} ] as $r
+    | [ range(0; $r | length) as $i
+        | range($i + 1; $r | length) as $j
+        | ($r[$i].x < $r[$j].X and $r[$j].x < $r[$i].X
+           and $r[$i].y < $r[$j].Y and $r[$j].y < $r[$i].Y) ]
     | any
   ' >/dev/null 2>&1
 }

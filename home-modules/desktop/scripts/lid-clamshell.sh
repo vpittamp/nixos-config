@@ -49,12 +49,16 @@ VERBATIM_RAISE="120"
 # Verbatim portable monitor: native mode, comfortable scale.
 VERBATIM_SCALE="1.25"
 
-# Samsung 55" 4K TV. The link only negotiates 4K at 30Hz; scale 2.5 gives a
-# heavily zoomed-in 1536x864 effective desktop (large UI for the big panel).
-SAMSUNG_MODE="3840x2160@30Hz"
-SAMSUNG_W="3840"
-SAMSUNG_H="2160"
-SAMSUNG_SCALE="2.5"
+# Samsung 55" 4K TV. The link only negotiates 4K at 30Hz, which makes every
+# animation/cursor movement judder; 1440p runs at 60Hz on the same link, so
+# prefer smoothness over the extra pixels. Scale 1.6 divides both dimensions
+# exactly (1600x900 logical — no fractional rounding drift between this
+# script's integer math and sway's own logical size) and keeps the UI about
+# the same physical size as the old 4K/2.5 setup.
+SAMSUNG_MODE="2560x1440@59.951Hz"
+SAMSUNG_W="2560"
+SAMSUNG_H="1440"
+SAMSUNG_SCALE="1.6"
 
 # Names of currently-connected external physical outputs (not the built-in
 # panel, not a virtual VNC HEADLESS output).
