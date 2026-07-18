@@ -3,8 +3,6 @@
 let
   repoRoot = ../../.;
 
-  # MLflow tracking server (Tailscale ingress fronting mlflow.mlflow:5000 in K8s hub).
-  mlflowTrackingUri = "https://mlflow-hub.tail286401.ts.net";
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
   nodeNpx = "${pkgs.nodejs}/bin/npx";
   workflowBuilderMcpProxy = pkgs.writeShellScript "workflow-builder-mcp-proxy-claude" ''
@@ -524,15 +522,7 @@ lib.mkIf enableClaudeCode {
     # MCP Servers configuration
     # Uses full Nix store paths to work in isolated environments (devenv, nix-shell)
     # Enable interactively via `/mcp` command or `@` menu when needed
-    mcpServers = {
-      mlflow = {
-        command = "${pkgs.nodejs}/bin/npx";
-        args = [ "-y" "@us-all/mlflow-mcp" ];
-        env = {
-          MLFLOW_TRACKING_URI = mlflowTrackingUri;
-        };
-      };
-    } // lib.optionalAttrs workflowBuilderMcp.enable {
+    mcpServers = lib.optionalAttrs workflowBuilderMcp.enable {
       workflow-builder = {
         command = "${workflowBuilderMcpProxy}";
         args = [];

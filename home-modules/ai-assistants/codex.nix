@@ -4,8 +4,6 @@ let
   repoRoot = ../../.;
   sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
 
-  # MLflow tracking server (Tailscale ingress fronting mlflow.mlflow:5000 in K8s hub).
-  mlflowTrackingUri = "https://mlflow-hub.tail286401.ts.net";
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
 
   sharedSkillsDir = repoRoot + "/shared-skills";
@@ -216,16 +214,6 @@ enabled = true
 startup_timeout_sec = 30
 tool_timeout_sec = 60
 url = "https://developers.openai.com/mcp"
-
-[mcp_servers.mlflow]
-args = ["-y", "@us-all/mlflow-mcp"]
-command = "${nodeNpx}"
-enabled = true
-startup_timeout_sec = 30
-tool_timeout_sec = 120
-
-[mcp_servers.mlflow.env]
-MLFLOW_TRACKING_URI = "${mlflowTrackingUri}"
 
 ${lib.optionalString workflowBuilderMcp.enable ''
 [mcp_servers.workflow-builder]

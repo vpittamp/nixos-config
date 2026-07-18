@@ -96,6 +96,7 @@ in
     ../ai-assistants/browser-mcp-lifecycle.nix
     ../ai-assistants/copilot-cli.nix
     ../ai-assistants/antigravity-cli.nix
+    ../ai-assistants/kimi-code.nix
     ../ai-assistants/nix-ai-help.nix
     ../ai-assistants/openshell.nix
 
