@@ -23,6 +23,9 @@
       gh-enhance = pkgs.callPackage ./gh-enhance.nix { };
       diffnav = pkgs.callPackage ./diffnav.nix { };
 
+      # Kimi WebBridge — browser control CLI/MCP bridge for Chrome
+      kimi-webbridge = pkgs.callPackage ./kimi-webbridge.nix { };
+
       # Cachix Deploy specification
       # Build with: nix build .#deploy
       # Used by GitHub Actions to trigger deployments to agents

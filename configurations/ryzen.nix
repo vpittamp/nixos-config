@@ -136,6 +136,9 @@ in
     # Chrome policy for Claude-in-Chrome extension (force-install in all Chrome profiles)
     ../modules/desktop/chrome-claude.nix
 
+    # Chrome policy for Kimi WebBridge extension (force-install in all Chrome profiles)
+    ../modules/desktop/chrome-kimi-webbridge.nix
+
     # Chrome managed bookmarks (one entry per PWA, generated from pwa-sites.nix)
     ../modules/desktop/chrome-bookmarks.nix
 

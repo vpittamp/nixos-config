@@ -94,6 +94,7 @@ in
     ../ai-assistants/claude-code-glm.nix
     ../ai-assistants/codex.nix
     ../ai-assistants/browser-mcp-lifecycle.nix
+    ../ai-assistants/kimi-webbridge.nix  # Kimi WebBridge: persistent local Chrome bridge (CLI one-shot control)
     ../ai-assistants/copilot-cli.nix
     ../ai-assistants/antigravity-cli.nix
     ../ai-assistants/kimi-code.nix

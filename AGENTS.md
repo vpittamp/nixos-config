@@ -156,6 +156,11 @@ Implications:
   - monitor profile load errors removed (name fallback)
   - implemented `AutoRestoreManager` in `layout/auto_restore.py`
   - daemon now initializes auto-restore manager instead of failing import
+- Added Kimi WebBridge for agent-driven control of the user's real Chrome:
+  - Chrome extension (ID `fldmhceldgbpfpkbgopacenieobmligc`) force-installed via managed policy (`modules/desktop/chrome-kimi-webbridge.nix`) into the aggregated ExtensionSettings policy file
+  - Nix-packaged `kimi-webbridge` daemon (`packages/kimi-webbridge.nix`), patched to bind the WebSocket bridge to 127.0.0.1 only (upstream binds 0.0.0.0)
+  - one persistent `kimi-webbridge.service` user service owns `ws://127.0.0.1:10086/ws`; agents drive the browser with `kimi-webbridge <action> '<json>'` one-shot CLI calls (no per-agent MCP registration — a second `mcp` process dies on EADDRINUSE)
+  - see `docs/KIMI_WEBBRIDGE.md`
 
 ## Current Behavior Validation
 
@@ -187,6 +192,10 @@ Validated in live Sway session after rebuild/restart:
 - Scratchpad checks:
   - `i3pm scratchpad status --json`
   - `i3pm scratchpad toggle --json`
+- Kimi WebBridge:
+  - `systemctl --user status kimi-webbridge.service`
+  - `journalctl --user -u kimi-webbridge.service -f`
+  - `kimi-webbridge list_tabs '{}'` (smoke test)
 
 ## Known Constraints
 
