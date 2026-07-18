@@ -272,22 +272,62 @@ def _load_discovered_worktree_cache(force_refresh: bool = False) -> Dict[str, An
 class DesktopIconIndex:
     """Index curated app/PWA/desktop icons for stable window lookups."""
 
+    # Paths whose mtime changing means the icon index is stale (registries rewritten
+    # by nixos-rebuild, or a .desktop added/removed in one of the desktop dirs).
+    _WATCHED_PATHS = [APP_REGISTRY_PATH, PWA_REGISTRY_PATH, *DESKTOP_DIRS]
+
+    # Minimum seconds between on-disk change checks. _resolve_window_icon_path is
+    # called once per window per snapshot, so throttle the stat() storm.
+    _CHANGE_CHECK_INTERVAL_SECONDS = 2.0
+
     def __init__(self) -> None:
         self._by_app_id: Dict[str, Dict[str, str]] = {}
         self._by_pwa_domain: Dict[str, Dict[str, str]] = {}
         self._by_desktop_id: Dict[str, Dict[str, str]] = {}
         self._by_startup_wm: Dict[str, Dict[str, str]] = {}
         self._icon_cache: Dict[str, str] = {}
+        self._source_mtimes: Dict[str, int] = {}
+        self._last_change_check: float = 0.0
         self.reload()
+
+    def _current_signature(self) -> Dict[str, int]:
+        """Snapshot the mtimes of every watched source path (0 if missing)."""
+        signature: Dict[str, int] = {}
+        for path in self._WATCHED_PATHS:
+            try:
+                signature[str(path)] = path.stat().st_mtime_ns
+            except OSError:
+                signature[str(path)] = 0
+        return signature
 
     def reload(self) -> None:
         self._by_app_id.clear()
         self._by_pwa_domain.clear()
         self._by_desktop_id.clear()
         self._by_startup_wm.clear()
+        # Icon store paths change hash on every rebuild; drop cached resolutions so a
+        # stale path can never win after the registries are regenerated.
+        self._icon_cache.clear()
         self._load_app_registry()
         self._load_pwa_registry()
         self._load_desktop_entries()
+        self._source_mtimes = self._current_signature()
+
+    def reload_if_changed(self) -> bool:
+        """Rebuild the index if any watched source changed on disk. Throttled.
+
+        Returns True if a reload happened. Lets a long-running daemon pick up new
+        PWAs/apps (and icon changes) after nixos-rebuild without a manual restart.
+        """
+        now = time.monotonic()
+        if now - self._last_change_check < self._CHANGE_CHECK_INTERVAL_SECONDS:
+            return False
+        self._last_change_check = now
+        if self._current_signature() == self._source_mtimes:
+            return False
+        logger.info("DesktopIconIndex: source registries changed on disk, reloading icon index")
+        self.reload()
+        return True
 
     def _store_app_payload(self, key: str, payload: Dict[str, str]) -> None:
         normalized = str(key).strip().lower()
@@ -3667,6 +3707,12 @@ class IPCServer:
         allow_fallback: bool = True,
     ) -> str:
         """Resolve a window icon using the same app/PWA/desktop sources as the workspace bar."""
+        # Pick up registry/desktop changes (e.g. a newly added PWA) without a daemon
+        # restart. Throttled internally so this is cheap on the per-window hot path.
+        try:
+            self.icon_resolver.reload_if_changed()
+        except Exception:
+            logger.debug("DesktopIconIndex.reload_if_changed failed", exc_info=True)
         try:
             icon_info = self.icon_resolver.lookup(
                 app_key=app_key,

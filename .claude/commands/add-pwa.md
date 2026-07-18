@@ -628,17 +628,47 @@ cat ~/.config/i3/pwa-registry.json | jq -r '.pwas[] | select(.ulid == "{ULID}") 
 cat ~/.config/i3/application-registry.json | jq -r --arg app "$APP_NAME" '.applications[] | select(.name == $app) | "✓ App registry: \(.name) [\(.display_name)]"' || echo "✗ Not in app registry"
 ```
 
-## Step 14: Test launch
+## Step 14: Verify the bottom-bar icon (auto-reload, no restart needed)
 
-Do not restart old launcher services or reload Sway unless there is a separate issue. The rebuild-generated desktop entry and registry are the intended integration path.
+The QuickShell bottom bar does not read desktop files directly — it shows `icon_path`
+from the i3pm daemon's dashboard snapshot. The daemon's `DesktopIconIndex` now
+**auto-reloads** when the registries change on disk: `_resolve_window_icon_path` calls
+`DesktopIconIndex.reload_if_changed()`, which watches the mtimes of
+`application-registry.json`, `pwa-registry.json`, and the desktop dirs (throttled to
+one check every ~2s). So after `nixos-rebuild switch` regenerates the registry, the
+running daemon rebuilds its icon index on the next window icon lookup — **no
+`systemctl restart` and no quickshell restart required.**
+
+Just confirm the daemon resolves the icon for the new PWA's window class. Chrome PWAs
+get app_key `chrome-<domain>__-default` (domain from the PWA URL, lowercased):
+
+```bash
+sleep 3   # let the ~2s reload throttle elapse after the rebuild
+i3pm dashboard snapshot 2>/dev/null \
+  | jq -r --arg dom "{domain}" '[.. | objects | select(.app_key? != null and (.app_key | test($dom; "i")))] | unique_by(.app_key) | .[] | "\(.app_key) => icon_path=[\(.icon_path)]"'
+# A non-empty icon_path means the bottom bar will show the icon.
+```
+
+If (and only if) the icon_path is still empty after the rebuild — e.g. the daemon
+predates the auto-reload code, or the index failed to rebuild — force a refresh:
+
+```bash
+systemctl --user restart i3-project-daemon.service   # fallback only
+```
+
+Do not restart other launcher services or reload Sway unless there is a separate issue.
+The rebuild-generated desktop entry and registry are the intended integration path.
+
+## Step 15: Test launch
 
 ```bash
 # Test via display-name helper
 launch-pwa-by-name "{PWA Name}" 2>&1 &
 sleep 3
 
-# Verify window appeared
-swaymsg -t get_tree | grep -q "WebApp-{ULID}" && echo "✓ PWA launched successfully!" || echo "✗ PWA did not launch"
+# Verify window appeared. Chrome PWAs use a "chrome-<domain>" app_id (NOT "WebApp-<ULID>",
+# which is the legacy Firefox-PWA convention and will never match a Chrome PWA).
+swaymsg -t get_tree | grep -qi "chrome-.*{domain}" && echo "✓ PWA launched successfully!" || echo "✗ PWA did not launch"
 
 # Optional: verify daemon-backed launch path too
 i3pm launch preview "$APP_NAME" --json
@@ -655,7 +685,8 @@ Confirm all of these before marking as complete:
 - ✅ PWA searchable in Walker (Meta+D)
 - ✅ PWA launches successfully
 - ✅ PWA opens on correct workspace
-- ✅ Icon displays correctly
+- ✅ Daemon snapshot shows a non-empty `icon_path` for the new window (auto-reloaded, Step 14)
+- ✅ Icon displays correctly (in launcher AND in the QuickShell bottom bar)
 
 ## Error Handling
 
@@ -666,6 +697,7 @@ Confirm all of these before marking as complete:
 | "Icon file not found" | Icon path doesn't exist | Re-run icon discovery |
 | "Icon is monochrome" | Single-color icon | Find colored version |
 | "PWA not appearing in Walker" | Desktop entry missing or rebuild not activated | Check `~/.local/share/i3pm-applications/applications/*.desktop` and rerun rebuild |
+| "Icon missing from QuickShell bottom bar" | Daemon icon index normally auto-reloads on registry change; if it didn't (daemon predates the auto-reload code, or reload failed) | Wait ~2s for the throttle, re-check the snapshot; fallback `systemctl --user restart i3-project-daemon.service` (Step 14) |
 | "Service not running" | localhost service down | Start service |
 | "Syntax error" | Invalid Nix syntax | Check brackets, semicolons, quotes |
 | "Unknown host" | Hostname not in flake | Specify correct flake target |
