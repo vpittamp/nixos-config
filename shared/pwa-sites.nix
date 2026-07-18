@@ -2123,6 +2123,24 @@ let
       preferred_monitor_role = "secondary";
       routing_domains = [ "minio-console-ryzen.tail286401.ts.net" ];
     }
+
+    # Kimi
+    {
+      name = "Kimi";
+      url = "https://www.kimi.com";
+      domain = "kimi.com";
+      icon = iconPath "kimi.svg";
+      description = "Kimi AI assistant";
+      categories = "Network;Development;";
+      keywords = "kimi;ai;chat;assistant;moonshot;llm;";
+      scope = "https://www.kimi.com/";
+      ulid = "7E3M26P1SP0BN0QAJYB215V90W";  # Generated 2026-07-18
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 175;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "kimi.com" "www.kimi.com" ];
+    }
   ];
 
   # Filter and format sites
