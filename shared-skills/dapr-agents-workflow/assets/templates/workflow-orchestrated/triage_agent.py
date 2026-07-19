@@ -29,7 +29,9 @@ triage_agent = DurableAgent(
     ],
     llm=OpenAIChatClient(),  # provider-direct (GA). Or DaprChatClient(component_name="llm-provider").
     tools=[get_customer_info],
-    memory=AgentMemoryConfig(store=ConversationDaprStateMemory(store_name="agent-memory")),
+    memory=AgentMemoryConfig(
+        store=ConversationDaprStateMemory(store_name="agent-memory")
+    ),
     state=AgentStateConfig(store=StateStoreService(store_name="agent-workflow")),
 )
 
@@ -37,6 +39,8 @@ triage_agent = DurableAgent(
 if __name__ == "__main__":
     runner = AgentRunner()
     try:
-        runner.serve(triage_agent, port=8001)  # HTTP + workflow runtime; blocks on uvicorn
+        runner.serve(
+            triage_agent, port=8001
+        )  # HTTP + workflow runtime; blocks on uvicorn
     finally:
         runner.shutdown(triage_agent)

@@ -48,7 +48,9 @@ def pipeline(ctx: wf.DaprWorkflowContext, batch: list):
 
     # 3) human-in-the-loop: wait for an approval event OR time out after 1 hour.
     #    Create both tasks first, then race them with when_any (do not yield each).
-    approval = ctx.wait_for_external_event("approval")          # raised via client.raise_workflow_event
+    approval = ctx.wait_for_external_event(
+        "approval"
+    )  # raised via client.raise_workflow_event
     timeout = ctx.create_timer(timedelta(hours=1))
     winner = yield wf.when_any([approval, timeout])
 
@@ -58,7 +60,10 @@ def pipeline(ctx: wf.DaprWorkflowContext, batch: list):
     # decision is exactly the dict passed to raise_workflow_event(..., data={...}).
     decision = approval.get_result()
     if not decision.get("approved", False):
-        return {"status": "rejected", "summary": summary}   # gate the downstream work off the decision
+        return {
+            "status": "rejected",
+            "summary": summary,
+        }  # gate the downstream work off the decision
 
     yield ctx.call_activity(notify, input=f"approved: {summary}")
     return {"status": "approved", "decision": decision, "summary": summary}

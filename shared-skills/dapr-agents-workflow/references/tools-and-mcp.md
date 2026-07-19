@@ -23,6 +23,7 @@ def get_customer_info(customer_name: str) -> str:
 - Attach by passing to the agent: `DurableAgent(..., tools=[get_customer_info])`.
 
 Explicit Pydantic schema (optional — overrides inference):
+
 ```python
 from pydantic import BaseModel, Field
 
@@ -46,7 +47,7 @@ auto-wraps any bare callable you pass in `tools=[...]`. You rarely construct it 
 ## MCP tools — `MCPClient`
 
 Connect to external Model Context Protocol servers and surface their tools to the agent.
-MCP support is **GA in v1.0.3**.
+This reference matches the MCP surface in `dapr-agents` **v1.0.5**.
 
 ```python
 from dapr_agents.tool.mcp import MCPClient
@@ -59,12 +60,12 @@ agent = DurableAgent(..., tools=tools)
 
 ### Transports (four)
 
-| method | for |
-|---|---|
-| `connect_stdio(server_name, command, args=None, env=None, cwd=None)` | subprocess MCP servers |
-| `connect_sse(server_name, url, headers=None, timeout=None, sse_read_timeout=None)` | Server-Sent Events |
-| `connect_streamable_http(server_name, url, headers=None, timeout=None, terminate_on_close=None)` | streamable HTTP |
-| `connect_many(server_configs: list)` | many servers at once (each dict has `server_name` + `transport` + transport args) |
+| method                                                                                           | for                                                                               |
+| ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `connect_stdio(server_name, command, args=None, env=None, cwd=None)`                             | subprocess MCP servers                                                            |
+| `connect_sse(server_name, url, headers=None, timeout=None, sse_read_timeout=None)`               | Server-Sent Events                                                                |
+| `connect_streamable_http(server_name, url, headers=None, timeout=None, terminate_on_close=None)` | streamable HTTP                                                                   |
+| `connect_many(server_configs: list)`                                                             | many servers at once (each dict has `server_name` + `transport` + transport args) |
 
 All are async. `get_all_tools() -> List[AgentTool]` returns tools from every connected server,
 each **name-prefixed by its `server_name`** (e.g. `local_get_weather`) to avoid collisions.
@@ -75,6 +76,7 @@ each **name-prefixed by its `server_name`** (e.g. `local_get_weather`) to avoid 
 ### Defining your own MCP server
 
 MCP servers use the **external `mcp` package** (not dapr-agents):
+
 ```python
 from mcp.server.fastmcp import FastMCP
 mcp = FastMCP("WeatherServer")

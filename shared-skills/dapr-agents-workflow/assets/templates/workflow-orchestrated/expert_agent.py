@@ -19,7 +19,9 @@ expert_agent = DurableAgent(
         "Return a single, actionable recommendation in plain language.",
     ],
     llm=OpenAIChatClient(),
-    memory=AgentMemoryConfig(store=ConversationDaprStateMemory(store_name="agent-memory")),
+    memory=AgentMemoryConfig(
+        store=ConversationDaprStateMemory(store_name="agent-memory")
+    ),
     state=AgentStateConfig(store=StateStoreService(store_name="agent-workflow")),
 )
 

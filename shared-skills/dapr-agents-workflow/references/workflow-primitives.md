@@ -1,11 +1,11 @@
 # Dapr Workflow — Python API surface
 
-The deterministic orchestration engine. Package `dapr-ext-workflow` (stable **1.17.x**,
-imported as `dapr.ext.workflow`). Everything in this file is the foundation both for
+Dapr's deterministic orchestration engine. This reference matches
+`dapr-ext-workflow` **1.18.x**, imported as `dapr.ext.workflow`. Everything in this file is the foundation both for
 plain workflows and for the workflow-orchestrated agent pattern (Pattern A).
 
-> Install: `pip install dapr-ext-workflow` (stable). `dapr-ext-workflow-dev` tracks the
-> *pre-release* runtime — do not use it for stable work.
+> Install the version required by the target project's lockfile. Do not mix the
+> stable package with a development runtime from another API line.
 
 ## Imports
 
@@ -37,7 +37,7 @@ wfr.shutdown()   # at app exit
 
 - A **workflow** is a generator: it `yield`s tasks and is **replayed** from the start on
   every event. A workflow function may run many times for one logical instance.
-- An **activity** runs exactly the side-effecting work. It is *not* replayed the way the
+- An **activity** runs exactly the side-effecting work. It is _not_ replayed the way the
   workflow body is — its recorded result is replayed instead.
 
 ## The determinism contract (the #1 source of bugs)
@@ -45,7 +45,7 @@ wfr.shutdown()   # at app exit
 Because the workflow body replays, it MUST be deterministic:
 
 - **No I/O, network, DB, file, or LLM calls in the workflow body.** Put them in activities
-  (or, for agents, in `call_agent`). The workflow only *orchestrates*.
+  (or, for agents, in `call_agent`). The workflow only _orchestrates_.
 - **No `datetime.now()`, `random`, `uuid4()`, env reads, or global mutable state** in the body.
   Use `ctx.current_utc_datetime` for time and `ctx.create_timer(...)` for delays.
 - **Always `yield` a scheduled task** (`call_activity`, `call_child_workflow`, `call_agent`,
@@ -54,21 +54,22 @@ Because the workflow body replays, it MUST be deterministic:
 
 ## DaprWorkflowContext — the orchestration primitives
 
-| Call | Purpose |
-|---|---|
-| `yield ctx.call_activity(fn, input=...)` | run an activity, get its result |
-| `yield ctx.call_child_workflow(wf_fn, input=..., instance_id=..., retry_policy=...)` | run a sub-workflow (this is what `call_agent` wraps) |
-| `task = ctx.wait_for_external_event(name)` | a future that completes when an event is raised |
-| `task = ctx.create_timer(timedelta(...))` | a durable timer future |
-| `yield wf.when_all([t1, t2, ...])` | fan-in: wait for ALL, returns a list of results |
-| `yield wf.when_any([t1, t2])` | race: returns the FIRST task that completes |
-| `ctx.current_utc_datetime` | deterministic "now" (safe in the body) |
-| `ctx.instance_id` | this instance's id |
-| `ctx.is_replaying` | True while replaying — gate non-durable side effects (e.g. logging) on `not ctx.is_replaying` |
+| Call                                                                                 | Purpose                                                                                       |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `yield ctx.call_activity(fn, input=...)`                                             | run an activity, get its result                                                               |
+| `yield ctx.call_child_workflow(wf_fn, input=..., instance_id=..., retry_policy=...)` | run a sub-workflow (this is what `call_agent` wraps)                                          |
+| `task = ctx.wait_for_external_event(name)`                                           | a future that completes when an event is raised                                               |
+| `task = ctx.create_timer(timedelta(...))`                                            | a durable timer future                                                                        |
+| `yield wf.when_all([t1, t2, ...])`                                                   | fan-in: wait for ALL, returns a list of results                                               |
+| `yield wf.when_any([t1, t2])`                                                        | race: returns the FIRST task that completes                                                   |
+| `ctx.current_utc_datetime`                                                           | deterministic "now" (safe in the body)                                                        |
+| `ctx.instance_id`                                                                    | this instance's id                                                                            |
+| `ctx.is_replaying`                                                                   | True while replaying — gate non-durable side effects (e.g. logging) on `not ctx.is_replaying` |
 
 ### Three canonical shapes
 
 **Chaining** — feed each result into the next:
+
 ```python
 @wfr.workflow(name="chain")
 def chain(ctx, wf_input):
@@ -83,6 +84,7 @@ def chain(ctx, wf_input):
 ```
 
 **Fan-out / fan-in** — build the task list first, then `when_all`:
+
 ```python
 parallel = [ctx.call_activity(work, input=item) for item in batch]
 outputs = yield wf.when_all(parallel)        # list of results, order preserved
@@ -90,6 +92,7 @@ total = sum(outputs)
 ```
 
 **Human-in-the-loop** — race an external event against a timeout:
+
 ```python
 approval = ctx.wait_for_external_event("approval")
 timeout = ctx.create_timer(timedelta(hours=1))
@@ -127,7 +130,7 @@ client.terminate_workflow(iid)
 client.purge_workflow(iid)        # purge requires a terminal state; recursive=True by default
 ```
 
-`terminate` *requests* shutdown — it is not proof the instance is terminal. Poll
+`terminate` _requests_ shutdown — it is not proof the instance is terminal. Poll
 `get_workflow_state` until terminal before `purge`.
 
 ## State store requirement

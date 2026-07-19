@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dapr Agents Workflows"
+  short_description: "Build durable Python agent and workflow applications."
+  default_prompt: "Use $dapr-agents-workflow to scaffold or debug a standalone durable Dapr Agents application."

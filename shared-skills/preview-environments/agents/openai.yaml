@@ -1,0 +1,4 @@
+interface:
+  display_name: "Preview Environments"
+  short_description: "Operate and prove dev preview vCluster lifecycles."
+  default_prompt: "Use $preview-environments to launch, diagnose, or verify a dev PreviewEnvironment lifecycle."

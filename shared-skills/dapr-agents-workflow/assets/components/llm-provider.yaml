@@ -13,6 +13,6 @@ spec:
   version: v1
   metadata:
     - name: key
-      envRef: OPENAI_API_KEY        # or use secretKeyRef with a Dapr secret store
+      envRef: OPENAI_API_KEY # or use secretKeyRef with a Dapr secret store
     - name: model
-      value: gpt-4o
+      envRef: OPENAI_MODEL # choose a model supported by the target account

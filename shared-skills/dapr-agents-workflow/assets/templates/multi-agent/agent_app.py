@@ -22,28 +22,34 @@ from dapr_agents.storage.daprstores.stateservice import StateStoreService
 from dapr_agents.workflow.utils.core import wait_for_shutdown
 
 
-name = os.environ["AGENT_NAME"]                      # e.g. "frodo"
+name = os.environ["AGENT_NAME"]  # e.g. "frodo"
 role = os.environ.get("AGENT_ROLE", name.title())
 
 agent = DurableAgent(
     name=name,
     role=role,
     goal=os.environ.get("AGENT_GOAL", "Collaborate with the team to solve the task."),
-    instructions=[os.environ.get("AGENT_INSTRUCTIONS", "Answer in character, concisely.")],
+    instructions=[
+        os.environ.get("AGENT_INSTRUCTIONS", "Answer in character, concisely.")
+    ],
     llm=OpenAIChatClient(),
     # Members keep conversation memory (the upstream example does); orchestrators usually don't.
-    memory=AgentMemoryConfig(store=ConversationDaprStateMemory(store_name="agent-memory")),
+    memory=AgentMemoryConfig(
+        store=ConversationDaprStateMemory(store_name="agent-memory")
+    ),
     pubsub=AgentPubSubConfig(
         pubsub_name="agent-pubsub",
-        agent_topic=f"fellowship.{name}.requests",   # this member's direct topic
-        broadcast_topic="fellowship.broadcast",      # shared team channel
+        agent_topic=f"fellowship.{name}.requests",  # this member's direct topic
+        broadcast_topic="fellowship.broadcast",  # shared team channel
     ),
     state=AgentStateConfig(
-        store=StateStoreService(store_name="agent-workflow", key_prefix=f"fellowship.{name}:"),
+        store=StateStoreService(
+            store_name="agent-workflow", key_prefix=f"fellowship.{name}:"
+        ),
     ),
     registry=AgentRegistryConfig(
         store=StateStoreService(store_name="agentregistrystore"),
-        team_name="fellowship",                      # MUST match the orchestrator's team_name
+        team_name="fellowship",  # MUST match the orchestrator's team_name
     ),
 )
 
@@ -51,8 +57,8 @@ agent = DurableAgent(
 async def main():
     runner = AgentRunner()
     try:
-        runner.subscribe(agent)        # wire pub/sub handlers (no HTTP server)
-        await wait_for_shutdown()      # keep the process alive
+        runner.subscribe(agent)  # wire pub/sub handlers (no HTTP server)
+        await wait_for_shutdown()  # keep the process alive
     finally:
         runner.shutdown(agent)
 

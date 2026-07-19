@@ -1,243 +1,136 @@
 ---
 name: cluster-desired-state
-description: "Authoritative end-to-end guide to how PittampalliOrg reaches the DESIRED STATE for every cluster in the hub-and-spoke fleet: hub, ryzen, and dev. Use whenever you need the ordered path from nothing to a healthy cluster (provisioning to GitOps registration to Tailscale secret transport to hub/spoke connectivity to workloads to verification), the cross-cutting architecture (cluster-Secret contract, spoke-transport contract, source-hydrator plus GitOps Promoter, env/hub and env/spokes branch flow, ryzen main-direct local autonomous ArgoCD, AWI-to-Tailscale secret migration, ryzen host-device raw TCP passthrough, per-cluster ExternalSecret parameterization), or recovery runbooks and gotchas (Talos ISO vs k8s in-place upgrade, kueue ClientSideApplyMigration wedge, RFC6902 op:add clobber, env-table SWE-bench restore, stale tailnet device cleanup). Use this to plan or audit a fresh build or full recreate of hub, ryzen, or dev; for narrow tasks defer to talos-clusters, ryzen-spoke-bootstrap, or gitops."
+description: "Plan, recreate, repair, or audit the PittampalliOrg hub, dev, and ryzen clusters end to end. Use for full-cluster desired state, provisioning order, argocd-agent enrollment, GitOps branch ownership, Tailscale secret transport, hub or spoke recovery, and post-rebuild convergence. Use talos-clusters for a narrow Talos node or capacity change and gitops for an application rollout or drift incident."
 ---
 
-# Cluster Desired State (hub / ryzen / dev)
+# Cluster Desired State
 
-The single map of **what each cluster in the PittampalliOrg/stacks fleet should be**
-and **the ordered path to get there**. The fleet is one ArgoCD/GitOps management
-plane (the **hub**) plus spokes that the hub renders and reconciles. Three clusters
-matter today:
+Use this skill for the ordered path from infrastructure to a healthy fleet. Do
+not treat this skill as a snapshot of live versions or resource counts.
 
-| Cluster | Role | Provisioning | Branch it syncs | API reach | Secrets |
-|---|---|---|---|---|---|
-| **hub** | management plane + central Tekton build pool | manual Talos/Hetzner + `deployment/scripts/recreate-hub.sh` | `env/hub` (path `hub-apps/`) | `k8s-api-hub.tail286401.ts.net` ProxyGroup VIP | **canonical** 1Password `hub-eso` vault via `onepassword-store` |
-| **ryzen** | bare-metal local-dev spoke (AUTONOMOUS agent) | `bootstrap-spoke-cluster.sh --recreate` -> `enroll-ryzen-agent.sh` (Talos-in-Docker) | `main` directly (local ArgoCD `root-ryzen` reconciles `overlays/ryzen`; no env branch, no Promoter) | `ryzen.tail286401.ts.net:6443` (host-device raw TCP passthrough, full TLS verify) | hub mirror over Tailscale |
-| **dev** | disposable Hetzner SWE-bench spoke | `recreate-dev.sh` = `provision-spoke.sh` + `bootstrap-spoke-deps.sh` + `enroll-dev-agent.sh` | `main` -> `env/spokes-dev` | no ArgoCD kube-API reach (managed agent, gRPC out) | hub mirror over Tailscale |
+## Authority
 
-> **The HUB's own secret root migrated Azure Workload Identity -> 1Password (2026-06).**
-> The 21 hub `ExternalSecret`s now resolve from the `onepassword-store` `ClusterSecretStore`
-> (ESO `onepasswordSDK` -> the dedicated **`hub-eso`** 1Password vault), bootstrapped from a
-> single scoped read-only 1Password Service-Account token (`hub-eso-reader`) in the
-> `onepassword-sa-token` Secret (ns `external-secrets`), persisted at
-> `op://CLI/<id>/credential`. **Azure Key Vault (`keyvault-thcmfmoo5oeow`) + the AD App +
-> `azure-keyvault-store` are left DORMANT (not deleted); `sync-jwks-to-azure.sh` is no longer
-> in the hub path** (it is a spoke-only tool now). **Spokes are unaffected** — they still read
-> hub-mirrored secrets via the ESO kubernetes-provider `ClusterSecretStore` (`hub-secrets-store`)
-> over Tailscale, regardless of how the hub populates them. Do not re-introduce
-> `azure-keyvault-store` on a spoke, and do not re-add Azure WI as the hub root.
-> See `references/secrets-1password.md`.
+Work from fresh repository state:
 
-## Start Here
-
-1. **Pick the cluster + operation** and read its reference, then its runbook. Each
-   recreate is now a **hands-off script** (the runbook explains + wraps it):
-   - **hub** -> `references/hub.md` + `runbooks/build-hub.md`; entrypoint
-     **`deployment/scripts/recreate-hub.sh`** (`--verify-only` / `--seed-secret` /
-     `--fixups` / `--dry-run-clone` / `--in-place --confirm-wipe hub-cluster`; reuses the
-     `talos-cluster` configs + `hub-secrets.yaml`, NEVER deletes the ash servers) +
-     **`hub-verify-gate.sh`** (9-check convergence) + the self-healing **kube-system-fixups**
-     CronJob.
-   - **ryzen** (bare-metal Docker spoke) -> `references/ryzen.md` + `runbooks/recreate-ryzen.md`;
-     entrypoint **`bootstrap-spoke-cluster.sh --recreate`**, which enrolls the AUTONOMOUS
-     agent via **`deployment/scripts/argocd-agent/enroll-ryzen-agent.sh`** (+ the
-     `ryzen-agent-bootstrap` component). `register-spoke-with-hub.sh` is RETIRED.
-   - **dev** (script-provisioned Hetzner spoke) -> `references/dev.md` + `runbooks/recreate-dev.md`;
-     entrypoint **`deployment/scripts/talos-hetzner/recreate-dev.sh`** (data backup/restore +
-     provision + bootstrap-deps + `enroll-dev-agent.sh` + verify-gate).
-2. **Need the shared model?** (cluster-Secret contract, transport contract,
-   source-hydrator/Promoter, branch flow, the 1Password hub secret root + AWI->Tailscale
-   spoke transport, ryzen host-passthrough connectivity, per-cluster ES parameterization)
-   -> `references/architecture.md`; for the hub secret backend specifically ->
-   `references/secrets-1password.md`.
-3. **Hit a known failure?** -> `runbooks/recovery-and-gotchas.md` (Talos ISO/k8s
-   in-place upgrade, ryzen host-passthrough connectivity, kueue `ClientSideApplyMigration`,
-   RFC6902 `op: add` clobber, env-table SWE-bench restore, stale tailnet device
-   cleanup).
-4. **Cross-reference the focused skills** for the deep mechanics:
-   - `gitops` — ArgoCD health/drift, Promoter/source-hydrator recovery, image pins.
-   - `talos-clusters` — hub Talos provisioning + (removed) Crossplane history;
-     **dev is NOT Crossplane-provisioned** (Crossplane removed in Phase D — dev is
-     script-provisioned + agent-enrolled, the same imperative path as hub & ryzen).
-   - `ryzen-spoke-bootstrap` — the imperative ryzen Docker bootstrap mechanics.
-   - `evaluations` / `workflow-builder` — workload-level validation after a rebuild.
-
-## The desired-state mental model (all three clusters)
-
-Every cluster is healthy when **all seven layers** below are green. The reference
-and runbook files walk each layer in order. A cluster is **not** "done" when nodes
-are Ready — Argo child apps, secret transport, hub connectivity, web exposure, and
-workload data must all be healthy too.
-
-```
-1. PROVISION        nodes Ready, correct Talos/k8s version, CNI + build/pool labels
-        |
-2. REGISTER         argocd cluster Secret in ns argocd (the cluster-Secret contract)
-        |           -> appset materializes the spoke-<name> root Application
-3. SECRET TRANSPORT spoke ESO reads hub ns spoke-secrets over Tailscale
-        |           (hub-secrets-store CSS; AWI/KV stays hub-only canonical)
-4. HUB CONNECTIVITY hub ArgoCD can reach the spoke API (direct IP, or ryzen
-        |           host-device raw TCP passthrough over Tailscale + CoreDNS egress)
-5. WORKLOADS        all <name>-* child apps Synced/Healthy; DB migrate-then-seed;
-        |           per-cluster ExternalSecret repointing applied
-6. WEB EXPOSURE     workflow-builder reachable at https://workflow-builder-<cluster>.tail286401.ts.net
-        |           via a Tailscale L4 LoadBalancer Service + in-cluster nginx tls-terminator
-        |           sidecar serving the persistent self-signed *.tail286401.ts.net wildcard
-        |           (NO Let's Encrypt, NO Tailscale Ingress). mcp-gateway is in-cluster only.
-7. VERIFY           the per-cluster verification command block passes clean
+```bash
+STACKS_ROOT=/home/vpittamp/repos/PittampalliOrg/stacks/main
+git -C "$STACKS_ROOT" fetch origin
+git -C "$STACKS_ROOT" status --short --branch
 ```
 
-## Cross-cutting architecture (one-screen summary)
+If the checkout is dirty or on unrelated work, create a worktree from
+`origin/main`. Never reset or overwrite another user's changes.
 
-Full detail in `references/architecture.md`. The load-bearing pieces:
+Resolve contradictions in this order:
 
-- **Control plane = argocd-agent v0.9.0.** The hub runs the **principal** (single pane,
-  ns `argocd`); each spoke runs a **local ArgoCD + an agent** dialing the principal
-  OUTBOUND over tailnet mTLS (`:8443`). **dev = MANAGED agent** — the hub authors the
-  `Application` objects in ns `dev` (== the agent name), the principal pushes them to
-  the dev agent, and dev's LOCAL controller reconciles (single pane: hub
-  `kubectl -n dev get applications`). **ryzen = AUTONOMOUS agent** — reconciles its own
-  apps; the hub only aggregates status. Sync **operations run on the SPOKE's local
-  controller**, so the hub pane shows sync + health but NOT operation lifecycle —
-  `"Unknown operation status"` on the hub is architectural and **benign**. The
-  `cluster-<spoke>` Secret is now an agent MAPPING (Contract 1 below), not a direct
-  server+bearerToken.
-- **Cluster-Secret contract** (Contract 1). A Secret in ns `argocd` labeled
-  `argocd.argoproj.io/secret-type=cluster` + `stacks.io/hub-managed=true` +
-  `stacks.io/cluster-role=spoke` + `stacks.io/platform=talos`, annotated
-  `spoke-cluster=<name>`. **BOTH dev and ryzen are now argocd-agent MAPPINGS**
-  (`managed-by: argocd-agent`, label `argocd-agent.argoproj-labs.io/agent-name`):
-  `server=https://argocd-agent-resource-proxy:9090?agentName=<name>` with embedded mTLS
-  certData/keyData/caData and **no bearerToken**. dev's is created by `enroll-dev-agent.sh`
-  (it replaced the old group-5 spoke-register + `ExternalSecret-cluster-talos.yaml`
-  direct-IP+token Secret); ryzen's by `argocd-agentctl agent create ryzen`. The two spokes
-  differ only in agent **mode** (dev = MANAGED, ryzen = AUTONOMOUS), NOT in Secret shape.
-  > The legacy `ExternalSecret-cluster-ryzen.yaml` (a real `server=https://ryzen.tail286401.ts.net:6443`
-  > + caData + SA bearerToken) is now **vestigial** — superseded by the agent mapping. That
-  > host-passthrough kube-API endpoint + SA token is what **Headlamp** uses to reach ryzen
-  > (via the dedicated `headlamp-cluster-ryzen` Secret), NOT the ArgoCD cluster Secret. ryzen
-  > reconciles `overlays/ryzen` @ `main` via its own local ArgoCD (no env branch). See `references/tailscale-and-certs.md`.
-- **Managed dev hydration is explicit.** `packages/components/hub-management/apps/spoke-dev.yaml`
-  hydrates `packages/overlays/dev` to `env/spokes-dev-next` and syncs
-  `env/spokes-dev`. `spoke-workloads-appset.yaml` selects labeled managed spokes
-  for the separate `spoke-<name>-workflow-builder` release overlay; the dev
-  instance is also declared by `spoke-dev-workflow-builder.yaml`. The old
-  `spoke-clusters-appset.yaml` copies were removed. **Ryzen is not driven by this path** —
-  its local `root-ryzen` app-of-apps reconciles `overlays/ryzen` @ `main` itself.
-- **GitOps source-hydrator + Promoter (hub + dev/staging only).** `drySource` on `main` is
-  rendered to `env/<env>-next`; GitOps Promoter PRs `env/<env>-next -> env/<env>`;
-  ArgoCD syncs from `env/<env>`. **Hub syncs from `env/hub` (path `hub-apps/`), NOT
-  `main`.** dev/staging from `env/spokes-<env>`. **ryzen reconciles `overlays/ryzen` @
-  `main` DIRECTLY** via its local ArgoCD — NO source-hydrator, NO Promoter, NO
-  `inner-loop` branch (retired), NO `env/spokes-ryzen`. Commit/merge to `main`; force
-  an immediate re-compare with `deployment/scripts/ryzen-sync.sh`.
-- **AWI -> Tailscale secret transport** (Contract 2). Hub mirrors every
-  spoke-consumed KV secret into ns `spoke-secrets` as `<cluster>-shared-secrets`.
-  The spoke ESO `ClusterSecretStore hub-secrets-store` (kubernetes provider) reads
-  them over Tailscale via the standalone hub Ingress **device**
-  `k8s-api-hub-ingress.tail286401.ts.net` (LE cert chaining to **ISRG Root X1** —
-  `caBundle` is hard-set to it, still REQUIRED on ESO v2.4.1), authenticating with a
-  scoped read-only SA token. A spoke CoreDNS rewrite maps that FQDN ->
-  `k8s-api-hub-egress.tailscale.svc.cluster.local`.
-- **External Secrets Operator is `2.4.1` fleet-wide on the `external-secrets.io/v1`
-  API** (2026-05-30). Chart `2.4.1` is pinned in `packages/base/apps/external-secrets.yaml`
-  (spoke default) and `packages/components/hub-base/apps/external-secrets.yaml` (hub),
-  both with `crds.unsafeServeV1Beta1: true` so the CRDs serve `v1` (storage) **and**
-  the deprecated `v1beta1` (lets any lingering v1beta1 manifest keep working). **All
-  ES/CSS manifests are `external-secrets.io/v1`** (PushSecret/ClusterPushSecret stay
-  `v1alpha1` — no v1). Spokes run ESO **controller-only** (`webhook.create:false`,
-  `certController.create:false`; v2 renders the same shape). A global `argocd-cm`
-  `resource.customizations.ignoreDifferences.external-secrets.io_ExternalSecret`
-  (via the `argocd-cm-patches` Job) ignores the server-defaulted fields
-  (`conversionStrategy`/`decodingStrategy`/`metadataPolicy`/`nullBytePolicy` +
-  `target.deletionPolicy`/`template.engineVersion`/`mergePolicy`) so ArgoCD's
-  client-side diff doesn't flag them. **ESO version is per-cluster — ALWAYS check
-  `kubectl get crd externalsecrets.external-secrets.io -o jsonpath='{.spec.versions[*].name}'`
-  on EACH target before migrating manifest apiVersions** (the hub was bumped to v2
-  before the spokes; flipping spoke manifests to `v1` while a spoke still served only
-  `v1beta1` broke every spoke ES app with `resource mapping not found`). See
-  `runbooks/recovery-and-gotchas.md` for the webhook-spoke in-place-upgrade fix.
-- **Persistent self-signed CA** (Contract 3, web exposure). A 10-year offline CA
-  ("PittampalliOrg Tailnet Dev CA") lives in the 1Password `hub-eso` vault as
-  `TAILNET-DEV-CA-CRT/KEY` (the hub's `tailnet-ca` ExternalSecret reads it via
-  `onepassword-store`; note its `decodingStrategy: Base64`, so those two items hold the
-  **base64** form — see `references/secrets-1password.md`);
-  the hub mirrors it CLUSTER-NEUTRALLY into ns `spoke-secrets` Secret `tailnet-ca`
-  (`ExternalSecret-tailnet-ca.yaml`; the namespace-wide `spoke-secrets-reader` Role
-  means every spoke reads the SAME key — no per-cluster CA). The spoke base app
-  `packages/components/tailnet-ca` (via `packages/base/apps/tailnet-ca.yaml`, spoke-only)
-  restores it into a `tailnet-dev-ca` CA `ClusterIssuer` that signs the
-  `*.tail286401.ts.net` wildcard Certificate consumed by the workflow-builder
-  `tls-terminator` sidecar. Same CA on every cluster -> clients trust it ONCE and it
-  SURVIVES recreation. PR #2319.
-- **Host-device raw TCP passthrough** (ryzen-only, hub->spoke direction). hub->ryzen
-  reaches the ryzen Talos kube-apiserver DIRECTLY over Tailscale via the ryzen HOST
-  device (`ryzen.tail286401.ts.net`, `100.96.102.1`, `tag:k8s`) running
-  `tailscale serve --bg --tcp=6443` as a RAW TCP passthrough to the local apiserver
-  (nixos-config `services.tailscaleK8sApiserver` / the `tailscale-serve-k8s-apiserver`
-  oneshot; the stacks bootstrap restarts it after each cluster create). No TLS
-  termination, so the Talos apiserver's own serving cert reaches the hub end-to-end;
-  the hub does FULL TLS verify (`insecure:false`) against the Talos CA, and the cert's
-  `apiServer.certSANs` cover `ryzen.tail286401.ts.net`+`100.96.102.1` — **no SNI
-  workaround needed**. HUB CoreDNS rewrite `ryzen.tail286401.ts.net -> ryzen-api-egress`
-  (self-healing CronJob) points at the egress; the Tailscale operator apiserver-proxy
-  is NO LONGER in this path (so it never provisions an LE cert). WHY: the operator
-  proxy's per-hostname Let's Encrypt cert (5 dup-certs/week limit) was exhausted by
-  recreate churn, taking the ryzen fleet to 0-healthy (2026-05-29). Host-passthrough
-  consumes ZERO LE quota. PRs #2305 (hub cutover), #2307 (`--ts-host-passthrough`).
-- **Per-cluster ExternalSecret parameterization.** Shared workload manifests
-  hardcode `remoteRef.key=ryzen-shared-secrets`. dev re-points them onto
-  `dev-shared-secrets` via `scripts/gitops/render-workflow-builder-release-overlays.sh`
-  (dev-gated `emit_es_key_repoint` / `emit_es_store_repoint` / `emit_oauth_op`).
-  ryzen re-points its OAuth + swebench ESes inline in `packages/overlays/ryzen`.
+1. Provisioning, enrollment, render, and verification scripts.
+2. Current manifests and executable tests on `origin/main`.
+3. Focused repository docs.
+4. This skill.
 
-> **Canonical Tailscale/cert doc.** `references/tailscale-and-certs.md` is the SINGLE
-> canonical home for the full Tailscale topology + Let's-Encrypt-avoidance rationale
-> (host raw-TCP passthrough, tailnet LoadBalancer Services, per-cluster operator
-> hostname, the one stable hub-Ingress LE cert, ESO transport, stale-device cleanup).
-> Read it for the WHY; the bullets above and the table below are the quick reference.
+Historical Crossplane, local-Gitea, Azure-root-secret, and direct hub-to-spoke
+ArgoCD procedures are not operating instructions. Confirm every named flag and
+resource against current source before using it.
 
-## Two distinct Tailscale paths — do not conflate
+## Fleet Model
 
-| Direction | Used for | FQDN | Rewrite location -> target |
-|---|---|---|---|
-| **hub -> ryzen** | ArgoCD sync to spoke API (raw TCP passthrough via ryzen HOST device) | `ryzen.tail286401.ts.net:6443` | **HUB** CoreDNS -> `ryzen-api-egress.tailscale.svc.cluster.local` |
-| **ryzen/dev -> hub** | ESO secret fetch | `k8s-api-hub-ingress.tail286401.ts.net` | **SPOKE** CoreDNS -> `k8s-api-hub-egress.tailscale.svc.cluster.local` |
+| Cluster | Role                                                      | Reconciliation authority                                     | Delivery branch                        |
+| ------- | --------------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------- |
+| `hub`   | Management plane, principal, build and promotion services | Hub ArgoCD                                                   | Hydrated `env/hub`                     |
+| `dev`   | Active shared workload spoke                              | Managed argocd-agent; applications are authored from the hub | Hydrated and promoted `env/spokes-dev` |
+| `ryzen` | Local development spoke                                   | Autonomous argocd-agent and local ArgoCD                     | `main` directly through `root-ryzen`   |
 
-Different devices, different rewrites, different clusters. ESO uses the
-**standalone hub Ingress device** (not the `k8s-api-hub` ProxyGroup VIP — the VIP
-route never propagates into a spoke egress netmap).
+The hub secret root is 1Password-backed. Spokes consume hub-mirrored secrets
+through the Tailscale transport contract. Verify the current ExternalSecret and
+ClusterSecretStore manifests instead of reintroducing an older Azure Workload
+Identity path on a spoke.
 
-## Default working rules
+## Choose The Entrypoint
 
-- **Commit the desired shape first.** For spokes the claim/overlay is the source of
-  truth; HCloud servers and Docker containers are implementation detail.
-- **Know the branch.** Pushing to `main` alone never reaches the hub (needs the `env/hub`
-  Promoter PR merge). It DOES reach ryzen — ryzen's local ArgoCD reconciles `overlays/ryzen`
-  @ `main` directly (no `inner-loop`, no Promoter; nudge with `ryzen-sync.sh`). dev/staging
-  need their `env/spokes-<env>` Promoter step. See `references/architecture.md`.
-- **Never delete a working Tailscale VIP** even if it shows `ProxyGroupInvalid`.
-- **Pause before destructive recreate.** Drain active SWE-bench runs/leases/Dapr
-  workflows and back up the env tables first (`runbooks/recovery-and-gotchas.md`).
-- **Validate infra AND runtime.** Close every build/recreate with the per-cluster
-  verification block in the reference file.
+| Operation                            | Canonical entrypoint                                                             |
+| ------------------------------------ | -------------------------------------------------------------------------------- |
+| Recreate or verify the hub           | `deployment/scripts/recreate-hub.sh` and `deployment/scripts/hub-verify-gate.sh` |
+| Recreate dev                         | `deployment/scripts/talos-hetzner/recreate-dev.sh`                               |
+| Recreate ryzen                       | `deployment/scripts/bootstrap-spoke-cluster.sh --recreate --ts-host-passthrough` |
+| Enroll or repair dev agent mapping   | `deployment/scripts/argocd-agent/enroll-dev-agent.sh`                            |
+| Enroll or repair ryzen agent mapping | `deployment/scripts/argocd-agent/enroll-ryzen-agent.sh`                          |
+| Narrow Talos resize or upgrade       | Use the `talos-clusters` skill                                                   |
+| Application drift or image delivery  | Use the `gitops` skill                                                           |
 
-## Authoritative stacks docs (canonical living source)
+Read each script's `--help` and source before execution. The wrapper scripts own
+ordering, secret transport, agent enrollment, Headlamp credential refresh, and
+verification; do not manually replay a remembered subset of their steps.
 
-This skill is a curated snapshot; the stacks docs are canonical. Re-sync after any
-major procedure change.
+## Recreate Workflow
 
-- `docs/hub-cluster-setup.md`, `docs/hub-gitops-bootstrap.md`, `docs/hub-recovery-runbook.md`
-- `docs/gitops-architecture-overview.md`
-- `docs/hub-and-spoke-quickstart.md`
-- `deployment/scripts/talos-hetzner/README.md`
-- `docs/outer-loop-promotion.md`, `docs/spoke-cluster-access.md`
-- `packages/components/spoke-tailscale-secrets/CONTRACT.md` (the spoke transport contract)
-- `packages/components/hub-onepassword/README.md` (the 1Password hub-secret-root contract + bootstrap)
-- **Recreate automation** (the hands-off scripts these runbooks wrap):
-  `deployment/scripts/recreate-hub.sh` + `hub-verify-gate.sh`,
-  `deployment/scripts/talos-hetzner/recreate-dev.sh`,
-  `deployment/scripts/argocd-agent/{enroll-dev-agent.sh,enroll-ryzen-agent.sh}`,
-  `deployment/scripts/bootstrap-spoke-cluster.sh`,
-  `packages/components/hub-management/manifests/kube-system-fixups/`
+1. **Establish target and blast radius.** Confirm cluster name, requested
+   operation, source revision, active workloads, and whether destruction is
+   expected.
+2. **Drain and preserve state.** Stop active benchmark, workflow, preview, and
+   build activity through their owning APIs. Back up target-local product data
+   using the current recreate script's supported path.
+3. **Validate credentials and tools.** Check `talosctl`, `kubectl`, `hcloud`,
+   `tailscale`, `argocd`, `op`, and required kubeconfigs without printing
+   secrets.
+4. **Inspect desired state.** Read the target script, its sourced libraries,
+   relevant overlay, agent enrollment manifest, and verification gate at the
+   same revision.
+5. **Run the canonical wrapper.** Preserve its logs and stop on the first failed
+   phase. Do not patch around a failed phase before finding the owning source.
+6. **Verify every layer.** A Ready node is necessary but not sufficient.
+7. **Reconcile declaratively.** Put durable corrections through `stacks`; use
+   imperative edits only to diagnose or restore the controller that owns the
+   desired state.
+
+## Convergence Gate
+
+Do not call a rebuild complete until all of these are demonstrated:
+
+- Nodes, CNI, DNS, storage, and required capacity labels are healthy.
+- The argocd-agent principal and target agent agree on identity and mode.
+- The hub cluster mapping is an agent mapping where expected, not a stale
+  bearer-token cluster credential.
+- External Secrets and the spoke transport store are Ready without exposing
+  secret values.
+- Root and child Applications use the expected source branch and are
+  `Synced`/`Healthy` or have an explicitly understood exception.
+- Tailscale API, service, and user-facing routes resolve through the intended
+  device or service-host ownership model.
+- Workflow Builder and one representative durable workflow path are healthy
+  when that workload belongs on the target.
+- Temporary admin kubeconfigs, bootstrap Jobs, active leases, and failed
+  operations are cleaned up.
+
+## Safety Rules
+
+- Never recreate a cluster while live benchmark, preview, or durable workflow
+  work is still running.
+- Never infer a spoke's authority from a legacy Secret name. Inspect its current
+  argocd-agent mode and local Applications.
+- Never delete a Tailscale device or service reservation until the current
+  owner, hostname, and replacement are proven.
+- Keep generated overlays generated. Run their owning renderer and validation
+  script; do not hand-edit generated output.
+- Keep admin kubeconfigs mode `0600`, outside git, and remove temporary copies
+  after recovery.
+- Do not use ryzen as a substitute target when the request names dev or hub.
+
+## Source Map
+
+Start with these current sources in `PittampalliOrg/stacks`:
+
+- `AGENTS.md`
+- `deployment/scripts/recreate-hub.sh`
+- `deployment/scripts/hub-verify-gate.sh`
+- `deployment/scripts/talos-hetzner/recreate-dev.sh`
+- `deployment/scripts/bootstrap-spoke-cluster.sh`
+- `deployment/scripts/argocd-agent/`
+- `deployment/scripts/lib/spoke-transport-bootstrap.sh`
+- `packages/overlays/{hub,dev,ryzen}/`
+- `packages/components/hub-management/`
+- `packages/components/spoke-tailscale-secrets/CONTRACT.md`
+- `packages/components/hub-onepassword/README.md`
+
+Use `docs/gitops-architecture-overview.md`, `docs/hub-cluster-setup.md`, and
+`docs/hub-recovery-runbook.md` as orientation only where they agree with the
+executable sources above.

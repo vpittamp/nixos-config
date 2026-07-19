@@ -50,7 +50,9 @@ def http_json(
 def auth_headers(access_token: str | None, cookie: str | None) -> dict[str, str]:
     if access_token:
         if access_token.startswith("wfb_"):
-            fail("wfb_ workspace keys authenticate Workflow MCP, not BFF workflow routes")
+            fail(
+                "wfb_ workspace keys authenticate Workflow MCP, not BFF workflow routes"
+            )
         return {"Authorization": f"Bearer {access_token}"}
     if cookie:
         return {"Cookie": cookie}
@@ -66,7 +68,9 @@ def save_via_api(payload: dict, args: argparse.Namespace) -> None:
     workflow_id = payload.get("id")
 
     if workflow_id:
-        existing = http_json("GET", f"{base}/api/workflows/{workflow_id}", None, headers)
+        existing = http_json(
+            "GET", f"{base}/api/workflows/{workflow_id}", None, headers
+        )
         if existing.get("engineType") != "dynamic-script":
             fail(
                 "refusing to PUT a dynamic-script spec into a non-dynamic workflow; "

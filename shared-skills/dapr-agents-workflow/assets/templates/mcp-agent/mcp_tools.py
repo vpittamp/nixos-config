@@ -24,4 +24,4 @@ async def get_forecast(location: str, days: int = 3) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run("stdio")   # transport: "stdio" (also "sse" / "streamable-http")
+    mcp.run("stdio")  # transport: "stdio" (also "sse" / "streamable-http")

@@ -24,7 +24,9 @@ weather_agent = DurableAgent(
     instructions=["Use get_weather to answer, then reply in one sentence."],
     llm=OpenAIChatClient(),
     tools=[get_weather],
-    memory=AgentMemoryConfig(store=ConversationDaprStateMemory(store_name="agent-memory")),
+    memory=AgentMemoryConfig(
+        store=ConversationDaprStateMemory(store_name="agent-memory")
+    ),
     state=AgentStateConfig(store=StateStoreService(store_name="agent-workflow")),
 )
 

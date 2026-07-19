@@ -43,6 +43,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Validate shared skills
+        run: python3 scripts/validate-shared-skills.py
+
       - name: Free disk space
         run: |
           # Remove unnecessary packages
