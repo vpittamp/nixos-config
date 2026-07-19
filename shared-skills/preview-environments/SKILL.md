@@ -44,6 +44,48 @@ the active implementation.
 Choose the smallest profile that answers the question. Do not use a host
 candidate to test an ordinary service edit.
 
+`host-candidate` is not a vCluster launch mode. Its dedicated host adapter and
+receipt boundary must reject attempts to route it through the app-live runner.
+
+## Workflow MCP Operations
+
+Use the BFF-authorized Workflow MCP tools instead of Kubernetes discovery for
+normal lifecycle work:
+
+1. `list_preview_services`, then `list_preview_environments`.
+2. `launch_preview_environment`, followed by `get_preview_environment` until
+   the accepted generation is Ready.
+3. `debug_preview_environment` for the bounded lifecycle/runtime/trace bundle,
+   then `query_preview_traces` for explicit service, status, search, and time
+   filters.
+4. Read the generation again immediately before teardown. Pass its exact
+   `provenance.requestId` and `sourceRevision` to
+   `teardown_preview_environment`, then poll the returned signed ticket with
+   `get_preview_teardown_status` until all twelve checks are true.
+
+Honor `telemetry.refreshAfterMs`, generation-fence warnings, pagination, and
+server-issued `nextActions`. A partial or `7/12` cleanup snapshot can be a
+normal transition between dev-side physical cleanup and hub finalizer
+convergence; only `12/12` is terminal proof.
+
+The physical dev workspace key is never forwarded into a preview. A direct
+preview-local Workflow MCP connection uses a preview-local key and audience.
+Its standard execution/trace tools keep authorization in the preview while
+deep evidence is read through the tuple-bound physical diagnostics adapter.
+
+## Preview Runtime Boundary
+
+An `app-live` vCluster does not inherit the physical host OpenShell or
+`workspace-runtime`. Do not restore host credentials or host workspace URLs to
+make an agent call pass. For preview-local agent proofs, confirm the selected
+runtime is the preview-native `dapr-agent-py-juicefs` lane and that Sandbox
+Execution API receives the immutable environment tuple plus its tuple-scoped
+storage scope and class before launching the workflow.
+
+K3 vision analyzes pixels but does not navigate a browser. Keep the supported
+browser control/capture boundary, pass native screenshot image content to K3,
+and remove only obsolete model-specific text/metadata compensation.
+
 ## Lifecycle Workflow
 
 1. **Prepare.** Confirm dev health, host image/flags, preview capacity, source

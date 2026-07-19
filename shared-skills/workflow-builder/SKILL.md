@@ -52,6 +52,28 @@ Prefer Workflow MCP or the UI. The bundled
 path for an access JWT or cookie; it intentionally rejects workspace keys and
 has no Postgres fallback.
 
+## Kimi K3 Contract
+
+Resolve the current model route from source and live runtime evidence before
+making a claim. When a call resolves to `kimi/kimi-k3`, require the complete
+platform contract:
+
+- `contextWindowTokens` is `1048576` and `reasoningEffort` is `max`; a lower
+  per-call effort must not downgrade K3.
+- Schema-bearing dynamic-script calls use K3 as the default structured-output
+  route and retain the resolved structured-output mode and schema validation.
+- Authentication comes only from `KIMI_API_KEY` through the owning secret and
+  deployment path. Never copy the key into workflow input, agent config, logs,
+  fixtures, or a preview.
+- Multimodal messages keep native content arrays. Images must reach K3 as
+  structured image objects containing supported base64 data URIs or uploaded
+  file references, not JSON-stringified screenshot metadata.
+
+Vision is not browser control. Use the current browser runtime or catalog
+actions to navigate and capture pixels, then pass the resulting image content
+to K3. Remove model-specific text-only browser workarounds only after proving
+the supported control and capture path still covers the workflow.
+
 ## Task Map
 
 | Task                             | Read or inspect                                                                        |
@@ -98,15 +120,27 @@ has no Postgres fallback.
 
 For a failed or silent run, inspect in order:
 
-1. Saved workflow engine, script, metadata, and validation result.
-2. Authenticated workspace and optional session attachment.
-3. Execution row, durable instance ID, current node, and failure payload.
-4. Orchestrator logs and script journal/replay state.
-5. Saved agent version, runtime-registry resolution, model, and MCP/tool config.
-6. Kueue Workload, Sandbox, pod scheduling, init containers, and both app and
-   `daprd` logs.
-7. Session events, tool calls, usage, artifacts, and terminal status.
-8. User-facing API/UI state.
+1. Call `get_workflow_context`, then use `list_workflow_executions` only when
+   the exact execution ID is unknown.
+2. Call `debug_workflow_execution` for the bounded overview and server-issued
+   `nextActions`, followed by `trace_get_digest` for phases, usage, critical
+   path, and evidence coverage.
+3. Drill down narrowly with `trace_search_spans`, `trace_get_span`, and
+   `trace_get_logs`. Use returned cursors rather than requesting an unbounded
+   trace.
+4. For model evidence, call `trace_get_llm_turn` with exactly one of `spanId`
+   or `sessionId`. For browser evidence, call
+   `trace_get_browser_screenshot` with an execution-bound storage reference;
+   it returns native MCP image content for vision analysis.
+5. Compare the MCP evidence with the saved workflow engine, script, metadata,
+   validation result, durable instance, current node, and replay journal.
+6. Verify saved-agent version, runtime-registry resolution, effective model
+   config, MCP/tool config, session events, usage, artifacts, and terminal
+   status.
+7. Only then inspect Kueue Workload, Sandbox, pod scheduling, init containers,
+   orchestrator/runtime logs, and both app and `daprd` containers when the
+   bounded product evidence identifies a runtime gap.
+8. Confirm the same result through the user-facing API/UI state.
 
 Normal replay messages are not proof of a hang. Prove lack of progress with
 durable state, timestamps, queue admission, and runtime logs before intervening.
