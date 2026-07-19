@@ -69,7 +69,11 @@ The deployed Dapr prompt path stays canonical:
 2. A `chat_history` placeholder.
 3. The current user prompt appended by Dapr.
 
-The Prompt Workbench preview can render Mustache values to help authors reason about the prompt, but runtime substitution for these variables is out of scope for V1. In workflow JSON, use SW 1.0 jq expressions such as `${ .trigger.url }` for runtime interpolation. A `{{runtime.cwd}}` placeholder in a workflow node prompt is just literal text at execution time unless another runtime layer explicitly handles it.
+The Prompt Workbench preview can render Mustache values to help authors reason
+about an agent prompt, but runtime substitution is a separate concern. New
+dynamic scripts use ordinary JavaScript plus `args`. SW 1.0 jq expressions such
+as `${ .trigger.url }` apply only to frozen legacy definitions. A
+`{{runtime.cwd}}` placeholder is literal unless a runtime layer handles it.
 
 ## Prompt caching
 
@@ -109,8 +113,8 @@ Then run an authenticated smoke for list/create/update/archive in the target wor
 ## Authoritative files
 
 - `src/lib/agents/prompt-workbench-renderer.ts`
-- `src/lib/components/agents/prompt-workbench.svelte`
-- `src/lib/components/agents/prompt-preview.svelte`
+- `src/lib/components/agents/{prompt-content-editor,prompt-stack-editor,prompt-preview}.svelte`
+- `src/routes/workspaces/[slug]/agents/[id]/+page.svelte`
 - `src/lib/server/agents/instruction-bundle.ts`
 - `src/routes/api/prompt-presets/`
 - `drizzle/0060_resource_prompt_versions.sql`

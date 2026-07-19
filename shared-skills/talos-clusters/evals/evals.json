@@ -4,7 +4,7 @@
     {
       "id": 1,
       "prompt": "We need to recreate dev as a Crossplane-owned Talos spoke on Hetzner for SWE-bench. Tell me the exact order of edits, destructive cleanup, Tailscale checks, and validation gates you would run.",
-      "expected_output": "A destructive rebuild plan that starts from the TalosSpokeClusterClaim, preflights runtime data, cleans stale HCloud/Argo/Tailscale resources, monitors Crossplane/onboarding/GitOps, and validates nodes, labels, DB seed data, and capacity gates.",
+      "expected_output": "Correct the retired Crossplane premise, then use recreate-dev.sh as the destructive orchestrator: preflight and back up runtime data, destroy labeled HCloud resources, clean stale Tailscale devices, provision and bootstrap the spoke, enroll the managed argocd-agent, restore data, and pass node, label, GitOps, seed, and capacity gates.",
       "files": []
     },
     {
@@ -16,7 +16,7 @@
     {
       "id": 3,
       "prompt": "I want to resize dev workers from 3 to 6 and run a 72-instance Kimi SWE-bench ramp. What stack files and post-deploy checks matter?",
-      "expected_output": "Guidance covering claim/XRD/composition fan-out, worker labels, kustomize validation, Argo/Crossplane health, nodefs/DiskPressure, workflow-builder seed counts, Dapr state-store scopes, and capacity API gates before launching ramps.",
+      "expected_output": "Guidance covering provision-spoke.sh WORKER_COUNT and WORKER_TYPE defaults or invocation overrides, the destructive recreate-dev.sh path, custom WORKER_NODE_LABELS, script validation, argocd-agent and spoke app health, nodefs/DiskPressure, workflow-builder seed counts, Dapr state-store scopes, and capacity API gates before launching ramps.",
       "files": []
     }
   ]

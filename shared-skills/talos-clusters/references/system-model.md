@@ -8,7 +8,7 @@ The hub is a 5-node Hetzner/Talos cluster (Talos `v1.12.x`, Kubernetes
 `v1.32.0`, Flannel CNI, kube-proxy enabled): 3x cpx41 control-plane/management +
 2x ccx33 dedicated build nodes (labeled/tainted `stacks.io/build-pool=hub`). It
 is provisioned IMPERATIVELY (`docs/hub-cluster-setup.md`). It runs the
-**argocd-agent v0.8.1 PRINCIPAL** (single ArgoCD pane, ns `argocd`),
+**argocd-agent v0.9.0 PRINCIPAL** (single ArgoCD pane, ns `argocd`),
 source-hydrator, GitOps Promoter, the Tailscale operator, hub Tekton, and
 External Secrets Operator. As of 2026-06 the hub's 21 ExternalSecrets resolve from
 the **`onepassword-store`** ClusterSecretStore (ESO `onepasswordSDK` provider ->
@@ -31,7 +31,7 @@ Spokes differ by how they are provisioned, but all three use imperative scripts:
   runs a LOCAL ArgoCD + an AUTONOMOUS argocd-agent. Use the
   `ryzen-spoke-bootstrap` skill for it.
 
-The control plane is **argocd-agent v0.8.1**: the hub runs the principal, each
+The control plane is **argocd-agent v0.9.0**: the hub runs the principal, each
 spoke runs a local ArgoCD + an agent that dials the principal OUTBOUND over
 tailnet mTLS (8443). The single hub pane aggregates spoke status.
 

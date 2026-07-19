@@ -1,171 +1,188 @@
 # Runbook: Resize Or Upgrade A Talos Spoke
 
-Use when changing control-plane/worker counts, HCloud server types, Talos
-version, Kubernetes version, ISO ID, or worker labels.
+Use when changing dev control-plane/worker counts, HCloud server types or
+location, Talos/Kubernetes versions, the maintenance ISO, or worker labels.
+Paths are relative to `/home/vpittamp/repos/PittampalliOrg/stacks/main`.
 
-> **NOTE (stale — Crossplane retired, Phase D):** Crossplane no longer
-> provisions the dev spoke. dev is now script-provisioned via
-> `deployment/scripts/talos-hetzner/provision-spoke.sh` and agent-enrolled. For a
-> full recreate see `cluster-desired-state/runbooks/recreate-dev.md`. The
-> Crossplane XRD/Composition/claim steps below are HISTORICAL — read them for
-> background, but drive resize/recreate from the script path. Recreate gotchas
-> live in `cluster-desired-state/runbooks/recovery-and-gotchas.md`.
+Crossplane is retired. There is no live `TalosSpokeClusterClaim`, XRD,
+Composition, or provider reconcile to patch or wait for. The current authority
+is `deployment/scripts/talos-hetzner/provision-spoke.sh`, normally driven by the
+destructive `deployment/scripts/talos-hetzner/recreate-dev.sh` orchestrator.
 
-## Decide Whether This Is Mutable
+## Choose The Operation
 
-Small GitOps workload changes are mutable. Many Talos/HCloud infrastructure
-changes are effectively replace-and-reconcile in the current Crossplane
-composition. Before editing, inspect `Composition-talospokecluster.yaml` to see
-whether the field patches an existing managed resource cleanly or changes a
-bootstrap-time input.
+- Workload-only changes are mutable through GitOps and do not belong in this
+  runbook.
+- A Kubernetes-only minor upgrade may be performed in place with
+  `talosctl upgrade-k8s` after a successful dry run.
+- Node count/type, location/network, ISO, Talos version, and bootstrap machine
+  configuration changes default to a full dev recreate. Do not manually add an
+  HCloud server and expect the provisioning script or Talos PKI to adopt it.
+- For a one-off validation cluster, pass environment overrides to
+  `provision-spoke.sh`. For a durable dev default, edit that script's parameter
+  defaults and the matching current docs before recreating.
 
-Conservative default:
+The full recreate is destructive. Confirm no active benchmark/evaluation work,
+review the data backup scope, and use
+`cluster-desired-state/runbooks/recreate-dev.md` for the complete safety and
+recovery sequence. `recreate-dev.sh` backs up its declared application tables,
+destroys labeled HCloud resources, cleans stale tailnet devices, provisions,
+bootstraps dependencies, enrolls the managed argocd-agent, restores data, and
+runs the convergence gate.
 
-- Worker labels: mutable through Talos/Kubernetes config if composition supports
-  it; verify live labels after sync.
-- Worker count within XRD maximum: composition must have matching generated
-  worker resources. If it does not, expand schema/composition first.
-- Server type or ISO: plan as recreate unless the composition has explicit,
-  tested replacement behavior.
-- Kubernetes/Talos major/minor version: plan a controlled upgrade path, not a
-  casual claim edit.
-- HCloud server type or location changes can fail late if the target type is not
-  available in the target location. Check `hcloud server-type describe` before
-  changing the claim.
+## Current Provisioning Parameters
 
-## Hetzner ISO vs Kubernetes Version Constraint
+Read the script before every change; its checked-in defaults are the source of
+truth. The primary controls are:
 
-This is the most common bootstrap wall for a fresh Hetzner spoke recreate.
-
-- The Hetzner public catalog ships only a Talos `1.12.4` ISO. There is no
-  custom-ISO upload API; a custom ISO requires a Hetzner support ticket with a
-  direct `factory.talos.dev` URL.
-- `install.image` is derived from the claim's `talos.version` inside the
-  Terraform `talos_machine_configuration` data source (the composition module
-  itself sets only `install.disk=/dev/sda` + `wipe=true`, NOT `install.image`).
-  `install.image` governs the Talos version that gets WRITTEN TO DISK, even when
-  the node boots the older `1.12.4` ISO.
-- BUT while still in maintenance mode (before the install completes) the node
-  validates the REQUESTED `kubernetesVersion` against the RUNNING ISO Talos
-  (`1.12.4`). A new Kubernetes minor that the running `1.12.4` Talos does not
-  support will fail the bootstrap before the newer Talos is ever on disk.
-
-Net effect: a one-shot claim of Talos `1.13.2` + Kubernetes `1.36` on the
-`1.12.4` ISO CANNOT bootstrap. This is not a Talos failure; it is the
-maintenance-mode k8s-version validation against the ISO's running version.
-
-## Kubernetes Upgrade Guidance (Supported In-Place Path)
-
-For the `1.12.4`-ISO-vs-newer-Talos case, the supported recovery is a transient
-two-step Kubernetes version, performed by patching the LIVE claim:
-
-1. Set `kubernetesVersion` to a value the running `1.12.4` ISO accepts (e.g.
-   `1.35.0`) while keeping `talos.version: 1.13.2`. Because `install.image`
-   follows `talos.version`, the node still installs Talos `1.13.x` to disk; it
-   just bootstraps Kubernetes `1.35` first.
-
-   ```bash
-   kubectl --kubeconfig ~/.kube/hub-config -n crossplane-system patch \
-     talospokeclusterclaims.platform.pittampalli.io <spoke> --type=merge \
-     -p '{"spec":{"parameters":{"talos":{"kubernetesVersion":"1.35.0"}}}}'
-   ```
-
-2. Let the cluster finish bootstrapping on k8s `1.35` (now running Talos
-   `1.13.x`, which DOES support k8s `1.36`).
-
-3. Raise `kubernetesVersion` back to `1.36.0`:
-
-   ```bash
-   kubectl --kubeconfig ~/.kube/hub-config -n crossplane-system patch \
-     talospokeclusterclaims.platform.pittampalli.io <spoke> --type=merge \
-     -p '{"spec":{"parameters":{"talos":{"kubernetesVersion":"1.36.0"}}}}'
-   ```
-
-Patch the LIVE claim, not just Git. `crossplane-hcloud-compositions` auto-syncs
-from `main` with selfHeal, so a Git edit alone may be overwritten in flight; the
-live patch is what drives the in-flight reconcile (commit the final desired
-value to Git afterward so it persists).
-
-Verify the installed Talos via the OS-IMAGE column (NOT the claim value):
-
-```bash
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl get nodes -o wide
-# OS-IMAGE should read Talos (v1.13.x); k8s VERSION the requested 1.36.0
-talosctl --talosconfig /tmp/<spoke>-talosconfig version
+```text
+LOCATION / NETWORK_ZONE
+NETWORK_CIDR / SUBNET_CIDR
+CP_COUNT / CP_TYPE
+WORKER_COUNT / WORKER_TYPE
+TALOS_VERSION
+BOOTSTRAP_K8S_VERSION / K8S_VERSION
+ISO_ID
+WORKER_NODE_LABELS
+PREVIEW_BUILD_WORKER_COUNT / PREVIEW_BUILD_USERNS_MAX
+INSTALL_CNI / CILIUM_VERSION
 ```
 
-If you cannot reason about ISO-vs-target compatibility, you can still dry-run a
-stepwise in-place k8s upgrade before patching:
+Before choosing an HCloud type or location, verify availability rather than
+assuming a similarly named type exists there:
 
 ```bash
-talosctl --talosconfig /tmp/<spoke>-talosconfig version
-talosctl --talosconfig /tmp/<spoke>-talosconfig upgrade-k8s --to <next-minor> --dry-run
+hcloud location list -o columns=name,description,country,city,network_zone
+for type in cpx41 cpx51 cpx42 cpx62; do
+  hcloud server-type describe "$type" -o json | jq -r \
+    --arg type "$type" '"\($type): " + ([.locations[]?.name] | join(","))'
+done
 ```
 
-For a fully disposable spoke, a clean recreate from the committed claim plus the
-two-step `kubernetesVersion` sequence above is the reliable end-to-end path.
+## Resize Or Replace Dev
+
+For an invocation-only override, export the target shape on the orchestrator.
+The following illustrates the interface; set values to the approved target:
+
+```bash
+WORKER_COUNT=6 \
+WORKER_TYPE=cpx51 \
+CP_COUNT=3 \
+CP_TYPE=cpx41 \
+  deployment/scripts/talos-hetzner/recreate-dev.sh
+```
+
+To make a shape the durable default, update the corresponding default values in
+`provision-spoke.sh`, validate the script, commit the change, and then run the
+orchestrator. Do not create a replacement claim/XRD/composition layer.
+
+For a small disposable test cluster, call the provisioner directly with a
+non-dev name and isolated network CIDRs, then run the documented bootstrap and
+enrollment sequence only if that test needs workloads:
+
+```bash
+CLUSTER_NAME=devtest \
+CP_COUNT=1 WORKER_COUNT=1 \
+CP_TYPE=cpx21 WORKER_TYPE=cpx21 \
+NETWORK_CIDR=10.9.0.0/16 SUBNET_CIDR=10.9.1.0/24 \
+  deployment/scripts/talos-hetzner/provision-spoke.sh
+```
+
+Destroy that test with the same identity and network parameters:
+
+```bash
+CLUSTER_NAME=devtest \
+NETWORK_CIDR=10.9.0.0/16 SUBNET_CIDR=10.9.1.0/24 \
+  deployment/scripts/talos-hetzner/provision-spoke.sh --destroy
+```
+
+## ISO And Kubernetes Version Constraint
+
+The current Hetzner public Talos maintenance ISO is `1.12.4` (`ISO_ID=125127`).
+It validates the requested bootstrap Kubernetes version while the node is still
+running Talos 1.12.4. A one-shot bootstrap at a newer unsupported Kubernetes
+minor fails before the target Talos image is installed to disk.
+
+`provision-spoke.sh` encodes the supported sequence:
+
+1. Generate machine configs for `BOOTSTRAP_K8S_VERSION` (currently 1.35).
+2. Install `TALOS_VERSION` to disk through the generated machine config.
+3. Install Cilium and wait for nodes.
+4. When `K8S_VERSION` differs from the bootstrap version, run
+   `talosctl upgrade-k8s` on the installed Talos system.
+
+The default recreate stays at the bootstrap Kubernetes version for speed. Opt
+into a newer target explicitly:
+
+```bash
+deployment/scripts/talos-hetzner/recreate-dev.sh --upgrade-k8s=1.36.0
+```
+
+For a Kubernetes-only upgrade on the existing dev cluster, first verify the
+installed Talos supports the target and dry-run it:
+
+```bash
+T=/tmp/talos-spoke-dev/talosconfig
+talosctl --talosconfig "$T" version
+talosctl --talosconfig "$T" upgrade-k8s --to 1.36.0 --dry-run
+talosctl --talosconfig "$T" upgrade-k8s --to 1.36.0
+```
+
+Do not patch a retired Crossplane claim to perform either sequence.
 
 ## Worker Labels
 
-There are two label paths:
-
-- `machine.nodeLabels` keeps labels in Talos machine config.
-- Kubelet `extraArgs.node-labels` makes custom labels appear on Kubernetes Nodes
-  during registration.
-
-For labels that schedulers or capacity checks rely on, ensure the composition
-passes only custom labels to kubelet:
-
-```yaml
-machine:
-  nodeLabels:
-    node-role.kubernetes.io/worker: ""
-    stacks.io/swebench-pool: dev-benchmark
-  kubelet:
-    extraArgs:
-      node-labels: stacks.io/swebench-pool=dev-benchmark
-```
-
-Do not pass reserved role labels such as `node-role.kubernetes.io/worker` in
-`kubelet.extraArgs.node-labels`; kubelet rejects unknown `kubernetes.io` and
-`k8s.io` label prefixes there and may fail to start.
-
-## Edit Checklist
-
-1. Update the claim for desired shape.
-2. Update the XRD schema if count limits or fields change.
-3. Update the composition resource fan-out if adding more workers.
-4. Keep worker pools simple unless the user explicitly asks for mixed pools.
-5. Validate kustomize and YAML parsing.
-6. Commit and push; then let hub Argo/Crossplane reconcile.
-
-## Talos Version Notes
-
-The claim records the intended Talos version and Hetzner ISO ID, but live nodes
-must still be checked after bootstrap:
+Pass custom-domain labels as a comma-separated `WORKER_NODE_LABELS` value. The
+provisioner renders them into Talos `machine.nodeLabels` and performs its
+post-bootstrap worker labeling required by the SWE-bench ResourceFlavor.
 
 ```bash
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl get nodes -o wide
-talosctl --talosconfig /tmp/<spoke>-talosconfig version
+WORKER_NODE_LABELS='stacks.io/swebench-pool=dev-benchmark' \
+  deployment/scripts/talos-hetzner/recreate-dev.sh
 ```
 
-The installed Talos version is set by `install.image` (derived from
-`talos.version`), NOT by the booted ISO ID, so the OS-IMAGE column should match
-`talos.version` even though nodes boot the older Hetzner `1.12.4` ISO. If the
-OS-IMAGE differs from `talos.version`, treat it as a real finding: check the
-Terraform `talos_machine_configuration` `install.image`, the claim
-`talos.version`, the ISO ID, and composition defaults before assuming the claim
-value won. The booted ISO version still matters for one thing only: the
-maintenance-mode Kubernetes-version validation described above.
+Do not put reserved `node-role.kubernetes.io/*` labels into the Talos
+`machine.nodeLabels` input. NodeRestriction prevents the kubelet from
+self-setting them; the provisioner stamps the worker role after bootstrap with
+the admin kubeconfig.
+
+## Change Checklist
+
+1. Inspect `provision-spoke.sh` and confirm the current defaults and supported
+   parameters.
+2. Decide whether the change is an in-place Kubernetes upgrade or a destructive
+   recreate.
+3. Check HCloud location/type capacity and the ISO/Kubernetes compatibility.
+4. Drain or cancel active work and verify the recreate backup covers required
+   product data.
+5. For a durable default, edit only the script parameters and matching current
+   docs; do not edit retired Crossplane artifacts.
+6. Validate shell syntax and run the full recreate or in-place upgrade.
+7. Pass the orchestrator verify gate and the workload-specific capacity gates.
 
 ## Validation
 
 ```bash
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl get nodes -o wide
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl get nodes -L stacks.io/swebench-pool
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl describe nodes | rg 'DiskPressure|nodefs|Allocatable'
-talosctl --talosconfig /tmp/<spoke>-talosconfig get kubeletconfig
+bash -n deployment/scripts/talos-hetzner/provision-spoke.sh
+bash -n deployment/scripts/talos-hetzner/recreate-dev.sh
+
+K=/tmp/talos-spoke-dev/kubeconfig
+T=/tmp/talos-spoke-dev/talosconfig
+kubectl --kubeconfig "$K" get nodes -o wide
+kubectl --kubeconfig "$K" get nodes \
+  -L node-role.kubernetes.io/worker,stacks.io/swebench-pool
+kubectl --kubeconfig "$K" describe nodes | rg 'DiskPressure|nodefs|Allocatable'
+talosctl --talosconfig "$T" version
+
+kubectl --kubeconfig ~/.kube/hub-config -n dev get applications
+deployment/scripts/talos-hetzner/recreate-dev.sh --verify-only
 ```
 
 For dev SWE-bench capacity, continue with
-`validate-dev-swebench-capacity.md`.
+`validate-dev-swebench-capacity.md` before launching a ramp.
+
+## Historical Boundary
+
+Before Phase D, claims, XRD schema limits, composition worker fan-out, and
+Crossplane provider health controlled this operation. Those mechanics are
+retired context only and must not be used to operate or recreate dev.

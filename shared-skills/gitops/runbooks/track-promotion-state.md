@@ -3,9 +3,9 @@
 ## When to use
 
 Hub Tekton `update-stacks` pushed release metadata to `origin/main`, you merged a `release/workflow-builder-*` release-intent PR, or you manually changed `release-pins/workflow-builder-images.yaml`, and want to see:
-- Where the promotion is in the pipeline (hydrating? promoter PR open? spoke synced?)
-- What's gating the next step (most often: dev's `argocd-health` not green yet → staging blocked)
-- Which spoke is currently on which image
+- Where the dev promotion is in the pipeline (hydrating, gates, auto-merge, dev sync)
+- What's gating dev (`argocd-health`, timer, or Argo sync)
+- Which image is currently live on dev
 - Whether "stuck" is actually stuck or just waiting on a normal poll
 
 The hub ArgoCD UI has the GitOps Promoter extension installed. Use it for visualizing Promoter resources and relationships, but still treat CRD status and branch tips as authoritative when debugging.
@@ -19,40 +19,38 @@ origin/main
    │  (update-stacks direct push or release PR updates release-pins tag/digest/provenance)
    │  (per-app sourceHydrator on hub-side spoke-<env>-<app>)
    ▼
-env/spokes-<env>-next   ──merged──▶  env/spokes-<env>   ──synced──▶  Spoke cluster (dev/staging)
+env/spokes-dev-next   ──auto-merged──▶  env/spokes-dev   ──synced──▶  dev
    │                       ▲                                              │
    │                       │                                              │ ArgoCD reports health
    │            ChangeTransferPolicy                                      │ via argocd-health
-   │            (dev: timer=0s, staging: timer=10m)                       │ + timer CommitStatus
-   │            (PR opened with autoMerge: true)                          │ on the hydrated sha
+   │            (argocd-health + dev timer)                               │ + timer CommitStatus
+   │            (autoMerge: true)                                         │ on the hydrated sha
    │                       ▲                                              │
    │                       └────── argocd-health + timer gates ◀──────────┘
    ▼
-env/spokes-staging-next ── blocked until dev's argocd-health=success ──▶ env/spokes-staging
 ```
 
-> **Staging is dormant (no staging cluster, 2026-06):** the `env/spokes-staging*` leg
-> above is paused — `workflow-builder-release` promotes to dev only (stacks PR #2436).
-> Promotion model = ryzen (direct `main`) + dev. The diagram describes the full
-> mechanism for when staging is re-enabled.
+Staging branches/overlays are retained for an explicit future re-enable, but
+there is no current staging cluster or active staging promotion leg. Ryzen is a
+separate opt-in direct-`main` lane.
 
 Four layers of state to read in order:
 
 | Layer | What to look at | What it tells you |
 |---|---|---|
 | 0. Inventory | workflow-builder `/admin/deployments`, `gitops-inventory-hub`, or in-cluster egress | Desired images, live images, drift, commit/build metadata, and promotion SHAs in one place |
-| 1. Hydrator | `env/spokes-<env>-next` branch tip on github | Whether your release-pins commit got rendered (~30-90s after origin/main lands) |
+| 1. Hydrator | `env/spokes-dev-next` branch tip on GitHub | Whether the dev release-pin commit got rendered |
 | 2. Promoter | `PromotionStrategy.status.environments[*]` + `ChangeTransferPolicy` | Whether the promoter PR was opened/merged (gated by `argocd-health` and `timer` CommitStatuses) |
-| 3. Spoke ArgoCD | `spoke-<env>-<app>` and `<env>-<app>` Application status | Whether the spoke synced; whether the new image is live |
+| 3. Dev ArgoCD | hub meta app `spoke-dev-<app>` plus managed child app in hub namespace `dev` | Whether dev synced and the new image is live |
 
 ## Web UI on argocd-hub.tail286401.ts.net
 
 1. **workflow-builder `/admin/deployments`** — preferred first view for app/runtime metadata. It compares release-pins, live Argo images, commit metadata, build status, and promotion state.
 2. **GitOps Promoter UI extension in ArgoCD** — use the Promoter section to visualize `PromotionStrategy`, `ChangeTransferPolicy`, `PullRequest`, and related CRDs. If the section is missing, see `runbooks/manage-gitops-promoter.md`.
 3. **PromotionStrategy** — `argocd / workflow-builder-release` for spokes, or `argocd / stacks-environments` for hub-only changes. View YAML; look at `.status.environments[]` for per-environment dry/hydrated SHAs and `commitStatuses[?(@.key=="argocd-health" || @.key=="timer")].phase`.
-4. **`spoke-<env>-<app>` apps** (e.g. `spoke-dev-workflow-builder`) — these are the meta-apps that watch `env/spokes-<env>` and deploy Application CRDs to the spoke cluster. Sync revision = the hydrated commit currently serving.
-5. **`<env>-<app>` apps** (e.g. `dev-workflow-builder`) — these run ON the spoke cluster (`destination.name=dev`) and deploy actual workloads. `summary.images` shows the resolved image tag after kustomize image substitution.
-6. **Open PRs in stacks** — promoter creates auto-merge PRs from `env/spokes-<env>-next` → `env/spokes-<env>` for each promotion. https://github.com/PittampalliOrg/stacks/pulls?q=is%3Aopen+head%3Aenv%2Fspokes-
+4. **`spoke-dev-<app>` meta apps** in hub namespace `argocd` watch the dev dry source/hydrated branch.
+5. **`dev-<app>` managed apps** are authored in hub namespace `dev` and pushed to dev by the argocd-agent principal. `summary.images` shows the resolved image.
+6. **Promoter state** should auto-converge; the review gate was the `main` PR, not a second manual env-branch PR.
 
 ## CLI cheat-sheet
 
@@ -67,13 +65,10 @@ curl -fsS -H "Authorization: Bearer ${TOKEN}" \
 
 # Spoke workload path: workflow-builder pods use this URL, not the HTTPS service-host VIP.
 # The egress Service must target gitops-inventory-hub-node.tail286401.ts.net:8080.
-tmp=$(mktemp /tmp/dev-kubeconfig.XXXXXX)
-trap 'shred -u "$tmp"' EXIT
-kubectl --kubeconfig ~/.kube/hub-config get secret dev-2frrm-kubeconfig -n crossplane-system \
-  -o jsonpath='{.data.kubeconfig}' | base64 -d > "$tmp"
-pod=$(KUBECONFIG="$tmp" kubectl -n workflow-builder get pod \
+DEV_KUBECONFIG=/tmp/talos-spoke-dev/kubeconfig
+pod=$(kubectl --kubeconfig "$DEV_KUBECONFIG" -n workflow-builder get pod \
   -l app.kubernetes.io/name=workflow-builder -o jsonpath='{.items[0].metadata.name}')
-KUBECONFIG="$tmp" kubectl -n workflow-builder exec "$pod" -c workflow-builder -- node -e '
+kubectl --kubeconfig "$DEV_KUBECONFIG" -n workflow-builder exec "$pod" -c workflow-builder -- node -e '
 const http = require("node:http");
 const url = process.env.WORKFLOW_BUILDER_GITOPS_INVENTORY_URL;
 http.get(url, {headers: {authorization: `Bearer ${process.env.WORKFLOW_BUILDER_GITOPS_INVENTORY_TOKEN || ""}`}}, (res) => {
@@ -184,16 +179,13 @@ If the egress target is `gitops-inventory-hub.tail286401.ts.net`, the proxy is p
 ## Verify (after a normal flow)
 
 ```bash
-# Both spoke meta-apps Synced + Healthy at the new hydrated commit
-kubectl --kubeconfig ~/.kube/hub-config -n argocd get app spoke-dev-workflow-builder spoke-staging-workflow-builder \
+# Dev meta-app Synced + Healthy at the new hydrated commit
+kubectl --kubeconfig ~/.kube/hub-config -n argocd get app spoke-dev-workflow-builder \
   -o custom-columns='NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status'
 
-# Both workload apps have the new image
-for env in dev staging; do
-  echo "--- $env ---"
-  kubectl --kubeconfig ~/.kube/hub-config -n argocd get app ${env}-workflow-builder \
-    -o jsonpath='{.status.summary.images}' | tr ',' '\n' | grep workflow-builder
-done
+# Managed dev workload app has the new image
+kubectl --kubeconfig ~/.kube/hub-config -n dev get app dev-workflow-builder \
+  -o jsonpath='{.status.summary.images}' | tr ',' '\n' | grep workflow-builder
 
 # No open promoter PRs left = promotion fully merged
 gh pr list --repo PittampalliOrg/stacks --state open --search "head:env/spokes" --json number
@@ -202,10 +194,10 @@ gh pr list --repo PittampalliOrg/stacks --state open --search "head:env/spokes" 
 
 ## Verify workflow-builder MCP/auth after a rollout
 
-When the change touches MCP connection UX, ActivePieces auth, `piece-mcp-server`, `dapr-agent-py`, or AgentRuntime registry sync, add this check after the normal image/promotion verification:
+When the change touches MCP connection UX, ActivePieces auth, `piece-mcp-server`, or `dapr-agent-py`, add this check after normal image/promotion verification:
 
 ```bash
-ctx=dev
+ctx=admin@dev
 
 kubectl --context "$ctx" -n workflow-builder get cm activepieces-mcp-catalog \
   -o jsonpath='{.data.servers\.json}' | jq 'keys'
@@ -214,12 +206,10 @@ kubectl --context "$ctx" -n workflow-builder get ksvc \
   -l app.kubernetes.io/managed-by=activepieces-mcp-reconciler \
   -o custom-columns=NAME:.metadata.name,READY:.status.conditions[?(@.type==\"Ready\")].status,URL:.status.address.url
 
-slug=<agent-slug>
-kubectl --context "$ctx" -n workflow-builder get deploy "agent-runtime-${slug}" -o json | \
-  jq -r '.spec.template.spec.containers[] | select(.name=="dapr-agent-py") | .env[] | select(.name=="DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON").value' | jq .
-
-kubectl --context "$ctx" -n workflow-builder logs deploy/"agent-runtime-${slug}" \
-  -c dapr-agent-py --tail=250 | rg 'mcp-bootstrap|Loaded|Registered|Missing credentials'
+kubectl --context "$ctx" -n workflow-builder get sandbox,pods
+kubectl --context "$ctx" -n workflow-builder logs <new-session-pod> \
+  -c <runtime-container> --tail=250 \
+  | rg 'mcp-bootstrap|connected|Loaded|Registered|Missing credentials'
 ```
 
 For piece MCP servers, runtime URLs should be Knative URLs without `:3100`, and OAuth-backed entries should include `headers.X-Connection-External-Id`. If this verification fails, switch to `runbooks/debug-workflow-builder-mcp-auth.md`.

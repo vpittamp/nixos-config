@@ -3,7 +3,7 @@
 A **disposable** Hetzner Talos spoke, provisioned + enrolled by SCRIPTS — the SAME
 imperative path as hub & ryzen (Crossplane was REMOVED in Phase D; there is no
 `TalosSpokeClusterClaim`/Composition/group-N pipeline any more). dev runs a LOCAL ArgoCD
-plus an **argocd-agent v0.8.1 MANAGED agent**: the hub authors the dev Application objects
+plus an **argocd-agent v0.9.0 MANAGED agent**: the hub authors the dev Application objects
 in ns `dev` (== agent name), the hub principal pushes them to the dev agent, and dev's
 local controller reconciles them. Single pane = `kubectl --context hub-cluster -n dev get
 applications`. Shared model in `architecture.md`; recreate steps in

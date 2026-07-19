@@ -7,10 +7,8 @@
 # reads project-level .kimi-code/mcp.json and Claude-style .mcp.json, both of
 # which override the user-level entry of the same name.
 #
-#   - workflow-builder: direct streamable-HTTP entry (kimi supports `url`
-#     natively). Unlike codex.nix / claude-code.nix it does NOT go through an
-#     mcp-remote stdio proxy — the tailnet ingress answers plain HTTP MCP
-#     without the X-Wfb-Session-Id header.
+#   - workflow-builder: shared authenticated mcp-remote proxy. WFB_API_KEY owns
+#     the workspace principal; WFB_MCP_SESSION_ID is optional explicit lineage.
 #   - chrome-devtools / playwright: same stdio servers as codex.nix, gated on a
 #     real Sway session via browser-mcp-shared.nix.
 #   - mlflow is intentionally absent (no longer used).
@@ -52,7 +50,8 @@ let
   mcpServers =
     lib.optionalAttrs workflowBuilderMcp.enable {
       "workflow-builder" = {
-        url = workflowBuilderMcp.url;
+        command = "${workflowBuilderMcp.proxyCommand}";
+        args = [];
         startupTimeoutMs = 30000;
         toolTimeoutMs = 300000;
       };

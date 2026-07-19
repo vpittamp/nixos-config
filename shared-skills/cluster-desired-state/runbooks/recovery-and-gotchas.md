@@ -3,7 +3,7 @@
 Failure modes discovered/validated across hub/ryzen/dev. Each is **Symptom ->
 Diagnosis -> Fix -> Verify**. Paths relative to
 `/home/vpittamp/repos/PittampalliOrg/stacks/main`. For ArgoCD/Promoter recovery
-mechanics defer to the `gitops` skill; for Crossplane spoke specifics, `talos-clusters`.
+mechanics defer to the `gitops` skill; for Talos spoke specifics, `talos-clusters`.
 
 ---
 
@@ -198,11 +198,11 @@ devices that still reserve the canonical hostname. The new operator can't claim 
 suffixes. Hub's `<spoke>-api-egress` Service may also stay pinned to the OLD device.
 
 **Fix.** Delete the stale devices via the Tailscale API (token minted from the
-operator-oauth Secret / OAuth client), BEFORE or right after bootstrap. For
-Crossplane spokes, group-9 proxygroup-auth already cleans `svc:k8s-api-<spoke>` + stale
-devices; for ryzen, the gated `deployment/scripts/cleanup-tailnet-devices.sh` runs in the
-`--recreate` path. Then patch/restart the hub egress Service or the operator StatefulSet pod
-so it re-resolves.
+operator-oauth Secret / OAuth client) BEFORE provisioning replacements. The
+gated `deployment/scripts/cleanup-tailnet-devices.sh` is part of both current
+recreate paths: `talos-hetzner/recreate-dev.sh` for dev and
+`bootstrap-spoke-cluster.sh --recreate` for ryzen. Then patch/restart the hub
+egress Service or the operator StatefulSet pod so it re-resolves.
 
 **Backstop = `tailnet-device-sweeper` CronJob** (hub ns `tailscale`, every 15m, PRs
 #2322/#2325). Deletes OFFLINE stale spoke tailnet devices (offline-only via
@@ -211,9 +211,9 @@ accumulate and force `-N` collisions. It is hygiene, NOT the guarantee — the h
 on-recreate guarantee remains the gated pre-recreate `cleanup-tailnet-devices.sh`.
 API gotcha: the Tailscale device `hostname` field DROPS the `-N` suffix (a live device and
 its dead `-N` twin share one hostname) — match on the MagicDNS `name`; `lastSeen` IS a
-reliable liveness signal (control-plane keepalives keep it fresh for connected devices). An
-in-Composition pre-onboarding cleanup was deliberately NOT built (a function-pipeline error
-would halt ALL spoke provisioning).
+reliable liveness signal (control-plane keepalives keep it fresh for connected devices).
+The retired Crossplane composition never gained pre-onboarding cleanup; do not
+revive that path.
 
 **Verify.** The canonical hostname (no `-1` suffix) is present; no stale offline devices
 remain in the tailnet admin list. (ryzen hub->spoke no longer uses the operator device —
@@ -411,7 +411,7 @@ v2.4.1, all ES served at v1, all SecretSynced, 0/194 OutOfSync.
 after external-secrets) under `set -u` — `TS_OPERATOR_CHART_VERSION: unbound variable`.
 Because destroy has ALREADY run by this point, ryzen is left DOWN.
 
-**Diagnosis.** `deployment/scripts/talos-hetzner/bootstrap-spoke-cluster.sh` is a
+**Diagnosis.** `deployment/scripts/bootstrap-spoke-cluster.sh` is a
 STANDALONE script — it does NOT source `deployment/scripts/lib/common.sh`, which is where
 the Tailscale-operator chart pin (`1.96.5`) lives. So `${TS_OPERATOR_CHART_VERSION}` was
 never defined and the recreate died at the helm install.

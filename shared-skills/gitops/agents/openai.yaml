@@ -1,3 +1,4 @@
 interface:
   display_name: "GitOps (PittampalliOrg/stacks)"
-  short_description: "Operate ArgoCD, image promotion, Tailscale, and runtime drift."
+  short_description: "Operate the dev GitOps lane, ArgoCD, promotion, MCP auth, and drift."
+  default_prompt: "Use $gitops to deliver or diagnose the requested change on the dev cluster unless another target is explicitly named."

@@ -1,6 +1,9 @@
 # SW 1.0 Spec Reference
 
-Scope: the canonical shape of a SW 1.0 document as the workflow-builder orchestrator parses it. Use this when you need to write a new spec or validate an existing one. Source of truth: `services/workflow-orchestrator/core/sw_types.py` (Pydantic models) and `services/workflow-orchestrator/core/sw_expressions.py` (jq evaluation).
+Scope: the frozen legacy SW 1.0 shape parsed by `sw_workflow_v1`. Use this to
+inspect, operate, or migrate an existing definition, not to author a new user
+workflow. New workflows use dynamic script. When `SW_AUTHORING_FROZEN=true`,
+explicit SW creation and SW spec writes are rejected.
 
 ## Top-level shape
 
@@ -177,7 +180,7 @@ Before submitting a spec, run through this list. Most failures hit one of these.
 6. ☐ Any `${ .<task>.<x> }` reference points to a task that appears earlier in `do[]`.
 7. ☐ Every `durable/run` step has `with.agentRef.id` (or `with.body.agentRef.id` for the nested form). Without it, the orchestrator falls back to the legacy `dapr-agent-py` pod, which is not what you want.
 8. ☐ If the workflow uses a workspace sandbox you want to keep alive, the `workspace/*` step has `with.keepAfterRun: true`.
-9. ☐ `workflows.project_id` will be stamped at insert time — the BFF does this from `locals.session.projectId`. If you're inserting via psql, set it explicitly to a real project id.
+9. ☐ Save through Workflow MCP or the authenticated BFF so workspace ownership and `workflows.project_id` are stamped by the application. Direct SQL is not a workflow authoring path.
 
 ## See also
 

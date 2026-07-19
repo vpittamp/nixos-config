@@ -1,4 +1,4 @@
 interface:
   display_name: "Skaffold Dev Loop"
   short_description: "Run Skaffold HMR and image-pin loops on ryzen."
-  default_prompt: "Use $skaffold-dev-loop to start, exit, or troubleshoot the Skaffold dev loop for workflow-builder system services."
+  default_prompt: "Use $skaffold-dev-loop only for an explicitly requested Ryzen Skaffold loop; generic dev deployments use the GitOps skill."

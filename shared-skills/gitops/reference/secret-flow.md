@@ -1,124 +1,102 @@
-# Secret flow: KeyVault → ESO → K8s Secret → pod env
+# Secret flow: 1Password -> hub mirror -> spoke ESO -> pod
 
-## The chain
+Use this reference for the active hub and spoke secret path. Azure Key Vault and
+Azure Workload Identity are dormant compatibility assets, not the current secret
+root.
 
+## Active chain
+
+```text
+1Password vault `hub-eso`
+  -> hub ClusterSecretStore `onepassword-store`
+  -> hub ExternalSecrets
+  -> hub Secrets in namespace `spoke-secrets`
+       (`dev-shared-secrets`, `ryzen-shared-secrets`, agent certs, tailnet CA)
+  -> spoke ClusterSecretStore `hub-secrets-store`
+       (ESO kubernetes provider over the Tailscale hub API path)
+  -> workload ExternalSecret
+  -> local Kubernetes Secret
+  -> pod env / secretKeyRef at pod start
 ```
-Azure KeyVault                  ExternalSecrets Operator           K8s Secret              Pod env
-keyvault-thcmfmoo5oeow    →     ExternalSecret CR with        →    workflow-builder-  →    envFrom
-(per-spoke entries:             refreshInterval: 1h                secrets                  (read at start)
- *-CLIENT-ID-DEV,               Pulls each remoteRef.key
- *-CLIENT-SECRET-DEV, …)        and writes to .data
-                                Triggers on:
-                                 - schedule (1h)
-                                 - annotation force-sync=<ts>
-```
 
-> **NOTE (2026-06): hub secret root migrated to 1Password.** The chain diagram above
-> still shows Azure KeyVault as the hub root, but hub ExternalSecrets now resolve from the
-> `onepassword-store` ClusterSecretStore (ESO `onepasswordSDK` → `hub-eso` vault) instead of
-> Azure KeyVault. Spokes are unaffected — they still read hub-mirrored secrets over Tailscale.
-> See `cluster-desired-state/references/secrets-1password.md` for the migration detail.
+The hub bootstrap credential is the scoped read-only 1Password service-account
+token in `external-secrets/onepassword-sa-token`. Spokes do not authenticate to
+1Password or Azure. Their `hub-secrets-store` can read only the hub
+`spoke-secrets` namespace through the scoped `spoke-secrets-reader` transport.
 
-## Per-spoke secret naming
+Source-of-truth manifests:
 
-Each spoke gets its own copy of every credential it needs. The `spoke-workloads` ApplicationSet template (`packages/components/hub-spoke-appsets/apps/spoke-workloads-appset.yaml`) patches the `workflow-builder-secrets` ExternalSecret to substitute the per-spoke KeyVault key:
+- `packages/components/hub-onepassword/ClusterSecretStore-onepassword-store.yaml`
+- `packages/components/hub-management/manifests/spoke-secrets/`
+- `packages/components/spoke-tailscale-secrets/manifests/spoke-transport/ClusterSecretStore-hub-secrets-store.yaml`
+- `packages/components/workloads/workflow-builder-secrets/manifests/ExternalSecret-workflow-builder.yaml`
+- `packages/components/workloads/workflow-builder/manifests/ExternalSecret-dapr-agent-py.yaml`
 
-| Generic env var (in pod) | KeyVault key | Notes |
-|---|---|---|
-| `GITHUB_CLIENT_ID` | `GITHUB-OAUTH-CLIENT-ID-{DEV,STAGING,RYZEN}` | Social login (Sign in with GitHub) |
-| `GITHUB_CLIENT_SECRET` | `GITHUB-OAUTH-CLIENT-SECRET-{DEV,STAGING,RYZEN}` | Social login |
-| `GOOGLE_CLIENT_ID` | `GOOGLE-OAUTH-CLIENT-ID-{DEV,STAGING}` | Social login (no ryzen entry) |
-| `GOOGLE_CLIENT_SECRET` | `GOOGLE-OAUTH-CLIENT-SECRET-{DEV,STAGING}` | Social login |
-| `OAUTH_APP_GITHUB_CLIENT_ID` | `OAUTH-APP-GITHUB-CLIENT-ID-{DEV,STAGING,RYZEN}` | Per-piece OAuth (different app, used by integration "Connect to GitHub" feature) |
-| `OAUTH_APP_GITHUB_CLIENT_SECRET` | `OAUTH-APP-GITHUB-CLIENT-SECRET-{DEV,STAGING,RYZEN}` | Same |
-| `INTERNAL_API_TOKEN` | `INTERNAL-API-TOKEN` | Shared, not per-spoke |
-| `BROWSERSTATION_API_KEY` | `BROWSERSTATION-API-KEY` | Shared |
-| `DAPR_POSTGRES_CONNECTION_STRING` | `WORKFLOW-BUILDER-DATABASE-URL` | Shared |
-| `WORKFLOW_BUILDER_*` (many) | various | See ExternalSecret on each spoke for the full data list |
+## Environment mapping
 
-There's also a separate set for the third-party piece OAuth apps (`OAUTH_APP_NOTION_*`, `OAUTH_APP_MICROSOFT_*`, `OAUTH_APP_LINKEDIN_*`) which are typically **not** per-spoke.
+Workload manifests use `ryzen-shared-secrets` as their base remote object.
+Environment overlays retarget that object and the indexed per-environment OAuth
+properties. The active dev render points at `dev-shared-secrets` and properties
+such as `GITHUB-OAUTH-CLIENT-ID-DEV`; Ryzen uses the corresponding Ryzen
+properties. Staging mappings are retained but dormant.
 
-## Per-spoke OAuth Apps on GitHub
+Do not insert entries into the middle of
+`ExternalSecret-workflow-builder.yaml`'s `spec.data`. The overlays use guarded,
+index-based JSON6902 patches for environment-specific OAuth entries. Append new
+entries and render the dev overlay to prove the indices still match.
 
-Each spoke has its own OAuth App registration (because each spoke has a distinct callback URL):
+Kimi follows the same path. The hub mirror exposes property `KIMI-API-KEY`, and
+the Dapr agent ExternalSecret maps it to local key `KIMI_API_KEY`. Do not create
+a second provider-specific credential or put the key in a ConfigMap.
 
-| Spoke | OAuth App name (vpittamp account) | Callback URL |
-|---|---|---|
-| dev | `workflow-builder-dev` (id 3532146) | `https://workflow-builder-dev.tail286401.ts.net/api/v1/auth/social/github/callback` |
-| staging | `workflow-builder-staging` (id 3532148) | `https://workflow-builder-staging.tail286401.ts.net/api/v1/auth/social/github/callback` |
-| ryzen | (corresponding ryzen app) | `https://workflow-builder-ryzen.tail286401.ts.net/api/v1/auth/social/github/callback` |
+## Refresh and rollout
 
-Find them at https://github.com/settings/developers → OAuth Apps.
-
-There are also separate "Workflow Connections (Dev/Prod/Ryzen/Staging)" apps for the per-piece OAuth (the second column above).
-
-## Common diagnostic: `attributes.updated` mismatch
-
-If `*-CLIENT-ID-*` and `*-CLIENT-SECRET-*` were updated more than a few minutes apart in KeyVault, someone rotated the OAuth App but only updated one half. This is the most common cause of `[OAuth] github exchange failed: Error: The client_id and/or client_secret passed are incorrect`.
+There are two asynchronous ESO hops: 1Password -> hub mirror, then hub mirror ->
+spoke Secret. Force and verify them in that order before restarting a consumer.
 
 ```bash
-az keyvault secret show --vault-name keyvault-thcmfmoo5oeow \
-  --name GITHUB-OAUTH-CLIENT-ID-DEV     --query attributes.updated -o tsv
-az keyvault secret show --vault-name keyvault-thcmfmoo5oeow \
-  --name GITHUB-OAUTH-CLIENT-SECRET-DEV --query attributes.updated -o tsv
+# Hub: materialize the changed 1Password item into the per-spoke mirror.
+kubectl --context hub-cluster -n spoke-secrets annotate externalsecret \
+  dev-shared-secrets force-sync="$(date +%s)" --overwrite
+kubectl --context hub-cluster -n spoke-secrets get externalsecret \
+  dev-shared-secrets
+
+# Dev: materialize the hub mirror into the workload Secret.
+kubectl --context admin@dev -n workflow-builder annotate externalsecret \
+  workflow-builder-secrets force-sync="$(date +%s)" --overwrite
+kubectl --context admin@dev -n workflow-builder get externalsecret \
+  workflow-builder-secrets
 ```
 
-If they're hours/days apart → the secret in KeyVault doesn't match the OAuth App's current secret on GitHub. Generate a new one on GitHub and update KeyVault. See `runbooks/rotate-oauth-secret.md`.
+Use the actual available kubeconfig context; do not assume `admin@dev` exists on
+every workstation. Confirm both ExternalSecrets report `Ready=True` and verify a
+non-secret checksum or a short, non-logged prefix of the destination value before
+rolling the Deployment. Existing pods do not reread environment variables after
+the Kubernetes Secret changes.
 
-## The ESO ↔ pod restart race condition
+For `dapr-agent-py-secrets`, force that ExternalSecret instead of
+`workflow-builder-secrets`. For image pull credentials, force the matching GHCR
+ExternalSecret; they are separate from application secrets.
 
-This bites every time it's not respected. The chain has FOUR steps and they are NOT atomic:
-
-1. `az keyvault secret set ...`  — KeyVault updated **immediately**
-2. ESO sees the change on next refresh — defaults to `refreshInterval: 1h`, but you can force with `kubectl annotate externalsecret <name> force-sync=$(date +%s) --overwrite`
-3. ESO writes the new value to the K8s Secret (`workflow-builder-secrets`) — happens **after** the force-sync annotation is processed, takes seconds
-4. Pod reads env from K8s Secret — **only at pod start**. Existing pods see the OLD value until restart.
-
-If you trigger the rollout (`kubectl rollout restart`) at the same moment as step 3, the new pod can race-read the K8s Secret while ESO is still writing — getting the stale value.
-
-**The rule:** between force-sync and rollout-restart, **verify the K8s Secret head matches the new value**:
+## Diagnostics
 
 ```bash
-kubectl -n workflow-builder annotate externalsecret workflow-builder-secrets \
-  force-sync=$(date +%s) --overwrite
-
-# Wait until this matches the first 8 chars of what you just set in KV:
-kubectl -n workflow-builder get secret workflow-builder-secrets \
-  -o jsonpath='{.data.GITHUB_CLIENT_SECRET}' | base64 -d | head -c 8
-
-# THEN restart:
-kubectl -n workflow-builder rollout restart deploy/workflow-builder
+kubectl --context hub-cluster get clustersecretstore onepassword-store
+kubectl --context hub-cluster -n spoke-secrets get externalsecret
+kubectl --context admin@dev get clustersecretstore hub-secrets-store
+kubectl --context admin@dev -n workflow-builder get externalsecret
 ```
 
-## ExternalSecret status fields
+Interpret failures by hop:
 
-```bash
-kubectl -n workflow-builder get externalsecret workflow-builder-secrets \
-  -o jsonpath='refresh: {.status.refreshTime}{"\nstate: "}{.status.conditions[0].type}={.status.conditions[0].status}{"\n"}'
-```
+- `onepassword-store` not ready: repair the hub 1Password service-account token
+  or provider reachability.
+- Hub mirror not ready: inspect the item/key named by its `remoteRef`.
+- `hub-secrets-store` not ready: repair the spoke-to-hub Tailscale transport,
+  scoped reader token, CA, or CoreDNS rewrite.
+- Workload ExternalSecret not ready: inspect its remote object/property mapping;
+  do not bypass ESO by hand-editing the generated Secret.
 
-Healthy state is `Ready=True` with a recent `refreshTime`. If `Ready=False`, ESO is failing to fetch from KeyVault — check the operator pod logs in `external-secrets` namespace.
-
-## Image pull secrets
-
-Separate from app secrets. Two flavours:
-- `ghcr-pull-credentials` — workload-namespace ExternalSecret, written by ESO from KeyVault. Allows pods to pull from `ghcr.io/pittampalliorg/<image>` (private/public).
-- `ghcr-push-credentials` (in `tekton-pipelines` ns on hub) — Tekton task auth for pushing to ghcr.io. Org-scoped PAT. Use this same secret for a manual build-and-push to ghcr.io when the outer-loop build didn't publish a release-pinned `git-<sha>` tag (see `runbooks/debug-funnel-orphan-tag.md`).
-
-## Hub-side secrets cheat sheet
-
-Most operational secrets live in `tekton-pipelines` (build pipelines) or `argocd` (cluster certs):
-
-```bash
-kubectl --kubeconfig ~/.kube/hub-config get secrets -n tekton-pipelines | \
-  grep -E "ghcr|gitea|webhook"
-# ghcr-push-credentials                kubernetes.io/dockerconfigjson
-# gitea-registry-credentials           kubernetes.io/dockerconfigjson
-# github-webhook-secret                Opaque
-
-kubectl --kubeconfig ~/.kube/hub-config get secrets -n argocd | grep -E "cluster-|admin"
-# argocd-initial-admin-secret          Opaque
-# cluster-dev / cluster-staging / cluster-ryzen   Opaque (cluster registration)
-```
-
-**Treat any extracted credential as transient** — `shred -u` after use. The Crossplane spoke kubeconfigs and the ghcr-push docker config are admin-equivalent.
+Extracted credentials and generated admin kubeconfigs are transient sensitive
+material. Avoid printing full values and remove temporary files after the
+operation.

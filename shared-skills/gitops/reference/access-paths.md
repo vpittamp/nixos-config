@@ -25,42 +25,33 @@ kubectl --context hub-cluster get nodes
 
 ## Spoke kubectl — primary path (Tailscale)
 
-Per-spoke ProxyGroups expose each spoke's API server as `<spoke>-api-v2.tail286401.ts.net` (or similar — check `hub-and-spoke-quickstart.md` for the current naming). The K9s launcher script auto-merges them into `~/.kube/config`:
+For the active dev target, use the configured direct/Tailscale context:
 
 ```bash
-kubectl --context dev-api-v2.tail286401.ts.net get nodes
-kubectl --context staging-api-v2.tail286401.ts.net get nodes
-kubectl --context dev-cluster get nodes      # if Tailscale registers it
-kubectl --context staging-cluster get nodes
-kubectl --context admin@ryzen get nodes        # ryzen Talos-in-Docker, local kubeconfig
+kubectl --context admin@dev get nodes
+# or, from the provision/recreate workdir:
+KUBECONFIG=/tmp/talos-spoke-dev/kubeconfig kubectl get nodes
 ```
 
 If the context exists in `~/.kube/config` but `kubectl` errors with `lookup …: no such host`, the Tailscale device for that ProxyGroup isn't registering its hostname publicly (often the orphan-tag issue — see `runbooks/debug-funnel-orphan-tag.md`).
 
-The `*-api-v2` VIPs are Tailscale service-hosts. `policy.hujson` must approve `svc:dev-api-v2` / `svc:staging-api-v2`, and devices authenticated as `tag:spoke-api` need a Kubernetes grant to `tag:k8s` with `system:masters`. If ACL policy has changed but the VIP still fails, re-authenticate the spoke ProxyGroup with `deployment/scripts/tailscale/proxygroup-auth.sh --cluster <spoke>` after verifying the Tailscale ACL GitHub Action succeeded.
+If the configured Tailscale path fails, use the script-generated kubeconfig and
+run `deployment/scripts/tailscale/proxygroup-auth.sh --cluster dev` with that
+explicit `KUBECONFIG`. Other targets are opt-in; staging is currently dormant.
 
-## Spoke kubectl — fallback (Crossplane-managed kubeconfig)
+## Dev kubectl fallback (script-generated kubeconfig)
 
-When the Tailscale path is broken, every spoke's full admin kubeconfig lives in a Secret on the hub, written by Crossplane's `kubernetes` provider during cluster onboarding:
+Crossplane provisioning and its hub kubeconfig Secrets are retired. Dev's
+admin kubeconfig is produced by `provision-spoke.sh`:
 
 ```bash
-# Find it
-kubectl --kubeconfig ~/.kube/hub-config get secrets -n crossplane-system | grep kubeconfig
-# dev-2frrm-kubeconfig                                connection.crossplane.io/v1alpha1
-# staging-j7ptt-kubeconfig                            connection.crossplane.io/v1alpha1
-
-# Extract — admin certs, treat with care
-kubectl --kubeconfig ~/.kube/hub-config get secret dev-2frrm-kubeconfig -n crossplane-system \
-  -o jsonpath='{.data.kubeconfig}' | base64 -d > /tmp/dev-kubeconfig
-chmod 600 /tmp/dev-kubeconfig
-
-KUBECONFIG=/tmp/dev-kubeconfig kubectl get nodes
-# … do whatever you came to do …
-
-shred -u /tmp/dev-kubeconfig    # ALWAYS shred when done
+KUBECONFIG=/tmp/talos-spoke-dev/kubeconfig kubectl get nodes
 ```
 
-The kubeconfig points at the spoke's first control-plane public IP (e.g. `https://178.156.225.243:6443` for dev), bypassing Tailscale entirely. The Crossplane secret name suffix (`-2frrm`, `-j7ptt`) is the composition revision; if you delete and recreate the spoke, the suffix changes.
+If it is stale or absent, derive it again from
+`/tmp/talos-spoke-dev/talosconfig` with `talosctl kubeconfig ... --force` as
+documented in the fallback runbook. The `cluster-dev` Argo Secret is an agent
+mapping and cannot be used as a Kubernetes admin kubeconfig.
 
 The full procedure is in `runbooks/access-spoke-cluster-fallback.md`.
 
@@ -107,14 +98,19 @@ Spoke clusters do **not** have a ready-made talosconfig file in `~/.talos/`. If 
 **Hub pods reach ryzen kube-api via Tailscale egress.** Pattern: `ryzen-api-egress.tailscale.svc.cluster.local` ExternalName Service points at the operator-rendered headless egress pod for the `ryzen-api-v3.tail286401.ts.net` device. For other hub→ryzen traffic, follow the same `tailscale.com/tailnet-fqdn` egress pattern
 - Run the command from ryzen host, where the Tailscale daemon resolves the hostname natively
 
-## GitHub & Azure
+## GitHub and secret administration
 
 - `gh` is authenticated as `vpittamp`. Useful for: webhook delivery history (`gh api repos/PittampalliOrg/workflow-builder/hooks/<id>/deliveries`), OAuth app metadata, PR/run inspection.
-- `az` is logged in to the user's Azure tenant. KeyVault: `keyvault-thcmfmoo5oeow`. Common commands:
+- The active hub secret root is the `hub-eso` 1Password vault. Use an authenticated
+  `op` session or the 1Password UI, then force the hub mirror and spoke
+  ExternalSecrets in order; see `reference/secret-flow.md`.
+- Azure Key Vault and Azure Workload Identity are dormant compatibility assets.
+  Use `az keyvault` only for an explicitly scoped legacy/recovery investigation,
+  not for normal rotation or rollout.
 
 ```bash
-az keyvault secret show --vault-name keyvault-thcmfmoo5oeow --name <NAME> --query attributes.updated -o tsv
-az keyvault secret set  --vault-name keyvault-thcmfmoo5oeow --name <NAME> --value '<v>' --output none
+op item get <ITEM> --vault hub-eso
+kubectl --context hub-cluster get clustersecretstore onepassword-store
 ```
 
 ## Tailscale

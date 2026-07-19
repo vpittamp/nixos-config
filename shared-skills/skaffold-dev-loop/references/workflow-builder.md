@@ -51,9 +51,10 @@ There is NO inbound webhook path to a spoke. All 3 GitHub webhooks are HUB-FACIN
 (`/api/webhook`), `gitops-promoter-webhook-hub`. ryzen, being an autonomous
 argocd-agent with no argocd-server, can only be refreshed by its own SPOKE-LOCAL
 ArgoCD (which is why commit-pin `refresh=hard`es the ryzen app directly rather
-than relying on a relay — the argocd-agent principal does NOT relay refreshes to
-autonomous agents on v0.8.1, verified live). The MANAGED dev agent DOES receive
-relayed refreshes (hub annotation → reconcile in ~3s). For DEV, stacks PR #2449
+than relying on a relay). **Historical observation (v0.8.1, 2026-06-04):** the
+principal did not relay refreshes to the autonomous agent, while the managed dev
+agent did (hub annotation → reconcile in ~3s). Current v0.9.0 behavior must be
+verified independently. For DEV, stacks PR #2449
 added `argocd.argoproj.io/manifest-generate-paths` to the `spoke-workloads`
 ApplicationSet hydrator template (pointing at each spoke's dry-source overlay,
 `/packages/components/workloads/workflow-builder-system-overlays/<spoke>`); the
@@ -119,7 +120,7 @@ kubectl get application workflow-builder -n argocd \
 
 Prefer the GitHub/GHCR build lane plus an `origin/main` pin for durable workflow-builder images. For workflow-builder + workflow-mcp-server the ryzen pin is now FULLY AUTOMATED: `commit-pin.sh` upserts the flat pins file `packages/components/hub-spoke-appsets/release-pins/workflow-builder-images-ryzen.yaml` AND renders + commits the kustomize Component `packages/components/workloads/workflow-builder-ryzen-image/kustomization.yaml` LOCALLY (running `WFB_RENDER_ENVS=ryzen scripts/gitops/render-workflow-builder-release-overlays.sh` in its fresh hard-reset `~/.cache/skaffold/stacks-ryzen` clone — deterministic, byte-identical to CI), all in the SAME push, then `refresh=hard`es the ryzen SPOKE-LOCAL app. ryzen's autonomous local ArgoCD then reconciles `overlays/ryzen@main` in SECONDS (no ~1-2 min CI wait, no 30s-poll wait). No manifests `newTag` edit. stacks CI (`render-ryzen-image.yml`) is UNCHANGED but is now just a DRIFT-CORRECTION SAFETY NET — it re-renders on push and commits only on a diff, so it NO-OPS when commit-pin's local render already matches. (Phase 2d is DONE — ryzen no longer reads a bare `manifests/kustomization.yaml` `images:` block for these two services; the render now runs in commit-pin locally with CI as a drift net.) Use the Skaffold deploy path only for narrow ryzen-only recovery/testing.
 
-The local render (instead of relying on a webhook to ryzen) is required because there is NO inbound webhook path to ryzen: ryzen is an AUTONOMOUS argocd-agent with NO argocd-server (so no inbound `/api/webhook`), AND the argocd-agent principal does NOT relay a refresh to autonomous agents on v0.8.1 (live test: a hub-side `argocd.argoproj.io/refresh` annotation on the ryzen mirror NEVER reached the spoke). The only fast path is the SPOKE-LOCAL refresh commit-pin issues directly. (By contrast the MANAGED agent (dev) relay WORKS — a hub-side refresh annotation reached the dev agent and reconciled in ~3s.)
+The local render (instead of relying on a webhook to ryzen) is required because there is NO inbound webhook path to ryzen: ryzen is an AUTONOMOUS argocd-agent with NO argocd-server (so no inbound `/api/webhook`). Commit-pin therefore issues the SPOKE-LOCAL refresh directly. Historical observation (v0.8.1, 2026-06-04): a hub-side `argocd.argoproj.io/refresh` annotation on the ryzen mirror never reached the spoke, while the managed dev relay reconciled in ~3s. Verify v0.9.0 independently; this path does not rely on relay behavior.
 
 ```bash
 pnpm deploy:skaffold                                  # workflow-builder
@@ -239,5 +240,4 @@ docker login -u PittampalliOrg ghcr.io
 - **`fn-system` (Knative)** — treat the cluster's Argo-managed pod as an external dependency. Skaffold sync into a transient Knative revision is impractical. `scripts/sandbox-dev.sh` is the experimental sandbox-based alternative for Knative-style workloads.
 - **ActivePieces piece-runtime (`ap-<piece>-service`)** — reconciler-owned per-piece Knative services (`activepieces-mcps`), not a Skaffold module. Deliver changes via an image rebuild (`piece-mcp-server`) + metadata re-sync, not Skaffold. (`fn-activepieces` was deleted.)
 - **Services not in the Skaffold module set** — add them to `skaffold/<svc>.skaffold.yaml` and the root `requires:` list rather than using a side-channel inner-loop.
-
 

@@ -1,3 +1,4 @@
 interface:
   display_name: "Workflow Builder"
-  short_description: "Author SW 1.0 workflows, MCP tools, prompts, and agent runtime fixes."
+  short_description: "Author dynamic workflows and debug Workflow MCP/runtime paths."
+  default_prompt: "Use $workflow-builder to author, save, run, or debug a Workflow Builder workflow using the current dev, Workspace MCP, and Kimi K3 contracts."

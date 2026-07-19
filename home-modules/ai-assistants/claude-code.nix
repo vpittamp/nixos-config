@@ -4,26 +4,6 @@ let
   repoRoot = ../../.;
 
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
-  nodeNpx = "${pkgs.nodejs}/bin/npx";
-  workflowBuilderMcpProxy = pkgs.writeShellScript "workflow-builder-mcp-proxy-claude" ''
-    set -euo pipefail
-
-    session_id="''${WFB_MCP_SESSION_ID:-''${CLAUDE_CODE_SESSION_ID:-}}"
-    if [ -z "$session_id" ] && [ -n "''${XDG_RUNTIME_DIR:-}" ] && [ -f "''${XDG_RUNTIME_DIR}/workflow-builder-mcp-session-id" ]; then
-      session_id="$(${pkgs.coreutils}/bin/head -n1 "''${XDG_RUNTIME_DIR}/workflow-builder-mcp-session-id" | ${pkgs.gnused}/bin/sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-    fi
-    if [ -z "$session_id" ] && [ -f "''${HOME}/.cache/workflow-builder/mcp-session-id" ]; then
-      session_id="$(${pkgs.coreutils}/bin/head -n1 "''${HOME}/.cache/workflow-builder/mcp-session-id" | ${pkgs.gnused}/bin/sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-    fi
-
-    mcp_url="''${WFB_MCP_URL:-${workflowBuilderMcp.url}}"
-    args=(-y mcp-remote "$mcp_url" --transport http-only)
-    if [ -n "$session_id" ]; then
-      args+=(--header "X-Wfb-Session-Id: $session_id")
-    fi
-
-    exec "${nodeNpx}" "''${args[@]}"
-  '';
 
   # Use claude-code from the dedicated flake for latest version
   # Fall back to nixpkgs-unstable if flake not available
@@ -353,9 +333,10 @@ lib.mkIf enableClaudeCode {
 
           # MCP Server permissions
           "mcp__claude-in-chrome"  # Claude-in-Chrome browser automation (built-in via --chrome)
-          "mcp__workflow-builder__list_workflow_targets"
-          "mcp__workflow-builder__get_workflow_target_health"
-          "mcp__workflow-builder__get_workflow_target_resources"
+          "mcp__workflow-builder__get_workflow_context"
+          "mcp__workflow-builder__list_workflows"
+          "mcp__workflow-builder__get_workflow"
+          "mcp__workflow-builder__execute_workflow"
           "mcp__workflow-builder__get_workflow_script_spec"
           "mcp__workflow-builder__validate_workflow_script"
           "mcp__workflow-builder__run_workflow_script"
@@ -524,7 +505,7 @@ lib.mkIf enableClaudeCode {
     # Enable interactively via `/mcp` command or `@` menu when needed
     mcpServers = lib.optionalAttrs workflowBuilderMcp.enable {
       workflow-builder = {
-        command = "${workflowBuilderMcpProxy}";
+        command = "${workflowBuilderMcp.proxyCommand}";
         args = [];
       };
     };

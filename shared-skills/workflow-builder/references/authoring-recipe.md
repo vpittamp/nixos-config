@@ -1,177 +1,134 @@
-# Authoring Recipe
+# Dynamic-Script Authoring Recipe
 
-Scope: the end-to-end happy path for "I want a workflow that does X." Steps from blank slate → spec → DB row → rendered canvas → green run. Cross-references to the deeper references and templates.
+Scope: create a new user workflow, save it in the authenticated workspace, and
+run it on dev. SW 1.0 is a frozen legacy format; it is not the new-workflow
+template.
 
-## Step 1 — Pick a template
+## 1. Establish the workspace
 
-Open the matching file in `assets/`:
+Connect to the dev Workflow MCP endpoint with a workspace `wfb_...` API key and
+call `get_workflow_context`. Confirm the expected workspace and `workflow:write`
+and `workflow:execute` capabilities before authoring.
 
-- One HTTP call → `assets/minimal-http.workflow.json`.
-- One agent step → `assets/minimal-agent.workflow.json`.
-- Workspace-bridged agent → `assets/workspace-keepalive.workflow.json`.
-- Just the trigger schema block → `assets/trigger-schema.snippet.json`.
+Workflow operations do not take `sessionId`. A verified Workflow Builder
+session is optional goal/trace lineage only.
 
-These are *complete* (`spec`, `nodes`, `edges`) — the BFF can ingest them directly.
+## 2. Read the live dialect
 
-## Step 2 — Fill in real values
+Call `get_workflow_script_spec` before writing. The server response is the
+authoritative client-facing contract. The repository sources are:
 
-Make a working copy. Then:
+- `docs/dynamic-script-authoring-guide.md`
+- `docs/dynamic-script-workflows.md`
+- `docs/code-first-cutover.md`
 
-1. **document.name + document.title** — short, descriptive, unique-ish. The `name` ends up in the URL.
-2. **input.schema** — declare every field the user provides at run time. See `assets/trigger-schema.snippet.json` for JSON Schema patterns. Fields you'll reference must appear here, otherwise `${ .trigger.<field> }` resolves to null.
-3. **The `do[]` tasks** — adapt the templates. Reach for `references/sw-1.0-spec.md` for the 12 task types and `references/agent-task.md` for `durable/run` body.
-4. **agentRef.id** — for any `durable/run`, replace the placeholder ID. Get a real one via:
-   ```bash
-   curl -s http://workflow-builder:3000/api/agents | jq '.[] | {id, slug, name}'
-   ```
-   Or inside the BFF pod:
-   ```bash
-   kubectl -n workflow-builder exec deploy/workflow-builder -- \
-     psql "$DATABASE_URL" -c "SELECT id, slug, name FROM agents WHERE NOT is_archived ORDER BY updated_at DESC LIMIT 10;"
-   ```
-5. **nodes/edges** — easiest path: leave the template's start/end + one task as-is and only edit `data.taskConfig` to mirror your `do[]` change. The adapter won't run on direct DB upserts, so spec and nodes/edges must agree. If you change the spec significantly, regenerate via the BFF (see Step 3 path B).
+The common primitives are:
 
-## Step 3 — Run the spec validation checklist
+- `await agent(prompt, opts)` for an agent call
+- `await parallel(thunks)` for a barrier fan-out
+- `await pipeline(items, ...stages)` for per-item streaming stages
+- `await action(slug, input, opts)` for deterministic platform actions
+- `await sleep(seconds)` and `await approve()` / `waitForEvent()`
+- `await workflow(name, args)` for one-level saved-workflow composition
+- `phase(title)` and `log(message)` for progress
 
-From `references/sw-1.0-spec.md`:
+Always await async primitives. Un-awaited calls and Promises in the returned
+value are hard script errors.
 
-1. ☐ `document.dsl == "1.0.0"`, namespace + name + version present.
-2. ☐ Every `do[]` entry is a single-key object with one of the 12 task types set.
-3. ☐ No rejected slugs — the eight in `_REMOVED_AGENT_ACTION_TYPES` (`claude/run`, `openshell/run`, `openshell/session-start`, `openshell-langgraph/run`, `openshell-langgraph-observable/run`, `dapr-agent-py/run`, `dapr-swe/run`, `durable/plan`); also avoid `mastra/*` / `agent/*` (they route nowhere). See `references/action-catalog.md`.
-4. ☐ Every `${...}` value is fully wrapped (full-string rule).
-5. ☐ `${ .trigger.<x> }` matches a declared input property.
-6. ☐ `${ .<task>.<x> }` references an earlier task only.
-7. ☐ Every `durable/run` has `with.agentRef.id`.
-8. ☐ Sandbox-keep steps have `with.keepAfterRun: true`.
+## 3. Write the script
 
-## Step 4 — Insert into the DB
+Start with a pure literal metadata export:
 
-### Path A (preferred): use the bundled script
+```js
+export const meta = {
+  name: 'inspect-page',
+  description: 'Inspect a page and return a structured summary',
+  input: {
+    type: 'object',
+    properties: {
+      url: { type: 'string', format: 'uri' },
+    },
+    required: ['url'],
+  },
+}
+
+const RESULT = {
+  type: 'object',
+  properties: {
+    title: { type: 'string' },
+    summary: { type: 'string' },
+  },
+  required: ['title', 'summary'],
+}
+
+const result = await agent(
+  `Open ${args.url}, inspect the rendered page, and summarize it.`,
+  {
+    agent: 'kimi-k3-browser-agent',
+    model: 'kimi/kimi-k3',
+    effort: 'max',
+    schema: RESULT,
+    label: 'inspect-page',
+  },
+)
+
+return result
+```
+
+Kimi K3 is the default dapr-agent-py model. It uses `KIMI_API_KEY`, a
+1,048,576-token context window, and maximum thinking. For vision, preserve
+structured image objects or base64 data URIs; never stringify multimodal
+content arrays into screenshot metadata.
+
+Use `opts.agent` for a saved agent/persona slug. `opts.agentType` selects a
+runtime such as `dapr-agent-py` or `browser-use-agent`; it is not a persona.
+Use exact platform model keys, not tier aliases.
+
+## 4. Validate, save, and run
+
+Use this exact loop:
+
+```text
+validate_workflow_script
+  -> fix every reported error
+  -> save_workflow_script
+  -> run_workflow_script { workflowName, args }
+```
+
+`save_workflow_script` validates again and upserts by workflow name inside the
+authenticated workspace. Save before run so the reusable definition has a
+stable workspace-owned identity and appears in the Workflows UI.
+
+## 5. Verify
+
+1. Read the saved definition with `get_workflow`.
+2. Open `https://workflow-builder-dev.tail286401.ts.net/workspaces/<slug>/workflows/<id>`.
+3. Confirm the script canvas and `meta.input` form.
+4. Run by saved name and inspect the run page, script-call journal, spawned
+   session, Sandbox/Kueue admission, and returned value.
+5. For a staged Workflow MCP token/bootstrap change, start a fresh session.
+   Retrying spawn for an already-running session does not refresh its token.
+
+## Secondary BFF JSON path
+
+`scripts/upsert-workflow.py` is available for a machine-generated full JSON
+definition. It creates with POST or updates when the payload includes `id`.
+It requires a Workflow Builder access JWT or login cookie:
 
 ```bash
-python3 ~/.claude/skills/workflow-builder/scripts/upsert-workflow.py my-workflow.json
+WORKFLOW_BUILDER_COOKIE='wb_access_token=<access-jwt>; wb_refresh_token=<refresh-jwt>' \
+  python3 scripts/upsert-workflow.py workflow.json
 ```
 
-The script:
-1. Resolves `project_id` from the user's session (or `WORKFLOW_BUILDER_API_KEY` env).
-2. POSTs `{name, nodes, edges, engineType}` to `/api/workflows` (which stamps `userId` + `projectId`).
-3. PUTs `{spec}` to `/api/workflows/<id>` to set the `spec` JSONB column.
-4. Prints the workflow `id` + a `canvasUrlHint`. The canvas page lives only at `/workspaces/<slug>/workflows/<id>` — there is no top-level `/workflows/<id>` route — and the POST response carries no workspace slug, so fill in the workspace you launched from.
-5. Falls back to direct `psql INSERT` if the BFF is unreachable (you must set `DATABASE_URL` and `--project-id` in that case).
+A workspace `wfb_...` API key authenticates Workflow MCP, not the
+session-authenticated `/api/workflows` BFF routes. The helper has no direct
+Postgres fallback.
 
-Why both POST + PUT: `POST /api/workflows` does not accept a `spec` field — only `name`, `nodes`, `edges`, `engineType`. The `spec` column is set via `PUT /api/workflows/[id]` (see `src/routes/api/workflows/[workflowId]/+server.ts:50-77`). The script handles both calls.
+## Legacy SW 1.0
 
-### Path B (manual, BFF available): UI editor
-
-Open `/workspaces/<slug>/workflows/new`, paste the spec into the Code tab, click Save. The BFF runs `specToGraph` to regenerate `nodes`/`edges` from the spec — that means you can hand-author *just* the spec and the BFF fills in the rest.
-
-### Path C (manual, BFF down): direct psql
-
-```bash
-kubectl -n workflow-builder exec -it deploy/postgresql -- \
-  psql -U postgres -d workflow_builder -c "
-    INSERT INTO workflows (id, name, nodes, edges, engine_type, user_id, project_id, spec)
-    VALUES ('wf_$(uuidgen | tr -d -)',
-            'My Workflow',
-            '<paste nodes JSON>'::jsonb,
-            '<paste edges JSON>'::jsonb,
-            'dapr',
-            '<user-id>',
-            '<project-id>',
-            '<paste spec JSON>'::jsonb)
-    RETURNING id;"
-```
-
-⚠ `project_id` is NOT NULL; without a real value the insert fails. Get one via:
-
-```sql
-SELECT id, slug, name FROM projects WHERE owner_user_id = '<user-id>' ORDER BY created_at LIMIT 5;
-```
-
-## Step 5 — Verify in the UI
-
-Read `references/verify-in-ui.md`. Quick version:
-
-1. `kubectl -n workflow-builder logs deploy/workflow-builder | tail -20` — confirm no compile errors.
-2. Browse to `/workspaces/<slug>/workflows/<id>` — the canvas should render with start/end + your tasks.
-3. Click **Execute** — the dialog should render form fields matching `input.schema.document.properties`.
-4. Submit — runs page (`/workspaces/<slug>/workflows/<id>/runs/<execId>`) shows live execution.
-
-## Recipe variants
-
-### Adding an agent step to an existing workflow
-
-1. Find the agent: `curl /api/agents` → copy `id` + `slug`.
-2. Confirm the agent is published/registered. The `agent-runtime-<slug>` Deployment lands when the agent is published; agents not yet published WILL fail at runtime even if the spec parses.
-3. If the agent needs project MCP tools, set its `mcpConnectionMode`/MCP connections in the agent UI or use an unresolved `mcpServers` reference; read `references/mcp-connections.md`.
-4. Append a `durable/run` task to `do[]` per `assets/minimal-agent.workflow.json`.
-5. Update `nodes`/`edges` to include the new node + edge to/from existing nodes (or use Path B in Step 4 to let the BFF regenerate).
-6. Re-upsert via the script.
-
-### Defining trigger inputs
-
-The trigger drives `${ .trigger.<field> }`. Two-step:
-
-1. Edit `spec.input.schema.document` (or `spec.document['x-workflow-builder'].input.schema` — the adapter normalizes both):
-   ```json
-   "input": {
-     "schema": {
-       "format": "json",
-       "document": {
-         "type": "object",
-         "properties": {
-           "url": { "type": "string", "format": "uri", "title": "Starting URL", "default": "https://example.com" },
-           "task": { "type": "string", "title": "What to do", "default": "Summarize this page in 2 sentences." }
-         },
-         "required": ["url", "task"]
-       }
-     }
-   }
-   ```
-2. Reference each declared field as `${ .trigger.url }`, `${ .trigger.task }`, etc. The Execute dialog auto-renders form fields from JSON Schema (string/number/enum/format=uri all work; nested objects are flattened).
-
-### Workflow that runs on a webhook
-
-Set up the webhook in the BFF: `POST /api/workflows/[workflowId]/webhook` with auth via JWT API key (`wfb_*` prefix). The webhook payload becomes the trigger data — so `${ .trigger.<field> }` reads webhook body fields. See `src/routes/api/workflows/[workflowId]/webhook/+server.ts` for the auth + payload shape.
-
-### Self-contained upsert script (no source-clone)
-
-Modern pattern: write a single TypeScript/Node script that builds the entire spec inline and INSERT…ON CONFLICT-upserts it — no `SOURCE_WORKFLOW_ID` dependency. Recommended over the older "clone-and-append" pattern because cloned source rows tend to drift or disappear across cluster rebuilds, the cloned-from row's per-step shape goes stale relative to the per-agent-runtime architecture, and renderer/migration runs can wipe overlay-injected workflow rows.
-
-Canonical examples in `scripts/`:
-
-- `scripts/upsert-plan-execute-browser-demo-workflow.ts` (5-step plan → execute → test → browser/validate)
-- `scripts/upsert-3b1b-animation-workflow.ts` (3-step animation generation + browser/validate)
-- `services/code-eval-runner/code-eval-item.workflow.json` (4-step code-eval, evaluations-stamp path)
-
-Common shape:
-
-1. CLI args: `--user-email <addr>` (required for owner resolution on a fresh cluster), `--agent-id <id>` / `--agent-version <n>` (override hardcoded default).
-2. `resolveOwner(sql, existing, userEmail)` helper: prefers existing row's `user_id`/`project_id`, then matches user by email + first project membership, then first project member, then first user. Mirrors `scripts/upsert-claude-code-agent-loop-workflow.mjs`.
-3. Spec builders return `JsonRecord` shapes for each task; `buildSpec(args)` assembles `spec.do[]`, `spec.document['x-workflow-builder']`, and `spec.input.schema`.
-4. Single `INSERT INTO workflows … ON CONFLICT (id) DO UPDATE` keyed on `WORKFLOW_ID` env or default.
-5. `visibility: "public"` so any workspace can launch.
-
-Deploy from outside the cluster:
-```bash
-kubectl --context dev -n workflow-builder port-forward svc/postgresql 35432:5432 >/dev/null 2>&1 &
-PF=$!
-sleep 3
-DATABASE_URL="postgresql://postgres:password@127.0.0.1:35432/workflow_builder" \
-  npx tsx scripts/upsert-<your-script>.ts --user-email vinod@pittampalli.com
-kill $PF
-```
-
-Then verify the spec landed:
-```bash
-kubectl --context dev -n workflow-builder exec postgresql-0 -- psql -U postgres -d workflow_builder -c "
-  select id, name, visibility, jsonb_array_length(spec->'do') do_steps from workflows where id='<id>';"
-```
-
-## See also
-
-- `references/sw-1.0-spec.md` — the spec.
-- `references/agent-task.md` — `durable/run` body.
-- `references/canvas-shape.md` — nodes/edges shapes.
-- `references/troubleshooting.md` — when something goes wrong.
-- `references/verify-in-ui.md` — confirming it shows up.
+Existing SW definitions remain readable/runnable through `sw_workflow_v1`.
+When `SW_AUTHORING_FROZEN=true`, explicit new SW creation and SW spec writes are
+rejected while metadata-only edits and internal migration producers remain
+possible. Use `sw-1.0-spec.md`, `agent-task.md`, and `canvas-shape.md` only to
+diagnose or migrate an existing row. Never bypass the freeze or application
+ports with SQL.

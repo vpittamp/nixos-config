@@ -4,11 +4,11 @@ Scope: the autonomous session goal loop (Codex `/goal` parity — wfb PRs #84/#8
 
 ## Mental model
 
-A **goal** is a persistent objective attached to one session (`thread_goals` table, migration `drizzle/0079_thread_goals.sql`; one ACTIVE goal per session enforced by the partial unique index `uq_thread_goals_session_active`). A BFF-side driver (`src/lib/server/goals/{goal-loop,repo,render}.ts`) re-injects the objective every time the agent finishes a turn, until the agent itself calls the `update_goal` MCP tool with `status: "complete"` after a completion audit, or a guardrail stops it. Statuses: `active | paused | budget_limited | complete`. Setting a new objective **replaces** any existing `active` OR `budget_limited` row — the `goalId` rotates and usage accounting resets (this is also the re-arm path after a budget stop).
+A **goal** is a persistent objective attached to one session (`thread_goals` table, migration `drizzle/0079_thread_goals.sql`; one ACTIVE goal per session enforced by the partial unique index `uq_thread_goals_session_active`). The BFF driver is `src/lib/server/goals/goal-loop.ts`, prompt rendering is in `render.ts`, and persistence stays behind the goal-loop application port with physical adapter `src/lib/server/application/adapters/goal-loop-store.ts`. It re-injects the objective every time the agent finishes a turn, until the agent calls `update_goal` with `status: "complete"` after a completion audit, or a guardrail stops it. Statuses: `active | paused | budget_limited | complete`. Setting a new objective **replaces** any existing `active` OR `budget_limited` row — the `goalId` rotates and usage accounting resets (this is also the re-arm path after a budget stop).
 
 ## The driver (event-driven, exactly-once)
 
-The loop is driven off `appendEvent` side-effects in `src/lib/server/sessions/events.ts` — no poller in the hot path:
+The loop is driven off session-event append side effects in `src/lib/server/application/adapters/session-events.ts` — no poller or CronJob:
 
 - **`agent.llm_usage`** → accrues token usage against the goal's budget (`accrueUsage` in `repo.ts`, which also flips `active → budget_limited` SQL-side when the budget is crossed).
 - **`session.status_idle{reason: end_turn}`** → renders the next continuation (verbatim Codex templates in `src/lib/server/goals/templates/{continuation,budget_limit}.md`, Mustache-style `{{ objective }}`/budget fields, objective wrapped in `<untrusted_objective>` tags) and injects it as a **visible `user.message`** with `origin=goal-continuation` and deterministic `sourceEventId = goal-continuation:<sessionId>:<iteration>`.
@@ -19,9 +19,16 @@ Terminal sessions halt the driver; an interrupt-mode Stop (Lifecycle Controller)
 
 ## Completion contract (MCP tools, auto-wired)
 
-`services/workflow-mcp-server/src/goal-tools.ts` exposes `create_goal` / `update_goal` / `get_goal`. Session scoping is **never a tool argument**: `spawn.ts` stamps an `X-Wfb-Session-Id` header into the goal MCP server entry at spawn time, and the server binds it per-request via AsyncLocalStorage (`goal-context.ts`). `update_goal` accepts ONLY `status: "complete"` — pause/resume/budget transitions are user/system-controlled (tool description tells the model to complete only after a completion audit with concrete evidence).
+`services/workflow-mcp-server/src/goal-tools.ts` exposes `create_goal` / `update_goal` / `get_goal`. Session scoping is **never a tool argument**. Platform spawn stamps both `X-Wfb-Session-Id` and a signed, session-bound `X-Wfb-Session-Token` on the Workflow MCP server entry; the BFF verifies session ownership/workspace membership before issuing the short-lived principal assertion used internally. A raw session ID is context, not authentication. `update_goal` accepts only the statuses declared by the current tool contract; completion must follow an evidence-backed audit, while pause/resume/budget transitions remain user/system-controlled.
 
-`spawn.ts` **auto-wires** the goal MCP server into every MCP-capable session (`ensureGoalMcpServer` — skipped when the runtime lacks MCP support, when an entry already matches the goal server, or with opt-out `GOAL_MCP_AUTO_WIRE=false`; URL override `GOAL_MCP_SERVER_URL`). The hosting service `workflow-mcp-server` is an actually-deployed workload since 2026-06 (was manifest-only): Deployment + `Service-workflow-mcp-server.yaml` port 3200 in stacks, `DATABASE_URL`/`INTERNAL_API_TOKEN` via `envFrom workflow-builder-secrets`; it hosts the goal tools alongside the workflow tools.
+`spawn.ts` **auto-wires** the goal MCP server into MCP-capable non-CLI sessions (`ensureGoalMcpServer`; skipped when the runtime lacks MCP, an entry already matches, or `GOAL_MCP_AUTO_WIRE=false`; URL override `GOAL_MCP_SERVER_URL`). The deployed `workflow-mcp-server` listens on port 3200 and hosts goal tools alongside workflow tools. Its Deployment receives only explicit `DATABASE_URL` and `INTERNAL_API_TOKEN` secret keys. Keep the BFF's JWT/Workflow MCP signing key out of this pod: the MCP service consumes opaque assertions and must not mint them.
+
+`spawnSessionWorkflow` returns early when the session is already running. A
+spawn retry therefore does **not** refresh that session's Workflow MCP token or
+bootstrap configuration. After a staged signing/auth/bootstrap rollout, start
+a fresh session and validate the new credential there.
+
+External API-key clients follow a different lane: workflow save/run operations are owned by the authenticated workspace and need no session. They may attach a verified same-user/same-workspace `X-Wfb-Session-Id` for goal, trace, or lineage context. See `workflow-mcp-server.md`.
 
 ## Budget accounting (codex semantics — net of cache reads)
 
@@ -44,9 +51,15 @@ delta = input_tokens + output_tokens + cache_creation_input_tokens   # cache REA
 
 Re-arm: POST a new goal — replace covers `budget_limited` rows too, rotating `goalId` and resetting accounting.
 
-## Crash-safety: tick CronJob + lost-idle probe
+## Delivery and recovery
 
-The runtime's session-event ingest to the BFF is **fire-and-forget** — an idle event dropped during a BFF outage/redeploy would freeze the loop forever. Backstop: stacks CronJob `goal-loop-tick` (`workflow-builder/manifests/CronJob-goal-loop-tick.yaml`, `*/2 * * * *`) → `POST /api/internal/goal-loop/tick` (internal token). The tick re-drives stalled goals and runs a **lost-idle probe**: if a goal's session event stream has been frozen longer than `GOAL_LOOP_LOST_IDLE_GRACE_SECONDS` (default 180), it posts the continuation anyway — safe because Dapr buffers raised events until the workflow's next `wait_for_external_event`, and the atomic iteration claim still dedupes.
+The inline session-event hook is the active driver and is fire-and-forget. The old
+`goal-loop-tick` CronJob, `POST /api/internal/goal-loop/tick`, and timer-driven
+lost-idle probe were retired. Goal creation and the stop-hook paths call the same
+idempotent `kickGoalLoop` driver, while the DB iteration claim, idle gate, and
+deterministic `sourceEventId` provide exactly-once posting. Do not look for a
+timer reaper when diagnosing a stalled goal; inspect the session event append,
+goal row, and explicit kick path.
 
 ## API + UI
 
@@ -60,7 +73,7 @@ The runtime's session-event ingest to the BFF is **fire-and-forget** — an idle
 - The `update_goal` call itself **is** accounted (Codex excludes it).
 - Wall-clock = `now - createdAt` (Codex: active-time deltas).
 - No plan-mode/feature-flag gates; no accounting-preserving unpause (re-set resets counters).
-- Ours adds `maxIterations` + DB-derived crash-safety (tick reaper) that Codex lacks.
+- Ours adds `maxIterations` plus DB claim/dedup safeguards; there is no timer-driven lost-idle backstop.
 
 ## Session Pulse (vitals strip)
 

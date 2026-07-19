@@ -122,7 +122,7 @@ When the skill seems wrong or the behavior surprises you, read these:
 - **APIs**: `src/routes/api/workflows/executions/[executionId]/artifacts/+server.ts` (read), `src/routes/api/internal/workflows/executions/[executionId]/artifacts/+server.ts` (write).
 - **UI**: `src/lib/components/workflow/execution/artifact-renderer.svelte` (discriminated-union switch), `src/lib/components/workflow/execution/artifact-list.svelte` (slot grouping + collapsible sections), `src/routes/workspaces/[slug]/workflows/[workflowId]/runs/[executionId]/+page.svelte` (Overview integration + Outputs TabsContent).
 - **Schema**: `src/lib/server/db/schema.ts` (`workflowArtifacts`), `drizzle/0067_workflow_artifacts.sql`.
-- **Read model**: `src/lib/server/execution-read-model.ts`, `src/lib/server/workflow-artifacts.ts`, `src/lib/types/execution-stream.ts` (`ExecutionReadModel.artifacts`).
+- **Read model**: `src/lib/server/application/workflow-execution-read-model.ts`, `src/lib/server/workflow-artifacts.ts`, `src/lib/types/execution-stream.ts` (`ExecutionReadModel.artifacts`).
 - **Repo-side doc**: `docs/workflow-artifacts.md` is the canonical doc; CLAUDE.md has a one-section summary.
 
 ## Template

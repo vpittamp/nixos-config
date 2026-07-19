@@ -101,3 +101,6 @@ The 2026-05-14 dev canary used DeepSeek Pro
 `astropy__astropy-13033`. Both runs completed and produced the expected MLflow
 hierarchy. Neither resolved the two instances; this validated the comparison
 architecture, not model quality.
+
+`agnt_kimi_k26_swe_canary` is a retained fixture identifier that now maps to
+`kimi/kimi-k3`; do not treat its name as an available K2.6 model option.

@@ -80,9 +80,9 @@ git ls-remote origin env/hub env/spokes-dev                                     
 
 ---
 
-## 3a. argocd-agent control plane (v0.8.1)
+## 3a. argocd-agent control plane (v0.9.0)
 
-The control plane is **argocd-agent v0.8.1**, not a hub-reconciles-everything model.
+The control plane is **argocd-agent v0.9.0**, not a hub-reconciles-everything model.
 
 - **Hub = principal** (ns `argocd`). It is the single pane: `kubectl -n <agent> get
   applications` on the hub shows every spoke's apps.
@@ -108,7 +108,7 @@ dev was the only live composite (`TalosSpokeClusterClaim-dev`); its registration
 (the group-5 `spoke-register` job that wrote the hub cluster-Secret) is **gone**. dev,
 ryzen, and the hub are now **all script-provisioned + agent-enrolled** — the same
 imperative path (no `TalosSpokeClusterClaim`, no Composition/group-N functions). The
-`packages/components/crossplane-hetzner-talos/` manifests may still sit on disk as inert
+Older revisions may contain `packages/components/crossplane-hetzner-talos/` manifests as inert
 history, but they are not wired into the dev overlay and do not register dev.
 
 The dev provision + enroll scripts (the SAME shape as hub/ryzen) — the entry point is the
@@ -187,20 +187,20 @@ How each cluster supplies it:
   `Secret-cluster-ryzen.yaml` was DELETED (PR #2308); the ryzen host TCP passthrough (§5)
   remains the Headlamp/break-glass kube endpoint.
 
-The **spoke-clusters-appset** (cluster generator,
-`packages/components/hub-spoke-appsets/apps/spoke-clusters-appset.yaml`) templates a
-`spoke-<name>` Application:
+Managed dev's root Application is explicit at
+`packages/components/hub-management/apps/spoke-dev.yaml`:
 ```yaml
-targetRevision: '{{- $sb := index .metadata.annotations "stacks.io/source-branch" -}}{{- if $sb -}}{{ $sb }}{{- else -}}main{{- end -}}'
-syncSource:  { targetBranch: 'env/spokes-{{index .metadata.annotations "spoke-cluster"}}' }
-hydrateTo:   { targetBranch: '<...>-next for dev/staging, else env/spokes-<name>' }
+drySource:  { targetRevision: main, path: packages/overlays/dev }
+syncSource: { targetBranch: env/spokes-dev, path: dev-apps }
+hydrateTo:  { targetBranch: env/spokes-dev-next }
 ```
-> GOTCHA: a SECOND copy at `packages/components/hub-base/apps/spoke-clusters-appset.yaml`
-> hardcodes `targetRevision: main` and has the buggy empty `kustomize: {}`
-> (hydrator-stall trap). The hub uses the **hub-spoke-appsets** copy (referenced by
-> `packages/overlays/hub/kustomization.yaml`). Edit that one, not hub-base's.
+The remaining cluster-generator is
+`packages/components/hub-spoke-appsets/apps/spoke-workloads-appset.yaml`; it
+selects managed spokes labeled for workflow-builder and hydrates each separate
+workflow-builder system overlay. The old `spoke-clusters-appset.yaml` copies no
+longer exist.
 >
-> NOTE: this appset drives **dev/staging only**. **ryzen is AUTONOMOUS** — its own
+> NOTE: this managed hydration drives **dev/staging only**. **ryzen is AUTONOMOUS** — its own
 > local ArgoCD runs a `root-ryzen` app-of-apps (from the `ryzen-agent-bootstrap`
 > component, applied by `enroll-ryzen-agent.sh`) that reconciles `packages/overlays/ryzen`
 > @ `main` directly. The hub neither hydrates nor renders ryzen's apps; it only sees a
@@ -466,7 +466,8 @@ packages/components/hub-management/                       # Promoter, headlamp, 
   .../manifests/argocd-agent-principal/                  # the hub PRINCIPAL (single pane) + resource-proxy TLS
   .../manifests/ryzen-agent-bootstrap/                   # ryzen autonomous-agent bootstrap kustomize component (applied by enroll-ryzen-agent.sh)
   .../manifests/kube-system-fixups/                      # self-healing CronJob: re-applies Flannel --iface + CoreDNS anti-affinity Talos drops
-  .../spoke-credentials/ExternalSecret-cluster-ryzen.yaml # ryzen Headlamp-only Secret (VESTIGIAL for ArgoCD; KV ARGOCD-CLUSTER-RYZEN-*, host TCP passthrough). cluster-ryzen ArgoCD mapping is written by argocd-agentctl, not this.
+  # headlamp-cluster-ryzen is staged imperatively by enroll-ryzen-agent.sh from
+  # the host-passthrough endpoint + read-only SA; the old cluster ExternalSecret is removed.
   # dev registration is NO LONGER an ExternalSecret/Crossplane job — cluster-dev is the
   #   resource-proxy agent mapping created by deployment/scripts/argocd-agent/enroll-dev-agent.sh
   .../spoke-secrets/{Namespace,ExternalSecret-<c>-shared-secrets,RBAC-spoke-secrets-reader,Ingress-k8s-api-hub-ingress}.yaml
@@ -481,7 +482,7 @@ packages/components/workloads/workflow-builder/manifests/{ConfigMap-workflow-bui
 packages/components/hub-spoke-appsets/apps/{spoke-clusters,spoke-workloads}-appset.yaml
 packages/components/spoke-tailscale-secrets/             # CONTRACT.md + spoke-transport manifests
 packages/components/profiles/local-core-ryzen/           # ryzen profile (Contour+Kourier, AWI/profile exclusions)
-# packages/components/crossplane-hetzner-talos/ is INERT history — Crossplane was REMOVED
+# packages/components/crossplane-hetzner-talos/ exists only in older revisions; Crossplane was REMOVED
 #   in Phase D; it no longer provisions or registers dev (or any cluster). See §3b.
 packages/components/tailscale-serve/manifests/tailscale-operator/Deployment-operator.yaml  # hardcodes OPERATOR_HOSTNAME=ryzen-operator; non-ryzen clusters MUST override (dev: PR #2364)
 deployment/scripts/talos-hetzner/recreate-dev.sh        # dev: ORCHESTRATOR rebuild entry point (data backup/restore + provision + deps + enroll-dev-agent + verify)

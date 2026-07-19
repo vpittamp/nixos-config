@@ -1,19 +1,24 @@
-# Runbook: Reconcile workflow-builder after moving from ryzen to dev/staging
+# Reconcile the dev workflow-builder environment
 
 ## When to use
 
-Use this when workflow-builder or one of its system services works on ryzen but fails after promotion to dev or staging. Typical symptoms:
+Use this when workflow-builder or one of its system services is wrong on the
+active dev target. Compare against another target only when the user explicitly
+requested that comparison. Staging configuration is retained but the cluster is
+currently dormant. Typical symptoms:
 
 - `workflow-builder-dev` loads but backend calls point at ryzen, localhost, or missing hostnames.
 - `phoenix-dev.tail286401.ts.net` does not resolve, times out, or is not declared.
 - `https://workflow-builder-dev.tail286401.ts.net` is unreachable, or returns 502 in a browser while `curl` returns 302 (see the tls-terminator buffer gotcha in Notes).
-- The dev/staging Deployment lacks `MCP_GATEWAY_BASE_URL`, `PUBLIC_PHOENIX_URL`, `PHOENIX_BASE_URL`, or `PHOENIX_API_BASE_URL`.
-- `kubectl --context dev-api-v2.tail286401.ts.net get nodes` fails even though the Crossplane fallback kubeconfig works.
+- The dev Deployment lacks `MCP_GATEWAY_BASE_URL`, `PUBLIC_PHOENIX_URL`, `PHOENIX_BASE_URL`, or `PHOENIX_API_BASE_URL`.
+- `kubectl --context admin@dev get nodes` fails while `/tmp/talos-spoke-dev/kubeconfig` still works.
 - A stale ExternalSecret, Service, or registry credential remains from an old ryzen/local-only app shape.
 
 ## Mental model
 
-Ryzen proves the hub-managed-spoke shape on local Talos Docker. Dev and staging are promoted spokes with different public hostnames and API access paths. Do not fix environment drift by patching live Deployments. Declare it in stacks:
+Dev is a managed argocd-agent spoke. Do not fix environment drift by patching
+live Deployments; declare it in stacks. Ryzen has a separate autonomous lane
+and staging is dormant, so neither is a default validation prerequisite.
 
 | Concern | Declarative owner |
 |---|---|
@@ -21,9 +26,11 @@ Ryzen proves the hub-managed-spoke shape on local Talos Docker. Dev and staging 
 | Tailnet app/service exposures (device-backed Ingresses like `phoenix-*`, plus the workflow-builder L4 LoadBalancer Service) | `packages/base/manifests/tailscale-ingresses/` plus per-spoke overlays |
 | Tailscale ACL policy and Kubernetes API grants | `policy.hujson` |
 | Hub/root ApplicationSet changes | `origin/main` → `env/hub-next` → `env/hub` through `stacks-environments` |
-| Dev/staging rendered workload changes | `origin/main` → `env/spokes-<env>-next` → `env/spokes-<env>` through `workflow-builder-release` |
+| Dev rendered workload changes | `origin/main` -> `env/spokes-dev-next` -> `env/spokes-dev` through `workflow-builder-release` |
 
-For app-spec or root-managed changes, push to GitHub `main`. Dev/staging reconcile via Hub Source Hydrator + spoke-* AppSets within ~3 min; ryzen's own local ArgoCD reconciles `main` directly (no `inner-loop`, no Promoter on the ryzen lane).
+For app-spec or root-managed changes, push to GitHub `main`. Dev reconciles via
+hub Source Hydrator, auto-merging Promoter, and the managed dev agent. Other
+cluster lanes are opt-in.
 
 ## Diagnostic
 
@@ -34,8 +41,6 @@ cd /path/to/stacks/main
 
 kubectl kustomize packages/overlays/dev/tailscale-ingresses | \
   rg 'workflow-builder-dev|phoenix-dev'
-kubectl kustomize packages/overlays/staging/tailscale-ingresses | \
-  rg 'workflow-builder-staging|phoenix-staging'
 # workflow-builder is an L4 LoadBalancer Service (not an Ingress); mcp-gateway is no longer on the tailnet.
 
 kubectl kustomize packages/overlays/hub | \
@@ -127,20 +132,17 @@ git add \
   policy.hujson
 git commit -m "fix(workflow-builder): declare dev spoke hostnames"
 git push origin HEAD:main
-# For local ryzen validation of the same manifest change (ryzen reconciles main directly):
-# Force ryzen's local ArgoCD to re-compare: deployment/scripts/ryzen-sync.sh
-# or: kubectl --context admin@ryzen annotate app -n argocd ryzen-<name> argocd.argoproj.io/refresh=hard --overwrite
 ```
 
 6. Wait for GitHub checks. `Tailscale ACL GitOps` must succeed before expecting new or re-tagged Tailscale services to work.
 
-7. If hub hydration is stuck on an older dry SHA, use `runbooks/manage-gitops-promoter.md` to clear `root-application.status.sourceHydrator.currentOperation` and `lastSuccessfulOperation`, then hard-refresh. Merge the generated `env/hub-next` → `env/hub` PR only after checking the diff is expected.
+7. If hub hydration is stuck on an older dry SHA, use `runbooks/manage-gitops-promoter.md` to clear `root-application.status.sourceHydrator.currentOperation` and `lastSuccessfulOperation`, then hard-refresh. `stacks-environments` auto-merges `env/hub-next` to `env/hub`; do not wait for a second manual PR.
 
 8. If a spoke API ProxyGroup still does not work after the ACL has applied, re-authenticate it:
 
 ```bash
-KUBECONFIG=/tmp/dev-kubeconfig bash deployment/scripts/tailscale/proxygroup-auth.sh --cluster dev
-kubectl --context dev-api-v2.tail286401.ts.net get nodes -o name
+KUBECONFIG=/tmp/talos-spoke-dev/kubeconfig bash deployment/scripts/tailscale/proxygroup-auth.sh --cluster dev
+kubectl --context admin@dev get nodes -o name
 ```
 
 ## Verify
@@ -148,11 +150,14 @@ kubectl --context dev-api-v2.tail286401.ts.net get nodes -o name
 ```bash
 # Hub/root and dev workload apps are converged.
 kubectl --context hub-cluster -n argocd get app \
-  root-application spoke-dev-workflow-builder dev-workflow-builder dev-tailscale-ingresses \
+  root-application spoke-dev-workflow-builder \
   -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,OP:.status.operationState.phase,REV:.status.sync.revision
+kubectl --context hub-cluster -n dev get app \
+  dev-workflow-builder dev-tailscale-ingresses \
+  -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,REV:.status.sync.revision
 
 # Runtime env is dev-specific.
-kubectl --context dev-api-v2.tail286401.ts.net -n workflow-builder get deploy workflow-builder \
+kubectl --context admin@dev -n workflow-builder get deploy workflow-builder \
   -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{"\n"}{end}' | \
   rg 'WORKFLOW_BUILDER_ENV|MCP_GATEWAY_BASE_URL|PHOENIX'
 
@@ -162,7 +167,7 @@ dig +short workflow-builder-dev-1.tail286401.ts.net  # should be empty
 # Use -k unless the workstation trusts the Tailnet Dev CA (nixos-config 44ba6324).
 curl -k -sSI --max-time 10 https://workflow-builder-dev.tail286401.ts.net | head -3
 curl -k -sSI --max-time 10 https://phoenix-dev.tail286401.ts.net | head -3
-kubectl --context dev-api-v2.tail286401.ts.net -n workflow-builder run curl-mcp-check \
+kubectl --context admin@dev -n workflow-builder run curl-mcp-check \
   --rm -i --restart=Never --image=curlimages/curl:8.10.1 --command -- \
   curl -sS -I --max-time 10 http://mcp-gateway.workflow-builder.svc.cluster.local:8080/health
 ```
@@ -172,11 +177,11 @@ Expected:
 - `WORKFLOW_BUILDER_ENV=dev`.
 - `MCP_GATEWAY_BASE_URL` is the in-cluster `http://mcp-gateway...:8080`; Phoenix URLs are `*-dev.tail286401.ts.net`.
 - `workflow-builder-dev` returns `200` in a browser (not just `curl`) and in-cluster `mcp-gateway` returns `200`.
-- `workflow-builder-release` promotes `env/spokes-dev` first; staging follows after dev `argocd-health` is successful.
+- `workflow-builder-release` promotes the dev render to `env/spokes-dev` after its health/timer gates pass.
 
 ## Notes
 
-- Do not copy ryzen URLs into dev/staging values. Use the cluster placeholder so one declaration covers both promoted spokes.
+- Do not copy another target's URLs into dev values. Keep cluster placeholders where the retained multi-environment manifest contract requires them.
 - Do not hand-patch Deployment env values except to prove a hypothesis; live patches will be reverted by ArgoCD and hide the missing declaration.
 - Tailscale ACL changes are asynchronous through `.github/workflows/tailscale-acl.yml`. Re-authenticate ProxyGroups only after the policy workflow succeeds.
 - `argocd app get --hard-refresh` can trigger an existing operation; if an app reports `operation already in progress`, poll the app before forcing a sync.
