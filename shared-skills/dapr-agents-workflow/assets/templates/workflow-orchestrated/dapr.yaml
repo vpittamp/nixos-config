@@ -16,6 +16,6 @@ apps:
     appDirPath: ./
     command: ["python3", "expert_agent.py"]
     appPort: 8002
-  - appID: support-workflow      # the orchestrator; no appPort (it is a client, not a server)
+  - appID: support-workflow # the orchestrator; no appPort (it is a client, not a server)
     appDirPath: ./
     command: ["python3", "workflow_app.py"]

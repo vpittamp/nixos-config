@@ -1,4 +1,4 @@
 interface:
   display_name: "Talos Clusters"
-  short_description: "Operate Talos/HCloud dev clusters and capacity gates."
-  default_prompt: "Use $talos-clusters to plan or execute a Talos/HCloud spoke cluster change."
+  short_description: "Operate Talos nodes, upgrades, and cluster capacity."
+  default_prompt: "Use $talos-clusters to plan or execute the requested Talos infrastructure change."

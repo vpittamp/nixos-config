@@ -1,6 +1,8 @@
 # DurableAgent — anatomy, components, serving
 
-`dapr-agents` GA **v1.0.3** (`uv add dapr-agents` or `pip install dapr-agents>=1.0.3`).
+This reference matches `dapr-agents` **v1.0.5**. Re-check the target project's
+installed version before copying signatures.
+
 Built ON Dapr Workflow: every agent turn/tool call is checkpointed, so an agent survives
 process restarts and resumes deterministically.
 
@@ -18,19 +20,19 @@ from dapr_agents import DurableAgent
 
 `DurableAgent.__init__` is keyword-only. The commonly-used parameters:
 
-| param | type | notes |
-|---|---|---|
-| `name` | `str` | the agent's identity; also the key for `call_agent(ctx, name, ...)` |
-| `role` | `str` | short persona, e.g. "Weather Assistant" |
-| `goal` | `str` | one-line objective |
-| `instructions` | `Iterable[str]` | system guidance lines |
-| `llm` | `ChatClientBase` | a chat client (see below). Optional for ROUNDROBIN/RANDOM orchestrators |
-| `tools` | `Optional[Iterable[Any]]` | `@tool` fns, `AgentTool`s, plain callables, or **other DurableAgents** (peer delegation) |
-| `memory` | `AgentMemoryConfig` | conversation history store |
-| `state` | `AgentStateConfig` | durable workflow/actor state store |
-| `pubsub` | `AgentPubSubConfig` | only for autonomous multi-agent (Pattern B) |
-| `registry` | `AgentRegistryConfig` | only for autonomous multi-agent (Pattern B) |
-| `execution` | `AgentExecutionConfig` | max_iterations, tool_choice, orchestration_mode |
+| param          | type                      | notes                                                                                    |
+| -------------- | ------------------------- | ---------------------------------------------------------------------------------------- |
+| `name`         | `str`                     | the agent's identity; also the key for `call_agent(ctx, name, ...)`                      |
+| `role`         | `str`                     | short persona, e.g. "Weather Assistant"                                                  |
+| `goal`         | `str`                     | one-line objective                                                                       |
+| `instructions` | `Iterable[str]`           | system guidance lines                                                                    |
+| `llm`          | `ChatClientBase`          | a chat client (see below). Optional for ROUNDROBIN/RANDOM orchestrators                  |
+| `tools`        | `Optional[Iterable[Any]]` | `@tool` fns, `AgentTool`s, plain callables, or **other DurableAgents** (peer delegation) |
+| `memory`       | `AgentMemoryConfig`       | conversation history store                                                               |
+| `state`        | `AgentStateConfig`        | durable workflow/actor state store                                                       |
+| `pubsub`       | `AgentPubSubConfig`       | only for autonomous multi-agent (Pattern B)                                              |
+| `registry`     | `AgentRegistryConfig`     | only for autonomous multi-agent (Pattern B)                                              |
+| `execution`    | `AgentExecutionConfig`    | max_iterations, tool_choice, orchestration_mode                                          |
 
 (Also accepts `profile, system_prompt, prompt_template, style_guidelines, executor,
 retry_policy, hooks, configuration, agent_metadata, …` — rarely needed.)
@@ -74,11 +76,11 @@ Two ways to reach a model:
 
 ## Components for ONE DurableAgent
 
-| component file | type | needed when | special |
-|---|---|---|---|
-| `agent-workflow.yaml` | `state.redis` | **always** — durable workflow state | **`actorStateStore: "true"`** |
-| `agent-memory.yaml` | `state.redis` | the agent sets `memory=` (recommended for chat agents; optional — `memory` defaults to `None`) | — |
-| `llm-provider.yaml` | `conversation.openai` | the agent uses `DaprChatClient` (skip if provider-direct) | ALPHA building block |
+| component file        | type                  | needed when                                                                                    | special                       |
+| --------------------- | --------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------- |
+| `agent-workflow.yaml` | `state.redis`         | **always** — durable workflow state                                                            | **`actorStateStore: "true"`** |
+| `agent-memory.yaml`   | `state.redis`         | the agent sets `memory=` (recommended for chat agents; optional — `memory` defaults to `None`) | —                             |
+| `llm-provider.yaml`   | `conversation.openai` | the agent uses `DaprChatClient` (skip if provider-direct)                                      | ALPHA building block          |
 
 Only `agent-workflow.yaml` is unconditionally required. Autonomous multi-agent (Pattern B)
 adds `agent-pubsub.yaml` (`pubsub.redis`) and `agentregistrystore.yaml` (`state.redis`). See
@@ -95,21 +97,23 @@ runner = AgentRunner()
 
 Three serving idioms — pick by how the agent is triggered:
 
-| method | use when | keeps process alive how |
-|---|---|---|
-| `runner.serve(agent, port=8001)` | HTTP entrypoint (POST `/agent/run`); also registers the workflow runtime so it is callable by `call_agent` | blocks on uvicorn |
-| `runner.subscribe(agent)` | pub/sub worker (autonomous multi-agent member) — no HTTP | `await wait_for_shutdown()` |
-| `runner.workflow(agent)` | pure workflow target, no HTTP/pub-sub | `await wait_for_shutdown()` |
+| method                           | use when                                                                                                   | keeps process alive how     |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------- |
+| `runner.serve(agent, port=8001)` | HTTP entrypoint (POST `/agent/run`); also registers the workflow runtime so it is callable by `call_agent` | blocks on uvicorn           |
+| `runner.subscribe(agent)`        | pub/sub worker (autonomous multi-agent member) — no HTTP                                                   | `await wait_for_shutdown()` |
+| `runner.workflow(agent)`         | pure workflow target, no HTTP/pub-sub                                                                      | `await wait_for_shutdown()` |
 
 `wait_for_shutdown` is imported from `dapr_agents.workflow.utils.core`. Always pair serving
 with `finally: runner.shutdown(agent)`.
 
 `serve()` signature (keyword-only after the agent):
+
 ```python
 serve(agent, *, app=None, host="0.0.0.0", port=8001, expose_entry=True,
       entry_path="/agent/run", status_path="/agent/instances/{instance_id}",
       workflow_component="dapr", delivery_mode="sync", queue_maxsize=1024) -> FastAPI
 ```
+
 Pass your own `app=FastAPI()` to mount the agent into an existing app (then you run uvicorn).
 
 **Triggering a served agent:** `POST {port}/agent/run` with body `{"task": "<prompt>"}` →

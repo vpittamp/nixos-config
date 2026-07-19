@@ -3,26 +3,26 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Build a new dynamic-script workflow that takes a URL, uses the saved kimi-k3-browser-agent with Kimi K3 vision/browser tools, and returns the page title plus a one-paragraph summary. Save it through Workflow MCP and tell me where to open it.",
-      "expected_output": "Calls get_workflow_context first, reads get_workflow_script_spec, writes a script with literal export const meta and meta.input JSON Schema for required URL, uses awaited agent() with the saved agent slug and a structured object schema, validates, saves by name with save_workflow_script, and runs by name. Uses kimi/kimi-k3 (1,048,576 context, max thinking) without retired Kimi/GLM defaults, preserves structured image inputs rather than stringifying screenshot arrays, passes no sessionId to workflow save/run tools, and does not write Postgres directly.",
+      "prompt": "Build a dynamic-script workflow that accepts a URL, asks my saved browser agent for the page title and a short summary, saves it, and runs it.",
+      "expected_output": "Calls get_workflow_context and get_workflow_script_spec first; reads the current saved-agent/model contract instead of inventing a model key; writes a literal meta input schema and deterministic script; uses schema-constrained agent output; validates, saves, runs, and verifies the execution in the authenticated workspace; passes no sessionId as workflow ownership and performs no direct database write.",
       "files": []
     },
     {
       "id": 2,
-      "prompt": "I have a workflow that runs a coding agent in a workspace, but the live preview returns 404 'Retained sandbox not found' immediately after the run finishes. Fix it.",
-      "expected_output": "Identifies that `with.keepAfterRun: true` is missing on the workspace/profile step (per references/troubleshooting.md § Workspace / sandbox). Edits the spec to add it. Mentions the persist_workspace_session activity contract and the _should_cleanup_workspaces gate that reads the spec — not just task outputs.",
+      "prompt": "My Workflow MCP client has a wfb_ key, but saving through the BFF helper returns unauthorized. Should I add a session ID or use the key as a bearer token?",
+      "expected_output": "Separates the workspace-scoped Workflow MCP key from BFF access JWT/cookie authentication, explains that optional session attachment is verified lineage rather than workflow ownership, uses get_workflow_context to verify the workspace, and does not forward the workspace key to another target or place it in workflow input.",
       "files": []
     },
     {
       "id": 3,
-      "prompt": "My durable/run step times out — the agent never seems to start. Walk me through what to check.",
-      "expected_output": "Triage from references/troubleshooting.md (current agent-sandbox + Kueue model): check the per-session Sandbox + Kueue admission (`kubectl -n workflow-builder get sandbox` and `get workloads` — a Pending/unadmitted Workload means the queue is out of quota or the pod is unschedulable), the per-session pod + daprd sidecar logs, the registry-resolved runtime app id (`runtime_registry.resolve()`), the dapr-agent-py-statestore scope for that app id, and the openshell-sandbox-dapr-webhook namespaceSelector. Distinguishes 'Ignoring unexpected taskCompleted event' (normal replay chatter) from actually stuck. Does NOT mention an AgentRuntime CR phase or an agent-runtime-controller rolling restart — that CRD + Kopf controller are retired.",
+      "prompt": "A dynamic workflow's agent call never produces a response. Walk through diagnosis without changing cluster state first.",
+      "expected_output": "Checks script validation and execution state, saved-agent version and runtime-registry resolution, Kueue Workload and Sandbox admission, pod/init/app/daprd logs, MCP bootstrap, session events and usage, then UI state. It does not inspect or patch a retired AgentRuntime CR, create a per-agent state store, or treat normal replay chatter as proof of a hang.",
       "files": []
     },
     {
       "id": 4,
-      "prompt": "I added the Outlook MCP connection to my agent and sent a test message, but the agent never responded. Debug it without exposing any OAuth tokens.",
-      "expected_output": "Uses references/mcp-connections.md and troubleshooting.md. Checks activepieces-mcp-catalog, ap-microsoft-outlook-service KService readiness and no-port /mcp URL, mcp_connection.connection_external_id -> active app_connection.external_id, the newly launched per-session Sandbox bootstrap, effective allowedTools selection, and runtime [mcp-bootstrap] logs. Explains credentials flow through X-Connection-External-Id/internal decrypt API and avoids printing or embedding OAuth secrets. Does not inspect an AgentRuntime CR, controller, wake annotation, or per-agent Deployment because those are retired.",
+      "prompt": "I attached an Outlook MCP connection to an agent, but the next session is silent. Debug it without exposing OAuth tokens.",
+      "expected_output": "Checks project MCP availability, per-agent allowed-tool narrowing, the piece-runtime service and no-port cluster URL, connection external-id linkage, newly launched Sandbox bootstrap config, and runtime MCP logs. It preserves reference-forwarded credentials and never prints, embeds, or copies OAuth plaintext.",
       "files": []
     }
   ]

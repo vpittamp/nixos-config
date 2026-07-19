@@ -26,7 +26,7 @@ async def load_mcp_tools() -> list:
     # For a remote server instead:
     #   await client.connect_streamable_http(server_name="remote", url="http://host/mcp")
     #   await client.connect_sse(server_name="remote", url="http://host/sse")
-    return client.get_all_tools()   # -> List[AgentTool]
+    return client.get_all_tools()  # -> List[AgentTool]
 
 
 def build_agent(tools: list) -> DurableAgent:
@@ -36,8 +36,10 @@ def build_agent(tools: list) -> DurableAgent:
         goal="Answer weather questions using the available MCP tools.",
         instructions=["Use the tools to answer; reply in one sentence."],
         llm=OpenAIChatClient(),
-        tools=tools,                       # MCP tools injected here
-        memory=AgentMemoryConfig(store=ConversationDaprStateMemory(store_name="agent-memory")),
+        tools=tools,  # MCP tools injected here
+        memory=AgentMemoryConfig(
+            store=ConversationDaprStateMemory(store_name="agent-memory")
+        ),
         state=AgentStateConfig(store=StateStoreService(store_name="agent-workflow")),
     )
 

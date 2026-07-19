@@ -1,4 +1,4 @@
 interface:
-  display_name: "Cluster Desired State (hub/ryzen/dev)"
-  short_description: "Plan fleet desired state, rebuilds, and recovery runbooks."
-  default_prompt: "Use $cluster-desired-state to plan or audit a fresh build or full recreate of the hub, ryzen, or dev cluster."
+  display_name: "Cluster Desired State"
+  short_description: "Rebuild and audit hub, dev, and ryzen clusters."
+  default_prompt: "Use $cluster-desired-state to plan, recreate, repair, or audit the requested cluster end to end."

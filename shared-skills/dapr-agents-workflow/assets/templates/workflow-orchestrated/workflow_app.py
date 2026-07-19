@@ -21,9 +21,7 @@ def support_workflow(ctx: wf.DaprWorkflowContext, request: dict):
     # Step 1 — triage agent runs as a child workflow on Dapr app-id "triage-agent".
     # `name` ("triage_agent") must equal the DurableAgent(name=...) in triage_agent.py.
     # `app_id` ("triage-agent") must equal the appID in dapr.yaml. They are DIFFERENT ids.
-    triage = yield call_agent(
-        ctx, "triage_agent", input=request, app_id="triage-agent"
-    )
+    triage = yield call_agent(ctx, "triage_agent", input=request, app_id="triage-agent")
     # call_agent returns the agent's final assistant message as a DICT:
     # {"role": "assistant", "content": "...", "name": ...}. Read .get("content").
     triage_text = triage.get("content", "") if isinstance(triage, dict) else triage
@@ -45,7 +43,11 @@ def support_workflow(ctx: wf.DaprWorkflowContext, request: dict):
         app_id="expert-agent",
     )
 
-    return recommendation.get("content", "") if isinstance(recommendation, dict) else recommendation
+    return (
+        recommendation.get("content", "")
+        if isinstance(recommendation, dict)
+        else recommendation
+    )
 
 
 def main():

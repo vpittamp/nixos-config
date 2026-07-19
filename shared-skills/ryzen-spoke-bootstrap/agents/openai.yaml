@@ -1,4 +1,0 @@
-interface:
-  display_name: "Ryzen Spoke Bootstrap"
-  short_description: "Recreate or repair the ryzen autonomous Talos spoke."
-  default_prompt: "Use $ryzen-spoke-bootstrap to recreate or repair the ryzen autonomous Talos spoke."

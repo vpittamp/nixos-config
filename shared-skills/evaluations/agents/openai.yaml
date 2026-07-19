@@ -1,4 +1,4 @@
 interface:
   display_name: "Evaluations"
-  short_description: "Run dev evals, Kimi K3 canaries, graders, and SWE-bench."
-  default_prompt: "Use $evaluations to create or debug a Workflow Builder evaluation run on dev."
+  short_description: "Run and debug evaluations and SWE-bench on dev."
+  default_prompt: "Use $evaluations to launch, inspect, or debug a Workflow Builder evaluation or benchmark on dev."

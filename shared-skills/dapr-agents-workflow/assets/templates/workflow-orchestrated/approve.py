@@ -19,7 +19,9 @@ def main():
     if len(sys.argv) < 2:
         sys.exit("usage: python3 approve.py <instance_id> [true|false]")
     instance_id = sys.argv[1]
-    approved = sys.argv[2].lower() in ("1", "true", "yes") if len(sys.argv) > 2 else True
+    approved = (
+        sys.argv[2].lower() in ("1", "true", "yes") if len(sys.argv) > 2 else True
+    )
 
     client = wf.DaprWorkflowClient()
     # event name "approval" must match ctx.wait_for_external_event("approval") in the workflow.

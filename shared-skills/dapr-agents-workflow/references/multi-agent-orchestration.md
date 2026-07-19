@@ -3,14 +3,14 @@
 Dapr Agents gives you **two distinct ways** to coordinate multiple agents. Choosing the
 right one is the most important design decision. They are not interchangeable.
 
-| | **Pattern A — Workflow-orchestrated** | **Pattern B — Autonomous (agent-to-agent)** |
-|---|---|---|
-| Who decides the next step | a deterministic Dapr Workflow you write | the framework, by orchestration mode + the agents themselves |
-| Control flow | explicit (`call_agent`, `when_all`, `wait_for_external_event`) | implicit (round-robin / random / LLM-planned turns) |
-| Transport between agents | child-workflow calls (`call_agent` → `call_child_workflow`) | **pub/sub** topics + a shared registry |
-| Components | state stores only (no pub/sub) | adds `pubsub.redis` + a registry state store |
-| Best for | known DAGs, fan-out/fan-in, human approval gates, auditable pipelines | open-ended collaboration, debate, emergent task routing |
-| Canonical example | quickstart `06_workflow_agents` | `examples/04-multi-agent-workflows` ("The Fellowship") |
+|                           | **Pattern A — Workflow-orchestrated**                                 | **Pattern B — Autonomous (agent-to-agent)**                  |
+| ------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Who decides the next step | a deterministic Dapr Workflow you write                               | the framework, by orchestration mode + the agents themselves |
+| Control flow              | explicit (`call_agent`, `when_all`, `wait_for_external_event`)        | implicit (round-robin / random / LLM-planned turns)          |
+| Transport between agents  | child-workflow calls (`call_agent` → `call_child_workflow`)           | **pub/sub** topics + a shared registry                       |
+| Components                | state stores only (no pub/sub)                                        | adds `pubsub.redis` + a registry state store                 |
+| Best for                  | known DAGs, fan-out/fan-in, human approval gates, auditable pipelines | open-ended collaboration, debate, emergent task routing      |
+| Canonical example         | quickstart `06_workflow_agents`                                       | `examples/04-multi-agent-workflows` ("The Fellowship")       |
 
 ---
 
@@ -41,6 +41,7 @@ and `ctx.wait_for_external_event(...)` for a human approval gate between agent s
 > output rather than parsing prose from `content`.
 
 Outside a workflow (e.g. an HTTP handler or a script), use the synchronous helper:
+
 ```python
 from dapr_agents.workflow.utils.core import trigger_agent
 result = trigger_agent("WeatherAgent", input={...}, app_id="weather-agent", timeout_in_seconds=120)
@@ -54,7 +55,7 @@ The agents themselves are ordinary DurableAgents served with `runner.serve(agent
 
 ## Pattern B — Autonomous multi-agent orchestration
 
-> ⚠️ **API change in v1.0.3:** the old standalone classes `RoundRobinOrchestrator`,
+> **Current 1.0.x API:** the old standalone classes `RoundRobinOrchestrator`,
 > `RandomOrchestrator`, and `LLMOrchestrator` were **REMOVED**. There is no orchestrator
 > class to instantiate. You configure an **orchestration MODE** on a `DurableAgent`.
 
@@ -63,11 +64,11 @@ from dapr_agents.agents.configs import OrchestrationMode, AgentExecutionConfig
 # OrchestrationMode.ROUNDROBIN | OrchestrationMode.RANDOM | OrchestrationMode.AGENT
 ```
 
-| mode | behavior | needs `llm=` on the orchestrator? |
-|---|---|---|
-| `ROUNDROBIN` | cycle team members in a fixed (sorted) order | no |
-| `RANDOM` | pick a member at random, avoiding the immediate previous speaker | no |
-| `AGENT` | an LLM plans which member acts next (plan-based) | **yes** |
+| mode         | behavior                                                         | needs `llm=` on the orchestrator? |
+| ------------ | ---------------------------------------------------------------- | --------------------------------- |
+| `ROUNDROBIN` | cycle team members in a fixed (sorted) order                     | no                                |
+| `RANDOM`     | pick a member at random, avoiding the immediate previous speaker | no                                |
+| `AGENT`      | an LLM plans which member acts next (plan-based)                 | **yes**                           |
 
 ### Orchestrator agent
 
@@ -109,11 +110,13 @@ runner = AgentRunner(); runner.subscribe(agent); await wait_for_shutdown()
 ### Kicking off a run
 
 Trigger the orchestrator over its HTTP entrypoint (from `serve()`):
+
 ```bash
 curl -s -X POST http://localhost:8004/agent/run \
      -H 'content-type: application/json' -d '{"task": "Debate: is remote work better?"}'
 # -> {"instance_id": "...", "status_url": "/agent/instances/..."}
 ```
+
 The body field is **`task`** (the orchestrator reads `message["task"]`). The same
 `POST /agent/run` + `{"task": ...}` contract triggers any HTTP-served agent.
 
@@ -129,15 +132,15 @@ The body field is **`task`** (the orchestrator reads `message["task"]`). The sam
   `max_iterations`. For **N** members and **R** full rounds, set `max_iterations = N * R`.
 - **Turn-to-turn context is threaded by the orchestrator**, not via pub/sub: each member's
   `task` is built as `"Task: …\n\nPrevious response from <prev>:\n<content>\n\nContinue…"`.
-  The `broadcast_topic` is a *separate* channel used to share the final message with the whole
+  The `broadcast_topic` is a _separate_ channel used to share the final message with the whole
   team, not to hand off each turn.
 - **Message flow:** two routes —
-  1. *orchestrated*: client → orchestrator's topic → selection logic → a member's topic → member;
-  2. *direct*: client → a member's topic → that member.
+  1. _orchestrated_: client → orchestrator's topic → selection logic → a member's topic → member;
+  2. _direct_: client → a member's topic → that member.
 - **Topics:** members subscribe to `fellowship.<name>.requests` and the shared
   `fellowship.broadcast`.
-- **Memory is optional.** In the upstream example, *members* set
-  `memory=AgentMemoryConfig(...)` but the *orchestrator* does not (`memory` defaults to `None`).
+- **Memory is optional.** In the upstream example, _members_ set
+  `memory=AgentMemoryConfig(...)` but the _orchestrator_ does not (`memory` defaults to `None`).
   Ship `agent-memory.yaml` only if some agent actually sets `memory=`.
 
 ### Config object field notes (verified)
