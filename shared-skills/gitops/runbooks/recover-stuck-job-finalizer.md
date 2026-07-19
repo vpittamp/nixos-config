@@ -2,12 +2,13 @@
 
 ## Symptoms / when to use
 
-A spoke's `db-migrate` (or any other ArgoCD sync hook Job) sits in `STATUS=Terminating` indefinitely after `kubectl delete job db-migrate`. The hub-side Application's `operationState.message` reads `waiting for completion of hook batch/Job/db-migrate` and never advances.
+Dev's `db-migrate` (or another ArgoCD sync hook Job) sits in
+`STATUS=Terminating` indefinitely. Other targets are opt-in.
 
 The cause: the Job has the ArgoCD hook finalizer:
 
 ```bash
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl -n workflow-builder \
+KUBECONFIG=/tmp/talos-spoke-dev/kubeconfig kubectl -n workflow-builder \
   get job db-migrate -o jsonpath='{.metadata.finalizers}'
 # ["argocd.argoproj.io/hook-finalizer"]
 ```
@@ -17,39 +18,35 @@ When ArgoCD created the hook Job, it added a finalizer so it could clean up the 
 ## Diagnostic
 
 ```bash
-# Get spoke kubeconfig (see access-spoke-cluster-fallback.md)
-kubectl --kubeconfig ~/.kube/hub-config get secret <spoke>-XXXXX-kubeconfig -n crossplane-system \
-  -o jsonpath='{.data.kubeconfig}' | base64 -d > /tmp/<spoke>-kubeconfig
-chmod 600 /tmp/<spoke>-kubeconfig
+# Use the script-generated dev kubeconfig (see access-spoke-cluster-fallback.md).
+KUBECONFIG=/tmp/talos-spoke-dev/kubeconfig
+chmod 600 "$KUBECONFIG"
 
 # Confirm the Job is stuck Terminating with a finalizer
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl -n workflow-builder get job db-migrate
+kubectl --kubeconfig "$KUBECONFIG" -n workflow-builder get job db-migrate
 # NAME         STATUS        COMPLETIONS   DURATION   AGE
 # db-migrate   Terminating   0/1           55m        55m
 
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl -n workflow-builder \
+kubectl --kubeconfig "$KUBECONFIG" -n workflow-builder \
   get job db-migrate -o jsonpath='finalizers: {.metadata.finalizers}{"\n"}deletionTS: {.metadata.deletionTimestamp}{"\n"}'
 
 # Look at the pods (often there's an old Completed pod still attached)
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl -n workflow-builder get pods -l job-name=db-migrate
+kubectl --kubeconfig "$KUBECONFIG" -n workflow-builder get pods -l job-name=db-migrate
 ```
 
 ## Fix steps
 
 ```bash
 # 1. Force-delete any pods with --grace-period=0 (they may have completed but are stuck on cleanup)
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl -n workflow-builder \
+kubectl --kubeconfig "$KUBECONFIG" -n workflow-builder \
   delete pod -l job-name=db-migrate --grace-period=0 --force --ignore-not-found
 
 # 2. Patch off the finalizer so the Job can actually be deleted
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl -n workflow-builder \
+kubectl --kubeconfig "$KUBECONFIG" -n workflow-builder \
   patch job db-migrate --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]'
 
 # 3. Verify the Job is gone
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl -n workflow-builder get jobs
-
-# 4. Shred the kubeconfig
-shred -u /tmp/<spoke>-kubeconfig
+kubectl --kubeconfig "$KUBECONFIG" -n workflow-builder get jobs
 ```
 
 ## Verify — argocd retries automatically (usually)

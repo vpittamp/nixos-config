@@ -1,14 +1,18 @@
 # Canvas Shape (`nodes` + `edges`)
 
-Scope: the JSON shape of `workflows.nodes` and `workflows.edges` (the SvelteFlow canvas). Source of truth: `src/lib/utils/spec-graph-adapter.ts`.
+Scope: the legacy SW 1.0 `nodes`/`edges` adapter retained for historical run
+views and migration. New dynamic scripts render through ScriptCanvas and do not
+use this as their authoring format.
 
 ## TL;DR — let the adapter do it
 
-The adapter takes a SW 1.0 spec and emits `{nodes, edges}` using the official `@serverlessworkflow/sdk::buildGraph()`. **You almost never hand-author nodes/edges.** The standard authoring flow is:
+For an existing SW definition, the adapter emits `{nodes, edges}` through
+`@serverlessworkflow/sdk::buildGraph()`. Do not hand-author these while
+migrating:
 
-1. Write the SW 1.0 spec.
-2. Call `specToGraph(spec)` (in TS) — or trust the BFF's PUT endpoint to call it for you on save.
-3. Persist all three: `spec`, `nodes`, `edges`.
+1. Read the existing SW spec.
+2. Call `specToGraph(spec)` in the migration/application path.
+3. Keep `spec`, `nodes`, and `edges` consistent until conversion completes.
 
 If you do hand-author `nodes`/`edges` — for example, when bootstrapping a workflow before the BFF runs the adapter — they MUST stay consistent with the spec or the canvas will look broken on next render. The adapter is idempotent on round-trip.
 
@@ -114,7 +118,7 @@ When `taskDef.call === "durable/run"`, the node's `type` becomes `"agent"` (rega
 
 `scripts/fixtures/sample-workflows.json` in the workflow-builder repo has three complete workflows you can borrow from:
 
-- `browser-use-web-navigator` — single agent step, parameterized URL + task.
+- `kimi-k3-browser-agent` — Kimi K3 vision agent with the browser MCP, parameterized URL + task.
 - `powerpoint-agent-smoke` — workspace/profile → durable/run sandbox-bridging.
 - `excel-agent-smoke` — same pattern with a different agent.
 

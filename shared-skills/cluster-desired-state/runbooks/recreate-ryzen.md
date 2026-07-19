@@ -80,13 +80,11 @@ generate-kubeconfig init-container at pod start, so a pod predating the recreate
 the OLD spoke endpoint/CA/token and cannot auth to the rebuilt cluster — the staged Secret is
 inert without the restart.
 
-The legacy
-`packages/components/hub-management/manifests/spoke-credentials/ExternalSecret-cluster-ryzen.yaml`
-(KV-materialized `server=https://ryzen.tail286401.ts.net:6443` + SA bearerToken) is now
-**vestigial for ArgoCD** — the agent mapping supersedes it; its host-passthrough endpoint is
-only what **Headlamp** uses (via the `headlamp-cluster-ryzen` Secret). Nothing to do unless
-the bootstrap component / appset changed on `main` — if so, advance the hub: merge the
-`env/hub-next -> env/hub` Promoter PR (`gitops` skill).
+The old `ExternalSecret-cluster-ryzen.yaml` was removed. ArgoCD uses the agent
+mapping, while Headlamp uses the dedicated `headlamp-cluster-ryzen` Secret that
+enrollment stages from the host-passthrough endpoint and a read-only service
+account. If the declarative bootstrap changes, merge it to `main` and observe
+the hub `env/hub-next` -> `env/hub` auto-merge; do not recreate the old Secret.
 
 ## 3. Secret transport (Contract 2 — spoke side is IMPERATIVE for ryzen)
 

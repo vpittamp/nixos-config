@@ -22,7 +22,7 @@ script-provisioned Hetzner Talos spoke (`dev`).
 
 - The hub is a 5-node Talos `v1.12.x` / Kubernetes `v1.32.0` cluster on Hetzner
   (Flannel CNI, NOT Cilium, kube-proxy enabled). It is provisioned imperatively
-  (`docs/hub-cluster-setup.md`) and runs the **argocd-agent v0.8.1 PRINCIPAL**
+  (`docs/hub-cluster-setup.md`) and runs the **argocd-agent v0.9.0 PRINCIPAL**
   (single ArgoCD pane, ns `argocd`). The hub's 21 ExternalSecrets resolve from
   the **`onepassword-store`** ClusterSecretStore (ESO `onepasswordSDK` provider ->
   the dedicated **`hub-eso`** 1Password vault) as of 2026-06; root-of-trust is one
@@ -30,7 +30,7 @@ script-provisioned Hetzner Talos spoke (`dev`).
   `onepassword-sa-token` (ns `external-secrets`). Azure Workload Identity + Key
   Vault (`keyvault-thcmfmoo5oeow`) + the AD App + the OIDC/JWKS federation are
   DORMANT (not deleted).
-- Control plane = **argocd-agent v0.8.1**. Each spoke runs a LOCAL ArgoCD + an
+- Control plane = **argocd-agent v0.9.0**. Each spoke runs a LOCAL ArgoCD + an
   agent that dials the hub principal OUTBOUND over tailnet mTLS (8443). dev is a
   **MANAGED agent** (hub authors `Application` objects in ns `dev` == agent name;
   the principal pushes them; dev's local controller reconciles —

@@ -3,8 +3,8 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Build me a workflow that takes a URL as input, opens it with the browser-use-web-navigator agent, and reports the page title plus a one-paragraph summary. Find the agent's id via /api/agents (or psql), insert the workflow into the DB, and tell me the canvas URL so I can run it.",
-      "expected_output": "Valid SW 1.0 spec with: trigger schema declaring `url` (string/uri/required); one durable/run task with real agentRef.id (not the placeholder); prompt uses jq full-string concat (no embedded interpolation); matching nodes/edges (3 nodes: __start__, agent task, __end__); workflow row inserted with non-NULL project_id via scripts/upsert-workflow.py; canvas URL printed.",
+      "prompt": "Build a new dynamic-script workflow that takes a URL, uses the saved kimi-k3-browser-agent with Kimi K3 vision/browser tools, and returns the page title plus a one-paragraph summary. Save it through Workflow MCP and tell me where to open it.",
+      "expected_output": "Calls get_workflow_context first, reads get_workflow_script_spec, writes a script with literal export const meta and meta.input JSON Schema for required URL, uses awaited agent() with the saved agent slug and a structured object schema, validates, saves by name with save_workflow_script, and runs by name. Uses kimi/kimi-k3 (1,048,576 context, max thinking) without retired Kimi/GLM defaults, preserves structured image inputs rather than stringifying screenshot arrays, passes no sessionId to workflow save/run tools, and does not write Postgres directly.",
       "files": []
     },
     {
@@ -22,7 +22,7 @@
     {
       "id": 4,
       "prompt": "I added the Outlook MCP connection to my agent and sent a test message, but the agent never responded. Debug it without exposing any OAuth tokens.",
-      "expected_output": "Uses references/mcp-connections.md and troubleshooting.md. Checks activepieces-mcp-catalog, ap-microsoft-outlook-service KService readiness and no-port /mcp URL, mcp_connection.connection_external_id -> active app_connection.external_id, AgentRuntime/Deployment DAPR_AGENT_PY_BOOTSTRAP_MCP_SERVERS_JSON, and dapr-agent-py [mcp-bootstrap] logs. Explains credentials flow through X-Connection-External-Id/internal decrypt API and avoids printing or embedding OAuth secrets.",
+      "expected_output": "Uses references/mcp-connections.md and troubleshooting.md. Checks activepieces-mcp-catalog, ap-microsoft-outlook-service KService readiness and no-port /mcp URL, mcp_connection.connection_external_id -> active app_connection.external_id, the newly launched per-session Sandbox bootstrap, effective allowedTools selection, and runtime [mcp-bootstrap] logs. Explains credentials flow through X-Connection-External-Id/internal decrypt API and avoids printing or embedding OAuth secrets. Does not inspect an AgentRuntime CR, controller, wake annotation, or per-agent Deployment because those are retired.",
       "files": []
     }
   ]

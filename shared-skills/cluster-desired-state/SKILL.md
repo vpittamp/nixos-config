@@ -92,7 +92,7 @@ workload data must all be healthy too.
 
 Full detail in `references/architecture.md`. The load-bearing pieces:
 
-- **Control plane = argocd-agent v0.8.1.** The hub runs the **principal** (single pane,
+- **Control plane = argocd-agent v0.9.0.** The hub runs the **principal** (single pane,
   ns `argocd`); each spoke runs a **local ArgoCD + an agent** dialing the principal
   OUTBOUND over tailnet mTLS (`:8443`). **dev = MANAGED agent** — the hub authors the
   `Application` objects in ns `dev` (== the agent name), the principal pushes them to
@@ -118,13 +118,12 @@ Full detail in `references/architecture.md`. The load-bearing pieces:
   > host-passthrough kube-API endpoint + SA token is what **Headlamp** uses to reach ryzen
   > (via the dedicated `headlamp-cluster-ryzen` Secret), NOT the ArgoCD cluster Secret. ryzen
   > reconciles `overlays/ryzen` @ `main` via its own local ArgoCD (no env branch). See `references/tailscale-and-certs.md`.
-- **spoke-clusters-appset** (cluster generator) turns each MANAGED-spoke (dev/staging)
-  cluster Secret into a `spoke-<name>` Application: `drySource` path `packages/overlays/<name>`,
-  `targetRevision` from the `stacks.io/source-branch` annotation (default `main`),
-  hydrateTo/syncSource `env/spokes-<name>`. The
-  **spoke-workloads-appset** (selector `workload.stacks.io/workflow-builder=true`)
-  adds the `spoke-<name>-workflow-builder` app (dev/staging only; ryzen composes
-  workflow-builder in its overlay instead). **Ryzen is NOT driven by these appsets** —
+- **Managed dev hydration is explicit.** `packages/components/hub-management/apps/spoke-dev.yaml`
+  hydrates `packages/overlays/dev` to `env/spokes-dev-next` and syncs
+  `env/spokes-dev`. `spoke-workloads-appset.yaml` selects labeled managed spokes
+  for the separate `spoke-<name>-workflow-builder` release overlay; the dev
+  instance is also declared by `spoke-dev-workflow-builder.yaml`. The old
+  `spoke-clusters-appset.yaml` copies were removed. **Ryzen is not driven by this path** —
   its local `root-ryzen` app-of-apps reconciles `overlays/ryzen` @ `main` itself.
 - **GitOps source-hydrator + Promoter (hub + dev/staging only).** `drySource` on `main` is
   rendered to `env/<env>-next`; GitOps Promoter PRs `env/<env>-next -> env/<env>`;
@@ -231,7 +230,8 @@ major procedure change.
 
 - `docs/hub-cluster-setup.md`, `docs/hub-gitops-bootstrap.md`, `docs/hub-recovery-runbook.md`
 - `docs/gitops-architecture-overview.md`
-- `docs/crossplane-spoke-onboarding.md`, `docs/recreate-disposable-dev.md`, `docs/hcloud-server-setup.md`
+- `docs/hub-and-spoke-quickstart.md`
+- `deployment/scripts/talos-hetzner/README.md`
 - `docs/outer-loop-promotion.md`, `docs/spoke-cluster-access.md`
 - `packages/components/spoke-tailscale-secrets/CONTRACT.md` (the spoke transport contract)
 - `packages/components/hub-onepassword/README.md` (the 1Password hub-secret-root contract + bootstrap)

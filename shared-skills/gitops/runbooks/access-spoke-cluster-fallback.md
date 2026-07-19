@@ -1,83 +1,88 @@
-# Runbook: Access a spoke cluster when Tailscale is broken
+# Access dev when the normal Tailscale context is broken
 
-## Symptoms / when to use
+Scope: regain direct `kubectl` access to the script-provisioned dev Talos
+cluster. Crossplane provisioning and its `crossplane-system` kubeconfig Secrets
+are retired; do not search for or extract them.
 
-`kubectl --context dev-cluster get nodes` (or staging-cluster, etc.) errors with one of:
+## Available paths
 
-- `dial tcp: lookup k8s-api-dev.tail286401.ts.net on 100.100.100.100:53: no such host` — Tailscale MagicDNS doesn't resolve the spoke API VIP
-- `connection timed out` to a Tailscale IP
-- The context doesn't even exist in `~/.kube/config` (the K9s launcher hasn't been able to discover the API endpoint)
+Use the least-privileged path that can answer the question:
 
-Likely upstream cause: the spoke's `k8s-api-<spoke>` ProxyGroup has the same orphan-tag issue documented in `debug-funnel-orphan-tag.md`. While you fix that, you still need to reach the spoke for inspection or surgery.
+1. Hub principal view for managed Application sync/health:
 
-## Diagnostic — identify the right Crossplane secret
+   ```bash
+   kubectl --kubeconfig ~/.kube/hub-config -n dev get applications
+   ```
 
-Crossplane's `kubernetes` provider extracts each spoke's admin kubeconfig at provisioning time and stores it in `crossplane-system` on the hub. Secret name pattern: `<spoke>-<5-char-suffix>-kubeconfig`.
+   This is a status/control-plane view, not arbitrary workload `kubectl`.
+   Operation lifecycle is intentionally local to dev.
 
-```bash
-kubectl --kubeconfig ~/.kube/hub-config get secrets -n crossplane-system \
-  -o custom-columns='NAME:.metadata.name,TYPE:.type,AGE:.metadata.creationTimestamp' | \
-  grep kubeconfig
-# dev-2frrm-kubeconfig                                connection.crossplane.io/v1alpha1   2026-03-28T...
-# staging-j7ptt-kubeconfig                            connection.crossplane.io/v1alpha1   2026-03-28T...
-```
+2. Hub Headlamp for read-oriented workload inspection. Enrollment stages the
+   dedicated `headlamp-cluster-dev` Secret and restarts Headlamp after a
+   recreate.
 
-The 5-char suffix is the Crossplane composition revision; if the spoke is deleted and recreated, the suffix changes — so always grep for the latest rather than memorizing it.
+3. Direct admin kubeconfig produced by the Talos provisioning scripts:
 
-## Fix steps
+   ```text
+   /tmp/talos-spoke-dev/kubeconfig
+   ```
 
-```bash
-# 1. Extract the kubeconfig (admin certs — handle carefully)
-kubectl --kubeconfig ~/.kube/hub-config get secret <spoke>-XXXXX-kubeconfig -n crossplane-system \
-  -o jsonpath='{.data.kubeconfig}' | base64 -d > /tmp/<spoke>-kubeconfig
-chmod 600 /tmp/<spoke>-kubeconfig
+   An existing `admin@dev` context may already point at the same cluster.
 
-# 2. Sanity test
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl get nodes
-# Should list the Talos nodes (control-plane + workers)
-
-# 3. Do whatever you came to do
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl -n workflow-builder get pods
-# ... etc
-
-# 4. ALWAYS shred when done — these are admin-equivalent certs
-shred -u /tmp/<spoke>-kubeconfig
-```
-
-## What this kubeconfig connects to
-
-The kubeconfig embeds Talos client certs and points at the spoke's first control-plane public IP (e.g., `https://178.156.225.243:6443` for dev). It bypasses Tailscale entirely and goes directly to the Hetzner-public Talos endpoint. So:
-
-- It works whenever the spoke's first control-plane node is up and its API server is healthy
-- It uses the user's outbound internet → Hetzner public IP, not the tailnet
-- TLS is verified against the embedded CA (Talos PKI), so even a network-level intercept can't MitM
-
-For dev/staging:
-- dev-cp-1 → 178.156.225.243:6443
-- staging-cp-1 → 178.156.230.212:6443
-
-(See `hcloud server list` for the current IPs; servers are persistent so these don't change unless the cluster is recreated.)
-
-## Verify
+## Verify an existing direct kubeconfig
 
 ```bash
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl get nodes
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl version --short
-KUBECONFIG=/tmp/<spoke>-kubeconfig kubectl get ns
+KUBECONFIG=/tmp/talos-spoke-dev/kubeconfig kubectl get nodes
+KUBECONFIG=/tmp/talos-spoke-dev/kubeconfig kubectl -n workflow-builder get pods
 ```
 
-If any of these errors with `Unauthorized` or `unable to connect to the server`, the kubeconfig might be stale (spoke was recreated and the Crossplane secret has the OLD certs). Re-check that you grabbed the newest secret name (`-w`-watch the Crossplane composition or `kubectl get secrets -n crossplane-system --sort-by=.metadata.creationTimestamp`).
+The file is admin-equivalent. Keep it mode `0600` and do not paste its client
+certificate/key into tickets, logs, or chat.
 
-## Why this isn't the default
+## Re-derive from Talos state
 
-The Tailscale path is preferred because:
-- Identity-based access via the user's tailnet identity (no shared admin certs)
-- API server isn't exposed on the public internet from the cluster's perspective; goes through the Tailscale auth proxy
-- K9s + sway integration — zero-config, no extracted files
+If the kubeconfig is missing or stale but the matching Talos config remains,
+derive a fresh one from the live dev control plane:
 
-The Crossplane secret path is the **break-glass** fallback. Don't make it your daily driver — the admin certs are equivalent to root-on-the-cluster, and the more you handle them outside their secret, the more chances for them to leak.
+```bash
+WORKDIR=/tmp/talos-spoke-dev
+chmod 700 "$WORKDIR"
+talosctl --talosconfig "$WORKDIR/talosconfig" \
+  kubeconfig "$WORKDIR/kubeconfig" --force
+chmod 600 "$WORKDIR/kubeconfig"
+KUBECONFIG="$WORKDIR/kubeconfig" kubectl get nodes
+```
 
-## Related
+This is the same recovery pattern used by
+`deployment/scripts/talos-hetzner/recreate-dev.sh::ensure_spoke_kubeconfig`.
+If `talosctl kubeconfig` cannot reach the cluster, diagnose the Talos endpoint
+or use Headlamp/hub status while repairing connectivity. Do not reconstruct a
+kubeconfig from the argocd-agent `cluster-dev` Secret: that Secret is an agent
+mapping with mTLS for the resource proxy, not a Kubernetes bearer credential.
 
-- `debug-funnel-orphan-tag.md` — fix the underlying Tailscale issue so the normal path works again
-- `reference/access-paths.md` — full access path reference
+## Repair the normal path
+
+Once direct access works, repair Tailscale using the explicit dev kubeconfig:
+
+```bash
+KUBECONFIG=/tmp/talos-spoke-dev/kubeconfig \
+  bash deployment/scripts/tailscale/proxygroup-auth.sh --cluster dev
+```
+
+Then verify the normal configured context and the local agent:
+
+```bash
+kubectl --context admin@dev get nodes
+kubectl --context admin@dev -n argocd get deploy argocd-agent-agent
+kubectl --kubeconfig ~/.kube/hub-config -n dev get applications
+```
+
+## Cleanup
+
+`/tmp/talos-spoke-dev` is also the provisioning/recreate work directory, so do
+not delete it during an active cluster operation. When the user deliberately
+wants to remove retained admin material and no recreate/recovery is active,
+remove both kubeconfig and Talos config together through the cluster runbook.
+
+Authoritative source: `cluster-desired-state/references/dev.md` and
+`deployment/scripts/talos-hetzner/{provision-spoke,recreate-dev}.sh`.

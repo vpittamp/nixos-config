@@ -1,30 +1,27 @@
 # Verify in UI
 
-Scope: a short checklist for confirming a freshly-inserted workflow is visible + runnable in the workflow-builder UI. Run this after every upsert.
+Scope: a short checklist for confirming a freshly saved workflow is visible and runnable in the workflow-builder UI. Run this after every save.
 
 ## Pre-flight (before opening the browser)
 
 ```bash
-# 1. The BFF pod is running (don't `pnpm dev` — it's Skaffold-synced)
-kubectl -n workflow-builder get deploy/workflow-builder
+# 1. The dev BFF pod is running
+kubectl --context dev -n workflow-builder get deploy/workflow-builder
 
-# 2. The row exists with a non-NULL project_id
-kubectl -n workflow-builder exec deploy/workflow-builder -- \
-  psql "$DATABASE_URL" -c "SELECT id, name, project_id, engine_type, length(spec::text) AS spec_bytes FROM workflows WHERE id='<id>';"
-
-# 3. The orchestrator can reach the BFF (peer-discovery sanity check)
-kubectl -n workflow-builder logs deploy/workflow-orchestrator --tail=20 | grep -i error
+# 2. The orchestrator can reach the BFF (peer-discovery sanity check)
+kubectl --context dev -n workflow-builder logs deploy/workflow-orchestrator --tail=20 | grep -i error
 ```
 
-If `project_id` is NULL, the workflow won't appear in any workspace. Backfill it before continuing (see `references/troubleshooting.md` § DB scoping).
-
-If `spec_bytes = 0` or NULL, you only ran the POST and skipped the PUT. Run the PUT (or rerun `scripts/upsert-workflow.py`).
+From the authenticated MCP client, call `get_workflow_context`, then
+`get_workflow` for the saved id/name. The workflow must resolve in the expected
+workspace and include the saved spec. If it does not, repeat the MCP/BFF save;
+do not inspect or repair the workflow table directly.
 
 ## Open the canvas
 
-URL pattern: `https://workflow-builder-{cluster}.tail286401.ts.net/workspaces/<workspace-slug>/workflows/<workflow-id>` for promoted spokes; on ryzen typically `https://workflow-builder-ryzen.tail286401.ts.net/...`.
+Current shared target: `https://workflow-builder-dev.tail286401.ts.net/workspaces/<workspace-slug>/workflows/<workflow-id>`. Do not switch the test to Ryzen unless the user explicitly requests Ryzen.
 
-Exposure (as of PR #2319): the app is reached over a Tailscale **L4 LoadBalancer Service** (`type: LoadBalancer`, `loadBalancerClass: tailscale`, `tailscale.com/hostname` annotation — NO Let's Encrypt / Tailscale Ingress); HTTPS is terminated **in-cluster** by a per-pod nginx `tls-terminator` sidecar serving a persistent self-signed wildcard `*.tail286401.ts.net` (signed by the `tailnet-dev-ca` ClusterIssuer; CA `"PittampalliOrg Tailnet Dev CA"`). Clients must trust that CA to avoid a cert warning (nixos-config seeds it system-wide + into Chrome's NSS db). For canonical hostnames see `Service-workflow-builder-tailnet.yaml` (dev/staging, in `packages/base/manifests/tailscale-ingresses/`) and `packages/components/workloads/workflow-builder-tailnet-lb/` (ryzen) in stacks — there is no longer an `Ingress-workflow-builder.yaml`.
+Exposure: the app is reached over a Tailscale **L4 LoadBalancer Service** (`type: LoadBalancer`, `loadBalancerClass: tailscale`, `tailscale.com/hostname` annotation; no Let's Encrypt/Tailscale Ingress). HTTPS is terminated in-cluster by the per-pod nginx `tls-terminator` using the persistent tailnet wildcard certificate. Clients must trust the `PittampalliOrg Tailnet Dev CA`. See the stacks workflow-builder Service/Deployment manifests for the current contract.
 
 If a browser gets a **502 while `curl` returns 302**, the tls-terminator nginx header buffers overflowed on SvelteKit's large auth Set-Cookie headers — fixed via the sidecar ConfigMap proxy-buffer bump (PR #2327); verify HTTPS exposure with a real browser, not bare curl.
 
@@ -37,7 +34,9 @@ Look for:
 | Edges follow the topological order | Edges loop or disconnect |
 | Properties panel (right) shows the task's `taskConfig` | Properties panel is empty |
 
-If the canvas is empty after a direct DB insert, the most likely cause is a `nodes`/`edges` ↔ `spec` mismatch. Either re-derive `nodes`/`edges` from the spec via the BFF Save action, or rerun the upsert script (which keeps them aligned).
+If the canvas is empty after an API/import save, the most likely cause is a
+`nodes`/`edges` vs `spec` mismatch. Re-derive the graph through the BFF Save
+action or rerun the API-only upsert helper. Do not repair the row directly.
 
 ## Test the trigger dialog
 
@@ -67,18 +66,14 @@ If the dialog is wrong, the trigger schema probably uses the alternate placement
 In a second terminal:
 
 ```bash
-# Workflow execution row appears
-kubectl -n workflow-builder exec deploy/workflow-builder -- \
-  psql "$DATABASE_URL" -c "SELECT id, status, started_at FROM workflow_executions WHERE workflow_id='<id>' ORDER BY started_at DESC LIMIT 1;"
-
-# Orchestrator logs the dispatch
-kubectl -n workflow-builder logs deploy/workflow-orchestrator -f | grep -E "exec|run|error" | head -50
+# Orchestrator logs the dispatch; the run page/API is the execution projection.
+kubectl --context admin@dev -n workflow-builder logs deploy/workflow-orchestrator -f | grep -E "exec|run|error" | head -50
 
 # For a durable/run step: a per-session agent-sandbox pod is Kueue-admitted, then starts
-kubectl -n workflow-builder get workloads -w        # Kueue admission of the session workload
-kubectl -n workflow-builder get sandbox             # ephemeral agent-sandbox CR(s), self-reaped on session end
+kubectl --context admin@dev -n workflow-builder get workloads -w
+kubectl --context admin@dev -n workflow-builder get sandbox
 # then tail the session-sandbox pod once it reaches Running:
-kubectl -n workflow-builder logs <session-sandbox-pod> -c <runtime-container> -f
+kubectl --context admin@dev -n workflow-builder logs <session-sandbox-pod> -c <runtime-container> -f
 ```
 
 ## Common discrepancies
@@ -88,22 +83,15 @@ kubectl -n workflow-builder logs <session-sandbox-pod> -c <runtime-container> -f
 | Run status: "running" forever | `dapr workflow get` shows no recent activity | Replay chatter — usually NOT stuck. Before intervening, confirm the per-session agent-sandbox pod reached `Running` (`kubectl get sandbox -n workflow-builder` + the pod) and the session's `updated_at` is advancing. See `references/troubleshooting.md` § Replay chatter. |
 | Run failed at task N | Orchestrator log shows `KeyError` on a task output | `${ .<task>.<x> }` references something not in the actual output. Add an `output: { as: { ... } }` to task N to shape the output predictably. |
 | Run failed with no error | Step output panel is empty | Look at orchestrator logs at the timestamp of the failure — parse errors get swallowed. |
-| Canvas renders but Execute is greyed out | `engineType !== 'dapr'` | Only `engineType: "dapr"` is currently runnable. Re-upsert with `engineType: "dapr"`. |
+| Canvas renders but Execute is greyed out | Unsupported or invalid engine/spec | Current runnable engines include `dapr` and `dynamic-script`. Validate the saved spec and use the engine matching its document shape. |
 
 ## Smoke test recipe (copy-paste)
 
 ```bash
-# After upsert
-WF_ID="<paste from script output>"
-
-# 1. Confirm row + project scoping
-kubectl -n workflow-builder exec deploy/workflow-builder -- \
-  psql "$DATABASE_URL" -c "
-    SELECT id, name, engine_type, project_id, length(spec::text) AS spec_bytes
-      FROM workflows WHERE id='$WF_ID';"
-
-# 2. Watch logs while you click Execute in the UI
-kubectl -n workflow-builder logs deploy/workflow-orchestrator -f --tail=10
+# After `get_workflow_context` + `get_workflow` confirms the workspace-owned save,
+# watch logs while you click Execute in the UI.
+kubectl --context admin@dev -n workflow-builder logs deploy/workflow-orchestrator -f --tail=10
 ```
 
-If the row exists, `spec_bytes > 0`, `project_id` is not null, and the orchestrator log shows a parse-then-dispatch line, the workflow is ready to run.
+If the MCP/BFF read returns the saved definition and the orchestrator log shows
+a parse-then-dispatch line, the workflow is ready to run.

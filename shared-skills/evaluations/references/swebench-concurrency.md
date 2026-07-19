@@ -195,10 +195,10 @@ Sandbox headroom variables in `src/lib/server/benchmarks/sandbox-capacity.ts`:
 
 ### Agent Runtime Capacity
 
-Files: `src/lib/server/agents/runtime-routing.ts`,
-`services/agent-runtime-controller/src/main.py`, stacks
-`Deployment-workflow-builder.yaml`, and stacks
-`Deployment-agent-runtime-controller.yaml`.
+Files: `services/shared/runtime-registry.json`, benchmark capacity helpers,
+the workflow-builder Deployment runtime-image env, and the static coding-pool
+Deployment. Per-session runs are Kueue-admitted Sandbox pods; there is no
+custom AgentRuntime controller.
 
 | Name/config | Fallback | Meaning |
 | --- | ---: | --- |
@@ -209,8 +209,6 @@ Files: `src/lib/server/agents/runtime-routing.ts`,
 | `AGENT_RUNTIME_DAPR_WORKFLOW_LIMIT_PER_SIDECAR` | slots per replica | Per-sidecar Dapr workflow capacity. Dev uses `12`. |
 | `DAPR_WORKFLOW_MAX_CONCURRENT_WORKFLOW_INVOCATIONS` | unset | BFF estimate override checked before `AGENT_RUNTIME_DAPR_WORKFLOW_LIMIT_PER_SIDECAR`; controller status does not read it. |
 | agent `runtimePool.maxActiveSessions` | unset | Explicit pool/session cap in agent config when present. |
-| `AgentRuntime.spec.lifecycle.slotsPerReplica` | class fallback | Controller-reported runtime slot count. |
-| `AgentRuntime.spec.lifecycle.daprWorkflowLimitPerSidecar` / `maxConcurrentWorkflowInvocations` | env or slots | Per-AgentRuntime Dapr workflow override. |
 
 ### Function-Router Workspace/Profile Timeout
 
@@ -398,6 +396,8 @@ Use this section before launching the next dev SWE-bench capacity ramp. Both
 runs below targeted SWE-bench_Verified at `--max-turns 30` on the
 `dapr-kueue` execution backend with `--execution-class benchmark-fast`, agent
 slug `kimi-k26-swebench-canary`, project `OJi0fn1xt2cKlh6HdnpZP`.
+The slug is retained historical fixture identity; current seeding maps it to
+`kimi/kimi-k3`. It does not indicate that a K2.6 model remains selectable.
 
 | Run | Concurrency | Outcome |
 | --- | ---: | --- |
@@ -409,15 +409,17 @@ plan. For the current infra-capacity goal, use the "Current Dev Capacity
 Baseline" above and increase only after the previous run has no
 benchmark-infra failures.
 
-**Idle-state preflight** (run before launching to confirm no active runs or
-dangling leases):
+**Idle-state preflight:** use the authenticated Benchmarks UI/API to confirm no
+run is active, then check coordinator logs and Kueue Workloads for unreleased
+capacity. Do not mutate run/lease rows or make direct Postgres an operator
+launch dependency.
 
-```sql
-select status,count(*) from benchmark_runs where status not in ('completed','failed','cancelled') group by status;
-select status,count(*) from benchmark_resource_leases where status='active' group by status;
+```bash
+curl -fsS --cookie "$WORKFLOW_BUILDER_COOKIE" \
+  'https://workflow-builder-dev.tail286401.ts.net/api/benchmarks/runs?limit=25' | jq .
+kubectl --context admin@dev -n workflow-builder logs deploy/swebench-coordinator --tail=200
+kubectl --context admin@dev -n workflow-builder get workloads
 ```
-
-Run via `kubectl --context dev -n workflow-builder exec postgresql-0 -- psql -U postgres -d workflow_builder -c "<sql>"`.
 
 **Historical launch invocation**:
 
@@ -474,8 +476,8 @@ Before raising SWE-bench throughput:
 
 1. Confirm no active benchmark Dapr workflows will be replay-broken by a rollout.
 2. Check selected agent capacity in the run summary or Benchmarks launch sheet.
-3. For shared agents, adjust pool replicas/slots; for dedicated agents, adjust
-   runtime-class slots or AgentRuntime lifecycle.
+3. For static-pool agents, adjust pool replicas/slots. For per-session agents,
+   adjust Kueue quota, Sandbox resource requests, and runtime-class caps.
 4. Keep `AGENT_RUNTIME_DAPR_WORKFLOW_LIMIT_PER_SIDECAR` aligned with runtime
    slots so Dapr is not the hidden limiter.
 5. Keep global inference, agent workflow, sandbox, and model caps coherent.

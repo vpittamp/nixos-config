@@ -1,43 +1,19 @@
 #!/usr/bin/env python3
-"""
-Upsert a workflow into workflow-builder.
+"""Create or update a workflow through Workflow Builder's BFF application API.
 
-Usage:
-    upsert-workflow.py <file.json> [--bff-url URL] [--api-key KEY] [--project-id PID]
-    upsert-workflow.py <file.json> --psql                        # direct DB upsert via kubectl exec
+The input is a full workflow JSON object. `engineType` defaults to
+`dynamic-script`. When `id` is present, the helper updates that scoped workflow
+with PUT; otherwise it creates one with POST. POST accepts `spec` directly.
 
-Input file shape (matches what the BFF expects, plus the spec column):
-    {
-      "name": "...",                       # required
-      "engineType": "dapr",                # optional, defaults to "dapr"
-      "spec": { ...SW 1.0 doc... },        # optional but strongly recommended
-      "nodes": [ ... ],                    # required if spec present (keep aligned)
-      "edges": [ ... ]                     # required if spec present
-    }
-
-Two phases (BFF mode):
-    1. POST /api/workflows  with name + nodes + edges + engineType (the BFF stamps userId + projectId)
-    2. PUT  /api/workflows/{id}  with spec (POST does NOT write the spec column)
-
-Authentication:
-    --api-key, or env WORKFLOW_BUILDER_API_KEY (Bearer "wfb_..."), or env WORKFLOW_BUILDER_COOKIE
-    (raw cookie header, e.g. "session=...").
-
-psql fallback (--psql):
-    Runs `kubectl -n workflow-builder exec deploy/postgresql -- psql ...`. Requires
-    --project-id (NOT NULL since migration 0040). Optionally --user-id; defaults to a
-    placeholder which you should update. This path skips connection-ref sync.
-
-Exit codes: 0 = success, 1 = validation/auth error, 2 = transport error.
+Authentication is a Workflow Builder access JWT or login cookie. Workspace
+`wfb_...` API keys belong to Workflow MCP and do not authenticate these BFF
+routes. There is intentionally no direct-Postgres fallback.
 """
 
 import argparse
 import json
 import os
-import subprocess
 import sys
-import uuid
-from typing import Any
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
@@ -47,145 +23,131 @@ def fail(msg: str, code: int = 1) -> "None":
     sys.exit(code)
 
 
-def http_json(method: str, url: str, body: dict | None, headers: dict[str, str]) -> dict:
-    data = None
-    if body is not None:
-        data = json.dumps(body).encode("utf-8")
-        headers = {**headers, "Content-Type": "application/json"}
-    req = urllib_request.Request(url, data=data, headers=headers, method=method)
+def http_json(
+    method: str,
+    url: str,
+    body: dict | None,
+    headers: dict[str, str],
+) -> dict:
+    request_headers = {**headers, "Content-Type": "application/json"}
+    req = urllib_request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8") if body is not None else None,
+        headers=request_headers,
+        method=method,
+    )
     try:
         with urllib_request.urlopen(req, timeout=30) as resp:
             raw = resp.read()
             return json.loads(raw) if raw else {}
-    except urllib_error.HTTPError as e:
-        body_text = e.read().decode("utf-8", errors="replace")
-        fail(f"{method} {url} -> HTTP {e.code}: {body_text}", code=2)
-    except urllib_error.URLError as e:
-        fail(f"{method} {url} -> {e.reason}", code=2)
+    except urllib_error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        fail(f"{method} {url} -> HTTP {exc.code}: {detail}", code=2)
+    except urllib_error.URLError as exc:
+        fail(f"{method} {url} -> {exc.reason}", code=2)
 
 
-def auth_headers(api_key: str | None, cookie: str | None) -> dict[str, str]:
-    if api_key:
-        return {"Authorization": f"Bearer {api_key}"}
+def auth_headers(access_token: str | None, cookie: str | None) -> dict[str, str]:
+    if access_token:
+        if access_token.startswith("wfb_"):
+            fail("wfb_ workspace keys authenticate Workflow MCP, not BFF workflow routes")
+        return {"Authorization": f"Bearer {access_token}"}
     if cookie:
         return {"Cookie": cookie}
     fail(
-        "no auth: pass --api-key, set WORKFLOW_BUILDER_API_KEY, or set WORKFLOW_BUILDER_COOKIE",
-        code=1,
+        "no BFF login auth: pass --access-token, set WORKFLOW_BUILDER_ACCESS_TOKEN, "
+        "or set WORKFLOW_BUILDER_COOKIE",
     )
 
 
-def upsert_via_bff(payload: dict, args: argparse.Namespace) -> None:
-    headers = auth_headers(args.api_key, args.cookie)
+def save_via_api(payload: dict, args: argparse.Namespace) -> None:
+    headers = auth_headers(args.access_token, args.cookie)
     base = args.bff_url.rstrip("/")
+    workflow_id = payload.get("id")
 
-    spec = payload.get("spec")
-    post_body = {
-        "name": payload["name"],
-        "engineType": payload.get("engineType", "dapr"),
-        "nodes": payload.get("nodes", []),
-        "edges": payload.get("edges", []),
-    }
-    workflow = http_json("POST", f"{base}/api/workflows", post_body, headers)
-    wf_id = workflow.get("id")
-    if not wf_id:
-        fail(f"POST /api/workflows returned no id: {workflow}", code=2)
-
-    if spec is not None:
-        put_body = {
+    if workflow_id:
+        existing = http_json("GET", f"{base}/api/workflows/{workflow_id}", None, headers)
+        if existing.get("engineType") != "dynamic-script":
+            fail(
+                "refusing to PUT a dynamic-script spec into a non-dynamic workflow; "
+                "use the application's explicit conversion flow",
+                code=2,
+            )
+        body = {"name": payload["name"], "spec": payload["spec"]}
+        if "nodes" in payload:
+            body["nodes"] = payload["nodes"]
+        if "edges" in payload:
+            body["edges"] = payload["edges"]
+        method = "PUT"
+        url = f"{base}/api/workflows/{workflow_id}"
+    else:
+        body = {
             "name": payload["name"],
+            "engineType": payload.get("engineType", "dynamic-script"),
             "nodes": payload.get("nodes", []),
             "edges": payload.get("edges", []),
-            "spec": spec,
+            "spec": payload["spec"],
         }
-        http_json("PUT", f"{base}/api/workflows/{wf_id}", put_body, headers)
+        method = "POST"
+        url = f"{base}/api/workflows"
 
-    # The canvas page lives only under the workspace route
-    # (/workspaces/<slug>/workflows/<id>) — there is no top-level
-    # /workflows/<id> page route, so we can't build a click-through URL from
-    # the POST response (it carries no workspace slug). Emit the id + a hint
-    # instead of a dead link; the workspace slug is the one you launched from.
-    print(json.dumps({
-        "id": wf_id,
-        "specWritten": spec is not None,
-        "canvasUrlHint": f"{base}/workspaces/<workspace-slug>/workflows/{wf_id}",
-    }, indent=2))
+    workflow = http_json(method, url, body, headers)
+    saved_id = workflow.get("id") or workflow_id
+    if not saved_id:
+        fail(f"{method} returned no workflow id: {workflow}", code=2)
 
-
-def upsert_via_psql(payload: dict, args: argparse.Namespace) -> None:
-    if not args.project_id:
-        fail("--project-id is required with --psql (workflows.project_id is NOT NULL since migration 0040)", code=1)
-    user_id = args.user_id or "REPLACE_WITH_REAL_USER_ID"
-    wf_id = payload.get("id") or f"wf_{uuid.uuid4().hex[:24]}"
-
-    sql = """
-    INSERT INTO workflows (id, name, nodes, edges, engine_type, user_id, project_id, spec)
-    VALUES ($wf_id$, $name$, $nodes$::jsonb, $edges$::jsonb, $engine$, $user_id$, $project_id$, $spec$::jsonb)
-    ON CONFLICT (id) DO UPDATE SET
-      name       = EXCLUDED.name,
-      nodes      = EXCLUDED.nodes,
-      edges      = EXCLUDED.edges,
-      engine_type = EXCLUDED.engine_type,
-      project_id = EXCLUDED.project_id,
-      spec       = EXCLUDED.spec,
-      updated_at = now()
-    RETURNING id;
-    """
-    placeholders = {
-        "wf_id": wf_id,
-        "name": payload["name"],
-        "nodes": json.dumps(payload.get("nodes", [])),
-        "edges": json.dumps(payload.get("edges", [])),
-        "engine": payload.get("engineType", "dapr"),
-        "user_id": user_id,
-        "project_id": args.project_id,
-        "spec": json.dumps(payload.get("spec", {})),
-    }
-    rendered = sql
-    for key, value in placeholders.items():
-        rendered = rendered.replace(f"${key}$", value.replace("'", "''"))
-
-    cmd = [
-        "kubectl", "-n", "workflow-builder", "exec", "deploy/postgresql", "--",
-        "psql", "-U", "postgres", "-d", "workflow_builder", "-v", "ON_ERROR_STOP=1",
-        "-c", rendered,
-    ]
-    try:
-        out = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=60)
-    except subprocess.CalledProcessError as e:
-        fail(f"psql failed: {e.stderr.strip()}", code=2)
-    except FileNotFoundError:
-        fail("kubectl not found on PATH", code=1)
-
-    print(json.dumps({"id": wf_id, "psqlOutput": out.stdout.strip()}, indent=2))
+    print(
+        json.dumps(
+            {
+                "id": saved_id,
+                "operation": "updated" if workflow_id else "created",
+                "canvasUrlHint": (
+                    f"{base}/workspaces/<workspace-slug>/workflows/{saved_id}"
+                ),
+            },
+            indent=2,
+        )
+    )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Upsert a workflow into workflow-builder")
-    parser.add_argument("file", help="Workflow JSON file (see header for shape)")
-    parser.add_argument("--bff-url", default=os.getenv("WORKFLOW_BUILDER_URL", "https://workflow-builder-ryzen.tail286401.ts.net"))
-    parser.add_argument("--api-key", default=os.getenv("WORKFLOW_BUILDER_API_KEY"))
-    parser.add_argument("--cookie", default=os.getenv("WORKFLOW_BUILDER_COOKIE"))
-    parser.add_argument("--psql", action="store_true", help="Bypass BFF and INSERT/UPSERT directly via kubectl exec psql")
-    parser.add_argument("--project-id", default=os.getenv("WORKFLOW_BUILDER_PROJECT_ID"), help="Required with --psql")
-    parser.add_argument("--user-id", default=os.getenv("WORKFLOW_BUILDER_USER_ID"), help="Optional with --psql")
+    parser = argparse.ArgumentParser(
+        description="Create or update a workflow through Workflow Builder's BFF",
+    )
+    parser.add_argument("file", help="Full workflow JSON definition")
+    parser.add_argument(
+        "--bff-url",
+        default=os.getenv(
+            "WORKFLOW_BUILDER_URL",
+            "https://workflow-builder-dev.tail286401.ts.net",
+        ),
+    )
+    parser.add_argument(
+        "--access-token",
+        default=os.getenv("WORKFLOW_BUILDER_ACCESS_TOKEN"),
+        help="Workflow Builder access JWT (not a wfb_ Workflow MCP key)",
+    )
+    parser.add_argument(
+        "--cookie",
+        default=os.getenv("WORKFLOW_BUILDER_COOKIE"),
+        help="Raw login Cookie header",
+    )
     args = parser.parse_args()
 
     try:
-        with open(args.file) as fh:
-            payload = json.load(fh)
+        with open(args.file, encoding="utf-8") as handle:
+            payload = json.load(handle)
     except FileNotFoundError:
         fail(f"file not found: {args.file}")
-    except json.JSONDecodeError as e:
-        fail(f"invalid JSON in {args.file}: {e}")
+    except json.JSONDecodeError as exc:
+        fail(f"invalid JSON in {args.file}: {exc}")
 
     if not isinstance(payload, dict) or not payload.get("name"):
-        fail("payload must be a JSON object with a non-empty 'name'")
+        fail("payload must be a JSON object with a non-empty name")
+    if not isinstance(payload.get("spec"), dict):
+        fail("payload must include a spec object")
 
-    if args.psql:
-        upsert_via_psql(payload, args)
-    else:
-        upsert_via_bff(payload, args)
+    save_via_api(payload, args)
 
 
 if __name__ == "__main__":

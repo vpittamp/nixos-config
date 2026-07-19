@@ -101,7 +101,9 @@ IDs, OpenShell pod admission, session IDs, token usage, and evaluator handoff.
 ## Capacity API Gate
 
 Use an authenticated workflow-builder token for the project that owns the canary
-agents, then call:
+agents, then call. The retained `agnt_kimi_k26_swe_canary` identifier is a
+legacy fixture identity; its current model mapping is `kimi/kimi-k3`. Do not
+infer that K2.6 remains an available model from the slug.
 
 ```bash
 curl -fsS -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
@@ -110,7 +112,7 @@ curl -fsS -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' 
     "instanceCount": 72,
     "requestedConcurrency": 72,
     "evaluationConcurrency": 24,
-    "modelNameOrPath": "moonshotai/kimi-k2-instruct"
+    "modelNameOrPath": "kimi/kimi-k3"
   }' \
   https://workflow-builder-dev.tail286401.ts.net/api/benchmarks/capacity | jq
 ```

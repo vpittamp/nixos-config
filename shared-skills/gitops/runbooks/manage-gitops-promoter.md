@@ -66,7 +66,6 @@ kubectl --context hub apply --server-side --dry-run=server \
   -k packages/components/hub-management/manifests/argocd-gitops-promoter-ui
 kubectl kustomize packages/overlays/hub >/tmp/hub-render.yaml
 kubectl kustomize packages/overlays/dev >/tmp/dev-render.yaml
-kubectl kustomize packages/overlays/staging >/tmp/staging-render.yaml
 git diff --check
 ```
 
@@ -76,7 +75,7 @@ git diff --check
 git push origin HEAD:main
 ```
 
-7. Let source-hydrator and Promoter move `origin/main` through `env/hub-next` to `env/hub`. If the same manifest change needs ryzen-only validation first, commit it to `main` and let ryzen's local ArgoCD reconcile it (ryzen tracks `main` directly — no Promoter step, no `inner-loop`). If hub promotion does not create/merge the PR, inspect `stacks-environments` and open/merge the `env/hub-next` → `env/hub` PR only if the diff is expected.
+7. Let Source Hydrator and Promoter move `origin/main` through `env/hub-next` to `env/hub`. `stacks-environments` has `autoMerge:true`; the approval gate is the `main` PR. If active/proposed SHAs do not converge, inspect and refresh the strategy/CTP. Do not open or manually merge a second env/hub PR. Ryzen validation is a separate opt-in lane.
 
 If `env/hub-next` has advanced but `ChangeTransferPolicy/stacks-environments-env-hub-*` still proposes a prior dry SHA or prior PR, force a promoter refresh before bypassing the normal flow:
 
@@ -136,14 +135,15 @@ kubectl --kubeconfig ~/.kube/hub-config annotate changetransferpolicy stacks-env
 
 kubectl --kubeconfig ~/.kube/hub-config get changetransferpolicy stacks-environments-env-hub-8c9641d5 -n argocd -o json |
   jq '{activeDry:.status.active.dry.sha, proposedDry:.status.proposed.dry.sha, proposedHydrated:.status.proposed.hydrated.sha, pr:.status.pullRequest}'
-gh pr list --repo PittampalliOrg/stacks --state open --base env/hub --json number,title,headRefName,url
+git ls-remote origin refs/heads/env/hub-next refs/heads/env/hub
 ```
 
-Expected: the proposed dry SHA advances to the latest main commit and a new `env/hub` PR appears. Merge it after checking the diff is expected.
+Expected: the proposed dry SHA advances to the latest main commit and
+`env/hub` auto-advances after the strategy reconciles.
 
-## Recover a MISSING `env/hub-next` branch after a hub promotion PR merges
+## Recover a missing `env/hub-next` branch after hub auto-promotion
 
-Symptom: after an `env/hub` promotion PR merges, GitOps Promoter logs `ChangeTransferPolicyNotReady` / "couldn't find remote ref env/hub-next" and `PromotionStrategy stacks-environments` goes NotReady, flooding warning events.
+Symptom: after an `env/hub` auto-promotion, GitOps Promoter logs `ChangeTransferPolicyNotReady` / "couldn't find remote ref env/hub-next" and `PromotionStrategy stacks-environments` goes NotReady, flooding warning events.
 
 This is NOT GitHub auto-deleting the branch (`delete_branch_on_merge=false`). Only `env/hub-next` is affected — the spoke `-next` branches self-heal because their hydrators are busy, but the idle hub hydrator does not recreate it. When `active == proposed` dry SHA (i.e. no pending hub change), just recreate the branch from `env/hub` and the Promoter reconciles to Ready:
 

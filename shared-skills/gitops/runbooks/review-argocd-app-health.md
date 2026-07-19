@@ -37,11 +37,11 @@ Before fixing drift, answer these questions:
 
 Known decisions:
 
-- Keep `agent-sandbox-crds` and `<spoke>-agent-sandbox-crds`. OpenShell and agent-runtime controllers require `AgentRuntime`, `Sandbox`, `SandboxClaim`, `SandboxTemplate`, and `SandboxWarmPool` CRDs. CRDs are split into a separate early-wave app intentionally.
+- Keep `agent-sandbox-crds` and the dev copy. Current runtimes require upstream `Sandbox`, `SandboxClaim`, `SandboxTemplate`, and `SandboxWarmPool` CRDs. The custom `AgentRuntime` CRD/controller is retired; do not restore it. CRDs remain a separate early-wave app intentionally.
 - Keep `hub-workflow-builder-builds` (now shared build infra only — cache PVCs + cleanup CronJobs after the gitea event-driven build lane was retired) and `hub-outer-loop-builds` (the live `github-outer-loop` EventListener → GHCR). The gitea build apps (`hub-gitea-builds`, `hub-gitea-builds-egress`, and the gitea EventListener) were retired and should NOT be recreated.
 - Remove stale spoke-local build apps and egress resources such as `workflow-builder-builds-local` or `gitea-builds-egress` on ryzen/spokes. The current build plane is centralized on hub; ryzen owns the resulting image tags, not the Buildah workload.
 - Remove AutoKube resources. AutoKube is legacy in this repo; do not repair AutoKube apps, Ingresses, ACL approvals, or manifests unless the product is explicitly reintroduced.
-- The old hcloud-spoke Crossplane `AzureWorkloadIdentity` claim/provider path is legacy. The current hcloud spoke lifecycle uses hcloud/talos/kubernetes/terraform providers plus existing Azure Workload Identity configuration, not generated Azure Crossplane RoleAssignments/FICs.
+- Crossplane spoke lifecycle is retired. Dev is provisioned by the Talos/Hetzner scripts and enrolled through argocd-agent; do not repair or recreate Crossplane claims/providers for it.
 
 If removing a resource, delete it from the source kustomization/ApplicationSet/app spec, commit, push, and let Argo prune. Avoid manual deletion unless finalizers or orphaned live resources block pruning.
 
@@ -139,7 +139,8 @@ git diff --check
 git push origin HEAD:main
 ```
 
-For local ryzen validation of the same change, use affected sync from the intended stacks worktree:
+Only when the user explicitly requests Ryzen validation, inspect and refresh
+Ryzen through its local ArgoCD. Generic reviews stop at hub/dev.
 
 ```bash
 # Inspect current ryzen-side state from hub: ssh vpittamp@ryzen 'kubectl --kubeconfig ~/.kube/hub-kubeconfig get app -n argocd | grep ^ryzen-'
@@ -148,11 +149,12 @@ For local ryzen validation of the same change, use affected sync from the intend
 
 Use affected sync for local ryzen validation of the same manifest change.
 
-Hub changes hydrate from `origin/main` to `env/hub-next`; `stacks-environments` has `autoMerge: false`, so merge the generated `env/hub` PR after checking it:
+Hub changes hydrate from `origin/main` to `env/hub-next` and
+`stacks-environments` has `autoMerge:true`. The review gate is the `main` PR;
+do not wait for or manually merge a second `env/hub` PR. Observe convergence:
 
 ```bash
-gh pr list --repo PittampalliOrg/stacks --state open --base env/hub --json number,title,headRefName,url
-gh pr merge <number> --repo PittampalliOrg/stacks --merge
+git ls-remote origin refs/heads/env/hub-next refs/heads/env/hub
 kubectl --kubeconfig ~/.kube/hub-config annotate app root-application -n argocd \
   argocd.argoproj.io/refresh=hard --overwrite
 ```

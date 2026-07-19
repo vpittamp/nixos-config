@@ -1,6 +1,8 @@
 # Agent Task (`durable/run`)
 
-Scope: the body shape for `call: durable/run` — the only agent-dispatch path in the system. Read this before adding an agent step. Source of truth: `src/lib/types/agent-graph.ts:65-80` (TS type) and the production fixtures in `scripts/fixtures/sample-workflows.json`.
+Scope: the legacy SW 1.0 `call: durable/run` body retained for existing
+definitions and migrations. New dynamic scripts dispatch agents with
+`await agent(prompt, opts)` and should not introduce new `durable/run` nodes.
 
 ## TL;DR
 
@@ -89,12 +91,15 @@ If `agentRef.id` is missing OR resolves to an agent that hasn't been published, 
 
 Agent runtime is selected by the agent row/config and the launch path, not by the workspace sandbox template. For SWE-bench and coding smokes, the reliable fields are DB/run metadata and workflow output:
 
+- dapr-agent-py default: `modelSpec=kimi/kimi-k3`, component `llm-kimi-k3`, authenticated with `KIMI_API_KEY`. The model contract is a 1,048,576-token context window with reasoning fixed at `max`; the native adapter rejects any other `KIMI_REASONING_EFFORT`.
 - Claude Agent SDK path: `agentRuntime=claude-agent-py`, `agentWorkflowMode=claude-agent-sdk`, model `anthropic/claude-opus-4-8`.
 - GPT current default: modelSpec `openai/gpt-5.5` when the OpenAI component/env is available.
 - Static pool path: `agents.runtime_app_id=agent-runtime-pool-coding`; this routes to the surviving static pool Deployment rather than a per-session Sandbox.
 - Workspace/testbed template path: `sandboxTemplate: "dapr-agent"` can still be correct for `workspace/profile` even when the agent runtime is Claude.
 
-When upgrading defaults, update both workflow-builder model options and stacks runtime components/env pins; then seed/launch under `vinod@pittampalli.com` so the rows land in the real dev/ryzen projects.
+For K3 structured output, object-shaped schemas use the synthetic `StructuredOutput` finalizer so normal browser/coding/MCP tools remain available before the final answer. Pydantic calls and non-object schemas retain native strict JSON Schema. For vision, pass structured `image_url` content or a supported base64 data URL containing the pixels; stringified multimodal arrays are not vision input.
+
+When upgrading defaults, update workflow-builder model options and stacks runtime components/env pins together, then seed/launch under `vinod@pittampalli.com` in dev project `N1nbCo9zESa-S0UrzVrOw`. Do not deploy or test Ryzen unless explicitly requested.
 
 ### Two stamping paths (UI launch vs evaluations)
 

@@ -23,15 +23,17 @@ let
     builtins.toJSON {
       mcpServers = {
         "workflow-builder" = {
-          # AGY uses serverUrl for remote MCP servers. The old Gemini-style
-          # `url` key is accepted by some configs but fails silently in AGY.
-          serverUrl = workflowBuilderMcp.url;
+          # Use the same authenticated proxy as the other local AI clients so
+          # workspace identity and optional session lineage have one contract.
+          command = "${workflowBuilderMcp.proxyCommand}";
+          args = [];
           timeoutSeconds = 300;
           strictArgumentValidation = true;
           enabledTools = [
-            "list_workflow_targets"
-            "get_workflow_target_health"
-            "get_workflow_target_resources"
+            "get_workflow_context"
+            "list_workflows"
+            "get_workflow"
+            "execute_workflow"
             "get_workflow_script_spec"
             "validate_workflow_script"
             "run_workflow_script"

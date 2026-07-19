@@ -4,7 +4,17 @@ Scope: the K8s mental model needed to reason about *where* a workflow runs and *
 
 ## One-paragraph mental model
 
-The user submits a workflow → SvelteKit **workflow-builder** BFF (port 3000) writes to Postgres + tells **workflow-orchestrator** (Python Dapr, port 8080) to start an instance. The orchestrator parses the SW 1.0 spec and walks `do[]`. For every task except `durable/run`, it does a Dapr service-invoke to **function-router**, which looks up the slug in the **function-registry ConfigMap** and forwards to fn-system / openshell-agent-runtime / code-runtime, or — for an AP slug (the `_default` `{type: activepieces}` route) — computes the per-piece `ap-<piece>-service` and dispatches there. For AP credentials, function-router uses **reference-forwarding**: it forwards only `X-Connection-External-Id` (audit `reference_forwarded` in `credential_access_logs`) and does NOT fetch plaintext or call a monolith — the per-piece piece-runtime self-resolves plaintext via the BFF `/api/internal/connections/<id>/decrypt`, where the BFF owns the actual AES-256-CBC decryption (`src/lib/server/security/encryption.ts`). For `durable/run`, the orchestrator resolves project MCP connections when requested, resolves the runtime via the **runtime registry** (`core/runtime_registry.resolve()`, fed by `services/shared/runtime-registry.json`), then yields `ctx.call_child_workflow("session_workflow", app_id="<runtime-app-id>")` — a native Dapr child workflow, not HTTP — to a **per-session ephemeral Sandbox pod** (upstream `kubernetes-sigs/agent-sandbox`, Kueue-admitted, self-reaped on session end) in the same `workflow-builder` namespace. The runtime app may execute `dapr-agent-py`, `claude-agent-py`, or `adk-agent-py`; the Sandbox pods differ only by container image. Do not infer the runtime from the workspace `sandboxTemplate` name. Durable workflow state is centralized in `workflowstatestore`, and agent application state uses `dapr-agent-py-statestore`; each sidecar must see exactly one actor state store.
+The SvelteKit BFF saves a dynamic script and starts the Python Dapr
+`dynamic_script_workflow_v1` pump. The zero-secret `script-evaluator` plans
+journaled agent/action/event/timer calls; the pump dispatches them through
+registered activities/children. `agent()` resolves a runtime through
+`services/shared/runtime-registry.json` and calls `session_workflow` on a
+per-session Kueue-admitted Sandbox app id. `action()` uses the deterministic
+function-router/piece-runtime path and reference-forwards connection ids, not
+plaintext credentials. Legacy SW rows still run through `sw_workflow_v1` and
+`durable/run`, but they are not the new authoring lane. Durable state remains in
+the single namespace-wide `workflowstatestore`; `dapr-agent-py-statestore` is
+non-actor application state.
 
 ## Pods that matter
 
@@ -114,14 +124,18 @@ When the question is "did this run use Claude or the right container?", collect 
 
 - `dapr-agent-py:git-<sha>` → legacy static `dapr-agent-py` + `dapr-agent-py-testing` Deployments (openshell-durable-agent enum + benchmark pool). Pinned by GitOps tag bump.
 - `dapr-agent-py-sandbox:latest` → per-session `dapr-agent-py` Sandbox pods. The BFF resolves the image from `AGENT_RUNTIME_DEFAULT_IMAGE` at session-launch time (no AgentRuntime CR). Uses `imagePullPolicy: Always`, so each freshly-launched Sandbox picks up new digests.
-- `dapr-agent-py-sandbox:git-<sha>` and `dapr-agent-py-testing-sandbox:git-<sha>` → current hub-built sandbox images used by SWE-bench agent/session hosts. A `services/dapr-agent-py` source change should roll both images, and the workflow-builder BFF pod must see the matching `AGENT_RUNTIME_*_DEFAULT_IMAGE` env values before new runtime CRs or session hosts are considered updated.
+- `dapr-agent-py-sandbox:git-<sha>` and `dapr-agent-py-testing-sandbox:git-<sha>` -> current hub-built sandbox images used by SWE-bench agent/session hosts. A `services/dapr-agent-py` source change should roll both images, and the workflow-builder BFF pod must see the matching `AGENT_RUNTIME_*_DEFAULT_IMAGE` env values before newly launched session Sandboxes are considered updated.
 - `claude-agent-py-sandbox:git-<sha>` → Claude Agent SDK runtime image. The workflow-builder BFF reads `AGENT_RUNTIME_CLAUDE_DEFAULT_IMAGE` for Claude runtime launches and GitOps UI exposes `claude-agent-py-sandbox` in the workflow-builder service matrix.
 
 A change in `services/dapr-agent-py/src/**` requires both the runtime image and sandbox image builds. A change in `services/claude-agent-py/**` requires the Claude runtime/sandbox image plus the workflow-builder BFF env pin that points at it. The current build plane is centralized on hub; see the `gitops` skill for details.
 
 ## Workflow JSON specs are NOT baked into images
 
-The production workflow-builder Dockerfile copies `src/` and `drizzle/` only — `services/` (where workflow JSONs live in dev) is excluded. Spec changes require a DB UPSERT against the spoke's Postgres. Image rebuilds alone don't change runtime behavior. See `references/authoring-recipe.md` for the upsert path.
+The production workflow-builder Dockerfile does not make repo workflow JSON
+files the runtime source of truth. Image rebuilds alone do not change saved
+workflow behavior. Save the new definition through Workflow MCP, the UI, or the
+authenticated BFF API; never update the workflow row directly. See
+`references/authoring-recipe.md`.
 
 ## When to read the gitops skill
 

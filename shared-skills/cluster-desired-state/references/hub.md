@@ -24,8 +24,7 @@ whole fleet. Shared model in `architecture.md`; build steps in
   hub-onepassword-store, hub-tailscale-{crds,operator,...},
   hub-tekton-{pipelines,triggers,dashboard}, hub-outer-loop-builds, hub-kueue,
   hub-mlflow, hub-headlamp, ...) plus un-prefixed gitops-promoter, spoke
-  appsets, crossplane(+hcloud-providers/compositions), nocodb*, redash*,
-  prometheus-agent, metrics-server, grafana*.
+  appsets, nocodb*, redash*, prometheus-agent, metrics-server, grafana*.
 - Hub also TRACKS ~75 `dev-*` and ~55 `ryzen-*` child apps (rendered via appsets;
   they run ON spokes).
 - Everything Synced/Healthy EXCEPT two benign permanent drifts:
@@ -38,9 +37,9 @@ whole fleet. Shared model in `architecture.md`; build steps in
   kube-apiserver mode, 2 replicas — for remote kubectl), `cluster-ingress`
   ProxyGroupReady. Tailscale operator Deployment 1/1; subnet-router Connector
   advertises 10.244.0.0/16 (pods) + 10.96.0.0/16 (services).
-- Crossplane providers all Installed+Healthy (provider-hetzner v1.0.0-alpha.1,
-  provider-talos v0.1.2, provider-terraform v1.1.1, provider-kubernetes v1.2.1;
-  functions cel-filter/patch-and-transform/sequencer Healthy).
+- Crossplane is absent from the active hub overlay and is not a health or
+  lifecycle dependency. Any `crossplane*` Application or provider that appears
+  live is stale inventory to investigate, not a controller to repair.
 - GitOps Promoter pod 2/2 (ns gitops-promoter-system); PromotionStrategies
   `stacks-environments` (env/hub, autoMerge:false) + `workflow-builder-release`
   READY; GitRepository `stacks-repo` + ScmProvider `github` READY.
@@ -115,9 +114,10 @@ whole fleet. Shared model in `architecture.md`; build steps in
    The Promoter PR `env/hub-next -> env/hub` must be **merged by a human** (autoMerge:false)
    for the root-application's child apps to appear. `packages/overlays/hub/kustomization.yaml`
    composes 8 components: hub-base, hub-management, hub-spoke-appsets, hub-tekton,
-   crossplane-hetzner-talos, addons/observability-clickhouse-shared, addons/nocodb,
-   addons/redash; cluster-config sets CLUSTER_NAME=hub, GIT_REPO_URL/GIT_BRANCH=main,
-   TAILSCALE_TAILNET=tail286401.ts.net, AZURE_KEY_VAULT_NAME=keyvault-thcmfmoo5oeow.
+   addons/observability-clickhouse-shared, addons/nocodb, addons/redash, and
+   hub-onepassword; cluster-config sets CLUSTER_NAME=hub,
+   GIT_REPO_URL/GIT_BRANCH=main, TAILSCALE_TAILNET=tail286401.ts.net, and
+   AZURE_KEY_VAULT_NAME=keyvault-thcmfmoo5oeow.
 5. **TAILSCALE + PROXYGROUP AUTH** (Steps 5-7). hub-base deploys tailscale-operator
    (OAuth from KV), ProxyGroup `k8s-api-cluster` (renamed `k8s-api-hub` via kustomize
    replacement from CLUSTER_NAME), ProxyGroup-cluster-ingress, Ingress argocd-hub,
@@ -132,9 +132,11 @@ whole fleet. Shared model in `architecture.md`; build steps in
    `architecture.md` §4. Plus the **Contract 3** cluster-neutral `tailnet-ca` mirror
    (`ExternalSecret-tailnet-ca.yaml`) and the `tailnet-device-sweeper` CronJob (ns
    tailscale) — see `architecture.md` §7.
-8. **CROSSPLANE SPOKE LIFECYCLE** (crossplane-hetzner-talos). Crossplane + providers +
-   functions; CRDs `platform.pittampalli.io` (claim -> XR -> Composition). hcloud token
-   from `ExternalSecret-hcloud-api-token`.
+8. **SCRIPTED SPOKE LIFECYCLE BOUNDARY.** The hub does not provision spokes.
+   `deployment/scripts/talos-hetzner/recreate-dev.sh` owns the destructive dev
+   lifecycle (backup, destroy, cleanup, provision, bootstrap, agent enrollment,
+   restore, verify); ryzen has its separate imperative bootstrap. The hub owns
+   agent principal, secret transport, desired-state delivery, and aggregation.
 9. **CENTRALIZED BUILD POOL** (hub-tekton). Tekton + outer-loop builds + kueue capacity
    (ClusterQueue `hub-swebench-image-builds`, ResourceFlavor `hub-build`). ALL build
    PipelineRuns carry `taskRunTemplate.podTemplate.nodeSelector stacks.io/build-pool=hub`
@@ -149,7 +151,9 @@ kubectl --kubeconfig $K get applications -n argocd | grep -vE 'Synced +Healthy' 
 kubectl --kubeconfig $K get proxygroup -o wide                                    # k8s-api-hub ProxyGroupReady
 kubectl --kubeconfig $K get clustersecretstore                                    # onepassword-store + argocd Valid/Ready
 kubectl --kubeconfig $K get externalsecret -n spoke-secrets                       # dev/ryzen-shared-secrets SecretSynced
-kubectl --kubeconfig $K get providers.pkg.crossplane.io                           # all Healthy
+if kubectl --kubeconfig $K get applications -n argocd -o name | rg -q 'crossplane'; then
+  echo 'unexpected retired Crossplane application remains' >&2; exit 1
+fi
 kubectl --kubeconfig $K get pods -n gitops-promoter-system                        # 2/2
 kubectl --kubeconfig $K get promotionstrategy -n argocd                           # both READY
 kubectl --kubeconfig $K get nodes -o wide                                         # 5 Ready, v1.32.0, Talos 1.12.2

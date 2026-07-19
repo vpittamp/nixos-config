@@ -177,8 +177,13 @@ The current wizard does not expose prompt template editing. For wizard-created q
 `grader-runners.ts:invokeEvaluatorAgent` (used by score_model):
 
 1. If `EVALUATIONS_GRADER_URL` env is set on the BFF, POST `{systemPrompt, userPrompt, agentSlug}` to that URL. Returns the `{output}` field. Useful escape hatch for Cloudflare Workers or custom rubric services.
-2. Otherwise, call `wakeAgentRuntime(slug, 30_000)` from `$lib/server/kube/client` to bring the per-agent pod up.
-3. Then POST via the BFF's Dapr sidecar: `${getDaprSidecarUrl()}/v1.0/invoke/agent-runtime-${slug}/method/api/grader-evaluate` with `{systemPrompt, userPrompt}`. Read `{output}`.
+2. Otherwise call `wakeAgentRuntime(slug, 30_000)`. The current helper prefers
+   the named `SandboxWarmPool` and retains `AgentRuntime` as a compatibility
+   fallback; that CR fallback is not the desired architecture for new runtime
+   work.
+3. Dapr-invoke
+   `agent-runtime-${slug}/api/grader-evaluate` and read the structured/text
+   response.
 
 `grader-runners.ts:runPythonGrader`:
 
@@ -207,7 +212,9 @@ POST /api/grader-evaluate
 
 Implementation: builds a one-turn `[{role: "user", content: userPrompt}]` message list with `system=systemPrompt`, calls `_call_anthropic_sdk(component, messages, tools=None, **kwargs)` directly. No tools, no compaction, no MCP, no Dapr workflow. Returns concatenated text content blocks.
 
-The endpoint relies on the per-agent pod's `ANTHROPIC_API_KEY` env var (already configured by AgentRuntime CR).
+The endpoint relies on provider credentials configured on the selected runtime.
+Kimi K3 uses `KIMI_API_KEY`; the compatibility AgentRuntime path is not a
+credential source-of-truth for new work.
 
 ## Summary Shape
 
@@ -259,19 +266,15 @@ Useful checks:
 kubectl logs -n workflow-builder deploy/evaluation-coordinator --tail=200
 kubectl logs -n workflow-builder deploy/workflow-orchestrator -c workflow-orchestrator --tail=200
 kubectl logs -n workflow-builder deploy/workflow-orchestrator -c daprd --tail=200
-kubectl get agentruntimes -n workflow-builder
-kubectl get pods -n workflow-builder | rg 'evaluation|workflow-orchestrator|agent-runtime'
+kubectl get sandbox,workloads -n workflow-builder
+kubectl get pods -n workflow-builder | rg 'evaluation|workflow-orchestrator|agent-sandbox|dapr-agent-py'
 ```
 
-Inspect recent runs:
+Inspect recent runs through the authenticated application API:
 
 ```bash
-kubectl exec -n workflow-builder postgresql-0 -- psql -U postgres -d workflow_builder -Atc "
-select r.id, r.status, r.summary, r.subject_type, r.subject_id, i.status, i.scores, i.error
-from evaluation_runs r
-join evaluation_run_items i on i.run_id = r.id
-order by r.created_at desc
-limit 10;"
+curl -fsS --cookie "$WORKFLOW_BUILDER_COOKIE" \
+  'https://workflow-builder-dev.tail286401.ts.net/api/evaluations/runs?limit=10' | jq .
 ```
 
 If an agent run is queued/running too long:
@@ -279,14 +282,16 @@ If an agent run is queued/running too long:
 - Verify coordinator item workflow exists in logs.
 - Verify `workflow_executions.dapr_instance_id` was recorded.
 - Verify `workflow-orchestrator` accepted `/api/v2/sw-workflows`.
-- Verify target `AgentRuntime` moved from `Sleeping` to `Starting` to `Active`.
-- Verify target runtime pod has both app and daprd containers ready.
+- Verify the per-session Sandbox or configured static pool pod has both app and daprd containers ready.
 - Read agent runtime logs if the item reached `durable/run`.
 
-If a `score_model` grader errors with `agent-runtime-<slug> /api/grader-evaluate returned 404`:
+If a `score_model` grader returns 404 from
+`agent-runtime-<slug>/api/grader-evaluate`:
 
-- Confirm the AgentRuntime CR's `spec.environment.imageTag` points at a `dapr-agent-py-sandbox` build that **includes** the `/api/grader-evaluate` endpoint (post OpenAI-parity rollout). Older images return 404.
-- The BFF caches nothing here; the failure is per-call. Patching the CR + waking the pod is sufficient.
+- Confirm `wakeAgentRuntime` selected a Ready SandboxWarmPool or compatibility
+  AgentRuntime and that the selected runtime image includes the endpoint.
+- Confirm the Dapr app id is exactly `agent-runtime-<slug>`. Fix the declarative
+  runtime source; do not make an ad hoc CR patch the steady-state solution.
 
 If a `python` grader errors with `code-runtime returned 404` or `python grader returned non-numeric value`:
 

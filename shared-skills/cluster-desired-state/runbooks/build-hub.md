@@ -99,9 +99,10 @@ auto-merges `env/hub-next -> env/hub` — no manual PR merge; `promote_env_hub` 
 - **5 Tailscale + ProxyGroup auth**: hub-base operator + ProxyGroups
   (`k8s-api-cluster`->`k8s-api-hub`, cluster-ingress) + subnet-router; run
   `deployment/scripts/tailscale/proxygroup-auth.sh --cluster hub`.
-- **6 Spoke management wiring**: cluster Secrets + appsets + Promoter
-  (`../references/architecture.md` §3). Confirm the hub uses the **hub-spoke-appsets**
-  spoke-clusters-appset, not the hub-base copy.
+- **6 Spoke management wiring**: agent-mapping cluster Secrets + the explicit
+  `spoke-dev` hydrator + `spoke-workloads-appset` + Promoter
+  (`../references/architecture.md` §3). The retired `spoke-clusters-appset`
+  copies should not reappear.
 - **7 Spoke secret transport (hub side)**: the `spoke-secrets` mirror, standalone
   `k8s-api-hub-ingress` device, spoke-secrets-reader RBAC, `tag:k8s->tag:k8s` impersonate
   ACL grant (`../references/architecture.md` §4).

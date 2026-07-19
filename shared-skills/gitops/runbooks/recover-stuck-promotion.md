@@ -57,7 +57,7 @@ kubectl --kubeconfig ~/.kube/hub-config get app <app-name> -n argocd \
 
 If the new sync also fails (genuine application-level error, not a stuck operation), look at:
 - The actual sync hook results: `kubectl get app <name> -o jsonpath='{.status.operationState.syncResult.resources}' | jq '.[] | select(.hookPhase != "Succeeded")'`
-- Pod logs on the spoke (use Crossplane kubeconfig fallback if needed)
+- Pod logs on dev (use `admin@dev` or `/tmp/talos-spoke-dev/kubeconfig` if the normal context is broken)
 
 ## Why kubectl patch alone doesn't work
 
