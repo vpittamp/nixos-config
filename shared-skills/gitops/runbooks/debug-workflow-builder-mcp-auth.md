@@ -34,16 +34,6 @@ An already-running session keeps its existing bootstrap: `spawnSessionWorkflow`
 returns early on retry and does not refresh the token. Start a fresh session
 after a staged Workflow MCP credential/auth rollout.
 
-Dev may temporarily set `WORKFLOW_MCP_LEGACY_RUNTIME_COMPAT_UNTIL` to an
-absolute cutoff no more than 48 hours ahead. This is a route-opt-in bridge for
-selected direct internal BFF operations owned by already-running pre-token
-sessions. The BFF rechecks ownership, nonterminal session state, and current
-membership, then grants only the minimal resource-specific scope. It grants no
-team capability or arbitrary script depth. The flag is not an external MCP
-authentication mechanism, and `X-Wfb-Session-Id` alone remains invalid at the
-Workflow MCP endpoint. New sessions must use signed credentials; remove the
-flag after the migration window.
-
 Do not confuse Workflow Builder `sessions.id` with Streamable HTTP
 `Mcp-Session-Id` or an AI-client thread ID.
 
