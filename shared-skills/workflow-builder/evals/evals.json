@@ -3,8 +3,8 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Build a dynamic-script workflow that accepts a URL, asks my saved browser agent for the page title and a short summary, saves it, and runs it.",
-      "expected_output": "Calls get_workflow_context and get_workflow_script_spec first; reads the current saved-agent/model contract instead of inventing a model key; writes a literal meta input schema and deterministic script; uses schema-constrained agent output; validates, saves, runs, and verifies the execution in the authenticated workspace; passes no sessionId as workflow ownership and performs no direct database write.",
+      "prompt": "Build a dynamic-script workflow that accepts a URL, uses our supported browser control and capture path, asks my saved Kimi K3 vision agent for the page title and a structured visual review, saves it, and runs it.",
+      "expected_output": "Calls get_workflow_context and get_workflow_script_spec first; discovers the current browser action/runtime and saved-agent contract instead of restoring a GLM browser agent or inventing a model key; keeps browser control separate from K3 vision; passes native screenshot image content rather than stringified metadata; verifies K3 max reasoning and 1048576-token context plus schema-constrained structured output; validates, saves, runs, and verifies the execution in the authenticated workspace; passes no sessionId as workflow ownership and performs no direct database write.",
       "files": []
     },
     {
@@ -16,7 +16,7 @@
     {
       "id": 3,
       "prompt": "A dynamic workflow's agent call never produces a response. Walk through diagnosis without changing cluster state first.",
-      "expected_output": "Checks script validation and execution state, saved-agent version and runtime-registry resolution, Kueue Workload and Sandbox admission, pod/init/app/daprd logs, MCP bootstrap, session events and usage, then UI state. It does not inspect or patch a retired AgentRuntime CR, create a per-agent state store, or treat normal replay chatter as proof of a hang.",
+      "expected_output": "Starts with get_workflow_context, discovers the exact run with list_workflow_executions only if needed, then uses debug_workflow_execution and trace_get_digest. It follows bounded nextActions into trace_search_spans, trace_get_span, trace_get_logs, and trace_get_llm_turn with exactly one spanId or sessionId before inspecting Kueue, Sandbox, pod/init/app/daprd logs. It verifies script state, saved-agent/runtime/model resolution, session events and usage, and UI state without patching a retired AgentRuntime CR, creating a per-agent state store, or treating normal replay chatter as proof of a hang.",
       "files": []
     },
     {
