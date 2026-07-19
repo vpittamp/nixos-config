@@ -77,20 +77,6 @@ Platform-spawned agents receive a signed, session-bound bootstrap credential
 automatically. Users do not forge or supply it. Team role and script recursion
 depth are signed claims; raw headers do not grant those capabilities.
 
-During a staged dev rollout only, `WORKFLOW_MCP_LEGACY_RUNTIME_COMPAT_UNTIL`
-may set an absolute compatibility cutoff no more than 48 hours in the future.
-That bridge lets selected direct internal BFF resource routes re-authorize an
-already-running pre-token session from database ownership and live membership.
-It grants only the minimal route-specific scope, no team capability, and no
-arbitrary recursion depth. It is **not** accepted by the external Workflow MCP
-endpoint, does not turn `X-Wfb-Session-Id` into a credential, and must be absent
-after the cutoff. New sessions always use signed bootstrap credentials.
-
-Roll out the BFF issuer and bounded compatibility first, then the MCP
-enforcement image. Drain or restart pre-token clients and remove the temporary
-flag after the migration window; do not merge these client instructions ahead
-of the corresponding workflow-builder and stacks changes.
-
 ## Do not confuse these IDs
 
 | ID | Meaning | Workflow owner or credential? |
