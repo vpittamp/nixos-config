@@ -134,7 +134,11 @@ in
     command = "${clipcatFzfScript}"
 
     [ui]
-    agent_panel_scope = "all"
+    # Herdr 0.7.5 dropped `agent_panel_scope`; the panel now always lists every
+    # agent (what `scope = "all"` used to select) and `agent_panel_sort` only
+    # chooses ordering — "spaces" (the default, grouped by space) or "priority".
+    # Keeping the retired key made `herdr server reload-config` report
+    # "unknown config key ui.agent_panel_scope".
     show_agent_labels_on_pane_borders = true
     # Let Herdr own normal mouse gestures. With this off, Ghostty receives plain
     # drag selection, but agent TUIs that request mouse reporting also receive
