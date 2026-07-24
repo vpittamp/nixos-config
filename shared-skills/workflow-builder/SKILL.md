@@ -86,6 +86,9 @@ the supported control and capture path still covers the workflow.
 | Stop, terminate, purge, or reset | `docs/workflow-lifecycle-termination.md` and `src/lib/server/lifecycle/`               |
 | Set or debug a persistent goal   | `docs/goal-loop.md` and goal application adapters                                      |
 | Produce typed run artifacts      | `docs/workflow-artifacts.md`                                                           |
+| Inspect or restore run code      | `list_code_checkpoints`, `get_checkpoint_diff`, `restore_checkpoint`                    |
+| Resume or fork a run             | `resume_workflow_execution` and `docs/dynamic-script-workflows.md`                      |
+| Promote a run's code to a PR     | `promote_run_to_pr`                                                                     |
 | Edit prompts or presets          | Prompt Workbench components, prompt APIs, and current prompt docs                      |
 | Diagnose a rollout               | Use `gitops`                                                                           |
 | Develop inside a preview         | Use `preview-environments`                                                             |
@@ -144,6 +147,33 @@ For a failed or silent run, inspect in order:
 
 Normal replay messages are not proof of a hang. Prove lack of progress with
 durable state, timestamps, queue admission, and runtime logs before intervening.
+
+To see what code a run actually changed, call `list_code_checkpoints` for the
+programmatic equivalent of the run's Changes tab (one durable checkpoint per
+code-mutating tool call), then `get_checkpoint_diff` for a checkpoint's patch.
+Reach for these over the Changes UI when diagnosing headlessly or when you need
+the exact diff a single step produced.
+
+## Code Checkpoints, Replay, and Promotion
+
+- A checkpoint is `durable` only once its commit is pushed to the in-cluster
+  checkpoint remote (`remoteStatus` `pushed`). Only durable checkpoints can be
+  restored.
+- `restore_checkpoint` is destructive: it hard-resets the target live sandbox's
+  workspace to the checkpoint's commit. Pass the intended `sandboxName`.
+- `resume_workflow_execution` starts a NEW run, never mutating the source. For an
+  SW-graph run it forks from a node (`fromNodeId`, or the in-flight node when
+  omitted). For a dynamic-script run it is resume-after-edit: the source must be
+  terminal, the current (possibly edited) script re-runs, unchanged calls resolve
+  from the imported done-call journal, and only changed calls re-dispatch — use
+  it to fix a step and continue or to iterate a later step without paying for the
+  prefix. Read the returned new `executionId`.
+- `promote_run_to_pr` opens a REAL GitHub PR (or pushes a branch). With no
+  `artifactId` it promotes the single unpromoted code version, or returns the
+  version list when the choice is ambiguous; re-call with a chosen `artifactId`.
+  Strict preview captures promote through preview continuation, not here.
+- Checkpoint reads need `workflow:read`; restore, resume, and promote need
+  `workflow:execute`.
 
 ## Verification
 
