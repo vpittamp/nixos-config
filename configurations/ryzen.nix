@@ -446,11 +446,13 @@ in
     "kernel.sysrq" = 244;
   };
 
-  # Early warning for the kmalloc-64 unreclaimable-slab leak (incident 2026-07-13).
-  # The leak builds silently over weeks; this converts "sudden OOM crisis" into a
-  # heads-up while there is still ~20 GiB of headroom. Logs to the journal at
-  # warning/err (scraped by grafana-alloy -> Loki) and best-effort desktop
-  # notification into vpittamp's graphical session.
+  # Early warning for the NVIDIA explicit-sync kmalloc-64 leak (root-caused
+  # 2026-07-21; see kernelParams note above). The leak builds silently over
+  # days/weeks and is not reclaimable without a reboot, so this converts a
+  # "sudden freeze" into a heads-up with ~20 GiB of headroom left — enough lead
+  # time to gracefully save/close AI sessions and reboot on your own schedule.
+  # Logs to the journal at warning/err (scraped by grafana-alloy -> Loki, so it
+  # is visible remotely in Grafana) plus a best-effort desktop notification.
   systemd.services.slab-leak-watch = {
     description = "Warn on unreclaimable-slab growth / low memory (kmalloc-64 leak watch)";
     serviceConfig = {
@@ -466,10 +468,10 @@ in
         msg=""; prio="info"
         if [ "''${sunreclaim:-0}" -ge "$crit_kb" ]; then
           prio=err
-          msg="CRITICAL: unreclaimable slab $((sunreclaim/1024)) MiB (>16 GiB). kmalloc-64 leak — plan a reboot soon. Attribute with: cat /sys/kernel/slab/kmalloc-rnd-*-64/alloc_calls | sort -rn | head"
+          msg="CRITICAL: unreclaimable slab $((sunreclaim/1024)) MiB (>16 GiB). NVIDIA explicit-sync kmalloc-64 leak — reboot NOW (save AI sessions first); only a reboot clears it, and a hard freeze is imminent + needs physical access."
         elif [ "''${sunreclaim:-0}" -ge "$warn_kb" ]; then
           prio=warning
-          msg="WARNING: unreclaimable slab $((sunreclaim/1024)) MiB (>8 GiB) and climbing — kmalloc-64 leak recurring."
+          msg="WARNING: unreclaimable slab $((sunreclaim/1024)) MiB (>8 GiB) and climbing — NVIDIA explicit-sync kmalloc-64 leak. Plan a graceful reboot in the next few days."
         elif [ "''${memavail:-999999999}" -le "$low_kb" ]; then
           prio=warning
           msg="WARNING: MemAvailable $((memavail/1024)) MiB (<3 GiB)."
@@ -512,23 +514,33 @@ in
     "mitigations=off"             # Optional: disable CPU mitigations for max performance
                                   # Remove this line if security is priority
 
-    # SLUB allocation-site tracking for the 64-byte kmalloc family.
+    # ROOT CAUSE ATTRIBUTED 2026-07-21 (was incident 2026-07-13).
     #
-    # Incident 2026-07-13: after 26 days uptime the host wedged with ~26 GiB of
-    # UNRECLAIMABLE kernel slab (SUnreclaim) — ~323M objects in the kmalloc-64
-    # cache. Unreclaimable slab is not swappable/reclaimable, so only a reboot
-    # cleared it. The leaking call site could not be attributed retroactively
-    # because CONFIG_RANDOM_KMALLOC_CACHES spreads 64-byte allocs across
-    # kmalloc-rnd-{01..15}-64 and this kernel had no SLUB user-tracking enabled.
+    # The recurring "unreclaimable kernel slab" freeze is an NVIDIA driver leak
+    # in the Wayland explicit-sync (linux-drm-syncobj-v1) path, driven by Sway.
+    # SLAB_STORE_USER tracking (the old `slub_debug=U,kmalloc-*64` flag, now
+    # removed) pinned 99.7% of the leaking kmalloc-64 objects to ONE call site:
+    #   __kmalloc_noprof
+    #   nvkms_alloc                               [nvidia_modeset]
+    #   nvKmsKapiRegisterSemaphoreSurfaceCallback [nvidia_modeset]
+    #   nv_drm_semsurf_fence_create_ioctl         [nvidia_drm]  <- DRM ioctl
+    # Every explicit-sync fence create registers a semaphore-surface callback
+    # whose 64-byte allocation is never freed; it also drags a kmalloc-512
+    # slab-obj-exts vector per leaked slab. SUnreclaim climbs monotonically and
+    # is neither swappable nor OOM-killable, so the box livelocks -> only a
+    # reboot clears it. Known unfixed NVIDIA bug across 570/580/590/595/610
+    # branches (forums.developer.nvidia.com); a driver bump does NOT fix it.
     #
-    # The `U` flag adds SLAB_STORE_USER (alloc/free stack per object) so that on
-    # recurrence the culprit is readable via:
-    #   cat /sys/kernel/slab/kmalloc-rnd-*-64/alloc_calls | sort -rn | head
-    # The glob covers the whole 64-byte family because the rnd bucket a call
-    # site maps to is reseeded each boot. Scoped to *64 so the per-object track
-    # overhead stays bounded to this family (it does NOT track every cache).
-    # Remove once the leak is attributed and fixed upstream.
-    "slub_debug=U,kmalloc-*64"
+    # `slub_debug=U` was REMOVED now that the culprit is known: it inflated each
+    # leaked object 64 -> 192 bytes, ~tripling the leak's footprint. Without it
+    # the same leak fills SUnreclaim ~3x slower, tripling time-to-freeze.
+    #
+    # To re-attribute on a future recurrence, re-add "slub_debug=U,kmalloc-*64",
+    # reboot, then read (note: modern kernels moved this to debugfs):
+    #   sudo cat /sys/kernel/debug/slab/kmalloc-rnd-*-64/alloc_traces | sort -rn | head
+    # Real cure requires disabling compositor explicit sync (reintroduces NVIDIA
+    # flicker) or an upstream driver fix; interim mitigation = periodic reboot
+    # before SUnreclaim approaches RAM size, watched by slab-leak-watch below.
   ];
 
   # Feature 117: i3-project-daemon now runs as home-manager user service
