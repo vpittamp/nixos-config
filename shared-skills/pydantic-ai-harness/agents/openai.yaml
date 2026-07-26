@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pydantic AI Harness"
+  short_description: "Add harness capabilities to Pydantic AI agents."
+  default_prompt: "Use $pydantic-ai-harness to add code mode, filesystem, sub-agents, or compaction to a Pydantic AI agent."

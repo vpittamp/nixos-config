@@ -1,0 +1,4 @@
+interface:
+  display_name: "HyperFrames Core"
+  short_description: "Author the HyperFrames composition contract."
+  default_prompt: "Use $hyperframes-core to structure the composition HTML, timing attributes, tracks, and validation."
