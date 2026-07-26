@@ -122,6 +122,13 @@ the supported control and capture path still covers the workflow.
   fail-closed 409 when unconfirmed). If a session's tool list lacks a tool the
   server should have, RECONNECT the MCP client — a list fetched before an image
   roll reads as "tool missing" and has twice sent operators to the UI needlessly.
+- A terminal execution row is NOT permission to reuse its durable instance id.
+  When Dapr reports the instance `RUNNING`/`PENDING`/`SUSPENDED` while the row
+  reads terminal, the orchestrator refuses terminate+purge-for-reuse and the
+  start returns HTTP 409 `instance_conflict_live` (the row is left alone, not
+  marked start-failed). Investigate the divergence;
+  `WORKFLOW_ALLOW_DESTRUCTIVE_ID_REUSE=true` restores the legacy destructive
+  self-heal and exists as a roll-back lever, not as a way past the error.
 - All user stop paths use the Lifecycle Controller and request/confirm semantics.
   Coordinator-owned eval or benchmark instances are stopped through their run.
 - Usage and goal-budget calculations depend on the normalized
@@ -162,6 +169,38 @@ reconciler's execution-liveness lane repairs it within a tick (watch
 `executionLivenessScanned`/`executionLivenessRepaired` in the
 `[session-reconciler] tick:` log line). A row with a stop intent is owned by
 the stop lane and is deliberately not touched.
+
+`runtimeStatus` alone is NOT the outcome. A workflow that RETURNS a failure
+payload is `COMPLETED` to Dapr, so any repair keyed on the Dapr status writes
+`success` over a real failure. The orchestrator therefore stamps a terminal
+outcome envelope — `customStatus.terminal` = `{outcome, error, source}`, outcome
+one of `success`/`error`/`cancelled` — before the terminal persist, and mirrors
+it as `terminalOutcome` in the return value. The status endpoint passes
+`customStatus` through, and both the reconciler and the read-model refresh
+consult the envelope before any legacy mapping. Read the envelope, not the
+status, when judging whether a run succeeded. A COMPLETED repair logged as
+`unaudited-legacy` means NO envelope was found and the recorded outcome is
+unproven — treat it as a finding, not a repair.
+
+Terminal projection writes are at-least-once: the persist activity re-raises
+under a retry policy, and a write still failing after retries is logged loudly
+and never flips the workflow itself FAILED. So a lost projection surfaces in
+orchestrator logs plus a divergent row, not as a failed workflow.
+
+A row with a NULL `dapr_instance_id` was never scheduled. The start-orphan
+sub-lane brands those `error` / `start_orphaned` once they age past
+`EXECUTION_START_ORPHANED_STALE_SECONDS` (default 900, floor 600), behind a
+fence still requiring a NULL instance id and only after probing the
+deterministic candidate instance id: an instance the runtime knows means the
+attach write was lost rather than the schedule, so the row is skipped
+(`skip_unverified`). `team-run` engine containers and `host` dispatch-backend
+rows hold NULL instance ids BY DESIGN and are excluded — never brand or
+hand-fix one. The lane carries its own `EXECUTION_START_ORPHANED_DRY_RUN` soak
+gate, default TRUE, so it stays observe-only even though the global reconciler
+dry run is off — and an observe-only decision still increments
+`executionLivenessRepaired`, so check `decisions[].outcome` for
+`repaired_start_orphaned` with `executed: false` before believing a repair
+happened.
 
 Normal replay messages are not proof of a hang. Prove lack of progress with
 durable state, timestamps, queue admission, and runtime logs before intervening.

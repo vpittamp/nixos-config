@@ -56,6 +56,7 @@ matters.
 | Repair a stuck promotion                                 | Inspect hydrator status, Promoter CRs/PRs/checks, then target Application health before retrying an operation                                                   |
 | Diagnose a `1/2` Dapr workload                           | Check app container, `daprd` health/logs, placement/scheduler/control plane, Components, then recycle only the affected pod after proving control-plane health  |
 | Diagnose Workflow MCP auth                               | Use the `workflow-builder` skill and `docs/workflow-mcp-server.md`; separate workspace keys, optional session context, and internal assertions                  |
+| Triage a run start refused `409 instance_conflict_live`  | Compare the durable instance against its execution row: the instance is live while the row reads terminal. Find the divergence; `WORKFLOW_ALLOW_DESTRUCTIVE_ID_REUSE=true` is a rollback lever, not a fix |
 | Diagnose Tailscale exposure                              | Read the owning Ingress/LoadBalancer/ProxyGroup manifests, `docs/tailscale-naming.md`, and `policy.hujson`; identify device versus service-host ownership first |
 | Rotate or repair secrets                                 | Trace ExternalSecret -> ClusterSecretStore -> remote key -> consuming pod; verify sync before restart and never print values                                    |
 | Recreate a cluster                                       | Use `cluster-desired-state`                                                                                                                                     |
@@ -102,8 +103,26 @@ controllers to hide the first causal error.
 
 - One writer owns each generated pin/overlay. Run its renderer and validator in
   the same change.
-- `workflowstatestore` is the sole Dapr actor/workflow store. Agent application
-  state is separate and must not become a second actor state store.
+- `workflowstatestore` is the sole Dapr actor/workflow store, and that is now
+  mechanically enforced by
+  `scripts/gitops/validate-dapr-actor-store-uniqueness.sh`. It rejects dead
+  `state.*` Component manifests that no sibling kustomization references,
+  same-name Component drift inside one (cluster-scope, namespace), and any
+  namespace where an unscoped `actorStateStore: "true"` store is not the only
+  true store. Preview vClusters count as their own cluster scope. It takes no
+  arguments and hangs off its own CI check only — no aggregate sweep runs it, so
+  run it yourself when a change touches Components. Agent application state
+  stays separate and must never become a second actor state store.
+- The orchestrator reaches product data only through the BFF's internal
+  workflow-data HTTP API; `WORKFLOW_DATA_API_MODE` is strict `http` on every
+  surface. A DB-fallback mode makes the orchestrator a second direct-Postgres
+  writer that bypasses the projection fence. Environments that set nothing
+  inherit the base ConfigMap, so the base value is the one that matters.
+- The Dapr control plane is versioned per target, not fleet-wide. The shared
+  base carries the host control plane, preview vClusters carry their own chart
+  pin (asserted by `scripts/gitops/validate-preview-vcluster-surface.sh`, which
+  must move in the same change), and the dormant `local-core-ryzen` profile
+  carries its own copy. Never state a fleet version from one target's manifests.
 - Runtime selection comes from the workflow-builder runtime registry and live
   deployment env, not from a remembered pod label.
 - ActivePieces credentials are reference-forwarded; plaintext credentials must
@@ -128,11 +147,18 @@ controllers to hide the first causal error.
 - Read every required PR check and generated-drift check before merging a
   stacks change.
 - Never hand-edit generated image-pin ConfigMaps or generated kustomizations.
-- Touching `SESSION_RECONCILER_*` / `PREVIEW_HOST_RUNTIMES_*` env keys or their
-  delivery surfaces requires `scripts/gitops/validate-wfb-env-contract.sh`
-  green: every governed key must be declared with its required and forbidden
-  surfaces, in both directions. A mechanism needing opt-in config is not
-  shipped until the config is.
+- Touching a governed workflow-builder env key or its delivery surfaces requires
+  `scripts/gitops/validate-wfb-env-contract.sh` green: every governed key must be
+  declared with its required and forbidden surfaces, in both directions. The
+  governed prefixes and surface map live in
+  `packages/components/workloads/workflow-builder-preview-vcluster/catalog/wfb-env-delivery-contract.json`
+  — read that file for the current list rather than a remembered one. A
+  mechanism needing opt-in config is not shipped until the config is.
+- A NEW reconciler lane ships with its OWN dry-run gate, delivered on every
+  required surface and defaulted observe-only. The shared
+  `SESSION_RECONCILER_DRY_RUN` is already `false` on host and preview, so a lane
+  that inherits only the global flag goes live on deploy with no soak. Flipping
+  a lane's own gate is a separate change that carries soak evidence.
 - Migrations that relabel or replace pods (e.g. a Service repointed at CNPG)
   must sweep NetworkPolicy podSelectors for the OLD labels — a label-pinned
   egress rule is a hidden consumer and fails as silent connect timeouts.

@@ -82,6 +82,13 @@ runtime is the preview-native `dapr-agent-py-juicefs` lane and that Sandbox
 Execution API receives the immutable environment tuple plus its tuple-scoped
 storage scope and class before launching the workflow.
 
+A preview vCluster runs its OWN Dapr control plane, pinned by the provisioner
+and asserted by `scripts/gitops/validate-preview-vcluster-surface.sh`. It is
+deliberately allowed to lag the host: previews have their own acceptance gates,
+so a host control-plane upgrade does NOT reach previews until that pin and its
+validator move together. Read the version from the preview, never from the host,
+before attributing a runtime behavior to a Dapr version.
+
 K3 vision analyzes pixels but does not navigate a browser. Keep the supported
 browser control/capture boundary, pass native screenshot image content to K3,
 and remove only obsolete model-specific text/metadata compensation.
@@ -175,7 +182,11 @@ verbatim never helps):
   the preview's own UI or preview-local Workflow MCP, then tear down normally.
 - `active-use` naming the HOST parent: if the row is stale the reconciler
   repairs it within a tick; a run finalizing its OWN preview is exempted via
-  `finalizingExecutionId` (never spoof another run's id).
+  `finalizingExecutionId` (never spoof another run's id). One row class does
+  NOT self-repair: an active row that never attached a durable instance id is
+  owned by the start-orphan sub-lane, which is observe-only by default, so it
+  will keep blocking teardown until that gate is flipped or the row is resolved
+  through a supported path.
 - `archive-required` / `executions-bad-response` (the preview's BFF is dead):
   `forceFailed: true` is the DESIGNED path for `failed` / aged-out
   `provisioning` previews — it quarantines with a receipt. For other states an

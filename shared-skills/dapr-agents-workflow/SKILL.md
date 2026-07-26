@@ -74,6 +74,13 @@ Read only the relevant reference:
   `actorStateStore: "true"`. Memory and registry stores remain non-actor.
 - Agent `name` and Dapr `appID` are distinct routing identifiers. Keep both
   stable and map them explicitly in `call_agent`.
+- On runtime 1.18.2+, reusing a workflow instance ID requires that instance and
+  every descendant child workflow — cross-app included — to already be terminal
+  or purged; the collision fails fast rather than hanging. Purge recursively
+  before reuse instead of retrying the schedule.
+- The Dapr runtime version is a separate axis from the SDK/package version and
+  is rarely uniform across a fleet. Read it from the target sidecar before
+  asserting a version-dependent behavior.
 - `AgentRunner` owns agent lifecycle. Do not invent a `.start()` method on
   `DurableAgent`.
 - Current orchestration uses `OrchestrationMode` on an agent execution config;
