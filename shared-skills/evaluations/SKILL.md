@@ -105,8 +105,13 @@ provider failure, and harness failure without mutating state.
 - Cancellation is request/confirm work owned by the run and Lifecycle
   Controller. Product rows must not be marked terminal before durable children
   and Sandboxes converge.
-- `workflowstatestore` remains the sole actor/workflow state store. Do not add a
-  per-agent actor store to solve an evaluation incident.
+- A durable workflow that RETURNS a failure payload is `COMPLETED` to Dapr.
+  Read the orchestrator's terminal outcome envelope
+  (`customStatus.terminal`, mirrored as `terminalOutcome`) rather than
+  `runtimeStatus` before scoring an item successful or blaming the harness.
+- `workflowstatestore` remains the sole actor/workflow state store, now enforced
+  by a stacks CI validator. Do not add a per-agent actor store to solve an
+  evaluation incident.
 
 ## Safety Rules
 

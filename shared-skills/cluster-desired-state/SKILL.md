@@ -98,6 +98,10 @@ Do not call a rebuild complete until all of these are demonstrated:
   device or service-host ownership model.
 - Workflow Builder and one representative durable workflow path are healthy
   when that workload belongs on the target.
+- Control-plane component versions (Dapr in particular) are pinned per target
+  and per profile — the shared base, the preview vCluster provisioner, and the
+  `local-core-ryzen` profile each carry their own. Verify the rebuilt target's
+  own pin; do not assert or expect fleet parity.
 - Temporary admin kubeconfigs, bootstrap Jobs, active leases, and failed
   operations are cleaned up.
 

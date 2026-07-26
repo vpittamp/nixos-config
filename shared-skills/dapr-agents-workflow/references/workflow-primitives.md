@@ -133,6 +133,24 @@ client.purge_workflow(iid)        # purge requires a terminal state; recursive=T
 `terminate` _requests_ shutdown — it is not proof the instance is terminal. Poll
 `get_workflow_state` until terminal before `purge`.
 
+### Instance-ID reuse
+
+Runtime **1.18.2+** enforces reuse transitively: scheduling an existing instance ID
+requires that instance **and every descendant child workflow — including children
+owned by another app — to already be terminal or purged**. A collision now fails
+fast instead of hanging, so `purge_workflow(iid)` (recursive) is the fix, not a
+retry loop around `schedule_new_workflow`. On the same line, terminating a parent
+that still has children no longer leaves the parent stuck `RUNNING`.
+
+Read the runtime version from the target sidecar. It moves independently of the
+`dapr-ext-workflow` package version, and a fleet is rarely uniform.
+
+Still unsolved on the 1.18 line: lost or orphaned scheduler reminders, unbounded
+workflow state growth (terminal-state retention is an explicit Configuration
+setting, not a safe default), duplicate activity execution, and the payload size
+ceiling. Any long-lived deployment still needs an external stuck-instance
+watchdog and a purge/retention procedure.
+
 ## State store requirement
 
 Dapr Workflow runs on **actors**, so the app's daprd needs a state store with
