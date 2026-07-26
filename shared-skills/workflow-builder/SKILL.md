@@ -47,6 +47,11 @@ Workflow operations use the workspace authenticated by the `wfb_...` key. Do
 not pass a session ID as workflow ownership. Optional session attachment is
 verified goal, trace, and lineage context only.
 
+Dev-environment workflows (`preview-development-lifecycle`,
+`microservice-dev-session`) launch ONLY via the `start_dev_environment_session`
+tool — `execute_workflow` and `run_workflow_script` reject them with HTTP 409
+("requires the target-aware Dev launcher").
+
 Prefer Workflow MCP or the UI. The bundled
 `scripts/upsert-workflow.py <workflow.json>` is a secondary authenticated BFF
 path for an access JWT or cookie; it intentionally rejects workspace keys and
@@ -113,6 +118,10 @@ the supported control and capture path still covers the workflow.
   enter scripts, prompts, runtime env, logs, or PRs.
 - `workflowstatestore` is the sole actor/workflow store. Agent application state
   is separate and must remain non-actor state.
+- `stop_workflow_execution` exists on the Workflow MCP server (request/confirm,
+  fail-closed 409 when unconfirmed). If a session's tool list lacks a tool the
+  server should have, RECONNECT the MCP client — a list fetched before an image
+  roll reads as "tool missing" and has twice sent operators to the UI needlessly.
 - All user stop paths use the Lifecycle Controller and request/confirm semantics.
   Coordinator-owned eval or benchmark instances are stopped through their run.
 - Usage and goal-budget calculations depend on the normalized
@@ -144,6 +153,15 @@ For a failed or silent run, inspect in order:
    orchestrator/runtime logs, and both app and `daprd` containers when the
    bounded product evidence identifies a runtime gap.
 8. Confirm the same result through the user-facing API/UI state.
+
+A `running` execution row is a PROJECTION, not the authority — the durable
+runtime is. When a row looks stuck, compare it against the orchestrator's
+`/api/v2/workflows/<instanceId>/status`: `FAILED`/`COMPLETED`/`UNKNOWN` there
+with `running` in the row means the terminal-status write was lost, and the
+reconciler's execution-liveness lane repairs it within a tick (watch
+`executionLivenessScanned`/`executionLivenessRepaired` in the
+`[session-reconciler] tick:` log line). A row with a stop intent is owned by
+the stop lane and is deliberately not touched.
 
 Normal replay messages are not proof of a hang. Prove lack of progress with
 durable state, timestamps, queue admission, and runtime logs before intervening.

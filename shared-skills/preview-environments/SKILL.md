@@ -93,24 +93,29 @@ and remove only obsolete model-specific text/metadata compensation.
    platform rollout.
 2. **Validate source changes.** Run the focused preview tests and render checks
    before launching. Admission-policy changes require the launch-boundary test.
-3. **Launch through the product path.** Use the UI, Workflow MCP, or authenticated
+3. **Write intents inside the sync scope.** The receiver's diff-scope gate
+   rejects ANY file outside the service's declared sync roots, with the exact
+   file and allowed set in the error. An intent that edits e.g. `docs/` fails
+   verification no matter how well the agent executes it — check the
+   dev-preview registry `syncPaths` for the service before writing the intent.
+4. **Launch through the product path.** Use the UI, Workflow MCP, or authenticated
    BFF lifecycle workflow. Do not create the CR or helper Jobs manually for a
    normal proof.
-4. **Observe provisioning.** Follow the host execution, PreviewEnvironment CR,
+5. **Observe provisioning.** Follow the host execution, PreviewEnvironment CR,
    provisioner/runner Jobs, vCluster readiness, managed-agent registration, and
    application health.
-5. **Observe development.** Stream adopted workflow-builder pod logs and the
+6. **Observe development.** Stream adopted workflow-builder pod logs and the
    in-vCluster Sandbox Execution API logs while the run is active. Adopted pod
    logs can disappear after failure, so post-failure polling is insufficient.
-6. **Verify edits.** Prove each selected service was adopted, synced, and live.
+7. **Verify edits.** Prove each selected service was adopted, synced, and live.
    Multi-service runs require one applied result per service and one shared sync
    generation, not independent generations.
-7. **Verify gates.** Prove rejected generations do not promote, corrected
+8. **Verify gates.** Prove rejected generations do not promote, corrected
    generations can proceed, and receiver-authoritative diff scope blocks files
    outside the allowed set.
-8. **Capture.** Inspect the draft PR for exact source identity and all intended
+9. **Capture.** Inspect the draft PR for exact source identity and all intended
    service files. Do not merge a proof artifact.
-9. **Retain or teardown.** Follow the selected policy and verify the complete
+10. **Retain or teardown.** Follow the selected policy and verify the complete
    contract rather than inferring cleanup from workflow completion.
 
 ## Retention Contract
@@ -162,6 +167,23 @@ The platform currently exposes a 12-check teardown contract. Read the named
 checks from source and require `12/12`; do not replace them with a smaller
 hand-written checklist. Also inspect helper Sandbox/PVC cleanup separately from
 preview-vCluster cleanup.
+
+Refusals and their designed escape paths (all `retryable: false` — retrying
+verbatim never helps):
+
+- `active-use` naming a preview-LOCAL execution: stop that child first through
+  the preview's own UI or preview-local Workflow MCP, then tear down normally.
+- `active-use` naming the HOST parent: if the row is stale the reconciler
+  repairs it within a tick; a run finalizing its OWN preview is exempted via
+  `finalizingExecutionId` (never spoof another run's id).
+- `archive-required` / `executions-bad-response` (the preview's BFF is dead):
+  `forceFailed: true` is the DESIGNED path for `failed` / aged-out
+  `provisioning` previews — it quarantines with a receipt. For other states an
+  admin `discardUnarchived: true` proceeds only on positive host evidence
+  (populated namespace, zero live agent pods); an empty namespace stays refused
+  except for `slept`.
+- Never bypass with kubectl deletes of the CR: the 12-check contract and
+  quarantine receipts only exist on the supported path.
 
 ## Safety Rules
 

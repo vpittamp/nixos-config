@@ -113,6 +113,11 @@ controllers to hide the first causal error.
 - Device-backed Tailscale hostnames and service-host VIPs have different
   ownership and cleanup paths. Identify the model before changing ACLs or
   deleting devices.
+- Dev durability: CNPG backs up to in-cluster MinIO, and the
+  `offsite-backup-mirror` CronJob (workflow-builder ns, 04:15 UTC) rclone-syncs
+  `cnpg-backups` + `wfb-run-archives` to Azure `mlflowhub/dev-offsite-backups`.
+  Its one secret is `OFFSITE-AZURE-STORAGE-KEY` via the hub dev-shared-secrets
+  chain.
 - A direct live patch is diagnostic only. Encode the durable fix in source and
   prove reconciliation restores it.
 
@@ -123,6 +128,14 @@ controllers to hide the first causal error.
 - Read every required PR check and generated-drift check before merging a
   stacks change.
 - Never hand-edit generated image-pin ConfigMaps or generated kustomizations.
+- Touching `SESSION_RECONCILER_*` / `PREVIEW_HOST_RUNTIMES_*` env keys or their
+  delivery surfaces requires `scripts/gitops/validate-wfb-env-contract.sh`
+  green: every governed key must be declared with its required and forbidden
+  surfaces, in both directions. A mechanism needing opt-in config is not
+  shipped until the config is.
+- Migrations that relabel or replace pods (e.g. a Service repointed at CNPG)
+  must sweep NetworkPolicy podSelectors for the OLD labels — a label-pinned
+  egress rule is a hidden consumer and fails as silent connect timeouts.
 - Do not bypass Promoter for a normal dev rollout.
 - Do not expose tokens, kubeconfigs, decrypted secrets, or OAuth payloads.
 - Do not delete stale Tailscale devices, Jobs, PVCs, or workflow state until
