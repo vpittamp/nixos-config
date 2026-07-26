@@ -43,6 +43,7 @@ in
     ./tools/i3pm-deno.nix
     ./tools/i3pm-diagnostic.nix
     ./tools/disk-guardrails.nix
+    ./tools/slab-reboot.nix
     # Application launcher and registry
     ./desktop/walker.nix
     ./desktop/app-registry.nix
@@ -72,6 +73,10 @@ in
   };
 
   programs.disk-guardrails.enable = true;
+
+  # Graceful drain-and-reboot for the NVIDIA kmalloc-64 slab leak
+  # (see configurations/ryzen.nix slab-leak-watch)
+  programs.slab-reboot.enable = true;
 
   # Declarative PWA Installation
 

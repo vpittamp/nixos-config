@@ -308,7 +308,6 @@ in
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
-    ../modules/services/grafana-alloy.nix      # Feature 129: OTLP collector → hub K8s otel-collector
     # Feature 117: System service removed - now runs as home-manager user service
 
     # Bare metal optimizations (KVM, Podman, printing, TPM, etc.)
@@ -411,12 +410,9 @@ in
   # Feature 117: i3 Project Daemon now runs as home-manager user service
   # Daemon lifecycle managed by graphical-session.target (see home-vpittamp.nix)
 
-  # Feature 129: Grafana Alloy — forwards OTLP telemetry to the hub K8s
-  # otel-collector over Tailscale. node-exporter/journald stay off (mimir/loki
-  # endpoints unset); the hub otel-collector is the canonical sink. The
-  # per-CLI MLflow trace routing was retired with the OTEL interceptor —
-  # AI-session state is now tracked natively via herdr.
-  services.grafana-alloy.enable = true;
+  # Local observability (grafana-alloy, Feature 129) was REMOVED 2026-07-26 —
+  # herdr tracks AI sessions natively and no local producer remained. Hub-side
+  # K8s observability (stacks repo) is unaffected.
 
   # Display manager - greetd for Wayland/Sway login
   services.greetd = {
