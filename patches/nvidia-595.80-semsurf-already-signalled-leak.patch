@@ -1,0 +1,45 @@
+Fix kmalloc-64 slab leak: free the semaphore-surface callback on the
+NVOS_STATUS_ERROR_ALREADY_SIGNALLED path of
+nvKmsKapiRegisterSemaphoreSurfaceCallback().
+
+When RM's _semsurfAddWaiter() finds the semaphore already past wait_value
+it returns NV_ERR_ALREADY_SIGNALLED before registerEventNotification(),
+so the freshly allocated NvKmsKapiSemaphoreSurfaceCallback (40 bytes ->
+kmalloc-64) is never stored in any RM list and never handed back to the
+caller (*pCallbackHandle unwritten). nvidia-drm's reg_callbacks retry
+loop (do/while on NVKMS_KAPI_REG_WAITER_ALREADY_SIGNALLED in
+nvidia-drm-fence.c) then allocates a fresh one per iteration; under
+Wayland explicit-sync compositing this races constantly (~50/s observed)
+and grows unreclaimable slab by hundreds of MiB/day until the host
+livelocks. The orphaned objects are unreachable from every teardown path
+(fence signal, DRM fd close, module unload) so only a reboot recovers
+the memory.
+
+Freeing cb here is safe by construction: on this status RM provably
+never retained the notification handle and the caller never receives the
+pointer, so no double-free or dangling reference is possible. This
+mirrors the existing unconditional nvKmsKapiFree(cb) at the fail: label.
+
+Verified byte-identical buggy code at tags 595.80, 595.84, 610.43.03.
+
+--- a/src/nvidia-modeset/kapi/src/nvkms-kapi-sync.c
++++ b/src/nvidia-modeset/kapi/src/nvkms-kapi-sync.c
+@@ -445,6 +445,18 @@
+         }
+         return NVKMS_KAPI_REG_WAITER_SUCCESS;
+     case NVOS_STATUS_ERROR_ALREADY_SIGNALLED:
++        /*
++         * RM detected the semaphore already passed wait_value and bailed out
++         * of _semsurfAddWaiter() before registerEventNotification(), so the
++         * notification handle in cb->rmCallback was never stored anywhere and
++         * *pCallbackHandle is never written on this path: cb is unreachable
++         * by both RM and the caller. Free it here, exactly as the fail: path
++         * does, or every ALREADY_SIGNALLED race (one per iteration of
++         * nvidia-drm's reg_callbacks retry loop) leaks one kmalloc-64 object
++         * into unreclaimable slab. nvKmsKapiFree(NULL) is a no-op for the
++         * pCallback == NULL case.
++         */
++        nvKmsKapiFree(cb);
+         return NVKMS_KAPI_REG_WAITER_ALREADY_SIGNALLED;
+     default:
+         break;

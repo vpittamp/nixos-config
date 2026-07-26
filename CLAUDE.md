@@ -144,56 +144,34 @@ systemctl --user restart quickshell-runtime-shell  # Panel
 i3pm health                                        # Runtime health, including Herdr
 ```
 
-## Observability Stack (Feature 129)
+## Observability
 
-Unified telemetry collection via Grafana Alloy, exporting to the hub K8s cluster's OTEL collector over Tailscale. The hub is the canonical observability sink (otel-collector + otel-clickhouse + grafana + tempo); spokes forward in-cluster traces to it via `clickhouse-hub-egress`.
+**Local observability was removed 2026-07-26** (grafana-alloy OTLP collector,
+Feature 129; beyla/pyroscope were never built). herdr tracks AI sessions
+natively via its socket, the per-CLI OTEL interceptors were retired earlier,
+and nothing else produced telemetry. Local monitoring is journal + desktop
+notifications (e.g. `slab-leak-watch` below).
 
-**Architecture**:
-```
-Clients → Alloy :4318 → [batch] → otel-collector-hub.tail286401.ts.net:4318
-                              → K8s otel-collector (hub observability ns)
-                                → otel-clickhouse-tailnet (hub)         (durable storage)
-                                → otlphttp/mlflow                       (per-CLI MLflow experiments)
+Hub-side K8s observability lives in the PittampalliOrg/stacks repo and is
+unaffected: otel-collector + ClickHouse + Grafana on the hub cluster, reachable
+via Tailscale Ingresses (`otel-collector-hub.tail286401.ts.net`,
+`clickhouse-hub.tail286401.ts.net`, `grafana-hub.tail286401.ts.net`). In-cluster
+workloads export there directly; if a local host ever needs remote telemetry
+again, push OTLP straight to the hub collector (no local relay needed).
 
-System  → node exporter → Alloy → Mimir (K8s)
-Journald → Alloy → Loki (K8s)
-```
+## NVIDIA Slab Leak (ryzen)
 
-**Services**:
-| Service | Port | Purpose |
-|---------|------|---------|
-| grafana-alloy | 4318 (OTLP), 12345 (UI) | Unified telemetry collector |
-| grafana-beyla | - | eBPF auto-instrumentation (optional) |
-| pyroscope-agent | - | Continuous profiling (optional) |
+The ryzen host's NVIDIA open driver leaks unreclaimable kmalloc-64 slab via a
+race in the explicit-sync path — fixed locally by
+`patches/nvidia-595.80-semsurf-already-signalled-leak.patch` (mechanism +
+history in the `boot.kernelParams` comment block of `configurations/ryzen.nix`).
+Leaked slab survives everything except a reboot.
 
-**Commands**:
 ```bash
-systemctl status grafana-alloy              # Service status
-journalctl -u grafana-alloy -f              # Logs
-curl -s localhost:4318/v1/traces            # Test OTLP endpoint
-curl -s localhost:12345/metrics             # Alloy metrics
-curl -sk http://clickhouse-hub.tail286401.ts.net:8123/ping   # ClickHouse reachable
+grep SUnreclaim /proc/meminfo                      # Current leak size
+journalctl -t slab-leak-watch -o short-iso         # Trend history (30-min samples, MiB/day + ETA)
+slab-reboot [--check|--yes|--force]                # Drain herdr agents, then reboot
 ```
-
-**Alloy UI**: http://localhost:12345 (live debugging enabled)
-
-**Configuration** (`configurations/{thinkpad,ryzen}.nix`):
-```nix
-services.grafana-alloy = {
-  enable = true;
-  # k8sEndpoint default = http://otel-collector-hub.tail286401.ts.net:4318 (Tailscale LoadBalancer on hub)
-  # NOTE: lokiEndpoint/mimirEndpoint still default to legacy *.cnoe.localtest.me:8443 URLs
-  # and silently fail (Loki/Mimir aren't deployed; observability is hub-side). Logs/metrics
-  # flow through the K8s otel-collector on hub instead.
-  enableNodeExporter = true;
-  enableJournald = true;
-  journaldUnits = [ "grafana-alloy.service" "i3pm-daemon.service" ];
-};
-```
-
-**Known Issues / Troubleshooting**:
-- OTLP gRPC `4317` may be taken by `docker-proxy`; prefer OTLP HTTP on `4318` (Alloy default).
-- `*.cnoe.localtest.me:8443` URLs no longer work — they were idpbuilder/kind legacy that resolved to `::1`. Post-A6 hub-managed mode moved observability to hub-side Tailscale Ingresses (`otel-collector-hub.tail286401.ts.net`, `clickhouse-hub.tail286401.ts.net`, `grafana-hub.tail286401.ts.net`, etc.). The dev/ryzen spoke Ingresses for observability were retired (see stacks `389291160`, `ab457a041`).
 
 ## Testing
 
@@ -218,7 +196,6 @@ journalctl --user -u i3-project-event-listener -f
 - `docs/PWA_SYSTEM.md` - PWA details
 - `docs/M1_SETUP.md` - Apple Silicon
 - `docs/ONEPASSWORD.md` - 1Password integration
-- `docs/AI_TRACING_GRAFANA.md` - Correlating Claude Code telemetry in Grafana
 - `/etc/nixos/specs/<feature>/quickstart.md` - Feature specs
 
 ## Tech Stack

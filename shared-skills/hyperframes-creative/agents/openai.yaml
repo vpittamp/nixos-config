@@ -1,0 +1,4 @@
+interface:
+  display_name: "HyperFrames Creative"
+  short_description: "Direct HyperFrames design, narration, and beats."
+  default_prompt: "Use $hyperframes-creative to set the design spec, palette, typography, narration, and beat plan."

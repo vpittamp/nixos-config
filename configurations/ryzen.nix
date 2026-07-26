@@ -124,7 +124,6 @@ in
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
     ../modules/services/tailscale-k8s-apiserver.nix  # expose local Talos kube-api on the tailnet (hub ArgoCD)
-    ../modules/services/grafana-alloy.nix      # Feature 129: Unified telemetry collector
     # Feature 117: System service removed - now runs as home-manager user service
 
     # Bare metal optimizations (KVM, Podman, gaming, printing, TPM, etc.)
@@ -375,12 +374,11 @@ in
   # Feature 117: i3 Project Daemon now runs as home-manager user service
   # Daemon lifecycle managed by graphical-session.target (see home-vpittamp.nix)
 
-  # Feature 129: Grafana Alloy — forwards OTLP telemetry to the hub K8s
-  # otel-collector over Tailscale. node-exporter/journald stay off (mimir/loki
-  # endpoints unset); the hub otel-collector is the canonical sink. The
-  # per-CLI MLflow trace routing was retired with the OTEL interceptor —
-  # AI-session state is now tracked natively via herdr.
-  services.grafana-alloy.enable = true;
+  # Local observability (grafana-alloy OTLP collector, Feature 129) was
+  # REMOVED 2026-07-26: herdr tracks AI sessions natively, the per-CLI OTEL
+  # interceptors were already retired, and in 10 days of uptime the collector
+  # received zero telemetry from anything but slab-leak-watch's test pushes.
+  # Hub-side K8s observability (Grafana/ClickHouse, stacks repo) is unaffected.
 
   # Display manager - greetd for Wayland/Sway login
   services.greetd = {
@@ -446,17 +444,21 @@ in
     "kernel.sysrq" = 244;
   };
 
-  # Early warning for the NVIDIA explicit-sync kmalloc-64 leak (root-caused
-  # 2026-07-21; see kernelParams note above). The leak builds silently over
-  # days/weeks and is not reclaimable without a reboot, so this converts a
-  # "sudden freeze" into a heads-up with ~20 GiB of headroom left — enough lead
-  # time to gracefully save/close AI sessions and reboot on your own schedule.
-  # Logs to the journal at warning/err (scraped by grafana-alloy -> Loki, so it
-  # is visible remotely in Grafana) plus a best-effort desktop notification.
+  # Early warning + trend history for the NVIDIA explicit-sync kmalloc-64
+  # leak (exact bug + local driver patch: see the kernelParams block and
+  # patches/nvidia-595.80-semsurf-already-signalled-leak.patch). Kept as the
+  # backstop even with the patch deployed — it is also how we verify the patch
+  # works (SUnreclaim slope should flatten to ~0 after the patched reboot).
+  # Every run logs an info-level trend line (value, MiB/day rate vs previous
+  # sample, ETA to the 16 GiB critical threshold); threshold breach adds a
+  # journal warning/err + desktop notification. Monitoring is LOCAL-ONLY
+  # (journal + notify): the grafana-alloy OTLP collector was removed
+  # 2026-07-26 along with the rest of local observability.
   systemd.services.slab-leak-watch = {
     description = "Warn on unreclaimable-slab growth / low memory (kmalloc-64 leak watch)";
     serviceConfig = {
       Type = "oneshot";
+      StateDirectory = "slab-leak-watch";
       ExecStart = pkgs.writeShellScript "slab-leak-watch" ''
         set -u
         kb() { ${pkgs.gawk}/bin/awk -v k="$1:" '$1==k{print $2}' /proc/meminfo; }
@@ -465,13 +467,39 @@ in
         warn_kb=$((  8 * 1024 * 1024 ))   # 8 GiB unreclaimable slab
         crit_kb=$(( 16 * 1024 * 1024 ))   # 16 GiB unreclaimable slab
         low_kb=$((   3 * 1024 * 1024 ))   # 3 GiB MemAvailable
+        now=$(${pkgs.coreutils}/bin/date +%s)
+
+        # Rate + ETA from the previous sample (persisted across runs; a value
+        # drop means a reboot happened, so just reseed silently).
+        state_file="''${STATE_DIRECTORY:-/var/lib/slab-leak-watch}/last"
+        rate_note=""
+        rate_kb_day=0
+        if [ -r "$state_file" ]; then
+          read -r prev_ts prev_kb < "$state_file" || true
+          if [ -n "''${prev_ts:-}" ] && [ -n "''${prev_kb:-}" ] \
+             && [ "$now" -gt "$prev_ts" ] && [ $((now - prev_ts)) -ge 1200 ] \
+             && [ "$sunreclaim" -ge "$prev_kb" ]; then
+            rate_kb_day=$(( (sunreclaim - prev_kb) * 86400 / (now - prev_ts) ))
+            rate_note=", +$((rate_kb_day/1024)) MiB/day"
+            if [ "$rate_kb_day" -gt 0 ] && [ "$sunreclaim" -lt "$crit_kb" ]; then
+              rate_note="$rate_note, ~$(( (crit_kb - sunreclaim) / rate_kb_day ))d to critical"
+            fi
+          fi
+        fi
+        printf '%s %s\n' "$now" "$sunreclaim" > "$state_file"
+
+        # Info-level trend line every run: journal history == leak history.
+        printf 'SUnreclaim %s MiB, MemAvailable %s MiB%s\n' \
+          "$((sunreclaim/1024))" "$((memavail/1024))" "$rate_note" \
+          | ${pkgs.systemd}/bin/systemd-cat -t slab-leak-watch -p info
+
         msg=""; prio="info"
         if [ "''${sunreclaim:-0}" -ge "$crit_kb" ]; then
           prio=err
-          msg="CRITICAL: unreclaimable slab $((sunreclaim/1024)) MiB (>16 GiB). NVIDIA explicit-sync kmalloc-64 leak — reboot NOW (save AI sessions first); only a reboot clears it, and a hard freeze is imminent + needs physical access."
+          msg="CRITICAL: unreclaimable slab $((sunreclaim/1024)) MiB (>16 GiB)$rate_note. NVIDIA explicit-sync kmalloc-64 leak — run slab-reboot NOW (it drains herdr agents first); only a reboot clears this, and a hard freeze is imminent + needs physical access."
         elif [ "''${sunreclaim:-0}" -ge "$warn_kb" ]; then
           prio=warning
-          msg="WARNING: unreclaimable slab $((sunreclaim/1024)) MiB (>8 GiB) and climbing — NVIDIA explicit-sync kmalloc-64 leak. Plan a graceful reboot in the next few days."
+          msg="WARNING: unreclaimable slab $((sunreclaim/1024)) MiB (>8 GiB)$rate_note — NVIDIA explicit-sync kmalloc-64 leak. Plan a graceful reboot (slab-reboot) in the next few days."
         elif [ "''${memavail:-999999999}" -le "$low_kb" ]; then
           prio=warning
           msg="WARNING: MemAvailable $((memavail/1024)) MiB (<3 GiB)."
@@ -524,12 +552,19 @@ in
     #   nvkms_alloc                               [nvidia_modeset]
     #   nvKmsKapiRegisterSemaphoreSurfaceCallback [nvidia_modeset]
     #   nv_drm_semsurf_fence_create_ioctl         [nvidia_drm]  <- DRM ioctl
-    # Every explicit-sync fence create registers a semaphore-surface callback
-    # whose 64-byte allocation is never freed; it also drags a kmalloc-512
-    # slab-obj-exts vector per leaked slab. SUnreclaim climbs monotonically and
-    # is neither swappable nor OOM-killable, so the box livelocks -> only a
-    # reboot clears it. Known unfixed NVIDIA bug across 570/580/590/595/610
-    # branches (forums.developer.nvidia.com); a driver bump does NOT fix it.
+    # EXACT BUG (source-verified 2026-07-26): the NVOS_STATUS_ERROR_
+    # ALREADY_SIGNALLED case of nvKmsKapiRegisterSemaphoreSurfaceCallback
+    # (src/nvidia-modeset/kapi/src/nvkms-kapi-sync.c) returns without freeing
+    # the 40-byte callback struct while RM never stored its handle — orphaned
+    # with zero references, one leak per iteration of nvidia-drm's retry loop
+    # (~50/s under compositing). It also drags a kmalloc-512 slab-obj-exts
+    # vector per leaked slab. SUnreclaim climbs monotonically and is neither
+    # swappable nor OOM-killable, so the box livelocks. Session restart does
+    # NOT reclaim (orphans are unreachable from every teardown path incl.
+    # DRM fd close and module unload) -> only a reboot clears it. Unfixed
+    # upstream: leak path byte-identical through 610.43.03; a driver bump does
+    # NOT fix it. FIXED LOCALLY via patches/nvidia-595.80-semsurf-already-
+    # signalled-leak.patch applied to the open module (hardware.nvidia below).
     #
     # `slub_debug=U` was REMOVED now that the culprit is known: it inflated each
     # leaked object 64 -> 192 bytes, ~tripling the leak's footprint. Without it
@@ -538,9 +573,17 @@ in
     # To re-attribute on a future recurrence, re-add "slub_debug=U,kmalloc-*64",
     # reboot, then read (note: modern kernels moved this to debugfs):
     #   sudo cat /sys/kernel/debug/slab/kmalloc-rnd-*-64/alloc_traces | sort -rn | head
-    # Real cure requires disabling compositor explicit sync (reintroduces NVIDIA
-    # flicker) or an upstream driver fix; interim mitigation = periodic reboot
-    # before SUnreclaim approaches RAM size, watched by slab-leak-watch below.
+    # If the local driver patch ever regresses (e.g. dropped on a bump), the
+    # verified fallback is disabling explicit sync end-to-end via BOTH
+    # WLR_RENDER_NO_EXPLICIT_SYNC=1 (wlroots >= 0.20 runtime toggle: kills the
+    # syncobj protocol global AND wlroots' own per-frame fence exports) and
+    # __NV_DISABLE_EXPLICIT_SYNC=1 (NVIDIA userspace, EGL+GLX+Vulkan since
+    # 575.51.02 — needed because Xwayland enables DRI3 syncobj from DRM caps
+    # alone) in environment.sessionVariables. Tradeoff: pre-555 sync behavior
+    # (Xwayland glFinish stalls, occasional glitches). Do NOT use
+    # WLR_DRM_NO_ATOMIC for this. slab-leak-watch below stays as the backstop;
+    # `slab-reboot` (home-modules/tools/slab-reboot.nix) drains herdr agents
+    # and reboots gracefully.
   ];
 
   # Feature 117: i3-project-daemon now runs as home-manager user service
@@ -587,8 +630,25 @@ in
 
   # ========== NVIDIA GPU CONFIGURATION ==========
   hardware.nvidia = {
-    # Use the stable driver (580.x supports RTX 5070)
-    package = config.boot.kernelPackages.nvidiaPackages.stable;
+    # Stable driver (595.80 from the nixpkgs pin) with a local one-line fix
+    # for the explicit-sync kmalloc-64 slab leak (root cause + verification in
+    # the boot.kernelParams comment block): the open kernel module's
+    # nvKmsKapiRegisterSemaphoreSurfaceCallback orphans its callback alloc on
+    # the NVOS_STATUS_ERROR_ALREADY_SIGNALLED race path. Only the OPEN kernel
+    # module derivation is patched — userspace is untouched, and `//` keeps
+    # the outer package's passthru so hardware.nvidia.open = true picks up the
+    # patched module. Upstream is unfixed through 610.43.03 (byte-identical
+    # code); before dropping the patch on a driver bump, diff the
+    # ALREADY_SIGNALLED case of src/nvidia-modeset/kapi/src/nvkms-kapi-sync.c.
+    package =
+      let base = config.boot.kernelPackages.nvidiaPackages.stable;
+      in base // {
+        open = base.open.overrideAttrs (old: {
+          patches = (old.patches or [ ]) ++ [
+            ../patches/nvidia-595.80-semsurf-already-signalled-leak.patch
+          ];
+        });
+      };
 
     # Modesetting is required for Wayland
     modesetting.enable = true;
