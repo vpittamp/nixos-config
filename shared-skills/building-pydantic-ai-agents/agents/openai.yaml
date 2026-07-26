@@ -1,0 +1,4 @@
+interface:
+  display_name: "Building Pydantic AI Agents"
+  short_description: "Build AI agents with the Pydantic AI framework."
+  default_prompt: "Use $building-pydantic-ai-agents to build or extend a Pydantic AI agent with tools, structured output, and tests."

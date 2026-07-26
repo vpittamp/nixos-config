@@ -1,0 +1,4 @@
+interface:
+  display_name: "HyperFrames Animation"
+  short_description: "Animate HyperFrames scenes and motion design."
+  default_prompt: "Use $hyperframes-animation to choreograph the motion, transitions, and runtime adapters for this composition."

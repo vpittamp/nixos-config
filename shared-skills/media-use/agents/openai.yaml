@@ -1,0 +1,4 @@
+interface:
+  display_name: "Media Use"
+  short_description: "Resolve, generate, and operate on media assets."
+  default_prompt: "Use $media-use to resolve or generate the audio, image, voice, or color-grade assets this project needs."

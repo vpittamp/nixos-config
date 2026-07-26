@@ -866,114 +866,35 @@ Comparing 2 field(s), ignoring 0 field(s)
 
 **Rationale**: Feature 068 fixed critical bugs in state comparison and established the sway-test framework as the standard for declarative window manager testing. The multi-mode comparison system provides flexibility: partial mode for focused assertions (90% of tests), exact mode for comprehensive validation, assertions mode for complex queries, and empty mode for action-only testing. Undefined semantics (`undefined` = "don't check") enable precise control over which fields matter in each test. Enhanced error messages with mode indicators, field tracking, and contextual diffs dramatically improve debugging speed. The framework follows Principle XIII (Deno/TypeScript standards) and Principle XI (Sway IPC authority), ensuring consistency with project architecture. Declarative JSON test definitions enable autonomous execution, version control, and clear documentation of expected window manager behavior.
 
-### XVI. Observability & Telemetry Standards
+### XVI. Observability & Telemetry Standards (RETIRED 2026-07-26)
 
-All system components with monitoring requirements MUST emit standardized telemetry via OpenTelemetry protocols, collected through a unified Grafana Alloy pipeline.
+The local observability stack this principle governed no longer exists. The
+per-CLI OTEL interceptors, `otel-ai-monitor` (:4320), and the EWW widgets were
+retired when Herdr became the native source of AI-session state (see
+`docs/AI_SESSION_SYSTEM.md` and `docs/I3PM_HERDR_MIGRATION.md`); the
+`grafana-alloy` local collector, its module
+(`modules/services/grafana-alloy.nix`), and `docs/AI_TRACING_GRAFANA.md` were
+removed on 2026-07-26 after confirming no producer remained. Beyla and
+pyroscope modules were designed (Feature 129) but never built.
 
-**Rules**:
-- Telemetry collection MUST use Grafana Alloy as the unified local collector
-- All AI CLI tools (Claude Code, Codex CLI, Gemini CLI) MUST emit or have synthesized OTEL traces
-- Non-native OTEL sources (Codex, Gemini) MUST use interceptor scripts to synthesize coherent traces
-- Session correlation MUST use `session.id` as the primary join key across traces, metrics, and logs
-- Trace hierarchy MUST follow: Session → Turn → LLM Call/Tool spans
-- Remote telemetry export MUST target the Kubernetes LGTM stack (Tempo/Mimir/Loki)
-- Local monitoring (EWW widgets) MUST function when remote stack is offline (graceful degradation)
-- Span metrics MUST be derived via `otelcol.connector.spanmetrics` for RED metrics with exemplars
-- Telemetry MUST NOT introduce high-cardinality series (exclude `span.name` from metrics dimensions)
-- Subagent traces MUST include span links and `claude.parent_session_id` for cross-trace correlation
+**Current rules**:
+- AI-session state is owned by Herdr (socket API); consumers read it via the
+  i3pm daemon. Do NOT reintroduce OTEL interceptors or local AI-session
+  telemetry pipelines (regression guards exist in i3pm health checks and
+  tests/085 assertions).
+- Host-local monitoring (e.g. `slab-leak-watch`) uses the systemd journal and
+  desktop notifications; there is no local telemetry relay.
+- Cluster observability (otel-collector + ClickHouse + Grafana on the hub) is
+  owned by the PittampalliOrg/stacks repo. In-cluster workloads export there
+  directly; a local host that ever needs remote telemetry again should push
+  OTLP straight to the hub collector (`otel-collector-hub.tail286401.ts.net`).
 
-**Telemetry Architecture**:
-```
-AI CLIs → Alloy :4318 → [batch] → otel-ai-monitor :4320 (local EWW)
-                               → K8s OTEL Collector (remote)
-System  → node exporter → Alloy → Mimir (K8s)
-Journald → Alloy → Loki (K8s)
-```
-
-**Service Ports**:
-| Service | Port | Purpose |
-|---------|------|---------|
-| grafana-alloy | 4318 (OTLP HTTP), 12345 (UI) | Unified telemetry collector |
-| otel-ai-monitor | 4320 | Local AI session tracking for EWW (all CLIs) |
-| grafana-beyla | - | eBPF auto-instrumentation (optional) |
-| pyroscope-agent | - | Continuous profiling (optional) |
-
-**AI CLI Telemetry Patterns**:
-
-**Claude Code** (native OTEL):
-- Uses Node.js interceptor (`scripts/minimal-otel-interceptor.js`) for trace synthesis
-- Session ID hydrated via SessionStart hook
-- Turn boundaries from UserPromptSubmit + Stop hooks
-- Subagent traces linked via Task tool spans
-
-**Codex CLI** (synthesized traces):
-- OTEL logs routed through `scripts/codex-otel-interceptor.js`
-- Synthesizes Session → Turn → LLM/Tool trace hierarchy
-- Uses `notify` hook for accurate turn boundaries
-- Normalizes `conversation.id` → `session.id` for correlation
-
-**Gemini CLI** (synthesized traces):
-- OTEL configured via `~/.gemini/settings.json`
-- Routed through `scripts/gemini-otel-interceptor.js`
-- Synthesizes traces from log events (`gemini_cli.user_prompt`, `gemini_cli.api_*`, `gemini_cli.tool_call`)
-- No notify hook - uses log event boundaries
-
-**Trace Hierarchy Standard**:
-```
-Claude Code Session (root)
-├── Turn #1: [user prompt]
-│   ├── LLM Call: claude-3-opus
-│   ├── Tool: Read file
-│   └── Tool: Edit file
-├── Turn #2: [user prompt]
-│   ├── LLM Call: claude-3-opus
-│   └── Task (subagent)
-│       └── [linked to subagent trace]
-└── ...
-```
-
-**Grafana Correlation Queries**:
-- By session: `{session.id="abc123"}`
-- By provider: `{service.name=~"claude-code|codex|gemini"}`
-- By model: `{gen_ai.request.model="gpt-4o"}`
-
-**Interceptor Configuration Knobs**:
-- `OTEL_INTERCEPTOR_TURN_BOUNDARY_MODE`: `auto|hooks|heuristic`
-- `OTEL_INTERCEPTOR_TURN_IDLE_END_MS`: Debounce window for heuristic mode (default: 1500)
-- `OTEL_INTERCEPTOR_SESSION_ID_POLICY`: `buffer|eager` (default: buffer)
-- `OTEL_INTERCEPTOR_INJECT_TRACEPARENT`: Enable W3C trace context injection (for Beyla correlation)
-
-**Graceful Degradation**:
-- Local AI monitoring (EWW widgets) works when K8s offline
-- Remote telemetry queued in 100MB memory buffer
-- Automatic retry with exponential backoff
-- Alloy live debugging UI at http://localhost:12345
-
-**NixOS Configuration Pattern**:
-```nix
-let
-  tailnet = "tail286401.ts.net";
-  host = config.networking.hostName;
-  cluster = if builtins.elem host [ "ryzen" "thinkpad" ] then host else "ryzen";
-  tsServiceUrl = name: "https://${name}-${cluster}.${tailnet}";
-in
-services.grafana-alloy = {
-  enable = true;
-  k8sEndpoint = tsServiceUrl "otel-collector";
-  lokiEndpoint = tsServiceUrl "loki";
-  mimirEndpoint = tsServiceUrl "mimir";
-  enableNodeExporter = true;
-  enableJournald = true;
-  journaldUnits = [ "grafana-alloy.service" "otel-ai-monitor.service" ];
-};
-```
-
-**Testing Observability** (integration with Principle XIV):
-- Unit tests: Validate span structure, attribute population, trace context propagation
-- Integration tests: Verify OTLP export to collector, session correlation across signals
-- E2E tests: Confirm traces appear in Grafana with correct hierarchy
-
-**Rationale**: Features 129, 130, 131, and 125 established a comprehensive observability stack for this project. All AI CLI tools now emit or have synthesized OTEL telemetry, enabling unified monitoring in Grafana. The `session.id` join key correlates traces, metrics, and logs for debugging AI workflows. Trace synthesis for non-native OTEL sources (Codex, Gemini) ensures consistent trace hierarchy regardless of provider. Local-first architecture via otel-ai-monitor enables EWW widget functionality even when the remote Kubernetes stack is unavailable. Span metrics with exemplars provide "click from metric to trace" functionality in Grafana. This observability foundation supports debugging, performance analysis, and cost tracking across all AI tooling.
+**Rationale**: Features 125/129/130/131 built a comprehensive local OTEL
+pipeline for AI-CLI tracing. Herdr made the local pipeline redundant: it tracks
+sessions natively with lower complexity and no interceptor fragility. Ten days
+of collector metrics showed zero organic telemetry, so the local stack was
+removed rather than maintained as dead weight. The historical design remains in
+`specs/{123,125,129,130,131,132,136}` and git history.
 
 ## Platform Support Standards
 

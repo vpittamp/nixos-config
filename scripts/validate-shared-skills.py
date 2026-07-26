@@ -14,7 +14,13 @@ from urllib.parse import unquote
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = REPO_ROOT / "shared-skills"
 NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-FRONTMATTER_RE = re.compile(r"^([A-Za-z0-9_-]+):\s*(.+)$")
+FRONTMATTER_RE = re.compile(r"^([A-Za-z0-9_-]+):\s*(.*)$")
+# Vendored upstream skills carry the optional keys the Agent Skills spec allows
+# alongside name/description. Accept them verbatim so re-vendoring stays a
+# straight copy; `metadata` is a nested mapping, so its children are indented.
+OPTIONAL_FRONTMATTER_KEYS = {"license", "compatibility", "metadata", "allowed-tools"}
+NESTED_VALUE_RE = re.compile(r"^\s+\S")
+BLOCK_SCALAR_RE = re.compile(r"^[>|][+-]?$")
 INTERFACE_RE = re.compile(
     r"^  (display_name|short_description|default_prompt):\s*(.+)$"
 )
@@ -68,7 +74,11 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, str], list[str]]:
         fail(path, "frontmatter has no closing delimiter")
 
     values: dict[str, str] = {}
-    for line_number, line in enumerate(lines[1:end], start=2):
+    index = 1
+    while index < end:
+        line = lines[index]
+        line_number = index + 1
+        index += 1
         if not line.strip():
             continue
         match = FRONTMATTER_RE.fullmatch(line)
@@ -77,7 +87,27 @@ def parse_frontmatter(path: Path) -> tuple[dict[str, str], list[str]]:
         key, raw = match.groups()
         if key in values:
             fail(path, f"duplicate frontmatter key {key}")
-        values[key] = scalar(path, raw)
+        raw = raw.strip()
+        if raw and not BLOCK_SCALAR_RE.fullmatch(raw):
+            values[key] = scalar(path, raw)
+            continue
+
+        # `key:` opens a nested mapping and `key: >` / `key: |` a block scalar;
+        # both put the value in the indented lines that follow.
+        body: list[str] = []
+        while index < end and (
+            not lines[index].strip() or NESTED_VALUE_RE.match(lines[index])
+        ):
+            if lines[index].strip():
+                body.append(lines[index].strip())
+            index += 1
+        if not raw:
+            # Nested mapping: keep the key for the allow-list check, and leave
+            # the children to the tools that consume them.
+            values[key] = ""
+        else:
+            joiner = " " if raw.startswith(">") else "\n"
+            values[key] = joiner.join(body).strip()
     return values, lines
 
 
@@ -130,8 +160,12 @@ def validate_skill(skill_dir: Path) -> int:
         fail(skill_path, "every shared-skills directory must be a skill")
 
     values, lines = parse_frontmatter(skill_path)
-    if set(values) != {"name", "description"}:
-        fail(skill_path, "frontmatter must contain only name and description")
+    missing_keys = {"name", "description"} - values.keys()
+    if missing_keys:
+        fail(skill_path, f"frontmatter must define: {', '.join(sorted(missing_keys))}")
+    unknown_keys = values.keys() - {"name", "description"} - OPTIONAL_FRONTMATTER_KEYS
+    if unknown_keys:
+        fail(skill_path, f"unsupported frontmatter keys: {', '.join(sorted(unknown_keys))}")
     name = values["name"]
     if name != skill_dir.name:
         fail(skill_path, f"name {name!r} does not match directory {skill_dir.name!r}")

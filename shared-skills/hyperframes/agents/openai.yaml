@@ -1,0 +1,4 @@
+interface:
+  display_name: "HyperFrames"
+  short_description: "Create, edit, and render HyperFrames videos."
+  default_prompt: "Use $hyperframes to plan, build, or diagnose the requested video or motion-graphics deliverable."
