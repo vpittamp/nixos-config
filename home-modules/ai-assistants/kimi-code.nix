@@ -11,6 +11,8 @@
 #     the workspace principal; WFB_MCP_SESSION_ID is optional explicit lineage.
 #   - chrome-devtools / playwright: same stdio servers as codex.nix, gated on a
 #     real Sway session via browser-mcp-shared.nix.
+#   - kalshi: read-only prediction-markets-mcp (packages/prediction-markets-mcp.nix),
+#     store-path binary, no API keys, always enabled.
 #   - mlflow is intentionally absent (no longer used).
 #
 # Agent Skills: kimi scans ~/.agents/skills/ (cross-tool user-level dir), so the
@@ -28,6 +30,7 @@ let
   sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
   enableBrowserMcpServers = sharedBrowserMcp.enableBrowserMcpServers;
   nodeNpx = "${pkgs.nodejs}/bin/npx";
+  predictionMarketsMcp = pkgs.callPackage ../../packages/prediction-markets-mcp.nix { };
 
   sharedSkillsDir = repoRoot + "/shared-skills";
   sharedSkillEntries = if builtins.pathExists sharedSkillsDir then builtins.readDir sharedSkillsDir else {};
@@ -85,6 +88,15 @@ let
         };
         startupTimeoutMs = 60000;
         toolTimeoutMs = 120000;
+      };
+    }
+    // {
+      # Read-only prediction market prices (Kalshi/Polymarket/PredictIt).
+      # Nix-packaged stdio server — no API keys, no npx wrapper.
+      kalshi = {
+        command = "${predictionMarketsMcp}/bin/prediction-markets";
+        args = [];
+        startupTimeoutMs = 30000;
       };
     };
 

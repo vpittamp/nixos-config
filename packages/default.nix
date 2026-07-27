@@ -26,6 +26,9 @@
       # Kimi WebBridge — browser control CLI/MCP bridge for Chrome
       kimi-webbridge = pkgs.callPackage ./kimi-webbridge.nix { };
 
+      # Read-only prediction markets MCP server (Kalshi/Polymarket/PredictIt)
+      prediction-markets-mcp = pkgs.callPackage ./prediction-markets-mcp.nix { };
+
       # Cachix Deploy specification
       # Build with: nix build .#deploy
       # Used by GitHub Actions to trigger deployments to agents

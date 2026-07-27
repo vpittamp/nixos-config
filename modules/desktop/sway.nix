@@ -82,6 +82,20 @@ in {
     # D-Bus: Required for Wayland session management
     services.dbus.enable = true;
 
+    # GNOME Keyring as the session Secret Service. The NixOS module adds
+    # pkgs.gcr to the D-Bus service path, providing the SystemPrompter that
+    # renders GUI unlock/password prompts — without it, apps that store
+    # credentials via libsecret (e.g. the GitHub Copilot app's BYOK API keys)
+    # fail with "no secret was found in the keychain" because the locked
+    # login keyring can never prompt. The home-manager side
+    # (home-modules/profiles/base-home.nix) starts the per-session daemon.
+    services.gnome.gnome-keyring.enable = true;
+
+    # Unlock the login keyring at password login (greetd/tuigreet). Harmless
+    # on greetd autologin sessions (no password → keyring stays locked until
+    # the first GUI prompt).
+    security.pam.services.greetd.enableGnomeKeyring = mkDefault true;
+
     # XDG portals: browser/OBS screen sharing on Sway goes through
     # xdg-desktop-portal-wlr, which publishes selected streams via PipeWire.
     xdg.portal = {
