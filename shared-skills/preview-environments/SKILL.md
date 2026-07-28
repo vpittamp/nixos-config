@@ -1,6 +1,6 @@
 ---
 name: preview-environments
-description: "Operate and prove Workflow Builder PreviewEnvironment lifecycles on the dev cluster. Use for preview vClusters, app-live or candidate profiles, agentic development, host-driven attach-mode development (preview-host-development), multi-service adoption and sync, retained previews, interactive handoff, HMR, impact gates, out-of-scope rejection, draft-PR capture, teardown checks, preview logs, and preview platform manifests. Use workflow-builder for ordinary workflow authoring and gitops for the host delivery lane."
+description: "Operate and prove Workflow Builder PreviewEnvironment lifecycles on the dev cluster. Use for preview vClusters, app-live or candidate profiles, agentic development, host-driven attach-mode development (preview-host-development), host-resident preview product DBs (preview-db pooler), multi-service adoption and sync, retained previews, interactive handoff, HMR, impact gates, out-of-scope rejection, draft-PR capture, teardown checks, preview logs, and preview platform manifests. Use workflow-builder for ordinary workflow authoring and gitops for the host delivery lane."
 ---
 
 # Preview Environments
@@ -132,6 +132,30 @@ Proven operational rules (each traces to a live failure on dev):
 - Preview-side fixes (SEA, preview BFF) ride NEW previews — the tuple pins
   them at provision. Host-side fixes ride the pin rollout. Re-verify a fix on
   whichever side it lives before claiming it works.
+
+## Host-Resident Preview Data (P3/P4, live 2026-07-28)
+
+- The preview PRODUCT database is one logical DB per preview on the HOST
+  `preview-db` CNPG cluster, reached only through `preview-db-pooler`
+  (transaction pgbouncer, wildcard routing). Previews run NO CNPG operator,
+  cluster, or PVC. App/Dapr URLs carry the pooler's ClusterIP — in-vcluster
+  pods resolve no host service DNS, so never "fix" a preview DB issue by
+  pointing anything at a host service NAME from inside the vcluster.
+- Admin DDL (create/drop of `preview_<name>`) is runner-side against
+  `preview-db-rw`; teardown terminates backends, drops the logical DB, and
+  proves absence. Verify with `psql` on `preview-db-1`, never by trusting
+  workflow output alone.
+- Teardown ARCHIVAL is retired: the archive call runs inventory-only
+  (activity answer stays fail-closed on a dead BFF; no bundle/summary
+  writes). Durable code paths are Gitea checkpoints during the run and the
+  draft-PR promotion — nothing is rescued at teardown.
+- Rollbacks: `VCLUSTER_PREVIEW_DB_MODE=cnpg` on the SEA deployment restores
+  in-vcluster DBs; `PREVIEW_ARCHIVE_ON_TEARDOWN=true` restores archival.
+- Changing the runner or its policies means REBUILDING the runner image
+  (runner.sh + host-policy.yaml are image-baked): build from the component
+  dir, keep a TWO-digest VAP rotation window, update renderer +
+  SEA-component pins, then advance the commit-pinned dev-preview-platform
+  app — stacks-only changes never auto-advance it.
 
 ## Lifecycle Workflow
 
