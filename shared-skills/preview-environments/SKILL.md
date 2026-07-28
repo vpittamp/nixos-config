@@ -1,6 +1,6 @@
 ---
 name: preview-environments
-description: "Operate and prove Workflow Builder PreviewEnvironment lifecycles on the dev cluster. Use for preview vClusters, app-live or candidate profiles, agentic development, multi-service adoption and sync, retained previews, interactive handoff, HMR, impact gates, out-of-scope rejection, draft-PR capture, teardown checks, preview logs, and preview platform manifests. Use workflow-builder for ordinary workflow authoring and gitops for the host delivery lane."
+description: "Operate and prove Workflow Builder PreviewEnvironment lifecycles on the dev cluster. Use for preview vClusters, app-live or candidate profiles, agentic development, host-driven attach-mode development (preview-host-development), multi-service adoption and sync, retained previews, interactive handoff, HMR, impact gates, out-of-scope rejection, draft-PR capture, teardown checks, preview logs, and preview platform manifests. Use workflow-builder for ordinary workflow authoring and gitops for the host delivery lane."
 ---
 
 # Preview Environments
@@ -92,6 +92,46 @@ before attributing a runtime behavior to a Dapr version.
 K3 vision analyzes pixels but does not navigate a browser. Keep the supported
 browser control/capture boundary, pass native screenshot image content to K3,
 and remove only obsolete model-specific text/metadata compensation.
+
+## Host-Driven Development Lane
+
+`preview-host-development` (seeded dynamic-script workflow) is the attach-mode
+inverse of the preview-local child: ONE host execution adopts a service inside
+an EXISTING app-live preview through the preview-control broker, seeds a host
+workspace, runs the policy-pinned pydantic-ai builder (kimi-k3, effort `low`),
+live-syncs each iteration, captures source from the HOST workspace, promotes a
+draft PR carrying the builder's structured report, and releases the adoption in
+a `finally` block. Run evidence (journal, sessions, LLM turns, cost, artifacts)
+lives in the HOST database; only the application under test runs in the
+vCluster.
+
+Launch it ONLY via `start_dev_environment_session` with
+`workflowName: preview-host-development`, passing `intent`, `previewOrigin`,
+and `previewTarget` — the preview's immutable tuple copied EXACTLY from
+`get_preview_environment` (name, `provenance.requestId`, `platformRevision`,
+`sourceRevision`, `catalogDigest`). The broker re-reads the live generation and
+refuses any drift, including a single wrong digest character.
+
+Proven operational rules (each traces to a live failure on dev):
+
+- Write the intent inside the target service's dev-sync `syncPaths` (e.g.
+  `src/` for workflow-builder) — the diff-scope gate rejects out-of-scope
+  files every iteration and the run fails after `maxIterations`.
+- Adoption readiness is slow-boot tolerant BY DESIGN: the dev pod's first
+  vite SSR render compiles the whole module graph (~30-55s) and the startup
+  probe carries it in one long attempt; transient boot 500s get the full
+  window. SEA's `waitReadySeconds` is the timeout authority, not the kubelet.
+  Do not "harden" these probes toward fast failure.
+- The derived adoption id `host-dev-<environmentRequestId>` is STABLE per
+  preview: the preview persists its workspace-session tombstone without
+  execution linkage, and SEA teardown intents expire after 180s rather than
+  permanently retiring the id.
+- After a run releases its adoption, give SEA ~60s to converge before
+  relaunching against the same preview; an adopt racing the deleting Sandbox
+  CR fails with an empty-bodied 409.
+- Preview-side fixes (SEA, preview BFF) ride NEW previews — the tuple pins
+  them at provision. Host-side fixes ride the pin rollout. Re-verify a fix on
+  whichever side it lives before claiming it works.
 
 ## Lifecycle Workflow
 
