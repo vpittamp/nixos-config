@@ -1,4 +1,4 @@
 interface:
   display_name: "Workflow Builder"
-  short_description: "Author and debug durable Workflow Builder scripts."
-  default_prompt: "Use $workflow-builder to author, save, run, or debug a durable Workflow Builder script or agent session."
+  short_description: "Author, debug, and inspect durable workflow evidence."
+  default_prompt: "Use $workflow-builder to author, save, run, or debug a durable Workflow Builder script, agent session, live trace, or sealed execution-evidence package."

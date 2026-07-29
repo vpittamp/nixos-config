@@ -1,6 +1,6 @@
 ---
 name: preview-environments
-description: "Operate and prove Workflow Builder PreviewEnvironment lifecycles on the dev cluster. Use for preview vClusters, app-live or candidate profiles, agentic development, host-driven attach-mode development (preview-host-development), host-resident preview product DBs (preview-db pooler), multi-service adoption and sync, retained previews, interactive handoff, HMR, impact gates, out-of-scope rejection, draft-PR capture, teardown checks, preview logs, and preview platform manifests. Use workflow-builder for ordinary workflow authoring and gitops for the host delivery lane."
+description: "Operate and prove Workflow Builder PreviewEnvironment lifecycles on the dev cluster. Use for preview vClusters, app-live or candidate profiles, agentic development, host-driven attach-mode development (preview-host-development), host-resident preview product DBs (preview-db pooler), durable post-teardown execution evidence, multi-service adoption and sync, retained previews, interactive handoff, HMR, impact gates, out-of-scope rejection, draft-PR capture, teardown checks, preview logs, and preview platform manifests. Use workflow-builder for ordinary workflow authoring and gitops for the host delivery lane."
 ---
 
 # Preview Environments
@@ -14,7 +14,9 @@ separate.
 Read both repository entry points before operating the platform:
 
 - Workflow Builder: `docs/preview-environments.md`
+- Workflow Builder evidence: `docs/execution-evidence.md`
 - Stacks architecture: `docs/preview-environment-architecture.md`
+- Stacks host/preview split: `docs/host-driven-preview-development.md`
 - Stacks operator procedure: `docs/preview-environment-runbook.md`
 
 Then inspect the current lifecycle fixture, API, CRD/manifests, scripts, catalog,
@@ -58,7 +60,12 @@ normal lifecycle work:
 3. `debug_preview_environment` for the bounded lifecycle/runtime/trace bundle,
    then `query_preview_traces` for explicit service, status, search, and time
    filters.
-4. Read the generation again immediately before teardown. Pass its exact
+4. For a terminal run, allow the telemetry grace, then use
+   `list_execution_evidence`, `get_execution_evidence`, and a bounded
+   `get_execution_evidence_part` or
+   `query_execution_evidence_telemetry`. Live trace tools diagnose active
+   executions; the evidence key is the durable post-teardown identity.
+5. Read the generation again immediately before teardown. Pass its exact
    `provenance.requestId` and `sourceRevision` to
    `teardown_preview_environment`, then poll the returned signed ticket with
    `get_preview_teardown_status` until all twelve checks are true.
@@ -72,6 +79,8 @@ The physical dev workspace key is never forwarded into a preview. A direct
 preview-local Workflow MCP connection uses a preview-local key and audience.
 Its standard execution/trace tools keep authorization in the preview while
 deep evidence is read through the tuple-bound physical diagnostics adapter.
+The host evidence catalog is a separate read boundary and remains available
+after the preview generation and logical product database are gone.
 
 ## Preview Runtime Boundary
 
@@ -133,7 +142,7 @@ Proven operational rules (each traces to a live failure on dev):
   them at provision. Host-side fixes ride the pin rollout. Re-verify a fix on
   whichever side it lives before claiming it works.
 
-## Host-Resident Preview Data (P3/P4, live 2026-07-28)
+## Host-Resident Preview Data And Evidence (live 2026-07-29)
 
 - The preview PRODUCT database is one logical DB per preview on the HOST
   `preview-db` CNPG cluster, reached only through `preview-db-pooler`
@@ -145,12 +154,23 @@ Proven operational rules (each traces to a live failure on dev):
   `preview-db-rw`; teardown terminates backends, drops the logical DB, and
   proves absence. Verify with `psql` on `preview-db-1`, never by trusting
   workflow output alone.
-- Teardown ARCHIVAL is retired: the archive call runs inventory-only
-  (activity answer stays fail-closed on a dead BFF; no bundle/summary
-  writes). Durable code paths are Gitea checkpoints during the run and the
-  draft-PR promotion — nothing is rescued at teardown.
-- Rollbacks: `VCLUSTER_PREVIEW_DB_MODE=cnpg` on the SEA deployment restores
-  in-vcluster DBs; `PREVIEW_ARCHIVE_ON_TEARDOWN=true` restores archival.
+- Durable execution evidence is host-owned. The recurring archive job and
+  normal teardown reconcile terminal preview executions through the exact
+  immutable tuple into sealed `wfb.execution-evidence/v2` packages. Incomplete
+  evidence blocks normal teardown and remains retryable; the supported
+  failed/aged-generation quarantine path writes a `lost` receipt.
+- Packages contain execution/journal data, sessions/events, dynamic-script
+  calls, artifacts, browser captures, checkpoints, promotion receipts, spans,
+  and logs. Preserve prompt text and tool inputs/outputs. Mask only
+  credential-shaped fields and embedded credential values.
+- Catalog receipts live in host Postgres, package bytes in
+  `wfb-run-archives`, and evidence-keyed spans/logs in the long-retention
+  ClickHouse projection. Dev retention is 365 days with a 30 GiB active-package
+  quota and oldest-first purge.
+- `VCLUSTER_PREVIEW_DB_MODE=cnpg` is the DB rollback lever. Evidence capture is
+  currently active through `WFB_RUN_ARCHIVE_ENABLED=true` and
+  `PREVIEW_ARCHIVE_ON_TEARDOWN=true`; do not describe it as retired or
+  inventory-only.
 - Changing the runner or its policies means REBUILDING the runner image
   (runner.sh + host-policy.yaml are image-baked): build from the component
   dir, keep a TWO-digest VAP rotation window, update renderer +
@@ -186,8 +206,10 @@ Proven operational rules (each traces to a live failure on dev):
    outside the allowed set.
 9. **Capture.** Inspect the draft PR for exact source identity and all intended
    service files. Do not merge a proof artifact.
-10. **Retain or teardown.** Follow the selected policy and verify the complete
-   contract rather than inferring cleanup from workflow completion.
+10. **Seal evidence, then retain or teardown.** For terminal preview-local
+   executions, verify a complete host evidence receipt. Follow the selected
+   lifecycle policy and verify the complete contract rather than inferring
+   cleanup from workflow completion.
 
 ## Retention Contract
 
@@ -252,11 +274,12 @@ verbatim never helps):
   will keep blocking teardown until that gate is flipped or the row is resolved
   through a supported path.
 - `archive-required` / `executions-bad-response` (the preview's BFF is dead):
+  first determine whether complete evidence can still be reconciled.
   `forceFailed: true` is the DESIGNED path for `failed` / aged-out
-  `provisioning` previews — it quarantines with a receipt. For other states an
-  admin `discardUnarchived: true` proceeds only on positive host evidence
-  (populated namespace, zero live agent pods); an empty namespace stays refused
-  except for `slept`.
+  `provisioning` previews — it quarantines with an explicit loss receipt. For
+  other states an admin `discardUnarchived: true` proceeds only on positive
+  host evidence (populated namespace, zero live agent pods); an empty namespace
+  stays refused except for `slept`.
 - Never bypass with kubectl deletes of the CR: the 12-check contract and
   quarantine receipts only exist on the supported path.
 
@@ -286,6 +309,8 @@ run is live:
 - Adopted workflow-builder pod, app container, and `daprd` logs.
 - In-vCluster SEA/Sandbox pod logs.
 - Lease, sync-generation, and receipt state.
+- The sealed evidence key/completeness after the telemetry grace, when the run
+  is terminal.
 
 Compare one minimal control run with one changed variable. Do not vary retention,
 service count, gates, and source revision at the same time.
@@ -295,6 +320,7 @@ service count, gates, and source revision at the same time.
 Workflow Builder:
 
 - `docs/preview-environments.md`
+- `docs/execution-evidence.md`
 - `docs/host-preview-development-lifecycle.md`
 - `docs/preview-environment-agent-development.md`
 - `docs/preview-governance-gate.md`
