@@ -84,6 +84,9 @@ For a stuck or zero-token benchmark, check in order:
 7. `agent.llm_usage` and terminal session events.
 8. Predictions/dataset artifacts and evaluator Job.
 9. Internal callback and final summary recomputation.
+10. For terminal workflow evidence that must survive preview teardown, read the
+    sealed receipt/package part and evidence-keyed telemetry through Workflow
+    MCP rather than depending on a live preview database.
 
 This order distinguishes build waiting, queue pressure, runtime startup,
 provider failure, and harness failure without mutating state.
@@ -112,6 +115,10 @@ provider failure, and harness failure without mutating state.
 - `workflowstatestore` remains the sole actor/workflow state store, now enforced
   by a stacks CI validator. Do not add a per-agent actor store to solve an
   evaluation incident.
+- Evaluation and grader prompts/tool calls remain queryable in durable
+  execution evidence when captured. Mask credentials, not ordinary prompt or
+  tool content; use evidence completeness rather than assuming preview teardown
+  preserved every required part.
 
 ## Safety Rules
 
@@ -138,6 +145,8 @@ A useful handoff records:
 - Exact-ready environment source and image digest summary.
 - Stage timings, official outcomes, grader/scorer results, and artifacts.
 - Evaluator identity and provenance.
+- Durable evidence keys and completeness for terminal host or preview workflow
+  runs used in the conclusion.
 - Final counts for active runs, leases, sessions, workflows, Sandboxes, and
   evaluator workloads.
 

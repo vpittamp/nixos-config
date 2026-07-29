@@ -1,6 +1,6 @@
 ---
 name: workflow-builder
-description: "Author, save, run, inspect, or debug Workflow Builder dynamic-script workflows and durable agent sessions. Use for Workflow MCP workspace auth, script primitives and validation, saved agents, runtime-registry routing, structured output, action catalog calls, MCP connections, Prompt Workbench, goal loops, artifacts, lifecycle stop/purge, Sandbox/Kueue startup, Dapr sidecars, and failed executions. Use preview-environments for preview vClusters and dapr-agents-workflow for standalone upstream Python apps."
+description: "Author, save, run, inspect, or debug Workflow Builder dynamic-script workflows and durable agent sessions. Use for Workflow MCP workspace auth, live traces, sealed execution evidence, script primitives and validation, saved agents, runtime-registry routing, structured output, action catalog calls, MCP connections, Prompt Workbench, goal loops, artifacts, lifecycle stop/purge, Sandbox/Kueue startup, Dapr sidecars, and failed executions. Use preview-environments for preview vClusters and dapr-agents-workflow for standalone upstream Python apps."
 ---
 
 # Workflow Builder
@@ -91,6 +91,7 @@ the supported control and capture path still covers the workflow.
 | Stop, terminate, purge, or reset | `docs/workflow-lifecycle-termination.md` and `src/lib/server/lifecycle/`               |
 | Set or debug a persistent goal   | `docs/goal-loop.md` and goal application adapters                                      |
 | Produce typed run artifacts      | `docs/workflow-artifacts.md`                                                           |
+| Query terminal/post-teardown evidence | `docs/execution-evidence.md` and Workflow MCP execution-evidence tools            |
 | Inspect or restore run code      | `list_code_checkpoints`, `get_checkpoint_diff`, `restore_checkpoint`                    |
 | Resume or fork a run             | `resume_workflow_execution` and `docs/dynamic-script-workflows.md`                      |
 | Promote a run's code to a PR     | `promote_run_to_pr`                                                                     |
@@ -116,6 +117,9 @@ the supported control and capture path still covers the workflow.
   ceiling; per-agent allowed tools can only narrow it.
 - OAuth and ActivePieces credentials are reference-forwarded. Plaintext must not
   enter scripts, prompts, runtime env, logs, or PRs.
+- Durable evidence retains prompt text and tool inputs/outputs. Its sanitizer
+  masks credential-shaped fields and embedded credential values; do not
+  implement or describe a blanket prompt/tool-content redaction policy.
 - `workflowstatestore` is the sole actor/workflow store. Agent application state
   is separate and must remain non-actor state.
 - `stop_workflow_execution` exists on the Workflow MCP server (request/confirm,
@@ -144,22 +148,28 @@ For a failed or silent run, inspect in order:
 2. Call `debug_workflow_execution` for the bounded overview and server-issued
    `nextActions`, followed by `trace_get_digest` for phases, usage, critical
    path, and evidence coverage.
-3. Drill down narrowly with `trace_search_spans`, `trace_get_span`, and
+3. While the run is active, drill down narrowly with `trace_search_spans`,
+   `trace_get_span`, and
    `trace_get_logs`. Use returned cursors rather than requesting an unbounded
    trace.
-4. For model evidence, call `trace_get_llm_turn` with exactly one of `spanId`
+4. For a terminal or post-teardown run, allow the telemetry grace and use
+   `list_execution_evidence` -> `get_execution_evidence` -> one bounded
+   `get_execution_evidence_part` or
+   `query_execution_evidence_telemetry`. A stable evidence key, not a preview
+   name, is the durable identity.
+5. For model evidence, call `trace_get_llm_turn` with exactly one of `spanId`
    or `sessionId`. For browser evidence, call
    `trace_get_browser_screenshot` with an execution-bound storage reference;
    it returns native MCP image content for vision analysis.
-5. Compare the MCP evidence with the saved workflow engine, script, metadata,
+6. Compare the MCP evidence with the saved workflow engine, script, metadata,
    validation result, durable instance, current node, and replay journal.
-6. Verify saved-agent version, runtime-registry resolution, effective model
+7. Verify saved-agent version, runtime-registry resolution, effective model
    config, MCP/tool config, session events, usage, artifacts, and terminal
    status.
-7. Only then inspect Kueue Workload, Sandbox, pod scheduling, init containers,
+8. Only then inspect Kueue Workload, Sandbox, pod scheduling, init containers,
    orchestrator/runtime logs, and both app and `daprd` containers when the
    bounded product evidence identifies a runtime gap.
-8. Confirm the same result through the user-facing API/UI state.
+9. Confirm the same result through the user-facing API/UI state.
 
 A `running` execution row is a PROJECTION, not the authority — the durable
 runtime is. When a row looks stuck, compare it against the orchestrator's
@@ -244,6 +254,8 @@ A workflow change is complete when:
 - Runtime, model, MCP/tool, and workspace identity are evidenced from resolved
   state and events.
 - Stop or cleanup behavior is verified when the change touches lifecycle code.
+- Terminal preview runs have a complete or explicit lost durable evidence
+  receipt before teardown is treated as finished.
 - The result appears correctly in the product surface.
 
 ## Safety Rules
@@ -268,6 +280,7 @@ A workflow change is complete when:
 - `docs/goal-loop.md`
 - `docs/mcp-agent-workflows.md`
 - `docs/workflow-artifacts.md`
+- `docs/execution-evidence.md`
 - `services/shared/runtime-registry.json`
 - `services/workflow-orchestrator/`
 - `services/workflow-mcp-server/`

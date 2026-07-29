@@ -56,6 +56,7 @@ matters.
 | Repair a stuck promotion                                 | Inspect hydrator status, Promoter CRs/PRs/checks, then target Application health before retrying an operation                                                   |
 | Diagnose a `1/2` Dapr workload                           | Check app container, `daprd` health/logs, placement/scheduler/control plane, Components, then recycle only the affected pod after proving control-plane health  |
 | Diagnose Workflow MCP auth                               | Use the `workflow-builder` skill and `docs/workflow-mcp-server.md`; separate workspace keys, optional session context, and internal assertions                  |
+| Deliver or recover durable execution evidence            | Inspect `docs/execution-evidence.md`, object-store config, archive reconciler env, ClickHouse evidence tables, release pins, and the live query surface          |
 | Triage a run start refused `409 instance_conflict_live`  | Compare the durable instance against its execution row: the instance is live while the row reads terminal. Find the divergence; `WORKFLOW_ALLOW_DESTRUCTIVE_ID_REUSE=true` is a rollback lever, not a fix |
 | Diagnose Tailscale exposure                              | Read the owning Ingress/LoadBalancer/ProxyGroup manifests, `docs/tailscale-naming.md`, and `policy.hujson`; identify device versus service-host ownership first |
 | Rotate or repair secrets                                 | Trace ExternalSecret -> ClusterSecretStore -> remote key -> consuming pod; verify sync before restart and never print values                                    |
@@ -137,6 +138,15 @@ controllers to hide the first causal error.
   `cnpg-backups` + `wfb-run-archives` to Azure `mlflowhub/dev-offsite-backups`.
   Its one secret is `OFFSITE-AZURE-STORAGE-KEY` via the hub dev-shared-secrets
   chain.
+- Preview product data is one logical `preview_<name>` database on the host
+  `preview-db` CNPG cluster through `preview-db-pooler`; the vCluster has no
+  CNPG operator, cluster, or database PVC. Terminal preview run evidence is
+  separately sealed into the host catalog, `wfb-run-archives`, and
+  `obs.execution_evidence_{spans,logs}` before normal teardown.
+- `WFB_RUN_ARCHIVE_ENABLED`, evidence retention/grace/quota, and
+  `PREVIEW_ARCHIVE_ON_TEARDOWN` are active delivery contracts on dev. Preserve
+  prompt/tool content and mask credentials only; never describe the current
+  path as retired or inventory-only.
 - A direct live patch is diagnostic only. Encode the durable fix in source and
   prove reconciliation restores it.
 
@@ -187,6 +197,7 @@ In `PittampalliOrg/workflow-builder`:
 
 - `docs/workflow-mcp-server.md`
 - `docs/durable-session-runtime-contract.md`
+- `docs/execution-evidence.md`
 - `services/shared/runtime-registry.json`
 - `src/lib/server/gitops/`
 - `src/lib/server/lifecycle/`

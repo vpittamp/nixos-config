@@ -24,6 +24,12 @@
       "prompt": "I attached an Outlook MCP connection to an agent, but the next session is silent. Debug it without exposing OAuth tokens.",
       "expected_output": "Checks project MCP availability, per-agent allowed-tool narrowing, the piece-runtime service and no-port cluster URL, connection external-id linkage, newly launched Sandbox bootstrap config, and runtime MCP logs. It preserves reference-forwarded credentials and never prints, embeds, or copies OAuth plaintext.",
       "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "A preview was torn down after its workflow failed. I need the prompts, tool calls, screenshots, and traces for a later review. Should I query the old preview or use the live trace tools?",
+      "expected_output": "Explains that the preview database and live pod/stdout surface are gone, uses list_execution_evidence then get_execution_evidence and bounded get_execution_evidence_part or query_execution_evidence_telemetry with the stable preview evidence key, distinguishes the 120-second dev sealing grace from a failure, checks completeness or an explicit lost receipt, retains prompt text and tool inputs/outputs, masks credential-shaped fields and embedded credential values only, and does not claim the live trace path or preview name is durable post-teardown identity.",
+      "files": []
     }
   ]
 }
