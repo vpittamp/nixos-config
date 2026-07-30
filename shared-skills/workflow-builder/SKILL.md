@@ -91,6 +91,11 @@ interactive runtime without that declaration or its registry-owned
 - Preserve user-scoped subscription OAuth delivery through `cliAuth` and the
   session Secret path. Do not replace it with a provider API key, SDK, print
   mode, `codex exec`, or another noninteractive subprocess.
+- For preview development, CLI sessions run through host-owned
+  `preview-host-development` profiles (`claude-code-cli-host`,
+  `codex-cli-host`, `kimi-code-cli-host`, or ordered `cli-fanout`). The
+  execution-scoped workspace syncs through the immutable preview-control
+  broker; never copy the OAuth Secret or CLI pod into the vCluster.
 - Kimi Code uses device-login OAuth from the exact
   `$KIMI_CODE_HOME/credentials/kimi-code.json` file. Capture and rotate only
   that file; remove Kimi and Moonshot API-key variables before launching the

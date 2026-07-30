@@ -107,16 +107,23 @@ and remove only obsolete model-specific text/metadata compensation.
 `preview-host-development` (seeded dynamic-script workflow) is the attach-mode
 inverse of the preview-local child: ONE host execution adopts a service inside
 an EXISTING app-live preview through the preview-control broker, seeds a host
-workspace, runs the policy-pinned pydantic-ai builder (kimi-k3, effort `low`),
-live-syncs each iteration, captures source from the HOST workspace, promotes a
-draft PR carrying the builder's structured report, and releases the adoption in
-a `finally` block. Run evidence (journal, sessions, LLM turns, cost, artifacts)
-lives in the HOST database; only the application under test runs in the
-vCluster.
+workspace, runs a policy-owned builder profile, live-syncs each iteration,
+captures source from the HOST workspace, promotes a draft PR carrying the
+builder reports, and releases the adoption in a `finally` block. Run evidence
+(journal, sessions, LLM turns, cost, artifacts) lives in the HOST database; only
+the application under test runs in the vCluster.
+
+The default `pydantic-ai-k3-host` profile preserves the Kimi K3 builder. The
+single-CLI profiles are `claude-code-cli-host`, `codex-cli-host`, and
+`kimi-code-cli-host`; `cli-fanout` runs those three in that fixed order against
+one execution-scoped host checkout. The ordering is load-bearing: concurrent
+writers on the same JuiceFS tree would make source outcomes timing-dependent.
+CLI pods, OAuth delivery, hooks, and transcripts stay on physical dev. Never
+restore or copy CLI OAuth into a preview to make this lane work.
 
 Launch it ONLY via `start_dev_environment_session` with
 `workflowName: preview-host-development`, passing `intent`, `previewOrigin`,
-and `previewTarget` — the preview's immutable tuple copied EXACTLY from
+an optional closed `builderProfile`, and `previewTarget` — the preview's immutable tuple copied EXACTLY from
 `get_preview_environment` (name, `provenance.requestId`, `platformRevision`,
 `sourceRevision`, `catalogDigest`). The broker re-reads the live generation and
 refuses any drift, including a single wrong digest character.
