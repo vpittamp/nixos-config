@@ -79,6 +79,27 @@ actions to navigate and capture pixels, then pass the resulting image content
 to K3. Remove model-specific text-only browser workarounds only after proving
 the supported control and capture path still covers the workflow.
 
+## Native CLI Runtime Contract
+
+`claude-code-cli`, `codex-cli`, and other `interactive-cli` runtimes run the
+official interactive binary inside Herdr's PTY for both attached sessions and
+workflow auto-turns. The runtime registry must declare
+`capabilities.cliExecutionMode: native-tui`; the workflow bridge rejects an
+interactive runtime without that declaration or its registry-owned
+`cliAdapter`.
+
+- Preserve user-scoped subscription OAuth delivery through `cliAuth` and the
+  session Secret path. Do not replace it with a provider API key, SDK, print
+  mode, `codex exec`, or another noninteractive subprocess.
+- Workflow kickoff is accepted only after the native composer reports a
+  positive receipt. Hook/transcript events, especially `turn.completed`, own
+  completion and output; terminal pixels are diagnostic evidence only.
+- A missing kickoff receipt fails the child with
+  `native_tui_kickoff_not_accepted`. Dynamic-script `agent()` resolves errored
+  journal entries to `null`, so required calls must check and reject `null`.
+- `CLI_AGENT_WORKFLOW_BATCH=0` exists only as compatibility configuration for
+  older images. Current runtime source has no workflow batch branch.
+
 ## Task Map
 
 | Task                             | Read or inspect                                                                        |
