@@ -81,9 +81,9 @@ the supported control and capture path still covers the workflow.
 
 ## Native CLI Runtime Contract
 
-`claude-code-cli`, `codex-cli`, and other `interactive-cli` runtimes run the
-official interactive binary inside Herdr's PTY for both attached sessions and
-workflow auto-turns. The runtime registry must declare
+`claude-code-cli`, `codex-cli`, `kimi-code-cli`, and other `interactive-cli`
+runtimes run the official interactive binary inside Herdr's PTY for both
+attached sessions and workflow auto-turns. The runtime registry must declare
 `capabilities.cliExecutionMode: native-tui`; the workflow bridge rejects an
 interactive runtime without that declaration or its registry-owned
 `cliAdapter`.
@@ -91,14 +91,30 @@ interactive runtime without that declaration or its registry-owned
 - Preserve user-scoped subscription OAuth delivery through `cliAuth` and the
   session Secret path. Do not replace it with a provider API key, SDK, print
   mode, `codex exec`, or another noninteractive subprocess.
+- Kimi Code uses device-login OAuth from the exact
+  `$KIMI_CODE_HOME/credentials/kimi-code.json` file. Capture and rotate only
+  that file; remove Kimi and Moonshot API-key variables before launching the
+  CLI.
 - Workflow kickoff is accepted only after the native composer reports a
-  positive receipt. Hook/transcript events, especially `turn.completed`, own
-  completion and output; terminal pixels are diagnostic evidence only.
+  positive receipt. Native hooks normally own completion, failure, permission,
+  and compaction events. Transcript ingestion is append-only and retains a
+  durable high-water mark so a restarted wrapper does not duplicate events.
+- Some CLIs can terminate a turn before emitting a stop hook. After a bounded
+  grace period, a transcript terminal failure may fail the turn; a later native
+  stop or failure hook cancels that fallback. Terminal pixels remain diagnostic
+  evidence, never completion authority.
+- Persist native transcripts with prompt, response, and tool content intact.
+  Treat them as queryable execution evidence; do not apply blanket content
+  redaction.
 - A missing kickoff receipt fails the child with
   `native_tui_kickoff_not_accepted`. Dynamic-script `agent()` resolves errored
   journal entries to `null`, so required calls must check and reject `null`.
 - `CLI_AGENT_WORKFLOW_BATCH=0` exists only as compatibility configuration for
   older images. Current runtime source has no workflow batch branch.
+- Borrow Omnigent's explicit capability declarations, session-scoped homes,
+  and supervised high-water transcript ingestion where they strengthen this
+  adapter. Do not introduce a second lifecycle, scheduling, or durable-state
+  authority beside Dapr, Kueue, the BFF, and JuiceFS.
 
 ## Task Map
 
