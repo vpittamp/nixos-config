@@ -202,6 +202,7 @@ args = []
 command = "${workflowBuilderMcp.proxyCommand}"
 enabled = true
 env_vars = [
+  "OP_BIOMETRIC_UNLOCK_ENABLED",
   "OP_SERVICE_ACCOUNT_TOKEN",
   "WFB_API_KEY",
   "WFB_API_KEY_OP_REF",
