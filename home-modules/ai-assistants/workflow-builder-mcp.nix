@@ -18,6 +18,11 @@ let
       exit 64
     fi
 
+    # Codex explicitly forwards the 1Password service credential to this
+    # launcher so `op read` can resolve the narrower workspace key. Do not let
+    # either source credential survive into the Node/mcp-remote process.
+    unset OP_SERVICE_ACCOUNT_TOKEN WFB_API_KEY
+
     mcp_url="''${WFB_MCP_URL:-${cfg.url}}"
     export WFB_MCP_AUTH_HEADER="Bearer $api_key"
     args=(

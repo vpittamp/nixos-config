@@ -122,6 +122,13 @@ the supported control and capture path still covers the workflow.
   implement or describe a blanket prompt/tool-content redaction policy.
 - `workflowstatestore` is the sole actor/workflow store. Agent application state
   is separate and must remain non-actor state.
+- Nix-managed Codex runs Workflow MCP through a local STDIO proxy. Codex must
+  explicitly forward `OP_SERVICE_ACCOUNT_TOKEN` and the supported `WFB_*`
+  overrides to that launcher, which resolves the narrower workspace key and
+  unsets the 1Password service token plus raw `WFB_API_KEY` before starting
+  `mcp-remote`. `Auth: Unsupported` is expected for this STDIO entry;
+  `Tools: (none)` together with a pre-initialize exit means launcher startup
+  failed, not that the Workflow MCP server has no tools.
 - `stop_workflow_execution` exists on the Workflow MCP server (request/confirm,
   fail-closed 409 when unconfirmed). If a session's tool list lacks a tool the
   server should have, RECONNECT the MCP client — a list fetched before an image

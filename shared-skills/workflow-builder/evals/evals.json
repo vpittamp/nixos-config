@@ -30,6 +30,12 @@
       "prompt": "A preview was torn down after its workflow failed. I need the prompts, tool calls, screenshots, and traces for a later review. Should I query the old preview or use the live trace tools?",
       "expected_output": "Explains that the preview database and live pod/stdout surface are gone, uses list_execution_evidence then get_execution_evidence and bounded get_execution_evidence_part or query_execution_evidence_telemetry with the stable preview evidence key, distinguishes the 120-second dev sealing grace from a failure, checks completeness or an explicit lost receipt, retains prompt text and tool inputs/outputs, masks credential-shaped fields and embedded credential values only, and does not claim the live trace path or preview name is durable post-teardown identity.",
       "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "The Workflow Builder key exists in 1Password, but Codex /mcp shows Auth: Unsupported and Tools: (none). Diagnose the local connection without rotating or printing credentials.",
+      "expected_output": "Explains that Auth: Unsupported is expected because Codex sees the local STDIO proxy rather than owning the remote bearer flow; checks the launcher startup error and a fresh tools/list before blaming the server; verifies Codex forwards OP_SERVICE_ACCOUNT_TOKEN and supported WFB_* overrides through mcp_servers.workflow-builder.env_vars; keeps secret values out of logs and config; requires the launcher to unset the broad 1Password service token and raw WFB_API_KEY before starting mcp-remote; and reconnects or restarts Codex after activation.",
+      "files": []
     }
   ]
 }

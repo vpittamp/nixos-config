@@ -201,6 +201,13 @@ ${lib.optionalString workflowBuilderMcp.enable ''
 args = []
 command = "${workflowBuilderMcp.proxyCommand}"
 enabled = true
+env_vars = [
+  "OP_SERVICE_ACCOUNT_TOKEN",
+  "WFB_API_KEY",
+  "WFB_API_KEY_OP_REF",
+  "WFB_MCP_URL",
+  "WFB_MCP_SESSION_ID",
+]
 startup_timeout_sec = 30
 tool_timeout_sec = 300
 ''}
