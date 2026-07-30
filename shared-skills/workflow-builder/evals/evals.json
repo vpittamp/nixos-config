@@ -34,7 +34,7 @@
     {
       "id": 6,
       "prompt": "The Workflow Builder key exists in 1Password, but Codex /mcp shows Auth: Unsupported and Tools: (none). Diagnose the local connection without rotating or printing credentials.",
-      "expected_output": "Explains that Auth: Unsupported is expected because Codex sees the local STDIO proxy rather than owning the remote bearer flow; checks the launcher startup error and a fresh tools/list before blaming the server; verifies Codex forwards the available 1Password authentication path (OP_SERVICE_ACCOUNT_TOKEN or OP_BIOMETRIC_UNLOCK_ENABLED) and supported WFB_* overrides through mcp_servers.workflow-builder.env_vars; keeps secret values out of logs and config; requires the launcher to unset the forwarded 1Password variables and raw WFB_API_KEY before starting mcp-remote; and reconnects or restarts Codex after activation.",
+      "expected_output": "Explains that Auth: Unsupported is expected because Codex sees the local STDIO proxy rather than owning the remote bearer flow; checks the launcher startup error and a fresh tools/list before blaming the server; verifies Codex forwards the available 1Password authentication path (OP_SERVICE_ACCOUNT_TOKEN or OP_BIOMETRIC_UNLOCK_ENABLED), biometric desktop IPC/display variables, and supported WFB_* overrides through mcp_servers.workflow-builder.env_vars; requires the NixOS launcher to prefer /run/wrappers/bin/op for desktop integration while retaining the store binary as a headless fallback; keeps secret values out of logs and config; requires the launcher to unset the forwarded 1Password, desktop IPC/display, and raw WFB_API_KEY variables before starting mcp-remote; and reconnects or restarts Codex after activation.",
       "files": []
     }
   ]

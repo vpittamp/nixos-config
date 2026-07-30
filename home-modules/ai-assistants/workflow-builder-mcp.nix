@@ -9,8 +9,12 @@ let
 
     api_key="''${WFB_API_KEY:-}"
     api_key_ref="''${WFB_API_KEY_OP_REF:-${cfg.apiKeyReference}}"
+    op_bin="/run/wrappers/bin/op"
+    if [ ! -x "$op_bin" ]; then
+      op_bin="${pkgs._1password-cli}/bin/op"
+    fi
     if [ -z "$api_key" ] && [ -n "$api_key_ref" ]; then
-      api_key="$(${pkgs._1password-cli}/bin/op read "$api_key_ref" 2>/dev/null || true)"
+      api_key="$("$op_bin" read "$api_key_ref" 2>/dev/null || true)"
     fi
     if [ -z "$api_key" ]; then
       echo "WFB_API_KEY is required for workflow-builder MCP access." >&2
@@ -18,10 +22,12 @@ let
       exit 64
     fi
 
-    # Codex explicitly forwards the available 1Password authentication path to
-    # this launcher so `op read` can resolve the narrower workspace key. Do not
-    # let it or the raw workspace credential survive into Node/mcp-remote.
-    unset OP_BIOMETRIC_UNLOCK_ENABLED OP_SERVICE_ACCOUNT_TOKEN WFB_API_KEY
+    # Codex explicitly forwards the available 1Password authentication path
+    # and desktop IPC variables to this launcher so `op read` can resolve the
+    # narrower workspace key. Do not let that authority or the raw workspace
+    # credential survive into Node/mcp-remote.
+    unset DBUS_SESSION_BUS_ADDRESS DISPLAY OP_BIOMETRIC_UNLOCK_ENABLED
+    unset OP_SERVICE_ACCOUNT_TOKEN WAYLAND_DISPLAY WFB_API_KEY XDG_RUNTIME_DIR
 
     mcp_url="''${WFB_MCP_URL:-${cfg.url}}"
     export WFB_MCP_AUTH_HEADER="Bearer $api_key"

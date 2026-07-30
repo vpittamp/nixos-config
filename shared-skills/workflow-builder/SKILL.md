@@ -125,9 +125,13 @@ the supported control and capture path still covers the workflow.
 - Nix-managed Codex runs Workflow MCP through a local STDIO proxy. Codex must
   explicitly forward the available 1Password authentication path
   (`OP_SERVICE_ACCOUNT_TOKEN` or `OP_BIOMETRIC_UNLOCK_ENABLED`) and the
-  supported `WFB_*` overrides to that launcher, which resolves the narrower
-  workspace key and unsets the 1Password variables plus raw `WFB_API_KEY`
-  before starting `mcp-remote`. `Auth: Unsupported` is expected for this STDIO entry;
+  desktop IPC/display variables needed by biometric unlock, plus the supported
+  `WFB_*` overrides, to that launcher. On NixOS the launcher must prefer
+  `/run/wrappers/bin/op` so 1Password desktop integration sees the security
+  wrapper; the direct store binary is only the headless fallback. The launcher
+  resolves the narrower workspace key and unsets the 1Password, desktop
+  IPC/display, and raw `WFB_API_KEY` variables before starting `mcp-remote`.
+  `Auth: Unsupported` is expected for this STDIO entry;
   `Tools: (none)` together with a pre-initialize exit means launcher startup
   failed, not that the Workflow MCP server has no tools.
 - `stop_workflow_execution` exists on the Workflow MCP server (request/confirm,

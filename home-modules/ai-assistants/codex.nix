@@ -202,12 +202,16 @@ args = []
 command = "${workflowBuilderMcp.proxyCommand}"
 enabled = true
 env_vars = [
+  "DBUS_SESSION_BUS_ADDRESS",
+  "DISPLAY",
   "OP_BIOMETRIC_UNLOCK_ENABLED",
   "OP_SERVICE_ACCOUNT_TOKEN",
   "WFB_API_KEY",
   "WFB_API_KEY_OP_REF",
   "WFB_MCP_URL",
   "WFB_MCP_SESSION_ID",
+  "WAYLAND_DISPLAY",
+  "XDG_RUNTIME_DIR",
 ]
 startup_timeout_sec = 30
 tool_timeout_sec = 300
