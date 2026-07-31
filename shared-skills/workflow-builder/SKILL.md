@@ -94,10 +94,11 @@ interactive runtime without that declaration or its registry-owned
 - For preview development, CLI sessions run through host-owned
   `preview-host-development` profiles (`claude-code-cli-host`,
   `codex-cli-host`, `kimi-code-cli-host`, ordered `cli-fanout`, or persistent
-  `claude-code-cli-interactive-host`). The execution-scoped workspace syncs
-  through the immutable preview-control broker; never copy the OAuth Secret or
-  CLI pod into the vCluster.
-- In the interactive profile, edit the seeded host checkout and run
+  `claude-code-cli-interactive-host`, `codex-cli-interactive-host`,
+  `kimi-code-cli-interactive-host`, and `agy-cli-interactive-host`). The
+  execution-scoped workspace syncs through the immutable preview-control
+  broker; never copy the OAuth Secret or CLI pod into the vCluster.
+- In an interactive profile, edit the seeded host checkout and run
   `wfb-preview-sync` after each coherent generation. Inspect the adopted page
   through the session's Playwright MCP. The parent remains durably parked at
   `preview.development.control` until its run page sends the fixed

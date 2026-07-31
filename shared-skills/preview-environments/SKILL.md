@@ -121,14 +121,16 @@ writers on the same JuiceFS tree would make source outcomes timing-dependent.
 CLI pods, OAuth delivery, hooks, and transcripts stay on physical dev. Never
 restore or copy CLI OAuth into a preview to make this lane work.
 
-`claude-code-cli-interactive-host` is the persistent interactive profile. It
-opens the official Claude Code TUI on the same host checkout and parks the
-parent run at the `preview.development.control` gate. After each coherent edit,
-Claude must run `wfb-preview-sync`; the helper sends only the owning session id
-and a content-derived idempotency key. The host application reconstructs and
-checks the parent execution, workspace, services, and immutable preview tuple
-before source crosses into the adopted receiver. Use the session's Playwright
-MCP to inspect the hot-reloaded preview at desktop and mobile widths.
+The persistent interactive profiles are `claude-code-cli-interactive-host`,
+`codex-cli-interactive-host`, `kimi-code-cli-interactive-host`, and
+`agy-cli-interactive-host`. Each opens the selected official CLI TUI on the
+same host checkout and parks the parent run at the
+`preview.development.control` gate. After each coherent edit, the CLI must run
+`wfb-preview-sync`; the helper sends only the owning session id and a
+content-derived idempotency key. The host application reconstructs and checks
+the parent execution, workspace, services, and immutable preview tuple before
+source crosses into the adopted receiver. Use the session's Playwright MCP to
+inspect the hot-reloaded preview at desktop and mobile widths.
 
 Launch it ONLY via `start_dev_environment_session` with
 `workflowName: preview-host-development`, passing `intent`, `previewOrigin`,
@@ -137,11 +139,11 @@ an optional closed `builderProfile`, and `previewTarget` — the preview's immut
 `sourceRevision`, `catalogDigest`). The broker re-reads the live generation and
 refuses any drift, including a single wrong digest character.
 
-For the interactive profile, leave the parent run active while reviewing the
+For an interactive profile, leave the parent run active while reviewing the
 session. On its host run page, **Create draft PR** sends the fixed
 `submit_preview_pr` event and **Discard** sends the fixed `discard` event to the
 exact waiting call. A rejected final sync or gate returns the run to `Await`,
-so repair in the same Claude session and submit again. A successful submit
+so repair in the same CLI session and submit again. A successful submit
 captures the host checkout and creates a draft evidence PR; never merge that
 proof PR. Either terminal path releases adoption from the workflow's `finally`
 block before preview teardown.
