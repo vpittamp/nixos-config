@@ -93,9 +93,16 @@ interactive runtime without that declaration or its registry-owned
   mode, `codex exec`, or another noninteractive subprocess.
 - For preview development, CLI sessions run through host-owned
   `preview-host-development` profiles (`claude-code-cli-host`,
-  `codex-cli-host`, `kimi-code-cli-host`, or ordered `cli-fanout`). The
-  execution-scoped workspace syncs through the immutable preview-control
-  broker; never copy the OAuth Secret or CLI pod into the vCluster.
+  `codex-cli-host`, `kimi-code-cli-host`, ordered `cli-fanout`, or persistent
+  `claude-code-cli-interactive-host`). The execution-scoped workspace syncs
+  through the immutable preview-control broker; never copy the OAuth Secret or
+  CLI pod into the vCluster.
+- In the interactive profile, edit the seeded host checkout and run
+  `wfb-preview-sync` after each coherent generation. Inspect the adopted page
+  through the session's Playwright MCP. The parent remains durably parked at
+  `preview.development.control` until its run page sends the fixed
+  `submit_preview_pr` or `discard` action; arbitrary event payloads and actions
+  against unrelated gates are rejected.
 - Kimi Code uses device-login OAuth from the exact
   `$KIMI_CODE_HOME/credentials/kimi-code.json` file. Capture and rotate only
   that file; remove Kimi and Moonshot API-key variables before launching the
