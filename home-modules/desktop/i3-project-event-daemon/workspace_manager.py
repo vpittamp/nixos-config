@@ -13,7 +13,6 @@ import json
 import logging
 from pathlib import Path
 
-from .monitor_config_manager import MonitorConfigManager
 from .models import MonitorRole
 from .monitor_role_resolver import MonitorRoleResolver
 from .models.monitor_config import (
@@ -107,64 +106,6 @@ class MonitorConfig:
         }
 
 
-async def get_monitor_configs(
-    i3,
-    config_manager: Optional[MonitorConfigManager] = None
-) -> List[MonitorConfig]:
-    """Get active monitor configurations with role assignments.
-
-    Feature 033: Now uses MonitorConfigManager for role assignment based on
-    declarative configuration (output_preferences) instead of hardcoded rules.
-
-    Args:
-        i3: i3ipc.aio.Connection instance
-        config_manager: Optional MonitorConfigManager instance (creates new if None)
-
-    Returns:
-        List of MonitorConfig objects with assigned roles
-
-    Examples:
-        >>> async with i3ipc.aio.Connection() as i3:
-        ...     monitors = await get_monitor_configs(i3)
-        ...     print(len(monitors))
-        1
-    """
-    # Get active outputs from i3
-    # Use output-states.json to determine which outputs are "active"
-    # This works around the limitation that headless outputs can't be disabled via DPMS
-    from .output_state_manager import load_output_states
-    output_states = load_output_states()
-
-    outputs = await i3.get_outputs()
-    active_outputs = [
-        o for o in outputs
-        if o.active and output_states.is_output_enabled(o.name)
-    ]
-
-    if not active_outputs:
-        raise RuntimeError("No active outputs found")
-
-    # Use config manager to assign roles (Feature 033)
-    if config_manager is None:
-        config_manager = MonitorConfigManager()
-
-    # Convert i3 outputs to Pydantic MonitorConfig models for role assignment
-    from .models import MonitorConfig as PydanticMonitorConfig
-    pydantic_monitors = [
-        PydanticMonitorConfig.from_i3_output(o)
-        for o in active_outputs
-    ]
-
-    # Get role assignments from config
-    role_assignments = config_manager.assign_monitor_roles(pydantic_monitors)
-
-    # Build MonitorConfig (dataclass) list with assigned roles
-    monitors = []
-    for output in active_outputs:
-        role = role_assignments.get(output.name, MonitorRole.PRIMARY).value
-        monitors.append(MonitorConfig.from_i3_output(output, role))
-
-    return monitors
 
 
 async def assign_workspaces_with_monitor_roles(

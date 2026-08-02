@@ -53,7 +53,6 @@ COMMANDS:
   run              Smart application launcher with run-raise-hide (Feature 051)
   windows          Window state visualization
   daemon           Daemon status and event monitoring
-  tree-monitor     Real-time window state event monitoring (Feature 065)
   trace            Window tracing for debugging (Feature 101)
   rules            Window classification rules
   monitors         Workspace-to-monitor mapping configuration
@@ -294,13 +293,6 @@ async function main(): Promise<void> {
           debug: args.debug,
         });
         Deno.exit(exitCode);
-      }
-      break;
-
-    case "tree-monitor":
-      {
-        const { treeMonitorCommand } = await import("./commands/tree-monitor.ts");
-        await treeMonitorCommand(commandArgs, { verbose: args.verbose, debug: args.debug });
       }
       break;
 

@@ -68,7 +68,6 @@ from .services.event_query_service import EventQueryService
 from .services.focus_service import FocusService
 from .services.herdr_service import HerdrService
 from .services.launch_service import LaunchService
-from .services.monitor_state_service import MonitorStateService
 from .services.trace_service import TraceService
 from .services.worktree_profile_service import WorktreeProfileService
 
@@ -692,12 +691,6 @@ class IPCServer:
             display_generation=lambda: self._display_generation,
             snapshot_version=lambda: self._snapshot_version,
         )
-        self.monitor_state_service = MonitorStateService(
-            i3_connection_provider=lambda: self.i3_connection,
-            monitor_profile_service_provider=lambda: getattr(self, "monitor_profile_service", None),
-            sway_workspaces_provider=lambda: self._sway_get_workspaces(),
-            log_ipc_event=lambda **kwargs: self._log_ipc_event(**kwargs),
-        )
         self.launch_service = LaunchService(
             runtime_dir=lambda: self._runtime_dir(),
             load_json_file=lambda path: self._load_json_file(path),
@@ -1172,22 +1165,6 @@ class IPCServer:
                 result = await self.daemon_status_service.diagnose_rpc(params)
             elif method == "daemon.apps":
                 result = await self.daemon_status_service.apps_rpc(params)
-
-            # Feature 033: Workspace-to-monitor mapping methods
-            elif method == "get_monitor_config":
-                result = await self.monitor_state_service.get_monitor_config()
-            elif method == "validate_monitor_config":
-                result = await self.monitor_state_service.validate_monitor_config(params)
-            elif method == "reload_monitor_config":
-                result = await self.monitor_state_service.reload_monitor_config()
-            elif method == "reassign_workspaces":
-                result = await self.monitor_state_service.reassign_workspaces(params)
-            elif method == "get_monitors":
-                result = await self.monitor_state_service.get_monitors()
-            elif method == "get_workspaces":
-                result = await self.monitor_state_service.get_workspaces()
-            elif method == "get_system_state":
-                result = await self.monitor_state_service.get_system_state()
 
             # Feature 037: Window filtering methods
             elif method == "project.hideWindows":

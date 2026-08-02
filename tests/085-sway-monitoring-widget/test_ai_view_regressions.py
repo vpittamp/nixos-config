@@ -45,7 +45,6 @@ SESSION_RUNTIME_SERVICE_PY = DAEMON_SERVICES_DIR / "session_runtime_service.py"
 DAEMON_STATUS_SERVICE_PY = DAEMON_SERVICES_DIR / "daemon_status_service.py"
 EVENT_QUERY_SERVICE_PY = DAEMON_SERVICES_DIR / "event_query_service.py"
 LAYOUT_SERVICE_PY = DAEMON_SERVICES_DIR / "layout_service.py"
-MONITOR_STATE_SERVICE_PY = DAEMON_SERVICES_DIR / "monitor_state_service.py"
 PROJECT_REMOTE_LAUNCH_PY = REPO_ROOT / "scripts" / "project-remote-launch.py"
 I3PM_MONITORING_DATA_PY = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "monitoring_data.py"
 I3PM_CLI_README = REPO_ROOT / "home-modules" / "tools" / "i3_project_manager" / "cli" / "README.md"
@@ -291,7 +290,6 @@ def test_daemon_rpc_behavior_lives_in_services_not_ipc_wrappers():
     daemon_status_text = DAEMON_STATUS_SERVICE_PY.read_text()
     event_query_text = EVENT_QUERY_SERVICE_PY.read_text()
     layout_text = LAYOUT_SERVICE_PY.read_text()
-    monitor_state_text = MONITOR_STATE_SERVICE_PY.read_text()
 
     for retired in [
         "async def _window_focus_fast",
@@ -368,13 +366,6 @@ def test_daemon_rpc_behavior_lives_in_services_not_ipc_wrappers():
     assert "layout_service.list(params)" in ipc_text
     assert "layout_service.delete(params)" in ipc_text
     assert "layout_service.info(params)" in ipc_text
-    assert "monitor_state_service.get_monitor_config()" in ipc_text
-    assert "monitor_state_service.validate_monitor_config(params)" in ipc_text
-    assert "monitor_state_service.reload_monitor_config()" in ipc_text
-    assert "monitor_state_service.reassign_workspaces(params)" in ipc_text
-    assert "monitor_state_service.get_monitors()" in ipc_text
-    assert "monitor_state_service.get_workspaces()" in ipc_text
-    assert "monitor_state_service.get_system_state()" in ipc_text
     assert "diagnostic_service.window_identity(params)" in ipc_text
     assert "diagnostic_service.window_environment(params)" in ipc_text
     assert "diagnostic_service.workspace_rule(params)" in ipc_text
@@ -406,9 +397,6 @@ def test_daemon_rpc_behavior_lives_in_services_not_ipc_wrappers():
     assert "class LayoutService" in layout_text
     assert "async def save" in layout_text
     assert "async def restore" in layout_text
-    assert "class MonitorStateService" in monitor_state_text
-    assert "async def get_monitor_config" in monitor_state_text
-    assert "async def get_system_state" in monitor_state_text
 
 
 def test_daemon_session_rows_strip_legacy_tmux_identity_fields():

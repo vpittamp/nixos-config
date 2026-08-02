@@ -30,10 +30,6 @@ let
     click          # CLI creation kit for testing
     psutil         # Process utilities for system tests
 
-    # sway-tree-monitor specific (Feature 064)
-    xxhash         # Fast non-cryptographic hashing for tree diffing
-    orjson         # 6x faster JSON serialization
-    textual        # Full TUI framework with async support
   ]);
 in
 {
