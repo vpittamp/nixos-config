@@ -91,6 +91,17 @@ output_mode() {
         | "\(.width) \(.height)"'
 }
 
+# Echo "<native_width> <native_height>" from the EDID mode list (largest mode),
+# ignoring whatever fallback mode the link negotiated. Used for the Verbatim,
+# which can come up at 1024x768 after a dock renegotiation — honoring
+# current_mode there would pin the low-res fallback mode forever.
+output_native_mode() {
+  swaymsg -t get_outputs 2>/dev/null | jq -r --arg o "$1" '
+    .[] | select(.name == $o)
+        | ((.modes | max_by(.width * .height)) // .current_mode)
+        | "\(.width) \(.height)"'
+}
+
 # "<make> <model>" for an output — used to recognize specific monitors by EDID.
 output_edid() {
   swaymsg -t get_outputs 2>/dev/null | jq -r --arg o "$1" '
@@ -149,7 +160,7 @@ place_externals() {
 
   # Verbatim at the origin.
   if [ -n "$verb" ]; then
-    read -r w h <<<"$(output_mode "$verb")"
+    read -r w h <<<"$(output_native_mode "$verb")"
     if [ -n "${w:-}" ] && [ "$w" != "null" ]; then
       swaymsg "output $verb enable mode ${w}x${h} position 0 0 scale $VERBATIM_SCALE" >/dev/null 2>&1 || true
       edge="$(logical_width "$w" "$VERBATIM_SCALE")"
@@ -211,7 +222,11 @@ layout_extended() {
 
   # Logical sizes (used to compute origins so nothing lands at negative coords).
   local pw ph; read -r pw ph <<<"$(logical_dims "$PANEL" "$PANEL_SCALE")" || { pw=1536; ph=960; }
-  local vw=0; [ -n "$verb" ] && vw="$(logical_dims "$verb" "$VERBATIM_SCALE" | cut -d' ' -f1)"
+  local vw=0
+  if [ -n "$verb" ]; then
+    local vnw0 vnh0; read -r vnw0 vnh0 <<<"$(output_native_mode "$verb")"
+    [ -n "${vnw0:-}" ] && [ "$vnw0" != "null" ] && vw="$(logical_width "$vnw0" "$VERBATIM_SCALE")"
+  fi
   local sh=0; [ -n "$sam" ] && sh="$(logical_width "$SAMSUNG_H" "$SAMSUNG_SCALE")"
 
   # Panel origin: reserve room above it (Samsung column and/or the Verbatim
@@ -231,7 +246,7 @@ layout_extended() {
 
   # Verbatim parallel to the panel on its left, sitting VERBATIM_RAISE px higher.
   if [ -n "$verb" ]; then
-    local vnw vnh; read -r vnw vnh <<<"$(output_mode "$verb")"
+    local vnw vnh; read -r vnw vnh <<<"$(output_native_mode "$verb")"
     if [ -n "${vnw:-}" ] && [ "$vnw" != "null" ]; then
       swaymsg "output $verb enable mode ${vnw}x${vnh} position $(( panel_x - vw )) $(( panel_y - VERBATIM_RAISE )) scale $VERBATIM_SCALE" >/dev/null 2>&1 || true
     fi

@@ -181,7 +181,7 @@ let
             x = 0;
             y = 0;
             width = 1920;
-            height = 1080;
+            height = 1200;
           };
         }
         {
@@ -220,7 +220,7 @@ let
             x = 0;
             y = 0;
             width = 1920;
-            height = 1080;
+            height = 1200;
           };
         }
         {
@@ -259,7 +259,7 @@ let
             x = 0;
             y = 0;
             width = 1920;
-            height = 1080;
+            height = 1200;
           };
         }
         {
@@ -298,7 +298,7 @@ let
             x = 0;
             y = 0;
             width = 1920;
-            height = 1080;
+            height = 1200;
           };
         }
         {
@@ -479,7 +479,7 @@ in
           scale = "1.0";
         };
         "HDMI-A-1" = {
-          mode = "1920x1080@60Hz";
+          mode = "1920x1200@60Hz";
           position = "0,0";
           scale = "1.0";
         };
