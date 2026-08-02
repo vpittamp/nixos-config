@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert";
-import { applyDashboardEvent, isDeltaEvent } from "./dashboard.ts";
+import { applyDashboardEvent, isDeltaEvent, watchDisconnectedEvent } from "./dashboard.ts";
 
 Deno.test("isDeltaEvent accepts typed payload events", () => {
   assertEquals(
@@ -63,4 +63,20 @@ Deno.test("applyDashboardEvent merges partial payload and generations", () => {
   assertEquals(next.focus_generation, 41);
   assertEquals(next.focus_state, { current_window_id: 202 });
   assertEquals(next.active_ai_sessions, [{ session_key: "new" }]);
+});
+
+Deno.test("watchDisconnectedEvent carries the error message", () => {
+  assertEquals(watchDisconnectedEvent("connection refused"), {
+    event_type: "watch.disconnected",
+    message: "connection refused",
+  });
+});
+
+Deno.test("watchDisconnectedEvent serializes to a single parseable JSON line", () => {
+  const encoded = JSON.stringify(watchDisconnectedEvent("socket closed"));
+  assertEquals(encoded.includes("\n"), false);
+  assertEquals(JSON.parse(encoded), {
+    event_type: "watch.disconnected",
+    message: "socket closed",
+  });
 });

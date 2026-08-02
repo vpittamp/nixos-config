@@ -1134,10 +1134,16 @@ def handle_jsonl_request(line: str) -> None:
 
 
 if len(sys.argv) >= 2 and sys.argv[1] == "--jsonl":
+    # More than one worker so a slow call cannot head-of-line block the rest.
+    # Every request opens its own socket and stdout writes are serialized under
+    # emit_lock, so concurrent workers are safe. This matters because slow and
+    # fast methods share the lane: a herdr focus that hands off over SSH, or a
+    # window.focus that retries with tree verification, would otherwise stall
+    # each following workspace-pill click until the 5s socket timeout fired.
     try:
-        worker_count = int(os.environ.get("QUICKSHELL_DAEMON_ACTION_WORKERS") or "1")
+        worker_count = int(os.environ.get("QUICKSHELL_DAEMON_ACTION_WORKERS") or "4")
     except ValueError:
-        worker_count = 1
+        worker_count = 4
     with ThreadPoolExecutor(max_workers=max(1, worker_count)) as executor:
         for line in sys.stdin:
             executor.submit(handle_jsonl_request, line)
@@ -2970,6 +2976,9 @@ in
         ExecStart = "${quickshellBin} -c ${cfg.configName}";
         Restart = "on-failure";
         RestartSec = "1s";
+        # No SuccessExitStatus=255: quickshell exits 255 for a broken QML config
+        # as well as for compositor teardown, so whitelisting it would stop
+        # systemd restarting a shell that failed to load.
         Environment = [
           "QT_QUICK_CONTROLS_STYLE=Fusion"
           "QT_QPA_PLATFORM=wayland"

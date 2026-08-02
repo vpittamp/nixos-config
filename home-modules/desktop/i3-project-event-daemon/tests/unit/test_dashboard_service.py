@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -162,11 +164,68 @@ async def test_notify_state_change_advances_generations_and_notifies_subscribers
     notification = json.loads(writer.lines[0].decode("utf-8"))
     assert notification["method"] == "session.changed"
     assert notification["params"]["generation"] == 1
+    # A worktree event still ships the array; only the far more frequent
+    # agent-session ticks drop it (see test_dashboard_model.py).
     assert notification["params"]["changed_keys"] == [
         "focus_state",
         "active_ai_sessions",
         "worktrees",
     ]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_notify_state_change_writes_generations_in_order() -> None:
+    # Without serialization a slower payload build lets a later caller write a
+    # higher generation first; clients then drop the fresher data or reset on
+    # phantom generation gaps.
+    service = _service()
+    writer = FakeWriter()
+    service.subscribe(writer)  # type: ignore[arg-type]
+
+    original_event_payload = service.event_payload
+    delays = iter([0.05, 0.0])
+
+    async def delayed_event_payload(changed_keys):
+        await asyncio.sleep(next(delays, 0.0))
+        return await original_event_payload(changed_keys)
+
+    service.event_payload = delayed_event_payload  # type: ignore[method-assign]
+
+    await asyncio.gather(
+        service.notify_state_change("worktree_changed"),
+        service.notify_state_change("worktree_changed"),
+    )
+
+    generations = [
+        json.loads(line.decode("utf-8"))["params"]["generation"]
+        for line in writer.lines
+    ]
+    assert generations == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_notify_state_change_closes_evicted_slow_subscriber() -> None:
+    class SlowWriter(FakeWriter):
+        def __init__(self) -> None:
+            super().__init__()
+            self.closed = False
+            self.transport = SimpleNamespace(get_write_buffer_size=lambda: 2_000_000)
+
+        def close(self) -> None:
+            self.closed = True
+
+    service = _service()
+    slow_writer = SlowWriter()
+    healthy_writer = FakeWriter()
+    service.subscribers = {slow_writer, healthy_writer}  # type: ignore[assignment]
+
+    await service.notify_state_change("focus_changed")
+
+    # The evicted writer is closed so a blocked `dashboard watch` reader sees
+    # EOF and reconnects; the healthy subscriber still received the event.
+    assert service.subscribers == {healthy_writer}
+    assert slow_writer.closed is True
+    assert len(healthy_writer.lines) == 1
 
 
 @pytest.mark.asyncio
@@ -404,3 +463,118 @@ async def test_non_git_event_payload_keeps_skip_git_hydration_fast_path() -> Non
     await service.event_payload(["focus_state", "projects", "tracked_windows"])
 
     assert runtime_params[-1] == {"skip_git_hydration": True}
+
+
+@pytest.mark.asyncio
+async def test_lightweight_focus_payload_retains_git_fields_on_session_rows() -> None:
+    # skip_git_hydration builds ship session rows without git_* fields; those
+    # rows become _last_snapshot, so focus-only events must not blank the git
+    # chips — the fields carry over from the last hydrated snapshot.
+    async def runtime_loader(params):
+        session = {
+            "source": "herdr",
+            "session_key": "session-a",
+            "pane_id": "pane-a",
+            "agent_status": "idle",
+        }
+        if not params.get("skip_git_hydration", False):
+            session.update({
+                "git_state": "dirty",
+                "git_compact": "● 2",
+                "git_freshness": "fresh",
+                "git_snapshot": {"dirty_count": 2, "status_compact": "● 2"},
+            })
+        return _runtime_snapshot(), [session], {}
+
+    service = DashboardService(
+        runtime_loader=runtime_loader,
+        display_snapshot=lambda: _async_value({"outputs": []}),
+        build_projects=lambda runtime, sessions: [],
+        build_worktrees=lambda runtime: _empty_worktrees(),
+        build_focus_state=lambda runtime, sessions, *, generation: {
+            "schema_version": "i3pm.focus_state.v2",
+            "generation": generation,
+            "current_session_key": "",
+            "current_window_id": 0,
+            "current_workspace_name": "",
+            "current_herdr_pane_id": "",
+            "current_herdr_host": "",
+            "pending_intent_id": "",
+        },
+        build_lightweight_focus_state=lambda *, generation, base_focus_state=None: {
+            "schema_version": "i3pm.focus_state.v2",
+            "generation": generation,
+            "current_session_key": "",
+            "current_window_id": 0,
+            "current_workspace_name": "1",
+            "current_herdr_pane_id": "",
+            "current_herdr_host": "",
+            "pending_intent_id": "",
+        },
+        build_herdr_spaces=lambda herdr_snapshot, sessions: [],
+        list_launches=lambda **kwargs: [],
+        invalidate_worktree_cache=lambda: None,
+        timestamp=lambda: 42.0,
+    )
+
+    await service.snapshot({})  # hydrated build seeds _last_snapshot
+
+    # Unhydrated build (e.g. window.changed) refreshes _last_snapshot but must
+    # keep the git fields from the previous hydrated rows.
+    await service.event_payload(["focus_state", "projects", "tracked_windows"])
+    merged_row = service._last_snapshot["active_ai_sessions"][0]
+    assert merged_row["git_compact"] == "● 2"
+    assert merged_row["git_state"] == "dirty"
+
+    payload = await service.event_payload(["focus_state"])
+
+    row = payload["active_ai_sessions"][0]
+    assert row["git_compact"] == "● 2"
+    assert row["git_state"] == "dirty"
+    assert row["git_snapshot"]["dirty_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_snapshot_can_omit_worktrees_for_shell_subscribers():
+    # `worktrees` is ~100KB of a ~157KB snapshot and no shell surface renders
+    # it, yet it rode through four serialization passes on every connect and
+    # gap recovery. Clients that only drive the bars ask for it to be left out;
+    # CLI consumers keep the default and still receive the array.
+    built = []
+
+    async def build_worktrees(runtime):
+        built.append(runtime)
+        return [{"qualified_name": "vpittamp/nixos-config:main"}]
+
+    async def runtime_loader(params):
+        return _runtime_snapshot(), [], {}
+
+    service = DashboardService(
+        runtime_loader=runtime_loader,
+        display_snapshot=lambda: _async_value({"outputs": []}),
+        build_projects=lambda runtime, sessions: [],
+        build_worktrees=build_worktrees,
+        build_focus_state=lambda runtime, sessions, *, generation: {
+            "schema_version": "i3pm.focus_state.v2",
+            "generation": generation,
+            "current_session_key": "",
+            "current_window_id": 0,
+            "current_workspace_name": "",
+            "current_herdr_pane_id": "",
+            "current_herdr_host": "",
+            "pending_intent_id": "",
+        },
+        build_herdr_spaces=lambda herdr, sessions: [],
+        list_launches=lambda limit: [],
+        invalidate_worktree_cache=lambda: None,
+    )
+
+    full = await service.snapshot({})
+    assert len(full["worktrees"]) == 1
+    assert len(built) == 1
+
+    trimmed = await service.snapshot({"include_worktrees": False})
+    assert trimmed["worktrees"] == []
+    # Not merely filtered out of the payload — the build is skipped entirely,
+    # so the cost of producing it is not paid either.
+    assert len(built) == 1

@@ -117,6 +117,10 @@ function buildGeminiCommand(endpointUrl, model, apiKey, systemPrompt, history, t
             "curl",
             "-s",
             "--no-buffer",
+            "--connect-timeout",
+            "10",
+            "--max-time",
+            "120",
             "-X",
             "POST",
             "-H",
@@ -199,6 +203,10 @@ function buildOpenAICommand(endpointUrl, apiKey, model, systemPrompt, history, t
         "-s",
         "-S",
         "--no-buffer",
+        "--connect-timeout",
+        "10",
+        "--max-time",
+        "120",
         "-X",
         "POST",
         "-H",
@@ -267,7 +275,7 @@ function buildGoogleTranslateCommand(text, targetLang, sourceLang) {
         + "&dt=t&q=" + encodeURIComponent(text);
 
     return {
-        args: ["curl", "-s", url]
+        args: ["curl", "-s", "--connect-timeout", "10", "--max-time", "20", url]
     };
 }
 
@@ -285,6 +293,10 @@ function buildDeepLTranslateCommand(text, targetLang, apiKey) {
         args: [
             "curl",
             "-s",
+            "--connect-timeout",
+            "10",
+            "--max-time",
+            "20",
             "-X",
             "POST",
             url,

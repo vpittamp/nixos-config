@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -12,6 +13,22 @@ PanelWindow {
     required property var colors
     readonly property QtObject root: shellRoot
     id: notificationDetailWindow
+    // notificationDetailItem is a snapshot taken when the detail opened; the
+    // feed carries the live closed flag, so resolve it by id. Closed items no
+    // longer have a runtime entry and invoking an action would silently no-op.
+    readonly property bool detailActionable: {
+        const item = root.notificationDetailItem;
+        if (!item) {
+            return false;
+        }
+        const feed = root.arrayOrEmpty(root.notificationFeed);
+        for (let i = 0; i < feed.length; i += 1) {
+            if (Number(feed[i] && feed[i].id) === Number(item.id || 0)) {
+                return !root.notificationClosed(feed[i]);
+            }
+        }
+        return !root.notificationClosed(item);
+    }
     screen: root.activeScreen
     visible: root.notificationDetailVisible && root.notificationDetailItem !== null && root.primaryScreen !== null
     color: "transparent"
@@ -38,13 +55,35 @@ PanelWindow {
 
         Rectangle {
             id: detailCard
+            // MultiEffect is shader-based; the software Quick backend (NVIDIA
+            // hosts) would render a layered item as nothing at all, so the
+            // shadow is gated and those hosts get the 1px dark halo instead.
+            readonly property bool shadowCapable: GraphicsInfo.api !== GraphicsInfo.Software
             anchors.centerIn: parent
             width: Math.min(520, parent.width - 80)
             height: Math.min(detailContent.implicitHeight + 40, parent.height - 80)
-            radius: 14
+            radius: root.radiusFloat
             color: colors.panel
             border.color: colors.borderStrong
             border.width: 1
+            layer.enabled: shadowCapable
+            layer.effect: MultiEffect {
+                shadowEnabled: true
+                shadowBlur: 1.0
+                shadowColor: Qt.rgba(0, 0, 0, 0.55)
+                shadowVerticalOffset: 6
+                shadowHorizontalOffset: 0
+            }
+
+            Rectangle {
+                visible: !detailCard.shadowCapable
+                anchors.fill: parent
+                anchors.margins: -1
+                radius: parent.radius + 1
+                color: "transparent"
+                border.color: Qt.rgba(0, 0, 0, 0.4)
+                border.width: 1
+            }
 
             MouseArea {
                 anchors.fill: parent
@@ -231,6 +270,7 @@ PanelWindow {
                             Layout.preferredHeight: 30
                             Layout.preferredWidth: detailActionLabel.implicitWidth + 24
                             radius: 10
+                            opacity: notificationDetailWindow.detailActionable ? 1 : 0.4
                             color: detailActionMouse.containsMouse ? colors.tealBg : colors.card
                             border.color: detailActionMouse.containsMouse ? colors.teal : colors.border
                             border.width: 1
@@ -247,8 +287,9 @@ PanelWindow {
                             MouseArea {
                                 id: detailActionMouse
                                 anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
+                                enabled: notificationDetailWindow.detailActionable
+                                hoverEnabled: notificationDetailWindow.detailActionable
+                                cursorShape: notificationDetailWindow.detailActionable ? Qt.PointingHandCursor : Qt.ArrowCursor
                                 onClicked: {
                                     var itemId = root.notificationDetailItem ? Number(root.notificationDetailItem.id || 0) : 0;
                                     root.invokeNotificationAction(itemId, root.notificationActionIdentifier(modelData));

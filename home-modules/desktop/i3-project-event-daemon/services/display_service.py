@@ -236,19 +236,38 @@ class DisplayService:
         if not i3_connection or not getattr(i3_connection, "conn", None):
             raise RuntimeError("Sway connection is unavailable")
 
-        applied = await monitor_profile_service.handle_profile_change(
-            i3_connection.conn,
-            layout,
-        )
-        if not applied:
-            raise RuntimeError(f"Failed to apply display layout: {layout}")
+        # Reject an unknown layout before touching anything. The write below
+        # happens first (see why), so without this check a typo would persist a
+        # profile that does not exist and the daemon would adopt it on next start.
+        list_profiles = getattr(monitor_profile_service, "list_profiles", None)
+        if callable(list_profiles):
+            known = [str(name) for name in (list_profiles() or [])]
+            if known and layout not in known:
+                raise ValueError(
+                    f"Unknown display layout: {layout} (available: {', '.join(sorted(known))})"
+                )
 
+        # Persist the selection BEFORE applying. The daemon watches this file and
+        # re-enters handle_profile_change when it changes; writing first means the
+        # watcher's callback observes a profile that is already applied and no-ops,
+        # instead of running the whole switch a second time.
         try:
             from ..monitor_profile_service import CURRENT_PROFILE_FILE
             CURRENT_PROFILE_FILE.parent.mkdir(parents=True, exist_ok=True)
             CURRENT_PROFILE_FILE.write_text(layout + "\n", encoding="utf-8")
         except Exception as exc:
             logger.warning("display.apply persisted layout state incompletely: %s", exc)
+
+        # force: this is an explicit request (user picking a layout, or the drift
+        # reconciler repairing outputs), so it must apply even when the profile
+        # name is unchanged.
+        applied = await monitor_profile_service.handle_profile_change(
+            i3_connection.conn,
+            layout,
+            force=True,
+        )
+        if not applied:
+            raise RuntimeError(f"Failed to apply display layout: {layout}")
 
         await self._notify_state_change("display_layout_changed")
         result = await self.snapshot(

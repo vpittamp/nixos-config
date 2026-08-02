@@ -34,43 +34,80 @@ Rectangle {
     readonly property var hostTokenData: rootObject.sessionHostToken(session)
     readonly property color accentColor: rootObject.launcherEntryAccentColor(session)
     readonly property color currentAccentColor: colorsObject.blue
+    // Canonical status color (sessionStatusStyle via the badge helpers): the
+    // rail, dot, and chip must all carry the same hue for one state.
+    readonly property color statusColor: rootObject.sessionBadgeColor(session)
     readonly property bool closableSurface: showCloseAction && rootObject.sessionHasClosableSurface(session)
     readonly property bool closeActionHovered: interactive
         && closableSurface
         && rowHoverLatched
         && pointInsideItem(Qt.point(sessionRowMouse.mouseX, sessionRowMouse.mouseY), closeActionHitbox)
     readonly property bool isIdle: rootObject.sessionIsIdle(session)
+    readonly property bool isBlocked: activityState === "blocked"
+    // Set false by hosts whose window is hidden: Item.visible follows the item
+    // tree, not window visibility, so a delegate inside a closed PanelWindow
+    // still reports visible and its infinite ping would burn wakeups forever.
+    property bool surfaceVisible: true
+    // Radar ping runs only while the row actually needs a human and is on
+    // screen; an off-screen infinite animation would just burn wakeups.
+    readonly property bool blockedPingActive: isBlocked && surfaceVisible && sessionRow.visible
     readonly property real idleRowOpacity: isIdle ? (isCurrent ? 0.9 : 0.76) : 1
     readonly property real idleTextOpacity: isIdle ? (isCurrent ? 0.86 : 0.72) : 1
     readonly property real idleChipOpacity: isIdle ? (isCurrent ? 0.9 : 0.76) : 1
     readonly property real toolIconOpacity: hasMotion ? 0.96 : (isIdle ? (isCurrent ? 0.64 : 0.5) : 0.92)
     property bool hasMotion: rootObject.sessionHasMotion(session)
-    property int activitySpinnerFrame: 0
     readonly property var activitySpinnerFrames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    // Frame comes from the shell root's single shared spinner clock; a private
+    // 95ms Timer per row multiplied wakeups across every visible session list.
+    readonly property int activitySpinnerFrame: Number(rootObject.activitySpinnerFrame || 0) % activitySpinnerFrames.length
     readonly property int rowHeight: compact ? 48 : 62
     readonly property int railHeight: compact ? (selected ? 30 : 24) : (selected ? 38 : 30)
     readonly property int iconWrapSize: compact ? 28 : 34
     readonly property int iconGlyphSize: compact ? 14 : 16
-    readonly property int chipHeight: compact ? 18 : 20
+    readonly property int chipHeight: compact ? 20 : 22
     readonly property int statusIconSize: compact ? 20 : 22
     readonly property bool stoppedNotification: activityState === "stopped"
 
-    implicitHeight: rowHeight
-    radius: compact ? 7 : 8
-    color: isCurrent
+    readonly property color baseRowColor: isCurrent
         ? (effectiveHovered ? Qt.tint(colorsObject.blueBg, Qt.rgba(1, 1, 1, 0.035)) : colorsObject.blueBg)
         : (selected ? colorsObject.blueBg : (effectiveHovered ? colorsObject.cardAlt : "transparent"))
+
+    implicitHeight: rowHeight
+    radius: rootObject.radiusControl
+    // Blocked rows get a subtle wash toward redBg so the attention state reads
+    // at the row level, not just on the badge.
+    color: isBlocked ? Qt.tint(baseRowColor, Qt.rgba(0.99, 0.64, 0.69, 0.08)) : baseRowColor
     border.color: isCurrent
         ? (effectiveHovered ? colorsObject.blue : colorsObject.blueMuted)
         : (selected ? colorsObject.blue : (effectiveHovered ? colorsObject.borderStrong : "transparent"))
     border.width: 1
     opacity: (closePending ? 0.9 : 1) * idleRowOpacity
 
+    Behavior on color {
+        ColorAnimation {
+            duration: 180
+            easing.type: Easing.OutCubic
+        }
+    }
+
+    Behavior on border.color {
+        ColorAnimation {
+            duration: 180
+            easing.type: Easing.OutCubic
+        }
+    }
+
+    Behavior on opacity {
+        NumberAnimation {
+            duration: 220
+        }
+    }
+
     Rectangle {
         visible: isCurrent
         anchors.fill: parent
         anchors.margins: 1
-        radius: compact ? 6 : 7
+        radius: parent.radius - 1
         color: Qt.rgba(1, 1, 1, effectiveHovered ? 0.018 : 0.012)
         border.color: "transparent"
         border.width: 0
@@ -108,23 +145,31 @@ Rectangle {
         onTriggered: rowHoverLatched = false
     }
 
-    Timer {
-        running: hasMotion
-        repeat: true
-        interval: 95
-        onTriggered: activitySpinnerFrame = (activitySpinnerFrame + 1) % activitySpinnerFrames.length
-    }
-
+    // Status rail: carries the canonical status hue (not the launcher accent)
+    // so the state reads at the row edge; idle recedes, active states stay hot.
     Rectangle {
         visible: showAccentRail
         anchors.left: parent.left
-        anchors.leftMargin: isCurrent ? 10 : 8
+        anchors.leftMargin: 8
         anchors.verticalCenter: parent.verticalCenter
-        width: isCurrent ? 3 : 2
+        width: 3
         height: isCurrent ? (compact ? 22 : 28) : railHeight
         radius: 1
-        color: isCurrent ? currentAccentColor : accentColor
-        opacity: (isCurrent ? 0.92 : (selected ? 0.92 : (effectiveHovered ? 0.72 : 0.46))) * idleTextOpacity
+        color: statusColor
+        opacity: isIdle ? 0.35 : 0.9
+
+        Behavior on color {
+            ColorAnimation {
+                duration: 180
+                easing.type: Easing.OutCubic
+            }
+        }
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: 220
+            }
+        }
 
         Rectangle {
             visible: isCurrent
@@ -147,10 +192,93 @@ Rectangle {
         Rectangle {
             width: iconWrapSize
             height: iconWrapSize
-            radius: compact ? 7 : 8
+            radius: rootObject.radiusControl
             color: "transparent"
             border.color: "transparent"
             border.width: 0
+
+            // Radar ping behind the tool icon: blocked is the state that needs
+            // a human, so it gets the strongest motion cue (working rows spin).
+            Rectangle {
+                id: blockedPingRing1
+                anchors.centerIn: parent
+                width: iconWrapSize
+                height: iconWrapSize
+                radius: width / 2
+                color: "transparent"
+                border.color: colorsObject.red
+                border.width: 2
+                opacity: 0
+                visible: sessionRow.blockedPingActive
+
+                SequentialAnimation {
+                    running: sessionRow.blockedPingActive
+                    loops: Animation.Infinite
+
+                    ParallelAnimation {
+                        NumberAnimation {
+                            target: blockedPingRing1
+                            property: "scale"
+                            from: 1.0
+                            to: 1.8
+                            duration: 1400
+                            easing.type: Easing.OutQuad
+                        }
+                        NumberAnimation {
+                            target: blockedPingRing1
+                            property: "opacity"
+                            from: 0.55
+                            to: 0
+                            duration: 1400
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                id: blockedPingRing2
+                anchors.centerIn: parent
+                width: iconWrapSize
+                height: iconWrapSize
+                radius: width / 2
+                color: "transparent"
+                border.color: colorsObject.red
+                border.width: 2
+                opacity: 0
+                visible: sessionRow.blockedPingActive
+
+                SequentialAnimation {
+                    running: sessionRow.blockedPingActive
+
+                    // Offset the second ring so the pings alternate instead of
+                    // overlapping into a single thick pulse.
+                    PauseAnimation {
+                        duration: 300
+                    }
+
+                    SequentialAnimation {
+                        loops: Animation.Infinite
+
+                        ParallelAnimation {
+                            NumberAnimation {
+                                target: blockedPingRing2
+                                property: "scale"
+                                from: 1.0
+                                to: 1.8
+                                duration: 1400
+                                easing.type: Easing.OutQuad
+                            }
+                            NumberAnimation {
+                                target: blockedPingRing2
+                                property: "opacity"
+                                from: 0.55
+                                to: 0
+                                duration: 1400
+                            }
+                        }
+                    }
+                }
+            }
 
             Item {
                 id: sessionToolIconWrap
@@ -204,16 +332,26 @@ Rectangle {
                 }
             }
 
+            // Presence badge: ringed with the panel background so the status
+            // dot punches out of whatever the row underneath is doing.
             Rectangle {
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 anchors.rightMargin: 1
                 anchors.bottomMargin: 1
-                width: compact ? 7 : 8
-                height: compact ? 7 : 8
-                radius: compact ? 3 : 4
-                color: rootObject.sessionBadgeColor(session)
-                opacity: 0.85
+                width: compact ? 9 : 10
+                height: width
+                radius: width / 2
+                color: statusColor
+                border.color: colorsObject.bg
+                border.width: 2
+
+                Behavior on color {
+                    ColorAnimation {
+                        duration: 180
+                        easing.type: Easing.OutCubic
+                    }
+                }
             }
         }
 
@@ -225,7 +363,7 @@ Rectangle {
                 Layout.fillWidth: true
                 text: primaryLabel
                 color: isCurrent ? colorsObject.text : (selected ? colorsObject.blue : colorsObject.text)
-                font.pixelSize: compact ? 12 : 13
+                font.pixelSize: rootObject.fontTitle
                 font.weight: Font.DemiBold
                 elide: Text.ElideRight
                 opacity: idleTextOpacity
@@ -235,7 +373,7 @@ Rectangle {
                 Layout.fillWidth: true
                 text: secondaryLabel
                 color: isCurrent ? colorsObject.textDim : (selected ? colorsObject.textDim : colorsObject.subtle)
-                font.pixelSize: compact ? 9 : 10
+                font.pixelSize: compact ? rootObject.fontCaption : rootObject.fontLabel
                 elide: Text.ElideRight
                 opacity: idleTextOpacity
             }
@@ -244,7 +382,7 @@ Rectangle {
         Rectangle {
             visible: showHostToken && hostTokenData && rootObject.stringOrEmpty(hostTokenData.label).length > 0
             height: chipHeight
-            radius: 6
+            radius: rootObject.radiusBadge
             color: hostTokenData ? hostTokenData.background : colorsObject.panelAlt
             border.color: colorsObject.lineSoft
             border.width: 1
@@ -260,8 +398,8 @@ Rectangle {
                 spacing: compact ? 4 : 5
 
                 Rectangle {
-                    width: compact ? 10 : 12
-                    height: compact ? 10 : 12
+                    width: compact ? 12 : 14
+                    height: compact ? 12 : 14
                     radius: 4
                     color: hostTokenData ? hostTokenData.border : colorsObject.lineSoft
                     border.color: "transparent"
@@ -280,7 +418,9 @@ Rectangle {
                         anchors.centerIn: parent
                         text: hostTokenData ? rootObject.stringOrEmpty(hostTokenData.monogram) : ""
                         color: colorsObject.bg
-                        font.pixelSize: compact ? 6 : 7
+                        font.pixelSize: rootObject.fontMicro
+                        font.capitalization: Font.AllUppercase
+                        font.letterSpacing: 0.5
                         font.weight: Font.Bold
                     }
                 }
@@ -289,7 +429,9 @@ Rectangle {
                     Layout.fillWidth: true
                     text: hostTokenData ? rootObject.stringOrEmpty(hostTokenData.label) : ""
                     color: hostTokenData ? hostTokenData.foreground : colorsObject.textDim
-                    font.pixelSize: compact ? 7 : 8
+                    font.pixelSize: rootObject.fontMicro
+                    font.capitalization: Font.AllUppercase
+                    font.letterSpacing: 0.5
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight
                 }
@@ -299,7 +441,7 @@ Rectangle {
         Rectangle {
             visible: showCurrentChip && isCurrent
             height: chipHeight
-            radius: 6
+            radius: rootObject.radiusBadge
             color: colorsObject.panelAlt
             border.color: colorsObject.lineSoft
             border.width: 1
@@ -311,7 +453,9 @@ Rectangle {
                 anchors.centerIn: parent
                 text: "Current"
                 color: currentAccentColor
-                font.pixelSize: compact ? 7 : 8
+                font.pixelSize: rootObject.fontMicro
+                font.capitalization: Font.AllUppercase
+                font.letterSpacing: 0.5
                 font.weight: Font.DemiBold
             }
         }
@@ -319,7 +463,7 @@ Rectangle {
         Rectangle {
             visible: rootObject.sessionGitChipVisible(session)
             height: chipHeight
-            radius: 6
+            radius: rootObject.radiusBadge
             color: rootObject.sessionGitChipBackground(session)
             border.color: "transparent"
             border.width: 0
@@ -331,7 +475,7 @@ Rectangle {
                 anchors.centerIn: parent
                 text: gitChipText
                 color: rootObject.sessionGitChipForeground(session)
-                font.pixelSize: compact ? 7 : 8
+                font.pixelSize: rootObject.fontCaption
                 font.weight: Font.Medium
             }
         }
@@ -339,18 +483,43 @@ Rectangle {
         Rectangle {
             visible: activityLabel.length > 0 || activitySymbol.length > 0
             height: stoppedNotification ? (compact ? 16 : 18) : Math.max(chipHeight, statusIconSize)
-            radius: stoppedNotification ? 5 : 6
+            radius: rootObject.radiusBadge
+            // Doubled-up tint keeps the chip readable on near-black rows; the
+            // status-alpha border ties it to the rail/dot hue.
             color: stoppedNotification
                 ? Qt.tint(rootObject.sessionBadgeBackground(session), Qt.rgba(1, 1, 1, isCurrent ? 0.05 : 0.02))
-                : rootObject.sessionBadgeBackground(session)
-            border.color: rootObject.sessionBadgeBorderColor(session)
-            border.width: border.color === "transparent" ? 0 : 1
+                : Qt.tint(rootObject.sessionBadgeBackground(session), Qt.alpha(statusColor, 0.10))
+            border.color: Qt.alpha(statusColor, 0.35)
+            border.width: 1
             opacity: idleChipOpacity
-            Layout.preferredWidth: stoppedNotification
+            // implicitWidth (not Layout.preferredWidth) so the width driver can
+            // carry a Behavior; the RowLayout tracks implicitWidth changes.
+            implicitWidth: stoppedNotification
                 ? (compact ? 22 : 24)
                 : (activityLabel.length > 0
                     ? activityText.implicitWidth + statusIconSize + 15
                     : statusIconSize + 12)
+
+            Behavior on color {
+                ColorAnimation {
+                    duration: 180
+                    easing.type: Easing.OutCubic
+                }
+            }
+
+            Behavior on border.color {
+                ColorAnimation {
+                    duration: 180
+                    easing.type: Easing.OutCubic
+                }
+            }
+
+            Behavior on implicitWidth {
+                NumberAnimation {
+                    duration: 200
+                    easing.type: Easing.OutCubic
+                }
+            }
 
             RowLayout {
                 anchors.fill: parent
@@ -392,7 +561,8 @@ Rectangle {
                     id: activityText
                     text: activityLabel
                     color: rootObject.sessionBadgeColor(session)
-                    font.pixelSize: compact ? 8 : 9
+                    font.pixelSize: compact ? rootObject.fontCaption : rootObject.fontLabel
+                    font.letterSpacing: 0.4
                     font.weight: Font.DemiBold
                 }
             }
@@ -410,17 +580,25 @@ Rectangle {
                 anchors.centerIn: parent
                 width: 22
                 height: 22
-                radius: 6
+                radius: rootObject.radiusBadge
                 color: closePending ? colorsObject.redBg : (closeActionHovered ? colorsObject.redBg : colorsObject.bg)
                 border.color: closePending ? colorsObject.red : (closeActionHovered ? colorsObject.red : colorsObject.lineSoft)
                 border.width: 1
+                scale: sessionRowMouse.pressed && closeActionHovered ? 0.96 : 1.0
+
+                Behavior on scale {
+                    NumberAnimation {
+                        duration: 90
+                        easing.type: Easing.OutQuad
+                    }
+                }
 
                 Text {
                     visible: !closePending
                     anchors.centerIn: parent
                     text: "×"
                     color: closeActionHovered ? colorsObject.red : (selected ? colorsObject.muted : colorsObject.subtle)
-                    font.pixelSize: closeActionHovered ? 11 : 10
+                    font.pixelSize: closeActionHovered ? rootObject.fontBody : rootObject.fontLabel
                     font.weight: closeActionHovered ? Font.Bold : Font.DemiBold
                 }
 

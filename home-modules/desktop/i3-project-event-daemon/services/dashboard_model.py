@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import re
 
 from typing import Any, Callable, Dict, Iterable, List, Tuple
 
+
+logger = logging.getLogger(__name__)
 
 DASHBOARD_SCHEMA_VERSION = "i3pm.dashboard.v2"
 DASHBOARD_EVENT_SCHEMA_VERSION = "i3pm.dashboard.event.v1"
@@ -299,11 +302,22 @@ def dashboard_changed_keys_for_event(event_type: str) -> List[str]:
     if typed_event == "workspace.changed":
         return ["focus_state", "outputs", "projects"]
     if typed_event == "session.changed":
-        return [
-            "focus_state",
-            "active_ai_sessions",
-            "worktrees",
-        ]
+        keys = ["focus_state", "active_ai_sessions"]
+        # `worktrees` (~100KB, over half the payload) is omitted for agent
+        # session ticks, which fire constantly and whose consumers only need
+        # the session rows; event merges are partial, so an absent key keeps
+        # its prior value. Worktree/project events are rare and are the only
+        # ones that actually change the array, so they still ship it.
+        normalized = (
+            str(event_type or "")
+            .replace("::", "_")
+            .replace(".", "_")
+            .replace("-", "_")
+            .lower()
+        )
+        if normalized.startswith("worktree") or normalized.startswith("project"):
+            keys.append("worktrees")
+        return keys
     if typed_event == "herdr.changed":
         return [
             "focus_state",
@@ -597,6 +611,37 @@ def build_dashboard_snapshot_payload(
     return payload
 
 
+_current_workspace_row_invariant_active = False
+
+
+def _note_current_workspace_row_invariant(
+    *,
+    tripped: bool,
+    workspace_name: str,
+    output_names: List[str],
+    duplicate_rows: List[Dict[str, Any]],
+) -> None:
+    """Log the duplicate-workspace invariant once per transition into degraded.
+
+    The invariant silently degrades dashboard_status otherwise; logging on the
+    transition (not per snapshot) keeps the journal usable without spam.
+    """
+    global _current_workspace_row_invariant_active
+    if not tripped:
+        _current_workspace_row_invariant_active = False
+        return
+    if _current_workspace_row_invariant_active:
+        return
+    _current_workspace_row_invariant_active = True
+    logger.warning(
+        "Dashboard degraded: current_workspace_row_not_unique for workspace %r "
+        "(outputs: %s, matching rows: %s)",
+        workspace_name,
+        output_names,
+        duplicate_rows,
+    )
+
+
 def validate_dashboard_payload(
     payload: Dict[str, Any],
     *,
@@ -701,19 +746,25 @@ def validate_dashboard_payload(
             warnings.append("focused_window_row_mismatch")
 
     workspace_rows: List[Dict[str, Any]] = []
+    workspace_row_outputs: List[str] = []
+    output_names: List[str] = []
     focused_workspaces = []
     for output in payload.get("outputs", []) or []:
         if not isinstance(output, dict):
             continue
+        output_name = str(output.get("name") or "").strip()
+        output_names.append(output_name)
         for workspace in output.get("workspaces", []) or []:
             if not isinstance(workspace, dict):
                 continue
             workspace_rows.append(workspace)
+            workspace_row_outputs.append(output_name)
             if bool(workspace.get("focused", False)):
                 focused_workspaces.append(workspace)
     if len(focused_workspaces) > 1:
         issues.append("duplicate_focused_workspaces")
     current_workspace_name = str(focus_state.get("current_workspace_name") or "").strip()
+    duplicate_workspace_rows: List[Dict[str, Any]] = []
     if current_workspace_name and workspace_rows:
         matching_current_workspaces = [
             workspace for workspace in workspace_rows
@@ -722,6 +773,20 @@ def validate_dashboard_payload(
         ]
         if len(matching_current_workspaces) != 1:
             issues.append("current_workspace_row_not_unique")
+            duplicate_workspace_rows = [
+                {
+                    "output": workspace_row_outputs[index],
+                    "workspace": str(
+                        workspace.get("name")
+                        or workspace.get("workspace_name")
+                        or ""
+                    ).strip(),
+                    "focused": bool(workspace.get("focused", False)),
+                }
+                for index, workspace in enumerate(workspace_rows)
+                if str(workspace.get("name") or workspace.get("workspace_name") or "").strip()
+                == current_workspace_name
+            ]
         elif not bool(matching_current_workspaces[0].get("focused", False)):
             issues.append("current_workspace_row_mismatch")
         if len(focused_workspaces) == 1:
@@ -753,6 +818,13 @@ def validate_dashboard_payload(
             # remote agent was focused (e.g. right after a daemon restart), so
             # surface it as a warning instead of failing the snapshot.
             warnings.append("remote_herdr_focus_mismatch")
+
+    _note_current_workspace_row_invariant(
+        tripped="current_workspace_row_not_unique" in issues,
+        workspace_name=current_workspace_name,
+        output_names=output_names,
+        duplicate_rows=duplicate_workspace_rows,
+    )
 
     return {
         "ok": not issues,

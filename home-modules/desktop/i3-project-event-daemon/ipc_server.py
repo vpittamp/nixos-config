@@ -55,6 +55,7 @@ from .services.dashboard_model import (
     DASHBOARD_EVENT_SCHEMA_VERSION,
     DASHBOARD_SCHEMA_VERSION,
     build_dashboard_projects as build_dashboard_project_cards,
+    dashboard_changed_keys_for_events,
 )
 from .services.daemon_contract_service import DaemonContractService
 from .services.dashboard_service import DashboardService
@@ -101,6 +102,21 @@ PWA_REGISTRY_PATH = Path.home() / ".config/i3/pwa-registry.json"
 WORKSPACE_ASSIGNMENTS_PATH = Path.home() / ".config/sway/workspace-assignments.json"
 CHROME_SCOPED_TMP_PREFIX = "/tmp/com.google.Chrome.scoped_dir."
 FOCUS_STATE_SCHEMA_VERSION = "i3pm.focus_state.v2"
+
+# Events that change only which thing is focused. They are the ones the user
+# watches (the workspace pill) and the only ones that leave the window-tree cache
+# intact — handlers pass invalidate_tree=False for exactly these — so their
+# rebuild is warm and cheap. Every other event drops the tree cache, making its
+# rebuild a cold multi-round-trip Sway query that must stay behind the wide
+# coalescing window. See _notify_coalesce_delay.
+FOCUS_ONLY_STATE_EVENTS = frozenset({"workspace::focus", "window::focus", "focus_changed"})
+# Changed keys whose payload additionally needs git hydration (subprocess probes)
+# or a full invalidation.
+EXPENSIVE_DASHBOARD_CHANGED_KEYS = frozenset(
+    {"active_ai_sessions", "herdr", "worktrees", "dashboard"}
+)
+FAST_DASHBOARD_NOTIFY_COALESCE_S = 0.02
+SLOW_DASHBOARD_NOTIFY_COALESCE_S = 0.25
 
 _DISCOVERED_WORKTREE_CACHE: Dict[str, Any] = {
     "file_path": "",
@@ -2378,15 +2394,29 @@ class IPCServer:
         }
         message = json.dumps(notification).encode() + b"\n"
 
-        # Send to all subscribed clients
+        # Send to all subscribed clients without awaiting drain — this runs
+        # inside Sway window/workspace handlers, so one wedged subscriber must
+        # not stall event processing. Mirrors the dashboard event fanout: evict
+        # and close writers whose write buffer exceeds the cap instead.
+        dead_clients = set()
         for writer in list(self.subscribed_clients):
             try:
                 writer.write(message)
-                await writer.drain()
-                logger.debug(f"Successfully sent event to client")
+                transport = getattr(writer, "transport", None)
+                get_buffer_size = getattr(transport, "get_write_buffer_size", None)
+                if callable(get_buffer_size) and int(get_buffer_size() or 0) > 1_000_000:
+                    logger.warning("Dropping slow event subscriber with oversized write buffer")
+                    dead_clients.add(writer)
             except Exception as e:
                 logger.error(f"Failed to broadcast to client: {e}")
-                self.subscribed_clients.discard(writer)
+                dead_clients.add(writer)
+
+        self.subscribed_clients -= dead_clients
+        for writer in dead_clients:
+            try:
+                writer.close()
+            except Exception:
+                pass
 
     async def broadcast_event_entry(self, event_entry) -> None:
         """Broadcast EventEntry to all subscribed clients (Feature 017: T019).
@@ -2746,6 +2776,9 @@ class IPCServer:
         """Invalidate the cached worktree summary used by dashboard snapshots."""
         self.dashboard_worktree_service.invalidate()
         self.dashboard_git_service.clear_snapshot_cache()
+        # Herdr's own repo/branch memo is TTL-only; without this a branch switch
+        # would keep the stale branch_label on space rows for up to its TTL.
+        self.herdr_service.clear_git_metadata_cache()
 
     def _canonical_discovered_project_name(
         self,
@@ -3104,11 +3137,47 @@ class IPCServer:
 
         task.add_done_callback(_consume_result)
 
+    @staticmethod
+    def _notify_coalesce_delay(pending: set[str]) -> float:
+        """Pick a coalescing window sized to what the pending batch will rebuild.
+
+        Only a purely-focus batch drains fast. That is narrower than "cheap to
+        build", deliberately:
+
+        - It has to cover a real workspace switch, which is two events and not
+          one: Sway emits window::focus alongside workspace::focus whenever the
+          target workspace holds a window. Classifying by typed event name put
+          those two in different buckets, so the batch the pill actually depends
+          on kept the wide window and nothing improved.
+        - It has to exclude the structural workspace and window events. They look
+          comparably cheap by changed-keys, but their handlers drop the
+          window-tree cache first, so each rebuild becomes a cold get_tree +
+          get_workspaces + get_outputs. Draining those every 20ms would turn a
+          burst — a monitor hotplug, or `i3pm monitors reassign` moving every
+          workspace — into repeated cold rebuilds competing for the same Sway
+          connection as the commands driving the burst.
+        """
+        if not pending or not pending <= FOCUS_ONLY_STATE_EVENTS:
+            return SLOW_DASHBOARD_NOTIFY_COALESCE_S
+        # Belt and braces: should the key mapping ever give a focus event a
+        # git-bearing key, cost wins over classification.
+        changed_keys = set(dashboard_changed_keys_for_events(sorted(pending)))
+        if changed_keys & EXPENSIVE_DASHBOARD_CHANGED_KEYS:
+            return SLOW_DASHBOARD_NOTIFY_COALESCE_S
+        return FAST_DASHBOARD_NOTIFY_COALESCE_S
+
     async def _drain_scheduled_state_notifications(self) -> None:
         """Drain pending notification requests with coalescing to avoid focus backpressure."""
         # Let the action RPC that scheduled this task flush its response before
         # dashboard event shaping does any heavier work on the daemon loop.
-        await asyncio.sleep(0.25)
+        delay = self._notify_coalesce_delay(set(self._dashboard_notify_pending))
+        await asyncio.sleep(delay)
+        # Events arriving during that wait can upgrade the batch to one that
+        # needs git hydration. Give it the rest of the wide window instead of
+        # paying for an expensive rebuild on the fast schedule.
+        remaining = self._notify_coalesce_delay(set(self._dashboard_notify_pending)) - delay
+        if remaining > 0:
+            await asyncio.sleep(remaining)
         while self._dashboard_notify_pending:
             pending = set(self._dashboard_notify_pending)
             self._dashboard_notify_pending.clear()
@@ -3117,7 +3186,13 @@ class IPCServer:
             # type dropped membership updates (e.g. window::close coalesced with
             # a focus switch downgraded to focus_changed, never shipping outputs,
             # so an emptied workspace pill lingered until the next change).
-            await self.notify_state_change(pending)
+            try:
+                await self.notify_state_change(pending)
+            except Exception:
+                # Re-add the batch so the notification retries on the next
+                # drain instead of silently losing every coalesced event.
+                self._dashboard_notify_pending |= pending
+                raise
 
     async def _subscribe_state_changes(self, params: Dict[str, Any], writer: asyncio.StreamWriter) -> Dict[str, Any]:
         """Subscribe to state change notifications (Feature 123).

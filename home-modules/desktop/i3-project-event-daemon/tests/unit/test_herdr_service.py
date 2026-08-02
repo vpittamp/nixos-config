@@ -2,6 +2,7 @@ import asyncio
 import importlib
 import importlib.util
 import json
+import logging
 import subprocess
 import sys
 from pathlib import Path
@@ -787,11 +788,13 @@ def test_herdr_service_git_space_metadata_is_cached(monkeypatch):
         ("branch", "--show-current"): "feature/focus",
     }
 
-    def fake_git_run(path, args, *, ssh_target="", timeout=0.75):
+    def fake_git_probe(path, args, *, ssh_target="", timeout=0.75):
         calls.append((path, tuple(args), ssh_target, timeout))
         return responses.get(tuple(args), "")
 
-    monkeypatch.setattr(service, "git_run", fake_git_run)
+    # git_probe is the primitive; git_run is a thin wrapper over it, so patching
+    # here covers both call styles.
+    monkeypatch.setattr(service, "git_probe", fake_git_probe)
 
     metadata = service.git_space_metadata(
         "/repo/workflow-builder/main",
@@ -812,6 +815,39 @@ def test_herdr_service_git_space_metadata_is_cached(monkeypatch):
     }
     assert cached == metadata
     assert [call[1] for call in calls].count(("rev-parse", "--show-toplevel")) == 1
+
+
+def test_herdr_service_failed_git_probe_is_not_memoized(monkeypatch):
+    """A timed-out git probe must not pin "not a repo" for the whole TTL."""
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    probe_ok = {"value": False}
+
+    def fake_git_probe(path, args, *, ssh_target="", timeout=0.75):
+        if not probe_ok["value"]:
+            return None  # git could not run (timeout / lock contention)
+        return {
+            ("rev-parse", "--is-inside-work-tree"): "true",
+            ("rev-parse", "--show-toplevel"): "/repo/main",
+            ("rev-parse", "--git-common-dir"): ".git",
+            ("config", "--get", "remote.origin.url"): "git@github.com:acme/repo.git",
+            ("branch", "--show-current"): "main",
+        }.get(tuple(args), "")
+
+    monkeypatch.setattr(service, "git_probe", fake_git_probe)
+
+    assert service.path_is_git_worktree("/repo/main") is False
+    assert service.git_space_metadata("/repo/main", normalize_connection_key=lambda v: v) == {}
+    # Nothing was memoized, so recovery is immediate rather than TTL-bound.
+    assert service.git_worktree_cache == {}
+    assert service.git_metadata_cache == {}
+
+    probe_ok["value"] = True
+    assert service.path_is_git_worktree("/repo/main") is True
+    metadata = service.git_space_metadata("/repo/main", normalize_connection_key=lambda v: v)
+    assert metadata["branch_label"] == "main"
 
 
 def test_herdr_service_normalizes_local_and_remote_sessions(monkeypatch):
@@ -1732,3 +1768,469 @@ async def test_herdr_service_remote_pane_focus_owns_transport_cache_and_launch(m
     assert service.snapshot_cache["sessions"][0]["focused"] is False
     assert service.snapshot_cache["sessions"][1]["focused"] is True
     assert service.snapshot_cache["sessions"][1]["pane_active"] is True
+
+
+def _local_snapshot_payload(*, success=True, sessions=None):
+    return {
+        "success": success,
+        "herdr_generation": 1,
+        "local_herdr_generation": 1,
+        "remote_herdr_generation": {},
+        "status": {"success": success},
+        "agents": [],
+        "panes": [],
+        "workspaces": [],
+        "tabs": [],
+        "worktrees": [],
+        "sessions": list(sessions or []),
+        "errors": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_subscription_backoff_resets_after_long_lived_connection(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+        subscription_initial_backoff=0.5,
+        subscription_max_backoff=30.0,
+    )
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(herdr_service_module.time, "monotonic", lambda: clock["now"])
+
+    attempts = {"count": 0}
+
+    async def fake_connect():
+        attempts["count"] += 1
+        if attempts["count"] <= 3:
+            clock["now"] += 0.01
+            raise ConnectionError("fast failure")
+        if attempts["count"] == 4:
+            clock["now"] += 120.0
+            raise ConnectionError("dropped after long uptime")
+        raise asyncio.CancelledError
+
+    sleeps = []
+
+    async def fake_sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(service, "connect_subscription_once", fake_connect)
+    monkeypatch.setattr(herdr_service_module.asyncio, "sleep", fake_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await service.run_subscription()
+
+    # Fast failures double the backoff; a connection that survived longer than
+    # the max backoff resets it to the initial value when it finally drops.
+    assert sleeps == [0.5, 1.0, 2.0, 0.5]
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_subscription_backoff_grows_and_warns_on_persistent_failures(monkeypatch, caplog):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+        subscription_initial_backoff=0.5,
+        subscription_max_backoff=4.0,
+    )
+    attempts = {"count": 0}
+
+    async def fake_connect():
+        attempts["count"] += 1
+        if attempts["count"] > 6:
+            raise asyncio.CancelledError
+        raise ConnectionError("connection refused")
+
+    sleeps = []
+
+    async def fake_sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(service, "connect_subscription_once", fake_connect)
+    monkeypatch.setattr(herdr_service_module.asyncio, "sleep", fake_sleep)
+
+    with caplog.at_level(logging.DEBUG, logger=herdr_service_module.logger.name):
+        with pytest.raises(asyncio.CancelledError):
+            await service.run_subscription()
+
+    assert sleeps == [0.5, 1.0, 2.0, 4.0, 4.0, 4.0]
+    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "consecutive failures" in warnings[0].getMessage()
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_read_json_line_skips_malformed_lines():
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    reader = asyncio.StreamReader()
+    reader.feed_data(b"not-json\n")
+    reader.feed_data(b"[1,2]\n")
+    reader.feed_data(b'{"event":"pane.focused"}\n')
+    reader.feed_eof()
+
+    payload = await service.read_json_line(reader)
+
+    assert payload == {"event": "pane.focused"}
+    with pytest.raises(ConnectionError):
+        await service.read_json_line(reader)
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_event_during_snapshot_build_is_not_clobbered(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+        notify_delay=0.0,
+    )
+    release = asyncio.Event()
+    builds = {"count": 0}
+
+    async def fake_local_snapshot(**_kwargs):
+        builds["count"] += 1
+        await release.wait()
+        return _local_snapshot_payload(sessions=[{
+            "session_key": "herdr:pane:pane-a",
+            "pane_id": "pane-a",
+            "agent_status": "working",
+        }])
+
+    monkeypatch.setattr(service, "local_snapshot", fake_local_snapshot)
+    snapshot_kwargs = {
+        "remote_targets": [],
+        "local_host": "thinkpad",
+        "normalize_connection_key": lambda value: value,
+        "project_for_cwd": lambda path: {"project_name": "global", "project_path": path},
+    }
+
+    build = asyncio.create_task(service.snapshot({"refresh": True}, **snapshot_kwargs))
+    await asyncio.sleep(0)
+    await service.handle_subscription_event({
+        "event": "pane.agent_status_changed",
+        "data": {"pane_id": "pane-a", "agent_status": "done"},
+    })
+    release.set()
+    snapshot = await build
+
+    # The fresh build is returned and cached only provisionally: it may already
+    # be one event behind, so it must not be served for a full TTL — but
+    # discarding it would make every read during a burst pay a full rebuild.
+    assert snapshot["sessions"][0]["pane_id"] == "pane-a"
+    assert service.snapshot_cache_is_provisional is True
+
+    # Within the short failure TTL the provisional snapshot still serves.
+    await service.snapshot({}, **snapshot_kwargs)
+    assert builds["count"] == 1
+
+    # Past it, the next read rebuilds on top of the mid-build event.
+    service.snapshot_cache_built_at -= service.snapshot_provisional_cache_ttl + 1.0
+    release.set()
+    await service.snapshot({}, **snapshot_kwargs)
+    assert builds["count"] == 2
+    await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_failed_snapshot_is_cached_with_short_failure_ttl(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+        snapshot_cache_ttl=5.0,
+    )
+    clock = {"now": 100.0}
+    monkeypatch.setattr(herdr_service_module.time, "time", lambda: clock["now"])
+    herdr_ok = {"value": False}
+    builds = {"count": 0}
+
+    async def fake_local_snapshot(**_kwargs):
+        builds["count"] += 1
+        return _local_snapshot_payload(success=herdr_ok["value"])
+
+    monkeypatch.setattr(service, "local_snapshot", fake_local_snapshot)
+    snapshot_kwargs = {
+        "remote_targets": [],
+        "local_host": "thinkpad",
+        "normalize_connection_key": lambda value: value,
+        "project_for_cwd": lambda path: {"project_name": "global", "project_path": path},
+    }
+
+    failed = await service.snapshot({}, **snapshot_kwargs)
+    assert failed["success"] is False
+    assert builds["count"] == 1
+
+    clock["now"] = 100.1
+    served = await service.snapshot({}, **snapshot_kwargs)
+    assert served["success"] is False
+    assert builds["count"] == 1
+
+    # herdr recovers: the failure snapshot expires after ~0.25s even though the
+    # normal 5s TTL has not elapsed, so recovery is immediate.
+    herdr_ok["value"] = True
+    clock["now"] = 100.4
+    recovered = await service.snapshot({}, **snapshot_kwargs)
+    assert recovered["success"] is True
+    assert builds["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_local_snapshot_retains_agents_on_partial_failure(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    agent_ok = {"value": True}
+
+    async def fake_run_json(args, timeout=2.0):
+        key = tuple(args)
+        if key == ("agent", "list"):
+            if agent_ok["value"]:
+                return {
+                    "success": True,
+                    "result": {"agents": [{
+                        "pane_id": "pane-l",
+                        "agent": "codex",
+                        "agent_status": "working",
+                        "cwd": "/repo/local",
+                    }]},
+                }
+            return {
+                "success": False,
+                "error": "timeout",
+                "command": ["herdr", "agent", "list"],
+            }
+        if key == ("status", "--json"):
+            return {"success": True, "result": {"protocol": 13}}
+        if key == ("pane", "list"):
+            return {
+                "success": True,
+                "result": {"panes": [{
+                    "pane_id": "pane-l",
+                    "workspace_id": "workspace-l",
+                    "cwd": "/repo/local",
+                }]},
+            }
+        return {"success": True, "result": {"workspaces": [], "tabs": [], "worktrees": []}}
+
+    monkeypatch.setattr(service, "run_json", fake_run_json)
+    monkeypatch.setattr(
+        service,
+        "effective_cwd",
+        lambda row, *, ssh_target="": str(row.get("cwd") or ""),
+    )
+    monkeypatch.setattr(
+        service,
+        "git_space_metadata",
+        lambda path, *, ssh_target="", normalize_connection_key: {},
+    )
+    snapshot_kwargs = {
+        "local_host": "thinkpad",
+        "normalize_connection_key": lambda value: value.lower(),
+        "project_for_cwd": lambda path: {"project_name": "global", "project_path": path},
+    }
+
+    first = await service.local_snapshot(**snapshot_kwargs)
+    assert [row["pane_id"] for row in first["agents"]] == ["pane-l"]
+
+    agent_ok["value"] = False
+    second = await service.local_snapshot(**snapshot_kwargs)
+
+    # The failed agent list reuses the last-known-good rows instead of
+    # blanking the panel, and the failure stays visible in errors.
+    assert [row["pane_id"] for row in second["agents"]] == ["pane-l"]
+    assert second["sessions"][0]["session_key"] == "herdr:pane:pane-l"
+    assert any(error.get("error") == "timeout" for error in second["errors"])
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_local_fallback_is_bounded(monkeypatch):
+    """A dead herdr must empty the panel rather than serve ghost sessions."""
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    clock = {"now": 500.0}
+    monkeypatch.setattr(herdr_service_module.time, "monotonic", lambda: clock["now"])
+    herdr_up = {"value": True}
+
+    async def fake_run_json(args, timeout=2.0):
+        key = tuple(args)
+        if not herdr_up["value"]:
+            return {"success": False, "error": "connection refused", "command": ["herdr", *args]}
+        if key == ("agent", "list"):
+            return {
+                "success": True,
+                "result": {"agents": [{
+                    "pane_id": "pane-l",
+                    "agent": "codex",
+                    "agent_status": "working",
+                    "cwd": "/repo/local",
+                }]},
+            }
+        if key == ("status", "--json"):
+            return {"success": True, "result": {"protocol": 13}}
+        if key == ("pane", "list"):
+            return {
+                "success": True,
+                "result": {"panes": [{
+                    "pane_id": "pane-l",
+                    "workspace_id": "workspace-l",
+                    "cwd": "/repo/local",
+                }]},
+            }
+        return {"success": True, "result": {"workspaces": [], "tabs": [], "worktrees": []}}
+
+    monkeypatch.setattr(service, "run_json", fake_run_json)
+    monkeypatch.setattr(
+        service,
+        "effective_cwd",
+        lambda row, *, ssh_target="": str(row.get("cwd") or ""),
+    )
+    monkeypatch.setattr(
+        service,
+        "git_space_metadata",
+        lambda path, *, ssh_target="", normalize_connection_key: {},
+    )
+    snapshot_kwargs = {
+        "local_host": "thinkpad",
+        "normalize_connection_key": lambda value: value.lower(),
+        "project_for_cwd": lambda path: {"project_name": "global", "project_path": path},
+    }
+
+    primed = await service.local_snapshot(**snapshot_kwargs)
+    assert [row["pane_id"] for row in primed["agents"]] == ["pane-l"]
+
+    # herdr itself is unreachable: the herd is genuinely gone, so the stored
+    # rows must not be resurrected even though the list call "just failed".
+    herdr_up["value"] = False
+    down = await service.local_snapshot(**snapshot_kwargs)
+    assert down["agents"] == []
+    assert down["sessions"] == []
+    assert service.local_collection_fallbacks == {}
+
+    # And a stale fallback expires even while herdr answers status but not lists.
+    herdr_up["value"] = True
+    await service.local_snapshot(**snapshot_kwargs)
+    assert "agents" in service.local_collection_fallbacks
+
+    async def status_only_run_json(args, timeout=2.0):
+        if tuple(args) == ("status", "--json"):
+            return {"success": True, "result": {"protocol": 13}}
+        return {"success": False, "error": "timeout", "command": ["herdr", *args]}
+
+    monkeypatch.setattr(service, "run_json", status_only_run_json)
+    clock["now"] += service.local_collection_fallback_ttl + 1.0
+    expired = await service.local_snapshot(**snapshot_kwargs)
+    assert expired["agents"] == []
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_status_events_do_not_extend_cache_ttl(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+        snapshot_cache_ttl=0.5,
+        notify_delay=0.0,
+    )
+    clock = {"now": 100.0}
+    monkeypatch.setattr(herdr_service_module.time, "time", lambda: clock["now"])
+    builds = {"count": 0}
+
+    async def fake_local_snapshot(**_kwargs):
+        builds["count"] += 1
+        return _local_snapshot_payload(sessions=[{
+            "session_key": "herdr:pane:pane-a",
+            "pane_id": "pane-a",
+            "agent_status": "working",
+            "agent_status_state": "working",
+        }])
+
+    monkeypatch.setattr(service, "local_snapshot", fake_local_snapshot)
+    snapshot_kwargs = {
+        "remote_targets": [],
+        "local_host": "thinkpad",
+        "normalize_connection_key": lambda value: value,
+        "project_for_cwd": lambda path: {"project_name": "global", "project_path": path},
+    }
+
+    await service.snapshot({}, **snapshot_kwargs)
+    assert builds["count"] == 1
+
+    # Status patches keep landing but must not extend the rebuild deadline.
+    for offset in (0.2, 0.4):
+        clock["now"] = 100.0 + offset
+        await service.handle_subscription_event({
+            "event": "pane.agent_status_changed",
+            "data": {"pane_id": "pane-a", "agent_status": "done"},
+        })
+
+    clock["now"] = 100.45
+    patched = await service.snapshot({}, **snapshot_kwargs)
+    assert patched["sessions"][0]["agent_status"] == "done"
+    assert builds["count"] == 1
+
+    clock["now"] = 100.7
+    await service.snapshot({}, **snapshot_kwargs)
+    assert builds["count"] == 2
+    await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_herdr_service_local_snapshot_reconciles_status_subscription_tasks(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+
+    async def wait_forever():
+        await asyncio.Event().wait()
+
+    gone_task = asyncio.create_task(wait_forever())
+    kept_task = asyncio.create_task(wait_forever())
+    service.status_subscription_tasks["gone"] = gone_task
+    service.status_subscription_tasks["pane-l"] = kept_task
+
+    async def fake_run_json(args, timeout=2.0):
+        key = tuple(args)
+        if key == ("status", "--json"):
+            return {"success": True, "result": {"protocol": 13}}
+        if key == ("agent", "list"):
+            return {
+                "success": True,
+                "result": {"agents": [{"pane_id": "pane-l", "agent": "codex"}]},
+            }
+        if key == ("pane", "list"):
+            return {
+                "success": True,
+                "result": {"panes": [{"pane_id": "pane-l", "workspace_id": "workspace-l"}]},
+            }
+        return {"success": True, "result": {"workspaces": [], "tabs": [], "worktrees": []}}
+
+    monkeypatch.setattr(service, "run_json", fake_run_json)
+    monkeypatch.setattr(
+        service,
+        "effective_cwd",
+        lambda row, *, ssh_target="": "",
+    )
+    monkeypatch.setattr(
+        service,
+        "git_space_metadata",
+        lambda path, *, ssh_target="", normalize_connection_key: {},
+    )
+
+    await service.local_snapshot(
+        local_host="thinkpad",
+        normalize_connection_key=lambda value: value,
+        project_for_cwd=lambda path: {"project_name": "global", "project_path": path},
+    )
+
+    # The pane that vanished without a pane.closed event loses its retry task;
+    # the still-present pane keeps its subscription.
+    assert set(service.status_subscription_tasks.keys()) == {"pane-l"}
+    await asyncio.gather(gone_task, return_exceptions=True)
+    assert gone_task.cancelled()
+
+    kept_task.cancel()
+    await asyncio.gather(kept_task, return_exceptions=True)

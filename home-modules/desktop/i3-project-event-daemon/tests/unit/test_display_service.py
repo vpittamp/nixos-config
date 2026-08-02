@@ -170,7 +170,12 @@ async def test_cycle_applies_next_layout(monkeypatch, tmp_path) -> None:
         snapshot_version=3,
     )
 
-    monitor_profile_service.handle_profile_change.assert_awaited_once_with(i3_connection.conn, "b")
+    # force=True: an explicit layout request must apply even when the profile
+    # name is unchanged, while the monitor-profile.current watcher (which sees
+    # the file this write produced) stays non-forcing and skips the repeat.
+    monitor_profile_service.handle_profile_change.assert_awaited_once_with(
+        i3_connection.conn, "b", force=True
+    )
     notify.assert_awaited_once_with("display_layout_changed")
     assert current_file.read_text(encoding="utf-8") == "b\n"
     assert result["applied"] is True

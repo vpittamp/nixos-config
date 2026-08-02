@@ -7,6 +7,7 @@ import importlib.util
 import sys
 import time
 from pathlib import Path
+from typing import Any, Dict
 from unittest.mock import AsyncMock
 
 import pytest
@@ -123,6 +124,62 @@ def test_apply_snapshot_to_session_and_worktree() -> None:
     assert worktree["is_clean"] is False
     assert worktree["ahead"] == 2
     assert worktree["dirty_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_status_probe_reports_unknown_state(tmp_path) -> None:
+    # A failed/timed-out `git status` parses zero lines; that must surface as
+    # 'unknown', never as a fake 'clean'.
+    service = DashboardGitService()
+    service.run_git_probe_command = AsyncMock(return_value=(-1, "", "timeout"))
+
+    snapshot = await service.probe_git_snapshot(worktree_path=str(tmp_path))
+
+    assert snapshot["state"] == "unknown"
+    assert snapshot["probe_success"] is False
+    assert snapshot["dirty_count"] == 0
+
+
+def test_apply_failed_probe_snapshot_preserves_existing_counts() -> None:
+    failed_snapshot = {
+        "state": "unknown",
+        "probe_success": False,
+        "has_conflicts": False,
+        "staged_count": 0,
+        "modified_count": 0,
+        "untracked_count": 0,
+        "dirty_count": 0,
+        "ahead": 0,
+        "behind": 0,
+    }
+    # Session rows are rebuilt fresh on every snapshot and carry no prior git_*
+    # keys, so this mirrors the real pipeline shape rather than a primed row.
+    session: Dict[str, Any] = {}
+    worktree = {
+        "is_clean": False,
+        "has_conflicts": False,
+        "ahead": 1,
+        "behind": 0,
+        "staged_count": 1,
+        "modified_count": 2,
+        "untracked_count": 0,
+        "dirty_count": 3,
+    }
+
+    DashboardGitService.apply_snapshot_to_session(session, failed_snapshot)
+    DashboardGitService.apply_snapshot_to_worktree(worktree, failed_snapshot)
+
+    # The failed probe publishes honest "unknown" state instead of fake-clean
+    # data, but must not invent zeroed counts.
+    assert session["git_state"] == "unknown"
+    assert session["git_freshness"] == "stale"
+    assert "git_compact" not in session
+    assert "git_snapshot" not in session
+    assert worktree["is_clean"] is False
+    assert worktree["staged_count"] == 1
+    assert worktree["modified_count"] == 2
+    assert worktree["dirty_count"] == 3
+    assert "git_state" not in worktree
 
 
 def test_apply_missing_snapshot_to_session_clears_git_fields() -> None:

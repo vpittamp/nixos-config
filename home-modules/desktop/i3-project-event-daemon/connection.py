@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Callable, Awaitable, Dict, Any
+from typing import Optional, Callable, Awaitable, Dict, Any, List, Tuple
 from i3ipc import aio
 from i3ipc._private import MessageType
 from i3ipc.events import IpcBaseEvent
@@ -171,6 +171,20 @@ class ResilientI3Connection:
         # calls cause response bytes to interleave, corrupting the stream.
         self._ipc_lock = asyncio.Lock()
 
+        # Every (event_type, handler) passed to subscribe(), so they can be
+        # replayed onto a replacement connection after a reconnect.
+        self._handlers: List[Tuple[str, Callable[[aio.Connection, IpcBaseEvent], Awaitable[None]]]] = []
+
+        # Set while a usable connection exists. main() waits on this instead of
+        # exiting when it finds self.conn unset: close() clears the connection
+        # before its replacement is built, so a reconnect necessarily has a
+        # window where there is no connection and the event loop must sit
+        # through it rather than treat it as terminal.
+        self._connection_ready = asyncio.Event()
+        # Serializes close()+connect_with_retry() so the periodic validator and
+        # the event loop cannot rebuild the connection concurrently.
+        self._reconnect_lock = asyncio.Lock()
+
         # Feature 121: Socket health tracking
         self.reconnection_count = 0
         self.last_connection_time: Optional[float] = None  # time.time() when connected
@@ -326,18 +340,21 @@ class ResilientI3Connection:
         os.environ["SWAYSOCK"] = new_socket
         os.environ["I3SOCK"] = new_socket
 
-        # Close old connection
-        if self.conn:
-            self.close()
+        # Close and rebuild under the lock so the event loop's own recovery path
+        # cannot start a second, overlapping reconnect.
+        async with self._reconnect_lock:
+            # Close old connection
+            if self.conn:
+                self.close()
 
-        # Reconnect with new socket
-        try:
-            await self.connect_with_retry(max_attempts=5)
-            logger.info(f"Successfully reconnected to new Sway socket: {new_socket}")
-            return True
-        except ConnectionError as e:
-            logger.error(f"Failed to reconnect to new socket: {e}")
-            return False
+            # Reconnect with new socket
+            try:
+                await self.connect_with_retry(max_attempts=5)
+                logger.info(f"Successfully reconnected to new Sway socket: {new_socket}")
+                return True
+            except ConnectionError as e:
+                logger.error(f"Failed to reconnect to new socket: {e}")
+                return False
 
     async def connect_with_retry(self, max_attempts: int = 10) -> aio.Connection:
         """Connect to i3 with exponential backoff retry.
@@ -353,6 +370,10 @@ class ResilientI3Connection:
         """
         attempt = 0
         delay = self.reconnect_delay
+
+        # Nothing is usable until this call finishes; the event loop waits on
+        # this flag rather than on self.conn, which is assigned mid-build below.
+        self._connection_ready.clear()
 
         while attempt < max_attempts:
             try:
@@ -441,8 +462,16 @@ class ResilientI3Connection:
                 if self.last_connection_time is not None:
                     # This is a reconnection, not initial connection
                     self.reconnection_count += 1
+
+                    # A replacement connection starts with no handlers and no
+                    # subscriptions. Restore both, or the daemon keeps serving
+                    # IPC while receiving no Sway events at all.
+                    self._replay_handlers()
+                    await self.subscribe_events()
+
                 self.last_connection_time = time.time()
                 self.last_validated_time = time.time()
+                self._connection_ready.set()
 
                 return self.conn
 
@@ -803,6 +832,12 @@ class ResilientI3Connection:
             event_type: Event type to subscribe to (window, workspace, tick, shutdown)
             handler: Async handler function for events
         """
+        # Remember every registration so it can be replayed onto a replacement
+        # connection. Handlers live on the i3ipc Connection object, so without
+        # this a reconnect produces a connection nothing is listening on and the
+        # daemon goes permanently deaf while still answering IPC queries.
+        self._handlers.append((event_type, handler))
+
         if not self.conn:
             logger.error("Cannot subscribe: not connected")
             return
@@ -812,26 +847,92 @@ class ResilientI3Connection:
         self.conn.on(event_type, handler)
         logger.debug(f"Registered handler for {event_type} events")
 
-    async def main(self) -> None:
-        """Run the i3 async event loop.
-
-        This blocks until i3 connection is closed or daemon is shut down.
-        """
-        if not self.conn:
-            logger.error("Cannot run main loop: not connected")
+    def _replay_handlers(self) -> None:
+        """Re-register every known handler onto the current connection."""
+        if not self.conn or not self._handlers:
             return
+        for event_type, handler in self._handlers:
+            self.conn.on(event_type, handler)
+        logger.info("Re-registered %d event handler(s) after reconnect", len(self._handlers))
 
-        try:
-            # Run i3 async main loop (native async, no executor needed)
-            # This will process events until connection closes
-            await self.conn.main()
+    async def main(self) -> None:
+        """Run the i3 async event loop until shutdown.
 
-        except Exception as e:
-            if not self.is_shutting_down:
+        Re-entered after a reconnect. `conn.main()` belongs to one Connection
+        object, and a reconnect replaces `self.conn` outright — so awaiting it
+        exactly once left the daemon parked on a dead connection's future while
+        the live connection had nobody consuming its events. Looping here keeps
+        the event stream attached to whichever connection is current.
+        """
+        while not self.is_shutting_down:
+            # Gate on the readiness flag, not on self.conn being set. A reconnect
+            # assigns self.conn as soon as the socket opens but only marks it
+            # ready after handlers are replayed and the subscription is live, and
+            # a failure in between discards that half-built connection — so
+            # attaching to it here would park this loop on an object nobody uses.
+            # Waiting also covers the window where close() has cleared the
+            # connection and woken this coroutine via main_quit() but the
+            # replacement does not exist yet; returning there would end the event
+            # loop for good on the very reconnect it exists to survive.
+            if not self._connection_ready.is_set():
+                try:
+                    await asyncio.wait_for(self._connection_ready.wait(), timeout=60.0)
+                except asyncio.TimeoutError:
+                    if self.is_shutting_down:
+                        break
+                    logger.error("No Sway connection for 60s; stopping event loop")
+                    return
+                continue
+
+            conn = self.conn
+            if not conn:
+                # close() clears the connection and the flag together, so this
+                # can only be a mid-update observation. Re-arm and wait.
+                self._connection_ready.clear()
+                continue
+
+            try:
+                # Run i3 async main loop (native async, no executor needed)
+                # This will process events until connection closes
+                await conn.main()
+
+            except Exception as e:
+                if self.is_shutting_down:
+                    logger.info("i3 event loop stopped (shutdown)")
+                    return
                 logger.error(f"i3 event loop error: {e}")
                 raise
+
+            if self.is_shutting_down:
+                break
+
+            if self.conn is conn:
+                # main() returned without a reconnect having swapped the
+                # connection, so the socket itself went away. Rebuild before
+                # looping, otherwise this spins on a dead connection. The lock
+                # keeps this from racing the periodic validator; re-check after
+                # acquiring it, since that validator may have already repaired
+                # the connection while this coroutine waited.
+                async with self._reconnect_lock:
+                    if self.conn is conn:
+                        logger.warning("Sway event loop ended unexpectedly; reconnecting")
+                        self.close()
+                        try:
+                            await self.connect_with_retry(max_attempts=5)
+                        except Exception as exc:
+                            # Never let a failed attempt end the loop: Sway may
+                            # simply still be restarting. Back off and retry —
+                            # the 30s validator is also trying, and whichever
+                            # succeeds first sets _connection_ready, which the
+                            # top of this loop is waiting on.
+                            logger.error(
+                                "Reconnect attempt failed (%s); retrying in background", exc
+                            )
+                            await asyncio.sleep(1.0)
             else:
-                logger.info("i3 event loop stopped (shutdown)")
+                logger.info("Sway event loop resuming on the replacement connection")
+
+        logger.info("i3 event loop stopped (shutdown)")
 
     async def get_tree(self) -> 'aio.Con':
         """Get the i3/Sway window tree.
@@ -864,10 +965,53 @@ class ResilientI3Connection:
     def close(self) -> None:
         """Close the i3 connection."""
         if self.conn:
+            conn = self.conn
+            self.conn = None
+            self._connection_ready.clear()
             try:
-                # Note: i3ipc doesn't have an explicit close method
-                # Connection will be cleaned up when object is destroyed
-                self.conn = None
+                # Stop the old connection's event loop and disable its private
+                # auto-reconnect before dropping the reference. Without this the
+                # orphan keeps retrying a socket path resolved at first connect
+                # — which is exactly the path that just went away — and its
+                # main() future never resolves.
+                conn._auto_reconnect = False
+
+                # Clearing the flag does not cancel a _reconnect() i3ipc may
+                # already have scheduled from its read path. If that one wins, it
+                # revives this orphan with fresh sockets — and it still holds
+                # every handler, so the daemon would then process each Sway event
+                # twice, once per connection. Drop its subscriptions so a revived
+                # orphan dispatches nothing.
+                pubsub = getattr(conn, "_pubsub", None)
+                subscriptions = getattr(pubsub, "_subscriptions", None)
+                if isinstance(subscriptions, list):
+                    subscriptions.clear()
+
+                main_quit = getattr(conn, "main_quit", None)
+                if callable(main_quit):
+                    main_quit()
+
+                # Drop the event-loop reader BEFORE closing the subscription
+                # socket. i3ipc registers _message_reader against _sub_fd, and a
+                # reader left on a closed descriptor fires again as soon as the
+                # kernel hands that number to the replacement connection's
+                # socket — the old callback would then read the new connection's
+                # stream. i3ipc does the same remove_reader in its own teardown.
+                sub_fd = getattr(conn, "_sub_fd", None)
+                loop = getattr(conn, "_loop", None)
+                if sub_fd is not None and loop is not None:
+                    try:
+                        loop.remove_reader(sub_fd)
+                    except Exception:
+                        pass
+
+                for attr in ("_cmd_socket", "_sub_socket"):
+                    sock = getattr(conn, attr, None)
+                    if sock is not None:
+                        try:
+                            sock.close()
+                        except Exception:
+                            pass
                 logger.info("Closed i3 connection")
             except Exception as e:
                 logger.error(f"Error closing connection: {e}")

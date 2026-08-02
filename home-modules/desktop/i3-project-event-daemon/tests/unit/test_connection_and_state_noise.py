@@ -365,3 +365,196 @@ async def test_apply_project_window_filter_raises_when_connection_unavailable_af
         (stale_conn, "vpittamp/nixos-config:main", "vpittamp/nixos-config:main::host::ryzen"),
     ]
     initialize_tree_cache.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_replays_handlers_onto_a_replacement_connection():
+    # Handlers live on the i3ipc Connection object, and a reconnect swaps that
+    # object out. Without replay the daemon kept answering IPC queries while
+    # receiving no Sway events at all — a failure the systemd watchdog cannot
+    # see, because it pings from its own thread.
+    connection = connection_module.ResilientI3Connection(SimpleNamespace())
+
+    async def on_window(conn, event):
+        return None
+
+    async def on_workspace(conn, event):
+        return None
+
+    first = SimpleNamespace(on=Mock())
+    connection.conn = first
+    connection.subscribe("window", on_window)
+    connection.subscribe("workspace", on_workspace)
+    assert first.on.call_count == 2
+
+    replacement = SimpleNamespace(on=Mock())
+    connection.conn = replacement
+    connection._replay_handlers()
+
+    assert replacement.on.call_count == 2
+    assert [call.args[0] for call in replacement.on.call_args_list] == ["window", "workspace"]
+    assert [call.args[1] for call in replacement.on.call_args_list] == [on_window, on_workspace]
+
+
+def test_close_stops_the_old_connection_instead_of_orphaning_it():
+    # i3ipc pins the socket path resolved at first connect, so an orphaned
+    # connection retries a path that no longer exists forever and its main()
+    # future never resolves. close() must actually stop it.
+    connection = connection_module.ResilientI3Connection(SimpleNamespace())
+
+    class FakeSocket:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    cmd_socket = FakeSocket()
+    sub_socket = FakeSocket()
+    removed = []
+    subscriptions = [{"event": "window", "detail": "", "handler": lambda *a: None}]
+    conn = SimpleNamespace(
+        _auto_reconnect=True,
+        main_quit=Mock(),
+        _cmd_socket=cmd_socket,
+        _sub_socket=sub_socket,
+        _sub_fd=42,
+        _loop=SimpleNamespace(remove_reader=lambda fd: removed.append(fd)),
+        _pubsub=SimpleNamespace(_subscriptions=subscriptions),
+    )
+    connection.conn = conn
+
+    connection.close()
+
+    assert connection.conn is None
+    assert conn._auto_reconnect is False
+    conn.main_quit.assert_called_once()
+    assert cmd_socket.closed is True
+    assert sub_socket.closed is True
+    # The event-loop reader must go before the fd is closed, or it fires again
+    # against whatever socket next receives that descriptor number.
+    assert removed == [42]
+    # And a revived orphan must dispatch nothing, or every Sway event would be
+    # handled twice — once per connection.
+    assert subscriptions == []
+
+
+@pytest.mark.asyncio
+async def test_main_loop_survives_the_gap_while_a_reconnect_is_in_flight():
+    # close() clears self.conn and wakes main() via main_quit() BEFORE the
+    # replacement connection exists. If main() treats "no connection" as
+    # terminal it exits during the very reconnect it is supposed to ride out,
+    # and the daemon goes deaf while still answering IPC — the exact failure
+    # this loop was added to prevent.
+    connection = connection_module.ResilientI3Connection(SimpleNamespace())
+
+    first_main = asyncio.Event()
+    second_entered = asyncio.Event()
+
+    class FakeConn:
+        def __init__(self, gate, entered=None):
+            self._gate = gate
+            self._entered = entered
+            self.on = Mock()
+
+        async def main(self):
+            if self._entered is not None:
+                self._entered.set()
+            await self._gate.wait()
+
+    old_conn = FakeConn(first_main)
+    connection.conn = old_conn
+    connection._connection_ready.set()
+
+    loop_task = asyncio.create_task(connection.main())
+    await asyncio.sleep(0)
+
+    # Reconnect begins: connection dropped, main() woken, replacement not ready.
+    connection.conn = None
+    connection._connection_ready.clear()
+    first_main.set()
+    await asyncio.sleep(0.01)
+
+    assert not loop_task.done(), "event loop exited during the reconnect window"
+
+    # Replacement arrives.
+    never = asyncio.Event()
+    new_conn = FakeConn(never, entered=second_entered)
+    connection.conn = new_conn
+    connection._connection_ready.set()
+
+    await asyncio.wait_for(second_entered.wait(), timeout=1.0)
+    assert not loop_task.done()
+
+    connection.is_shutting_down = True
+    never.set()
+    await asyncio.wait_for(loop_task, timeout=1.0)
+
+
+@pytest.mark.asyncio
+async def test_main_loop_ignores_a_half_built_connection():
+    # connect_with_retry assigns self.conn as soon as the socket opens, but only
+    # marks it ready after handlers are replayed and the subscription is live.
+    # Attaching to it before then parks the loop on a connection that a later
+    # failure in the build may discard.
+    connection = connection_module.ResilientI3Connection(SimpleNamespace())
+
+    entered = asyncio.Event()
+    gate = asyncio.Event()
+
+    class FakeConn:
+        def __init__(self):
+            self.on = Mock()
+
+        async def main(self):
+            entered.set()
+            await gate.wait()
+
+    half_built = FakeConn()
+    connection.conn = half_built
+    connection._connection_ready.clear()
+
+    loop_task = asyncio.create_task(connection.main())
+    await asyncio.sleep(0.02)
+
+    assert not entered.is_set(), "loop attached to a connection that was not ready"
+
+    connection._connection_ready.set()
+    await asyncio.wait_for(entered.wait(), timeout=1.0)
+
+    connection.is_shutting_down = True
+    gate.set()
+    await asyncio.wait_for(loop_task, timeout=1.0)
+
+
+@pytest.mark.asyncio
+async def test_main_loop_retries_instead_of_dying_when_a_reconnect_fails():
+    # Sway may still be restarting when the loop tries to recover. A failed
+    # attempt must not propagate out of main(), or one unlucky retry window
+    # permanently ends event processing.
+    connection = connection_module.ResilientI3Connection(SimpleNamespace())
+
+    class DeadConn:
+        def __init__(self):
+            self.on = Mock()
+
+        async def main(self):
+            return None
+
+    connection.conn = DeadConn()
+    connection._connection_ready.set()
+
+    attempts = []
+
+    async def failing_connect(max_attempts=10):
+        attempts.append(max_attempts)
+        if len(attempts) >= 3:
+            connection.is_shutting_down = True
+        raise ConnectionError("sway is not up yet")
+
+    connection.connect_with_retry = failing_connect
+    connection.close = lambda: None
+
+    await asyncio.wait_for(connection.main(), timeout=5.0)
+
+    assert len(attempts) >= 2, "loop gave up after a single failed reconnect"

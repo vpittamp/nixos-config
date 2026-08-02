@@ -54,9 +54,26 @@ class MonitorProfileService:
     def __init__(self):
         """Initialize profile service."""
         self._current_profile: Optional[str] = None
+        # What we last actually applied to Sway, as opposed to _current_profile,
+        # which reload_profiles() re-reads from monitor-profile.current. The two
+        # must stay separate: display.apply writes that file, so the file watcher
+        # re-enters handle_profile_change with _current_profile already synced to
+        # the new name, and comparing against it would never detect a repeat.
+        self._applied_profile: Optional[str] = None
+        # Fingerprint of the profile definition that was applied, so a rebuild
+        # that changes a profile's outputs still re-applies under the same name.
+        self._applied_definition: str = ""
         self._profiles: dict[str, MonitorProfile] = {}
         self._hybrid_profiles: dict[str, HybridMonitorProfile] = {}
         self._profile_switch_in_progress: bool = False
+        # Set when a switch is requested while one is running, so the request is
+        # coalesced and re-run instead of silently dropped.
+        self._pending_profile: Optional[str] = None
+        # Optional hook the daemon installs so a coalesced switch still refreshes
+        # the dashboard. The normal path notifies from its caller; a queued
+        # re-run has no caller left to do it, so without this the bars would show
+        # the pre-switch layout until the next unrelated event.
+        self.notify_display_changed = None
 
         self._active_virtual_outputs: Set[str] = set()
 
@@ -463,7 +480,27 @@ class MonitorProfileService:
 
         # TODO: Add to event buffer for i3pm diagnose events
 
-    async def handle_profile_change(self, conn, new_profile_name: str) -> bool:
+    @staticmethod
+    def _profile_definition_fingerprint(profile) -> str:
+        """Stable string for a profile's applied content (outputs and geometry)."""
+        if profile is None:
+            return ""
+        for dump in ("model_dump_json", "json"):
+            method = getattr(profile, dump, None)
+            if callable(method):
+                try:
+                    return str(method())
+                except Exception:
+                    continue
+        return repr(getattr(profile, "outputs", profile))
+
+    async def handle_profile_change(
+        self,
+        conn,
+        new_profile_name: str,
+        *,
+        force: bool = False,
+    ) -> bool:
         """Handle notification that profile has changed.
 
         Called when daemon detects monitor-profile.current was updated.
@@ -474,6 +511,12 @@ class MonitorProfileService:
         Args:
             conn: i3ipc.aio.Connection
             new_profile_name: Name of new profile
+            force: Re-apply even when this profile is already the applied one.
+                Explicit requests (display.apply, and therefore the drift
+                reconciler) pass this; the monitor-profile.current file watcher
+                does not, so merely rewriting the file with unchanged content —
+                which home-manager activation does on every rebuild — no longer
+                re-runs a switch that warps focus across workspaces.
 
         Returns:
             True if handled successfully
@@ -494,10 +537,32 @@ class MonitorProfileService:
             ))
             return False
 
-        # Set switch in progress guard
+        # Key idempotence on the profile's DEFINITION, not just its name. A
+        # rebuild rewrites monitor-profiles/*.json and touches
+        # monitor-profile.current, so a name-only check would skip applying a
+        # profile whose geometry actually changed — the new layout would sit
+        # unapplied until someone ran display.apply by hand.
+        definition = self._profile_definition_fingerprint(profile or hybrid_profile)
+        if (
+            not force
+            and new_profile_name == self._applied_profile
+            and definition == self._applied_definition
+        ):
+            logger.debug(
+                "Profile %s already applied and unchanged, skipping redundant switch",
+                new_profile_name,
+            )
+            return True
+
+        # Coalesce rather than drop: a request arriving mid-switch (typically the
+        # drift reconciler racing a user apply) is remembered and re-run once the
+        # in-flight switch finishes, so the reconcile is not silently lost.
         if self._profile_switch_in_progress:
-            logger.warning("Profile switch already in progress, ignoring")
-            return False
+            logger.info(
+                "Profile switch already in progress, queueing %s", new_profile_name
+            )
+            self._pending_profile = new_profile_name
+            return True
 
         self._profile_switch_in_progress = True
 
@@ -548,6 +613,8 @@ class MonitorProfileService:
 
             # Update current profile
             self._current_profile = new_profile_name
+            self._applied_profile = new_profile_name
+            self._applied_definition = self._profile_definition_fingerprint(profile)
 
             # Emit complete event
             duration_ms = (time.time() - start_time) * 1000
@@ -578,6 +645,48 @@ class MonitorProfileService:
 
         finally:
             self._profile_switch_in_progress = False
+            pending = self._pending_profile
+            self._pending_profile = None
+            # Run it even when it names the profile that just finished: a queued
+            # request is always an explicit, forced one (typically the drift
+            # reconciler repairing outputs), and skipping it because the name
+            # matches would drop exactly the repair it was queued for.
+            if pending:
+                logger.info("Running profile switch queued during the last one: %s", pending)
+                task = asyncio.create_task(
+                    self._run_queued_switch(conn, pending),
+                    name="i3pm-profile-switch-coalesced",
+                )
+
+                def _log_coalesced_result(fut: "asyncio.Future") -> None:
+                    # Without this the exception of a failed queued switch is
+                    # never retrieved and surfaces only as an asyncio warning.
+                    try:
+                        fut.result()
+                    except asyncio.CancelledError:
+                        pass
+                    except Exception:
+                        logger.warning("Queued profile switch failed", exc_info=True)
+
+                task.add_done_callback(_log_coalesced_result)
+
+    async def _run_queued_switch(self, conn, profile_name: str) -> bool:
+        """Apply a coalesced switch and refresh the dashboard behind it.
+
+        The RPC that requested this already returned, so nothing else will
+        publish the resulting layout; without the notify the bars would keep
+        rendering the pre-switch outputs.
+        """
+        applied = await self.handle_profile_change(conn, profile_name, force=True)
+        if applied and self.notify_display_changed:
+            try:
+                await self.notify_display_changed()
+            except Exception:
+                logger.warning(
+                    "Queued profile switch applied but dashboard notify failed",
+                    exc_info=True,
+                )
+        return applied
 
     async def _handle_hybrid_profile_change(
         self,
@@ -718,6 +827,8 @@ class MonitorProfileService:
 
         # Update current profile
         self._current_profile = new_profile_name
+        self._applied_profile = new_profile_name
+        self._applied_definition = self._profile_definition_fingerprint(hybrid_profile)
 
         # Emit complete event
         duration_ms = (time.time() - start_time) * 1000

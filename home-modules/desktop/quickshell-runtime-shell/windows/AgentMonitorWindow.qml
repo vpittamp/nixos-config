@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
@@ -146,14 +147,56 @@ PanelWindow {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
     Rectangle {
+        id: monitorCard
+        // MultiEffect is shader-based; the software Quick backend (NVIDIA
+        // hosts) would render a layered item as nothing at all, so the shadow
+        // is gated and those hosts get the 1px dark halo below instead.
+        readonly property bool shadowCapable: GraphicsInfo.api !== GraphicsInfo.Software
         anchors.fill: parent
         anchors.margins: 8
-        radius: 14
+        radius: root.radiusFloat
         // Dark glass: agent text stays readable while the video shows faintly
-        // through the strip (idle SessionRows are transparent).
-        color: Qt.rgba(0.03, 0.05, 0.08, 0.82)
+        // through the strip (idle SessionRows are transparent). The vertical
+        // gradient (#131d2a → #0d1117 at glass alpha) adds the elevation cue.
+        gradient: Gradient {
+            GradientStop {
+                position: 0.0
+                color: Qt.rgba(0.075, 0.114, 0.165, 0.86)
+            }
+            GradientStop {
+                position: 1.0
+                color: Qt.rgba(0.051, 0.067, 0.09, 0.82)
+            }
+        }
         border.color: colors.borderStrong
         border.width: 1
+        layer.enabled: shadowCapable
+        layer.effect: MultiEffect {
+            shadowEnabled: true
+            shadowBlur: 1.0
+            shadowColor: Qt.rgba(0, 0, 0, 0.55)
+            shadowVerticalOffset: 6
+            shadowHorizontalOffset: 0
+        }
+
+        Rectangle {
+            visible: !monitorCard.shadowCapable
+            anchors.fill: parent
+            anchors.margins: -1
+            radius: parent.radius + 1
+            color: "transparent"
+            border.color: Qt.rgba(0, 0, 0, 0.4)
+            border.width: 1
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: 1
+            radius: parent.radius - 1
+            color: "transparent"
+            border.color: Qt.rgba(1, 1, 1, 0.05)
+            border.width: 1
+        }
 
         ColumnLayout {
             anchors.fill: parent
@@ -167,14 +210,14 @@ PanelWindow {
                 Text {
                     text: "AI Agents"
                     color: colors.text
-                    font.pixelSize: 12
+                    font.pixelSize: root.fontTitle
                     font.weight: Font.DemiBold
                 }
                 Item { Layout.fillWidth: true }
                 Text {
                     text: monitorWindow.sessionEntries.length
                     color: colors.muted
-                    font.pixelSize: 11
+                    font.pixelSize: root.fontBody
                     font.weight: Font.DemiBold
                 }
                 Rectangle {
@@ -186,7 +229,7 @@ PanelWindow {
                         anchors.centerIn: parent
                         text: "✕"
                         color: colors.muted
-                        font.pixelSize: 11
+                        font.pixelSize: root.fontBody
                     }
                     MouseArea {
                         id: closeMouse
@@ -221,6 +264,35 @@ PanelWindow {
                 boundsBehavior: Flickable.StopAtBounds
                 cacheBuffer: 1200
 
+                // The model is keyed by stable identity, so these fire on
+                // membership change only — not on status/focus ticks.
+                add: Transition {
+                    // Scale, not opacity: SessionRow binds opacity (idle rows
+                    // sit at 0.76), and an animation would hold it at 1 until
+                    // the next tick re-evaluated the binding.
+                    NumberAnimation {
+                        property: "scale"
+                        from: 0.96
+                        to: 1
+                        duration: 220
+                        easing.type: Easing.OutCubic
+                    }
+                    NumberAnimation {
+                        property: "x"
+                        from: 16
+                        to: 0
+                        duration: 220
+                        easing.type: Easing.OutCubic
+                    }
+                }
+                displaced: Transition {
+                    NumberAnimation {
+                        property: "y"
+                        duration: 200
+                        easing.type: Easing.OutCubic
+                    }
+                }
+
                 ScrollBar.vertical: ScrollBar {
                     policy: agentList.contentHeight > agentList.height ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
                 }
@@ -231,6 +303,7 @@ PanelWindow {
                     width: agentList.width
                     rootObject: root
                     colorsObject: colors
+                    surfaceVisible: root.agentMonitorVisible
                     session: liveSession
                     selected: false
                     currentOverrideSet: true
@@ -254,7 +327,7 @@ PanelWindow {
                     anchors.centerIn: parent
                     text: "No active agents"
                     color: colors.subtle
-                    font.pixelSize: 11
+                    font.pixelSize: root.fontBody
                 }
             }
         }

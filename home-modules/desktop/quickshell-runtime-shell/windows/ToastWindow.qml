@@ -54,11 +54,11 @@ PanelWindow {
                 colorsObject: colors
                 itemData: modelData
                 preferredWidth: toastWindow.toastContentWidth
-                onDismissRequested: root.dismissNotification(notificationId)
-                onExpireRequested: root.expireNotification(notificationId)
-                onActionInvoked: root.invokeNotificationAction(notificationId, actionId)
-                onDefaultInvoked: root.markNotificationRead(notificationId)
-                onDetailRequested: root.showNotificationDetail(notificationId)
+                onDismissRequested: (notificationId) => root.dismissNotification(notificationId)
+                onExpireRequested: (notificationId) => root.expireNotification(notificationId)
+                onActionInvoked: (notificationId, actionId) => root.invokeNotificationAction(notificationId, actionId)
+                onDefaultInvoked: (notificationId) => root.markNotificationRead(notificationId)
+                onDetailRequested: (notificationId) => root.showNotificationDetail(notificationId)
             }
         }
     }

@@ -460,6 +460,14 @@ class I3ProjectDaemon:
         # Store for later use in callback
         self._handle_profile_file_change = async_handle_profile_change
 
+        async def _notify_display_layout_changed() -> None:
+            if self.ipc_server:
+                await self.ipc_server.notify_state_change("display_layout_changed")
+
+        # A switch coalesced behind an in-flight one has no caller left to
+        # publish its result, so give the service its own way to refresh the bars.
+        self.monitor_profile_service.notify_display_changed = _notify_display_layout_changed
+
         self.monitor_profile_watcher = MonitorProfileWatcher(
             config_file=CURRENT_PROFILE_FILE,
             reload_callback=on_profile_change,

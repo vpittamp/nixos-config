@@ -56,7 +56,7 @@ PanelWindow {
 
                 Rectangle {
                     id: panelToggleChip
-                    radius: 8
+                    radius: root.radiusControl
                     color: root.stateChipFill(root.panelVisible, panelToggleMouse.containsMouse, colors.blueBg)
                     border.color: root.stateChipBorder(root.panelVisible, panelToggleMouse.containsMouse, colors.blue)
                     border.width: 1
@@ -80,7 +80,7 @@ PanelWindow {
                         anchors.centerIn: parent
                         text: "AI Panel"
                         color: root.stateChipText(root.panelVisible, panelToggleMouse.containsMouse, colors.blue)
-                        font.pixelSize: 10
+                        font.pixelSize: root.fontLabel
                         font.weight: Font.DemiBold
                     }
 
@@ -104,9 +104,11 @@ PanelWindow {
                     readonly property bool anyBlocked: agentSessionsList.some(function (s) { return root.sessionPhase(s) === "blocked"; })
                     readonly property bool anyDone: agentSessionsList.some(function (s) { return root.sessionPhase(s) === "done"; })
                     readonly property bool anyWorking: agentSessionsList.some(function (s) { return root.sessionPhase(s) === "working"; })
-                    radius: 8
+                    radius: root.radiusControl
                     color: root.stateChipFill(root.agentMonitorVisible, agentMonitorMouse.containsMouse, colors.blueBg)
-                    border.color: root.stateChipBorder(root.agentMonitorVisible, agentMonitorMouse.containsMouse, colors.blue)
+                    border.color: agentMonitorChip.anyBlocked && !root.dashboardStale
+                        ? colors.red
+                        : root.stateChipBorder(root.agentMonitorVisible, agentMonitorMouse.containsMouse, colors.blue)
                     border.width: 1
                     implicitWidth: agentMonitorRow.implicitWidth + 20
                     Layout.fillHeight: true
@@ -134,16 +136,37 @@ PanelWindow {
                             width: 7
                             height: 7
                             radius: 4
-                            color: agentMonitorChip.anyBlocked ? colors.red
-                                : (agentMonitorChip.anyDone ? colors.green
-                                    : (agentMonitorChip.anyWorking ? colors.teal : colors.muted))
-                            SequentialAnimation on opacity {
-                                running: agentMonitorChip.anyWorking || agentMonitorChip.anyBlocked
-                                loops: Animation.Infinite
-                                alwaysRunToEnd: true
-                                NumberAnimation { from: 1.0; to: 0.35; duration: 700 }
-                                NumberAnimation { from: 0.35; to: 1.0; duration: 700 }
+                            // Canonical status map, priority blocked > working > done
+                            // > idle. Stale dashboard data gets no live colors: the
+                            // dot drops to muted slate until the stream reconnects.
+                            color: {
+                                if (root.dashboardStale) {
+                                    return colors.subtle;
+                                }
+                                if (agentMonitorChip.anyBlocked) {
+                                    return root.sessionStatusStyle("blocked").color;
+                                }
+                                if (agentMonitorChip.anyWorking) {
+                                    return root.sessionStatusStyle("working").color;
+                                }
+                                if (agentMonitorChip.anyDone) {
+                                    return root.sessionStatusStyle("done").color;
+                                }
+                                return root.sessionStatusStyle("idle").color;
                             }
+                            // Working carries no motion: the dot's color already
+                            // says "busy", and an infinite opacity animation here
+                            // repainted every top bar on every output at 60fps for
+                            // as long as any agent ran — under the software render
+                            // backend that was the shell's largest idle cost.
+                            // Blocked still blinks, because it means a session is
+                            // waiting on a human, but it steps off the shell-wide
+                            // attention clock instead of animating per frame. A
+                            // plain binding also removes the two-animations-on-one-
+                            // property hazard the pair of SequentialAnimations had.
+                            opacity: agentMonitorChip.anyBlocked && !root.dashboardStale && !root.attentionBlinkOn
+                                ? 0.3
+                                : 1.0
                         }
 
                         Text {
@@ -152,7 +175,7 @@ PanelWindow {
                                 ? ("Agents " + agentMonitorChip.agentSessionsCount)
                                 : "Agents"
                             color: root.stateChipText(root.agentMonitorVisible, agentMonitorMouse.containsMouse, colors.blue)
-                            font.pixelSize: 10
+                            font.pixelSize: root.fontLabel
                             font.weight: Font.DemiBold
                         }
                     }
@@ -177,7 +200,7 @@ PanelWindow {
 
             Rectangle {
                 Layout.alignment: Qt.AlignHCenter
-                radius: 9
+                radius: root.radiusControl
                 color: colors.card
                 border.color: colors.border
                 border.width: 1
@@ -204,7 +227,7 @@ PanelWindow {
                         id: outputLabel
                         text: runtimeConfig.hostName + (topBarWindow.topOutputName ? " · " + topBarWindow.topOutputName : "")
                         color: colors.text
-                        font.pixelSize: 10
+                        font.pixelSize: root.fontLabel
                         font.weight: Font.DemiBold
                     }
 
@@ -212,7 +235,7 @@ PanelWindow {
                         Layout.alignment: Qt.AlignVCenter
                         text: "│"
                         color: colors.subtle
-                        font.pixelSize: 10
+                        font.pixelSize: root.fontLabel
                     }
 
                     Text {
@@ -220,7 +243,7 @@ PanelWindow {
                         id: clockLabel
                         text: root.topBarTimeText()
                         color: colors.text
-                        font.pixelSize: 10
+                        font.pixelSize: root.fontLabel
                         font.weight: Font.DemiBold
                     }
                 }
@@ -233,7 +256,7 @@ PanelWindow {
 
                 Rectangle {
                     id: daemonHealthChip
-                    radius: 8
+                    radius: root.radiusControl
                     color: root.daemonHealthColor(daemonHealthMouse.containsMouse)
                     border.color: root.daemonHealthBorderColor(daemonHealthMouse.containsMouse)
                     border.width: 1
@@ -272,7 +295,7 @@ PanelWindow {
                         Text {
                             text: root.daemonHealthLabel()
                             color: root.daemonHealthTextColor(daemonHealthMouse.containsMouse)
-                            font.pixelSize: 10
+                            font.pixelSize: root.fontLabel
                             font.weight: Font.DemiBold
                         }
                     }
@@ -294,7 +317,7 @@ PanelWindow {
 
                 Rectangle {
                     id: generationChip
-                    radius: 8
+                    radius: root.radiusControl
                     color: root.neutralChipFill(generationMouse.containsMouse)
                     border.color: root.neutralChipBorder(generationMouse.containsMouse)
                     border.width: 1
@@ -318,7 +341,7 @@ PanelWindow {
                         anchors.centerIn: parent
                         text: root.systemGenerationLabel()
                         color: root.neutralChipText(generationMouse.containsMouse)
-                        font.pixelSize: 10
+                        font.pixelSize: root.fontLabel
                         font.weight: Font.Medium
                     }
 
@@ -331,7 +354,7 @@ PanelWindow {
 
                 Rectangle {
                     id: memoryChip
-                    radius: 8
+                    radius: root.radiusControl
                     color: root.neutralChipFill(memoryMouse.containsMouse)
                     border.color: root.neutralChipBorder(memoryMouse.containsMouse)
                     border.width: 1
@@ -355,7 +378,7 @@ PanelWindow {
                         anchors.centerIn: parent
                         text: root.systemStatsMemoryLabel()
                         color: root.neutralChipText(memoryMouse.containsMouse)
-                        font.pixelSize: 10
+                        font.pixelSize: root.fontLabel
                         font.weight: Font.Medium
                     }
 
@@ -368,7 +391,7 @@ PanelWindow {
 
                 Rectangle {
                     id: diskChip
-                    radius: 8
+                    radius: root.radiusControl
                     color: root.diskChipFill(diskMouse.containsMouse)
                     border.color: root.diskChipBorder(diskMouse.containsMouse)
                     border.width: 1
@@ -392,7 +415,7 @@ PanelWindow {
                         anchors.centerIn: parent
                         text: root.systemStatsDiskLabel()
                         color: root.diskChipText(diskMouse.containsMouse)
-                        font.pixelSize: 10
+                        font.pixelSize: root.fontLabel
                         font.weight: Font.Medium
                     }
 
@@ -413,7 +436,7 @@ PanelWindow {
 
                 Rectangle {
                     id: layoutChip
-                    radius: 8
+                    radius: root.radiusControl
                     readonly property bool displaySettingsActive: root.settingsVisible && root.stringOrEmpty(root.settingsSection) === "displays"
                     color: root.stateChipFill(displaySettingsActive, layoutMouse.containsMouse, colors.blueBg)
                     border.color: root.stateChipBorder(displaySettingsActive, layoutMouse.containsMouse, colors.blue)
@@ -438,7 +461,7 @@ PanelWindow {
                         anchors.centerIn: parent
                         text: "Displays ▾"
                         color: root.stateChipText(layoutChip.displaySettingsActive, layoutMouse.containsMouse, colors.blue)
-                        font.pixelSize: 10
+                        font.pixelSize: root.fontLabel
                         font.weight: Font.Medium
                     }
 
@@ -457,7 +480,7 @@ PanelWindow {
 
                 Rectangle {
                     id: moonlightChip
-                    radius: 8
+                    radius: root.radiusControl
                     color: root.moonlightChipFill(false)
                     border.color: root.moonlightChipBorder(false)
                     border.width: 1
@@ -482,7 +505,7 @@ PanelWindow {
                         anchors.centerIn: parent
                         text: root.moonlightChipLabel()
                         color: root.moonlightChipText(false)
-                        font.pixelSize: 10
+                        font.pixelSize: root.fontLabel
                         font.weight: Font.Medium
                     }
 
@@ -503,7 +526,7 @@ PanelWindow {
 
                 Rectangle {
                     id: networkChip
-                    radius: 8
+                    radius: root.radiusControl
                     color: root.neutralChipFill(networkMouse.containsMouse)
                     border.color: root.neutralChipBorder(networkMouse.containsMouse)
                     border.width: 1
@@ -527,7 +550,7 @@ PanelWindow {
                         anchors.centerIn: parent
                         text: root.networkLabel()
                         color: root.networkChipText(networkMouse.containsMouse)
-                        font.pixelSize: 10
+                        font.pixelSize: root.fontLabel
                         font.weight: Font.Medium
                     }
 
@@ -549,7 +572,7 @@ PanelWindow {
 
                 Rectangle {
                     id: notificationChip
-                    radius: 8
+                    radius: root.radiusControl
                     color: root.notificationChipFill(notificationMouse.containsMouse)
                     border.color: root.notificationChipBorder(notificationMouse.containsMouse)
                     border.width: 1
@@ -573,7 +596,7 @@ PanelWindow {
                         anchors.centerIn: parent
                         text: root.notificationLabel()
                         color: root.notificationChipText(notificationMouse.containsMouse)
-                        font.pixelSize: 10
+                        font.pixelSize: root.fontLabel
                         font.weight: Font.Medium
                     }
 
@@ -603,7 +626,7 @@ PanelWindow {
 
                 Rectangle {
                     id: audioChip
-                    radius: 8
+                    radius: root.radiusControl
                     color: root.neutralChipFill(audioMouse.containsMouse)
                     border.color: root.audioChipBorder(audioMouse.containsMouse)
                     border.width: 1
@@ -640,7 +663,7 @@ PanelWindow {
                             Layout.alignment: Qt.AlignVCenter
                             text: root.audioLabel() + " ▾"
                             color: root.audioChipText(audioMouse.containsMouse)
-                            font.pixelSize: 10
+                            font.pixelSize: root.fontLabel
                             font.weight: Font.Medium
                         }
                     }
@@ -669,7 +692,7 @@ PanelWindow {
 
                 Rectangle {
                     id: bluetoothChip
-                    radius: 8
+                    radius: root.radiusControl
                     color: root.neutralChipFill(bluetoothMouse.containsMouse)
                     border.color: root.neutralChipBorder(bluetoothMouse.containsMouse)
                     border.width: 1
@@ -706,7 +729,7 @@ PanelWindow {
                             Layout.alignment: Qt.AlignVCenter
                             text: root.bluetoothLabel() + " ▾"
                             color: root.neutralChipText(bluetoothMouse.containsMouse)
-                            font.pixelSize: 10
+                            font.pixelSize: root.fontLabel
                             font.weight: Font.Medium
                         }
                     }
@@ -732,7 +755,7 @@ PanelWindow {
 
                 Rectangle {
                     id: dictationChip
-                    radius: 8
+                    radius: root.radiusControl
                     color: root.neutralChipFill(dictationMouse.containsMouse)
                     border.color: root.voxtypeActive() ? root.voxtypeIconColor() : root.neutralChipBorder(dictationMouse.containsMouse)
                     border.width: 1
@@ -781,7 +804,7 @@ PanelWindow {
                             visible: root.voxtypeActive()
                             text: root.voxtypeLabel()
                             color: root.voxtypeIconColor()
-                            font.pixelSize: 10
+                            font.pixelSize: root.fontLabel
                             font.weight: Font.Medium
                         }
                     }
@@ -804,7 +827,7 @@ PanelWindow {
 
                 Rectangle {
                     id: keyboardChip
-                    radius: 8
+                    radius: root.radiusControl
                     color: root.neutralChipFill(keyboardMouse.containsMouse)
                     border.color: root.neutralChipBorder(keyboardMouse.containsMouse)
                     border.width: 1
@@ -846,7 +869,7 @@ PanelWindow {
                     visible: root.batteryReady()
                     Layout.preferredWidth: implicitWidth
                     Layout.minimumWidth: implicitWidth
-                    radius: 8
+                    radius: root.radiusControl
                     color: root.neutralChipFill(batteryMouse.containsMouse)
                     border.color: root.batteryChipBorder(batteryMouse.containsMouse)
                     border.width: 1
@@ -880,7 +903,7 @@ PanelWindow {
                         Text {
                             text: root.batteryLabel()
                             color: root.batteryChipText(batteryMouse.containsMouse)
-                            font.pixelSize: 10
+                            font.pixelSize: root.fontLabel
                             font.weight: Font.Medium
                             wrapMode: Text.NoWrap
                         }
@@ -912,7 +935,7 @@ PanelWindow {
                             visible: trayItem.status !== Status.Passive || systemTrayRow.pinnedTrayIds.indexOf(root.stringOrEmpty(trayItem.id).toLowerCase()) !== -1
                             width: 24
                             height: 22
-                            radius: 7
+                            radius: root.radiusControl - 1
                             color: root.neutralChipFill(trayMouse.containsMouse)
                             border.color: root.neutralChipBorder(trayMouse.containsMouse)
                             border.width: 1
@@ -972,7 +995,7 @@ PanelWindow {
                     id: powerChip
                     // On the focused monitor's bar (was configured-primary only).
                     visible: topBarWindow.isFocusedBar
-                    radius: 8
+                    radius: root.radiusControl
                     color: root.powerChipFill(powerMouse.containsMouse)
                     border.color: root.powerChipBorder(powerMouse.containsMouse)
                     border.width: 1
@@ -996,7 +1019,7 @@ PanelWindow {
                         anchors.centerIn: parent
                         text: "Power ▾"
                         color: root.powerChipText(powerMouse.containsMouse)
-                        font.pixelSize: 10
+                        font.pixelSize: root.fontLabel
                         font.weight: Font.DemiBold
                     }
 

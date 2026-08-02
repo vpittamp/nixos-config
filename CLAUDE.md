@@ -80,7 +80,6 @@ shows the focused herdr space's `repo[:branch]` + git status.
 
 ```bash
 i3pm daemon {status|events}
-i3pm diagnose {health|window <id>|validate|events|socket-health}
 i3pm monitors {status|reassign|config}
 i3pm dashboard {snapshot|watch}
 i3pm herdr-proxy {snapshot|events|focus}
@@ -105,9 +104,11 @@ swayconfig rollback <hash>  # Rollback
 Bars, panels, and on-screen widgets are driven by Quickshell (`home-modules/desktop/quickshell-runtime-shell/`).
 
 ```bash
-systemctl --user restart quickshell-runtime-shell  # Bar + panel
-systemctl --user restart swaync                    # Notifications
+systemctl --user restart quickshell-runtime-shell  # Bar + panel + notifications
 ```
+
+Notifications are served natively by Quickshell; there is no separate swaync
+unit (sway.nix disables any left over from older generations).
 
 **Device controls**: Volume 󰕾 | Brightness 󰃟 | Bluetooth 󰂯 | Battery 󰁹 (click to expand)
 **Devices tab**: `Mod+M` → `Alt+7`
@@ -185,8 +186,8 @@ i3-project-test {run|suite|verify-state}
 ```bash
 nixos-rebuild dry-build --flake .#<target> --show-trace
 nix flake show
-i3pm diagnose health
-journalctl --user -u i3-project-event-listener -f
+i3pm health
+journalctl --user -u i3-project-daemon -f
 ```
 
 ## Additional Docs
@@ -202,7 +203,7 @@ journalctl --user -u i3-project-event-listener -f
 
 - **Daemon**: Python 3.11+, i3ipc.aio, Pydantic, asyncio
 - **CLI**: TypeScript/Deno 1.40+, Zod
-- **UI**: Quickshell (Qt/QML), SwayNC
+- **UI**: Quickshell (Qt/QML), including the native notification server
 - **Config**: Nix flakes, JSON files in `~/.config/{i3,sway}/`
 
 For per-feature history, see `git log` or `ls specs/`. EWW is no longer in use; see Quickshell (`home-modules/desktop/quickshell-runtime-shell/`) for panel/widget code.

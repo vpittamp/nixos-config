@@ -40,6 +40,14 @@ HERDR_GIT_SPACE_FIELDS = (
     "git_freshness",
     "git_snapshot",
 )
+# Snapshot/list proxy calls must outlive a cold SSH connect (ConnectTimeout=3)
+# plus remote command time; interactive focus/action calls stay just above the
+# connect budget so a dead host still fails fast.
+HERDR_PROXY_SNAPSHOT_TIMEOUT = 8.0
+HERDR_PROXY_ACTION_TIMEOUT = 3.5
+# Herdr event lines (full session payloads) can exceed asyncio's default 64KiB
+# StreamReader limit; a limit overrun tears down the stream.
+HERDR_STREAM_READER_LIMIT = 2 ** 20
 
 RETIRED_SESSION_LIFECYCLE_FIELDS = {
     "session_phase",
@@ -111,11 +119,25 @@ class HerdrService:
         self.remote_proxy_event_generation: Dict[str, int] = {}
         self.snapshot_cache: Dict[str, Any] = {}
         self.snapshot_cache_time: float = 0.0
+        self.snapshot_cache_built_at: float = 0.0
+        self.snapshot_cache_is_failure: bool = False
+        self.snapshot_cache_is_provisional: bool = False
         self.snapshot_cache_ttl: float = snapshot_cache_ttl
         self.remote_snapshot_cache_ttl: float = remote_snapshot_cache_ttl
+        self.snapshot_failure_cache_ttl: float = 0.25
+        self.snapshot_provisional_cache_ttl: float = 1.0
+        self.snapshot_build_lock = asyncio.Lock()
+        self.herdr_event_generation: int = 0
         self.remote_targets_cache: List[Dict[str, str]] = []
         self.remote_targets_cache_signature: Tuple[Any, ...] = ("", False, 0, 0)
-        self.git_metadata_cache: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+        self.git_metadata_cache: Dict[Tuple[str, str, str], Tuple[float, Dict[str, Any]]] = {}
+        self.git_worktree_cache: Dict[Tuple[str, str], Tuple[float, bool]] = {}
+        self.git_metadata_cache_ttl: float = 30.0
+        self.local_collection_fallbacks: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
+        self.local_collection_fallback_ttl: float = 30.0
+        self._subscription_started: bool = False
+        self._herdr_binary_path: str = ""
+        self._malformed_line_warn_time: float = 0.0
         self._normalize_project_path = normalize_project_path or self._default_normalize_project_path
         self._resolve_worktree_for_path = resolve_worktree_for_path
         self._parse_remote_target = parse_remote_target or self._default_parse_remote_target
@@ -335,14 +357,43 @@ class HerdrService:
         """Return a copy of a valid cached Herdr snapshot."""
         if not self.snapshot_cache:
             return None
-        if now - self.snapshot_cache_time > self.cache_ttl(has_remote_targets=has_remote_targets):
+        # Expiry keys off the build time, never the last in-place patch time:
+        # a sustained status-event stream must not defer refetching the
+        # non-event fields (branch, git metadata, cwd) forever.
+        normal_ttl = self.cache_ttl(has_remote_targets=has_remote_targets)
+        if self.snapshot_cache_is_failure:
+            ttl = self.snapshot_failure_cache_ttl
+        elif self.snapshot_cache_is_provisional:
+            # Shorten, but never below what a normal read would cost: with
+            # remote targets the normal TTL is 10s, and expiring a provisional
+            # snapshot in 0.25s would re-SSH every host on nearly every read.
+            ttl = min(normal_ttl, self.snapshot_provisional_cache_ttl)
+        else:
+            ttl = normal_ttl
+        if now - self.snapshot_cache_built_at > ttl:
             return None
         return copy.deepcopy(self.snapshot_cache)
 
-    def store_snapshot(self, snapshot: Dict[str, Any], *, now: float) -> Dict[str, Any]:
-        """Store and return a defensive copy of a Herdr snapshot."""
+    def store_snapshot(
+        self,
+        snapshot: Dict[str, Any],
+        *,
+        now: float,
+        provisional: bool = False,
+    ) -> Dict[str, Any]:
+        """Store and return a defensive copy of a Herdr snapshot.
+
+        `provisional` marks a build that raced a mid-flight herdr event: the
+        data is fresh but may already be one event behind, so it is cached only
+        for the short TTL.
+        """
         self.snapshot_cache = copy.deepcopy(snapshot)
         self.snapshot_cache_time = float(now)
+        self.snapshot_cache_built_at = float(now)
+        # A snapshot whose local fetch explicitly failed only gets the short
+        # failure TTL so recovery is immediate once herdr is reachable again.
+        self.snapshot_cache_is_failure = snapshot.get("success") is False
+        self.snapshot_cache_is_provisional = bool(provisional)
         return copy.deepcopy(self.snapshot_cache)
 
     def touch_snapshot_cache(self, *, now: float) -> None:
@@ -351,14 +402,19 @@ class HerdrService:
 
     def invalidate_snapshot_cache(self) -> None:
         """Clear cached Herdr snapshots so the next read fetches fresh state."""
+        self.herdr_event_generation += 1
         self.snapshot_cache = {}
         self.snapshot_cache_time = 0.0
+        self.snapshot_cache_built_at = 0.0
+        self.snapshot_cache_is_failure = False
+        self.snapshot_cache_is_provisional = False
         if self._external_invalidate_snapshot_cache is not None:
             self._external_invalidate_snapshot_cache()
 
     def clear_git_metadata_cache(self) -> None:
         """Clear cached git metadata used to enrich Herdr spaces."""
         self.git_metadata_cache.clear()
+        self.git_worktree_cache.clear()
 
     def apply_remote_focus_cache(
         self,
@@ -834,6 +890,11 @@ class HerdrService:
 
         self.remote_targets_cache_signature = signature
         self.remote_targets_cache = [dict(item) for item in targets]
+        # The target config changed (the signature short-circuit above did not
+        # hit); polling picks the new targets up per snapshot, but the event
+        # streams only resync here.
+        if self._subscription_started:
+            self.sync_remote_proxy_subscriptions(targets)
         return [dict(item) for item in targets]
 
     def resolve_remote_action_target(
@@ -939,7 +1000,24 @@ class HerdrService:
         ssh_target: str = "",
         timeout: float = 0.75,
     ) -> str:
-        """Run a bounded git metadata command locally or on a Herdr remote."""
+        """Run a bounded git metadata command, or "" if it could not run."""
+        output = self.git_probe(path, args, ssh_target=ssh_target, timeout=timeout)
+        return output if output is not None else ""
+
+    def git_probe(
+        self,
+        path: str,
+        args: List[str],
+        *,
+        ssh_target: str = "",
+        timeout: float = 0.75,
+    ) -> Optional[str]:
+        """Run a bounded git command, returning None when the probe failed.
+
+        Callers that memoize results need to tell "this is not a repository"
+        (a real answer, safe to cache) apart from "git timed out / errored"
+        (no answer, caching it would pin a wrong value for the whole TTL).
+        """
         if not str(path or "").strip():
             return ""
 
@@ -962,21 +1040,40 @@ class HerdrService:
                 check=False,
             )
         except (OSError, subprocess.TimeoutExpired):
-            return ""
+            return None
         if result.returncode != 0:
-            return ""
+            return None
         return str(result.stdout or "").strip()
 
     def path_is_git_worktree(self, path: Any, *, ssh_target: str = "") -> bool:
-        """Return whether a path is inside a git worktree."""
+        """Return whether a path is inside a git worktree (memoized with TTL)."""
+        return self.git_worktree_probe(path, ssh_target=ssh_target) is True
+
+    def git_worktree_probe(self, path: Any, *, ssh_target: str = "") -> Optional[bool]:
+        """Tri-state worktree check: None when git could not answer.
+
+        A failed probe is indistinguishable from "not a repository", so callers
+        that memoize must not store it — it would pin the wrong answer for the
+        whole TTL.
+        """
         value = str(path or "").strip()
         if not value:
             return False
-        return self.git_run(
+        cache_key = (ssh_target, value)
+        cached = self.git_worktree_cache.get(cache_key)
+        now = time.monotonic()
+        if cached is not None and now - cached[0] <= self.git_metadata_cache_ttl:
+            return cached[1]
+        probe = self.git_probe(
             value,
             ["rev-parse", "--is-inside-work-tree"],
             ssh_target=ssh_target,
-        ).lower() == "true"
+        )
+        if probe is None:
+            return None
+        is_worktree = probe.lower() == "true"
+        self.git_worktree_cache[cache_key] = (now, is_worktree)
+        return is_worktree
 
     def effective_cwd(self, row: Dict[str, Any], *, ssh_target: str = "") -> str:
         """Prefer Herdr foreground CWD only when it resolves to a git worktree."""
@@ -1020,16 +1117,24 @@ class HerdrService:
             ssh_target,
             value,
         )
-        if cache_key in self.git_metadata_cache:
-            return dict(self.git_metadata_cache[cache_key])
+        cached = self.git_metadata_cache.get(cache_key)
+        if cached is not None and time.monotonic() - cached[0] <= self.git_metadata_cache_ttl:
+            return dict(cached[1])
 
-        if not self.path_is_git_worktree(value, ssh_target=ssh_target):
-            self.git_metadata_cache[cache_key] = {}
+        is_worktree = self.git_worktree_probe(value, ssh_target=ssh_target)
+        if is_worktree is None:
+            # Probe failed rather than answered; don't memoize the blank.
+            return {}
+        if not is_worktree:
+            self.git_metadata_cache[cache_key] = (time.monotonic(), {})
             return {}
 
-        checkout_path = self.git_run(value, ["rev-parse", "--show-toplevel"], ssh_target=ssh_target)
+        checkout_path = self.git_probe(value, ["rev-parse", "--show-toplevel"], ssh_target=ssh_target)
+        if checkout_path is None:
+            # Probe failed rather than answered; don't memoize the blank.
+            return {}
         if not checkout_path:
-            self.git_metadata_cache[cache_key] = {}
+            self.git_metadata_cache[cache_key] = (time.monotonic(), {})
             return {}
 
         common_dir = self.git_run(value, ["rev-parse", "--git-common-dir"], ssh_target=ssh_target)
@@ -1056,8 +1161,57 @@ class HerdrService:
             "is_linked_worktree": False,
             "branch_label": self.git_branch(value, ssh_target=ssh_target),
         }
-        self.git_metadata_cache[cache_key] = metadata
+        self.git_metadata_cache[cache_key] = (time.monotonic(), metadata)
         return dict(metadata)
+
+    _WORKTREE_METADATA_TEXT_FIELDS = (
+        "repo_key",
+        "repoKey",
+        "repo_name",
+        "repoName",
+        "repo_root",
+        "repoRoot",
+        "checkout_path",
+        "checkoutPath",
+        "branch_label",
+        "branchLabel",
+        "branch",
+    )
+
+    def space_needs_local_git_probe(self, item: Dict[str, Any]) -> bool:
+        """Whether build_spaces would run local git commands to enrich this row."""
+        if bool(item.get("is_remote_herdr", False)) or str(item.get("execution_mode") or "") == "ssh":
+            return False
+        nested = item.get("worktree")
+        sources = [item, nested] if isinstance(nested, dict) else [item]
+        for source in sources:
+            for key in self._WORKTREE_METADATA_TEXT_FIELDS:
+                if str(source.get(key) or "").strip():
+                    return False
+        return True
+
+    def prewarm_space_git_metadata(
+        self,
+        snapshot: Dict[str, Any],
+        *,
+        normalize_connection_key: Callable[[str], str],
+    ) -> None:
+        """Warm the git caches for cwds the sync build_spaces pass will probe.
+
+        build_spaces runs on the event loop, so its git enrichment must find
+        every local cwd already cached; this runs inside the snapshot's
+        to_thread enrichment pass.
+        """
+        for collection_name in ("workspaces", "sessions", "worktrees"):
+            for item in snapshot.get(collection_name, []) or []:
+                if not isinstance(item, dict) or not self.space_needs_local_git_probe(item):
+                    continue
+                cwd = self.effective_cwd(item)
+                if cwd:
+                    self.git_space_metadata(
+                        cwd,
+                        normalize_connection_key=normalize_connection_key,
+                    )
 
     @staticmethod
     def normalize_agent_status(value: Any, *, preserve_raw: bool = False) -> str:
@@ -1393,8 +1547,11 @@ class HerdrService:
         project_for_cwd: Callable[[str], Dict[str, str]],
     ) -> Dict[str, Any]:
         """Fetch and normalize one remote Herdr host snapshot through its i3pm proxy."""
-        self.clear_git_metadata_cache()
-        proxy_payload = await self.run_proxy_json(target, ["snapshot", "--json"])
+        proxy_payload = await self.run_proxy_json(
+            target,
+            ["snapshot", "--json"],
+            timeout=HERDR_PROXY_SNAPSHOT_TIMEOUT,
+        )
         host = str(target.get("host") or "").strip()
         ssh_target = str(target.get("ssh_target") or "").strip()
         connection_key = str(target.get("connection_key") or "").strip()
@@ -1490,7 +1647,10 @@ class HerdrService:
                 if isinstance(item, dict)
             ],
         }
-        snapshot["sessions"] = self.normalize_sessions(
+        # Session normalization forks bounded git subprocesses (over SSH for
+        # remote rows); keep that off the event loop.
+        snapshot["sessions"] = await asyncio.to_thread(
+            self.normalize_sessions,
             snapshot,
             remote_target=target,
             local_host=local_host,
@@ -1498,6 +1658,39 @@ class HerdrService:
             project_for_cwd=project_for_cwd,
         )
         return snapshot
+
+    def _local_collection_with_fallback(
+        self,
+        key: str,
+        payload: Dict[str, Any],
+        rows: List[Dict[str, Any]],
+        *,
+        herdr_available: bool,
+        now: float,
+    ) -> List[Dict[str, Any]]:
+        """Reuse the last-known-good local rows when one herdr list call fails.
+
+        A single timed-out ``herdr agent list`` must not blank the panel for a
+        full cache TTL; the failure stays recorded in the snapshot's errors.
+        The fallback is deliberately bounded: when herdr itself is unreachable,
+        or the last good rows are older than the fallback TTL, the real (empty)
+        rows are returned so a dead herd empties the panel instead of showing
+        ghost sessions forever.
+        """
+        if bool(payload.get("success", False)):
+            self.local_collection_fallbacks[key] = (now, copy.deepcopy(rows))
+            return rows
+        if not herdr_available:
+            self.local_collection_fallbacks.pop(key, None)
+            return rows
+        entry = self.local_collection_fallbacks.get(key)
+        if entry is None:
+            return rows
+        stored_at, fallback = entry
+        if now - stored_at > self.local_collection_fallback_ttl:
+            self.local_collection_fallbacks.pop(key, None)
+            return rows
+        return copy.deepcopy(fallback)
 
     async def local_snapshot(
         self,
@@ -1507,7 +1700,6 @@ class HerdrService:
         project_for_cwd: Callable[[str], Dict[str, str]],
     ) -> Dict[str, Any]:
         """Fetch and normalize the local Herdr host snapshot."""
-        self.clear_git_metadata_cache()
         status_payload, agent_payload, pane_payload, workspace_payload, tab_payload, worktree_payload = await asyncio.gather(
             self.run_json(["status", "--json"]),
             self.run_json(["agent", "list"]),
@@ -1578,12 +1770,40 @@ class HerdrService:
                 if not bool(payload.get("success", False))
             ],
         }
-        snapshot["sessions"] = self.normalize_sessions(
-            snapshot,
-            local_host=host_key,
-            normalize_connection_key=normalize_connection_key,
-            project_for_cwd=project_for_cwd,
-        )
+        for key, payload in (
+            ("agents", agent_payload),
+            ("panes", pane_payload),
+            ("workspaces", workspace_payload),
+            ("tabs", tab_payload),
+            ("worktrees", worktree_payload),
+        ):
+            snapshot[key] = self._local_collection_with_fallback(
+                key,
+                payload,
+                snapshot[key],
+                herdr_available=snapshot["success"],
+                now=time.monotonic(),
+            )
+
+        def enrich() -> None:
+            snapshot["sessions"] = self.normalize_sessions(
+                snapshot,
+                local_host=host_key,
+                normalize_connection_key=normalize_connection_key,
+                project_for_cwd=project_for_cwd,
+            )
+            self.prewarm_space_git_metadata(
+                snapshot,
+                normalize_connection_key=normalize_connection_key,
+            )
+
+        # Git enrichment forks bounded git subprocesses; keep it off the loop.
+        await asyncio.to_thread(enrich)
+        if bool(agent_payload.get("success", False)) and bool(pane_payload.get("success", False)):
+            self.reconcile_status_subscriptions(
+                self.pane_ids_from_rows(snapshot.get("panes"))
+                + self.pane_ids_from_rows(snapshot.get("agents"))
+            )
         return snapshot
 
     async def proxy_snapshot(
@@ -1642,37 +1862,64 @@ class HerdrService:
         resolved_normalize_connection_key = normalize_connection_key or self._normalize_connection_key
         resolved_project_for_cwd = project_for_cwd or self.configured_project_for_cwd()
         use_cache = not bool(params.get("refresh", False))
-        now = time.time()
         if use_cache:
             cached_snapshot = self.cached_snapshot(
-                now=now,
+                now=time.time(),
                 has_remote_targets=bool(resolved_remote_targets),
             )
             if cached_snapshot is not None:
                 return cached_snapshot
 
+        async with self.snapshot_build_lock:
+            # Another caller may have finished a build while this one awaited.
+            if use_cache:
+                cached_snapshot = self.cached_snapshot(
+                    now=time.time(),
+                    has_remote_targets=bool(resolved_remote_targets),
+                )
+                if cached_snapshot is not None:
+                    return cached_snapshot
+            return await self._build_snapshot(
+                remote_targets=resolved_remote_targets,
+                local_host=resolved_local_host,
+                normalize_connection_key=resolved_normalize_connection_key,
+                project_for_cwd=resolved_project_for_cwd,
+            )
+
+    async def _build_snapshot(
+        self,
+        *,
+        remote_targets: List[Dict[str, str]],
+        local_host: str,
+        normalize_connection_key: Callable[[str], str],
+        project_for_cwd: Callable[[str], Dict[str, str]],
+    ) -> Dict[str, Any]:
+        """Build and cache one merged Herdr snapshot (caller holds the lock)."""
+        build_generation = self.herdr_event_generation
+        now = time.time()
+
         snapshot = await self.local_snapshot(
-            local_host=resolved_local_host,
-            normalize_connection_key=resolved_normalize_connection_key,
-            project_for_cwd=resolved_project_for_cwd,
+            local_host=local_host,
+            normalize_connection_key=normalize_connection_key,
+            project_for_cwd=project_for_cwd,
         )
 
         remote_snapshots = await asyncio.gather(
             *(
                 self.remote_snapshot(
                     target,
-                    local_host=resolved_local_host,
-                    normalize_connection_key=resolved_normalize_connection_key,
-                    project_for_cwd=resolved_project_for_cwd,
+                    local_host=local_host,
+                    normalize_connection_key=normalize_connection_key,
+                    project_for_cwd=project_for_cwd,
                 )
-                for target in resolved_remote_targets
+                for target in remote_targets
             ),
             return_exceptions=True,
         )
 
         normalized_remote_snapshots: List[Dict[str, Any]] = []
         for index, remote_snapshot in enumerate(remote_snapshots):
-            target = resolved_remote_targets[index]
+            target = remote_targets[index]
             if isinstance(remote_snapshot, Exception):
                 error_entry = {
                     "remote": True,
@@ -1716,7 +1963,7 @@ class HerdrService:
             ])
             snapshot["errors"].extend(remote_snapshot.get("errors", []) or [])
 
-        snapshot["remote_targets"] = resolved_remote_targets
+        snapshot["remote_targets"] = remote_targets
         snapshot["remote_snapshots"] = normalized_remote_snapshots
         snapshot["remote_herdr_generation"] = self.remote_generations_snapshot()
         snapshot["remote_errors"] = [
@@ -1731,6 +1978,12 @@ class HerdrService:
             str(item.get("agent") or ""),
             str(item.get("pane_id") or ""),
         ))
+        if self.herdr_event_generation != build_generation:
+            # Herdr events landed mid-build, so this data may already be one
+            # event behind. Cache it only for the short TTL: discarding it
+            # outright would make every read during an event burst pay a full
+            # rebuild, while a normal TTL would serve it over the events.
+            return self.store_snapshot(snapshot, now=now, provisional=True)
         return self.store_snapshot(snapshot, now=now)
 
     async def _resolve_pane_tab_id(self, pane_id: str) -> str:
@@ -1943,7 +2196,11 @@ class HerdrService:
             launch_open,
             intent_epoch=int(params.get("__intent_epoch") or 0),
         ))
-        focus_result = await self.run_proxy_json(target, ["focus", pane_id, "--json"])
+        focus_result = await self.run_proxy_json(
+            target,
+            ["focus", pane_id, "--json"],
+            timeout=HERDR_PROXY_ACTION_TIMEOUT,
+        )
         if bool(focus_result.get("success", False)):
             self.bump_remote_generation(target.get("host"))
             cache_result = self.apply_remote_focus_cache(
@@ -2084,39 +2341,9 @@ class HerdrService:
             if not isinstance(nested, dict):
                 nested = {}
 
-            has_materialized_metadata = bool(
-                text_field(
-                    item,
-                    "repo_key",
-                    "repoKey",
-                    "repo_name",
-                    "repoName",
-                    "repo_root",
-                    "repoRoot",
-                    "checkout_path",
-                    "checkoutPath",
-                    "branch_label",
-                    "branchLabel",
-                    "branch",
-                )
-                or text_field(
-                    nested,
-                    "repo_key",
-                    "repoKey",
-                    "repo_name",
-                    "repoName",
-                    "repo_root",
-                    "repoRoot",
-                    "checkout_path",
-                    "checkoutPath",
-                    "branch_label",
-                    "branchLabel",
-                    "branch",
-                )
-            )
             effective_cwd = (
                 self.effective_cwd(item, ssh_target=ssh_target)
-                if (not is_remote and not has_materialized_metadata)
+                if self.space_needs_local_git_probe(item)
                 else ""
             )
             computed = self.git_space_metadata(
@@ -2573,7 +2800,11 @@ class HerdrService:
     async def run_json(self, args: List[str], timeout: float = 2.0) -> Dict[str, Any]:
         """Run a local Herdr CLI command that returns a single JSON object."""
         command = ["herdr", *args]
-        if not shutil.which("herdr"):
+        # Resolve the binary once and cache the hit; keep re-probing on a miss
+        # so installing herdr later does not require a daemon restart.
+        if not self._herdr_binary_path:
+            self._herdr_binary_path = shutil.which("herdr") or ""
+        if not self._herdr_binary_path:
             return {
                 "success": False,
                 "error": "herdr_not_found",
@@ -2668,7 +2899,7 @@ class HerdrService:
         self,
         target: Dict[str, str],
         args: List[str],
-        timeout: float = 2.5,
+        timeout: float = HERDR_PROXY_ACTION_TIMEOUT,
     ) -> Dict[str, Any]:
         """Run the remote host's i3pm Herdr proxy over one bounded SSH command."""
         ssh_target = str(target.get("ssh_target") or "").strip()
@@ -2804,27 +3035,45 @@ class HerdrService:
         writer.write(json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\n")
         await writer.drain()
 
+    def _warn_malformed_stream_line(self, source: str) -> None:
+        """Rate-limited warning for skipped malformed Herdr stream lines."""
+        now = time.monotonic()
+        if now - self._malformed_line_warn_time < 5.0:
+            return
+        self._malformed_line_warn_time = now
+        logger.warning("Skipping malformed JSON line on %s", source)
+
     async def read_json_line(
         self,
         reader: asyncio.StreamReader,
         *,
         timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
-        if timeout:
-            line = await asyncio.wait_for(reader.readline(), timeout=timeout)
-        else:
-            line = await reader.readline()
-        if not line:
-            raise ConnectionError("Herdr event stream closed")
-        payload = json.loads(line.decode("utf-8"))
-        if not isinstance(payload, dict):
-            raise ValueError("Herdr event stream returned non-object JSON")
-        return payload
+        while True:
+            if timeout:
+                line = await asyncio.wait_for(reader.readline(), timeout=timeout)
+            else:
+                line = await reader.readline()
+            if not line:
+                raise ConnectionError("Herdr event stream closed")
+            # A malformed or non-object line must not tear down the stream.
+            try:
+                payload = json.loads(line.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                self._warn_malformed_stream_line("the Herdr event stream")
+                continue
+            if not isinstance(payload, dict):
+                self._warn_malformed_stream_line("the Herdr event stream")
+                continue
+            return payload
 
     async def connect_subscription_once(self) -> None:
         """Connect once to the local Herdr event stream and process events until close."""
         socket_path = self.socket_path()
-        reader, writer = await asyncio.open_unix_connection(str(socket_path))
+        reader, writer = await asyncio.open_unix_connection(
+            str(socket_path),
+            limit=HERDR_STREAM_READER_LIMIT,
+        )
         try:
             pane_ids = await self.subscription_pane_ids()
             request = self.event_subscribe_payload(pane_ids=pane_ids)
@@ -2846,24 +3095,60 @@ class HerdrService:
             writer.close()
             await self._close_writer(writer)
 
-    async def run_subscription(self) -> None:
-        """Maintain a local Herdr event subscription with bounded reconnect backoff."""
+    async def _run_reconnect_loop(
+        self,
+        connect: Callable[[], Awaitable[None]],
+        *,
+        describe: str,
+    ) -> None:
+        """Reconnect ``connect`` forever with bounded backoff.
+
+        Backoff resets after a connection that survived longer than the max
+        backoff (a healthy stream that eventually dropped), not only on the
+        unreachable clean-return path, so one outage does not pin the daemon
+        at the max reconnect delay forever.
+        """
         backoff = self.subscription_initial_backoff
+        consecutive_failures = 0
         while True:
+            connected_at = time.monotonic()
             try:
-                await self.connect_subscription_once()
+                await connect()
                 backoff = self.subscription_initial_backoff
+                consecutive_failures = 0
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                logger.debug("Local Herdr event subscription unavailable: %s", exc)
+                if time.monotonic() - connected_at > self.subscription_max_backoff:
+                    backoff = self.subscription_initial_backoff
+                    consecutive_failures = 0
+                consecutive_failures += 1
+                if consecutive_failures == 5:
+                    logger.warning(
+                        "%s unavailable after %d consecutive failures: %s",
+                        describe,
+                        consecutive_failures,
+                        exc,
+                    )
+                else:
+                    logger.debug("%s unavailable: %s", describe, exc)
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, self.subscription_max_backoff)
+
+    async def run_subscription(self) -> None:
+        """Maintain a local Herdr event subscription with bounded reconnect backoff."""
+        await self._run_reconnect_loop(
+            self.connect_subscription_once,
+            describe="Local Herdr event subscription",
+        )
 
     async def connect_status_subscription_once(self, pane_id: str) -> None:
         """Connect once to one local Herdr pane status stream and process until close."""
         socket_path = self.socket_path()
-        reader, writer = await asyncio.open_unix_connection(str(socket_path))
+        reader, writer = await asyncio.open_unix_connection(
+            str(socket_path),
+            limit=HERDR_STREAM_READER_LIMIT,
+        )
         try:
             request = self.status_event_subscribe_payload(pane_id)
             await self.write_json_line(writer, request)
@@ -2886,17 +3171,10 @@ class HerdrService:
 
     async def run_status_subscription(self, pane_id: str) -> None:
         """Maintain one pane-specific status subscription with bounded reconnect backoff."""
-        backoff = self.subscription_initial_backoff
-        while True:
-            try:
-                await self.connect_status_subscription_once(pane_id)
-                backoff = self.subscription_initial_backoff
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.debug("Herdr status subscription unavailable for pane %s: %s", pane_id, exc)
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, self.subscription_max_backoff)
+        await self._run_reconnect_loop(
+            lambda: self.connect_status_subscription_once(pane_id),
+            describe=f"Herdr status subscription for pane {pane_id}",
+        )
 
     def ensure_status_subscription(self, pane_id: str) -> None:
         """Ensure a pane-specific status event subscription is running."""
@@ -2920,8 +3198,20 @@ class HerdrService:
         if task is not None and not task.done():
             task.cancel()
 
+    def reconcile_status_subscriptions(self, pane_ids: List[str]) -> None:
+        """Cancel status tasks for panes no longer present in the local snapshot.
+
+        A missed pane.closed event would otherwise leak an immortal retry task.
+        """
+        active = set(pane_ids)
+        for pane_id in list(self.status_subscription_tasks.keys()):
+            if pane_id in active:
+                continue
+            self.cancel_status_subscription(pane_id)
+
     def start_subscription(self) -> None:
         """Start local and configured remote Herdr event subscription tasks."""
+        self._subscription_started = True
         if self.subscription_task and not self.subscription_task.done():
             pass
         else:
@@ -2956,6 +3246,7 @@ class HerdrService:
 
     async def stop_subscription(self) -> None:
         """Cancel Herdr event subscription and pending notification tasks."""
+        self._subscription_started = False
         notify_task = self.notify_task
         self.notify_task = None
         if notify_task and not notify_task.done():
@@ -2996,6 +3287,7 @@ class HerdrService:
             *command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
+            limit=HERDR_STREAM_READER_LIMIT,
         )
         try:
             if process.stdout is None:
@@ -3004,7 +3296,13 @@ class HerdrService:
                 line = await process.stdout.readline()
                 if not line:
                     break
-                payload = json.loads(line.decode("utf-8"))
+                try:
+                    payload = json.loads(line.decode("utf-8"))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    self._warn_malformed_stream_line(
+                        f"the remote Herdr proxy stream for {ssh_target}"
+                    )
+                    continue
                 if not isinstance(payload, dict):
                     continue
                 await self.handle_remote_proxy_event(target, payload)
@@ -3022,18 +3320,11 @@ class HerdrService:
 
     async def run_remote_proxy_subscription(self, target: Dict[str, str]) -> None:
         """Maintain one remote Herdr proxy event stream with bounded reconnect backoff."""
-        backoff = self.subscription_initial_backoff
         host = self.normalize_host_key(target.get("host") or target.get("ssh_target"))
-        while True:
-            try:
-                await self.connect_remote_proxy_subscription_once(target)
-                backoff = self.subscription_initial_backoff
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.debug("Remote Herdr proxy subscription unavailable for %s: %s", host, exc)
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, self.subscription_max_backoff)
+        await self._run_reconnect_loop(
+            lambda: self.connect_remote_proxy_subscription_once(target),
+            describe=f"Remote Herdr proxy subscription for {host}",
+        )
 
     async def handle_remote_proxy_event(self, target: Dict[str, str], event: Dict[str, Any]) -> None:
         """Apply or recover from a remote Herdr proxy event."""
@@ -3052,6 +3343,10 @@ class HerdrService:
         if not bool(result.get("applied", False)):
             self.bump_remote_generation(target.get("host") or target.get("ssh_target"))
             self.invalidate_snapshot_cache()
+        elif bool(result.get("cache_updated", False)):
+            # Fence in-flight snapshot builds so they do not store over the
+            # freshly patched remote rows with pre-event data.
+            self.herdr_event_generation += 1
         self.schedule_state_change_notification()
 
     @staticmethod
@@ -3086,7 +3381,11 @@ class HerdrService:
         if event_name in {HERDR_STATUS_EVENT_TYPE, "pane_agent_status_changed"}:
             result = self.apply_status_event_cache(event)
             applied_status_cache = bool(result.get("applied", False) and result.get("cache_updated", False))
-        if not applied_status_cache:
+        if applied_status_cache:
+            # Fence in-flight snapshot builds: they must not store over this
+            # cache patch with pre-event data (invalidation bumps on its own).
+            self.herdr_event_generation += 1
+        else:
             self.invalidate_snapshot_cache()
         self.schedule_state_change_notification()
 

@@ -52,6 +52,7 @@ ShellRoot {
     readonly property var lidPolicyApplyProcess: runtimeServices ? runtimeServices.lidPolicyApplyProcessRef : null
     readonly property var lidInhibitActionProcess: runtimeServices ? runtimeServices.lidInhibitActionProcessRef : null
     readonly property var dashboardWatcher: runtimeServices ? runtimeServices.dashboardWatcherRef : null
+    readonly property var dashboardRestartTimer: runtimeServices ? runtimeServices.dashboardRestartTimerRef : null
 
     property var dashboard: ({
             status: "loading",
@@ -106,6 +107,10 @@ ShellRoot {
     // see the system is actually hearing speech (not just armed).
     property int dictationLevel: 0
     property string lastDashboardInvariantWarning: ""
+    property int dashboardParseFailureCount: 0
+    // Stale marker for a later visual pass: true while the watch stream is
+    // disconnected and the panel is showing the last-known dashboard data.
+    readonly property bool dashboardStale: !!dashboard && stringOrEmpty(dashboard.status) === "reconnecting"
 
     property var systemStatsState: ({
             memory_percent: 0,
@@ -256,6 +261,18 @@ ShellRoot {
     property string lastFocusedSessionKey: ""
     property var localFocusIntent: null
     property var sessionClosePendingMap: ({})
+    // Shared spinner clock for every SessionRow with motion: one timer for the
+    // whole shell instead of a private 95ms timer per row, ticking only while
+    // some session is actually working.
+    property bool anySessionWorking: false
+    property int activitySpinnerFrame: 0
+    // Shared attention blink for "a session needs you". Stepped by a timer that
+    // only ticks while something is blocked, rather than a per-window infinite
+    // opacity animation: those repaint their whole surface every frame, which on
+    // the software Qt Quick backend (NVIDIA workaround) costs real CPU on every
+    // bar, on every output, for as long as the state lasts.
+    property bool anySessionBlocked: false
+    property bool attentionBlinkOn: true
     property string displayApplyTarget: ""
     property string displayApplyStdout: ""
     property string displayApplyStderr: ""
@@ -530,6 +547,52 @@ ShellRoot {
             violetBg: "#241b43"
         })
     readonly property int fastColorMs: 90
+
+    // Type scale for the herd surfaces (SessionRow, runtime panel, agent
+    // monitor, bar chips). fontMicro is reserved for ALL-CAPS text with
+    // font.letterSpacing >= 0.5 — lowercase reading text must never drop
+    // below fontCaption.
+    readonly property int fontTitle: 13
+    readonly property int fontBody: 11
+    readonly property int fontLabel: 10
+    readonly property int fontCaption: 9
+    readonly property int fontMicro: 8
+
+    // Radius scale: floating surfaces > cards/sections > controls/rows/chips
+    // > count pills/mini badges. Nested corners follow inner = outer - padding.
+    readonly property int radiusFloat: 16
+    readonly property int radiusCard: 12
+    readonly property int radiusControl: 8
+    readonly property int radiusBadge: 6
+
+    // The ONE canonical session-status color map. Every surface that colors an
+    // agent/session state (panel badge, SessionRow dot, TopBar agent chip,
+    // herdr space dot, launcher session entries) must route through here so the
+    // same hue never carries opposite meanings across surfaces. Semantics:
+    //   working → amber (motion carries the rest)
+    //   blocked → red (strongest attention state)
+    //   done    → green (completion is the positive event)
+    //   idle    → subtle slate, near-transparent bg (idle must recede)
+    //   needs_attention → orange (defensive, currently unreachable)
+    // Teal is not a status hue; green means done only.
+    function sessionStatusStyle(state) {
+        if (state === "blocked") {
+            return ({ color: colors.red, bg: colors.redBg });
+        }
+        if (state === "working") {
+            return ({ color: colors.amber, bg: colors.amberBg });
+        }
+        if (state === "done") {
+            return ({ color: colors.green, bg: colors.greenBg });
+        }
+        if (state === "needs_attention") {
+            return ({ color: colors.orange, bg: colors.orangeBg });
+        }
+        if (state === "idle") {
+            return ({ color: colors.subtle, bg: Qt.rgba(0.39, 0.45, 0.55, 0.08) });
+        }
+        return ({ color: colors.muted, bg: colors.cardAlt });
+    }
 
     Timer {
         id: voxtypeStopIntentTimer
@@ -2169,6 +2232,7 @@ ShellRoot {
         const targetId = Number(notificationId || 0);
         const notification = notificationRuntimeMap[String(targetId)];
         if (!notification) {
+            console.warn("notification.action: no runtime entry for", targetId, "(closed?)");
             return;
         }
         const actions = arrayOrEmpty(notification.actions);
@@ -4878,20 +4942,7 @@ function normalizeLauncherMode(mode) {
     }
 
     function herdrSpaceStatusColor(space) {
-        const state = herdrSpaceEffectiveStatus(space);
-        if (state === "blocked") {
-            return colors.red;
-        }
-        if (state === "working") {
-            return colors.amber;
-        }
-        if (state === "done") {
-            return colors.teal;
-        }
-        if (state === "idle") {
-            return colors.green;
-        }
-        return colors.muted;
+        return sessionStatusStyle(herdrSpaceEffectiveStatus(space)).color;
     }
 
     function herdrSpaceStaticStatusIcon(state) {
@@ -4903,7 +4954,7 @@ function normalizeLauncherMode(mode) {
             return "●";
         }
         if (normalized === "done") {
-            return "●";
+            return "✓";
         }
         if (normalized === "idle") {
             return "○";
@@ -5452,20 +5503,7 @@ function normalizeLauncherMode(mode) {
     }
 
     function sessionAccentColor(session) {
-        const phase = sessionPhase(session);
-        if (phase === "blocked") {
-            return colors.red;
-        }
-        if (phase === "done") {
-            return colors.teal;
-        }
-        if (phase === "working") {
-            return colors.amber;
-        }
-        if (phase === "idle") {
-            return colors.green;
-        }
-        return colors.muted;
+        return sessionStatusStyle(sessionPhase(session)).color;
     }
 
     function boolOrFalse(value) {
@@ -5489,51 +5527,11 @@ function normalizeLauncherMode(mode) {
     }
 
     function sessionBadgeColor(session) {
-        const state = sessionBadgeState(session);
-        const hasHerdrStatus = stringOrEmpty(session && session.agent_status).length > 0;
-        if (state === "blocked") {
-            return colors.red;
-        }
-        if (state === "needs_attention") {
-            return colors.amber;
-        }
-        if (state === "stopped") {
-            return colors.violet;
-        }
-        if (state === "done") {
-            return hasHerdrStatus ? colors.teal : colors.accent;
-        }
-        if (state === "working") {
-            return hasHerdrStatus ? colors.amber : root.sessionAccentColor(session);
-        }
-        if (state === "idle") {
-            return hasHerdrStatus ? colors.green : colors.subtle;
-        }
-        return colors.muted;
+        return sessionStatusStyle(sessionBadgeState(session)).color;
     }
 
     function sessionBadgeBackground(session) {
-        const state = sessionBadgeState(session);
-        const hasHerdrStatus = stringOrEmpty(session && session.agent_status).length > 0;
-        if (state === "blocked") {
-            return colors.redBg;
-        }
-        if (state === "needs_attention") {
-            return colors.amberBg;
-        }
-        if (state === "stopped") {
-            return Qt.tint(colors.violetBg, Qt.rgba(1, 1, 1, 0.04));
-        }
-        if (state === "done") {
-            return hasHerdrStatus ? colors.tealBg : colors.accentBg;
-        }
-        if (state === "working") {
-            return hasHerdrStatus ? colors.amberBg : (root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt);
-        }
-        if (state === "idle") {
-            return hasHerdrStatus ? colors.greenBg : (root.sessionIsCurrent(session) ? colors.bg : colors.cardAlt);
-        }
-        return colors.cardAlt;
+        return sessionStatusStyle(sessionBadgeState(session)).bg;
     }
 
     function sessionBadgeBorderColor(session) {
@@ -5659,10 +5657,15 @@ function normalizeLauncherMode(mode) {
             return "◉";
         }
         if (state === "done") {
-            return "●";
+            return "✓";
         }
         if (owner === "llm" || state === "working") {
             return "◔";
+        }
+        // Before the owner fallback: sessionTurnOwner() reports "user" for idle
+        // as well as done, so an idle row would otherwise wear the done check.
+        if (state === "idle") {
+            return "○";
         }
         if (owner === "user") {
             return "✓";
@@ -7587,13 +7590,13 @@ function normalizeLauncherMode(mode) {
         runDetached(command);
     }
 
-    function runDaemonSocketCall(method, params) {
+    function runDaemonSocketCall(method, params, options) {
         const normalizedMethod = stringOrEmpty(method);
         if (!normalizedMethod || !runtimeServices || typeof runtimeServices.sendDaemonAction !== "function") {
             console.warn("daemon.action: bridge unavailable for", normalizedMethod || "<missing method>");
             return false;
         }
-        const sent = runtimeServices.sendDaemonAction(normalizedMethod, plainJsonValue(params || {}) || {});
+        const sent = runtimeServices.sendDaemonAction(normalizedMethod, plainJsonValue(params || {}) || {}, options);
         if (!sent) {
             console.warn("daemon.action: bridge rejected", normalizedMethod);
         }
@@ -7723,9 +7726,20 @@ function normalizeLauncherMode(mode) {
         return key !== "" && Object.prototype.hasOwnProperty.call(sessionClosePendingMap, key);
     }
 
+    function clearSessionClosePending(sessionKey) {
+        const key = stringOrEmpty(sessionKey);
+        if (!key || !Object.prototype.hasOwnProperty.call(sessionClosePendingMap, key)) {
+            return;
+        }
+        const next = Object.assign({}, sessionClosePendingMap);
+        delete next[key];
+        sessionClosePendingMap = next;
+    }
+
     function pruneSessionClosePending() {
         const next = {};
         const now = Date.now();
+        let changed = false;
         const liveKeys = {};
         const sessions = activeSessions();
         for (let i = 0; i < sessions.length; i += 1) {
@@ -7741,9 +7755,13 @@ function normalizeLauncherMode(mode) {
             const startedAt = Number(sessionClosePendingMap[key] || 0);
             if (liveKeys[key] && now - startedAt < 15000) {
                 next[key] = startedAt;
+            } else {
+                changed = true;
             }
         }
-        sessionClosePendingMap = next;
+        if (changed) {
+            sessionClosePendingMap = next;
+        }
     }
 
     function sessionHasClosableSurface(session) {
@@ -7766,7 +7784,16 @@ function normalizeLauncherMode(mode) {
         const explicitCloseTarget = sessionCloseTarget(session);
         if (explicitCloseTarget) {
             markSessionClosePending(sessionKey);
-            runDaemonCall(explicitCloseTarget.method, explicitCloseTarget.params);
+            // Socket bridge path rather than a detached CLI call, so a send
+            // failure clears the pending state immediately instead of leaving
+            // the row spinning until the 15s prune. Asynchronous daemon errors
+            // are only logged by handleDaemonActionResponse — the bridge
+            // carries no request/session correlation — but the row still
+            // self-corrects from the next dashboard snapshot.
+            if (!runDaemonSocketCall(explicitCloseTarget.method, explicitCloseTarget.params)) {
+                clearSessionClosePending(sessionKey);
+                console.error("session.close: daemon action failed for", explicitCloseTarget.method);
+            }
             return;
         }
 
@@ -7823,7 +7850,9 @@ function normalizeLauncherMode(mode) {
             connection_key: stringOrEmpty(windowData.connection_key),
         };
 
-        if (runDaemonSocketCall("window.action", params)) {
+        // Don't queue: this call has a CLI fallback below, and running both
+        // would try to close the window twice.
+        if (runDaemonSocketCall("window.action", params, { queue: false })) {
             return;
         }
 
@@ -7918,10 +7947,12 @@ function normalizeLauncherMode(mode) {
             return false;
         }
 
+        // `worktrees` is deliberately not a liveness signal: the watch feed asks
+        // the daemon to omit that array (nothing here renders it), so an empty
+        // one is normal rather than evidence of a stale or broken snapshot.
         return arrayOrEmpty(state.active_ai_sessions).length > 0
             || arrayOrEmpty(state.projects).length > 0
             || arrayOrEmpty(state.outputs).length > 0
-            || arrayOrEmpty(state.worktrees).length > 0
             || Number(state.total_windows || 0) > 0;
     }
 
@@ -7939,6 +7970,7 @@ function normalizeLauncherMode(mode) {
         dashboard = root.dashboardHasUsableData(dashboard)
             ? root.dashboardStateWithStatus(dashboard, status, errorMessage)
             : root.emptyDashboardState(status, errorMessage);
+        updateSessionMotionFlags();
         if (launcherVisible && (launcherMode === "sessions" || launcherMode === "windows")) {
             restartLauncherQuery();
         }
@@ -7962,9 +7994,32 @@ function normalizeLauncherMode(mode) {
         console.warn("dashboard.invariant:", message);
     }
 
+    function updateSessionMotionFlags() {
+        const sessions = activeSessions();
+        let working = false;
+        let blocked = false;
+        for (let i = 0; i < sessions.length; i += 1) {
+            if (!working && sessionHasMotion(sessions[i])) {
+                working = true;
+            }
+            if (!blocked && sessionPhase(sessions[i]) === "blocked") {
+                blocked = true;
+            }
+            if (working && blocked) {
+                break;
+            }
+        }
+        anySessionWorking = working;
+        anySessionBlocked = blocked;
+        if (!blocked) {
+            attentionBlinkOn = true;
+        }
+    }
+
     function afterDashboardApplied() {
         checkDashboardFocusInvariants(dashboard);
         syncDisplayApplyStateFromDashboard();
+        updateSessionMotionFlags();
         pruneSessionClosePending();
         clearLocalFocusIntentIfSettled();
         if (launcherVisible && (launcherMode === "sessions" || launcherMode === "windows")) {
@@ -8028,6 +8083,12 @@ function normalizeLauncherMode(mode) {
         }
 
         const eventType = stringOrEmpty(event.event_type || event.type);
+        if (eventType === "watch.disconnected") {
+            // The watch stream lost the daemon; keep the stale data visible and
+            // wait — recovery is signaled by the full snapshot it re-emits.
+            resetDashboard("reconnecting", stringOrEmpty(event.message) || "dashboard watch disconnected");
+            return;
+        }
         const changedKeys = dashboardEventChangedKeys(event);
         const eventGeneration = dashboardGeneration(event);
         const currentGeneration = dashboardGeneration(dashboard);
@@ -8041,22 +8102,35 @@ function normalizeLauncherMode(mode) {
             || changedKeys.indexOf("dashboard") !== -1
             || !payload
         ) {
-            resetDashboard("reconnecting", eventType || "dashboard invalidated");
+            recoverDashboardWatch(eventType || "dashboard invalidated");
             return;
         }
 
         if (eventGeneration >= 0 && currentGeneration >= 0 && eventGeneration > currentGeneration + 1) {
-            resetDashboard("reconnecting", "dashboard event generation gap");
+            recoverDashboardWatch("dashboard event generation gap");
             return;
         }
 
         dashboard = dashboardWithReconciledSessionFocus(Object.assign({}, dashboard, payload, {
-            snapshot_version: eventGeneration >= 0 ? eventGeneration : (payload.snapshot_version || dashboard.snapshot_version || 0),
-            session_generation: event.session_generation !== undefined ? event.session_generation : (payload.session_generation || dashboard.session_generation || 0),
-            display_generation: event.display_generation !== undefined ? event.display_generation : (payload.display_generation || dashboard.display_generation || 0),
-            focus_generation: event.focus_generation !== undefined ? event.focus_generation : (payload.focus_generation || dashboard.focus_generation || 0),
+            snapshot_version: eventGeneration >= 0 ? eventGeneration : (payload.snapshot_version ?? dashboard.snapshot_version ?? 0),
+            session_generation: event.session_generation !== undefined ? event.session_generation : (payload.session_generation ?? dashboard.session_generation ?? 0),
+            display_generation: event.display_generation !== undefined ? event.display_generation : (payload.display_generation ?? dashboard.display_generation ?? 0),
+            focus_generation: event.focus_generation !== undefined ? event.focus_generation : (payload.focus_generation ?? dashboard.focus_generation ?? 0),
         }));
         afterDashboardApplied();
+    }
+
+    // Full recovery from a wedged watch stream: without the watcher restart the
+    // stale generation makes every later delta re-trigger the gap branch and the
+    // panel sticks in "reconnecting" forever.
+    function recoverDashboardWatch(reason) {
+        resetDashboard("reconnecting", reason);
+        if (dashboardWatcher) {
+            dashboardWatcher.running = false;
+        }
+        if (dashboardRestartTimer) {
+            dashboardRestartTimer.restart();
+        }
     }
 
     function handleDashboardWatchError(payload) {
@@ -8066,9 +8140,7 @@ function normalizeLauncherMode(mode) {
         }
         console.warn("dashboard.watch:", message);
         if (message.indexOf("Bad resource ID") !== -1 || message.indexOf("Fatal error") !== -1) {
-            root.resetDashboard("reconnecting", message);
-            dashboardWatcher.running = false;
-            dashboardRestartTimer.restart();
+            recoverDashboardWatch(message);
         }
     }
 
@@ -8116,6 +8188,7 @@ function normalizeLauncherMode(mode) {
 
         try {
             const parsed = JSON.parse(raw);
+            dashboardParseFailureCount = 0;
             if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.event_type !== undefined) {
                 applyEvent(parsed);
             } else {
@@ -8123,6 +8196,11 @@ function normalizeLauncherMode(mode) {
             }
         } catch (error) {
             console.warn("Failed to parse dashboard payload", error, raw);
+            dashboardParseFailureCount += 1;
+            if (dashboardParseFailureCount >= 3) {
+                dashboardParseFailureCount = 0;
+                recoverDashboardWatch("dashboard payload parse failures");
+            }
         }
     }
 
@@ -8493,6 +8571,24 @@ function normalizeLauncherMode(mode) {
         id: runtimeServices
         shellRoot: shellRootRef
         runtimeConfig: shellConfig
+    }
+
+    // Single spinner clock shared by every SessionRow (see activitySpinnerFrame).
+    Timer {
+        interval: 95
+        repeat: true
+        running: root.anySessionWorking
+        onTriggered: root.activitySpinnerFrame = (root.activitySpinnerFrame + 1) % 10
+    }
+
+    // Single attention clock shared by every blocked-state indicator. Two steps
+    // per cycle, so a blocked session costs ~3 repaints/second instead of the 60
+    // an infinite opacity animation forces.
+    Timer {
+        interval: 340
+        repeat: true
+        running: root.anySessionBlocked
+        onTriggered: root.attentionBlinkOn = !root.attentionBlinkOn
     }
 
 

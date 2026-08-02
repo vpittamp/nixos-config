@@ -45,8 +45,47 @@ Item {
     property alias displayScaleProcessRef: displayScaleProcess
     property alias displayPresetProcessRef: displayPresetProcess
     property int daemonActionRequestId: 0
+    // Actions requested while the bridge process is down; flushed on its next
+    // start so a click during a bridge restart is delivered, not dropped.
+    property var daemonActionQueue: []
 
-    function sendDaemonAction(method, params) {
+    // Queued actions older than this are dropped rather than replayed: a focus
+    // request that has been waiting seconds for the bridge to come back no
+    // longer reflects where the user wants to be, and replaying it would yank
+    // them to a workspace they left long ago.
+    readonly property int daemonActionMaxQueueAgeMs: 2000
+
+    function queueDaemonAction(method, params) {
+        const next = daemonActionQueue.slice();
+        next.push({ method: method, params: params || {}, queuedAt: Date.now() });
+        while (next.length > 8) {
+            next.shift();
+        }
+        daemonActionQueue = next;
+    }
+
+    function flushDaemonActionQueue() {
+        if (!daemonActionBridge.running || daemonActionQueue.length === 0) {
+            return;
+        }
+        const pending = daemonActionQueue;
+        daemonActionQueue = [];
+        const now = Date.now();
+        for (let i = 0; i < pending.length; i += 1) {
+            const entry = pending[i];
+            const queuedAt = Number(entry.queuedAt || 0);
+            if (queuedAt && now - queuedAt > daemonActionMaxQueueAgeMs) {
+                continue;
+            }
+            sendDaemonAction(entry.method, entry.params);
+        }
+    }
+
+    // Returns true only when the request was actually written to the bridge.
+    // A queued request reports false so callers holding a real fallback (e.g.
+    // closeWindow's `i3pm window action` CLI path) still reach it; pass
+    // options.queue = false to skip queueing entirely and avoid running both.
+    function sendDaemonAction(method, params, options) {
         const normalizedMethod = String(method || "").trim();
         if (!normalizedMethod || !runtimeConfig.daemonActionBin) {
             return false;
@@ -54,6 +93,9 @@ Item {
 
         try {
             if (!daemonActionBridge.running) {
+                if (!options || options.queue !== false) {
+                    queueDaemonAction(normalizedMethod, params || {});
+                }
                 daemonActionBridge.running = true;
                 return false;
             }
@@ -440,6 +482,7 @@ Item {
         command: [runtimeConfig.daemonActionBin, "--jsonl"]
         running: true
         stdinEnabled: true
+        onStarted: services.flushDaemonActionQueue()
         stdout: SplitParser {
             splitMarker: "\n"
             onRead: function (data) {
@@ -1020,7 +1063,9 @@ Item {
         id: sessionClosePendingPruneTimer
         interval: 1500
         repeat: true
-        running: true
+        // Ticks only while there is something to prune; the dashboard-apply hook
+        // already prunes on every snapshot, so an empty map needs no timer.
+        running: Object.keys(shellRoot.sessionClosePendingMap).length > 0
         onTriggered: shellRoot.pruneSessionClosePending()
     }
 

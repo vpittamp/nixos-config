@@ -468,6 +468,7 @@ PanelWindow {
                                         anchors.fill: parent
                                         rootObject: root
                                         colorsObject: colors
+                                        surfaceVisible: root.launcherVisible
                                         session: entry
                                         selected: parent.selected
                                         hovered: entryMouse.containsMouse

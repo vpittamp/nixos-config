@@ -299,6 +299,7 @@ async def _get_window_pid_via_xprop(window_xid: int) -> Optional[int]:
         Uses subprocess.run to execute xprop command.
         Performance: ~10-20ms per call (cached by OS).
     """
+    proc = None
     try:
         # Run xprop in subprocess (i3 process ensures xprop is available)
         proc = await asyncio.create_subprocess_exec(
@@ -323,7 +324,15 @@ async def _get_window_pid_via_xprop(window_xid: int) -> Optional[int]:
         return None
 
     except asyncio.TimeoutError:
+        # wait_for only abandons the wait; the child keeps running. Kill it, or a
+        # hung xprop leaks a process per XWayland window that trips this path.
         logger.warning(f"xprop timeout for window {window_xid}")
+        if proc is not None and proc.returncode is None:
+            try:
+                proc.kill()
+                await proc.communicate()
+            except Exception:
+                pass
         return None
     except (ValueError, IndexError) as e:
         logger.warning(f"Failed to parse PID from xprop output: {e}")

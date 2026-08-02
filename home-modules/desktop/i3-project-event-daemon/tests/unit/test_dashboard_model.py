@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import logging
 import sys
 from pathlib import Path
 
@@ -461,6 +462,46 @@ def test_validate_dashboard_payload_rejects_duplicate_current_workspace_rows() -
     assert "current_workspace_row_not_unique" in result["issues"]
 
 
+def test_duplicate_workspace_invariant_logs_warning_on_transition(caplog) -> None:
+    def _payload(workspaces):
+        return {
+            "schema_version": "i3pm.dashboard.v2",
+            "generation": 1,
+            "snapshot_version": 1,
+            "focus_state": {
+                "current_session_key": "",
+                "current_window_id": 0,
+                "current_workspace_name": "2",
+            },
+            "active_ai_sessions": [],
+            "projects": [],
+            "outputs": [{"name": "DP-1", "workspaces": workspaces}],
+        }
+
+    degraded = _payload([
+        {"name": "2", "focused": True},
+        {"name": "2", "focused": False},
+    ])
+    healthy = _payload([{"name": "2", "focused": True}])
+    dashboard_model._current_workspace_row_invariant_active = False
+
+    with caplog.at_level(logging.WARNING, logger=dashboard_model.__name__):
+        validate_dashboard_payload(degraded)
+        validate_dashboard_payload(degraded)
+        validate_dashboard_payload(healthy)
+        validate_dashboard_payload(degraded)
+
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if "current_workspace_row_not_unique" in record.getMessage()
+    ]
+    # Logged once per transition into degraded, not per snapshot.
+    assert len(messages) == 2
+    assert "'2'" in messages[0]
+    assert "DP-1" in messages[0]
+
+
 def test_validate_dashboard_payload_warns_on_remote_herdr_focus_mismatch() -> None:
     payload = {
         "schema_version": "i3pm.dashboard.v2",
@@ -647,6 +688,32 @@ def test_dashboard_changed_keys_follow_typed_event_contract() -> None:
         "herdr",
     ]
     assert dashboard_changed_keys_for_event("dashboard_invalidated") == ["dashboard"]
+
+
+def test_agent_session_events_do_not_ship_worktrees() -> None:
+    # The worktree array dominated session.changed payloads (~100KB) while
+    # agent-session consumers only read the session rows; full snapshots still
+    # carry it, and event merges are partial so absent keys keep prior values.
+    assert dashboard_changed_keys_for_event("agent_session_changed") == [
+        "focus_state",
+        "active_ai_sessions",
+    ]
+    assert dashboard_changed_keys_for_event("ai_session_git_changed") == [
+        "focus_state",
+        "active_ai_sessions",
+    ]
+
+
+def test_worktree_and_project_events_still_ship_worktrees() -> None:
+    # These route through session.changed too, but they are rare and are the
+    # only events that actually mutate the array — dropping it there would
+    # leave `i3pm dashboard watch` consumers stale until a full snapshot.
+    for event_type in ("worktree_changed", "worktree::new", "project_changed"):
+        assert dashboard_changed_keys_for_event(event_type) == [
+            "focus_state",
+            "active_ai_sessions",
+            "worktrees",
+        ], event_type
 
 
 def test_window_membership_changes_refresh_outputs_focus_does_not() -> None:

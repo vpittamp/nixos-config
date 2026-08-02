@@ -59,6 +59,7 @@ class DashboardService:
         self.display_generation = 0
         self.focus_generation = 0
         self._last_snapshot: Dict[str, Any] = {}
+        self._notify_lock = asyncio.Lock()
 
     def subscribe(self, writer: asyncio.StreamWriter) -> Dict[str, Any]:
         """Subscribe a client to typed dashboard events."""
@@ -76,16 +77,25 @@ class DashboardService:
 
     async def snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return the daemon-owned dashboard payload consumed by QuickShell."""
-        runtime_snapshot, sessions, _cleanup = await self._runtime_loader(params or {})
+        params = params or {}
+        runtime_snapshot, sessions, _cleanup = await self._runtime_loader(params)
         display_snapshot = await self._display_snapshot()
         herdr_snapshot = runtime_snapshot.get("herdr", {})
         if not isinstance(herdr_snapshot, dict):
             herdr_snapshot = {}
 
         projects = self._build_projects(runtime_snapshot, sessions)
-        worktrees = list(runtime_snapshot.get("dashboard_worktrees", []) or [])
-        if not worktrees:
-            worktrees = await self._build_worktrees(runtime_snapshot)
+        # The worktrees array is ~100KB of a ~157KB snapshot and no shell surface
+        # renders it, so subscribers that only drive the bars ask to leave it out.
+        # Typed events already omit it for the same reason; this extends that to
+        # the full snapshots those clients fetch on connect and on gap recovery.
+        # CLI consumers keep the default and still get the array.
+        if bool(params.get("include_worktrees", True)):
+            worktrees = list(runtime_snapshot.get("dashboard_worktrees", []) or [])
+            if not worktrees:
+                worktrees = await self._build_worktrees(runtime_snapshot)
+        else:
+            worktrees = []
         focus_state = self._build_focus_state(
             runtime_snapshot,
             sessions,
@@ -95,6 +105,11 @@ class DashboardService:
             sessions,
             current_session_key=str(focus_state.get("current_session_key") or "").strip(),
         )
+        if bool(params.get("skip_git_hydration", False)):
+            # Unhydrated builds ship session rows without git_* fields; carry
+            # them over from the last hydrated snapshot so this build (which
+            # becomes _last_snapshot for focus-only events) keeps git chips lit.
+            self._merge_last_snapshot_git_fields(sessions)
         payload = build_dashboard_snapshot_payload(
             runtime_snapshot=runtime_snapshot,
             display_snapshot=display_snapshot,
@@ -140,6 +155,33 @@ class DashboardService:
                 session["window_active"] = is_current
             normalized.append(session)
         return normalized
+
+    _SESSION_GIT_FIELDS = (
+        "git_snapshot",
+        "git_state",
+        "git_compact",
+        "git_freshness",
+        "git_attribution",
+        "git_tooltip",
+    )
+
+    def _merge_last_snapshot_git_fields(self, sessions: List[Dict[str, Any]]) -> None:
+        """Fill missing git_* fields from the last snapshot's rows (by session key)."""
+        last_snapshot = self._last_snapshot if isinstance(self._last_snapshot, dict) else {}
+        previous_rows = {
+            str(row.get("session_key") or "").strip(): row
+            for row in last_snapshot.get("active_ai_sessions", []) or []
+            if isinstance(row, dict) and str(row.get("session_key") or "").strip()
+        }
+        for session in sessions:
+            if not isinstance(session, dict):
+                continue
+            previous = previous_rows.get(str(session.get("session_key") or "").strip())
+            if not isinstance(previous, dict):
+                continue
+            for field in self._SESSION_GIT_FIELDS:
+                if field not in session and field in previous:
+                    session[field] = previous[field]
 
     async def validate(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return dashboard invariant status without exposing validation internals."""
@@ -271,64 +313,85 @@ class DashboardService:
             event_types = [event_type]
         else:
             event_types = [str(item) for item in event_type] or ["dashboard_invalidated"]
-        event_state = advance_dashboard_event_state_for_batch(
-            event_types=event_types,
-            snapshot_version=self.snapshot_version,
-            session_generation=self.session_generation,
-            display_generation=self.display_generation,
-            focus_generation=self.focus_generation,
-        )
-        self.snapshot_version = int(event_state.get("snapshot_version") or 0)
-        self.session_generation = int(event_state.get("session_generation") or 0)
-        self.display_generation = int(event_state.get("display_generation") or 0)
-        self.focus_generation = int(event_state.get("focus_generation") or 0)
-        normalized_type = str(event_state.get("type") or "dashboard_invalidated")
-        changed_keys = list(event_state.get("changed_keys", []) or [])
-        if bool(event_state.get("invalidate_worktree_cache", False)):
-            self._invalidate_worktree_cache()
-
-        if not self.subscribers:
-            return
-
-        try:
-            event_payload = await self.event_payload(changed_keys)
-        except Exception as exc:
-            logger.warning("Failed to build dashboard event payload for %s: %s", normalized_type, exc)
-            event_state = dict(event_state)
-            event_state["event_type"] = "dashboard.invalidated"
-            changed_keys = ["dashboard"]
-            event_state["changed_keys"] = changed_keys
-            event_payload = dashboard_invalidated_payload(
-                error=exc,
+        # Serialize version-bump → payload build → write: concurrent callers
+        # interleaving across the awaited build could write a lower-generation
+        # payload after a higher one, making clients drop the fresher data or
+        # reset on phantom generation gaps.
+        async with self._notify_lock:
+            event_state = advance_dashboard_event_state_for_batch(
+                event_types=event_types,
                 snapshot_version=self.snapshot_version,
                 session_generation=self.session_generation,
                 display_generation=self.display_generation,
                 focus_generation=self.focus_generation,
-                schema_version=self.schema_version,
             )
+            self.snapshot_version = int(event_state.get("snapshot_version") or 0)
+            self.session_generation = int(event_state.get("session_generation") or 0)
+            self.display_generation = int(event_state.get("display_generation") or 0)
+            self.focus_generation = int(event_state.get("focus_generation") or 0)
+            normalized_type = str(event_state.get("type") or "dashboard_invalidated")
+            changed_keys = list(event_state.get("changed_keys", []) or [])
+            if bool(event_state.get("invalidate_worktree_cache", False)):
+                self._invalidate_worktree_cache()
 
-        notification = json.dumps(dashboard_event_notification(
-            state=event_state,
-            payload=event_payload,
-            timestamp=self._timestamp(),
-            event_schema_version=self.event_schema_version,
-        ))
+            if not self.subscribers:
+                return
 
-        dead_clients = set()
-        for writer in list(self.subscribers):
             try:
-                writer.write((notification + "\n").encode())
-                transport = getattr(writer, "transport", None)
-                get_buffer_size = getattr(transport, "get_write_buffer_size", None)
-                if callable(get_buffer_size) and int(get_buffer_size() or 0) > 1_000_000:
-                    logger.warning("Dropping slow dashboard event subscriber with oversized write buffer")
-                    dead_clients.add(writer)
-            except (ConnectionResetError, BrokenPipeError, ConnectionError):
-                dead_clients.add(writer)
+                event_payload = await self.event_payload(changed_keys)
+                notification = json.dumps(dashboard_event_notification(
+                    state=event_state,
+                    payload=event_payload,
+                    timestamp=self._timestamp(),
+                    event_schema_version=self.event_schema_version,
+                ))
             except Exception as exc:
-                logger.warning("Error notifying dashboard event subscriber: %s", exc)
-                dead_clients.add(writer)
+                logger.warning("Failed to build dashboard event payload for %s: %s", normalized_type, exc)
+                event_state = dict(event_state)
+                event_state["event_type"] = "dashboard.invalidated"
+                changed_keys = ["dashboard"]
+                event_state["changed_keys"] = changed_keys
+                event_payload = dashboard_invalidated_payload(
+                    error=exc,
+                    snapshot_version=self.snapshot_version,
+                    session_generation=self.session_generation,
+                    display_generation=self.display_generation,
+                    focus_generation=self.focus_generation,
+                    schema_version=self.schema_version,
+                )
+                notification = json.dumps(
+                    dashboard_event_notification(
+                        state=event_state,
+                        payload=event_payload,
+                        timestamp=self._timestamp(),
+                        event_schema_version=self.event_schema_version,
+                    ),
+                    default=str,
+                )
 
-        self.subscribers -= dead_clients
-        if dead_clients:
-            logger.debug("Removed %s dead dashboard event subscribers", len(dead_clients))
+            data = (notification + "\n").encode()
+            dead_clients = set()
+            for writer in list(self.subscribers):
+                try:
+                    writer.write(data)
+                    transport = getattr(writer, "transport", None)
+                    get_buffer_size = getattr(transport, "get_write_buffer_size", None)
+                    if callable(get_buffer_size) and int(get_buffer_size() or 0) > 1_000_000:
+                        logger.warning("Dropping slow dashboard event subscriber with oversized write buffer")
+                        dead_clients.add(writer)
+                except (ConnectionResetError, BrokenPipeError, ConnectionError):
+                    dead_clients.add(writer)
+                except Exception as exc:
+                    logger.warning("Error notifying dashboard event subscriber: %s", exc)
+                    dead_clients.add(writer)
+
+            self.subscribers -= dead_clients
+            for writer in dead_clients:
+                # Close evicted writers so blocked `dashboard watch` readers see
+                # EOF and reconnect instead of hanging on readline forever.
+                try:
+                    writer.close()
+                except Exception:
+                    pass
+            if dead_clients:
+                logger.debug("Removed %s dead dashboard event subscribers", len(dead_clients))

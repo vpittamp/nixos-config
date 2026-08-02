@@ -77,7 +77,8 @@ class DashboardGitService:
         """Probe live git state for a specific worktree path."""
         path = Path(str(worktree_path or "").strip())
         now = int(time.time())
-        if not path.exists() or not path.is_dir():
+        # Path.is_dir() hits the filesystem; keep the blocking stat off the loop.
+        if not await asyncio.to_thread(path.is_dir):
             return {
                 "available": False,
                 "worktree_path": str(path),
@@ -149,11 +150,13 @@ class DashboardGitService:
                 untracked_count += 1
 
         dirty_count = staged_count + modified_count + untracked_count
+        probe_success = status_result[0] == 0
+        # A failed/timed-out status probe parses zero lines; reporting that as
+        # 'clean' would fake a pristine worktree. Report 'unknown' instead.
         state = self.snapshot_state(
             has_conflicts=has_conflicts,
             dirty_count=dirty_count,
-        )
-        probe_success = status_result[0] == 0
+        ) if probe_success else "unknown"
         return {
             "available": bool(repo_root or probe_success),
             "worktree_path": str(path),
@@ -265,16 +268,26 @@ class DashboardGitService:
             )
             if decorated["freshness"] == "fresh":
                 return decorated
-            if priority != "current":
-                self.ensure_git_snapshot_refresh(
-                    worktree_path=normalized_path,
-                    qualified_name=qualified_name,
-                    branch_hint=branch_hint,
-                    notify_state_change=notify_state_change,
-                )
-                return decorated
+            # Serve the cached snapshot for every priority, including "current",
+            # and refresh behind it. This call runs inside the dashboard notify
+            # lock, so awaiting a probe here (three git subprocesses, 2.5s
+            # timeout each) stalled the whole event fanout — including unrelated
+            # focus deltas queued behind the lock — whenever the cache aged out.
+            # The row already carries a fresh/aging/stale marker for the UI, and
+            # the background refresh emits ai_session_git_changed when it lands,
+            # so the value converges within one notify cycle.
+            self.ensure_git_snapshot_refresh(
+                worktree_path=normalized_path,
+                qualified_name=qualified_name,
+                branch_hint=branch_hint,
+                notify_state_change=notify_state_change,
+            )
+            return decorated
 
-        if priority == "current" or entry is None:
+        # No cache entry at all: a first probe still runs inline, because
+        # returning None here would ship a session row with no git fields and
+        # no marker to explain the gap.
+        if entry is None:
             refreshed = await self.refresh_git_snapshot(
                 worktree_path=normalized_path,
                 qualified_name=qualified_name,
@@ -602,6 +615,17 @@ class DashboardGitService:
             session["git_attribution"] = ""
             session["git_tooltip"] = ""
             return
+        if not bool(snapshot.get("probe_success", True)):
+            # A failed probe carries zeroed counts, so the fake-clean state and
+            # compact string must not be published. Session rows are rebuilt
+            # fresh each snapshot and carry no prior git_* keys, so returning
+            # here would drop the chip entirely; write the honest "unknown /
+            # stale" fields instead and leave the count-bearing keys alone.
+            session["git_state"] = "unknown"
+            session["git_freshness"] = str(snapshot.get("freshness") or "stale").strip()
+            session["git_attribution"] = str(snapshot.get("attribution") or "").strip()
+            session["git_tooltip"] = str(snapshot.get("status_tooltip") or "").strip()
+            return
         session["git_snapshot"] = dict(snapshot)
         session["git_state"] = str(snapshot.get("state") or "unknown").strip()
         session["git_compact"] = str(snapshot.get("status_compact") or "").strip()
@@ -616,6 +640,10 @@ class DashboardGitService:
     ) -> None:
         """Overlay live git data onto a dashboard worktree payload."""
         if not isinstance(worktree, dict) or not isinstance(snapshot, dict):
+            return
+        if not bool(snapshot.get("probe_success", True)):
+            # A failed probe carries zeroed counts; keep the worktree's genuine
+            # counts from the repository scan instead of overwriting with zeros.
             return
         worktree["git_state"] = str(snapshot.get("state") or "unknown").strip()
         worktree["git_freshness"] = str(snapshot.get("freshness") or "").strip()

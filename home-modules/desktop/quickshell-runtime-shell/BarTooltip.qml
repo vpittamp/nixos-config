@@ -30,8 +30,17 @@ PopupWindow {
 
     visible: tipShown && active && text.length > 0
     color: "transparent"
-    implicitWidth: tipCard.implicitWidth
-    implicitHeight: tipCard.implicitHeight
+    // +2: room for the 1px depth halo around the card (see tipCard).
+    implicitWidth: tipCard.implicitWidth + 2
+    implicitHeight: tipCard.implicitHeight + 2
+
+    onVisibleChanged: {
+        if (visible) {
+            tipEnterAnim.restart();
+        } else {
+            tipEnterAnim.stop();
+        }
+    }
 
     anchor.window: anchorWindow
     anchor.item: anchorItem
@@ -52,12 +61,68 @@ PopupWindow {
 
     Rectangle {
         id: tipCard
+        x: 1
+        y: 1
         implicitWidth: Math.min(380, tipText.implicitWidth + 16)
         implicitHeight: tipText.implicitHeight + 10
-        radius: 6
-        color: barTooltip.colors.panel
+        radius: 8
+        gradient: Gradient {
+            GradientStop {
+                position: 0.0
+                color: "#131d2a"
+            }
+            GradientStop {
+                position: 1.0
+                color: "#0d1117"
+            }
+        }
         border.color: barTooltip.colors.border
         border.width: 1
+
+        // Pre-rendered depth instead of a MultiEffect shadow: the shadow needs
+        // inset room inside the popup window, and growing the window toward the
+        // bar would overlap the hovered chip and re-introduce the hover-steal
+        // oscillation this PopupWindow exists to avoid.
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -1
+            radius: parent.radius + 1
+            color: "transparent"
+            border.color: Qt.rgba(0, 0, 0, 0.4)
+            border.width: 1
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: 1
+            radius: parent.radius - 1
+            color: "transparent"
+            border.color: Qt.rgba(1, 1, 1, 0.05)
+            border.width: 1
+        }
+
+        // Fade + short upward drift on show; hide stays instant (the window
+        // just disappears with the hover).
+        ParallelAnimation {
+            id: tipEnterAnim
+
+            NumberAnimation {
+                target: tipCard
+                property: "opacity"
+                from: 0
+                to: 1
+                duration: 140
+                easing.type: Easing.OutCubic
+            }
+            NumberAnimation {
+                target: tipCard
+                property: "y"
+                from: 4
+                to: 1
+                duration: 140
+                easing.type: Easing.OutCubic
+            }
+        }
 
         Text {
             id: tipText

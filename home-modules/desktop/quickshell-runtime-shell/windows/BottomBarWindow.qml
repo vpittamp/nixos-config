@@ -18,9 +18,28 @@ PanelWindow {
     readonly property var barScreen: fallbackMode ? null : modelData
     readonly property string barOutputName: fallbackMode ? root.stringOrEmpty(fallbackOutputName) : root.screenOutputName(barScreen)
     property var barWorkspaces: []
+    property string barWorkspacesFingerprint: ""
 
     function refreshBarWorkspaces() {
-        barWorkspaces = root.barWorkspacesForOutput(barOutputName);
+        const next = root.barWorkspacesForOutput(barOutputName);
+        // Only reassign when something a delegate renders actually changed —
+        // a plain-array Repeater rebuilds every delegate on assignment.
+        const fingerprint = JSON.stringify(next.map(function(workspace) {
+            return [
+                Number(workspace && workspace.num || 0),
+                root.stringOrEmpty(workspace && workspace.name),
+                root.boolOrFalse(workspace && workspace.focused),
+                root.boolOrFalse(workspace && workspace.active),
+                root.boolOrFalse(workspace && workspace.urgent),
+                Number(workspace && workspace.window_count || 0),
+                root.arrayOrEmpty(workspace && workspace.icon_sources),
+            ];
+        }));
+        if (fingerprint === barWorkspacesFingerprint) {
+            return;
+        }
+        barWorkspacesFingerprint = fingerprint;
+        barWorkspaces = next;
     }
 
     onBarOutputNameChanged: refreshBarWorkspaces()
@@ -67,7 +86,7 @@ PanelWindow {
                 readonly property bool hovered: launcherMouse.containsMouse
                 Layout.preferredWidth: Math.min(320, Math.max(198, launcherContextTitle.implicitWidth + contextOutputText.implicitWidth + (contextGitChip.visible ? contextGitText.implicitWidth + 18 : 0) + 92))
                 Layout.fillHeight: true
-                radius: 8
+                radius: root.radiusControl
                 color: root.launcherVisible ? colors.blue : (hovered ? colors.card : colors.cardAlt)
                 border.color: root.launcherVisible ? colors.blue : (hovered ? colors.borderStrong : colors.border)
                 border.width: 1
@@ -84,7 +103,7 @@ PanelWindow {
                     Rectangle {
                         width: 26
                         height: 26
-                        radius: 7
+                        radius: root.radiusControl - 1
                         color: root.launcherVisible ? colors.bg : (launcherButton.hovered ? colors.blueWash : colors.card)
                         border.color: root.launcherVisible ? colors.bg : (launcherButton.hovered ? colors.blueMuted : colors.border)
                         border.width: 1
@@ -111,7 +130,7 @@ PanelWindow {
                     Text {
                         text: "Launch"
                         color: root.launcherVisible ? colors.bg : colors.text
-                        font.pixelSize: 12
+                        font.pixelSize: root.fontTitle
                         font.weight: Font.DemiBold
                     }
 
@@ -126,7 +145,7 @@ PanelWindow {
                         Layout.fillWidth: true
                         text: root.currentContextTitle()
                         color: root.launcherVisible ? colors.bg : colors.textDim
-                        font.pixelSize: 12
+                        font.pixelSize: root.fontTitle
                         font.weight: Font.DemiBold
                         elide: Text.ElideRight
                     }
@@ -136,7 +155,7 @@ PanelWindow {
                         visible: root.currentContextGitChipVisible()
                         width: contextGitText.implicitWidth + 10
                         height: 16
-                        radius: 5
+                        radius: root.radiusBadge
                         color: root.currentContextGitChipBackground()
                         border.color: "transparent"
                         border.width: 0
@@ -146,7 +165,7 @@ PanelWindow {
                             anchors.centerIn: parent
                             text: root.currentContextGitChipText()
                             color: root.currentContextGitChipForeground()
-                            font.pixelSize: 8
+                            font.pixelSize: root.fontCaption
                             font.weight: Font.DemiBold
                         }
                     }
@@ -155,7 +174,7 @@ PanelWindow {
                         id: contextOutputText
                         text: barOutputName || root.modeLabel((dashboard.active_context || {}).execution_mode)
                         color: root.launcherVisible ? colors.bg : colors.muted
-                        font.pixelSize: 10
+                        font.pixelSize: root.fontLabel
                         elide: Text.ElideRight
                     }
                 }
@@ -204,12 +223,23 @@ PanelWindow {
                                 readonly property bool workspaceHovered: workspaceMouse.containsMouse
                                 readonly property var workspaceIcons: root.arrayOrEmpty(workspace && workspace.icon_sources)
                                 readonly property int workspaceCount: Number(workspace && workspace.window_count || 0)
-                                width: Math.max(34, workspaceText.implicitWidth + (workspaceIcons.length ? 30 : 0) + (workspaceCount > 1 ? 14 : 0) + 12)
+                                width: Math.max(34, workspaceText.implicitWidth + (workspaceIcons.length ? 30 : 0) + (workspaceCount > 1 ? 16 : 0) + 12)
                                 height: 28
-                                radius: 8
+                                radius: root.radiusControl
                                 color: workspaceFocused ? colors.blue : (workspaceHovered ? colors.card : (root.boolOrFalse(workspace && workspace.active) ? colors.card : colors.cardAlt))
                                 border.color: workspaceFocused ? colors.blue : (root.boolOrFalse(workspace && workspace.urgent) ? colors.red : (workspaceHovered ? colors.borderStrong : colors.border))
                                 border.width: 1
+                                scale: workspaceMouse.pressed ? 0.96 : 1.0
+
+                                Behavior on color { ColorAnimation { duration: root.fastColorMs } }
+                                Behavior on border.color { ColorAnimation { duration: root.fastColorMs } }
+
+                                Behavior on scale {
+                                    NumberAnimation {
+                                        duration: 90
+                                        easing.type: Easing.OutQuad
+                                    }
+                                }
 
                                 RowLayout {
                                     anchors.fill: parent
@@ -228,7 +258,7 @@ PanelWindow {
                                                 required property var modelData
                                                 width: 18
                                                 height: 18
-                                                radius: 6
+                                                radius: root.radiusBadge
                                                 color: colors.bg
                                                 border.color: workspaceFocused ? colors.blue : colors.borderStrong
                                                 border.width: 1
@@ -248,15 +278,15 @@ PanelWindow {
                                         id: workspaceText
                                         text: workspaceLabelValue
                                         color: workspaceFocused ? colors.bg : (workspaceHovered ? colors.text : colors.textDim)
-                                        font.pixelSize: 11
+                                        font.pixelSize: root.fontBody
                                         font.weight: workspaceFocused ? Font.DemiBold : Font.Medium
                                     }
 
                                     Rectangle {
                                         visible: workspaceCount > 1
-                                        width: 12
-                                        height: 12
-                                        radius: 4
+                                        width: 14
+                                        height: 14
+                                        radius: root.radiusBadge
                                         color: workspaceFocused ? colors.bg : colors.card
                                         border.color: workspaceFocused ? colors.bg : colors.border
                                         border.width: 1
@@ -265,7 +295,7 @@ PanelWindow {
                                             anchors.centerIn: parent
                                             text: String(workspaceCount)
                                             color: workspaceFocused ? colors.blue : colors.muted
-                                            font.pixelSize: 8
+                                            font.pixelSize: root.fontCaption
                                             font.weight: Font.DemiBold
                                         }
                                     }
@@ -294,7 +324,7 @@ PanelWindow {
                 Layout.preferredWidth: dictateRow.implicitWidth + 24
                 Layout.fillHeight: true
                 Layout.alignment: Qt.AlignVCenter
-                radius: 10
+                radius: root.radiusControl
                 color: root.voxtypeListening() ? colors.redBg
                     : (root.voxtypeClass() === "stopping" ? colors.amberBg
                     : (dictateMouse.containsMouse ? colors.card : colors.cardAlt)
@@ -335,7 +365,7 @@ PanelWindow {
                                 : (root.voxtypeClass() === "stopping" ? "Stopping…"
                                     : (root.voxtypeClass() === "transcribing" ? "Transcribing…" : "Dictate")))
                         color: root.voxtypeActive() ? root.voxtypeIconColor() : colors.text
-                        font.pixelSize: 11
+                        font.pixelSize: root.fontBody
                         font.weight: Font.DemiBold
                     }
                 }
@@ -352,7 +382,7 @@ PanelWindow {
             Rectangle {
                 Layout.preferredWidth: 214
                 Layout.fillHeight: true
-                radius: 8
+                radius: root.radiusControl
                 color: colors.card
                 border.color: colors.border
                 border.width: 1
@@ -366,7 +396,7 @@ PanelWindow {
                     Text {
                         text: root.currentLayoutLabel()
                         color: colors.muted
-                        font.pixelSize: 10
+                        font.pixelSize: root.fontLabel
                         elide: Text.ElideRight
                     }
 
@@ -374,7 +404,7 @@ PanelWindow {
                         id: cycleLayoutButton
                         width: 38
                         height: 24
-                        radius: 7
+                        radius: root.radiusControl - 1
                         color: cycleLayoutMouse.containsMouse ? colors.card : colors.cardAlt
                         border.color: cycleLayoutMouse.containsMouse ? colors.borderStrong : colors.border
                         border.width: 1
@@ -383,7 +413,7 @@ PanelWindow {
                             anchors.centerIn: parent
                             text: "Next"
                             color: colors.text
-                            font.pixelSize: 9
+                            font.pixelSize: root.fontCaption
                             font.weight: Font.DemiBold
                         }
 
@@ -399,23 +429,34 @@ PanelWindow {
                     Text {
                         text: String(root.activeSessions().length) + " AI"
                         color: colors.text
-                        font.pixelSize: 11
+                        font.pixelSize: root.fontBody
                         font.weight: Font.DemiBold
                     }
 
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        radius: 7
+                        radius: root.radiusControl - 1
                         color: root.panelVisible ? (bottomPanelToggleMouse.containsMouse ? colors.blue : colors.blue) : (bottomPanelToggleMouse.containsMouse ? colors.card : colors.cardAlt)
                         border.color: root.panelVisible ? colors.blue : (bottomPanelToggleMouse.containsMouse ? colors.borderStrong : colors.border)
                         border.width: 1
+                        scale: bottomPanelToggleMouse.pressed ? 0.96 : 1.0
+
+                        Behavior on color { ColorAnimation { duration: root.fastColorMs } }
+                        Behavior on border.color { ColorAnimation { duration: root.fastColorMs } }
+
+                        Behavior on scale {
+                            NumberAnimation {
+                                duration: 90
+                                easing.type: Easing.OutQuad
+                            }
+                        }
 
                         Text {
                             anchors.centerIn: parent
                             text: root.panelVisible ? "Hide" : "Open"
                             color: root.panelVisible ? colors.bg : colors.text
-                            font.pixelSize: 10
+                            font.pixelSize: root.fontLabel
                             font.weight: Font.DemiBold
                         }
 

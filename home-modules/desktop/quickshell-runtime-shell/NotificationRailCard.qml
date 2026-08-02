@@ -17,6 +17,9 @@ Rectangle {
     signal detailRequested(int notificationId)
 
     readonly property bool critical: rootObject.notificationIsCritical(itemData)
+    // Closed notifications no longer have a runtime entry, so invoking an
+    // action would be a silent no-op — render the button inert instead.
+    readonly property bool actionable: !rootObject.notificationClosed(itemData)
     readonly property var primaryAction: rootObject.notificationPrimaryAction(itemData)
     readonly property string imageSource: rootObject.notificationResolvedImage(itemData)
     readonly property color accentColor: rootObject.notificationAccentColor(itemData)
@@ -178,6 +181,7 @@ Rectangle {
                     Layout.preferredHeight: 26
                     Layout.preferredWidth: visible ? actionText.implicitWidth + 18 : 0
                     radius: 9
+                    opacity: card.actionable ? 1 : 0.4
                     color: actionMouse.containsMouse ? Qt.tint(accentColor, Qt.rgba(1, 1, 1, 0.16)) : Qt.tint(accentColor, Qt.rgba(0, 0, 0, 0.58))
                     border.color: Qt.tint(accentColor, Qt.rgba(1, 1, 1, 0.16))
                     border.width: 1
@@ -194,8 +198,9 @@ Rectangle {
                     MouseArea {
                         id: actionMouse
                         anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
+                        enabled: card.actionable
+                        hoverEnabled: card.actionable
+                        cursorShape: card.actionable ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: card.actionInvoked(Number(itemData.id || 0), rootObject.notificationActionIdentifier(primaryAction))
                     }
                 }

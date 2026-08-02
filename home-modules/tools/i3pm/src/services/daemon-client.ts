@@ -257,8 +257,14 @@ export class DaemonClient {
     return await this.request<T>("runtime.snapshot", {});
   }
 
-  async getDashboardSnapshot<T = unknown>(): Promise<T> {
-    return await this.request<T>("dashboard.snapshot", {});
+  async getDashboardSnapshot<T = unknown>(
+    options: { includeWorktrees?: boolean } = {},
+  ): Promise<T> {
+    const params: Record<string, unknown> = {};
+    if (options.includeWorktrees === false) {
+      params.include_worktrees = false;
+    }
+    return await this.request<T>("dashboard.snapshot", params);
   }
 
   /**

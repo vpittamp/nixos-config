@@ -17,8 +17,11 @@ Options:
   --count <n>  Stop after n events (events only)`);
 }
 
-async function fetchSnapshot(client: DaemonClient): Promise<unknown> {
-  return await client.getDashboardSnapshot();
+async function fetchSnapshot(
+  client: DaemonClient,
+  options: { includeWorktrees?: boolean } = {},
+): Promise<unknown> {
+  return await client.getDashboardSnapshot(options);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -74,6 +77,15 @@ export function applyDashboardEvent(
   return next;
 }
 
+export interface WatchDisconnectedEvent {
+  event_type: "watch.disconnected";
+  message: string;
+}
+
+export function watchDisconnectedEvent(message: string): WatchDisconnectedEvent {
+  return { event_type: "watch.disconnected", message };
+}
+
 export async function dashboardCommand(args: string[], _flags: CommandOptions): Promise<number> {
   const parsed = parseArgs(args, {
     boolean: ["help", "json"],
@@ -103,6 +115,7 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
     let lastPayload = "";
     let lastSeenGeneration = -1;
     let currentSnapshot: Record<string, unknown> | null = null;
+    let disconnectEmitted = false;
 
     while (true) {
       const snapshotClient = new DaemonClient();
@@ -127,7 +140,13 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
         try {
           do {
             snapshotQueued = false;
-            const snapshot = asRecord(await fetchSnapshot(snapshotClient));
+            // watch feeds the bars and panel, which never render `worktrees`.
+            // Leaving it out drops ~64% of the bytes off every connect, gap
+            // recovery and invalidation refetch. `dashboard snapshot` (the
+            // human/CLI path) still asks for the full document.
+            const snapshot = asRecord(
+              await fetchSnapshot(snapshotClient, { includeWorktrees: false }),
+            );
             if (snapshot === null) {
               continue;
             }
@@ -161,6 +180,7 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
         // Reconnect (or first connect): adopt the daemon's current generation as
         // the baseline so a restarted daemon's low generation isn't rejected.
         await emitSnapshot(true);
+        disconnectEmitted = false;
 
         for await (const event of subscriptionClient.subscribeToStateChanges()) {
           const generation = Number(event.generation ?? event.snapshot_version ?? -1);
@@ -188,6 +208,14 @@ export async function dashboardCommand(args: string[], _flags: CommandOptions): 
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`[i3pm dashboard watch] reconnecting after error: ${message}`);
+        if (!disconnectEmitted) {
+          disconnectEmitted = true;
+          const encoded = JSON.stringify(watchDisconnectedEvent(message));
+          console.log(encoded);
+          // Adopt the disconnect line as lastPayload so the recovery snapshot
+          // re-emit is never deduped away even when its content is unchanged.
+          lastPayload = encoded;
+        }
       } finally {
         subscriptionClient.disconnect();
         snapshotClient.disconnect();

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 import QtQuick.Layouts
 import Quickshell.Widgets
 
@@ -22,14 +23,36 @@ Rectangle {
     readonly property string imageSource: rootObject.notificationResolvedImage(itemData)
     readonly property var primaryAction: rootObject.notificationPrimaryAction(itemData)
     readonly property int timeoutMs: rootObject.notificationTimeoutFor(itemData)
+    // MultiEffect is shader-based; the software Quick backend (NVIDIA hosts)
+    // would render a layered item as nothing at all, so the shadow is gated
+    // and those hosts get the 1px dark halo below instead.
+    readonly property bool shadowCapable: GraphicsInfo.api !== GraphicsInfo.Software
 
     width: preferredWidth
     implicitWidth: preferredWidth
     implicitHeight: toastColumn.implicitHeight + 20
-    radius: 20
+    radius: rootObject.radiusFloat
     color: Qt.rgba(0.055, 0.074, 0.11, critical ? 0.94 : 0.88)
     border.color: Qt.tint(accentColor, Qt.rgba(1, 1, 1, critical ? 0.22 : 0.1))
     border.width: 1
+    layer.enabled: shadowCapable
+    layer.effect: MultiEffect {
+        shadowEnabled: true
+        shadowBlur: 1.0
+        shadowColor: Qt.rgba(0, 0, 0, 0.55)
+        shadowVerticalOffset: 6
+        shadowHorizontalOffset: 0
+    }
+
+    Rectangle {
+        visible: !toast.shadowCapable
+        anchors.fill: parent
+        anchors.margins: -1
+        radius: parent.radius + 1
+        color: "transparent"
+        border.color: Qt.rgba(0, 0, 0, 0.4)
+        border.width: 1
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -66,7 +89,7 @@ Rectangle {
             Rectangle {
                 Layout.preferredWidth: 42
                 Layout.preferredHeight: 42
-                radius: 14
+                radius: rootObject.radiusCard
                 color: rootObject.notificationAvatarFill(itemData)
                 border.color: Qt.rgba(1, 1, 1, 0.08)
                 border.width: 1
@@ -122,7 +145,7 @@ Rectangle {
             Rectangle {
                 Layout.preferredWidth: 28
                 Layout.preferredHeight: 28
-                radius: 10
+                radius: rootObject.radiusControl
                 color: closeMouse.containsMouse ? colorsObject.redBg : Qt.rgba(1, 1, 1, 0.03)
                 border.color: Qt.rgba(1, 1, 1, 0.06)
                 border.width: 1
@@ -174,7 +197,7 @@ Rectangle {
             visible: imageSource !== ""
             Layout.fillWidth: true
             Layout.preferredHeight: visible ? 116 : 0
-            radius: 14
+            radius: rootObject.radiusCard
             color: Qt.rgba(1, 1, 1, 0.02)
             border.color: Qt.rgba(1, 1, 1, 0.06)
             border.width: 1
@@ -206,7 +229,7 @@ Rectangle {
                 visible: primaryAction !== null
                 Layout.preferredHeight: 28
                 Layout.preferredWidth: visible ? actionLabel.implicitWidth + 22 : 0
-                radius: 10
+                radius: rootObject.radiusControl
                 color: actionMouse.containsMouse ? Qt.tint(accentColor, Qt.rgba(1, 1, 1, 0.18)) : Qt.tint(accentColor, Qt.rgba(0, 0, 0, 0.58))
                 border.color: Qt.tint(accentColor, Qt.rgba(1, 1, 1, 0.22))
                 border.width: 1

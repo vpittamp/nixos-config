@@ -4,7 +4,13 @@ function dashboardGeneration(state) {
     if (!state || typeof state !== "object") {
         return -1;
     }
-    const generation = Number(state.snapshot_version || state.generation || -1);
+    // Presence checks, not truthiness: generation 0 is valid (daemon restart),
+    // and collapsing it to -1 would disable ordering checks.
+    const value = state.snapshot_version ?? state.generation;
+    if (value === undefined || value === null) {
+        return -1;
+    }
+    const generation = Number(value);
     return Number.isFinite(generation) ? generation : -1;
 }
 

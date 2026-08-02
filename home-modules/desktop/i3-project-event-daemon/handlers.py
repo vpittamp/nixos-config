@@ -559,17 +559,13 @@ async def on_window_new(
             # Sway/Wayland: PID available directly from container
             window_pid = container.pid
         elif container.window:
-            # i3/X11: Use xprop with X11 window ID
+            # i3/X11: Use xprop with X11 window ID. This must be the async
+            # helper: a blocking subprocess.run here froze every coroutine in
+            # the daemon for up to its timeout — in-flight focus RPCs included —
+            # on each XWayland window that reported no container.pid.
+            from .window_filtering import _get_window_pid_via_xprop
             try:
-                import subprocess
-                result = subprocess.run(
-                    ["xprop", "-id", str(container.window), "_NET_WM_PID"],
-                    capture_output=True,
-                    text=True,
-                    timeout=0.5
-                )
-                if result.returncode == 0 and "_NET_WM_PID(CARDINAL)" in result.stdout:
-                    window_pid = int(result.stdout.split("=")[-1].strip())
+                window_pid = await _get_window_pid_via_xprop(container.window)
             except Exception:
                 pass  # PID not available (timeout, xprop error)
 

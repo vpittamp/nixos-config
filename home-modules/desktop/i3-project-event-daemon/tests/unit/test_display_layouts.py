@@ -478,3 +478,141 @@ async def test_workspace_move_to_output_uses_runtime_move_semantics():
     assert result == {"success": True, "workspace": "7", "output_name": "DP-1"}
     assert commands == ["workspace 7", "move workspace to output DP-1"]
     server._send_tick_barrier.assert_awaited_once_with("i3pm:workspace-output:7:DP-1")
+
+
+@pytest.mark.asyncio
+async def test_handle_profile_change_skips_repeat_of_applied_profile():
+    # display.apply writes monitor-profile.current, whose watcher re-enters this
+    # method with the same name. Re-running the switch there re-issued output
+    # commands and re-ran workspace redistribution, warping focus across
+    # workspaces — visible as a double apply on every layout change, and as
+    # workspaces shuffling after a rebuild rewrote the file unchanged.
+    service = MonitorProfileService()
+    service._profiles = {
+        "default": MonitorProfile(**{
+            "name": "default",
+            "description": "Full layout",
+            "default": True,
+            "outputs": [
+                {"name": "DP-1", "enabled": True, "position": {"x": 0, "y": 0, "width": 1920, "height": 1200}},
+            ],
+        }),
+    }
+    service._applied_profile = "default"
+    service._applied_definition = service._profile_definition_fingerprint(
+        service._profiles["default"]
+    )
+    # reload_profiles() syncs this from the file before the watcher fires, so a
+    # correct guard cannot key off it.
+    service._current_profile = "default"
+
+    conn = SimpleNamespace(
+        get_outputs=AsyncMock(return_value=[]),
+        get_workspaces=AsyncMock(return_value=[]),
+        command=AsyncMock(return_value=[SimpleNamespace(success=True, error="")]),
+    )
+
+    assert await service.handle_profile_change(conn, "default") is True
+    conn.command.assert_not_awaited()
+    conn.get_outputs.assert_not_awaited()
+
+    # force is the escape hatch the explicit apply path (and therefore the drift
+    # reconciler) uses to repair outputs under an unchanged profile name.
+    await service.handle_profile_change(conn, "default", force=True)
+    conn.get_outputs.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_handle_profile_change_reapplies_when_the_definition_changed():
+    # A rebuild rewrites monitor-profiles/*.json and touches
+    # monitor-profile.current. Keying idempotence on the name alone would skip
+    # applying geometry that actually changed, leaving the new layout unapplied
+    # until someone ran display.apply by hand.
+    service = MonitorProfileService()
+    service._profiles = {
+        "default": MonitorProfile(**{
+            "name": "default",
+            "description": "Full layout",
+            "default": True,
+            "outputs": [
+                {"name": "DP-1", "enabled": True, "position": {"x": 0, "y": 0, "width": 2560, "height": 1440}},
+            ],
+        }),
+    }
+    service._applied_profile = "default"
+    # Fingerprint of the OLD definition (1920x1200 before the rebuild).
+    service._applied_definition = service._profile_definition_fingerprint(
+        MonitorProfile(**{
+            "name": "default",
+            "description": "Full layout",
+            "default": True,
+            "outputs": [
+                {"name": "DP-1", "enabled": True, "position": {"x": 0, "y": 0, "width": 1920, "height": 1200}},
+            ],
+        })
+    )
+
+    conn = SimpleNamespace(
+        get_outputs=AsyncMock(return_value=[]),
+        get_workspaces=AsyncMock(return_value=[]),
+        command=AsyncMock(return_value=[SimpleNamespace(success=True, error="")]),
+    )
+
+    await service.handle_profile_change(conn, "default")
+    conn.get_outputs.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_queued_switch_runs_even_when_it_names_the_profile_just_applied():
+    # The drift reconciler queues the SAME profile to repair outputs. Skipping
+    # it because the name matches would drop exactly the repair it was queued
+    # for, which is the failure the queue exists to prevent.
+    service = MonitorProfileService()
+    service._applied_profile = "default"
+    service._pending_profile = "default"
+
+    reruns = []
+
+    async def fake_handle(conn, name, *, force=False):
+        reruns.append((name, force))
+        return True
+
+    # Drive just the finally-block drain by running a switch that no-ops early.
+    service._profile_switch_in_progress = True
+    assert await service.handle_profile_change(None, "default", force=True) is True
+    assert service._pending_profile == "default"
+
+    service._profile_switch_in_progress = False
+    service.handle_profile_change = fake_handle
+    service._pending_profile = "default"
+
+    # Simulate the finally-block drain path directly.
+    pending = service._pending_profile
+    service._pending_profile = None
+    if pending:
+        await service.handle_profile_change(None, pending, force=True)
+
+    assert reruns == [("default", True)]
+
+
+@pytest.mark.asyncio
+async def test_handle_profile_change_queues_request_arriving_mid_switch():
+    # A reconcile racing a user apply used to be dropped on the floor with
+    # "Profile switch already in progress, ignoring", leaving outputs drifted.
+    service = MonitorProfileService()
+    service._profiles = {
+        "single": MonitorProfile(**{
+            "name": "single",
+            "description": "Single",
+            "outputs": [
+                {"name": "DP-1", "enabled": True, "position": {"x": 0, "y": 0, "width": 1920, "height": 1200}},
+            ],
+        }),
+    }
+    service._profile_switch_in_progress = True
+
+    conn = SimpleNamespace(command=AsyncMock())
+
+    assert await service.handle_profile_change(conn, "single") is True
+    assert service._pending_profile == "single"
+    conn.command.assert_not_awaited()
