@@ -1,6 +1,6 @@
 ---
 name: workflow-builder
-description: "Author, save, run, inspect, or debug Workflow Builder dynamic-script workflows and durable agent sessions. Use for Workflow MCP workspace auth, live traces, sealed execution evidence, script primitives and validation, saved agents, runtime-registry routing, structured output, action catalog calls, MCP connections, Prompt Workbench, goal loops, artifacts, lifecycle stop/purge, Sandbox/Kueue startup, Dapr sidecars, and failed executions. Use preview-environments for preview vClusters and dapr-agents-workflow for standalone upstream Python apps."
+description: "Author, save, run, inspect, or debug Workflow Builder dynamic-script workflows and durable agent sessions. Use for Workflow MCP workspace auth, consolidated host and preview runs, live traces, sealed execution evidence, script primitives, saved agents, runtime-registry routing, structured output, action catalog calls, MCP connections, goals, artifacts, lifecycle stop/purge, Sandbox/Kueue startup, Dapr sidecars, and failed executions. Use preview-environments for PreviewEnvironment lifecycle and dapr-agents-workflow for standalone upstream Python apps."
 ---
 
 # Workflow Builder
@@ -48,9 +48,13 @@ not pass a session ID as workflow ownership. Optional session attachment is
 verified goal, trace, and lineage context only.
 
 Dev-environment workflows (`preview-development-lifecycle`,
-`microservice-dev-session`) launch ONLY via the `start_dev_environment_session`
-tool — `execute_workflow` and `run_workflow_script` reject them with HTTP 409
-("requires the target-aware Dev launcher").
+`preview-host-development`, and `microservice-dev-session`) launch ONLY via
+`start_dev_environment_session` — `execute_workflow` and
+`run_workflow_script` reject them with HTTP 409 ("requires the target-aware Dev
+launcher"). For the preferred preview flow, launch `system-live` through the
+preview MCP tools, wait for Ready, then start `preview-host-development` with
+`previewTarget: { previewName }`; the server resolves the origin and pins the
+complete tuple.
 
 Prefer Workflow MCP or the UI. The bundled
 `scripts/upsert-workflow.py <workflow.json>` is a secondary authenticated BFF
@@ -91,7 +95,7 @@ interactive runtime without that declaration or its registry-owned
 - Preserve user-scoped subscription OAuth delivery through `cliAuth` and the
   session Secret path. Do not replace it with a provider API key, SDK, print
   mode, `codex exec`, or another noninteractive subprocess.
-- For preview development, CLI sessions run through host-owned
+- For `app-live` or `system-live` preview development, CLI sessions run through host-owned
   `preview-host-development` profiles (`claude-code-cli-host`,
   `codex-cli-host`, `kimi-code-cli-host`, ordered `cli-fanout`, or persistent
   `claude-code-cli-interactive-host`, `codex-cli-interactive-host`,
@@ -147,7 +151,7 @@ interactive runtime without that declaration or its registry-owned
 | Promote a run's code to a PR     | `promote_run_to_pr`                                                                     |
 | Edit prompts or presets          | Prompt Workbench components, prompt APIs, and current prompt docs                      |
 | Diagnose a rollout               | Use `gitops`                                                                           |
-| Develop inside a preview         | Use `preview-environments`                                                             |
+| Develop or inspect runs inside a preview | Use `preview-environments`; keep `/dev/system` and host `/runs` as the primary surfaces |
 | Run SWE-bench or evals           | Use `evaluations`                                                                      |
 
 ## Stable Invariants
@@ -163,6 +167,14 @@ interactive runtime without that declaration or its registry-owned
   metadata is not image input.
 - Runtime identity and capabilities come from the runtime registry and resolved
   saved-agent configuration, not a pod label or sandbox template name.
+- `/workspaces/<slug>/runs` is the canonical run entry point. Host-owned
+  `preview-host-development` activity uses the ordinary host run detail and its
+  Live tab; preview-local activity and sealed evidence enter through federated,
+  read-only application ports. Presentation code must not know preview database
+  credentials, namespaces, broker URLs, or Kubernetes clients.
+- `get_preview_development_system` is the host `system-live` activity/read-model
+  surface. `get_preview_development_run` is the separate preview-local child
+  lineage adapter; do not substitute one for the other.
 - Agent MCP configuration is resolved at session launch. Project access is the
   ceiling; per-agent allowed tools can only narrow it.
 - OAuth and ActivePieces credentials are reference-forwarded. Plaintext must not

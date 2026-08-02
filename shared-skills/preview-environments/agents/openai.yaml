@@ -1,4 +1,4 @@
 interface:
   display_name: "Preview Environments"
-  short_description: "Operate previews and preserve post-teardown evidence."
-  default_prompt: "Use $preview-environments to launch, diagnose, or verify a dev PreviewEnvironment lifecycle and its durable execution evidence."
+  short_description: "Develop and prove combined preview systems."
+  default_prompt: "Use $preview-environments to launch or diagnose a system-live dev PreviewEnvironment, attach host-owned development, inspect the consolidated run, and prove durable evidence plus teardown."

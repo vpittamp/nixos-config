@@ -62,6 +62,7 @@ matters.
 | Rotate or repair secrets                                 | Trace ExternalSecret -> ClusterSecretStore -> remote key -> consuming pod; verify sync before restart and never print values                                    |
 | Recreate a cluster                                       | Use `cluster-desired-state`                                                                                                                                     |
 | Operate a preview vCluster                               | Use `preview-environments`                                                                                                                                      |
+| Deliver a `system-live` platform/runtime change          | Validate the preview surface and catalog, rebuild any image-baked runner/runtime, render pins, advance the exact dev-preview-platform pointer, then prove a fresh generation and session |
 
 ## Rollout Proof
 
@@ -126,6 +127,11 @@ controllers to hide the first causal error.
   carries its own copy. Never state a fleet version from one target's manifests.
 - Runtime selection comes from the workflow-builder runtime registry and live
   deployment env, not from a remembered pod label.
+- `system-live` is one immutable preview generation across stacks candidate
+  paths and Workflow Builder services. Cataloged Deployments and the registered
+  `development-module` use hot reload; `dapr-agent-py` is a session runtime and
+  requires a built/pinned image plus a fresh session. Do not direct-patch a
+  running durable agent or describe the retired Pydantic runtime as current.
 - ActivePieces credentials are reference-forwarded; plaintext credentials must
   not enter workflow JSON, agent prompts, KService env, logs, or PRs.
 - External Workflow MCP uses a workspace principal. Optional session context is
