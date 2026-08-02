@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -616,3 +617,39 @@ async def test_handle_profile_change_queues_request_arriving_mid_switch():
     assert await service.handle_profile_change(conn, "single") is True
     assert service._pending_profile == "single"
     conn.command.assert_not_awaited()
+
+
+def test_output_states_fingerprint_ignores_noop_rewrites(tmp_path, monkeypatch):
+    # Reassignment force-moves existing workspaces between monitors, which is
+    # visible as workspace pills jumping between bars. output-states.json
+    # carries a last_updated stamp and is rewritten as part of a normal profile
+    # apply, so firing on every write relocated the user's workspaces for no
+    # reason. Only the enabled/disabled set may count as a change.
+    daemon_module = importlib.import_module("i3_project_daemon.daemon")
+
+    states = tmp_path / "output-states.json"
+    monkeypatch.setattr(daemon_module, "OUTPUT_STATES_PATH", states)
+    daemon = daemon_module.I3ProjectDaemon.__new__(daemon_module.I3ProjectDaemon)
+
+    def write(enabled, stamp):
+        states.write_text(json.dumps({
+            "version": 1,
+            "outputs": {name: {"enabled": value} for name, value in enabled.items()},
+            "last_updated": stamp,
+        }), encoding="utf-8")
+
+    write({"DP-1": True, "DP-2": True}, "first")
+    baseline = daemon._output_states_fingerprint()
+
+    write({"DP-1": True, "DP-2": True}, "second-stamp-only")
+    assert daemon._output_states_fingerprint() == baseline
+
+    write({"DP-2": True, "DP-1": True}, "third")
+    assert daemon._output_states_fingerprint() == baseline, "key order must not matter"
+
+    write({"DP-1": True, "DP-2": False}, "fourth")
+    assert daemon._output_states_fingerprint() != baseline, "a real change must reassign"
+
+    states.unlink()
+    # Unreadable means "assume changed" rather than silently skipping a real one.
+    assert daemon._output_states_fingerprint() is None

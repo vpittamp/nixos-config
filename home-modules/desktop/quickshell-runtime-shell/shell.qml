@@ -1430,7 +1430,18 @@ ShellRoot {
             break;
         }
 
-        items.sort((left, right) => Number(left?.num || 0) - Number(right?.num || 0));
+        // Total order, so pill positions can never depend on the order the
+        // daemon happened to serialize its workspaces in. Number alone is not
+        // total: an unnumbered or same-numbered workspace would tie, and a tie
+        // leaves the outcome to the incoming array order, which is exactly the
+        // kind of thing that makes pills appear to swap places on their own.
+        items.sort(function (left, right) {
+            const byNum = Number(left?.num || 0) - Number(right?.num || 0);
+            if (byNum !== 0) {
+                return byNum;
+            }
+            return stringOrEmpty(left?.name).localeCompare(stringOrEmpty(right?.name));
+        });
         return items;
     }
 

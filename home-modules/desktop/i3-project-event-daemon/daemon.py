@@ -6,6 +6,7 @@ This module provides the main event loop and systemd integration
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import signal
@@ -74,6 +75,16 @@ import time
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+
+def _output_state_enabled(state: Any) -> bool:
+    """Read the enabled flag from one output-states entry.
+
+    Entries are {"enabled": bool} today, but older files stored a bare bool.
+    """
+    if isinstance(state, dict):
+        return bool(state.get("enabled", False))
+    return bool(state)
 
 
 @contextlib.contextmanager
@@ -194,6 +205,9 @@ class I3ProjectDaemon:
         self.window_rules: List[WindowRule] = []  # Feature 021: Window rules cache
         self.rules_watcher: Optional[WindowRulesWatcher] = None  # Feature 021: File watcher
         self.output_states_watcher: Optional[OutputStatesWatcher] = None  # Output states file watcher
+        # Enabled/disabled output set that the last reassignment ran for, so a
+        # rewrite that only refreshes the file's last_updated stamp is ignored.
+        self._last_output_states_fingerprint: Optional[str] = None
         self.application_registry: Dict[str, Dict] = {}  # Feature 037 T027: Application registry
         self.registry_watcher: Optional[ApplicationRegistryWatcher] = None  # Auto-reload on rebuild
         self.mark_manager: Optional[MarkManager] = None  # Feature 076: Mark-based app identification
@@ -522,12 +536,32 @@ class I3ProjectDaemon:
         # Setup output states file watcher
         # When output-states.json changes, trigger workspace reassignment
         def on_output_states_change():
-            """Callback for output states file changes."""
+            """Callback for output states file changes.
+
+            Reassignment force-moves existing workspaces to the output their
+            assignment names, which visibly relocates them between monitors — so
+            it must run only when the enabled/disabled set actually changed. The
+            watcher fires on every write, and profile applies rewrite this file
+            as part of their normal work, so without this comparison a no-op
+            rewrite shuffled the user's workspaces (and therefore the bar's
+            workspace pills) across monitors for no reason.
+            """
+            fingerprint = self._output_states_fingerprint()
+            if fingerprint is not None and fingerprint == self._last_output_states_fingerprint:
+                logger.debug("Output states file rewritten with identical content; no reassignment")
+                return
+            self._last_output_states_fingerprint = fingerprint
+
             logger.info("Output states file changed, triggering workspace reassignment")
             # Schedule async workspace reassignment
             loop = asyncio.get_event_loop()
             if self.connection and self.connection.conn:
                 loop.create_task(self._trigger_output_state_change())
+
+        # Seed the fingerprint from the file as it stands, so the initialization
+        # write below (and any other rewrite that changes nothing) does not look
+        # like a change and relocate workspaces at startup.
+        self._last_output_states_fingerprint = self._output_states_fingerprint()
 
         self.output_states_watcher = OutputStatesWatcher(
             config_file=OUTPUT_STATES_PATH,
@@ -563,6 +597,30 @@ class I3ProjectDaemon:
             await self.event_buffer.add_event(entry)
             logger.info(f"Logged daemon::start event (duration: {duration_ms:.2f}ms)")
 
+
+    def _output_states_fingerprint(self) -> Optional[str]:
+        """Stable fingerprint of the enabled/disabled output set.
+
+        Only the enabled set matters for reassignment, so formatting churn or an
+        unrelated key changing in the file does not count as a change. Returns
+        None when the file cannot be read, which forces the caller to treat it
+        as changed rather than silently skipping a real reassignment.
+        """
+        try:
+            raw = OUTPUT_STATES_PATH.read_text(encoding="utf-8")
+        except Exception:
+            return None
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return raw.strip()
+        outputs = data.get("outputs") if isinstance(data, dict) else None
+        if isinstance(outputs, dict):
+            return json.dumps(
+                {str(name): bool(_output_state_enabled(state)) for name, state in outputs.items()},
+                sort_keys=True,
+            )
+        return json.dumps(data, sort_keys=True, default=str)
 
     async def _trigger_output_state_change(self) -> None:
         """Trigger workspace reassignment after output states file change.
