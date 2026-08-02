@@ -84,7 +84,16 @@ PanelWindow {
             Rectangle {
                 id: launcherButton
                 readonly property bool hovered: launcherMouse.containsMouse
-                Layout.preferredWidth: Math.min(320, Math.max(198, launcherContextTitle.implicitWidth + contextOutputText.implicitWidth + (contextGitChip.visible ? contextGitText.implicitWidth + 18 : 0) + 92))
+                // Fixed width on purpose. This used to size itself to its
+                // contents — the herdr repo:branch title, the git chip, and the
+                // output name — so every branch switch, git-status change, or
+                // chip appearing re-measured it between 198 and 320px and shoved
+                // the whole workspace strip sideways. The pills then looked like
+                // they had reordered themselves. Pinning the width costs a
+                // little whitespace on short labels and keeps every pill at a
+                // fixed screen position, which is what makes them clickable from
+                // muscle memory. Children elide into whatever room this leaves.
+                Layout.preferredWidth: root.bottomBarLauncherWidth
                 Layout.fillHeight: true
                 radius: root.radiusControl
                 color: root.launcherVisible ? colors.blue : (hovered ? colors.card : colors.cardAlt)

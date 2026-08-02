@@ -565,6 +565,13 @@ ShellRoot {
     readonly property int radiusControl: 8
     readonly property int radiusBadge: 6
 
+    // Width of the bottom bar's launcher/context button. Everything to its
+    // right — the whole workspace pill strip — starts where this ends, so it
+    // must not depend on its own contents: a content-sized button moves every
+    // pill whenever the herdr branch label or git chip changes. 320 is the
+    // widest it ever grew to before, so nothing that used to fit now elides.
+    readonly property int bottomBarLauncherWidth: 320
+
     // The ONE canonical session-status color map. Every surface that colors an
     // agent/session state (panel badge, SessionRow dot, TopBar agent chip,
     // herdr space dot, launcher session entries) must route through here so the
