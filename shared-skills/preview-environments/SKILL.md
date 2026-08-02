@@ -1,12 +1,14 @@
 ---
 name: preview-environments
-description: "Operate and prove Workflow Builder PreviewEnvironment lifecycles on the dev cluster. Use for system-live combined infrastructure and application development, app-live or candidate profiles, preview-host-development, Dapr Agents builders, greenfield service registration, HMR, the development/debug page, consolidated host runs, MCP preview actions, sleep/wake, durable evidence, and 12-check teardown. Use workflow-builder for ordinary workflow authoring and gitops for persistent delivery."
+description: "Operate and prove Workflow Builder PreviewEnvironment lifecycles on the dev cluster. Use for the canonical Previews inventory, system-live combined infrastructure and application development, app-live or candidate profiles, preview-host-development, Dapr Agents and CLI builders, greenfield service registration, HMR, consolidated host runs, MCP preview actions, sleep/wake, durable evidence, and signed 12-check teardown. Use workflow-builder for ordinary workflow authoring and gitops for persistent delivery."
 ---
 
 # Preview Environments
 
-`PreviewEnvironment` is a dev-cluster vCluster lifecycle. It is not an agent
-Sandbox, a persistent environment, or the ryzen Skaffold loop.
+`PreviewEnvironment` is the single user-facing dev-cluster vCluster product. A
+host execution or per-session Sandbox may develop against it, but neither is a
+second environment product. It is not persistent delivery or the ryzen
+Skaffold loop.
 
 ## Start From Current Sources
 
@@ -30,8 +32,17 @@ capacity counts, image digests, Dapr versions, or run IDs.
   truth. Workflow output and logs are evidence.
 - The host derives repositories, complete revisions, workspace, target,
   identity, credentials, and policy.
-- One immutable tuple binds request ID, platform revision, source revision,
-  catalog digest, services, paths, and lifecycle.
+- One immutable effective contract binds request ID, platform/source revisions,
+  runner and policies, service catalog, Dapr configuration, runtime registry,
+  effective agent/APM snapshot, database journal/template, seed set, services,
+  candidate paths, lifecycle, capacity plan, and ResourceQuota.
+- Physical-dev SEA is the sole privileged executor. The hub
+  `PreviewEnvironment` is the sole desired-state/lifecycle object, physical
+  Kueue is the one capacity ledger, and each preview remains execution
+  authority for its own workflows and agents.
+- Admission completes before Kubernetes mutation. Invalid, render-no-op, and
+  capacity-rejected requests create no PreviewEnvironment, namespace, Job,
+  Workload, or quota.
 - The application core is hexagonal: `DevelopmentChangeSet`,
   `PreviewGeneration`, and `DevelopmentTarget` depend on observation, target,
   impact, and activity ports. Kubernetes, Git, Dapr, HTTP, UI, and MCP are
@@ -138,14 +149,15 @@ Pydantic AI runtime.
 ## Canonical User Surfaces
 
 ```text
+/workspaces/<slug>/previews
 /workspaces/<slug>/dev/system
 /workspaces/<slug>/runs
 /workspaces/<owning-workspace>/workflows/preview-host-development/runs/<executionId>
 /workspaces/<slug>/evidence
 ```
 
-The development page shows the immutable generation, target strategies, gates,
-and host activity. The run detail's Live tab is primary. Canvas is optional
+Start from the Previews inventory and exact-generation detail. The development
+page shows target strategies, gates, and host activity. The run detail's Live tab is primary. Canvas is optional
 workflow-definition context and is not a Kubernetes topology. The Runs service
 federates host, live preview-local, and sealed sources behind read-only ports;
 the UI must stay source-neutral.
@@ -177,9 +189,28 @@ hostNamespaceAbsent storageScopeAbsent runnerIdentityAbsent
 
 Read refusal details and use only the designed escape path. Stop a live
 preview-local child through its preview surface. Let stale host projections
-reconcile. Use supported failed-generation quarantine or explicit admin archive
-loss only under its positive-host-evidence rules. Never remove finalizers to
-skip ownership reconciliation.
+reconcile. `forceFailed` is limited to failed or aged-provisioning quarantine
+and records loss. Workflow MCP does not expose archive discard, and acceptance
+proof must never depend on it. Never remove finalizers to skip ownership
+reconciliation.
+
+## Acceptance Envelope
+
+The current complete campaign covers `app-live`, `system-live`, and
+`manifest-candidate`. Re-run the machine-readable harness after changing a
+contract boundary and require:
+
+- at least 20 cold launches, nearest-rank P50 at most 180s and P95 at most 300s;
+- invalid/no-op and capacity-rejected cases create zero lifecycle resources;
+- at least 100 exact-generation runtime reads with P95 at most 2s and zero
+  cross-generation results;
+- at least 100 bounded trace queries with P95 at most 3s, query rows/bytes
+  reported, and materialized execution-locator coverage;
+- terminal evidence complete within 30s and readable after teardown;
+- sleep/wake preserving UID, request ID, evidence, and reservation semantics;
+  and
+- signed 12/12 teardown receipts followed by zero canonical inventory and zero
+  campaign-orphan matches across `hub` and `dev`.
 
 ## Validation
 
@@ -193,12 +224,16 @@ scripts/gitops/validate-dev-preview-service-catalog.sh
 scripts/gitops/validate-preview-application-policy.sh
 scripts/gitops/validate-preview-vcluster-sync-contract.sh
 deployment/scripts/tests/test-preview-job-launch-boundary.sh
+REQUIRE_LIVE_PREVIEW_JOB_LAUNCH_BOUNDARY=true DEV_CONTEXT=dev \
+  deployment/scripts/tests/test-preview-job-launch-boundary.sh
+REQUIRE_LIVE_PREVIEW_CAPACITY_BOUNDARY=true DEV_CONTEXT=dev \
+  deployment/scripts/tests/test-preview-capacity-workload-boundary.sh
 ```
 
 Run the Dapr actor-store validator for any Component change. Runner/policy
-changes require a rebuilt runner image, a bounded two-digest admission rotation,
-rendered pins, and a new platform pointer; stacks text alone does not update an
-image-baked runner.
+changes require a rebuilt runner image, a bounded old/new admission transition,
+rendered pins, and a new platform pointer. Finish with exactly one admitted
+runner digest; stacks text alone does not update an image-baked runner.
 
 ## Safety
 

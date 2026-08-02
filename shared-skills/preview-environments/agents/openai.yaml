@@ -1,4 +1,4 @@
 interface:
   display_name: "Preview Environments"
-  short_description: "Develop and prove combined preview systems."
-  default_prompt: "Use $preview-environments to launch or diagnose a system-live dev PreviewEnvironment, attach host-owned development, inspect the consolidated run, and prove durable evidence plus teardown."
+  short_description: "Operate exact dev preview generations."
+  default_prompt: "Use $preview-environments to work from the canonical Previews inventory, launch or diagnose a system-live dev generation, attach host-owned Dapr Agents or CLI development, inspect the consolidated run, and prove sealed evidence plus signed 12-check teardown."

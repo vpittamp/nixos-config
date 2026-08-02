@@ -62,7 +62,7 @@ matters.
 | Rotate or repair secrets                                 | Trace ExternalSecret -> ClusterSecretStore -> remote key -> consuming pod; verify sync before restart and never print values                                    |
 | Recreate a cluster                                       | Use `cluster-desired-state`                                                                                                                                     |
 | Operate a preview vCluster                               | Use `preview-environments`                                                                                                                                      |
-| Deliver a `system-live` platform/runtime change          | Validate the preview surface and catalog, rebuild any image-baked runner/runtime, render pins, advance the exact dev-preview-platform pointer, then prove a fresh generation and session |
+| Deliver a `system-live` platform/runtime change          | Validate the compiled contract and pre-admission boundaries, rebuild any image-baked runner/runtime, render pins, advance the exact dev-preview-platform pointer, finish with one admitted runner digest, then prove a fresh generation, session, evidence receipt, and teardown |
 
 ## Rollout Proof
 
@@ -132,6 +132,12 @@ controllers to hide the first causal error.
   `development-module` use hot reload; `dapr-agent-py` is a session runtime and
   requires a built/pinned image plus a fresh session. Do not direct-patch a
   running durable agent or describe the retired Pydantic runtime as current.
+- Preview admission is physical-dev authority: the compiled contract binds the
+  runner, policies, catalog, Dapr/runtime registry, effective agent/APM
+  snapshot, database journal/template, seed set, capacity plan, and matching
+  ResourceQuota before any lifecycle resource is created. A rollout may admit
+  old and new runner digests only as a bounded transition; remove the old
+  digest after proof.
 - ActivePieces credentials are reference-forwarded; plaintext credentials must
   not enter workflow JSON, agent prompts, KService env, logs, or PRs.
 - External Workflow MCP uses a workspace principal. Optional session context is

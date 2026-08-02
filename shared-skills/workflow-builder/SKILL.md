@@ -151,7 +151,7 @@ interactive runtime without that declaration or its registry-owned
 | Promote a run's code to a PR     | `promote_run_to_pr`                                                                     |
 | Edit prompts or presets          | Prompt Workbench components, prompt APIs, and current prompt docs                      |
 | Diagnose a rollout               | Use `gitops`                                                                           |
-| Develop or inspect runs inside a preview | Use `preview-environments`; keep `/dev/system` and host `/runs` as the primary surfaces |
+| Develop or inspect runs inside a preview | Use `preview-environments`; start at `/previews`, then use the exact `/dev/system` detail and host `/runs` surfaces |
 | Run SWE-bench or evals           | Use `evaluations`                                                                      |
 
 ## Stable Invariants
