@@ -318,6 +318,23 @@ async def test_herdr_service_ignores_unknown_remote_proxy_event_schema():
     assert notifications == []
 
 
+def test_herdr_service_failure_ttl_is_relaxed_for_remote_targets():
+    """A remote outage must not re-SSH every host on essentially every read."""
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    service.store_snapshot({"success": False, "sessions": []}, now=100.0)
+    assert service.snapshot_cache_is_failure is True
+
+    # Local-only: retry fast, a rebuild is cheap.
+    assert service.cached_snapshot(now=100.0 + 0.3, has_remote_targets=False) is None
+    # With remotes each rebuild costs a failing SSH per host, so hold longer --
+    # still far tighter than the 10s healthy TTL.
+    assert service.cached_snapshot(now=100.0 + 0.3, has_remote_targets=True) is not None
+    assert service.cached_snapshot(now=100.0 + 2.5, has_remote_targets=True) is None
+
+
 @pytest.mark.asyncio
 async def test_herdr_service_remote_proxy_event_fences_build_with_empty_cache():
     """A proxy event during a build must fence it even with no cache to patch.

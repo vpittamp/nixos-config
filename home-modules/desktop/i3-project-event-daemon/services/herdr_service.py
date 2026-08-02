@@ -125,6 +125,7 @@ class HerdrService:
         self.snapshot_cache_ttl: float = snapshot_cache_ttl
         self.remote_snapshot_cache_ttl: float = remote_snapshot_cache_ttl
         self.snapshot_failure_cache_ttl: float = 0.25
+        self.remote_snapshot_failure_cache_ttl: float = 2.0
         self.snapshot_provisional_cache_ttl: float = 1.0
         self.snapshot_build_lock = asyncio.Lock()
         self.herdr_event_generation: int = 0
@@ -362,7 +363,12 @@ class HerdrService:
         # non-event fields (branch, git metadata, cwd) forever.
         normal_ttl = self.cache_ttl(has_remote_targets=has_remote_targets)
         if self.snapshot_cache_is_failure:
+            # Retry fast, but not so fast that a remote outage re-SSHes every
+            # host on essentially every read: the local budget is far too tight
+            # once each rebuild costs a (failing, therefore slow) SSH per host.
             ttl = self.snapshot_failure_cache_ttl
+            if has_remote_targets:
+                ttl = max(ttl, self.remote_snapshot_failure_cache_ttl)
         elif self.snapshot_cache_is_provisional:
             # Shorten, but never below what a normal read would cost: with
             # remote targets the normal TTL is 10s, and expiring a provisional
