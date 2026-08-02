@@ -59,9 +59,6 @@ let
     cp ${./BarTooltip.qml} "$out/BarTooltip.qml"
     cp ${./NotificationToast.qml} "$out/NotificationToast.qml"
     cp ${./NotificationRailCard.qml} "$out/NotificationRailCard.qml"
-    cp ${./AssistantPanel.qml} "$out/AssistantPanel.qml"
-    cp ${./AssistantService.qml} "$out/AssistantService.qml"
-    cp ${./AssistantProviderLogic.js} "$out/AssistantProviderLogic.js"
     cat >"$out/ShellConfig.qml" <<'EOF'
 import QtQuick
 
