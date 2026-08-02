@@ -319,6 +319,40 @@ async def test_herdr_service_ignores_unknown_remote_proxy_event_schema():
 
 
 @pytest.mark.asyncio
+async def test_herdr_service_remote_proxy_event_fences_build_with_empty_cache():
+    """A proxy event during a build must fence it even with no cache to patch.
+
+    The cache is empty for the whole of a rebuild, so the payload applies but
+    updates nothing. Without a fence bump the in-flight build stores its
+    pre-event rows while the event's generation is already consumed, and the
+    re-delivery is rejected as stale — losing the update outright.
+    """
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+        notify_delay=0.0,
+    )
+    assert service.snapshot_cache == {}
+    before = service.herdr_event_generation
+
+    await service.handle_remote_proxy_event(
+        {"host": "ryzen", "ssh_target": "ryzen", "connection_key": "vpittamp@ryzen:22"},
+        {
+            "schema_version": "i3pm.herdr_proxy.event.v1",
+            "protocol_version": 1,
+            "event_type": "herdr.changed",
+            "generation": 5,
+            "snapshot_version": 5,
+            "changed_keys": ["active_ai_sessions"],
+            "payload": {"active_ai_sessions": [], "herdr": {"herdr_generation": 5}},
+        },
+    )
+    await asyncio.sleep(0)
+
+    assert service.herdr_event_generation > before
+
+
+@pytest.mark.asyncio
 async def test_herdr_service_syncs_remote_proxy_subscription_tasks(monkeypatch):
     service = HerdrService(
         notify_state_change=lambda event_type: asyncio.sleep(0),

@@ -3343,9 +3343,13 @@ class HerdrService:
         if not bool(result.get("applied", False)):
             self.bump_remote_generation(target.get("host") or target.get("ssh_target"))
             self.invalidate_snapshot_cache()
-        elif bool(result.get("cache_updated", False)):
+        else:
             # Fence in-flight snapshot builds so they do not store over the
-            # freshly patched remote rows with pre-event data.
+            # freshly patched remote rows with pre-event data. Bump even when
+            # the patch found no cache to update: during a build the cache is
+            # empty, and without the fence the build stores pre-event rows
+            # while the event's generation is already consumed, so a
+            # re-delivery is rejected as stale and the update is lost outright.
             self.herdr_event_generation += 1
         self.schedule_state_change_notification()
 

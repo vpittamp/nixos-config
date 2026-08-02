@@ -82,10 +82,15 @@ PanelWindow {
     function refreshSessionEntries(preserveViewport) {
         const savedContentY = preserveViewport && monitorWindow.monitorReady ? Number(agentList.contentY || 0) : 0;
         const next = buildSessionEntries();
+        let membershipChanged = false;
         if (!sameSessionEntries(sessionEntries, next)) {
             sessionEntries = next;
+            membershipChanged = true;
         }
-        if (preserveViewport && monitorWindow.monitorReady) {
+        // Only a membership change can reset the viewport; restoring on every
+        // status tick would fight the user mid-scroll.
+        if (preserveViewport && monitorWindow.monitorReady && membershipChanged
+            && !agentList.dragging && !agentList.flicking) {
             Qt.callLater(function() {
                 monitorWindow.restoreAgentListContentY(savedContentY);
             });
@@ -126,6 +131,9 @@ PanelWindow {
 
     Connections {
         target: root
+        // A hidden monitor does not need per-event refreshes; onVisibleChanged
+        // rebuilds the entries when it opens.
+        enabled: monitorWindow.visible
 
         function onDashboardChanged() {
             monitorWindow.refreshSessionEntries(true);
