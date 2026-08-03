@@ -5253,6 +5253,26 @@ function normalizeLauncherMode(mode) {
         return stringOrEmpty(dashboardFocusState().current_session_key);
     }
 
+    // Anchor for session cycling. It must agree with what the panel highlights,
+    // which currentSessionKey() alone does not: focus_state is the daemon's view
+    // and lags a switch we just committed by a full round trip (daemon action →
+    // herdr → pane.focused event → dashboard event → QML). Anchoring on the
+    // stale value makes a second Meta+Tab re-select the session we just left, so
+    // repeated presses bounce between two sessions instead of walking the ring.
+    // sessionIsCurrent() already folds in the optimistic local focus intent, so
+    // reuse it and fall back to the daemon's key once the intent settles.
+    function effectiveCurrentSessionKey() {
+        if (localPendingFocusIntentFor("herdr_pane_focus")) {
+            const sessions = activeSessions();
+            for (let i = 0; i < sessions.length; i += 1) {
+                if (sessionIsCurrent(sessions[i])) {
+                    return sessionIdentityKey(sessions[i]);
+                }
+            }
+        }
+        return currentSessionKey();
+    }
+
     function sessionMatchesKey(session, key) {
         const target = stringOrEmpty(key);
         if (!session || !target) {
@@ -5605,7 +5625,7 @@ function normalizeLauncherMode(mode) {
             return all;
         }
 
-        const current = currentSessionKey();
+        const current = effectiveCurrentSessionKey();
         if (!current) {
             return attention;
         }
@@ -7013,8 +7033,8 @@ function normalizeLauncherMode(mode) {
             return;
         }
 
-        const current = currentSessionKey();
-        const index = sessions.findIndex(item => stringOrEmpty(item.session_key) === current);
+        const current = effectiveCurrentSessionKey();
+        const index = sessions.findIndex(item => sessionMatchesKey(item, current));
         const delta = direction === "prev" ? -1 : 1;
         // Nothing focused (browser, or an idle session filtered out): step onto
         // the first/last candidate rather than skipping it.
@@ -7053,8 +7073,8 @@ function normalizeLauncherMode(mode) {
             return;
         }
 
-        const current = currentSessionKey();
-        const index = entries.findIndex(item => stringOrEmpty(item.session_key) === current);
+        const current = effectiveCurrentSessionKey();
+        const index = entries.findIndex(item => sessionMatchesKey(item, current));
 
         launcherPointerSelectionEnabled = false;
         launcherSelectionMode = "keyboard";
