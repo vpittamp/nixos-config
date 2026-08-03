@@ -3893,8 +3893,18 @@ class IPCServer:
                 workspace_name = container.name if container.type == "workspace" else ""
                 workspace_str = workspace_name if workspace_name else str(workspace_num)
 
-                # Use node.id for Wayland windows (unique identifier), node.window for X11
-                window_id = node.window if is_x11_window else node.id
+                # Always identify a window by its Sway container id, never by the
+                # X11 id. Those differ only for XWayland windows, and every other
+                # layer already speaks container id: marks are written as
+                # scope:app:<con_id>, the tracked window map is keyed by it, and
+                # every command addresses windows as [con_id=...]. Reporting the
+                # X11 id here meant an XWayland window never matched its own
+                # tracked entry, so the snapshot dropped it as a stale bound
+                # window and its workspace looked empty — the workspace pill for
+                # it then existed only while that workspace happened to be
+                # visible. The X11 id is kept as its own field below so nothing
+                # that genuinely needs it (xprop lookups) loses access.
+                window_id = node.id
                 tracked_window = tracked_windows.get(int(window_id)) or tracked_windows_by_con_id.get(int(node.id))
 
                 # Extract app_id and worktree metadata from already-read env
@@ -3908,6 +3918,8 @@ class IPCServer:
 
                 window_data = {
                     "id": window_id,
+                    # 0 for native Wayland windows; only XWayland has an X11 id.
+                    "x11_window_id": int(node.window or 0),
                     "pid": node.pid if hasattr(node, 'pid') else None,
                     "app_id": app_id,  # I3PM_APP_ID from process environment
                     "app_key": app_key,

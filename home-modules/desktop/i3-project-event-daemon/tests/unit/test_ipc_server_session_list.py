@@ -1009,3 +1009,76 @@ async def test_build_dashboard_worktrees_rebuilds_when_cached_active_context_is_
     assert len(worktrees) == 1
     assert worktrees[0]["qualified_name"] == "vpittamp/nixos-config:main"
     assert worktrees[0]["is_active"] is True
+
+
+def test_extract_windows_identifies_xwayland_by_container_id_not_x11_id(server):
+    """An XWayland window must be reported under its Sway container id.
+
+    Modelled on the real GitHub Copilot window: a Tauri app forced onto
+    GDK_BACKEND=x11, so Sway gives it app_id=None, window_class="Github" and a
+    separate X11 id. Marks, the tracked window map and every [con_id=...] command
+    all speak container id, so reporting the X11 id here made the window fail to
+    match its own tracked entry. The snapshot then dropped it as a stale bound
+    window, its workspace looked empty, and the bottom bar hid that workspace's
+    pill whenever the workspace was not visible.
+    """
+    CON_ID = 24
+    X11_ID = 12582916
+
+    tracked_window = WindowInfo(
+        window_id=CON_ID,
+        con_id=CON_ID,
+        window_class="Github",
+        window_title="GitHub Copilot",
+        window_instance="github",
+        app_identifier="Github",
+        project="global",
+        marks=[f"global:github-copilot:global:{CON_ID}"],
+        scope="global",
+        workspace="38",
+        output="DP-2",
+        binding_state="bound_workspace",
+    )
+    rect = SimpleNamespace(x=0, y=0, width=100, height=100)
+    node = SimpleNamespace(
+        id=CON_ID,
+        window=X11_ID,           # XWayland: X11 id present, app_id absent
+        app_id=None,
+        window_class="Github",
+        window_instance="github",
+        name="GitHub Copilot",
+        marks=[f"global:github-copilot:global:{CON_ID}"],
+        pid=1236311,
+        floating="auto_off",
+        focused=False,
+        fullscreen_mode=0,
+        rect=rect,
+        nodes=[],
+        floating_nodes=[],
+    )
+    workspace = SimpleNamespace(
+        window=None,
+        app_id="",
+        type="workspace",
+        name="38",
+        nodes=[node],
+        floating_nodes=[],
+    )
+
+    windows = server._extract_windows_from_container(
+        workspace,
+        38,
+        "DP-2",
+        tracked_windows={CON_ID: tracked_window},
+        tracked_windows_by_con_id={CON_ID: tracked_window},
+    )
+
+    assert len(windows) == 1
+    assert windows[0]["id"] == CON_ID, (
+        "XWayland window must be keyed by container id so it matches its tracked "
+        "entry and so [con_id=...] commands can address it"
+    )
+    # The X11 id is still available for the things that actually need it.
+    assert windows[0]["x11_window_id"] == X11_ID
+    # And it resolved against the tracked entry rather than being treated as new.
+    assert windows[0]["app_key"] == "github-copilot"
