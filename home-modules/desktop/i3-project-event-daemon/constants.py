@@ -17,8 +17,8 @@ class ConfigPaths:
     Example:
         from .constants import ConfigPaths
 
-        # Instead of: Path.home() / ".config" / "i3" / "repos.json"
-        repos_data = ConfigPaths.REPOS_FILE.read_text()
+        # Instead of: Path.home() / ".config" / "i3" / "window-rules.json"
+        rules = ConfigPaths.WINDOW_RULES_FILE.read_text()
     """
 
     # Base directories
@@ -29,20 +29,12 @@ class ConfigPaths:
     LOCAL_STATE_DIR: Final[Path] = HOME / ".local" / "state"
     LOCAL_SHARE_DIR: Final[Path] = HOME / ".local" / "share" / "i3pm"
 
-    # Feature 101: Worktree system files (single source of truth)
-    REPOS_FILE: Final[Path] = I3_CONFIG_DIR / "repos.json"
-    ACCOUNTS_FILE: Final[Path] = I3_CONFIG_DIR / "accounts.json"
+    # The worktree inventory (`repos.json`), its account roots, the per-project
+    # usage/host-profile sidecars and the discovery config were removed with the
+    # RPC family that produced them: identity is now the pane's own checkout
+    # path and git answers everything else. `active-worktree.json` is the one
+    # survivor because the context RPCs still read it.
     ACTIVE_WORKTREE_FILE: Final[Path] = I3_CONFIG_DIR / "active-worktree.json"
-    PROJECT_USAGE_FILE: Final[Path] = I3_CONFIG_DIR / "project-usage.json"
-    WORKTREE_HOST_PROFILES_FILE: Final[Path] = I3_CONFIG_DIR / "worktree-host-profiles.json"
-    LEGACY_WORKTREE_REMOTE_PROFILES_FILE: Final[Path] = I3_CONFIG_DIR / "worktree-remote-profiles.json"
-
-    # Legacy project files (deprecated, for backward compatibility)
-    ACTIVE_PROJECT_FILE: Final[Path] = I3_CONFIG_DIR / "active-project.json"
-    PROJECTS_DIR: Final[Path] = I3_CONFIG_DIR / "projects"
-
-    # Discovery configuration
-    DISCOVERY_CONFIG_FILE: Final[Path] = I3_CONFIG_DIR / "discovery-config.json"
 
     # Application registry
     APPLICATION_REGISTRY_FILE: Final[Path] = I3_CONFIG_DIR / "application-registry.json"
@@ -70,7 +62,6 @@ class ConfigPaths:
         dirs = [
             cls.I3_CONFIG_DIR,
             cls.SWAY_CONFIG_DIR,
-            cls.PROJECTS_DIR,
             cls.LOCAL_STATE_DIR,
             cls.LOCAL_SHARE_DIR,
             cls.LAYOUTS_DIR,
@@ -78,21 +69,6 @@ class ConfigPaths:
         ]
         for d in dirs:
             d.mkdir(parents=True, exist_ok=True)
-
-    @classmethod
-    def project_file(cls, project_name: str) -> Path:
-        """Get path to a legacy project JSON file.
-
-        Args:
-            project_name: Simple project name (not qualified)
-
-        Returns:
-            Path to ~/.config/i3/projects/{project_name}.json
-
-        Note:
-            This is for legacy compatibility. New code should use repos.json.
-        """
-        return cls.PROJECTS_DIR / f"{project_name}.json"
 
     @classmethod
     def layout_file(cls, project_name: str, layout_name: str) -> Path:

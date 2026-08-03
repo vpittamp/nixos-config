@@ -268,32 +268,6 @@ export class DaemonClient {
   }
 
   /**
-   * Close project windows (used before layout restore)
-   */
-  async closeProjectWindows(projectName: string): Promise<number> {
-    const result = await this.request<{ closed_count: number }>(
-      "close_project_windows",
-      { project_name: projectName },
-    );
-    return result.closed_count;
-  }
-
-  /**
-   * Send project switch notification to daemon
-   * Daemon will filter windows based on /proc reading
-   */
-  async notifyProjectSwitch(projectName: string): Promise<void> {
-    await this.request("notify_project_switch", { project_name: projectName });
-  }
-
-  /**
-   * Clear project (return to global mode)
-   */
-  async notifyProjectClear(): Promise<void> {
-    await this.request("notify_project_clear");
-  }
-
-  /**
    * Get recent daemon events (for debugging)
    */
   async getEvents(params?: {

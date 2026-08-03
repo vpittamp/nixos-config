@@ -310,52 +310,39 @@ class DashboardGitService:
         )
         return None
 
+    @staticmethod
+    def session_checkout_path(session: Dict[str, Any]) -> str:
+        """Return the checkout a session row should be git-probed at.
+
+        The pane's own checkout is the identity: it is derived per row from
+        `git rev-parse --show-toplevel` on that pane's cwd, so it is correct for
+        a worktree an agent created five seconds ago. A row with no checkout is
+        not inside a work tree at all, and probing its cwd would burn three git
+        subprocesses to learn "unknown" — which is exactly what a row with no
+        snapshot already reports.
+        """
+        if not isinstance(session, dict):
+            return ""
+        return str(session.get("checkout_path") or "").strip()
+
     async def hydrate_runtime_git_state(
         self,
         runtime_snapshot: Dict[str, Any],
         sessions: List[Dict[str, Any]],
         *,
-        build_dashboard_worktrees: Callable[[Dict[str, Any]], Awaitable[List[Dict[str, Any]]]],
         get_or_schedule_git_snapshot: Optional[Callable[..., Awaitable[Optional[Dict[str, Any]]]]] = None,
     ) -> None:
-        """Attach live git snapshots to session rows and priority dashboard worktrees."""
-        worktrees = await build_dashboard_worktrees(runtime_snapshot)
-        worktree_by_name = {
-            str(item.get("qualified_name") or "").strip(): item
-            for item in worktrees
-            if isinstance(item, dict) and str(item.get("qualified_name") or "").strip()
-        }
+        """Attach live git snapshots to session rows, keyed by each row's checkout.
+
+        Probing used to be gated on the session's project_name being present in
+        the `repos.json`-derived worktree inventory. That inventory is only
+        rebuilt by a producer no workflow reaches any more, so every worktree an
+        agent created with plain `git worktree add` failed the gate and silently
+        rendered with no git status at all. Targets are now the live rows' own
+        checkouts, which also shrinks the probe set from "inventory rows with
+        windows" to "live sessions".
+        """
         target_specs: Dict[str, Dict[str, str]] = {}
-
-        active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
-        active_project = str(
-            active_context.get("qualified_name")
-            or active_context.get("project_name")
-            or ""
-        ).strip()
-        if active_project and active_project in worktree_by_name:
-            target_specs[active_project] = {
-                "priority": "current",
-                "attribution": "exact_worktree",
-            }
-
-        for worktree in worktrees:
-            if not isinstance(worktree, dict):
-                continue
-            qualified_name = str(worktree.get("qualified_name") or "").strip()
-            if not qualified_name:
-                continue
-            if bool(worktree.get("is_active", False)):
-                target_specs[qualified_name] = {
-                    "priority": "current",
-                    "attribution": "exact_worktree",
-                }
-                continue
-            if int(worktree.get("visible_window_count", 0) or 0) > 0 or int(worktree.get("scoped_window_count", 0) or 0) > 0:
-                target_specs.setdefault(qualified_name, {
-                    "priority": "visible",
-                    "attribution": "exact_worktree",
-                })
 
         current_session_key = str(runtime_snapshot.get("current_session_key") or "").strip()
         current_session = next(
@@ -370,65 +357,55 @@ class DashboardGitService:
                 continue
             if bool(session.get("is_remote_herdr", False)):
                 continue
-            project_name = str(
+            checkout_path = self.session_checkout_path(session)
+            if not checkout_path:
+                continue
+            priority = "current" if session is current_session else "visible"
+            branch_hint = str(session.get("branch_label") or "").strip()
+            qualified_name = str(
                 session.get("canonical_project_name")
                 or session.get("project_name")
                 or session.get("project")
                 or ""
             ).strip()
-            if not project_name or project_name not in worktree_by_name:
-                continue
-            priority = "current" if session is current_session else "visible"
-            existing = target_specs.get(project_name, {})
-            existing_priority = str(existing.get("priority") or "").strip()
-            if existing_priority != "current":
-                target_specs[project_name] = {
+            existing = target_specs.get(checkout_path)
+            if existing is None:
+                target_specs[checkout_path] = {
                     "priority": priority,
                     "attribution": "exact_worktree",
+                    "branch_hint": branch_hint,
+                    "qualified_name": qualified_name,
                 }
+                continue
+            if priority == "current":
+                existing["priority"] = "current"
+            if branch_hint and not str(existing.get("branch_hint") or "").strip():
+                existing["branch_hint"] = branch_hint
+            if qualified_name and not str(existing.get("qualified_name") or "").strip():
+                existing["qualified_name"] = qualified_name
 
         get_snapshot = get_or_schedule_git_snapshot or self.get_or_schedule_git_snapshot
-        snapshots_by_project: Dict[str, Dict[str, Any]] = {}
-        for qualified_name, spec in target_specs.items():
-            worktree = worktree_by_name.get(qualified_name)
-            if not isinstance(worktree, dict):
-                continue
+        snapshots_by_path: Dict[str, Dict[str, Any]] = {}
+        for checkout_path, spec in target_specs.items():
             snapshot = await get_snapshot(
-                worktree_path=str(worktree.get("path") or "").strip(),
-                qualified_name=qualified_name,
-                branch_hint=str(worktree.get("branch") or "").strip(),
+                worktree_path=checkout_path,
+                qualified_name=str(spec.get("qualified_name") or "").strip(),
+                branch_hint=str(spec.get("branch_hint") or "").strip(),
                 priority=str(spec.get("priority") or "background"),
                 attribution=str(spec.get("attribution") or "exact_worktree"),
             )
             if isinstance(snapshot, dict):
-                snapshots_by_project[qualified_name] = snapshot
+                snapshots_by_path[checkout_path] = snapshot
 
         for session in sessions:
             if not isinstance(session, dict):
                 continue
             if bool(session.get("is_remote_herdr", False)):
                 continue
-            project_name = str(
-                session.get("canonical_project_name")
-                or session.get("project_name")
-                or session.get("project")
-                or ""
-            ).strip()
-            snapshot = snapshots_by_project.get(project_name)
-            self.apply_snapshot_to_session(session, snapshot)
-
-        enriched_worktrees: List[Dict[str, Any]] = []
-        for worktree in worktrees:
-            if not isinstance(worktree, dict):
-                continue
-            item = dict(worktree)
-            self.apply_snapshot_to_worktree(
-                item,
-                snapshots_by_project.get(str(item.get("qualified_name") or "").strip()),
+            self.apply_snapshot_to_session(
+                session,
+                snapshots_by_path.get(self.session_checkout_path(session)),
             )
-            enriched_worktrees.append(item)
-
-        runtime_snapshot["dashboard_worktrees"] = enriched_worktrees
 
     def snapshot_ttl(self, priority: str, *, success: bool = True) -> float:
         """Return the cache TTL for a live git snapshot priority bucket."""

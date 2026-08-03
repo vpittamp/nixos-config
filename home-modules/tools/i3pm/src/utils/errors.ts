@@ -102,9 +102,9 @@ export function formatProjectNotFoundError(projectName: string): string {
     `\n` +
     `Worktree: ${projectName}\n` +
     `\n` +
-    `The specified worktree context does not exist.\n` +
-    `List available worktrees:\n` +
-    `  i3pm worktree list`
+    `No git checkout was found at that path.\n` +
+    `List the worktrees git knows about:\n` +
+    `  git worktree list`
   );
 }
 

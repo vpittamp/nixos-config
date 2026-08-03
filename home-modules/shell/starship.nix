@@ -123,9 +123,10 @@ in
         format = "[$output]($style) ";
       };
 
-      # Feature 106: portable wrapper for worktree support
+      # Outside tmux the badge derives "<repo>:<branch>" from git in $PWD, so it
+      # is empty (and renders nothing) whenever the shell is not in a checkout.
       custom.i3pm_project = {
-        when = "test -z \"$TMUX\" && [ -x ${scriptWrappers.i3pm-project-badge}/bin/i3pm-project-badge ] && test -n \"$I3PM_PROJECT_NAME$I3PM_PROJECT_DISPLAY_NAME\"";
+        when = "test -z \"$TMUX\" && [ -x ${scriptWrappers.i3pm-project-badge}/bin/i3pm-project-badge ]";
         command = "${scriptWrappers.i3pm-project-badge}/bin/i3pm-project-badge --plain";
         style = "fg:${colors.peach} bold";
         format = "[$output]($style)";

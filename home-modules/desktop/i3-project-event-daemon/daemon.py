@@ -28,15 +28,12 @@ from .config import (
     load_project_configs,
     load_app_classification,
     load_application_registry,  # Feature 037 T027
-    load_active_project,
-    atomic_write_json,
     reload_window_rules,
     WindowRulesWatcher,
     OutputStatesWatcher,
     ApplicationRegistryWatcher,  # Auto-reload registry after NixOS rebuild
     MonitorProfileWatcher,  # Feature 083: Profile file watcher
     MonitorProfilesDirectoryWatcher,
-    load_discovery_config,  # Feature 097: Git-based discovery
 )
 from .output_state_manager import (
     load_output_states,
@@ -216,7 +213,6 @@ class I3ProjectDaemon:
         self.monitor_profiles_directory_watcher: Optional[MonitorProfilesDirectoryWatcher] = None
         self.tree_cache: Optional[Any] = None  # Feature 091: Tree cache service
         self.performance_tracker: Optional[Any] = None  # Feature 091: Performance tracker
-        self.discovery_config: Optional[Any] = None  # Feature 097: Discovery configuration
 
     async def initialize(self) -> None:
         """Initialize daemon components."""
@@ -295,27 +291,15 @@ class I3ProjectDaemon:
         self.registry_watcher.set_event_loop(asyncio.get_event_loop())
         self.registry_watcher.start()
 
-        # Feature 097: Load discovery configuration
-        discovery_config_file = self.config_dir / "discovery-config.json"
-        self.discovery_config = load_discovery_config(discovery_config_file)
-        logger.info(f"[Feature 097] Discovery config loaded: {len(self.discovery_config.scan_paths)} scan paths")
-
-        # Load active project state
-        active_project_file = self.config_dir / "active-project.json"
-        active_state = load_active_project(active_project_file)
-        if active_state:
-            project_name = self.ipc_server._canonical_discovered_project_name(active_state.project_name)
-            if project_name:
-                await self.state_manager.set_active_project(project_name)
-                resolved = self.ipc_server._find_worktree_by_qualified_name(project_name)
-                context = self.ipc_server._build_active_worktree_context(
-                    project_name,
-                    resolved["repo_name"],
-                    resolved["repo"],
-                    resolved["worktree"],
-                )
-                atomic_write_json(ConfigPaths.ACTIVE_WORKTREE_FILE, context)
-                self.ipc_server._set_active_runtime_context(context)
+        # The daemon no longer rehydrates an "active project" at startup. That
+        # block read a 2026-07-11 `active-project.json`, looked the name up in
+        # the `repos.json` inventory and rewrote `active-worktree.json` from it,
+        # which is how every terminal pane ended up badged with one frozen
+        # project label regardless of its cwd. A single active worktree is
+        # incoherent with N agents in N checkouts anyway: the daemon starts with
+        # no context and each surface derives identity from its own cwd.
+        # `discovery-config.json` went with it — it configured only the scan
+        # that produced the inventory.
 
         # Create connection manager
         self.connection = ResilientI3Connection(self.state_manager)

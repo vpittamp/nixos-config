@@ -415,30 +415,17 @@ PY
       fi
     fi
 
-    # Query daemon-owned worktree context directly.
-    CONTEXT_JSON=$(i3pm context current --json 2>/dev/null || echo '{}')
-    PROJECT_NAME=$(echo "$CONTEXT_JSON" | ${pkgs.jq}/bin/jq -r '.qualified_name // ""')
-    PROJECT_DIR=$(echo "$CONTEXT_JSON" | ${pkgs.jq}/bin/jq -r '.local_directory // .directory // ""')
-    PROJECT_DISPLAY_NAME=$(echo "$CONTEXT_JSON" | ${pkgs.jq}/bin/jq -r '
-      (.qualified_name // "") as $q
-      | if $q == "" then "" else (($q | split("/") | last) | split(":") | if length == 2 then .[1] else .[0] end) end
-    ')
-    PROJECT_ICON=""
-
-    # Generate app instance ID using the same metadata shape as the managed launcher.
+    # No project context is injected: there is no daemon-owned "active
+    # worktree" any more, and nothing hides or shows windows by project. The
+    # editor's identity is the file it opened, which git can answer from the
+    # path itself whenever something needs it.
     TIMESTAMP=$(date +%s)
-    APP_INSTANCE_ID="nvim-''${PROJECT_NAME:-global}-$$-$TIMESTAMP"
+    APP_INSTANCE_ID="nvim-global-$$-$TIMESTAMP"
 
-    # Export I3PM environment variables for window-to-project association
+    # Export I3PM environment variables used to match this window to its launch.
     export I3PM_APP_ID="$APP_INSTANCE_ID"
     export I3PM_APP_NAME="nvim"
-    export I3PM_PROJECT_NAME="''${PROJECT_NAME:-}"
-    export I3PM_PROJECT_DIR="''${PROJECT_DIR:-}"
-    export I3PM_PROJECT_DISPLAY_NAME="''${PROJECT_DISPLAY_NAME:-}"
-    export I3PM_PROJECT_ICON="''${PROJECT_ICON:-}"
-    export I3PM_SCOPE="scoped"
-    export I3PM_ACTIVE=$(if [[ -n "$PROJECT_NAME" ]]; then echo "true"; else echo "false"; fi)
-    export I3PM_LAUNCH_TIME="$(date +%s)"
+    export I3PM_LAUNCH_TIME="$TIMESTAMP"
     export I3PM_LAUNCHER_PID="$$"
 
     # Build nvim command with line number if present
@@ -453,12 +440,6 @@ PY
       exec systemd-run --user --scope \
         --setenv=I3PM_APP_ID="$I3PM_APP_ID" \
         --setenv=I3PM_APP_NAME="$I3PM_APP_NAME" \
-        --setenv=I3PM_PROJECT_NAME="$I3PM_PROJECT_NAME" \
-        --setenv=I3PM_PROJECT_DIR="$I3PM_PROJECT_DIR" \
-        --setenv=I3PM_PROJECT_DISPLAY_NAME="$I3PM_PROJECT_DISPLAY_NAME" \
-        --setenv=I3PM_PROJECT_ICON="$I3PM_PROJECT_ICON" \
-        --setenv=I3PM_SCOPE="$I3PM_SCOPE" \
-        --setenv=I3PM_ACTIVE="$I3PM_ACTIVE" \
         --setenv=I3PM_LAUNCH_TIME="$I3PM_LAUNCH_TIME" \
         --setenv=I3PM_LAUNCHER_PID="$I3PM_LAUNCHER_PID" \
         --setenv=DISPLAY="''${DISPLAY:-:0}" \

@@ -72,7 +72,6 @@ EOF
 
         Commands:
         - i3pm apps list/show - Query application registry
-        - i3pm context current/ensure/clear - Runtime context management
         - i3pm layout save/restore/delete - Window layout persistence
         - i3pm daemon status/events - Monitoring and debugging
         - i3pm windows - Real-time window state visualization
@@ -94,7 +93,9 @@ in
     ];
 
     # Feature 109: Declarative GitHub accounts configuration
-    # This eliminates the need to manually run `i3pm account add` on each system
+    # Purely a declarative list of clone roots: nothing discovers or inventories
+    # worktrees any more (git answers that on demand), and `i3pm account add`
+    # could not write here anyway — this is a read-only /nix/store symlink.
     # The paths use ${config.home.homeDirectory} so they work on any system
     xdg.configFile."i3/accounts.json".text = builtins.toJSON {
       version = 1;

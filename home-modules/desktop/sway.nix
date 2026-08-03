@@ -651,11 +651,7 @@ in
       #         "${mod}+Shift+8" = "move container to workspace number 8";
       #         "${mod}+Shift+9" = "move container to workspace number 9";
       # 
-      #         # Project management keybindings (parallel to i3 config)
-      #         "${mod}+p" = "exec ${pkgs.xterm}/bin/xterm -name fzf-launcher -geometry 80x24 -e /etc/nixos/scripts/fzf-project-switcher.sh";
-      #         "${mod}+Shift+p" = "exec i3pm project clear";
-      # 
-      #         # Project-aware application launchers (Feature 035: Registry-based)
+      #         # Application launchers (Feature 035: Registry-based)
       #         "${mod}+c" = "exec i3pm launch open code";
       #         "${mod}+g" = "exec ~/.local/bin/app-launcher-wrapper.sh lazygit";
       #         "${mod}+y" = "exec ~/.local/bin/app-launcher-wrapper.sh yazi";

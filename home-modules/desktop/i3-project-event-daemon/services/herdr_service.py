@@ -97,7 +97,6 @@ class HerdrService:
         snapshot_cache_ttl: float = 0.5,
         remote_snapshot_cache_ttl: float = 10.0,
         normalize_project_path: Optional[Callable[[Optional[str]], Optional[str]]] = None,
-        resolve_worktree_for_path: Optional[Callable[[Optional[str]], Optional[Dict[str, str]]]] = None,
         parse_remote_target: Optional[Callable[[str], Tuple[str, str, int]]] = None,
         normalize_connection_key: Optional[Callable[[str], str]] = None,
         load_remote_targets: Optional[Callable[[], List[Dict[str, str]]]] = None,
@@ -140,7 +139,6 @@ class HerdrService:
         self._herdr_binary_path: str = ""
         self._malformed_line_warn_time: float = 0.0
         self._normalize_project_path = normalize_project_path or self._default_normalize_project_path
-        self._resolve_worktree_for_path = resolve_worktree_for_path
         self._parse_remote_target = parse_remote_target or self._default_parse_remote_target
         self._normalize_connection_key = normalize_connection_key or self._default_normalize_connection_key
         self._load_remote_targets = load_remote_targets
@@ -245,21 +243,54 @@ class HerdrService:
         """Normalize a Herdr host key for generation tracking."""
         return str(host or "").strip().lower()
 
-    def project_for_cwd(self, cwd: str) -> Dict[str, str]:
-        """Resolve a Herdr CWD into the project identity used by session rows."""
-        discovered: Optional[Dict[str, str]] = None
-        if self._resolve_worktree_for_path is not None:
-            discovered = self._resolve_worktree_for_path(cwd)
-        if discovered:
+    @staticmethod
+    def project_identity_from_git_metadata(
+        metadata: Optional[Dict[str, Any]],
+        fallback_path: str = "",
+    ) -> Dict[str, str]:
+        """Compose a session row's project identity from live git metadata.
+
+        `repo_key` + `branch_label` reproduces the `account/repo:branch` shape
+        the inventory used to mint, byte for byte, for every checkout that has
+        an origin — and unlike the inventory it stays correct the instant
+        someone switches branches in place, because both halves are re-probed
+        per cwd. A checkout with no repo_key falls back to its own path, which
+        is at least unique; a cwd that is not in a work tree stays 'global'.
+        """
+        source = metadata if isinstance(metadata, dict) else {}
+        checkout_path = str(source.get("checkout_path") or "").strip()
+        if not checkout_path:
             return {
-                "project_name": str(discovered.get("qualified_name") or "").strip(),
-                "project_path": str(discovered.get("path") or "").strip(),
+                "project_name": "global",
+                "project_path": str(fallback_path or "").strip(),
             }
-        normalized = self._normalize_project_path(cwd) or str(cwd or "").strip()
+        repo_key = str(source.get("repo_key") or "").strip()
+        branch_label = str(source.get("branch_label") or "").strip()
+        if repo_key and branch_label:
+            project_name = f"{repo_key}:{branch_label}"
+        else:
+            project_name = repo_key or checkout_path
         return {
-            "project_name": "global",
-            "project_path": normalized,
+            "project_name": project_name,
+            "project_path": checkout_path,
         }
+
+    def project_for_cwd(self, cwd: str, *, ssh_target: str = "") -> Dict[str, str]:
+        """Resolve a Herdr CWD into the project identity used by session rows.
+
+        The cwd is the identity and git answers everything else. This used to
+        consult the `repos.json` inventory, whose only producer fires from RPCs
+        no workflow reaches any more (agents run plain `git worktree add`), so
+        every checkout missing from it — 37% of the worktrees on this host —
+        was labelled 'global' and lost its git chip along with its name.
+        """
+        metadata = self.git_space_metadata(
+            cwd,
+            ssh_target=ssh_target,
+            normalize_connection_key=self._normalize_connection_key,
+        )
+        normalized = self._normalize_project_path(cwd) or str(cwd or "").strip()
+        return self.project_identity_from_git_metadata(metadata, normalized)
 
     def bump_local_generation(self) -> int:
         """Advance and return the local Herdr generation."""
@@ -967,7 +998,32 @@ class HerdrService:
         return [dict(item) for item in rows if isinstance(item, dict)]
 
     @staticmethod
-    def worktree_result_array(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def derive_repo_name(
+        *,
+        repo_key: Any = "",
+        repo_root: Any = "",
+        checkout_path: Any = "",
+    ) -> str:
+        """Derive a repository name from git identity fields.
+
+        Single source of truth for the ``.bare``/``.git`` stripping rule so a
+        value supplied by Herdr and a value computed from a live git probe can
+        never disagree for the same checkout.
+        """
+        key = str(repo_key or "").strip()
+        root = str(repo_root or "").strip()
+        checkout = str(checkout_path or "").strip()
+        if key and not key.startswith("/") and "/" in key:
+            return key.rstrip("/").rsplit("/", 1)[-1]
+        root_parts = [part for part in (root or checkout).rstrip("/").split("/") if part]
+        if root_parts and root_parts[-1] in {".bare", ".git"} and len(root_parts) >= 2:
+            return root_parts[-2]
+        if checkout:
+            return checkout.rstrip("/").rsplit("/", 1)[-1]
+        return root_parts[-1] if root_parts else ""
+
+    @classmethod
+    def worktree_result_array(cls, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Return normalized Herdr worktree rows with source metadata filled in."""
         result = payload.get("result") if isinstance(payload, dict) else {}
         if not isinstance(result, dict):
@@ -987,9 +1043,24 @@ class HerdrService:
             if not str(row.get("workspace_id") or "").strip() and str(row.get("open_workspace_id") or "").strip():
                 row["workspace_id"] = str(row.get("open_workspace_id") or "").strip()
             row.setdefault("repo_key", source.get("repo_key"))
-            row.setdefault("repo_name", source.get("repo_name"))
             row.setdefault("repo_root", source.get("repo_root"))
             row.setdefault("checkout_path", row.get("path"))
+            # Herdr reports `source.repo_name` as the basename of whatever
+            # checkout its CLI happened to run in — live, the stacks bare repo
+            # answers repo_name='main' — and taking that verbatim bypassed the
+            # .bare/.git stripping that git_space_metadata applies, so a space
+            # and its own session rows disagreed about the identical cwd.
+            # Derive it here instead and keep Herdr's value only as a fallback.
+            derived_repo_name = cls.derive_repo_name(
+                repo_key=row.get("repo_key"),
+                repo_root=row.get("repo_root"),
+                checkout_path=row.get("checkout_path"),
+            )
+            row["repo_name"] = (
+                derived_repo_name
+                or str(row.get("repo_name") or "").strip()
+                or str(source.get("repo_name") or "").strip()
+            )
             if str(row.get("branch") or "").strip() and not str(row.get("branch_label") or "").strip():
                 row["branch_label"] = str(row.get("branch") or "").strip()
             normalized.append(row)
@@ -1164,14 +1235,11 @@ class HerdrService:
             repo_root = repo_root[:-5]
         origin = self.git_run(value, ["config", "--get", "remote.origin.url"], ssh_target=ssh_target)
         repo_key = self.normalize_repo_url(origin) or repo_root
-        if repo_key and not repo_key.startswith("/") and "/" in repo_key:
-            repo_name = repo_key.rstrip("/").rsplit("/", 1)[-1]
-        else:
-            repo_root_parts = [part for part in repo_root.rstrip("/").split("/") if part]
-            if repo_root_parts and repo_root_parts[-1] in {".bare", ".git"} and len(repo_root_parts) >= 2:
-                repo_name = repo_root_parts[-2]
-            else:
-                repo_name = checkout_path.rstrip("/").rsplit("/", 1)[-1]
+        repo_name = self.derive_repo_name(
+            repo_key=repo_key,
+            repo_root=repo_root,
+            checkout_path=checkout_path,
+        )
         metadata = {
             "repo_key": repo_key,
             "repo_name": repo_name,
@@ -1220,8 +1288,15 @@ class HerdrService:
         build_spaces runs on the event loop, so its git enrichment must find
         every local cwd already cached; this runs inside the snapshot's
         to_thread enrichment pass.
+
+        `panes` is walked alongside the other collections because it is the
+        only collection that reliably carries a cwd: Herdr workspace rows carry
+        none at all, and a pane without an agent never becomes a session row.
+        A space whose panes are all agentless therefore had nothing to probe
+        and rendered with empty repo/branch/checkout (verified live), which
+        build_spaces now repairs from these same pane cwds.
         """
-        for collection_name in ("workspaces", "sessions", "worktrees"):
+        for collection_name in ("workspaces", "sessions", "panes", "worktrees"):
             for item in snapshot.get(collection_name, []) or []:
                 if not isinstance(item, dict) or not self.space_needs_local_git_probe(item):
                     continue
@@ -1385,11 +1460,19 @@ class HerdrService:
         )
         ssh_target = str(remote_target.get("ssh_target") or "").strip() if is_remote and remote_target else ""
         effective_cwd = self.effective_cwd(row, ssh_target=ssh_target)
-        project = project_for_cwd(effective_cwd)
         git_metadata = self.git_space_metadata(
             effective_cwd,
             ssh_target=ssh_target,
             normalize_connection_key=normalize_connection_key,
+        )
+        # This row's own metadata names it: it was probed with this row's
+        # ssh_target, so a remote pane is described by the remote checkout
+        # rather than by whatever happens to sit at the same path locally. The
+        # injected resolver is consulted only when git could not answer at all.
+        project = (
+            self.project_identity_from_git_metadata(git_metadata, effective_cwd)
+            if git_metadata
+            else project_for_cwd(effective_cwd)
         )
         project_name = str(project.get("project_name") or "global").strip() or "global"
         connection_key = (
@@ -2655,8 +2738,39 @@ class HerdrService:
             space["agent_count"] = max(len(matching_sessions), len(matching_agents))
             space["pane_count"] = len(matching_panes)
             space["tab_count"] = len(matching_tabs)
-            if not str(space.get("project_name") or "").strip():
-                space["project_name"] = "global"
+
+            if not str(space.get("checkout_path") or "").strip():
+                # Herdr workspace rows carry no cwd of their own, and a pane
+                # with no agent never becomes a session row, so a space whose
+                # panes are all agentless ended up with empty repo/branch/
+                # checkout even though its panes sat in a real worktree
+                # (verified live on the workflow-builder space). The panes do
+                # carry cwd/foreground_cwd; adopt the first one that resolves.
+                # prewarm_space_git_metadata warms these exact cwds off the
+                # event loop, so this stays a cache read here.
+                for pane in matching_panes:
+                    pane_metadata = enrich_worktree(
+                        host_key,
+                        workspace_id,
+                        worktree_metadata_for(pane),
+                    )
+                    if not str(pane_metadata.get("checkout_path") or "").strip():
+                        continue
+                    for key in ["repo_key", "repo_name", "repo_root", "checkout_path", "branch_label"]:
+                        value = str(pane_metadata.get(key) or "").strip()
+                        if value and not str(space.get(key) or "").strip():
+                            space[key] = value
+                    if pane_metadata.get("is_linked_worktree"):
+                        space["is_linked_worktree"] = True
+                    copy_git_fields(space, pane_metadata)
+                    break
+
+            if str(space.get("project_name") or "").strip() in ("", "global"):
+                # No agent session means nothing named this space, but its own
+                # git metadata composes the identical identity a session would
+                # have carried — so an agentless space in a real checkout stops
+                # reading 'global'.
+                space["project_name"] = self.project_identity_from_git_metadata(space)["project_name"]
 
         # Show ALL herdr workspaces in the panel (local + remote, agent or idle).
         # Previously, as soon as ANY space had an agent this collapsed the list to

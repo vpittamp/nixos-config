@@ -113,20 +113,25 @@ def test_herdr_service_tracks_remote_generations_by_host():
     }
 
 
-def test_herdr_service_resolves_project_for_cwd_with_worktree_fallback():
-    def resolve_worktree(path):
-        if path == "/repo/main":
-            return {
-                "qualified_name": "vpittamp/nixos-config:main",
-                "path": "/repo/main",
-            }
-        return None
-
+def test_herdr_service_resolves_project_for_cwd_from_git(monkeypatch):
+    # Identity is derived from the cwd's own git metadata, not looked up in an
+    # inventory: repo_key + branch_label reproduces the `account/repo:branch`
+    # shape byte for byte, and a cwd outside a work tree stays 'global'.
     service = HerdrService(
         notify_state_change=lambda event_type: asyncio.sleep(0),
         invalidate_snapshot_cache=lambda: None,
         normalize_project_path=lambda path: str(path or "").rstrip("/") or None,
-        resolve_worktree_for_path=resolve_worktree,
+    )
+    monkeypatch.setattr(
+        service,
+        "git_space_metadata",
+        lambda path, *, ssh_target="", normalize_connection_key: {
+            "repo_key": "vpittamp/nixos-config",
+            "repo_name": "nixos-config",
+            "repo_root": "/repo",
+            "checkout_path": "/repo/main",
+            "branch_label": "main",
+        } if str(path or "").rstrip("/") == "/repo/main" else {},
     )
 
     assert service.project_for_cwd("/repo/main") == {
@@ -136,6 +141,23 @@ def test_herdr_service_resolves_project_for_cwd_with_worktree_fallback():
     assert service.project_for_cwd("/tmp/work/") == {
         "project_name": "global",
         "project_path": "/tmp/work",
+    }
+
+
+def test_herdr_service_project_identity_falls_back_to_checkout_path():
+    # A checkout with no origin has no `account/repo` to name it; its own path
+    # is still a stable, unique identity — 'global' is not.
+    assert HerdrService.project_identity_from_git_metadata({
+        "checkout_path": "/tmp/agent-worktree",
+        "repo_key": "",
+        "branch_label": "feature/x",
+    }) == {
+        "project_name": "/tmp/agent-worktree",
+        "project_path": "/tmp/agent-worktree",
+    }
+    assert HerdrService.project_identity_from_git_metadata({}, "/tmp/not-a-repo") == {
+        "project_name": "global",
+        "project_path": "/tmp/not-a-repo",
     }
 
 

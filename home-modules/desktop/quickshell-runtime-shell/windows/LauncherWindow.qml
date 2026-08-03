@@ -429,7 +429,6 @@ PanelWindow {
                                     readonly property var entry: modelData
                                     readonly property int itemIndex: index
                                     readonly property bool selected: itemIndex === root.launcherSelectedIndex
-                                    readonly property bool projectEntry: root.stringOrEmpty(entry && entry.kind) === "project" || root.stringOrEmpty(entry && entry.kind) === "global"
                                     readonly property bool sessionEntry: root.stringOrEmpty(entry && entry.kind) === "session"
                                     readonly property bool windowEntry: root.stringOrEmpty(entry && entry.kind) === "window"
                                     readonly property bool urlEntry: root.stringOrEmpty(entry && entry.kind) === "url" || root.stringOrEmpty(entry && entry.kind) === "search"
@@ -457,7 +456,7 @@ PanelWindow {
                                     Component.onCompleted: resetMotionVisuals()
 
                                     width: launcherList.width
-                                    height: sessionEntry || projectEntry || windowEntry || clipboardImageEntry || snippetEntry || urlEntry || fileEntry ? 62 : 56
+                                    height: sessionEntry || windowEntry || clipboardImageEntry || snippetEntry || urlEntry || fileEntry ? 62 : 56
                                     radius: 8
                                     clip: true
                                     color: sessionEntry ? "transparent" : (selected ? colors.blueBg : (entryMouse.containsMouse ? colors.cardAlt : "transparent"))
@@ -539,7 +538,7 @@ PanelWindow {
                                             }
 
                                             IconImage {
-                                                visible: !sessionEntry && !projectEntry && !clipboardImageEntry && !windowEntry
+                                                visible: !sessionEntry && !clipboardImageEntry && !windowEntry
                                                 anchors.centerIn: parent
                                                 implicitSize: 20
                                                 source: root.launcherIconSource(entry)
@@ -557,10 +556,10 @@ PanelWindow {
                                             }
 
                                             Text {
-                                                visible: projectEntry || (windowEntry && root.iconSourceFor(entry) === "")
+                                                visible: windowEntry && root.iconSourceFor(entry) === ""
                                                 anchors.centerIn: parent
-                                                text: projectEntry ? (root.stringOrEmpty(entry && entry.kind) === "global" ? "G" : root.stringOrEmpty(entry && entry.text).slice(0, 1).toUpperCase()) : root.appLabel(entry).slice(0, 1).toUpperCase()
-                                                color: selected ? colors.blue : (projectEntry ? root.projectTargetHostText(entry) : colors.textDim)
+                                                text: root.appLabel(entry).slice(0, 1).toUpperCase()
+                                                color: selected ? colors.blue : colors.textDim
                                                 font.pixelSize: 11
                                                 font.weight: Font.DemiBold
                                             }
@@ -746,63 +745,6 @@ PanelWindow {
 
                                             Text {
                                                 id: launcherSessionCurrentText
-                                                anchors.centerIn: parent
-                                                text: "Current"
-                                                color: colors.accent
-                                                font.pixelSize: 8
-                                                font.weight: Font.DemiBold
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            visible: projectEntry && root.stringOrEmpty(entry && entry.kind) !== "global"
-                                            height: 20
-                                            radius: 6
-                                            color: root.projectTargetHostFill(entry)
-                                            border.color: root.projectTargetHostBorder(entry)
-                                            border.width: 1
-                                            Layout.preferredWidth: launcherVariantText.implicitWidth + 12
-
-                                            Text {
-                                                id: launcherVariantText
-                                                anchors.centerIn: parent
-                                                text: root.projectTargetHostLabel(entry)
-                                                color: root.projectTargetHostText(entry)
-                                                font.pixelSize: 8
-                                                font.weight: Font.DemiBold
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            visible: projectEntry && root.stringOrEmpty(entry && entry.kind) !== "global"
-                                            height: 20
-                                            radius: 6
-                                            color: selected ? colors.bg : colors.panelAlt
-                                            border.color: root.worktreeStatusColor(entry)
-                                            border.width: 1
-                                            Layout.preferredWidth: launcherProjectStatusText.implicitWidth + 12
-
-                                            Text {
-                                                id: launcherProjectStatusText
-                                                anchors.centerIn: parent
-                                                text: root.worktreeStatusLabel(entry)
-                                                color: root.worktreeStatusColor(entry)
-                                                font.pixelSize: 8
-                                                font.weight: Font.DemiBold
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            visible: projectEntry && !!entry.is_active
-                                            height: 20
-                                            radius: 6
-                                            color: colors.accentBg
-                                            border.color: colors.accent
-                                            border.width: 1
-                                            Layout.preferredWidth: launcherCurrentText.implicitWidth + 12
-
-                                            Text {
-                                                id: launcherCurrentText
                                                 anchors.centerIn: parent
                                                 text: "Current"
                                                 color: colors.accent

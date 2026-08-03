@@ -153,7 +153,7 @@ main() {
     echo
     echo "To create a feature worktree:"
     echo "  cd ${repo_path}/${default_branch}"
-    echo "  i3pm worktree create 100-feature"
+    echo "  git worktree add ../100-feature -b 100-feature"
 }
 
 main "$@"

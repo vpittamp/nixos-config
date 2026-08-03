@@ -145,11 +145,6 @@ let
       extraInputs = [ pkgs.fzf ];
       description = "FZF window selector for sending";
     };
-    fzf-project-switcher = {
-      scriptPath = "scripts/fzf-project-switcher.sh";
-      extraInputs = [ pkgs.fzf ];
-      description = "FZF project switcher";
-    };
     sesh-switcher = {
       scriptPath = "scripts/sesh-switcher.sh";
       description = "Tmux session switcher via sesh";
@@ -157,9 +152,11 @@ let
 
     # i3pm utilities
     i3pm-project-badge = {
+      # git and coreutils come from commonInputs; the label is a git probe of
+      # the pane's own cwd, so both are load-bearing here.
       scriptPath = "scripts/i3pm-project-badge.sh";
-      extraInputs = [ pkgs.jq pkgs.tmux ];
-      description = "Display current project badge for status bars";
+      extraInputs = [ pkgs.tmux ];
+      description = "Display the pane's git repo:branch badge for status bars";
     };
     i3pm-clone = {
       scriptPath = "scripts/i3pm-clone.sh";
@@ -221,7 +218,6 @@ in {
     plasma-diff
     fzf-launcher
     fzf-send-to-window
-    fzf-project-switcher
     sesh-switcher
     i3pm-project-badge
     i3pm-clone

@@ -674,29 +674,20 @@ async def test_find_context_terminal_window_recovers_context_from_process_env(se
 
 
 @pytest.mark.asyncio
-async def test_switch_runtime_context_requires_connection_key_match(server):
-    server._context_get_active = AsyncMock(return_value={
+async def test_switch_runtime_context_reports_no_switch_for_a_named_project(server):
+    # Switching INTO a project meant resolving its qualified name to a
+    # directory through the `repos.json` inventory. With no inventory there is
+    # nothing to resolve and no window is scoped to a project anyway, so a
+    # named target reports switched=False and leaves the caller's focus request
+    # to proceed rather than failing it.
+    active_context = {
         "qualified_name": "PittampalliOrg/stacks:main",
         "execution_mode": "ssh",
         "connection_key": "vpittamp@thinkstation:22",
-    })
-    server._worktree_switch = AsyncMock()
-    server._send_tick_barrier = AsyncMock()
-
-    switched_context = {
-        "qualified_name": "PittampalliOrg/stacks:main",
-        "execution_mode": "ssh",
-        "connection_key": "vpittamp@ryzen:22",
     }
-    server._context_get_active = AsyncMock(side_effect=[
-        {
-            "qualified_name": "PittampalliOrg/stacks:main",
-            "execution_mode": "ssh",
-            "connection_key": "vpittamp@thinkstation:22",
-        },
-        switched_context,
-    ])
-    server._worktree_switch = AsyncMock(return_value={"success": True})
+    server._context_get_active = AsyncMock(return_value=active_context)
+    server._send_tick_barrier = AsyncMock()
+    server._worktree_clear = AsyncMock(return_value={"success": True})
 
     result = await server._switch_runtime_context_if_needed(
         "PittampalliOrg/stacks:main",
@@ -704,12 +695,32 @@ async def test_switch_runtime_context_requires_connection_key_match(server):
         "vpittamp@ryzen:22",
     )
 
+    assert result["switched"] is False
+    assert result["context"] is active_context
+    server._worktree_clear.assert_not_awaited()
+    server._send_tick_barrier.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_switch_runtime_context_still_clears_to_global(server):
+    # Clearing is the one context transition that still has an effect: it drops
+    # the persisted active-* files and un-scopes the runtime context.
+    server._context_get_active = AsyncMock(side_effect=[
+        {
+            "qualified_name": "PittampalliOrg/stacks:main",
+            "execution_mode": "ssh",
+            "connection_key": "vpittamp@thinkstation:22",
+        },
+        {"qualified_name": "", "execution_mode": "local"},
+    ])
+    server._send_tick_barrier = AsyncMock()
+    server._worktree_clear = AsyncMock(return_value={"success": True})
+
+    result = await server._switch_runtime_context_if_needed("global", "local", "")
+
     assert result["switched"] is True
-    server._worktree_switch.assert_awaited_once_with({
-        "qualified_name": "PittampalliOrg/stacks:main",
-        "target_host": "ryzen",
-    })
-    assert result["context"]["connection_key"] == "vpittamp@ryzen:22"
+    server._worktree_clear.assert_awaited_once_with({})
+    server._send_tick_barrier.assert_awaited_once()
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-#!/usr/bin/env -S deno run --allow-net --allow-run=tmux --allow-read=/run/user,/home,/etc/nixos --allow-write=/home,/etc/nixos --allow-env=XDG_RUNTIME_DIR,HOME,USER,FLAKE_ROOT,NH_FLAKE,NH_OS_FLAKE,I3PM_CONFIG_ROOT
+#!/usr/bin/env -S deno run --allow-net --allow-run=tmux,git --allow-read=/run/user,/home,/etc/nixos,/tmp --allow-write=/home,/etc/nixos --allow-env=XDG_RUNTIME_DIR,HOME,USER,FLAKE_ROOT,NH_FLAKE,NH_OS_FLAKE,I3PM_CONFIG_ROOT
 
 /**
  * i3pm Deno CLI - Main Entry Point
@@ -38,7 +38,6 @@ GLOBAL OPTIONS:
   --debug          Enable debug logging
 
 COMMANDS:
-  context          Active runtime context commands
   launch           Daemon-owned application launch commands
   session          AI session inspection commands
   herdr-proxy      Host-local Herdr proxy for remote dashboard aggregation
@@ -52,6 +51,7 @@ COMMANDS:
   display          Display layout snapshot/apply/cycle commands
   run              Smart application launcher with run-raise-hide (Feature 051)
   windows          Window state visualization
+  worktrees        Cross-repository git worktree cleanup view
   daemon           Daemon status and event monitoring
   trace            Window tracing for debugging (Feature 101)
   rules            Window classification rules
@@ -62,7 +62,6 @@ COMMANDS:
 Run 'i3pm <command> --help' for more information on a specific command.
 
 EXAMPLES:
-  i3pm context current                 Show active runtime context
   i3pm launch open terminal           Launch an app through the daemon
   i3pm session list --json            Inspect daemon AI session rows
   i3pm herdr-proxy focus <pane_id> --json
@@ -79,6 +78,8 @@ EXAMPLES:
   i3pm run firefox                     Toggle Firefox (launch/focus/summon)
   i3pm run alacritty --hide            Toggle terminal visibility
   i3pm windows --live                  Live window visualization
+  i3pm worktrees --merged --stale      Cleanup candidates across every repo
+  i3pm worktrees --missing --prune     Drop registrations whose checkout is gone
   i3pm daemon status                   Show daemon status
   i3pm rules list                      List classification rules
   i3pm monitors config show            Show workspace distribution config
@@ -141,17 +142,6 @@ async function main(): Promise<void> {
 
   // Route to command handler
   switch (command) {
-    case "context":
-      {
-        const { contextCommand } = await import("./commands/context.ts");
-        const exitCode = await contextCommand(commandArgs, {
-          verbose: args.verbose,
-          debug: args.debug,
-        });
-        Deno.exit(exitCode);
-      }
-      break;
-
     case "launch":
       {
         const { launchCommand } = await import("./commands/launch.ts");
@@ -278,6 +268,17 @@ async function main(): Promise<void> {
       {
         const { windowsCommand } = await import("./commands/windows.ts");
         const exitCode = await windowsCommand(commandArgs, {
+          verbose: args.verbose,
+          debug: args.debug,
+        });
+        Deno.exit(exitCode);
+      }
+      break;
+
+    case "worktrees":
+      {
+        const { worktreesCommand } = await import("./commands/worktrees.ts");
+        const exitCode = await worktreesCommand(commandArgs, {
           verbose: args.verbose,
           debug: args.debug,
         });

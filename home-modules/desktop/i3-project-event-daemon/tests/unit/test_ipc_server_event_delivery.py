@@ -252,9 +252,12 @@ def test_notify_coalesce_delay_stays_wide_for_cold_rebuild_batches():
     assert IPCServer._notify_coalesce_delay({"dashboard_invalidated"}) == slow
     # `i3pm monitors reassign` / hotplug: the burst that the wide window exists for.
     assert IPCServer._notify_coalesce_delay({"display_layout_changed"}) == slow
-    # Worktree refreshes are the other cache: the handler invalidates the
-    # worktree cache before notifying, and the payload carries the ~100KB array.
+    # Worktree refreshes are the other cache: `worktree.refresh` drops the
+    # per-checkout git snapshot cache before notifying, so the rebuild pays for
+    # a fresh git probe per live checkout even though its changed keys look
+    # like the warm agent-row path.
     assert IPCServer._notify_coalesce_delay({"worktree_changed"}) == slow
+    assert IPCServer._notify_coalesce_delay({"project_changed"}) == slow
 
 
 def test_notify_coalesce_delay_takes_the_widest_window_in_a_mixed_batch():

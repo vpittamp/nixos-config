@@ -193,33 +193,25 @@ def test_apply_missing_snapshot_to_session_clears_git_fields() -> None:
 
 
 @pytest.mark.asyncio
-async def test_hydrate_runtime_git_state_enriches_sessions_and_worktrees() -> None:
+async def test_hydrate_runtime_git_state_probes_each_row_checkout_once() -> None:
+    # Identity is the pane's own checkout, so two sessions sharing one checkout
+    # share one probe and the current session upgrades the shared priority.
     service = DashboardGitService()
-    runtime_snapshot = {
-        "active_context": {
-            "qualified_name": "vpittamp/nixos-config:main",
-        },
-        "current_session_key": "session-1",
-    }
+    runtime_snapshot = {"current_session_key": "session-1"}
     sessions = [
-        {
-            "session_key": "session-1",
-            "project_name": "vpittamp/nixos-config:main",
-        },
         {
             "session_key": "session-2",
             "project_name": "vpittamp/nixos-config:main",
+            "checkout_path": "/tmp/nixos-config",
+            "branch_label": "main",
+        },
+        {
+            "session_key": "session-1",
+            "project_name": "vpittamp/nixos-config:main",
+            "checkout_path": "/tmp/nixos-config",
+            "branch_label": "main",
         },
     ]
-    build_worktrees = AsyncMock(return_value=[{
-        "qualified_name": "vpittamp/nixos-config:main",
-        "path": "/tmp/nixos-config",
-        "branch": "main",
-        "is_active": True,
-        "visible_window_count": 1,
-        "scoped_window_count": 1,
-        "is_clean": True,
-    }])
     get_snapshot = AsyncMock(return_value={
         "state": "dirty",
         "freshness": "fresh",
@@ -238,29 +230,51 @@ async def test_hydrate_runtime_git_state_enriches_sessions_and_worktrees() -> No
     await service.hydrate_runtime_git_state(
         runtime_snapshot,
         sessions,
-        build_dashboard_worktrees=build_worktrees,
         get_or_schedule_git_snapshot=get_snapshot,
     )
 
-    get_snapshot.assert_awaited_once()
+    get_snapshot.assert_awaited_once_with(
+        worktree_path="/tmp/nixos-config",
+        qualified_name="vpittamp/nixos-config:main",
+        branch_hint="main",
+        priority="current",
+        attribution="exact_worktree",
+    )
     assert sessions[0]["git_state"] == "dirty"
     assert sessions[1]["git_compact"] == "● 2"
-    assert runtime_snapshot["dashboard_worktrees"][0]["git_state"] == "dirty"
-    assert runtime_snapshot["dashboard_worktrees"][0]["dirty_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_hydrate_runtime_git_state_skips_rows_without_a_checkout() -> None:
+    # A row with no checkout is not inside a work tree; probing its cwd would
+    # spend three git subprocesses to learn the "unknown" it already reports.
+    service = DashboardGitService()
+    sessions = [{
+        "session_key": "session-1",
+        "project_name": "global",
+        "working_dir": "/tmp",
+    }]
+    get_snapshot = AsyncMock(return_value={})
+
+    await service.hydrate_runtime_git_state(
+        {"current_session_key": "session-1"},
+        sessions,
+        get_or_schedule_git_snapshot=get_snapshot,
+    )
+
+    get_snapshot.assert_not_awaited()
+    assert sessions[0]["git_state"] == "unknown"
 
 
 @pytest.mark.asyncio
 async def test_hydrate_runtime_git_state_preserves_remote_herdr_git_fields() -> None:
     service = DashboardGitService()
-    runtime_snapshot = {
-        "active_context": {
-            "qualified_name": "vpittamp/nixos-config:main",
-        },
-        "current_session_key": "remote-session",
-    }
+    runtime_snapshot = {"current_session_key": "remote-session"}
     sessions = [{
         "session_key": "remote-session",
         "project_name": "vpittamp/nixos-config:main",
+        "checkout_path": "/home/vpittamp/repos/vpittamp/nixos-config/main",
+        "branch_label": "main",
         "is_remote_herdr": True,
         "git_state": "dirty",
         "git_compact": "● 6",
@@ -271,15 +285,6 @@ async def test_hydrate_runtime_git_state_preserves_remote_herdr_git_fields() -> 
             "status_compact": "● 6",
         },
     }]
-    build_worktrees = AsyncMock(return_value=[{
-        "qualified_name": "vpittamp/nixos-config:main",
-        "path": "/tmp/local-nixos-config",
-        "branch": "main",
-        "is_active": True,
-        "visible_window_count": 1,
-        "scoped_window_count": 1,
-        "is_clean": True,
-    }])
     get_snapshot = AsyncMock(return_value={
         "state": "clean",
         "freshness": "fresh",
@@ -292,15 +297,15 @@ async def test_hydrate_runtime_git_state_preserves_remote_herdr_git_fields() -> 
     await service.hydrate_runtime_git_state(
         runtime_snapshot,
         sessions,
-        build_dashboard_worktrees=build_worktrees,
         get_or_schedule_git_snapshot=get_snapshot,
     )
 
-    get_snapshot.assert_awaited_once()
+    # The remote row's checkout only exists on the remote host, so it is never
+    # probed locally and keeps the git fields the proxy supplied.
+    get_snapshot.assert_not_awaited()
     assert sessions[0]["git_state"] == "dirty"
     assert sessions[0]["git_compact"] == "● 6"
     assert sessions[0]["git_snapshot"]["dirty_count"] == 6
-    assert runtime_snapshot["dashboard_worktrees"][0]["git_state"] == "clean"
 
 
 @pytest.mark.asyncio

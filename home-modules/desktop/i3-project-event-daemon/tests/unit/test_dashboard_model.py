@@ -32,7 +32,6 @@ dashboard_event_type_for_state_change = dashboard_model.dashboard_event_type_for
 dashboard_changed_keys_for_event = dashboard_model.dashboard_changed_keys_for_event
 dashboard_event_payload_from_snapshot = dashboard_model.dashboard_event_payload_from_snapshot
 build_dashboard_projects = dashboard_model.build_dashboard_projects
-build_dashboard_worktree_rows = dashboard_model.build_dashboard_worktree_rows
 build_dashboard_snapshot_payload = dashboard_model.build_dashboard_snapshot_payload
 advance_dashboard_event_state = dashboard_model.advance_dashboard_event_state
 dashboard_event_notification = dashboard_model.dashboard_event_notification
@@ -80,25 +79,6 @@ def _project_builder_callbacks(*, override_windows=None):
             "connection_key": str(kwargs.get("connection_key") or ""),
         },
     }
-
-
-def _worktree(branch: str, **overrides):
-    data = {
-        "branch": branch,
-        "path": f"/tmp/worktrees/{branch}",
-        "is_main": branch == "main",
-        "is_clean": True,
-        "is_stale": False,
-        "has_conflicts": False,
-        "ahead": 0,
-        "behind": 0,
-        "staged_count": 0,
-        "modified_count": 0,
-        "untracked_count": 0,
-        "last_commit_message": f"commit for {branch}",
-    }
-    data.update(overrides)
-    return data
 
 
 def test_validate_dashboard_payload_accepts_single_daemon_current_row() -> None:
@@ -246,91 +226,6 @@ def test_build_dashboard_projects_sorts_windows_by_workspace_and_app() -> None:
     )
 
     assert [window["id"] for window in projects[0]["windows"]] == [1, 2, 3]
-
-
-def test_build_dashboard_worktree_rows_sorts_by_active_visibility_usage_and_dirtyness() -> None:
-    rows = build_dashboard_worktree_rows(
-        runtime_snapshot={
-            "active_context": {
-                "qualified_name": "vpittamp/nixos-config:main",
-            },
-        },
-        repositories=[{
-            "account": "vpittamp",
-            "name": "nixos-config",
-            "worktrees": [
-                _worktree("main"),
-                _worktree("feature-visible"),
-                _worktree("feature-recent"),
-                _worktree("feature-frequent"),
-                _worktree("feature-infrequent"),
-                _worktree("feature-dirty", is_clean=False, modified_count=2),
-                _worktree("feature-clean"),
-            ],
-        }],
-        usage_map={
-            "vpittamp/nixos-config:feature-recent": {"last_used_at": 300, "use_count": 1},
-            "vpittamp/nixos-config:feature-frequent": {"last_used_at": 200, "use_count": 50},
-            "vpittamp/nixos-config:feature-infrequent": {"last_used_at": 200, "use_count": 1},
-        },
-        runtime_windows=[
-            {"project": "vpittamp/nixos-config:feature-visible", "hidden": False},
-            {"project": "vpittamp/nixos-config:feature-visible", "hidden": True},
-        ],
-        active_target_host="local",
-        canonical_project_name=lambda value, **_kwargs: str(value or "").strip(),
-        get_worktree_host_profile=lambda _qualified_name: None,
-    )
-
-    assert [item["qualified_name"] for item in rows] == [
-        "vpittamp/nixos-config:main",
-        "vpittamp/nixos-config:feature-visible",
-        "vpittamp/nixos-config:feature-recent",
-        "vpittamp/nixos-config:feature-frequent",
-        "vpittamp/nixos-config:feature-infrequent",
-        "vpittamp/nixos-config:feature-dirty",
-        "vpittamp/nixos-config:feature-clean",
-    ]
-    visible = rows[1]
-    assert visible["visible_window_count"] == 1
-    assert visible["scoped_window_count"] == 2
-    assert rows[0]["is_active"] is True
-    assert rows[0]["active_target_host"] == "local"
-    assert rows[5]["dirty_count"] == 2
-
-
-def test_build_dashboard_worktree_rows_exposes_remote_profile_metadata() -> None:
-    rows = build_dashboard_worktree_rows(
-        runtime_snapshot={
-            "active_context": {
-                "qualified_name": "vpittamp/nixos-config:main",
-            },
-        },
-        repositories=[{
-            "account": "vpittamp",
-            "name": "nixos-config",
-            "worktrees": [
-                _worktree("main"),
-                _worktree("feature-local"),
-            ],
-        }],
-        usage_map={},
-        runtime_windows=[],
-        active_target_host="ryzen",
-        canonical_project_name=lambda value, **_kwargs: str(value or "").strip(),
-        get_worktree_host_profile=lambda qualified_name: (
-            {"enabled": True, "host": "ryzen"}
-            if qualified_name == "vpittamp/nixos-config:main"
-            else None
-        ),
-    )
-
-    assert rows[0]["qualified_name"] == "vpittamp/nixos-config:main"
-    assert rows[0]["is_active"] is True
-    assert rows[0]["active_target_host"] == "ryzen"
-    assert rows[0]["host_profile_available"] is True
-    assert rows[0]["host_profile_host"] == "ryzen"
-    assert rows[1]["host_profile_available"] is False
 
 
 def test_validate_dashboard_payload_rejects_duplicate_current_rows() -> None:
@@ -690,29 +585,21 @@ def test_dashboard_changed_keys_follow_typed_event_contract() -> None:
     assert dashboard_changed_keys_for_event("dashboard_invalidated") == ["dashboard"]
 
 
-def test_agent_session_events_do_not_ship_worktrees() -> None:
-    # The worktree array dominated session.changed payloads (~100KB) while
-    # agent-session consumers only read the session rows; full snapshots still
-    # carry it, and event merges are partial so absent keys keep prior values.
-    assert dashboard_changed_keys_for_event("agent_session_changed") == [
-        "focus_state",
-        "active_ai_sessions",
-    ]
-    assert dashboard_changed_keys_for_event("ai_session_git_changed") == [
-        "focus_state",
-        "active_ai_sessions",
-    ]
-
-
-def test_worktree_and_project_events_still_ship_worktrees() -> None:
-    # These route through session.changed too, but they are rare and are the
-    # only events that actually mutate the array — dropping it there would
-    # leave `i3pm dashboard watch` consumers stale until a full snapshot.
-    for event_type in ("worktree_changed", "worktree::new", "project_changed"):
+def test_session_changed_events_ship_only_focus_and_session_rows() -> None:
+    # `worktrees` used to ride along on worktree/project events. The array is
+    # no longer part of the payload at all, so every event routed through
+    # session.changed — agent ticks and worktree/project events alike — ships
+    # exactly the two keys its consumers read.
+    for event_type in (
+        "agent_session_changed",
+        "ai_session_git_changed",
+        "worktree_changed",
+        "worktree::new",
+        "project_changed",
+    ):
         assert dashboard_changed_keys_for_event(event_type) == [
             "focus_state",
             "active_ai_sessions",
-            "worktrees",
         ], event_type
 
 
@@ -888,7 +775,6 @@ def test_dashboard_event_payload_contains_common_metadata_and_changed_models_onl
         "total_windows": 8,
         "window_count": 8,
         "project_count": 2,
-        "worktree_count": 4,
         "state_health": {"ok": True},
         "dashboard_invariants": {"ok": True},
         "focus_state": {"current_window_id": 101},
@@ -955,7 +841,6 @@ def test_build_dashboard_snapshot_payload_shapes_herdr_summary() -> None:
         runtime_snapshot=runtime_snapshot,
         display_snapshot={"outputs": ["DP-1"]},
         projects=[{"windows": [{"id": 101, "focused": True}]}],
-        worktrees=[{"qualified_name": "vpittamp/nixos-config:main"}],
         sessions=sessions,
         focus_state={
             "current_session_key": "session-current",
@@ -977,7 +862,6 @@ def test_build_dashboard_snapshot_payload_shapes_herdr_summary() -> None:
     assert "current_ai_session_key" not in payload
     assert payload["dashboard_invariants"]["ok"] is True
     assert payload["project_count"] == 1
-    assert payload["worktree_count"] == 1
     assert payload["herdr"]["local_herdr_generation"] == 7
     assert payload["herdr"]["spaces"] == [{"id": "space-1", "pane_count": 1}]
 
@@ -990,7 +874,6 @@ def test_build_dashboard_snapshot_payload_degrades_gracefully_on_invariant_viola
         runtime_snapshot={"current_session_key": "session-missing"},
         display_snapshot={},
         projects=[],
-        worktrees=[],
         sessions=[],
         focus_state={"current_session_key": "session-missing"},
         herdr_spaces=[],

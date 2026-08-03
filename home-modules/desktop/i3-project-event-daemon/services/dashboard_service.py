@@ -31,7 +31,6 @@ class DashboardService:
         runtime_loader: Callable[..., Awaitable[Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]]],
         display_snapshot: Callable[[], Awaitable[Dict[str, Any]]],
         build_projects: Callable[[Dict[str, Any], List[Dict[str, Any]]], List[Dict[str, Any]]],
-        build_worktrees: Callable[[Dict[str, Any]], Awaitable[List[Dict[str, Any]]]],
         build_focus_state: Callable[..., Dict[str, Any]],
         build_herdr_spaces: Callable[[Dict[str, Any], List[Dict[str, Any]]], List[Dict[str, Any]]],
         list_launches: Callable[..., List[Dict[str, Any]]],
@@ -44,7 +43,6 @@ class DashboardService:
         self._runtime_loader = runtime_loader
         self._display_snapshot = display_snapshot
         self._build_projects = build_projects
-        self._build_worktrees = build_worktrees
         self._build_focus_state = build_focus_state
         self._build_lightweight_focus_state = build_lightweight_focus_state
         self._build_herdr_spaces = build_herdr_spaces
@@ -85,17 +83,11 @@ class DashboardService:
             herdr_snapshot = {}
 
         projects = self._build_projects(runtime_snapshot, sessions)
-        # The worktrees array is ~100KB of a ~157KB snapshot and no shell surface
-        # renders it, so subscribers that only drive the bars ask to leave it out.
-        # Typed events already omit it for the same reason; this extends that to
-        # the full snapshots those clients fetch on connect and on gap recovery.
-        # CLI consumers keep the default and still get the array.
-        if bool(params.get("include_worktrees", True)):
-            worktrees = list(runtime_snapshot.get("dashboard_worktrees", []) or [])
-            if not worktrees:
-                worktrees = await self._build_worktrees(runtime_snapshot)
-        else:
-            worktrees = []
+        # The `worktrees` array (~100KB of a ~157KB snapshot) and the
+        # `include_worktrees` parameter that gated it are both gone: the rows
+        # were the `repos.json` inventory rendered verbatim, no shell surface
+        # ever read them, and the inventory itself has been removed. A caller
+        # still passing `include_worktrees` is simply ignored.
         focus_state = self._build_focus_state(
             runtime_snapshot,
             sessions,
@@ -114,7 +106,6 @@ class DashboardService:
             runtime_snapshot=runtime_snapshot,
             display_snapshot=display_snapshot,
             projects=projects,
-            worktrees=worktrees,
             sessions=sessions,
             focus_state=focus_state,
             herdr_spaces=self._build_herdr_spaces(
@@ -302,7 +293,7 @@ class DashboardService:
             if active_ai_sessions:
                 payload["active_ai_sessions"] = active_ai_sessions
             return payload
-        git_bearing_keys = {"active_ai_sessions", "herdr", "worktrees"}
+        git_bearing_keys = {"active_ai_sessions", "herdr"}
         skip_git_hydration = not any(
             key in git_bearing_keys for key in normalized_changed_keys
         )

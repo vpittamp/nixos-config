@@ -7,7 +7,6 @@ import importlib
 import importlib.util
 import json
 import sys
-import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -883,7 +882,6 @@ async def test_dashboard_snapshot_marks_remote_window_focused_from_current_sessi
     }
 
     server.display_service.snapshot = AsyncMock(return_value={"outputs": []})
-    server._build_dashboard_worktrees = AsyncMock(return_value=[])
     server._load_reconciled_session_runtime = AsyncMock(return_value=(runtime_snapshot, sessions, {}))
 
     result = await server._dashboard_snapshot({})
@@ -921,7 +919,6 @@ async def test_dashboard_snapshot_preserves_runtime_active_project(server):
     }
 
     server.display_service.snapshot = AsyncMock(return_value={"outputs": []})
-    server._build_dashboard_worktrees = AsyncMock(return_value=[])
     server._load_reconciled_session_runtime = AsyncMock(return_value=(runtime_snapshot, [], {}))
 
     result = await server._dashboard_snapshot({})
@@ -931,22 +928,19 @@ async def test_dashboard_snapshot_preserves_runtime_active_project(server):
 
 
 @pytest.mark.asyncio
-async def test_hydrate_runtime_git_state_uses_canonical_project_identity(server):
+async def test_hydrate_runtime_git_state_probes_agent_created_worktree_checkout(server):
+    # The checkout below is in no inventory — an agent made it with plain
+    # `git worktree add`. It must still be probed, and the row's live branch
+    # (not the label its project_name was minted with) is the branch hint.
     runtime_snapshot = {
         "active_context": {},
         "tracked_windows": [],
     }
     sessions = [{
-        "project_name": "PittampalliOrg/workflow-builder:main",
-        "canonical_project_name": "PittampalliOrg/workflow-builder:codex-shared-workspace-capabilities-20260323",
+        "project_name": "PittampalliOrg/workflow-builder:codex-shared-workspace-capabilities-20260323",
+        "checkout_path": "/tmp/workflow-builder",
+        "branch_label": "codex-shared-workspace-capabilities-20260323",
     }]
-    server._build_dashboard_worktrees = AsyncMock(return_value=[{
-        "qualified_name": "PittampalliOrg/workflow-builder:codex-shared-workspace-capabilities-20260323",
-        "path": "/tmp/workflow-builder",
-        "branch": "codex-shared-workspace-capabilities-20260323",
-        "visible_window_count": 0,
-        "scoped_window_count": 0,
-    }])
     server._get_or_schedule_git_snapshot = AsyncMock(return_value={
         "state": "dirty",
         "status_compact": "● 1",
@@ -965,50 +959,10 @@ async def test_hydrate_runtime_git_state_uses_canonical_project_identity(server)
     await server._hydrate_runtime_git_state(runtime_snapshot, sessions)
 
     assert sessions[0]["git_state"] == "dirty"
-    assert runtime_snapshot["dashboard_worktrees"][0]["git_state"] == "dirty"
-
-
-@pytest.mark.asyncio
-async def test_build_dashboard_worktrees_rebuilds_when_cached_active_context_is_stale(server, monkeypatch):
-    runtime_snapshot = {
-        "active_context": {
-            "qualified_name": "vpittamp/nixos-config:main",
-            "project_name": "vpittamp/nixos-config:main",
-            "execution_mode": "local",
-        },
-        "tracked_windows": [],
-    }
-    server.dashboard_worktree_service._cache = [{
-        "qualified_name": "PittampalliOrg/stacks:main",
-        "is_active": True,
-    }]
-    server.dashboard_worktree_service._cache_time = time.time()
-    server.dashboard_worktree_service._cache_fingerprint_value = {
-        "active_qualified": "PittampalliOrg/stacks:main",
-        "active_target_host": "local",
-        "repos": (0, 0),
-        "usage": (0, 0),
-    }
-    monkeypatch.setattr(server, "_stat_fingerprint", lambda _path: (0, 0))
-    server._repo_list = AsyncMock(return_value={
-        "repositories": [{
-            "account": "vpittamp",
-            "name": "nixos-config",
-            "worktrees": [{
-                "branch": "main",
-                "path": "/home/vpittamp/repos/vpittamp/nixos-config/main",
-                "is_clean": True,
-                "is_main": True,
-            }],
-        }],
-    })
-    monkeypatch.setattr(server, "_get_project_remote_profile", lambda _qualified_name: None)
-
-    worktrees = await server._build_dashboard_worktrees(runtime_snapshot)
-
-    assert len(worktrees) == 1
-    assert worktrees[0]["qualified_name"] == "vpittamp/nixos-config:main"
-    assert worktrees[0]["is_active"] is True
+    assert server._get_or_schedule_git_snapshot.await_args.kwargs["worktree_path"] == "/tmp/workflow-builder"
+    assert server._get_or_schedule_git_snapshot.await_args.kwargs["branch_hint"] == (
+        "codex-shared-workspace-capabilities-20260323"
+    )
 
 
 def test_extract_windows_identifies_xwayland_by_container_id_not_x11_id(server):

@@ -71,21 +71,70 @@ journalctl --user -u quickshell-runtime-shell -f   # Logs
 ## i3pm Runtime Daemon
 
 The project-scoping system (project switch, scoped-app hide/show, per-project
-scratchpad/layouts, worktree discovery) was **retired** — herdr now owns the
-terminal/AI-session workflow. The i3pm daemon remains as the runtime backbone:
-it builds the dashboard snapshot that powers the QuickShell bottom bar + herdr
-panel, routes focus, aggregates local + remote herdr, and manages monitors/
-display. All apps are global (no hide-on-switch); the bottom-bar context chip
-shows the focused herdr space's `repo[:branch]` + git status.
+scratchpad/layouts) was **retired** — herdr now owns the terminal/AI-session
+workflow. Worktree *discovery* is retired with it: there is no repos.json
+inventory, no `i3pm discover`, no `i3pm worktree create/switch/clear`, and no
+single "active worktree". CLI agents create worktrees with plain
+`git worktree add`, anywhere on disk (37% of them live outside
+`~/repos/<account>/<repo>/`).
+
+**Identity model**: a pane's (or window's) **cwd is its identity, and git
+answers everything else.** The daemon probes git for that path — repo name,
+branch label, checkout path, status — behind a 30s TTL cache, so a worktree
+created a minute ago labels itself correctly and a `git checkout` is reflected
+within one TTL. Nothing is keyed by `account/repo:branch` any more; that key
+was a directory identified by a mutable property of that directory.
+
+The daemon remains the runtime backbone: it builds the dashboard snapshot that
+powers the QuickShell bottom bar + herdr panel, routes focus, aggregates local
++ remote herdr, and manages monitors/display. All apps are global (no
+hide-on-switch); the bottom-bar context chip shows the focused herdr space's
+`repo[:branch]` + git status, and the tmux/prompt badge
+(`scripts/i3pm-project-badge.sh`) derives the same label from git in each
+pane's own working directory.
 
 ```bash
 i3pm daemon {status|events}
 i3pm monitors {status|reassign|config}
 i3pm dashboard {snapshot|watch}
 i3pm herdr-proxy {snapshot|events|focus}
-i3pm context {current|clear}            # pclear/pcurrent aliases
 i3pm health
+git worktree list --porcelain           # the worktree inventory, asked on demand
 ```
+
+## Worktree Cleanup (`i3pm worktrees`)
+
+The one thing the retired repos.json inventory was actually good for — the
+cross-repository view of what can be deleted — is now a CLI command that asks
+git instead of a file. It globs `~/repos/*/*/.bare`, fans `git worktree list
+--porcelain` out in parallel, and probes status/log/merge state per checkout.
+Full sweep of this machine: **37 repos, 490 worktrees, ~1.1s**. Nothing is
+cached and nothing is written, so it cannot go stale.
+
+```bash
+i3pm worktrees                          # everything git knows about
+i3pm worktrees --merged --stale         # cleanup candidates (filters are a union)
+i3pm worktrees --missing                # registrations whose checkout is gone
+i3pm worktrees --prune --dry-run        # what a prune would drop
+i3pm worktrees --merged --paths | xargs -n1 git worktree remove
+i3pm worktrees --json                   # full report, machine readable
+```
+
+**Flags**: `--merged` `--stale` `--missing` `--prune` `--dry-run` `--json`
+`--paths` `--root <path>` `--account <name>` `--stale-days <n>` `--concurrency <n>`
+
+**Row tags**: `missing` (checkout gone) | `locked` | `unreadable` | `detached` |
+`merged` | `stale` (tip older than `--stale-days`, default 30) | `dirty`
+(staged, modified, or untracked)
+
+**Exit code 1 means the report is incomplete** — a repository that would not
+list, a checkout that could not be read, or git that could not be started. A
+failure to observe is never printed as though it were a finding; a repository
+that fails to enumerate is named, not silently counted as having no worktrees.
+
+Deleting a worktree is still plain git (`git worktree remove <path>`); this
+command only tells you which ones to point it at. `--prune` is the exception
+and only drops git's bookkeeping for checkouts that are already gone.
 
 ## Sway Configuration (Feature 047)
 
@@ -116,7 +165,6 @@ unit (sway.nix disables any left over from older generations).
 ## Workspace Navigation (Feature 042)
 
 Enter mode (`CapsLock`/`Ctrl+0`) → type digits → `Enter` | `Escape` cancel | `+Shift` move window
-Type `:` in workspace mode for project fuzzy search
 
 ## PWA Management
 

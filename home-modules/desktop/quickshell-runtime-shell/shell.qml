@@ -71,7 +71,6 @@ ShellRoot {
             display_layout: {},
             outputs: [],
             projects: [],
-            worktrees: [],
             scratchpad: {},
             state_health: {},
             total_windows: 0
@@ -197,7 +196,6 @@ ShellRoot {
     // Overlay layer, no keyboard grab, narrow side strip.
     property bool agentMonitorVisible: false
     property string agentMonitorOutputName: ""
-    property bool worktreePickerVisible: false
     property bool launcherVisible: false
     property bool launcherLoading: false
     property bool launcherNormalizingInput: false
@@ -870,20 +868,6 @@ ShellRoot {
         return compact.length > 0 ? (title + "\nGit: " + compact) : "";
     }
 
-    function activeContextProjectName() {
-        const context = dashboard.active_context || {};
-        return stringOrEmpty(context.qualified_name || context.project_name);
-    }
-    function activeContextTargetHost() {
-        const context = dashboard.active_context || {};
-        return normalizeHostAlias(context.target_host || context.host_alias || shellConfig.hostName);
-    }
-
-    function isGlobalContext() {
-        const project = activeContextProjectName();
-        return !project || project === "global";
-    }
-
     function activeSessions() {
         return arrayOrEmpty(dashboard.active_ai_sessions);
     }
@@ -1217,30 +1201,6 @@ ShellRoot {
         const sessions = uniqueSessions(items).slice();
         sessions.sort((left, right) => stableSessionCompare(left, right));
         return sessions;
-    }
-
-    function projectGroupFor(projectName, targetHost) {
-        const projects = arrayOrEmpty(dashboard.projects);
-        const project = stringOrEmpty(projectName);
-        const host = normalizeHostAlias(targetHost || currentHostAlias());
-
-        return projects.find(projectGroup => stringOrEmpty(projectGroup.project) === project && normalizeHostAlias(projectGroup.target_host || shellConfig.hostName) === host) || null;
-    }
-
-    function focusPreferredWindowForContext(projectName, targetHost) {
-        const projectGroup = projectGroupFor(projectName, targetHost);
-        if (!projectGroup) {
-            return false;
-        }
-
-        const windows = arrayOrEmpty(projectGroup.windows).filter(windowData => !boolOrFalse(windowData.hidden));
-        if (!windows.length) {
-            return false;
-        }
-
-        const focusedWindow = windows.find(windowData => windowIsFocused(windowData));
-        focusWindow(focusedWindow || windows[0]);
-        return true;
     }
 
     function primaryOutputCandidates() {
@@ -5478,38 +5438,6 @@ function normalizeLauncherMode(mode) {
         return false;
     }
 
-   function worktreeStatusLabel(item) {
-        if (!item || stringOrEmpty(item.kind) === "global") {
-            return "";
-        }
-        if (boolOrFalse(item.has_conflicts)) {
-            return "Conflict";
-        }
-        if (!boolOrFalse(item.is_clean)) {
-            return "Dirty";
-        }
-        if (boolOrFalse(item.is_stale)) {
-            return "Stale";
-        }
-        return "Clean";
-    }
-
-    function worktreeStatusColor(item) {
-        if (!item || stringOrEmpty(item.kind) === "global") {
-            return colors.subtle;
-        }
-        if (boolOrFalse(item.has_conflicts)) {
-            return colors.red;
-        }
-        if (!boolOrFalse(item.is_clean)) {
-            return colors.amber;
-        }
-        if (boolOrFalse(item.is_stale)) {
-            return colors.blue;
-        }
-        return colors.accent;
-    }
-
     function toolIconSource(session) {
         const tool = stringOrEmpty(session.tool).toLowerCase();
         if (tool === "codex") {
@@ -5527,28 +5455,7 @@ function normalizeLauncherMode(mode) {
         return "file://" + shellConfig.aiFallbackIcon;
     }
 
-    function projectTargetHostIsCurrentHost(entry) {
-        const targetHost = normalizeHostAlias(entry && entry.target_host);
-        const currentHost = currentHostAlias();
-        return !targetHost || !currentHost || targetHost === currentHost;
-    }
-
-    function projectTargetHostFill(entry) {
-        return projectTargetHostIsCurrentHost(entry) ? colors.blueWash : colors.orangeBg;
-    }
-
-    function projectTargetHostBorder(entry) {
-        return projectTargetHostIsCurrentHost(entry) ? colors.blueMuted : colors.orange;
-    }
-
-    function projectTargetHostText(entry) {
-        return projectTargetHostIsCurrentHost(entry) ? colors.blue : colors.orange;
-    }
-
-    function projectTargetHostLabel(entry) {
-        return stringOrEmpty(entry && entry.target_host);
-    }
-   function sessionGroupFill(group) {
+    function sessionGroupFill(group) {
         if (boolOrFalse(group && group.is_current_host)) {
             return colors.panelAlt;
         }
@@ -7064,16 +6971,6 @@ function normalizeLauncherMode(mode) {
 
     function activateLauncherEntry(entry, actionMode) {
         const kind = stringOrEmpty(entry && entry.kind);
-        if (kind === "global") {
-            closeLauncher();
-            clearContext();
-            return;
-        }
-        if (kind === "project") {
-            closeLauncher();
-            activateWorktree(entry, stringOrEmpty(entry && entry.target_host));
-            return;
-        }
         if (kind === "session") {
             const sessionKey = stringOrEmpty(entry && entry.session_key);
             if (!sessionKey) {
@@ -7188,7 +7085,6 @@ function normalizeLauncherMode(mode) {
         panelOutputName = stringOrEmpty(outputName);
         panelVisible = true;
         panelSection = "runtime";
-        worktreePickerVisible = false;
         audioPopupVisible = false;
         bluetoothPopupVisible = false;
         displaySelectorVisible = false;
@@ -7729,7 +7625,6 @@ function normalizeLauncherMode(mode) {
             return;
         }
         panelVisible = false;
-        worktreePickerVisible = false;
         audioPopupVisible = false;
         bluetoothPopupVisible = false;
         displaySelectorVisible = false;
@@ -8298,53 +8193,6 @@ function normalizeLauncherMode(mode) {
         runDetached(command);
     }
 
-    function clearContext() {
-        root.worktreePickerVisible = false;
-        runDetached([shellConfig.i3pmBin, "context", "clear"]);
-    }
-
-    function switchContext(projectName, targetHost) {
-        const name = stringOrEmpty(projectName);
-        const host = normalizeHostAlias(targetHost || currentHostAlias());
-        if (!name || name === "global") {
-            clearContext();
-            return;
-        }
-
-        root.worktreePickerVisible = false;
-        const command = [shellConfig.i3pmBin, "context", "ensure", name];
-        if (host) {
-            command.push("--host", host);
-        }
-        runDetached(command);
-    }
-
-    function activateWorktree(item, targetHost) {
-        if (!item) {
-            return;
-        }
-
-        const kind = stringOrEmpty(item.kind);
-        if (kind === "global") {
-            if (!isGlobalContext()) {
-                clearContext();
-            }
-            return;
-        }
-
-        const projectName = stringOrEmpty(item.qualified_name);
-        const requestedHost = normalizeHostAlias(targetHost || currentHostAlias());
-        const activeProject = activeContextProjectName();
-        const activeHost = activeContextTargetHost();
-
-        if (projectName === activeProject && requestedHost === activeHost) {
-            focusPreferredWindowForContext(projectName, requestedHost);
-            return;
-        }
-
-        switchContext(projectName, requestedHost);
-    }
-
     function cycleDisplayLayout() {
         runDetached([shellConfig.i3pmBin, "display", "cycle"]);
     }
@@ -8364,7 +8212,6 @@ function normalizeLauncherMode(mode) {
             display_layout: {},
             outputs: [],
             projects: [],
-            worktrees: [],
             herdr: {
                 spaces: [],
             },
@@ -8379,9 +8226,6 @@ function normalizeLauncherMode(mode) {
             return false;
         }
 
-        // `worktrees` is deliberately not a liveness signal: the watch feed asks
-        // the daemon to omit that array (nothing here renders it), so an empty
-        // one is normal rather than evidence of a stale or broken snapshot.
         return arrayOrEmpty(state.active_ai_sessions).length > 0
             || arrayOrEmpty(state.projects).length > 0
             || arrayOrEmpty(state.outputs).length > 0

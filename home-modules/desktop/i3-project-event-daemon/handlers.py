@@ -385,8 +385,10 @@ async def on_tick(
 ) -> None:
     """Handle daemon tick events.
 
-    Project switching via tick payloads is deprecated. The canonical switching path
-    is the IPC `worktree.switch` / `worktree.clear` methods.
+    Project switching via tick payloads is deprecated, and so is project
+    switching itself: the `worktree.switch`/`worktree.clear` RPCs it pointed at
+    are gone along with the inventory that resolved a project name to a
+    directory.
     """
     start_time = time.perf_counter()
     error_msg: Optional[str] = None
@@ -410,7 +412,7 @@ async def on_tick(
 
         if payload.startswith("project:"):
             logger.warning(
-                "Ignoring deprecated project tick payload '%s'; use IPC worktree.switch/worktree.clear",
+                "Ignoring project tick payload '%s'; project switching was removed",
                 payload,
             )
         elif payload == "i3pm:reload-config":

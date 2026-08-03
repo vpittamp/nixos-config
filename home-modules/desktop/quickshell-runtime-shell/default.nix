@@ -1699,12 +1699,9 @@ PY
       exit 0
     fi
 
-    context_json=$("${config.home.profileDirectory}/bin/i3pm" context current --json 2>/dev/null || printf '{}')
-    context_dir=$(printf '%s\n' "$context_json" | ${lib.getExe pkgs.jq} -r '.local_directory // .directory // ""' 2>/dev/null || true)
-
-    if [[ -z "$context_dir" || ! -d "$context_dir" ]]; then
-      context_dir="$HOME"
-    fi
+    # Runner commands are host-global: there is no daemon-owned active worktree
+    # to inherit a directory from, so $HOME is the honest working directory.
+    context_dir="$HOME"
 
     display_dir="$context_dir"
     if [[ "$display_dir" == "$HOME" ]]; then
@@ -2382,21 +2379,16 @@ PY
       exit 1
     fi
 
-    context_json=$("${config.home.profileDirectory}/bin/i3pm" context current --json 2>/dev/null || printf '{}')
-    context_dir=$(printf '%s\n' "$context_json" | ${lib.getExe pkgs.jq} -r '.local_directory // .directory // ""' 2>/dev/null || true)
-
-    if [[ -z "$context_dir" || ! -d "$context_dir" ]]; then
-      context_dir="$HOME"
-    fi
+    # Launcher commands are host-global: there is no daemon-owned active
+    # worktree to inherit a directory from, so $HOME is the honest working
+    # directory. (This also retired the scratchpad hand-off, which could only
+    # ever fire for a context key the daemon no longer produces.)
+    context_dir="$HOME"
 
     run_in_context() {
       cd "$context_dir"
       export PATH="${pkgs.libnotify}/bin:$PATH"
       exec ${pkgs.bash}/bin/bash -lc "$command"
-    }
-
-    shell_quote() {
-      ${lib.getExe pkgs.jq} -Rn --arg value "$1" '$value | @sh'
     }
 
     resolve_terminal() {
@@ -2417,56 +2409,6 @@ PY
 
     if [[ "$mode" == "background" ]]; then
       run_in_context
-    fi
-
-    launch_in_scratchpad() {
-      local context_key execution_mode remote_host remote_user remote_port remote_dir
-      local terminal_json tmux_session state shell_payload tmux_command
-
-      context_key=$(printf '%s\n' "$context_json" | ${lib.getExe pkgs.jq} -r '.context_key // ""' 2>/dev/null || true)
-      execution_mode=$(printf '%s\n' "$context_json" | ${lib.getExe pkgs.jq} -r '.execution_mode // "local"' 2>/dev/null || true)
-      remote_host=$(printf '%s\n' "$context_json" | ${lib.getExe pkgs.jq} -r '.remote.host // ""' 2>/dev/null || true)
-      remote_user=$(printf '%s\n' "$context_json" | ${lib.getExe pkgs.jq} -r '.remote.user // ""' 2>/dev/null || true)
-      remote_port=$(printf '%s\n' "$context_json" | ${lib.getExe pkgs.jq} -r '.remote.port // 22' 2>/dev/null || true)
-      remote_dir=$(printf '%s\n' "$context_json" | ${lib.getExe pkgs.jq} -r '.remote.remote_dir // .directory // ""' 2>/dev/null || true)
-
-      if [[ -z "$context_key" ]]; then
-        return 1
-      fi
-
-      terminal_json=$("${config.home.profileDirectory}/bin/i3pm" scratchpad status --context-key "$context_key" --json 2>/dev/null || printf '{"terminals":[],"count":0}')
-      tmux_session=$(printf '%s\n' "$terminal_json" | ${lib.getExe pkgs.jq} -r '.terminals[0].tmux_session_name // ""' 2>/dev/null || true)
-      state=$(printf '%s\n' "$terminal_json" | ${lib.getExe pkgs.jq} -r '.terminals[0].state // ""' 2>/dev/null || true)
-
-      if [[ -z "$tmux_session" ]]; then
-        terminal_json=$("${config.home.profileDirectory}/bin/i3pm" scratchpad launch --context-key "$context_key" --json 2>/dev/null || printf '{}')
-        tmux_session=$(printf '%s\n' "$terminal_json" | ${lib.getExe pkgs.jq} -r '.tmux_session_name // ""' 2>/dev/null || true)
-        state="visible"
-      elif [[ "$state" != "visible" ]]; then
-        "${config.home.profileDirectory}/bin/i3pm" scratchpad toggle --context-key "$context_key" --json >/dev/null 2>&1 || true
-      fi
-
-      if [[ -z "$tmux_session" ]]; then
-        return 1
-      fi
-
-      shell_payload="${pkgs.bash}/bin/bash -lc $(shell_quote "$command; exec ${pkgs.bash}/bin/bash -l")"
-
-      if [[ "$execution_mode" == "ssh" && -n "$remote_host" && -n "$remote_user" ]]; then
-        tmux_command="tmux new-window -t $(shell_quote "$tmux_session") -c $(shell_quote "$remote_dir") $(shell_quote "$shell_payload")"
-        if [[ -n "$remote_port" && "$remote_port" != "22" ]]; then
-          ssh -p "$remote_port" "$remote_user@$remote_host" "$tmux_command"
-          return $?
-        fi
-        ssh "$remote_user@$remote_host" "$tmux_command"
-        return $?
-      fi
-
-      ${pkgs.tmux}/bin/tmux new-window -t "$tmux_session" -c "$context_dir" "$shell_payload"
-    }
-
-    if launch_in_scratchpad; then
-      exit 0
     fi
 
     if ! terminal=$(resolve_terminal); then

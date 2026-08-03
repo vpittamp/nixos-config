@@ -12,7 +12,6 @@ import json
 import logging
 import os
 import re
-import shlex
 import socket
 import shutil
 import subprocess
@@ -38,13 +37,11 @@ from .models import EventEntry
 from . import window_filtering  # Feature 037: Window filtering utilities
 from .worktree_utils import (
     canonicalize_context_key,
-    is_qualified_name,
     parse_context_key,
     parse_mark,
     parse_qualified_name,
 )  # Feature 101
 from .constants import ConfigPaths  # Feature 101
-from .config import atomic_write_json  # Feature 137: Atomic file writes
 from .services.window_filter import (
     clear_pid_environ_cache,
     parse_window_environment,
@@ -61,7 +58,6 @@ from .services.dashboard_model import (
 from .services.daemon_contract_service import DaemonContractService
 from .services.dashboard_service import DashboardService
 from .services.dashboard_git_service import DashboardGitService
-from .services.dashboard_worktree_service import DashboardWorktreeService
 from .services.daemon_status_service import DaemonStatusService
 from .services.diagnostic_service import DiagnosticService
 from .services.display_service import DisplayService
@@ -70,7 +66,6 @@ from .services.focus_service import FocusService
 from .services.herdr_service import HerdrService
 from .services.launch_service import LaunchService
 from .services.trace_service import TraceService
-from .services.worktree_profile_service import WorktreeProfileService
 
 logger = logging.getLogger(__name__)
 
@@ -130,12 +125,26 @@ AGENT_STATE_DASHBOARD_EVENT_TYPES = frozenset({"session.changed", "herdr.changed
 # Changed keys whose payload additionally needs git hydration (subprocess probes)
 # or a full invalidation.
 EXPENSIVE_DASHBOARD_CHANGED_KEYS = frozenset(
-    {"active_ai_sessions", "herdr", "worktrees", "dashboard"}
+    {"active_ai_sessions", "herdr", "dashboard"}
 )
-# Changed keys that mean a rebuild is not the warm agent-row path after all: a
-# full invalidation, or the ~100KB worktrees array whose own cache the handler
-# queueing the event just dropped.
-COLD_REBUILD_DASHBOARD_CHANGED_KEYS = frozenset({"dashboard", "worktrees"})
+# Changed keys that mean a rebuild is not the warm agent-row path after all —
+# i.e. a full invalidation.
+COLD_REBUILD_DASHBOARD_CHANGED_KEYS = frozenset({"dashboard"})
+
+
+def _drops_git_snapshot_cache(event_type: str) -> bool:
+    """Whether this event makes the daemon re-probe git before rebuilding.
+
+    Same predicate advance_dashboard_event_state_for_batch uses to set
+    `invalidate_worktree_cache`. These events route through session.changed and
+    so look like the warm agent-row path by their changed keys, but the handler
+    queueing them has just dropped the per-checkout git snapshot cache, so the
+    rebuild pays for a fresh subprocess probe per live checkout.
+    """
+    normalized = str(event_type or "")
+    return normalized.startswith("project") or normalized.startswith("worktree")
+
+
 FAST_DASHBOARD_NOTIFY_COALESCE_S = 0.02
 MEDIUM_DASHBOARD_NOTIFY_COALESCE_S = 0.06
 SLOW_DASHBOARD_NOTIFY_COALESCE_S = 0.25
@@ -148,6 +157,8 @@ def _state_event_coalesce_delay(event_type: str) -> float:
     widest window any member of the batch asks for.
     """
     if event_type in TREE_CACHE_INVALIDATING_STATE_EVENTS:
+        return SLOW_DASHBOARD_NOTIFY_COALESCE_S
+    if _drops_git_snapshot_cache(event_type):
         return SLOW_DASHBOARD_NOTIFY_COALESCE_S
     changed_keys = set(dashboard_changed_keys_for_event(event_type))
     if event_type in FOCUS_ONLY_STATE_EVENTS:
@@ -164,13 +175,38 @@ def _state_event_coalesce_delay(event_type: str) -> float:
     return SLOW_DASHBOARD_NOTIFY_COALESCE_S
 
 
-_DISCOVERED_WORKTREE_CACHE: Dict[str, Any] = {
-    "file_path": "",
-    "mtime_ns": None,
-    "size": None,
-    "by_path": {},
-    "by_qualified_name": {},
-}
+def normalize_context_remote_profile(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Normalize an active-context `remote` block into the legacy launch shape.
+
+    This used to live on WorktreeProfileService alongside the per-worktree
+    profile FILE, which was keyed by inventory qualified_name and has no writer
+    any more. The normalization itself is still needed: a runtime context can
+    carry its own `remote` block, and that — not any inventory — is what names
+    the host a scoped launch would ssh to.
+    """
+    source = profile if isinstance(profile, dict) else {}
+    directory = str(
+        source.get("remote_dir")
+        or source.get("directory")
+        or source.get("working_dir")
+        or ""
+    ).strip()
+    enabled_raw = source.get("enabled", True)
+    if isinstance(enabled_raw, str):
+        enabled = enabled_raw.strip().lower() in {"1", "true", "yes", "on"}
+    else:
+        enabled = bool(enabled_raw)
+    try:
+        port = int(source.get("port", 22))
+    except Exception:
+        port = 22
+    return {
+        "enabled": enabled,
+        "host": str(source.get("host") or "ryzen").strip(),
+        "user": str(source.get("user") or os.environ.get("USER", "vpittamp")).strip(),
+        "port": port,
+        "remote_dir": directory,
+    }
 
 
 def _is_transient_chrome_icon_path(path: Path) -> bool:
@@ -195,140 +231,6 @@ def parse_context_key_target_host(value: Optional[str]) -> str:
     """Extract the canonical target host from a canonicalized context key."""
     _project_name, target_host = parse_context_key(value)
     return target_host
-
-
-def resolve_discovered_worktree(path_value: Optional[str]) -> Optional[Dict[str, str]]:
-    """Resolve a canonical worktree entry from `repos.json` by normalized path."""
-    cache = _load_discovered_worktree_cache()
-    if not cache:
-        return None
-
-    normalized = normalize_project_path(path_value)
-    if not normalized:
-        return None
-
-    entry = cache.get("by_path", {}).get(normalized)
-    if not isinstance(entry, dict):
-        return None
-    return dict(entry)
-
-
-def resolve_discovered_worktree_name(qualified_name: Optional[str]) -> Optional[Dict[str, str]]:
-    """Resolve a canonical worktree entry from `repos.json` by qualified name."""
-    cache = _load_discovered_worktree_cache()
-    if not cache:
-        return None
-
-    normalized_name = str(qualified_name or "").strip()
-    if not normalized_name:
-        return None
-
-    entry = cache.get("by_qualified_name", {}).get(normalized_name)
-    if not isinstance(entry, dict):
-        return None
-    return dict(entry)
-
-
-def is_discovered_worktree_name(qualified_name: Optional[str]) -> bool:
-    """Return True when the qualified name exists in discovered worktrees."""
-    return resolve_discovered_worktree_name(qualified_name) is not None
-
-
-def discovered_worktree_matches_path(
-    qualified_name: Optional[str],
-    path_value: Optional[str],
-) -> bool:
-    """Return True when the qualified name resolves and matches the discovered local path."""
-    discovered = resolve_discovered_worktree_name(qualified_name)
-    normalized_path = normalize_project_path(path_value)
-    if not discovered or not normalized_path:
-        return False
-    return normalize_project_path(discovered.get("path")) == normalized_path
-
-
-def _load_discovered_worktree_cache(force_refresh: bool = False) -> Dict[str, Any]:
-    """Load discovered worktree identity maps keyed by path and qualified name."""
-    repos_file = ConfigPaths.REPOS_FILE
-    if not repos_file.exists():
-        _DISCOVERED_WORKTREE_CACHE.update({
-            "file_path": "",
-            "mtime_ns": None,
-            "size": None,
-            "by_path": {},
-            "by_qualified_name": {},
-        })
-        return {}
-
-    try:
-        stat_result = repos_file.stat()
-    except OSError:
-        return {}
-
-    cached_by_path = _DISCOVERED_WORKTREE_CACHE.get("by_path")
-    cached_by_name = _DISCOVERED_WORKTREE_CACHE.get("by_qualified_name")
-    cache_valid = (
-        not force_refresh
-        and str(_DISCOVERED_WORKTREE_CACHE.get("file_path") or "") == str(repos_file)
-        and _DISCOVERED_WORKTREE_CACHE.get("mtime_ns") == stat_result.st_mtime_ns
-        and _DISCOVERED_WORKTREE_CACHE.get("size") == stat_result.st_size
-        and isinstance(cached_by_path, dict)
-        and isinstance(cached_by_name, dict)
-    )
-    if cache_valid:
-        return {
-            "by_path": dict(cached_by_path),
-            "by_qualified_name": dict(cached_by_name),
-        }
-
-    try:
-        with repos_file.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-    by_path: Dict[str, Dict[str, str]] = {}
-    by_name: Dict[str, Dict[str, str]] = {}
-    repositories = payload.get("repositories", []) if isinstance(payload, dict) else []
-    for repo in repositories if isinstance(repositories, list) else []:
-        if not isinstance(repo, dict):
-            continue
-        account = str(repo.get("account") or "").strip()
-        repo_name = str(repo.get("name") or "").strip()
-        repo_qualified = f"{account}/{repo_name}" if account and repo_name else ""
-        if not repo_qualified:
-            continue
-        worktrees = repo.get("worktrees", [])
-        if not isinstance(worktrees, list):
-            continue
-        for worktree in worktrees:
-            if not isinstance(worktree, dict):
-                continue
-            branch = str(worktree.get("branch") or "").strip()
-            worktree_path = normalize_project_path(worktree.get("path"))
-            if not branch or not worktree_path:
-                continue
-            entry = {
-                "qualified_name": f"{repo_qualified}:{branch}",
-                "repo_qualified_name": repo_qualified,
-                "account": account,
-                "repo_name": repo_name,
-                "branch": branch,
-                "path": worktree_path,
-            }
-            by_path[worktree_path] = entry
-            by_name[entry["qualified_name"]] = entry
-
-    _DISCOVERED_WORKTREE_CACHE.update({
-        "file_path": str(repos_file),
-        "mtime_ns": stat_result.st_mtime_ns,
-        "size": stat_result.st_size,
-        "by_path": by_path,
-        "by_qualified_name": by_name,
-    })
-    return {
-        "by_path": dict(by_path),
-        "by_qualified_name": dict(by_name),
-    }
 
 
 class DesktopIconIndex:
@@ -634,7 +536,6 @@ class IPCServer:
             "slots_by_output": {},
         }
 
-        self._worktree_cache_ttl: float = 10.0
         self._git_probe_timeout_seconds: float = 2.5
         self._git_snapshot_ttl_current: float = 3.0
         self._git_snapshot_ttl_visible: float = 8.0
@@ -677,18 +578,6 @@ class IPCServer:
             ttl_failure=self._git_snapshot_failure_ttl,
             git_probe_timeout_seconds=self._git_probe_timeout_seconds,
         )
-        self.dashboard_worktree_service = DashboardWorktreeService(
-            repo_list=lambda: self._repo_list({}),
-            load_usage_map=self._load_validated_project_usage_map,
-            flatten_runtime_windows=lambda runtime_snapshot: self._flatten_runtime_windows(runtime_snapshot),
-            cache_fingerprint=self._dashboard_worktree_cache_fingerprint,
-            normalize_target_host=self._normalize_target_host,
-            local_host_alias=self._local_host_alias,
-            canonical_project_name=lambda *args, **kwargs: self._canonical_discovered_project_name(*args, **kwargs),
-            get_worktree_host_profile=lambda qualified_name: self._get_worktree_host_profile(qualified_name),
-            ttl=self._worktree_cache_ttl,
-        )
-        self.worktree_profile_service = WorktreeProfileService()
         self.daemon_contract_service = DaemonContractService(
             dashboard_schema_version=DASHBOARD_SCHEMA_VERSION,
             dashboard_event_schema_version=DASHBOARD_EVENT_SCHEMA_VERSION,
@@ -765,7 +654,6 @@ class IPCServer:
         self.herdr_service = HerdrService(
             notify_state_change=lambda event_type: self.notify_state_change_background(event_type),
             normalize_project_path=normalize_project_path,
-            resolve_worktree_for_path=resolve_discovered_worktree,
             parse_remote_target=self._parse_remote_target,
             normalize_connection_key=self._normalize_connection_key,
             local_host=lambda: self._local_host_alias(),
@@ -777,7 +665,6 @@ class IPCServer:
                 runtime_snapshot,
                 sessions,
             ),
-            build_worktrees=lambda runtime_snapshot: self._build_dashboard_worktrees(runtime_snapshot),
             build_focus_state=lambda *args, **kwargs: self.focus_service.build_focus_state_payload(
                 *args,
                 **kwargs,
@@ -1104,8 +991,6 @@ class IPCServer:
             "window.focus_fast",
             "workspace.focus",
             "workspace.focus_fast",
-            "worktree.switch",
-            "worktree.clear",
         }
         if isinstance(method, str) and method in explicit_intent_methods:
             params["__intent_epoch"] = self._advance_user_intent_epoch(
@@ -1175,8 +1060,6 @@ class IPCServer:
                 result = await self.display_service.toggle_output(params)
             elif method == "display.set_scale":
                 result = await self.display_service.set_scale(params)
-            elif method == "get_projects":
-                result = await self._get_projects()
             elif method == "get_windows":
                 # Return hierarchical tree structure (outputs array)
                 tree_result = await self._get_window_tree(params)
@@ -1212,14 +1095,6 @@ class IPCServer:
                 result = await self.daemon_status_service.diagnose_rpc(params)
             elif method == "daemon.apps":
                 result = await self.daemon_status_service.apps_rpc(params)
-
-            # Feature 037: Window filtering methods
-            elif method == "project.hideWindows":
-                result = await self._hide_windows(params)
-            elif method == "project.restoreWindows":
-                result = await self._restore_windows(params)
-            elif method == "project.switchWithFiltering":
-                result = await self._switch_with_filtering(params)
 
             # Feature 037 US5: Window visibility methods (T036, T037)
             elif method == "windows.getHidden":
@@ -1282,65 +1157,14 @@ class IPCServer:
             elif method == "session.exit":
                 result = await self._session_exit(params)
 
-            # Feature 097: Discovery configuration methods
-            elif method == "get_discovery_config":
-                result = await self._get_discovery_config(params)
-            elif method == "update_discovery_config":
-                result = await self._update_discovery_config(params)
-
-            # Feature 098: Worktree environment integration methods
-            elif method == "worktree.list":
-                result = await self._worktree_list(params)
-            elif method == "worktree.current":
-                result = await self._context_get_active(params)
-
-            # Feature 100: Structured Git Repository Management
-            elif method == "account.add":
-                result = await self._account_add(params)
-            elif method == "account.list":
-                result = await self._account_list(params)
-            elif method == "clone":
-                result = await self._clone(params)
-            elif method == "discover":
-                result = await self._discover_bare_repos(params)
-            elif method == "repo.list":
-                result = await self._repo_list(params)
-            elif method == "repo.get":
-                result = await self._repo_get(params)
-            elif method == "worktree.create":
-                result = await self._worktree_create(params)
-            elif method == "worktree.remove":
-                result = await self._worktree_remove(params)
+            # The worktree/repo/account/discover RPC family is gone: it existed
+            # to build and address the `repos.json` inventory, which keyed a
+            # directory by its (mutable) branch and whose only producer fired
+            # from RPCs no workflow reaches any more. `worktree.refresh` stays
+            # because it is the hook a post-`git worktree add` agent hook wants:
+            # it drops the git caches so a new checkout is probed immediately.
             elif method == "worktree.refresh":
                 result = await self._worktree_refresh(params)
-            elif method == "worktree.switch":
-                # Feature 101: Switch to worktree by qualified name
-                result = await self._worktree_switch(params)
-            elif method == "worktree.clear":
-                # Feature 101: Clear active project (return to global mode)
-                result = await self._worktree_clear(params)
-            elif method == "worktree.host.set":
-                result = await self._worktree_remote_set(params)
-            elif method == "worktree.host.get":
-                result = await self._worktree_remote_get(params)
-            elif method == "worktree.host.unset":
-                result = await self._worktree_remote_unset(params)
-            elif method == "worktree.host.list":
-                result = await self._worktree_remote_list(params)
-            elif method == "worktree.host.test":
-                result = await self._worktree_remote_test(params)
-            elif method == "worktree.remote.set":
-                result = await self._worktree_remote_set(params)
-            elif method == "worktree.remote.get":
-                result = await self._worktree_remote_get(params)
-            elif method == "worktree.remote.unset":
-                result = await self._worktree_remote_unset(params)
-            elif method == "worktree.remote.list":
-                result = await self._worktree_remote_list(params)
-            elif method == "worktree.remote.test":
-                result = await self._worktree_remote_test(params)
-            elif method == "worktree.diagnose":
-                result = await self._worktree_diagnose(params)
 
             # Feature 101: Window tracing for debugging
             elif method == "trace.start":
@@ -1877,70 +1701,6 @@ class IPCServer:
             "requested_target_host": requested_target_host,
             "context": context,
         }
-
-    async def _get_projects(self) -> Dict[str, Any]:
-        """List all projects with window counts.
-
-        Feature 101: Uses repos.json as single source of truth.
-        All projects are worktrees (including main branch checkouts).
-        """
-        from pathlib import Path
-
-        start_time = time.perf_counter()
-        error_msg = None
-        project_count = 0
-
-        try:
-            # Feature 101: Load from repos.json
-            repos_file = ConfigPaths.REPOS_FILE
-            if not repos_file.exists():
-                return {"projects": {}}
-
-            with open(repos_file) as f:
-                repos_data = json.load(f)
-
-            result = {}
-
-            for repo in repos_data.get("repositories", []):
-                repo_qualified = f"{repo.get('account', '')}/{repo.get('name', '')}"
-
-                for wt in repo.get("worktrees", []):
-                    branch = wt.get("branch", "unknown")
-                    qualified_name = f"{repo_qualified}:{branch}"
-
-                    # Get window count for this project
-                    windows = await self.state_manager.get_windows_by_project(qualified_name)
-
-                    result[qualified_name] = {
-                        "display_name": branch,
-                        "icon": "🌿",
-                        "directory": wt.get("path", ""),
-                        "window_count": len(windows),
-                        # Feature 101: All projects are worktrees
-                        "source_type": "worktree",
-                        "status": "active" if Path(wt.get("path", "")).exists() else "missing",
-                        "parent_project": repo_qualified,
-                        "git_metadata": {
-                            "branch": branch,
-                            "is_clean": wt.get("is_clean", True),
-                            "ahead": wt.get("ahead", 0),
-                            "behind": wt.get("behind", 0),
-                        },
-                    }
-                    project_count += 1
-
-            return {"projects": result}
-        except Exception as e:
-            error_msg = str(e)
-            raise
-        finally:
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            await self._log_ipc_event(
-                event_type="query::projects",
-                result_count=project_count,
-                duration_ms=duration_ms,
-                error=error_msg,
-            )
 
     async def _get_windows(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Query windows with filters."""
@@ -2558,7 +2318,6 @@ class IPCServer:
 
         # Gather all state in parallel for performance
         daemon_state = await self._get_status()
-        projects_data = await self._get_projects()
         windows_data = await self._get_windows({})
 
         # Optional components
@@ -2587,7 +2346,11 @@ class IPCServer:
 
         return {
             "daemon_state": daemon_state,
-            "projects": projects_data["projects"],
+            # Always empty: the project list was read straight out of the
+            # `repos.json` inventory, which is gone. Window attribution is in
+            # `windows` below, which is the only project signal that was ever
+            # live (every mark carries scope `global`).
+            "projects": {},
             "windows": windows_data["windows"],
             "events": events_data["events"],
             "event_stats": events_data.get("stats", {}),
@@ -2797,12 +2560,27 @@ class IPCServer:
         self._window_tree_cache_time = 0.0
 
     def invalidate_worktree_cache(self) -> None:
-        """Invalidate the cached worktree summary used by dashboard snapshots."""
-        self.dashboard_worktree_service.invalidate()
+        """Drop the git caches keyed by checkout after a worktree mutation.
+
+        The cached `repos.json`-derived worktree summary this also used to clear
+        went away with the inventory; what remains are the two caches that a new
+        checkout or a branch switch actually invalidates.
+        """
         self.dashboard_git_service.clear_snapshot_cache()
         # Herdr's own repo/branch memo is TTL-only; without this a branch switch
         # would keep the stale branch_label on space rows for up to its TTL.
         self.herdr_service.clear_git_metadata_cache()
+
+    def _path_is_git_worktree(self, path_value: Optional[str]) -> bool:
+        """Whether a path exists and sits inside a git work tree.
+
+        Delegates to Herdr's memoized probe so repeated checks inside one
+        snapshot cost one `git rev-parse` per path per TTL, not one per call.
+        """
+        normalized = normalize_project_path(path_value)
+        if not normalized:
+            return False
+        return self.herdr_service.path_is_git_worktree(normalized)
 
     def _canonical_discovered_project_name(
         self,
@@ -2810,84 +2588,36 @@ class IPCServer:
         *,
         project_path: Optional[str] = None,
     ) -> str:
-        """Return the canonical discovered worktree name or an empty string."""
+        """Return the project name when it identifies a real checkout.
+
+        This used to require membership in the `repos.json` inventory, whose
+        producer fires only from RPCs nothing reaches any more, so any worktree
+        an agent created with plain `git worktree add` failed the check and had
+        its name erased: windows regrouped under 'global', usage/focus entries
+        pruned, and active-worktree.json unlinked at daemon startup against a
+        three-week-old file. Identity is the path now — a name is canonical
+        unless it arrives with a path that is not a git work tree.
+        """
         normalized_name = str(project_name or "").strip()
         if not normalized_name or normalized_name.lower() == "global":
             return ""
-
-        discovered = resolve_discovered_worktree_name(normalized_name)
-        if not discovered:
+        if project_path and not self._path_is_git_worktree(project_path):
             return ""
-
-        if project_path and not discovered_worktree_matches_path(
-            discovered.get("qualified_name"),
-            project_path,
-        ):
-            return ""
-        return str(discovered.get("qualified_name") or "").strip()
-
-    def _load_validated_project_usage_map(self) -> Dict[str, Dict[str, Any]]:
-        """Load project usage and prune entries that no longer resolve to worktrees."""
-        usage_file = ConfigPaths.PROJECT_USAGE_FILE
-        data: Dict[str, Any] = {"version": 1, "projects": {}}
-
-        if usage_file.exists():
-            try:
-                existing_usage = json.loads(usage_file.read_text())
-                if isinstance(existing_usage, dict):
-                    data.update(existing_usage)
-            except Exception as exc:
-                logger.debug("dashboard.worktrees could not read project usage map: %s", exc)
-
-        raw_projects = data.get("projects", {})
-        if not isinstance(raw_projects, dict):
-            raw_projects = {}
-
-        pruned_projects: Dict[str, Dict[str, Any]] = {}
-        removed = 0
-        for qualified_name, entry in raw_projects.items():
-            canonical_name = self._canonical_discovered_project_name(str(qualified_name or "").strip())
-            if not canonical_name:
-                removed += 1
-                continue
-            if not isinstance(entry, dict):
-                entry = {}
-            pruned_projects[canonical_name] = {
-                "last_used_at": int(entry.get("last_used_at", 0) or 0),
-                "use_count": int(entry.get("use_count", 0) or 0),
-            }
-
-        if removed or pruned_projects != raw_projects:
-            updated = {
-                "version": int(data.get("version", 1) or 1),
-                "updated_at": int(time.time()),
-                "projects": pruned_projects,
-            }
-            atomic_write_json(usage_file, updated)
-            logger.info("Pruned %s stale project usage entr%s", removed, "y" if removed == 1 else "ies")
-
-        return pruned_projects
+        return normalized_name
 
     def prune_persisted_project_state(self) -> Dict[str, int]:
-        """Prune persisted project state that no longer resolves to discovered worktrees."""
+        """Drop persisted project state whose checkout is no longer a work tree.
+
+        The `project-usage.json` and `active-project.json` halves went away with
+        the inventory that ranked and named their entries — usage counts only
+        ever fed the dashboard worktree rows, and nothing reads the active
+        project file now that the daemon no longer rehydrates a context at
+        startup.
+        """
         stats = {
-            "usage_removed": 0,
             "focus_removed": 0,
-            "active_project_cleared": 0,
             "active_worktree_cleared": 0,
         }
-
-        usage_file = ConfigPaths.PROJECT_USAGE_FILE
-        if usage_file.exists():
-            before_count = 0
-            try:
-                existing = json.loads(usage_file.read_text())
-                if isinstance(existing, dict) and isinstance(existing.get("projects"), dict):
-                    before_count = len(existing.get("projects", {}))
-            except Exception:
-                before_count = 0
-            usage_map = self._load_validated_project_usage_map()
-            stats["usage_removed"] = max(0, before_count - len(usage_map))
 
         focus_tracker = getattr(self.state_manager, "focus_tracker", None)
         if focus_tracker is not None:
@@ -2909,19 +2639,6 @@ class IPCServer:
                 focus_tracker.project_focus_file.write_text(json.dumps(pruned_focus, indent=2))
             stats["focus_removed"] = max(0, before_count - len(pruned_focus))
 
-        active_project_file = ConfigPaths.ACTIVE_PROJECT_FILE
-        if active_project_file.exists():
-            try:
-                payload = json.loads(active_project_file.read_text())
-            except Exception:
-                payload = {}
-            project_name = str((payload or {}).get("project_name") or "").strip()
-            if project_name and not self._canonical_discovered_project_name(project_name):
-                active_project_file.unlink(missing_ok=True)
-                stats["active_project_cleared"] = 1
-                if getattr(self.state_manager.state, "active_project", None) == project_name:
-                    self.state_manager.state.active_project = None
-
         active_worktree_file = ConfigPaths.ACTIVE_WORKTREE_FILE
         if active_worktree_file.exists():
             try:
@@ -2930,37 +2647,15 @@ class IPCServer:
                 payload = {}
             qualified_name = str((payload or {}).get("qualified_name") or "").strip()
             local_directory = str((payload or {}).get("local_directory") or (payload or {}).get("path") or "").strip()
-            if (
-                not self._canonical_discovered_project_name(qualified_name)
-                or not discovered_worktree_matches_path(qualified_name, local_directory)
+            if not self._canonical_discovered_project_name(
+                qualified_name,
+                project_path=local_directory,
             ):
                 active_worktree_file.unlink(missing_ok=True)
                 stats["active_worktree_cleared"] = 1
                 self._set_active_runtime_context(None)
 
         return stats
-
-    @staticmethod
-    def _stat_fingerprint(path: Path) -> Tuple[int, int]:
-        """Return a cheap file fingerprint tuple for cache coherence checks."""
-        try:
-            stat_result = path.stat()
-        except OSError:
-            return (0, 0)
-        return (int(stat_result.st_mtime_ns), int(stat_result.st_size))
-
-    def _dashboard_worktree_cache_fingerprint(self, runtime_snapshot: Dict[str, Any]) -> Dict[str, Any]:
-        """Build the coherence key for dashboard worktree snapshots."""
-        active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
-        return {
-            "active_qualified": str(active_context.get("qualified_name") or active_context.get("project_name") or "").strip(),
-            "active_target_host": self._target_host_from_context_payload(
-                active_context,
-                project_name=str(active_context.get("qualified_name") or active_context.get("project_name") or "").strip(),
-            ),
-            "repos": self._stat_fingerprint(ConfigPaths.REPOS_FILE),
-            "usage": self._stat_fingerprint(ConfigPaths.PROJECT_USAGE_FILE),
-        }
 
     async def _run_git_probe_command(
         self,
@@ -3044,7 +2739,6 @@ class IPCServer:
         await self.dashboard_git_service.hydrate_runtime_git_state(
             runtime_snapshot,
             sessions,
-            build_dashboard_worktrees=self._build_dashboard_worktrees,
             get_or_schedule_git_snapshot=self._get_or_schedule_git_snapshot,
         )
 
@@ -3082,7 +2776,13 @@ class IPCServer:
         return snapshot
 
     async def _worktree_refresh(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Invalidate worktree/dashboard caches after CLI-side worktree mutations."""
+        """Drop the per-checkout git caches after a CLI-side worktree mutation.
+
+        The hook for a post-`git worktree add` / post-checkout agent hook: the
+        daemon no longer has an inventory to rebuild, so this exists to make the
+        next snapshot re-probe git instead of serving a cached branch/status for
+        a checkout that just changed underneath it.
+        """
         _ = params
         self.invalidate_worktree_cache()
         await self.notify_state_change("worktree_changed")
@@ -4842,30 +4542,16 @@ class IPCServer:
         app = self._require_registry_app(app_name)
         dry_run = bool(params.get("dry_run", False))
         register_launch = bool(params.get("register_launch", True))
-        requested_project = str(
-            params.get("qualified_name")
-            or params.get("project_name")
-            or ""
-        ).strip()
         active_project = await self.state_manager.get_active_project()
         active_context: Dict[str, Any] = {}
 
-        if app.scope == "scoped" and requested_project:
-            resolved = self._find_worktree_by_qualified_name(requested_project)
-            active_project = str(resolved["full_qualified_name"] or "").strip()
-            active_context = self._build_active_worktree_context(
-                active_project,
-                resolved["repo_name"],
-                resolved["repo"],
-                resolved["worktree"],
-                target_host=(
-                    target_host_override
-                    if target_host_override
-                    else self._resolve_requested_target_host(variant_override, project_name=active_project)
-                ),
-            )
-        else:
-            active_context = self._get_active_runtime_context(active_project=active_project) or {}
+        # A launch used to be able to name a project and have the daemon build a
+        # context for it out of `repos.json`. Without the inventory there is no
+        # directory to resolve a qualified name to, so the daemon-owned active
+        # context is the only context a scoped launch can run in; a scoped app
+        # requested with none raises -32004 below, exactly as it did when the
+        # named worktree was missing from the inventory.
+        active_context = self._get_active_runtime_context(active_project=active_project) or {}
         scoped_launch = app.scope == "scoped"
         qualified_name = (
             str(active_context.get("qualified_name") or "").strip()
@@ -4932,7 +4618,7 @@ class IPCServer:
             }))
 
         if qualified_name and target_host != self._local_host_alias():
-            remote_profile = self._get_project_remote_profile(qualified_name) if qualified_name else None
+            remote_profile = self._get_project_remote_profile(qualified_name)
             if not remote_profile:
                 raise RuntimeError(json.dumps({
                     "code": -32004,
@@ -5382,13 +5068,6 @@ class IPCServer:
             build_window_focus_target=self.focus_service.build_window_focus_target,
         )
 
-    async def _build_dashboard_worktrees(
-        self,
-        runtime_snapshot: Dict[str, Any],
-    ) -> List[Dict[str, Any]]:
-        """Build a compact worktree list for the runtime shell."""
-        return await self.dashboard_worktree_service.build_worktrees(runtime_snapshot)
-
     async def _dashboard_snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return the daemon-owned dashboard payload consumed by QuickShell."""
         return await self.dashboard_service.snapshot(params or {})
@@ -5410,259 +5089,6 @@ class IPCServer:
             clear_focus_overrides=self._clear_focus_overrides,
         )
 
-    # Feature 098: Worktree environment integration methods
-    # Feature 101: Updated to use repos.json as single source of truth
-    async def _worktree_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """List all worktree projects for a given parent repository.
-
-        Feature 098: Worktree-Aware Project Environment Integration
-        Feature 101: Uses repos.json as single source of truth
-
-        Args:
-            params: {
-                "parent_project": str  # Qualified repo name (account/repo) or repo name
-            }
-
-        Returns:
-            {
-                "parent": {"name": str, "directory": str},
-                "worktrees": [
-                    {
-                        "name": str,           # Full qualified name: account/repo:branch
-                        "display_name": str,   # Branch name or formatted display
-                        "directory": str,
-                        "icon": str,
-                        "status": str,
-                        "branch_metadata": {"number": str?, "type": str?, "full_name": str},
-                        "git_metadata": {...}
-                    }
-                ],
-                "count": int
-            }
-
-        Raises:
-            PROJECT_NOT_FOUND (1001): Parent repository doesn't exist
-        """
-        from pathlib import Path
-        from .models.discovery import parse_branch_metadata
-
-        start_time = time.perf_counter()
-
-        try:
-            parent_name = params.get("parent_project")
-            if not parent_name:
-                raise ValueError("parent_project parameter is required")
-
-            # Feature 101: Load from repos.json
-            repos_file = ConfigPaths.REPOS_FILE
-            if not repos_file.exists():
-                raise FileNotFoundError("repos.json not found. Run 'i3pm discover' first.")
-
-            with open(repos_file) as f:
-                repos_data = json.load(f)
-
-            # Find the repository by qualified name (account/repo) or just repo name
-            repo = None
-            for r in repos_data.get("repositories", []):
-                r_qualified = f"{r.get('account', '')}/{r.get('name', '')}"
-                # Match by qualified name or just repo name
-                if r_qualified == parent_name or r.get("name") == parent_name:
-                    repo = r
-                    break
-
-            if not repo:
-                raise FileNotFoundError(f"Repository not found: {parent_name}")
-
-            repo_qualified = f"{repo.get('account', '')}/{repo.get('name', '')}"
-
-            # Build worktree list from repos.json
-            worktrees = []
-            for wt in repo.get("worktrees", []):
-                branch = wt.get("branch", "unknown")
-                qualified_name = f"{repo_qualified}:{branch}"
-
-                # Parse branch metadata
-                branch_metadata = parse_branch_metadata(branch)
-
-                # Create display name
-                if branch_metadata and branch_metadata.number:
-                    # Format: "098 - Description"
-                    branch_desc = branch
-                    if branch_desc.startswith(f"{branch_metadata.number}-"):
-                        branch_desc = branch_desc[len(branch_metadata.number) + 1:]
-                    display_name = f"{branch_metadata.number} - {branch_desc.replace('-', ' ').replace('_', ' ').title()}"
-                else:
-                    display_name = branch
-
-                worktree_data = {
-                    "name": qualified_name,
-                    "display_name": display_name,
-                    "directory": wt.get("path", ""),
-                    "icon": "🌿",
-                    "status": "active" if Path(wt.get("path", "")).exists() else "missing",
-                }
-
-                # Include branch_metadata
-                if branch_metadata:
-                    worktree_data["branch_metadata"] = {
-                        "number": branch_metadata.number,
-                        "type": branch_metadata.type,
-                        "full_name": branch_metadata.full_name,
-                    }
-
-                # Include git_metadata from worktree entry (Feature 108: enhanced fields)
-                worktree_data["git_metadata"] = {
-                    "branch": branch,
-                    "commit": wt.get("commit", ""),
-                    "is_clean": wt.get("is_clean", True),
-                    "ahead": wt.get("ahead", 0),
-                    "behind": wt.get("behind", 0),
-                    # Feature 108: Enhanced status fields
-                    "is_merged": wt.get("is_merged", False),
-                    "is_stale": wt.get("is_stale", False),
-                    "has_conflicts": wt.get("has_conflicts", False),
-                    "staged_count": wt.get("staged_count", 0),
-                    "modified_count": wt.get("modified_count", 0),
-                    "untracked_count": wt.get("untracked_count", 0),
-                    "last_commit_timestamp": wt.get("last_commit_timestamp", 0),
-                    "last_commit_message": wt.get("last_commit_message", ""),
-                }
-
-                worktrees.append(worktree_data)
-
-            duration_ms = (time.perf_counter() - start_time) * 1000
-
-            await self._log_ipc_event(
-                event_type="worktree::list",
-                duration_ms=duration_ms,
-                params={"parent_project": parent_name, "count": len(worktrees)}
-            )
-
-            return {
-                "parent": {
-                    "name": repo_qualified,
-                    "directory": repo.get("path", ""),
-                },
-                "worktrees": worktrees,
-                "count": len(worktrees),
-            }
-
-        except FileNotFoundError as e:
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            await self._log_ipc_event(
-                event_type="worktree::list",
-                duration_ms=duration_ms,
-                params=params,
-                error=str(e)
-            )
-            raise RuntimeError(f"{PROJECT_NOT_FOUND}:{str(e)}")
-
-        except Exception as e:
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            await self._log_ipc_event(
-                event_type="worktree::list",
-                duration_ms=duration_ms,
-                params=params,
-                error=str(e)
-            )
-            raise
-
-    async def _get_discovery_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get current discovery configuration.
-
-        Feature 097 T060: Get discovery config for CLI display/editing.
-
-        Returns:
-            {
-                "scan_paths": list[str],
-                "exclude_patterns": list[str],
-                "auto_discover_on_startup": bool,
-                "max_depth": int
-            }
-        """
-        from .config import load_discovery_config
-        from pathlib import Path
-
-        config_file = Path.home() / ".config" / "i3" / "discovery-config.json"
-        config = load_discovery_config(config_file)
-
-        return {
-            "scan_paths": config.scan_paths,
-            "exclude_patterns": config.exclude_patterns,
-            "auto_discover_on_startup": config.auto_discover_on_startup,
-            "max_depth": config.max_depth
-        }
-
-    async def _update_discovery_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Update discovery configuration.
-
-        Feature 097 T061: Update discovery config from CLI.
-
-        Args:
-            params: {
-                "scan_paths": list[str] (optional),
-                "exclude_patterns": list[str] (optional),
-                "auto_discover_on_startup": bool (optional),
-                "max_depth": int (optional),
-                "add_path": str (optional) - add single path,
-                "remove_path": str (optional) - remove single path
-            }
-
-        Returns:
-            {"success": bool, "config": dict}
-        """
-        import json
-        from pathlib import Path
-        from .config import load_discovery_config
-        from .models.discovery import ScanConfiguration
-
-        config_file = Path.home() / ".config" / "i3" / "discovery-config.json"
-        current_config = load_discovery_config(config_file)
-
-        # Build updated values
-        scan_paths = list(current_config.scan_paths)
-        exclude_patterns = list(current_config.exclude_patterns)
-        auto_discover = current_config.auto_discover_on_startup
-        max_depth = current_config.max_depth
-
-        # Apply updates
-        if "scan_paths" in params:
-            scan_paths = params["scan_paths"]
-        if "exclude_patterns" in params:
-            exclude_patterns = params["exclude_patterns"]
-        if "auto_discover_on_startup" in params:
-            auto_discover = params["auto_discover_on_startup"]
-        if "max_depth" in params:
-            max_depth = params["max_depth"]
-
-        # Handle add_path/remove_path
-        if "add_path" in params:
-            path = params["add_path"]
-            if path not in scan_paths:
-                scan_paths.append(path)
-        if "remove_path" in params:
-            path = params["remove_path"]
-            if path in scan_paths:
-                scan_paths.remove(path)
-
-        # Validate with Pydantic
-        new_config = ScanConfiguration(
-            scan_paths=scan_paths,
-            exclude_patterns=exclude_patterns,
-            auto_discover_on_startup=auto_discover,
-            max_depth=max_depth
-        )
-
-        # Save to file - Feature 137: Use atomic write to prevent corruption
-        atomic_write_json(config_file, new_config.model_dump())
-
-        logger.info(f"[Feature 097] Updated discovery config: {len(scan_paths)} paths, auto_discover={auto_discover}")
-
-        return {
-            "success": True,
-            "config": new_config.model_dump()
-        }
-
     def _read_active_worktree_context(self) -> Optional[Dict[str, Any]]:
         """Read active-worktree context from disk."""
         path = ConfigPaths.ACTIVE_WORKTREE_FILE
@@ -5674,9 +5100,9 @@ class IPCServer:
             if isinstance(data, dict):
                 qualified_name = str(data.get("qualified_name") or "").strip()
                 local_directory = str(data.get("local_directory") or data.get("path") or "").strip()
-                if self._canonical_discovered_project_name(qualified_name) and discovered_worktree_matches_path(
+                if self._canonical_discovered_project_name(
                     qualified_name,
-                    local_directory,
+                    project_path=local_directory,
                 ):
                     return data
                 path.unlink(missing_ok=True)
@@ -5936,13 +5362,17 @@ class IPCServer:
         if not needs_switch:
             return {"switched": False, "context": active}
 
-        if desired_project == "global":
-            await self._worktree_clear({})
-        else:
-            await self._worktree_switch({
-                "qualified_name": desired_project,
-                "target_host": desired_target_host,
-            })
+        if desired_project != "global":
+            # Switching INTO a project meant resolving its qualified name to a
+            # directory in `repos.json` and persisting that as the active
+            # context. There is no inventory to resolve against any more, and no
+            # window is scoped to a project (every mark carries scope `global`),
+            # so there is nothing left to switch: report no-switch rather than
+            # failing the focus request that asked for one. Clearing still has
+            # an effect and is still honoured.
+            return {"switched": False, "context": active}
+
+        await self._worktree_clear({})
         await self._send_tick_barrier(
             f"i3pm:context-switch:{desired_project}:{desired_target_host or 'auto'}"
         )
@@ -6651,21 +6081,23 @@ class IPCServer:
             raise RuntimeError(f"Failed to run app '{app_name}': {e}")
 
     def _get_project_remote_profile(self, project_name: str) -> Optional[Dict[str, Any]]:
-        """Get remote profile for project if SSH mode is enabled."""
+        """Get the remote profile a project's own runtime context carries.
+
+        The per-worktree profile file this also consulted was keyed by inventory
+        qualified_name and could only be written by the worktree.host.*/remote.*
+        RPCs, so it has no writer left; the active context's own `remote` block
+        is the only thing that still names a reachable host.
+        """
         if project_name == "global":
             return None
 
-        # Prefer active context when project matches active worktree.
         active_context = self._get_active_runtime_context(
             active_project=str(self.state_manager.state.active_project or "").strip()
         )
         if isinstance(active_context, dict) and active_context.get("qualified_name") == project_name:
             remote = active_context.get("remote")
             if isinstance(remote, dict) and remote.get("enabled"):
-                return self._normalize_remote_profile(remote)
-
-        if is_qualified_name(project_name):
-            return self._get_worktree_remote_profile(project_name)
+                return normalize_context_remote_profile(remote)
         return None
 
     async def _get_project_working_dir(self, project_name: str) -> Path:
@@ -6694,19 +6126,9 @@ class IPCServer:
             if directory and Path(directory).exists():
                 return Path(directory)
 
-        if ":" in project_name:
-            try:
-                resolved = self._find_worktree_by_qualified_name(project_name)
-                directory = str(
-                    resolved.get("worktree", {}).get("path")
-                    or resolved.get("path")
-                    or ""
-                ).strip()
-                if directory and Path(directory).exists():
-                    return Path(directory)
-            except Exception as e:
-                logger.warning("Failed to resolve worktree working dir for '%s': %s", project_name, e)
-
+        # A qualified name used to be resolvable to a directory through
+        # `repos.json`; without the inventory the active context above is the
+        # only place a project's checkout is known.
         # Fallback to home directory
         logger.warning("Could not find working dir for '%s', using $HOME", project_name)
         return Path.home()
@@ -6810,688 +6232,6 @@ class IPCServer:
                 "error": str(e)
             }
 
-    # -------------------------------------------------------------------------
-    # Feature 100: Structured Git Repository Management IPC Handlers
-    # -------------------------------------------------------------------------
-
-    async def _account_add(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Add a new account configuration.
-
-        Feature 100: Structured Git Repository Management (T012)
-
-        Args:
-            params: {
-                "name": str,         # GitHub account/org name
-                "path": str,         # Base directory path
-                "is_default": bool,  # Default account for clone (optional)
-                "ssh_host": str      # SSH host alias (optional, default: github.com)
-            }
-
-        Returns:
-            {"success": bool, "account": {...}}
-        """
-        import json
-        from pathlib import Path
-
-        start_time = time.perf_counter()
-        accounts_file = Path.home() / ".config" / "i3" / "accounts.json"
-
-        try:
-            name = params.get("name")
-            path = params.get("path")
-
-            if not name or not path:
-                raise ValueError("name and path parameters are required")
-
-            # Load existing accounts
-            accounts = {"version": 1, "accounts": []}
-            if accounts_file.exists():
-                accounts = json.loads(accounts_file.read_text())
-
-            # Check for duplicate
-            for acc in accounts["accounts"]:
-                if acc["name"] == name:
-                    raise ValueError(f"Account '{name}' already exists")
-
-            # Expand ~ in path
-            if path.startswith("~/"):
-                path = str(Path.home()) + path[1:]
-
-            # Create directory if needed
-            account_dir = Path(path)
-            account_dir.mkdir(parents=True, exist_ok=True)
-
-            # Build account config
-            account = {
-                "name": name,
-                "path": path,
-                "is_default": params.get("is_default", False),
-                "ssh_host": params.get("ssh_host", "github.com"),
-            }
-
-            # If new default, clear other defaults
-            if account["is_default"]:
-                for acc in accounts["accounts"]:
-                    acc["is_default"] = False
-
-            # Make first account default
-            if not accounts["accounts"]:
-                account["is_default"] = True
-
-            accounts["accounts"].append(account)
-
-            # Save
-            accounts_file.parent.mkdir(parents=True, exist_ok=True)
-            accounts_file.write_text(json.dumps(accounts, indent=2) + "\n")
-
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            logger.info(f"[Feature 100] Added account '{name}' in {duration_ms:.2f}ms")
-
-            return {"success": True, "account": account}
-
-        except Exception as e:
-            logger.error(f"[Feature 100] account.add error: {e}")
-            raise
-
-    async def _account_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """List configured accounts.
-
-        Feature 100: Structured Git Repository Management (T013)
-
-        Returns:
-            {"accounts": [...]}
-        """
-        import json
-        from pathlib import Path
-
-        accounts_file = Path.home() / ".config" / "i3" / "accounts.json"
-
-        try:
-            if not accounts_file.exists():
-                return {"accounts": []}
-
-            accounts = json.loads(accounts_file.read_text())
-            return {"accounts": accounts.get("accounts", [])}
-
-        except Exception as e:
-            logger.error(f"[Feature 100] account.list error: {e}")
-            raise
-
-    async def _clone(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Clone a repository with bare setup.
-
-        Feature 100: Structured Git Repository Management (T021)
-
-        Args:
-            params: {
-                "url": str,        # GitHub URL (SSH or HTTPS)
-                "account": str     # Override account detection (optional)
-            }
-
-        Returns:
-            {"success": bool, "path": str, "main_worktree": str}
-        """
-        import subprocess
-        import re
-        from pathlib import Path
-
-        start_time = time.perf_counter()
-
-        try:
-            url = params.get("url")
-            if not url:
-                raise ValueError("url parameter is required")
-
-            # Parse URL to get account and repo
-            ssh_match = re.match(r"^git@github\.com:([^/]+)/([^/]+?)(?:\.git)?$", url)
-            https_match = re.match(r"^https://github\.com/([^/]+)/([^/]+?)(?:\.git)?$", url)
-
-            if ssh_match:
-                detected_account, repo_name = ssh_match.groups()
-            elif https_match:
-                detected_account, repo_name = https_match.groups()
-            else:
-                raise ValueError(f"Invalid GitHub URL: {url}")
-
-            account = params.get("account") or detected_account
-            base_path = Path.home() / "repos" / account
-            repo_path = base_path / repo_name
-            bare_path = repo_path / ".bare"
-
-            # Check if exists
-            if bare_path.exists():
-                raise ValueError(f"Repository already exists at {repo_path}")
-
-            # Create directory
-            repo_path.mkdir(parents=True, exist_ok=True)
-
-            # Bare clone
-            subprocess.run(
-                ["git", "clone", "--bare", url, str(bare_path)],
-                capture_output=True, text=True, check=True, timeout=120
-            )
-
-            # Create .git pointer
-            (repo_path / ".git").write_text("gitdir: ./.bare\n")
-
-            # Get default branch
-            default_branch = "main"
-            result = subprocess.run(
-                ["git", "-C", str(bare_path), "symbolic-ref", "refs/remotes/origin/HEAD"],
-                capture_output=True, text=True
-            )
-            if result.returncode == 0:
-                ref = result.stdout.strip()
-                match = re.match(r"refs/remotes/origin/(.+)", ref)
-                if match:
-                    default_branch = match.group(1)
-
-            # Create main worktree
-            main_path = repo_path / default_branch
-            subprocess.run(
-                ["git", "-C", str(bare_path), "worktree", "add", str(main_path), default_branch],
-                capture_output=True, text=True, check=True, timeout=60
-            )
-
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            logger.info(f"[Feature 100] Cloned {url} to {repo_path} in {duration_ms:.2f}ms")
-
-            return {
-                "success": True,
-                "path": str(repo_path),
-                "main_worktree": str(main_path),
-                "default_branch": default_branch,
-            }
-
-        except subprocess.CalledProcessError as e:
-            logger.error(f"[Feature 100] clone git error: {e.stderr}")
-            raise RuntimeError(f"Git command failed: {e.stderr}")
-        except Exception as e:
-            logger.error(f"[Feature 100] clone error: {e}")
-            raise
-
-    async def _discover_bare_repos(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Discover all bare repositories and worktrees.
-
-        Feature 100: Structured Git Repository Management (T031)
-        Runs in a thread to avoid blocking the asyncio event loop.
-
-        Returns:
-            {"success": bool, "repos": int, "worktrees": int, "duration_ms": int}
-        """
-        return await asyncio.to_thread(self._discover_bare_repos_sync, params)
-
-    def _discover_bare_repos_sync(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Synchronous implementation of bare repo discovery (runs in thread)."""
-        import json
-        import subprocess
-        from pathlib import Path
-
-        start_time = time.perf_counter()
-        accounts_file = Path.home() / ".config" / "i3" / "accounts.json"
-        repos_file = ConfigPaths.REPOS_FILE
-
-        try:
-            # Load accounts
-            if not accounts_file.exists():
-                return {"success": False, "error": "No accounts configured"}
-
-            accounts = json.loads(accounts_file.read_text())
-            repositories = []
-            total_worktrees = 0
-
-            for account in accounts.get("accounts", []):
-                account_path = Path(account["path"])
-                if account_path.as_posix().startswith("~/"):
-                    account_path = Path.home() / account_path.as_posix()[2:]
-
-                if not account_path.exists():
-                    continue
-
-                # Scan for repos with .bare directory
-                for entry in account_path.iterdir():
-                    if not entry.is_dir():
-                        continue
-
-                    bare_path = entry / ".bare"
-                    if not bare_path.is_dir():
-                        continue
-
-                    # Get remote URL
-                    result = subprocess.run(
-                        ["git", "-C", str(bare_path), "remote", "get-url", "origin"],
-                        capture_output=True, text=True
-                    )
-                    if result.returncode != 0:
-                        continue
-
-                    remote_url = result.stdout.strip()
-
-                    # Get default branch
-                    default_branch = "main"
-                    result = subprocess.run(
-                        ["git", "-C", str(bare_path), "symbolic-ref", "refs/remotes/origin/HEAD"],
-                        capture_output=True, text=True
-                    )
-                    if result.returncode == 0:
-                        import re
-                        match = re.match(r"refs/remotes/origin/(.+)", result.stdout.strip())
-                        if match:
-                            default_branch = match.group(1)
-
-                    # Get worktrees
-                    worktrees = []
-                    result = subprocess.run(
-                        ["git", "-C", str(bare_path), "worktree", "list", "--porcelain"],
-                        capture_output=True, text=True
-                    )
-                    if result.returncode == 0:
-                        entries = result.stdout.split("\n\n")
-                        for wt_entry in entries:
-                            if not wt_entry.strip():
-                                continue
-                            wt = {}
-                            for line in wt_entry.split("\n"):
-                                if line.startswith("worktree "):
-                                    wt["path"] = line[9:]
-                                elif line.startswith("HEAD "):
-                                    wt["commit"] = line[5:]
-                                elif line.startswith("branch refs/heads/"):
-                                    wt["branch"] = line[18:]
-
-                            if wt.get("path") and not wt["path"].endswith("/.bare"):
-                                if not wt.get("branch"):
-                                    wt["branch"] = "HEAD"
-                                wt["is_main"] = wt.get("branch") in (default_branch, "main", "master")
-                                wt["ahead"] = 0
-                                wt["behind"] = 0
-
-                                # Feature 108: Get detailed git status for worktree
-                                wt_path = wt["path"]
-                                status_result = subprocess.run(
-                                    ["git", "-C", wt_path, "status", "--porcelain=v1"],
-                                    capture_output=True, text=True
-                                )
-                                staged_count = 0
-                                modified_count = 0
-                                untracked_count = 0
-                                has_conflicts = False
-                                if status_result.returncode == 0:
-                                    for line in status_result.stdout.splitlines():
-                                        if len(line) >= 2:
-                                            x, y = line[0], line[1]
-                                            # Conflict detection
-                                            if x == 'U' or y == 'U' or (x == 'A' and y == 'A') or (x == 'D' and y == 'D'):
-                                                has_conflicts = True
-                                            if x not in (' ', '?'):
-                                                staged_count += 1
-                                            if y == 'M':
-                                                modified_count += 1
-                                            if x == '?' and y == '?':
-                                                untracked_count += 1
-
-                                wt["is_clean"] = staged_count == 0 and modified_count == 0
-                                wt["staged_count"] = staged_count
-                                wt["modified_count"] = modified_count
-                                wt["untracked_count"] = untracked_count
-                                wt["has_conflicts"] = has_conflicts
-
-                                # Feature 108: Get last commit info
-                                log_result = subprocess.run(
-                                    ["git", "-C", wt_path, "log", "-1", "--format=%ct|%s"],
-                                    capture_output=True, text=True
-                                )
-                                last_commit_timestamp = 0
-                                last_commit_message = ""
-                                if log_result.returncode == 0 and log_result.stdout.strip():
-                                    parts = log_result.stdout.strip().split("|", 1)
-                                    if len(parts) >= 1:
-                                        try:
-                                            last_commit_timestamp = int(parts[0])
-                                        except ValueError:
-                                            pass
-                                    if len(parts) >= 2:
-                                        last_commit_message = parts[1][:80]
-
-                                wt["last_commit_timestamp"] = last_commit_timestamp
-                                wt["last_commit_message"] = last_commit_message
-
-                                # Feature 108: Stale detection (30+ days since last commit)
-                                import time as time_module
-                                is_stale = False
-                                if last_commit_timestamp > 0:
-                                    days_since = (int(time_module.time()) - last_commit_timestamp) // 86400
-                                    is_stale = days_since >= 30
-                                wt["is_stale"] = is_stale
-
-                                # Feature 108: Merge detection
-                                is_merged = False
-                                current_branch = wt.get("branch", "")
-                                if current_branch not in ("main", "master", "HEAD"):
-                                    for check_branch in [default_branch, "main", "master"]:
-                                        merged_result = subprocess.run(
-                                            ["git", "-C", str(bare_path), "branch", "--merged", check_branch],
-                                            capture_output=True, text=True
-                                        )
-                                        if merged_result.returncode == 0:
-                                            merged_branches = [b.strip().lstrip("* ") for b in merged_result.stdout.splitlines()]
-                                            if current_branch in merged_branches:
-                                                is_merged = True
-                                                break
-                                wt["is_merged"] = is_merged
-
-                                worktrees.append(wt)
-                                total_worktrees += 1
-
-                    repositories.append({
-                        "account": account["name"],
-                        "name": entry.name,
-                        "path": str(entry),
-                        "remote_url": remote_url,
-                        "default_branch": default_branch,
-                        "worktrees": worktrees,
-                        "discovered_at": datetime.now().isoformat(),
-                    })
-
-            # Save results
-            repos_storage = {
-                "version": 1,
-                "last_discovery": datetime.now().isoformat(),
-                "repositories": repositories,
-            }
-            repos_file.parent.mkdir(parents=True, exist_ok=True)
-            repos_file.write_text(json.dumps(repos_storage, indent=2) + "\n")
-
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            logger.info(f"[Feature 100] Discovered {len(repositories)} repos, {total_worktrees} worktrees in {duration_ms:.2f}ms")
-
-            return {
-                "success": True,
-                "repos": len(repositories),
-                "worktrees": total_worktrees,
-                "duration_ms": int(duration_ms),
-            }
-
-        except Exception as e:
-            logger.error(f"[Feature 100] discover error: {e}")
-            raise
-
-    async def _repo_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """List discovered repositories.
-
-        Feature 100: Structured Git Repository Management (T034)
-
-        Returns:
-            {"repositories": [...], "total": int}
-        """
-        import json
-        from pathlib import Path
-
-        repos_file = ConfigPaths.REPOS_FILE
-
-        try:
-            if not repos_file.exists():
-                return {"repositories": [], "total": 0}
-
-            repos = json.loads(repos_file.read_text())
-            repositories = repos.get("repositories", [])
-
-            # Filter by account if specified
-            account_filter = params.get("account")
-            if account_filter:
-                repositories = [r for r in repositories if r["account"] == account_filter]
-
-            return {"repositories": repositories, "total": len(repositories)}
-
-        except Exception as e:
-            logger.error(f"[Feature 100] repo.list error: {e}")
-            raise
-
-    async def _repo_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get details for a specific repository.
-
-        Feature 100: Structured Git Repository Management (T034)
-
-        Args:
-            params: {
-                "account": str,
-                "repo": str
-            }
-
-        Returns:
-            Repository details or error
-        """
-        import json
-        from pathlib import Path
-
-        repos_file = ConfigPaths.REPOS_FILE
-
-        try:
-            account = params.get("account")
-            repo_name = params.get("repo")
-
-            if not account or not repo_name:
-                raise ValueError("account and repo parameters are required")
-
-            if not repos_file.exists():
-                raise FileNotFoundError(f"Repository not found: {account}/{repo_name}")
-
-            repos = json.loads(repos_file.read_text())
-            for repo in repos.get("repositories", []):
-                if repo["account"] == account and repo["name"] == repo_name:
-                    return repo
-
-            raise FileNotFoundError(f"Repository not found: {account}/{repo_name}")
-
-        except Exception as e:
-            logger.error(f"[Feature 100] repo.get error: {e}")
-            raise
-
-    async def _worktree_create(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new worktree.
-
-        Feature 100: Structured Git Repository Management (T024)
-
-        Args:
-            params: {
-                "branch": str,      # Branch name for new worktree
-                "repo": str,        # Repository qualified name (optional)
-                "from": str         # Base branch (optional, default: main)
-            }
-
-        Returns:
-            {"success": bool, "path": str}
-        """
-        import subprocess
-        from pathlib import Path
-
-        start_time = time.perf_counter()
-
-        try:
-            branch = params.get("branch")
-            if not branch:
-                raise ValueError("branch parameter is required")
-
-            repo_name = params.get("repo")
-            from_branch = params.get("from", "main")
-
-            # Find repo path
-            if repo_name and "/" in repo_name:
-                account, name = repo_name.split("/", 1)
-                repo_path = Path.home() / "repos" / account / name
-            else:
-                raise ValueError("repo parameter with account/repo format required")
-
-            bare_path = repo_path / ".bare"
-            if not bare_path.exists():
-                raise FileNotFoundError(f"Repository not found: {repo_path}")
-
-            worktree_path = repo_path / branch
-            if worktree_path.exists():
-                raise ValueError(f"Worktree already exists: {worktree_path}")
-
-            # Create worktree
-            subprocess.run(
-                ["git", "-C", str(bare_path), "worktree", "add", str(worktree_path), "-b", branch, from_branch],
-                capture_output=True, text=True, check=True, timeout=60
-            )
-
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            logger.info(f"[Feature 100] Created worktree '{branch}' at {worktree_path} in {duration_ms:.2f}ms")
-
-            # Feature 101: Auto-discover after worktree creation to update UI
-            try:
-                await self._discover_bare_repos({})
-                logger.info(f"[Feature 101] Auto-discovery completed after worktree creation")
-            except Exception as discover_err:
-                logger.warning(f"[Feature 101] Auto-discovery failed (non-fatal): {discover_err}")
-
-            return {"success": True, "path": str(worktree_path)}
-
-        except subprocess.CalledProcessError as e:
-            logger.error(f"[Feature 100] worktree.create git error: {e.stderr}")
-            raise RuntimeError(f"Git command failed: {e.stderr}")
-        except Exception as e:
-            logger.error(f"[Feature 100] worktree.create error: {e}")
-            raise
-
-    async def _worktree_remove(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Remove a worktree.
-
-        Feature 100: Structured Git Repository Management
-
-        Args:
-            params: {
-                "branch": str,      # Branch name of worktree to remove
-                "repo": str,        # Repository qualified name (optional)
-                "force": bool       # Force removal with uncommitted changes
-            }
-
-        Returns:
-            {"success": bool, "removed": str}
-        """
-        import subprocess
-        from pathlib import Path
-
-        start_time = time.perf_counter()
-
-        try:
-            branch = params.get("branch")
-            if not branch:
-                raise ValueError("branch parameter is required")
-
-            # Prevent removing main/master
-            if branch in ("main", "master"):
-                raise ValueError("Cannot remove main worktree")
-
-            repo_name = params.get("repo")
-            force = params.get("force", False)
-
-            # Find repo path
-            if repo_name and "/" in repo_name:
-                account, name = repo_name.split("/", 1)
-                repo_path = Path.home() / "repos" / account / name
-            else:
-                raise ValueError("repo parameter with account/repo format required")
-
-            bare_path = repo_path / ".bare"
-            worktree_path = repo_path / branch
-
-            if not worktree_path.exists():
-                raise FileNotFoundError(f"Worktree not found: {worktree_path}")
-
-            # Remove worktree
-            cmd = ["git", "-C", str(bare_path), "worktree", "remove"]
-            if force:
-                cmd.append("--force")
-            cmd.append(str(worktree_path))
-
-            subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=60)
-
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            logger.info(f"[Feature 100] Removed worktree '{branch}' in {duration_ms:.2f}ms")
-
-            # Feature 101: Auto-discover after worktree removal to update UI
-            try:
-                await self._discover_bare_repos({})
-                logger.info(f"[Feature 101] Auto-discovery completed after worktree removal")
-            except Exception as discover_err:
-                logger.warning(f"[Feature 101] Auto-discovery failed (non-fatal): {discover_err}")
-
-            return {"success": True, "removed": str(worktree_path)}
-
-        except subprocess.CalledProcessError as e:
-            logger.error(f"[Feature 100] worktree.remove git error: {e.stderr}")
-            raise RuntimeError(f"Git command failed: {e.stderr}")
-        except Exception as e:
-            logger.error(f"[Feature 100] worktree.remove error: {e}")
-            raise
-
-    def _load_worktree_host_profiles(self) -> Dict[str, Any]:
-        """Load worktree host profile mapping from disk."""
-        return self.worktree_profile_service.load_host_profiles()
-
-    def _save_worktree_host_profiles(self, data: Dict[str, Any]) -> None:
-        """Persist worktree host profile mapping to disk."""
-        self.worktree_profile_service.save_host_profiles(data)
-
-    def _normalize_host_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
-        """Normalize host profile payload and support legacy aliases."""
-        return self.worktree_profile_service.normalize_host_profile(profile)
-
-    def _validate_host_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate normalized host profile."""
-        return self.worktree_profile_service.validate_host_profile(profile)
-
-    def _find_worktree_by_qualified_name(self, qualified_name: str) -> Dict[str, Any]:
-        """Resolve worktree metadata from repos.json."""
-        repos_file = ConfigPaths.REPOS_FILE
-        if not repos_file.exists():
-            raise FileNotFoundError("repos.json not found. Run 'i3pm discover' first.")
-
-        repos_data = json.loads(repos_file.read_text())
-        if ":" not in qualified_name:
-            raise ValueError(
-                "Branch is required in qualified name. Use 'account/repo:branch' format."
-            )
-        repo_name, branch = qualified_name.rsplit(":", 1)
-
-        repo = None
-        for r in repos_data.get("repositories", []):
-            r_qualified = f"{r.get('account', '')}/{r.get('name', '')}"
-            if r_qualified == repo_name:
-                repo = r
-                break
-
-        if not repo:
-            raise FileNotFoundError(f"Repository not found: {repo_name}")
-
-        worktree = None
-        worktrees = repo.get("worktrees", [])
-        for wt in worktrees:
-            if wt.get("branch") == branch:
-                worktree = wt
-                break
-
-        if not worktree:
-            available_branches = [wt.get("branch") for wt in worktrees]
-            raise FileNotFoundError(
-                f"Worktree '{branch}' not found in {repo_name}. "
-                f"Available branches: {', '.join(available_branches)}"
-            )
-
-        full_qualified_name = f"{repo_name}:{worktree.get('branch', branch)}"
-        return {
-            "repo_name": repo_name,
-            "repo": repo,
-            "worktree": worktree,
-            "full_qualified_name": full_qualified_name,
-        }
-
-    def _get_worktree_host_profile(self, qualified_name: str) -> Optional[Dict[str, Any]]:
-        """Get normalized host profile for a specific worktree."""
-        return self.worktree_profile_service.get_host_profile(qualified_name)
-
     def _normalize_target_host(self, value: Optional[str]) -> str:
         """Normalize target host aliases for host-targeted worktree contexts."""
         normalized = str(value or "").strip().lower()
@@ -7508,9 +6248,11 @@ class IPCServer:
         if not raw or raw == "local":
             return self._local_host_alias()
         if raw == "ssh":
-            profile = self._get_worktree_host_profile(project_name) if project_name else None
-            if isinstance(profile, dict) and profile.get("host"):
-                return self._normalize_target_host(profile.get("host"))
+            # The legacy `ssh` token resolved through the per-worktree host
+            # profile map, which was keyed by inventory qualified_name and can
+            # no longer be written. With no profile to name a host, `ssh` means
+            # the local host — the same answer the profile lookup gave whenever
+            # the project had none.
             return self._local_host_alias()
         return self._normalize_target_host(raw)
 
@@ -7535,10 +6277,9 @@ class IPCServer:
             _user, remote_host, _port = self._parse_remote_target("", connection_key)
             if remote_host:
                 return self._normalize_target_host(remote_host)
-        if project_name:
-            profile = self._get_worktree_host_profile(project_name)
-            if isinstance(profile, dict) and profile.get("host") and execution_mode == "ssh":
-                return self._normalize_target_host(profile.get("host"))
+        # The per-worktree host profile fallback for `project_name` went away
+        # with the profile map; a payload that does not carry its own host is
+        # local.
         return self._local_host_alias()
 
     def _build_target_context_key(self, project_name: str, target_host: str) -> str:
@@ -7574,21 +6315,6 @@ class IPCServer:
         port = int(host_profile.get("port", 22) or 22)
         raw_connection_key = f"{user}@{profile_host}:{port}" if user else f"{profile_host}:{port}"
         return self._normalize_connection_key(raw_connection_key)
-
-    def _load_worktree_remote_profiles(self) -> Dict[str, Any]:
-        return self.worktree_profile_service.load_remote_profiles()
-
-    def _save_worktree_remote_profiles(self, data: Dict[str, Any]) -> None:
-        self.worktree_profile_service.save_remote_profiles(data)
-
-    def _normalize_remote_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
-        return self.worktree_profile_service.normalize_remote_profile(profile)
-
-    def _validate_remote_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
-        return self.worktree_profile_service.validate_remote_profile(profile)
-
-    def _get_worktree_remote_profile(self, qualified_name: str) -> Optional[Dict[str, Any]]:
-        return self.worktree_profile_service.get_remote_profile(qualified_name)
 
     def _normalize_connection_key(self, value: str) -> str:
         """Normalize connection identity for stable context keys."""
@@ -7687,97 +6413,6 @@ class IPCServer:
             "identity_key": identity_key,
             "context_key": context_key,
         }
-
-    def _build_active_worktree_context(
-        self,
-        full_qualified_name: str,
-        repo_name: str,
-        repo: Dict[str, Any],
-        worktree: Dict[str, Any],
-        *,
-        target_host: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Build active-worktree.json payload with canonical host-targeted identity."""
-        local_directory = worktree.get("path", "")
-        normalized_target_host = self._normalize_target_host(target_host)
-        host_profile = (
-            self._get_worktree_host_profile(full_qualified_name)
-            if normalized_target_host != self._local_host_alias()
-            else None
-        )
-        identity = self._build_worktree_context_identity(
-            full_qualified_name,
-            host_profile,
-            target_host=normalized_target_host,
-        )
-        effective_directory = (
-            str(host_profile.get("directory") or "").strip()
-            if isinstance(host_profile, dict) and identity["transport_kind"] == "ssh_helper"
-            else local_directory
-        )
-
-        context: Dict[str, Any] = {
-            "qualified_name": full_qualified_name,
-            "repo_qualified_name": repo_name,
-            "branch": worktree.get("branch", ""),
-            "directory": effective_directory,
-            "local_directory": local_directory,
-            "account": repo.get("account", ""),
-            "repo_name": repo.get("name", ""),
-            "host_profile": host_profile if host_profile else None,
-        }
-        context.update(identity)
-        return context
-
-    def _record_project_usage(self, qualified_name: str) -> None:
-        """Record project usage for ranking in ':' project list.
-
-        Stores per-project recency/frequency in a small JSON file under
-        `~/.config/i3/project-usage.json`.
-        """
-        try:
-            usage_file = ConfigPaths.PROJECT_USAGE_FILE
-            usage_file.parent.mkdir(parents=True, exist_ok=True)
-
-            now_s = int(time.time())
-            data: Dict[str, Any] = {"version": 1, "updated_at": now_s, "projects": {}}
-
-            try:
-                if usage_file.exists():
-                    existing = json.loads(usage_file.read_text())
-                    if isinstance(existing, dict):
-                        projects = existing.get("projects")
-                        if isinstance(projects, dict):
-                            data["projects"] = projects
-            except Exception as e:
-                logger.warning(f"[Feature 101] Failed to read project usage (will overwrite): {e}")
-
-            projects = data["projects"]
-            entry = projects.get(qualified_name)
-            if not isinstance(entry, dict):
-                entry = {}
-
-            try:
-                prev_count = int(entry.get("use_count", 0))
-            except Exception:
-                prev_count = 0
-
-            projects[qualified_name] = {"last_used_at": now_s, "use_count": prev_count + 1}
-            data["updated_at"] = now_s
-
-            tmp_path = usage_file.with_suffix(f".tmp.{os.getpid()}.{time.time_ns()}")
-            try:
-                tmp_path.write_text(json.dumps(data, indent=2))
-                os.replace(tmp_path, usage_file)
-            finally:
-                try:
-                    if tmp_path.exists():
-                        tmp_path.unlink()
-                except Exception:
-                    pass
-        except Exception as e:
-            # Best-effort only; never block an otherwise-successful project switch.
-            logger.warning(f"[Feature 101] Failed to record project usage for {qualified_name}: {e}")
 
     async def _deferred_window_filter_retry(
         self,
@@ -7928,154 +6563,13 @@ class IPCServer:
         )
         return filter_result
 
-    async def _worktree_switch(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Switch to a worktree by qualified name.
-
-        Feature 101: Click-to-switch for discovered worktrees.
-
-        This method:
-        1. Looks up the worktree by qualified name from discovery cache
-        2. Sets active project to the qualified name
-        3. Stores the worktree directory for app launcher context
-        4. Applies window filtering based on new project context
-
-        Args:
-            params: {
-                "qualified_name": str,  # e.g., "vpittamp/nixos-config:main" or "vpittamp/nixos-config"
-                "target_host": str      # optional: canonical host target for this switch
-            }
-
-        Returns:
-            {
-                "success": bool,
-                "qualified_name": str,
-                "directory": str,
-                "branch": str,
-                "previous_project": str | None
-            }
-        """
-        from pathlib import Path
-
-        start_time = time.perf_counter()
-
-        try:
-            qualified_name = params.get("qualified_name")
-            if not qualified_name:
-                raise ValueError("qualified_name parameter is required")
-            target_host = self._resolve_requested_target_host(
-                params.get("target_host") or params.get("host") or "",
-                project_name=str(qualified_name),
-            )
-            if int(params.get("__intent_epoch") or 0) > 0:
-                self._clear_focus_overrides()
-
-            logger.info(f"[Feature 101] Switching to worktree: {qualified_name}")
-
-            resolved = self._find_worktree_by_qualified_name(qualified_name)
-            repo_name = resolved["repo_name"]
-            repo = resolved["repo"]
-            worktree = resolved["worktree"]
-            full_qualified_name = resolved["full_qualified_name"]
-            worktree_path = worktree.get("path", "")
-
-            # Get previous project
-            previous_project = self.state_manager.state.active_project
-
-            # Set active project to the full qualified name
-            await self.state_manager.set_active_project(full_qualified_name)
-
-            # Store the project directory for launcher context
-            # This is consumed by the daemon-owned launch surface as I3PM_PROJECT_DIR
-            from .config import save_active_project
-            from .models import ActiveProjectState
-
-            active_state = ActiveProjectState(
-                project_name=full_qualified_name
-            )
-            # Add project_dir to the state if supported
-            if hasattr(active_state, 'project_dir'):
-                active_state.project_dir = worktree_path
-
-            config_dir = Path.home() / ".config" / "i3"
-            config_file = config_dir / "active-project.json"
-            save_active_project(active_state, config_file)
-
-            # Also save the active worktree context for launcher/scratchpad.
-            # directory is the target host directory when a non-local host profile is enabled.
-            worktree_context_file = config_dir / "active-worktree.json"
-            worktree_context = self._build_active_worktree_context(
-                full_qualified_name,
-                repo_name,
-                repo,
-                worktree,
-                target_host=target_host,
-            )
-            atomic_write_json(worktree_context_file, worktree_context)
-            self._set_active_runtime_context(worktree_context)
-
-            # Apply window filtering based on new project context
-            # Feature 137: Wrap in try/except for graceful degradation
-            try:
-                await self._apply_project_window_filter(
-                    active_project=full_qualified_name,
-                    active_context_key=worktree_context.get("context_key"),
-                    log_label=full_qualified_name,
-                )
-            except Exception as e:
-                import traceback
-                logger.error(f"[Feature 101] Window filtering failed for '{full_qualified_name}': {type(e).__name__}: {e}")
-                logger.debug(f"[Feature 101] Traceback: {traceback.format_exc()}")
-                # Schedule deferred retry so windows eventually get filtered
-                self._schedule_deferred_filter(
-                    active_project=full_qualified_name,
-                    active_context_key=worktree_context.get("context_key"),
-                    log_label=full_qualified_name,
-                )
-                # Notify clients of partial failure - project switched but windows not filtered
-                await self.broadcast_event({
-                    "type": "error",
-                    "action": "window_filter_failed",
-                    "project": full_qualified_name,
-                    "error": str(e)
-                })
-
-            # Broadcast project change event
-            await self.broadcast_event({
-                "type": "project",
-                "action": "switch",
-                "project": full_qualified_name
-            })
-
-            # Record usage for recency/frequency ranking in ':' project list.
-            self._record_project_usage(full_qualified_name)
-
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            logger.info(f"[Feature 101] Switched to worktree '{full_qualified_name}' in {duration_ms:.2f}ms")
-
-            return {
-                "success": True,
-                "qualified_name": full_qualified_name,
-                "directory": worktree_context.get("directory", worktree_path),
-                "local_directory": worktree_path,
-                "host_profile": worktree_context.get("host_profile"),
-                "target_host": worktree_context.get("target_host"),
-                "transport_kind": worktree_context.get("transport_kind"),
-                "branch": worktree.get("branch", ""),
-                "previous_project": previous_project,
-                "duration_ms": duration_ms
-            }
-
-        except FileNotFoundError as e:
-            logger.error(f"[Feature 101] worktree.switch not found: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"[Feature 101] worktree.switch error: {e}")
-            raise
-
     async def _worktree_clear(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Clear active project (return to global mode).
 
-        Feature 101: Unified project management via worktree architecture.
+        Internal only — the `worktree.clear` RPC arm went with the rest of the
+        worktree family. It survives as the implementation of "return to
+        global", which `context.ensure` and the focus-service context alignment
+        both still call and which touches no inventory of any kind.
 
         This method:
         1. Clears active project state
@@ -8157,328 +6651,3 @@ class IPCServer:
         except Exception as e:
             logger.error(f"[Feature 101] worktree.clear error: {e}")
             raise
-
-    async def _worktree_remote_set(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Set SSH remote profile for a worktree-qualified project."""
-        qualified_name = params.get("qualified_name")
-        if not qualified_name:
-            raise ValueError("qualified_name parameter is required")
-
-        resolved = self._find_worktree_by_qualified_name(str(qualified_name))
-        full_qualified_name = resolved["full_qualified_name"]
-
-        existing = self._load_worktree_remote_profiles().get("profiles", {}).get(full_qualified_name, {})
-        if not isinstance(existing, dict):
-            existing = {}
-
-        raw_profile = {
-            "enabled": params.get("enabled", existing.get("enabled", True)),
-            "host": params.get("host") or params.get("remote_host") or existing.get("host") or "ryzen",
-            "user": params.get("user") or params.get("remote_user") or existing.get("user") or os.environ.get("USER", "vpittamp"),
-            "port": params.get("port", existing.get("port", 22)),
-            "remote_dir": (
-                params.get("remote_dir")
-                or params.get("working_dir")
-                or params.get("dir")
-                or existing.get("remote_dir")
-                or existing.get("working_dir")
-            ),
-        }
-        profile = self._validate_remote_profile(raw_profile)
-
-        data = self._load_worktree_remote_profiles()
-        profiles = data.get("profiles", {})
-        if not isinstance(profiles, dict):
-            profiles = {}
-        profiles[full_qualified_name] = profile
-        data["profiles"] = profiles
-        self._save_worktree_remote_profiles(data)
-
-        active_updated = False
-        if self.state_manager.state.active_project == full_qualified_name:
-            config_dir = Path.home() / ".config" / "i3"
-            context = self._build_active_worktree_context(
-                full_qualified_name, resolved["repo_name"], resolved["repo"], resolved["worktree"]
-            )
-            atomic_write_json(config_dir / "active-worktree.json", context)
-            self._set_active_runtime_context(context)
-            active_updated = True
-
-        return {
-            "success": True,
-            "qualified_name": full_qualified_name,
-            "host_profile": profile,
-            "active_context_updated": active_updated,
-        }
-
-    async def _worktree_remote_get(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get SSH remote profile for a worktree-qualified project."""
-        qualified_name = params.get("qualified_name")
-        if not qualified_name:
-            raise ValueError("qualified_name parameter is required")
-
-        resolved = self._find_worktree_by_qualified_name(str(qualified_name))
-        full_qualified_name = resolved["full_qualified_name"]
-
-        data = self._load_worktree_remote_profiles()
-        profile = data.get("profiles", {}).get(full_qualified_name)
-        if isinstance(profile, dict):
-            profile = self._normalize_remote_profile(profile)
-        else:
-            profile = None
-
-        return {
-            "success": True,
-            "qualified_name": full_qualified_name,
-            "configured": profile is not None,
-            "host_profile": profile,
-        }
-
-    async def _worktree_remote_unset(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Unset SSH remote profile for a worktree-qualified project."""
-        qualified_name = params.get("qualified_name")
-        if not qualified_name:
-            raise ValueError("qualified_name parameter is required")
-
-        resolved = self._find_worktree_by_qualified_name(str(qualified_name))
-        full_qualified_name = resolved["full_qualified_name"]
-
-        data = self._load_worktree_remote_profiles()
-        profiles = data.get("profiles", {})
-        if not isinstance(profiles, dict):
-            profiles = {}
-
-        existed = full_qualified_name in profiles
-        if existed:
-            del profiles[full_qualified_name]
-            data["profiles"] = profiles
-            self._save_worktree_remote_profiles(data)
-
-        active_updated = False
-        if self.state_manager.state.active_project == full_qualified_name:
-            config_dir = Path.home() / ".config" / "i3"
-            context = self._build_active_worktree_context(
-                full_qualified_name, resolved["repo_name"], resolved["repo"], resolved["worktree"]
-            )
-            atomic_write_json(config_dir / "active-worktree.json", context)
-            self._set_active_runtime_context(context)
-            active_updated = True
-
-        return {
-            "success": True,
-            "qualified_name": full_qualified_name,
-            "removed": existed,
-            "active_context_updated": active_updated,
-        }
-
-    async def _worktree_remote_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """List all configured worktree SSH remote profiles."""
-        data = self._load_worktree_remote_profiles()
-        profiles = data.get("profiles", {})
-        if not isinstance(profiles, dict):
-            profiles = {}
-
-        items = []
-        for qualified_name in sorted(profiles.keys()):
-            profile = profiles.get(qualified_name)
-            if not isinstance(profile, dict):
-                continue
-            items.append({
-                "qualified_name": qualified_name,
-                "host_profile": self._normalize_remote_profile(profile),
-                "is_active": self.state_manager.state.active_project == qualified_name,
-            })
-
-        return {
-            "success": True,
-            "count": len(items),
-            "profiles": items,
-        }
-
-    async def _worktree_remote_test(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Test SSH connectivity and remote directory validity for a worktree profile."""
-        import shlex
-        import subprocess
-
-        qualified_name = params.get("qualified_name")
-        if not qualified_name:
-            raise ValueError("qualified_name parameter is required")
-
-        resolved = self._find_worktree_by_qualified_name(str(qualified_name))
-        full_qualified_name = resolved["full_qualified_name"]
-
-        data = self._load_worktree_remote_profiles()
-        stored_profile = data.get("profiles", {}).get(full_qualified_name, {})
-        if not isinstance(stored_profile, dict):
-            stored_profile = {}
-
-        raw_profile = {
-            "enabled": True,
-            "host": params.get("host") or params.get("remote_host") or stored_profile.get("host") or "ryzen",
-            "user": params.get("user") or params.get("remote_user") or stored_profile.get("user") or os.environ.get("USER", "vpittamp"),
-            "port": params.get("port", stored_profile.get("port", 22)),
-            "remote_dir": (
-                params.get("remote_dir")
-                or params.get("working_dir")
-                or stored_profile.get("remote_dir")
-                or stored_profile.get("working_dir")
-            ),
-        }
-        profile = self._validate_remote_profile(raw_profile)
-
-        ssh_cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
-        if profile["port"] != 22:
-            ssh_cmd.extend(["-p", str(profile["port"])])
-        ssh_cmd.append(f"{profile['user']}@{profile['host']}")
-        remote_check = f"test -d {shlex.quote(profile['remote_dir'])}"
-        ssh_cmd.append(remote_check)
-
-        from .subprocess_utils import run_command
-        start = time.perf_counter()
-        try:
-            proc = await run_command(
-                *ssh_cmd,
-                timeout=10.0,
-            )
-            duration_ms = int((time.perf_counter() - start) * 1000)
-            ok = proc.returncode == 0
-            return {
-                "success": ok,
-                "qualified_name": full_qualified_name,
-                "host_profile": profile,
-                "duration_ms": duration_ms,
-                "returncode": proc.returncode,
-                "stderr": proc.stderr.strip(),
-                "stdout": proc.stdout.strip(),
-                "message": (
-                    "Host connectivity and host directory check passed"
-                    if ok else
-                    "Host connectivity or host directory check failed"
-                ),
-            }
-        except subprocess.TimeoutExpired:
-            duration_ms = int((time.perf_counter() - start) * 1000)
-            return {
-                "success": False,
-                "qualified_name": full_qualified_name,
-                "host_profile": profile,
-                "duration_ms": duration_ms,
-                "returncode": None,
-                "stderr": "Host test timed out after 10s",
-                "stdout": "",
-                "message": "Host connectivity test timed out",
-            }
-
-    async def _worktree_diagnose(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Diagnose host-target/runtime readiness for a worktree."""
-        qualified_name = str(params.get("qualified_name") or "").strip()
-        active_context = await self._context_get_active({})
-
-        if not qualified_name:
-            qualified_name = str(active_context.get("qualified_name") or "").strip()
-        if not qualified_name:
-            raise ValueError("qualified_name parameter is required when no active worktree context exists")
-
-        resolved = self._find_worktree_by_qualified_name(qualified_name)
-        full_qualified_name = resolved["full_qualified_name"]
-        remote_profile = self._get_worktree_remote_profile(full_qualified_name)
-        target_identity = self._build_worktree_context_identity(full_qualified_name, remote_profile)
-
-        remote_test = None
-        if remote_profile:
-            remote_test = await self._worktree_remote_test({"qualified_name": full_qualified_name})
-
-        scratchpad_payload: Dict[str, Any] = {
-            "available": False,
-            "context_key": target_identity["context_key"],
-            "count": 0,
-            "terminal": None,
-        }
-        if self.scratchpad_manager:
-            try:
-                scratchpad_status = await self._scratchpad_status({
-                    "project_name": full_qualified_name,
-                    "context_key": target_identity["context_key"],
-                })
-                terminals = scratchpad_status.get("terminals", [])
-                terminal_info = terminals[0] if terminals else None
-                scratchpad_payload = {
-                    "available": bool(terminal_info),
-                    "context_key": target_identity["context_key"],
-                    "count": int(scratchpad_status.get("count", 0) or 0),
-                    "terminal": terminal_info,
-                }
-            except Exception as e:
-                logger.warning("worktree.diagnose scratchpad status failed for %s: %s", full_qualified_name, e)
-
-        launch_stats = self.launch_service.launch_stats()
-        pending_launches = []
-        if hasattr(self.state_manager, "launch_registry"):
-            pending_launches = await self.state_manager.launch_registry.get_pending_launches(include_matched=True)
-        project_pending_launches = [
-            {
-                "app_name": str(item.get("app_name") or ""),
-                "matched": bool(item.get("matched", False)),
-                "age": float(item.get("age", 0.0) or 0.0),
-            }
-            for item in pending_launches
-            if str(item.get("project_name") or "") == full_qualified_name
-        ]
-
-        readiness_reasons = []
-        if not remote_profile:
-            readiness_reasons.append("No enabled host profile is configured for this worktree.")
-        if remote_test and not remote_test.get("success"):
-            readiness_reasons.append(
-                str(remote_test.get("stderr") or remote_test.get("message") or "Host connectivity test failed")
-            )
-
-        recommended_commands = [
-            f"i3pm worktree switch {full_qualified_name}",
-            f"i3pm worktree current --json",
-        ]
-        if remote_profile:
-            recommended_commands.append(f"i3pm worktree host test {full_qualified_name}")
-            recommended_commands.append(f"i3pm scratchpad toggle --context-key {target_identity['context_key']}")
-        else:
-            recommended_commands.append(
-                f"i3pm worktree host set {full_qualified_name} --host ryzen --user {os.environ.get('USER', 'vpittamp')} --dir <host_dir>"
-            )
-
-        return {
-            "success": True,
-            "qualified_name": full_qualified_name,
-            "active_context": {
-                "qualified_name": str(active_context.get("qualified_name") or ""),
-                "target_host": self._target_host_from_context_payload(
-                    active_context,
-                    project_name=str(active_context.get("qualified_name") or ""),
-                ),
-                "transport_kind": str(active_context.get("transport_kind") or "global"),
-                "connection_key": str(active_context.get("connection_key") or ""),
-                "context_key": str(active_context.get("context_key") or ""),
-                "is_global": bool(active_context.get("is_global", False)),
-            },
-            "target_context": {
-                "target_host": target_identity["target_host"],
-                "transport_kind": target_identity["transport_kind"],
-                "connection_key": target_identity["connection_key"],
-                "context_key": target_identity["context_key"],
-            },
-            "host_profile_configured": bool(remote_profile),
-            "host_profile": remote_profile,
-            "host_test": remote_test,
-            "scratchpad": scratchpad_payload,
-            "launch_support": {
-                "host_terminal_supported": bool(remote_profile),
-                "host_scoped_gui_supported": False,
-                "host_policy": "terminal_only",
-            },
-            "launch_stats": launch_stats,
-            "project_pending_launches": project_pending_launches,
-            "readiness": {
-                "host_ready": bool(remote_profile and (remote_test is None or remote_test.get("success"))),
-                "reasons": readiness_reasons,
-            },
-            "recommended_commands": recommended_commands,
-        }

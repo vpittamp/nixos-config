@@ -84,7 +84,6 @@ def _service(*, invalidations: list[str] | None = None) -> DashboardService:
         runtime_loader=runtime_loader,
         display_snapshot=display_snapshot,
         build_projects=lambda runtime, sessions: [],
-        build_worktrees=lambda runtime: _empty_worktrees(),
         build_focus_state=lambda runtime, sessions, *, generation: {
             "schema_version": "i3pm.focus_state.v2",
             "generation": generation,
@@ -110,10 +109,6 @@ def _service(*, invalidations: list[str] | None = None) -> DashboardService:
         invalidate_worktree_cache=lambda: invalidations.append("worktree"),
         timestamp=lambda: 42.0,
     )
-
-
-async def _empty_worktrees() -> list[dict]:
-    return []
 
 
 async def _async_value(value: dict) -> dict:
@@ -164,12 +159,9 @@ async def test_notify_state_change_advances_generations_and_notifies_subscribers
     notification = json.loads(writer.lines[0].decode("utf-8"))
     assert notification["method"] == "session.changed"
     assert notification["params"]["generation"] == 1
-    # A worktree event still ships the array; only the far more frequent
-    # agent-session ticks drop it (see test_dashboard_model.py).
     assert notification["params"]["changed_keys"] == [
         "focus_state",
         "active_ai_sessions",
-        "worktrees",
     ]
 
 
@@ -242,7 +234,6 @@ async def test_focus_event_payload_uses_lightweight_focus_state_without_snapshot
         runtime_loader=runtime_loader,
         display_snapshot=lambda: _async_value({"outputs": []}),
         build_projects=lambda runtime, sessions: [],
-        build_worktrees=lambda runtime: _empty_worktrees(),
         build_focus_state=lambda runtime, sessions, *, generation: {
             "schema_version": "i3pm.focus_state.v2",
             "generation": generation,
@@ -297,7 +288,6 @@ async def test_focus_event_payload_updates_session_rows_without_snapshot_reload(
         runtime_loader=runtime_loader,
         display_snapshot=lambda: _async_value({"outputs": []}),
         build_projects=lambda runtime, sessions: [],
-        build_worktrees=lambda runtime: _empty_worktrees(),
         build_focus_state=lambda runtime, sessions, *, generation: {
             "schema_version": "i3pm.focus_state.v2",
             "generation": generation,
@@ -415,7 +405,6 @@ async def test_snapshot_keeps_herdr_focused_while_reauthorizing_sway_focus() -> 
         runtime_loader=runtime_loader,
         display_snapshot=lambda: _async_value({"outputs": []}),
         build_projects=lambda runtime, sessions: [],
-        build_worktrees=lambda runtime: _empty_worktrees(),
         build_focus_state=lambda runtime, sessions, *, generation: {
             "schema_version": "i3pm.focus_state.v2",
             "generation": generation,
@@ -471,7 +460,6 @@ async def test_duplicate_herdr_focused_rows_warn_without_failing_the_snapshot() 
         runtime_loader=runtime_loader,
         display_snapshot=lambda: _async_value({"outputs": []}),
         build_projects=lambda runtime, sessions: [],
-        build_worktrees=lambda runtime: _empty_worktrees(),
         build_focus_state=lambda runtime, sessions, *, generation: {
             "schema_version": "i3pm.focus_state.v2",
             "generation": generation,
@@ -531,7 +519,6 @@ async def test_git_bearing_event_payload_keeps_hydrated_herdr_space_git_fields()
         runtime_loader=runtime_loader,
         display_snapshot=lambda: _async_value({"outputs": []}),
         build_projects=lambda runtime, sessions: [],
-        build_worktrees=lambda runtime: _empty_worktrees(),
         build_focus_state=lambda runtime, sessions, *, generation: {
             "schema_version": "i3pm.focus_state.v2",
             "generation": generation,
@@ -568,7 +555,6 @@ async def test_non_git_event_payload_keeps_skip_git_hydration_fast_path() -> Non
         runtime_loader=runtime_loader,
         display_snapshot=lambda: _async_value({"outputs": []}),
         build_projects=lambda runtime, sessions: [{"project": "global"}],
-        build_worktrees=lambda runtime: _empty_worktrees(),
         build_focus_state=lambda runtime, sessions, *, generation: {
             "schema_version": "i3pm.focus_state.v2",
             "generation": generation,
@@ -615,7 +601,6 @@ async def test_lightweight_focus_payload_retains_git_fields_on_session_rows() ->
         runtime_loader=runtime_loader,
         display_snapshot=lambda: _async_value({"outputs": []}),
         build_projects=lambda runtime, sessions: [],
-        build_worktrees=lambda runtime: _empty_worktrees(),
         build_focus_state=lambda runtime, sessions, *, generation: {
             "schema_version": "i3pm.focus_state.v2",
             "generation": generation,
@@ -659,47 +644,3 @@ async def test_lightweight_focus_payload_retains_git_fields_on_session_rows() ->
     assert row["git_snapshot"]["dirty_count"] == 2
 
 
-@pytest.mark.asyncio
-async def test_snapshot_can_omit_worktrees_for_shell_subscribers():
-    # `worktrees` is ~100KB of a ~157KB snapshot and no shell surface renders
-    # it, yet it rode through four serialization passes on every connect and
-    # gap recovery. Clients that only drive the bars ask for it to be left out;
-    # CLI consumers keep the default and still receive the array.
-    built = []
-
-    async def build_worktrees(runtime):
-        built.append(runtime)
-        return [{"qualified_name": "vpittamp/nixos-config:main"}]
-
-    async def runtime_loader(params):
-        return _runtime_snapshot(), [], {}
-
-    service = DashboardService(
-        runtime_loader=runtime_loader,
-        display_snapshot=lambda: _async_value({"outputs": []}),
-        build_projects=lambda runtime, sessions: [],
-        build_worktrees=build_worktrees,
-        build_focus_state=lambda runtime, sessions, *, generation: {
-            "schema_version": "i3pm.focus_state.v2",
-            "generation": generation,
-            "current_session_key": "",
-            "current_window_id": 0,
-            "current_workspace_name": "",
-            "current_herdr_pane_id": "",
-            "current_herdr_host": "",
-            "pending_intent_id": "",
-        },
-        build_herdr_spaces=lambda herdr, sessions: [],
-        list_launches=lambda limit: [],
-        invalidate_worktree_cache=lambda: None,
-    )
-
-    full = await service.snapshot({})
-    assert len(full["worktrees"]) == 1
-    assert len(built) == 1
-
-    trimmed = await service.snapshot({"include_worktrees": False})
-    assert trimmed["worktrees"] == []
-    # Not merely filtered out of the payload — the build is skipped entirely,
-    # so the cost of producing it is not paid either.
-    assert len(built) == 1

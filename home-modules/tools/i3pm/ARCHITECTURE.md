@@ -165,27 +165,57 @@ Return success response to TypeScript
 TypeScript formats and displays result
 ```
 
-### Example 2: Switch Project
+### Example 2: Label a Worktree
+
+There is no project-switch RPC: worktrees are created with plain
+`git worktree add`, and a checkout's identity is its path. Nothing switches a
+global "active project", so labelling is a read, not a state change.
 
 ```
-User runs: i3pm worktree switch vpittamp/nixos-config:main
+Pane cwd (or window cwd)
     ↓
-TypeScript CLI parses arguments
+Python daemon probes git for that path (30s TTL cache)
     ↓
-TypeScript sends JSON-RPC worktree.switch request
+rev-parse --show-toplevel / --git-common-dir / branch
     ↓
-Python daemon receives request
+repo_key, repo_name, checkout_path, branch_label
     ↓
-ProjectService validates worktree exists (repos.json + active context)
+Dashboard snapshot rows carry those fields
     ↓
-Save active state to ~/.config/i3/active-worktree.json
-    ↓
-Trigger window filtering (scoped vs global)
-    ↓
-Return success response to TypeScript
-    ↓
-TypeScript displays "Switched to worktree: vpittamp/nixos-config:main"
+QuickShell renders "<repo>:<branch>" and the git status pill
 ```
+
+### Example 3: Survey Every Worktree (`i3pm worktrees`)
+
+Labelling answers "what is this pane in?". The cross-repository question — "what
+can I delete?" — has no live pane to hang off, so it is a CLI-side scan rather
+than daemon state. There is no inventory file: the command globs the bare
+repositories and asks git, every time.
+
+```
+Glob <root>/<account>/<repo>/.bare       (default root ~/repos)
+    ↓
+git worktree list --porcelain, one per repo, bounded parallel fan-out
+    ↓
+per checkout: git status --porcelain, git log -1
+per repo:     git branch --merged <trunk>
+    ↓
+merged / stale / missing / detached / dirty per row
+    ↓
+Human table, --paths, or --json; --prune drops dead registrations
+```
+
+Two rules the earlier inventory broke, and this must not:
+
+- A detached checkout has no branch to be keyed by, so it is **reported as
+  detached**, never dropped. Its merge state comes from `merge-base
+  --is-ancestor` instead of a branch-name lookup.
+- A failure to observe is never reported as data. A repository that will not
+  list becomes a named skip, an unreadable checkout is flagged rather than
+  called missing, and either makes the whole report incomplete and the exit
+  code non-zero.
+
+The scan lives in `src/services/worktree-scan.ts`; the daemon has no part in it.
 
 ---
 

@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 
 # Display a compact I3PM/tmux context badge for prompts, tmux status bars,
-# and pane borders. Tmux-facing modes intentionally resolve from pane/tmux
-# metadata only so they do not drift from the actual pane being rendered.
+# and pane borders.
+#
+# The project label is derived from git in the pane's own working directory:
+# identity is the checkout path, and git answers repo name and branch. There is
+# no daemon-owned "active worktree" any more, so nothing here can print a label
+# that belongs to a different pane. Pane/tmux/env metadata is still consulted,
+# but only for the host, connection and terminal-role chips (and as the label
+# fallback for panes whose real cwd lives on another host).
 
 set -euo pipefail
 
@@ -11,7 +17,7 @@ source_mode="${I3PM_PROJECT_BADGE_SOURCE:-auto}"
 max_len="${I3PM_PROJECT_BADGE_MAX_LEN:-22}"
 pane_pid="${I3PM_PROJECT_BADGE_PANE_PID:-}"
 pane_id="${I3PM_PROJECT_BADGE_PANE_ID:-${TMUX_PANE:-}}"
-active_context_file="${I3PM_ACTIVE_WORKTREE_FILE:-${HOME}/.config/i3/active-worktree.json}"
+context_dir_override="${I3PM_PROJECT_BADGE_CWD:-}"
 
 project_name=""
 project_qualified_name=""
@@ -81,7 +87,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --help|-h)
       cat <<'EOF'
-Usage: i3pm-project-badge.sh [--prompt|--tmux|--tmux-pane|--plain] [--source auto|env|file|pane|hybrid] [--pane-pid PID] [--pane-id %N] [--max-len N]
+Usage: i3pm-project-badge.sh [--prompt|--tmux|--tmux-pane|--plain] [--source auto|env|git|pane|hybrid] [--pane-pid PID] [--pane-id %N] [--max-len N]
 
 Modes:
   --prompt     Compact shell-prompt context for tmux panes
@@ -89,8 +95,12 @@ Modes:
   --tmux-pane  Pane-border context chip
   --plain      Non-tmux project label fallback
 
-Tmux-facing modes resolve from pane/tmux metadata first and do not fall back to
-global daemon context, to avoid stale or cross-pane drift.
+The project label ("<repo>:<branch>") is derived from git in the pane's own
+working directory, so every pane reports its own checkout. Set
+I3PM_PROJECT_BADGE_CWD to probe a specific directory instead.
+
+Pane/tmux/env metadata supplies the host, connection and role chips, and is the
+label fallback only for remote (ssh) panes, whose cwd is not local.
 EOF
       exit 0
       ;;
@@ -104,7 +114,13 @@ if ! [[ "$max_len" =~ ^[0-9]+$ ]]; then
   max_len=22
 fi
 
-if ! [[ "$source_mode" =~ ^(auto|env|file|pane|hybrid)$ ]]; then
+# `file` is the legacy name for what is now a live git probe; keep accepting it
+# so older tmux/starship invocations do not silently fall back to "auto".
+if [[ "$source_mode" == "file" ]]; then
+  source_mode="git"
+fi
+
+if ! [[ "$source_mode" =~ ^(auto|env|git|pane|hybrid)$ ]]; then
   source_mode="auto"
 fi
 
@@ -420,49 +436,90 @@ load_context_from_tmux_metadata() {
   [[ -n "$project_name" || -n "$tmux_pane_id" ]]
 }
 
-load_context_from_file() {
-  local payload=""
-  if [[ -f "$active_context_file" ]]; then
-    payload="$(cat "$active_context_file" 2>/dev/null || true)"
-  elif command -v i3pm >/dev/null 2>&1; then
-    payload="$(i3pm context current --json 2>/dev/null || true)"
+# Resolve the directory whose git checkout this badge describes.
+#
+# Priority is "the pane being rendered, not the process doing the rendering":
+# tmux runs status/pane formats from the server's own cwd, so $PWD is only
+# meaningful for the in-pane prompt.
+badge_context_dir() {
+  local candidate=""
+
+  if [[ -n "$context_dir_override" ]]; then
+    printf '%s' "$context_dir_override"
+    return
   fi
 
-  if [[ -z "$payload" ]] || ! command -v jq >/dev/null 2>&1; then
+  if [[ "$pane_pid" =~ ^[0-9]+$ ]] && (( pane_pid > 1 )); then
+    candidate="$(readlink -f "/proc/${pane_pid}/cwd" 2>/dev/null || true)"
+    if [[ -n "$candidate" && -d "$candidate" ]]; then
+      printf '%s' "$candidate"
+      return
+    fi
+  fi
+
+  case "$mode" in
+    tmux|tmux-pane)
+      candidate="$(tmux_display_message '#{pane_current_path}')"
+      if [[ -n "$candidate" && -d "$candidate" ]]; then
+        printf '%s' "$candidate"
+        return
+      fi
+      ;;
+  esac
+
+  printf '%s' "$PWD"
+}
+
+# Derive "<repo>:<branch>" from git itself. The repo name comes from the common
+# git dir (so bare-repo layouts report "nixos-config", not the branch directory
+# name), and detached HEADs fall back to the short commit.
+load_context_from_git() {
+  if is_truthy "$remote_enabled" || is_truthy "$bridge_enabled"; then
     return 1
   fi
+  command -v git >/dev/null 2>&1 || return 1
 
-  local parsed
-  parsed="$(
-    jq -r '
-      if type != "object" then empty else
-      [
-        (.qualified_name // ""),
-        (.execution_mode // "local"),
-        (.connection_key // ""),
-        (.remote.host // ""),
-        (.remote.user // ""),
-        ((.remote.port // 22) | tostring)
-      ] | @tsv
-      end
-    ' <(printf '%s' "$payload") 2>/dev/null || true
-  )"
-  if [[ -z "$parsed" ]]; then
-    return 1
+  local dir
+  dir="$(badge_context_dir)"
+  [[ -n "$dir" && -d "$dir" ]] || return 1
+
+  local parsed toplevel common_dir branch repo_root repo
+  parsed="$(git -C "$dir" rev-parse --show-toplevel --git-common-dir --abbrev-ref HEAD 2>/dev/null || true)"
+  [[ -n "$parsed" ]] || return 1
+
+  toplevel=""
+  common_dir=""
+  branch=""
+  { read -r toplevel; read -r common_dir; read -r branch; } <<<"$parsed" || true
+  [[ -n "$toplevel" ]] || return 1
+
+  repo_root="$common_dir"
+  if [[ -n "$repo_root" && "$repo_root" != /* ]]; then
+    repo_root="${toplevel}/${repo_root}"
+  fi
+  repo_root="${repo_root%/}"
+  case "$repo_root" in
+    */.bare|*/.git)
+      repo_root="${repo_root%/*}"
+      ;;
+  esac
+  [[ -n "$repo_root" ]] || repo_root="$toplevel"
+
+  repo="${repo_root##*/}"
+  [[ -n "$repo" ]] || repo="${toplevel##*/}"
+  [[ -n "$repo" ]] || return 1
+
+  if [[ -z "$branch" || "$branch" == "HEAD" ]]; then
+    branch="$(git -C "$dir" rev-parse --short HEAD 2>/dev/null || true)"
   fi
 
-  IFS=$'\t' read -r project_qualified_name context_variant connection_key remote_host remote_user remote_port <<<"$parsed"
-  unset IFS
-
-  project_name="$(derive_project_label "$project_qualified_name")"
-  if [[ "$context_variant" == "ssh" ]]; then
-    remote_enabled="true"
+  if [[ -n "$branch" ]]; then
+    project_name="${repo}:${branch}"
+  else
+    project_name="$repo"
   fi
-  if is_truthy "$remote_enabled" && [[ -z "$remote_host" ]]; then
-    hydrate_remote_from_connection_key "$connection_key"
-  fi
-  local_host_alias="$(default_local_host_alias)"
-  [[ -n "$project_name" ]]
+  project_qualified_name="$project_name"
+  return 0
 }
 
 resolve_context() {
@@ -477,7 +534,7 @@ resolve_context() {
           load_context_from_pane || true
           load_context_from_tmux_metadata || true
           ;;
-        file)
+        git)
           load_context_from_tmux_metadata || true
           ;;
         hybrid|auto)
@@ -501,19 +558,25 @@ resolve_context() {
         pane)
           load_context_from_pane || true
           ;;
-        file)
-          load_context_from_file || true
+        git)
+          :
           ;;
         hybrid|auto)
-          if ! load_context_from_env; then
-            load_context_from_file || true
-          fi
+          load_context_from_env || true
           ;;
       esac
       ;;
   esac
 
   [[ -n "$project_name" ]] || project_name="$(derive_project_label "$project_qualified_name")"
+
+  # Git wins over anything an env block or tmux option claims: those values are
+  # snapshots taken when the pane was launched, git is the pane's cwd right now.
+  # `--source env` is the one opt-out, for callers that want the raw env block.
+  if [[ "$source_mode" != "env" ]]; then
+    load_context_from_git || true
+  fi
+
   terminal_role="$(normalize_role_label "$terminal_role")"
 }
 

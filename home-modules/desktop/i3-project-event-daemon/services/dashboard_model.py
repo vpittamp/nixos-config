@@ -150,108 +150,6 @@ def build_dashboard_projects(
     return projects
 
 
-def build_dashboard_worktree_rows(
-    *,
-    runtime_snapshot: Dict[str, Any],
-    repositories: List[Dict[str, Any]],
-    usage_map: Dict[str, Dict[str, Any]],
-    runtime_windows: List[Dict[str, Any]],
-    active_target_host: str,
-    canonical_project_name: Callable[..., str],
-    get_worktree_host_profile: Callable[[str], Dict[str, Any] | None],
-) -> List[Dict[str, Any]]:
-    """Build sorted dashboard worktree rows from daemon repository/runtime inputs."""
-    active_context = runtime_snapshot.get("active_context", {}) if isinstance(runtime_snapshot, dict) else {}
-    active_qualified = str(
-        active_context.get("qualified_name")
-        or active_context.get("project_name")
-        or ""
-    ).strip()
-
-    window_counts: Dict[str, Dict[str, int]] = {}
-    for window in runtime_windows:
-        if not isinstance(window, dict):
-            continue
-        project_name = canonical_project_name(
-            window.get("project"),
-            project_path=window.get("project_path"),
-        )
-        if not project_name:
-            continue
-
-        counts = window_counts.setdefault(project_name, {
-            "scoped_window_count": 0,
-            "visible_window_count": 0,
-        })
-        counts["scoped_window_count"] += 1
-        if not bool(window.get("hidden", False)):
-            counts["visible_window_count"] += 1
-
-    worktrees: List[Dict[str, Any]] = []
-    for repo in repositories:
-        if not isinstance(repo, dict):
-            continue
-        account = str(repo.get("account") or "").strip()
-        repo_name = str(repo.get("name") or "").strip()
-        display_name = f"{account}/{repo_name}" if account and repo_name else repo_name or account
-
-        for worktree in list(repo.get("worktrees", []) or []):
-            if not isinstance(worktree, dict):
-                continue
-            branch = str(worktree.get("branch") or "").strip()
-            qualified_name = f"{account}/{repo_name}:{branch}" if account and repo_name and branch else branch or display_name
-            staged = int(worktree.get("staged_count") or 0)
-            modified = int(worktree.get("modified_count") or 0)
-            untracked = int(worktree.get("untracked_count") or 0)
-            dirty_count = staged + modified + untracked
-            usage_entry = usage_map.get(qualified_name, {}) if isinstance(usage_map, dict) else {}
-            counts = window_counts.get(qualified_name, {})
-            host_profile = get_worktree_host_profile(qualified_name)
-            host_profile_available = bool(host_profile)
-            worktrees.append({
-                "qualified_name": qualified_name,
-                "repo_display": display_name,
-                "repo_name": repo_name,
-                "account": account,
-                "branch": branch,
-                "path": str(worktree.get("path") or ""),
-                "is_main": bool(worktree.get("is_main", False)),
-                "is_clean": bool(worktree.get("is_clean", False)),
-                "is_stale": bool(worktree.get("is_stale", False)),
-                "has_conflicts": bool(worktree.get("has_conflicts", False)),
-                "ahead": int(worktree.get("ahead") or 0),
-                "behind": int(worktree.get("behind") or 0),
-                "staged_count": staged,
-                "modified_count": modified,
-                "untracked_count": untracked,
-                "dirty_count": dirty_count,
-                "is_active": qualified_name == active_qualified,
-                "active_target_host": active_target_host if qualified_name == active_qualified else "",
-                "host_profile_available": host_profile_available,
-                "host_profile_host": str(host_profile.get("host") or "").strip() if isinstance(host_profile, dict) else "",
-                "visible_window_count": int(counts.get("visible_window_count", 0) or 0),
-                "scoped_window_count": int(counts.get("scoped_window_count", 0) or 0),
-                "last_used_at": int(usage_entry.get("last_used_at", 0) or 0),
-                "use_count": int(usage_entry.get("use_count", 0) or 0),
-                "last_commit_message": str(worktree.get("last_commit_message") or ""),
-            })
-
-    worktrees.sort(
-        key=lambda item: (
-            0 if bool(item.get("is_active", False)) else 1,
-            -int(item.get("visible_window_count", 0) or 0),
-            -int(item.get("scoped_window_count", 0) or 0),
-            -int(item.get("last_used_at", 0) or 0),
-            -int(item.get("use_count", 0) or 0),
-            0 if not bool(item.get("is_clean", False)) else 1,
-            str(item.get("repo_display") or "").casefold(),
-            str(item.get("branch") or "").casefold(),
-            str(item.get("qualified_name") or "").casefold(),
-        ),
-    )
-    return worktrees
-
-
 def dashboard_event_type_for_state_change(event_type: str) -> str:
     """Map daemon invalidations to the typed dashboard event contract."""
     normalized = str(event_type or "dashboard_invalidated").strip() or "dashboard_invalidated"
@@ -302,22 +200,11 @@ def dashboard_changed_keys_for_event(event_type: str) -> List[str]:
     if typed_event == "workspace.changed":
         return ["focus_state", "outputs", "projects"]
     if typed_event == "session.changed":
-        keys = ["focus_state", "active_ai_sessions"]
-        # `worktrees` (~100KB, over half the payload) is omitted for agent
-        # session ticks, which fire constantly and whose consumers only need
-        # the session rows; event merges are partial, so an absent key keeps
-        # its prior value. Worktree/project events are rare and are the only
-        # ones that actually change the array, so they still ship it.
-        normalized = (
-            str(event_type or "")
-            .replace("::", "_")
-            .replace(".", "_")
-            .replace("-", "_")
-            .lower()
-        )
-        if normalized.startswith("worktree") or normalized.startswith("project"):
-            keys.append("worktrees")
-        return keys
+        # `worktrees` used to be appended here for worktree/project events. The
+        # array (~100KB, over half the payload) was built from the `repos.json`
+        # inventory and had no renderer; it is no longer part of the payload at
+        # all, so there is nothing extra for those events to ship.
+        return ["focus_state", "active_ai_sessions"]
     if typed_event == "herdr.changed":
         return [
             "focus_state",
@@ -508,7 +395,6 @@ def dashboard_event_payload_from_snapshot(
         "total_windows": snapshot.get("total_windows"),
         "window_count": snapshot.get("window_count"),
         "project_count": snapshot.get("project_count"),
-        "worktree_count": snapshot.get("worktree_count"),
         "state_health": snapshot.get("state_health", {}),
         "dashboard_invariants": snapshot.get("dashboard_invariants", {}),
     }
@@ -545,7 +431,6 @@ def build_dashboard_snapshot_payload(
     runtime_snapshot: Dict[str, Any],
     display_snapshot: Dict[str, Any],
     projects: List[Dict[str, Any]],
-    worktrees: List[Dict[str, Any]],
     sessions: List[Dict[str, Any]],
     focus_state: Dict[str, Any],
     herdr_spaces: List[Dict[str, Any]],
@@ -585,8 +470,9 @@ def build_dashboard_snapshot_payload(
         "scratchpad": runtime_snapshot.get("scratchpad", {}),
         "projects": projects,
         "project_count": len(projects),
-        "worktrees": worktrees,
-        "worktree_count": len(worktrees),
+        # No `worktrees`/`worktree_count`: the array was the `repos.json`
+        # inventory rendered verbatim, nothing in the shell ever read it, and
+        # the inventory is gone.
         "active_ai_sessions": sessions,
         "focus_state": focus_state,
         "herdr": build_herdr_dashboard_summary(

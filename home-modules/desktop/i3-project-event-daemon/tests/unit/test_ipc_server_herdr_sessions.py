@@ -90,30 +90,34 @@ def build_herdr_spaces(server, snapshot, sessions):
     )
 
 
-def test_herdr_rows_preserve_status_and_targets(server, tmp_path, monkeypatch):
-    repos_file = tmp_path / "repos.json"
-    repos_file.write_text(json.dumps({
-        "repositories": [{
-            "account": "vpittamp",
-            "name": "nixos-config",
-            "worktrees": [{
-                "branch": "main",
-                "path": "/home/vpittamp/repos/vpittamp/nixos-config/main",
-            }],
-        }],
-    }))
-    monkeypatch.setattr(constants_module.ConfigPaths, "REPOS_FILE", repos_file)
-    ipc_server_module._load_discovered_worktree_cache(force_refresh=True)
+def make_git_checkout(path: Path, branch: str, repo_slug: str = "") -> Path:
+    """Create a real checkout on `branch`, optionally with a GitHub origin."""
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-b", branch], cwd=path, check=True, capture_output=True)
+    if repo_slug:
+        subprocess.run(
+            ["git", "remote", "add", "origin", f"git@github.com:{repo_slug}.git"],
+            cwd=path,
+            check=True,
+            capture_output=True,
+        )
+    return path
+
+
+def test_herdr_rows_preserve_status_and_targets(server, tmp_path):
+    # The row's identity comes from git in its own cwd, so this fixture is a
+    # real checkout rather than a repos.json entry describing one.
+    repo_path = make_git_checkout(tmp_path / "nixos-config", "main", "vpittamp/nixos-config")
 
     rows = normalize_herdr_sessions(server, {
         "agents": [{
             "agent": "codex",
             "agent_status": "blocked",
             "custom_status": "reviewing diff",
-            "cwd": "/home/vpittamp/repos/vpittamp/nixos-config/main",
+            "cwd": str(repo_path),
             "display_agent": "Codex auth",
             "focused": True,
-            "foreground_cwd": "/home/vpittamp/repos/vpittamp/nixos-config/main",
+            "foreground_cwd": str(repo_path),
             "pane_id": "w123-1",
             "revision": 7,
             "state_labels": {
@@ -128,9 +132,9 @@ def test_herdr_rows_preserve_status_and_targets(server, tmp_path, monkeypatch):
         "panes": [{
             "agent": "codex",
             "agent_status": "blocked",
-            "cwd": "/home/vpittamp/repos/vpittamp/nixos-config/main",
+            "cwd": str(repo_path),
             "focused": True,
-            "foreground_cwd": "/home/vpittamp/repos/vpittamp/nixos-config/main",
+            "foreground_cwd": str(repo_path),
             "pane_id": "w123-1",
             "revision": 7,
             "tab_id": "w123:1",
@@ -170,25 +174,12 @@ def test_herdr_rows_preserve_status_and_targets(server, tmp_path, monkeypatch):
     assert row["is_current_host"] is True
 
 
-def test_herdr_row_uses_git_cwd_when_foreground_cwd_is_not_repo(server, tmp_path, monkeypatch):
-    repo_path = tmp_path / "workflow-builder"
-    repo_path.mkdir()
-    subprocess.run(["git", "init", "-b", "fix/repo-editor-commit-guard"], cwd=repo_path, check=True)
-    subprocess.run(["git", "remote", "add", "origin", "git@github.com:PittampalliOrg/workflow-builder.git"], cwd=repo_path, check=True)
-
-    repos_file = tmp_path / "repos.json"
-    repos_file.write_text(json.dumps({
-        "repositories": [{
-            "account": "PittampalliOrg",
-            "name": "workflow-builder",
-            "worktrees": [{
-                "branch": "fix/repo-editor-commit-guard",
-                "path": str(repo_path),
-            }],
-        }],
-    }))
-    monkeypatch.setattr(constants_module.ConfigPaths, "REPOS_FILE", repos_file)
-    ipc_server_module._load_discovered_worktree_cache(force_refresh=True)
+def test_herdr_row_uses_git_cwd_when_foreground_cwd_is_not_repo(server, tmp_path):
+    repo_path = make_git_checkout(
+        tmp_path / "workflow-builder",
+        "fix/repo-editor-commit-guard",
+        "PittampalliOrg/workflow-builder",
+    )
 
     rows = normalize_herdr_sessions(server, {
         "agents": [{
@@ -312,6 +303,165 @@ def test_herdr_git_metadata_repo_name_uses_repo_key_for_main_checkout(server, tm
     assert metadata["repo_name"] == "workflow-builder"
     assert metadata["checkout_path"] == str(repo_path)
     assert metadata["branch_label"] == "fix/repo-editor-commit-guard"
+
+
+def make_agent_worktree(tmp_path, *, repo_slug: str, branch: str):
+    """Create a linked worktree the way a coding agent does: plain git."""
+    repo_path = make_git_checkout(tmp_path / repo_slug.rsplit("/", 1)[-1] / "main", "main", repo_slug)
+    subprocess.run(
+        [
+            "git",
+            "-c", "user.email=test@example.invalid",
+            "-c", "user.name=test",
+            "commit", "--allow-empty", "-m", "root",
+        ],
+        cwd=repo_path,
+        check=True,
+        capture_output=True,
+    )
+    worktree_path = tmp_path / "agent-worktrees" / branch.rsplit("/", 1)[-1]
+    subprocess.run(
+        ["git", "worktree", "add", "-b", branch, str(worktree_path)],
+        cwd=repo_path,
+        check=True,
+        capture_output=True,
+    )
+    return worktree_path
+
+
+@pytest.mark.asyncio
+async def test_agent_created_worktree_gets_project_name_and_git_state(server, tmp_path):
+    # The failure this migration exists to fix. This worktree was created with
+    # plain `git worktree add`, so it appeared in no inventory and lives outside
+    # ~/repos/<account>/<repo>/. It used to be labelled 'global' by
+    # project_for_cwd AND to fail the hydration gate, which required inventory
+    # membership — so the panel showed it with no name and no git status at all.
+    # Both answers now come from the checkout itself.
+    worktree_path = make_agent_worktree(
+        tmp_path,
+        repo_slug="PittampalliOrg/stacks",
+        branch="feat/capacity-observer-node-detail",
+    )
+    (worktree_path / "notes.md").write_text("uncommitted\n")
+
+    local_host = server._local_host_alias()
+    pane = {
+        "agent": "claude",
+        "agent_status": "working",
+        "cwd": str(worktree_path),
+        "focused": True,
+        "foreground_cwd": str(worktree_path),
+        "pane_id": "wA-1",
+        "tab_id": "wA:1",
+        "workspace_id": "wA",
+        "herdr_host": local_host,
+    }
+    snapshot = {
+        "workspaces": [{
+            "workspace_id": "wA",
+            "label": "wA",
+            "focused": True,
+            "herdr_host": local_host,
+            "execution_mode": "local",
+        }],
+        "agents": [dict(pane)],
+        "panes": [dict(pane)],
+        "tabs": [],
+        "worktrees": [],
+    }
+
+    sessions = normalize_herdr_sessions(server, snapshot)
+
+    assert len(sessions) == 1
+    assert sessions[0]["project_name"] == "PittampalliOrg/stacks:feat/capacity-observer-node-detail"
+    assert sessions[0]["repo_name"] == "stacks"
+    assert sessions[0]["checkout_path"] == str(worktree_path)
+    assert sessions[0]["branch_label"] == "feat/capacity-observer-node-detail"
+
+    runtime_snapshot = {"current_session_key": sessions[0]["session_key"]}
+    await server._hydrate_runtime_git_state(runtime_snapshot, sessions)
+
+    assert sessions[0]["git_state"] == "dirty"
+    assert sessions[0]["git_snapshot"]["untracked_count"] == 1
+    assert sessions[0]["git_snapshot"]["branch"] == "feat/capacity-observer-node-detail"
+
+    spaces = build_herdr_spaces(server, snapshot, sessions)
+
+    assert len(spaces) == 1
+    assert spaces[0]["project_name"] == "PittampalliOrg/stacks:feat/capacity-observer-node-detail"
+    assert spaces[0]["checkout_path"] == str(worktree_path)
+    assert spaces[0]["git_state"] == "dirty"
+
+
+def test_herdr_space_derives_git_metadata_from_agentless_panes(server, tmp_path):
+    # Herdr workspace rows carry no cwd, and a pane with no agent never becomes
+    # a session row, so a space whose panes are all agentless used to render
+    # with empty repo/branch/checkout even though its panes sat in a worktree.
+    repo_path = make_git_checkout(
+        tmp_path / "workflow-builder" / "main",
+        "fix/preview-host-runtime-isolation",
+        "PittampalliOrg/workflow-builder",
+    )
+    local_host = server._local_host_alias()
+    snapshot = {
+        "workspaces": [{
+            "workspace_id": "wB",
+            "label": "builder",
+            "focused": True,
+            "herdr_host": local_host,
+            "execution_mode": "local",
+        }],
+        "agents": [],
+        "panes": [{
+            "pane_id": "wB-1",
+            "workspace_id": "wB",
+            "herdr_host": local_host,
+            "cwd": str(repo_path),
+            "foreground_cwd": str(repo_path),
+        }],
+        "tabs": [],
+        "worktrees": [],
+    }
+
+    server.herdr_service.prewarm_space_git_metadata(
+        snapshot,
+        normalize_connection_key=server._normalize_connection_key,
+    )
+    spaces = build_herdr_spaces(server, snapshot, [])
+
+    assert len(spaces) == 1
+    assert spaces[0]["repo_key"] == "PittampalliOrg/workflow-builder"
+    assert spaces[0]["repo_name"] == "workflow-builder"
+    assert spaces[0]["checkout_path"] == str(repo_path)
+    assert spaces[0]["branch_label"] == "fix/preview-host-runtime-isolation"
+    # Nothing named this space (no agent, so no session row), but its own git
+    # metadata composes the identity a session would have carried.
+    assert spaces[0]["project_name"] == "PittampalliOrg/workflow-builder:fix/preview-host-runtime-isolation"
+
+
+def test_herdr_worktree_rows_strip_bare_suffix_from_supplied_repo_name():
+    # Herdr answers `repo_name` with the basename of whatever checkout its CLI
+    # ran in — live, the stacks bare repo reports 'main' — so taking it
+    # verbatim made a space disagree with its own session rows for the very
+    # same cwd. Derive it through the same .bare stripping instead.
+    rows = HerdrService.worktree_result_array({
+        "result": {
+            "source": {
+                "repo_key": "/home/vpittamp/repos/PittampalliOrg/stacks/.bare",
+                "repo_name": "main",
+                "repo_root": "/home/vpittamp/repos/PittampalliOrg/stacks/.bare",
+            },
+            "worktrees": [{
+                "branch": "feat/capacity-observer-node-detail",
+                "path": "/home/vpittamp/worktrees/capacity-observer",
+                "is_linked_worktree": True,
+            }],
+        },
+    })
+
+    assert rows[0]["repo_name"] == "stacks"
+    assert rows[0]["repo_key"] == "/home/vpittamp/repos/PittampalliOrg/stacks/.bare"
+    assert rows[0]["checkout_path"] == "/home/vpittamp/worktrees/capacity-observer"
 
 
 def test_herdr_rows_skip_plain_panes_and_keep_unknown_status(server):
