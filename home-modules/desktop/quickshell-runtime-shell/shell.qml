@@ -5360,13 +5360,18 @@ function normalizeLauncherMode(mode) {
         const label = displayHostName(hostName) || hostNameFromConnectionKey(connectionKey) || (isRemote ? "Remote" : localHostDisplayName());
         const icon = isRemote ? ("file://" + shellConfig.tailscaleIcon) : resolveThemeIcon(["computer-symbolic", "computer-laptop-symbolic", "video-display-symbolic", "desktop-symbolic"]);
 
+        // Which host a session runs on is metadata, not status, so the token is
+        // a neutral secondary badge. It used to be drawn in the accent colour,
+        // which put a saturated chip on every row and left the actual signal —
+        // the agent's status pill — competing with it. Remote still reads
+        // stronger than local, via surface and border weight rather than hue.
         return {
             label: label,
             icon: icon,
             is_remote: isRemote,
-            foreground: colors.blue,
-            background: isRemote ? colors.blueBg : colors.blueWash,
-            border: colors.blueMuted,
+            foreground: isRemote ? colors.textDim : colors.muted,
+            background: isRemote ? colors.cardAlt : "transparent",
+            border: isRemote ? colors.borderStrong : colors.border,
             monogram: label.length ? label.charAt(0).toUpperCase() : (isRemote ? "R" : "L")
         };
     }

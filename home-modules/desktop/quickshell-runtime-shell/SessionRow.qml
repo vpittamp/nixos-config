@@ -68,9 +68,13 @@ Rectangle {
     readonly property int statusIconSize: compact ? 20 : 22
     readonly property bool stoppedNotification: activityState === "stopped"
 
+    // The focused session keeps an accent fill — it is the one row worth
+    // pointing at. Merely selected rows drop to a neutral surface, so a list of
+    // seven agents no longer renders as seven accent blocks; selection there is
+    // carried by the border instead.
     readonly property color baseRowColor: isCurrent
         ? (effectiveHovered ? Qt.tint(colorsObject.blueBg, Theme.elevationSoft) : colorsObject.blueBg)
-        : (selected ? colorsObject.blueBg : (effectiveHovered ? colorsObject.cardAlt : "transparent"))
+        : (selected ? colorsObject.card : (effectiveHovered ? colorsObject.cardAlt : "transparent"))
 
     implicitHeight: rowHeight
     radius: rootObject.radiusControl

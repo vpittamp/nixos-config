@@ -377,8 +377,12 @@ PanelWindow {
                     Layout.fillWidth: true
                     implicitHeight: 30
                     radius: root.radiusControl
-                    color: root.panelSection === "runtime" ? colors.blueBg : colors.cardAlt
-                    border.color: root.panelSection === "runtime" ? colors.blue : colors.border
+                    // Tab selection reads as a lifted neutral surface, the way a
+                    // shadcn tab does, rather than an accent-filled block: the
+                    // active tab is the one that looks raised, not the one that
+                    // is coloured. Colour in this panel means status.
+                    color: root.panelSection === "runtime" ? colors.card : "transparent"
+                    border.color: root.panelSection === "runtime" ? colors.borderStrong : colors.border
                     border.width: 1
                     scale: runtimeTabMouse.pressed ? 0.96 : 1.0
 
@@ -392,7 +396,7 @@ PanelWindow {
                     Text {
                         anchors.centerIn: parent
                         text: "Runtime"
-                        color: root.panelSection === "runtime" ? colors.blue : colors.textDim
+                        color: root.panelSection === "runtime" ? colors.text : colors.muted
                         font.pixelSize: root.fontLabel
                         font.weight: Font.DemiBold
                     }

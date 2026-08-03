@@ -11,12 +11,17 @@ Rectangle {
     property int count: 0
     property bool expanded: false
     property bool clickable: true
-    property color expandedFill: colorsObject.blueWash
-    property color collapsedFill: colorsObject.card
-    property color expandedBorder: colorsObject.lineSoft
-    property color collapsedBorder: colorsObject.lineSoft
+    // Section headers are chrome, not content: they stay neutral so the only
+    // colour in the panel is status. Expanding is signalled by the surface
+    // lifting one step and by the chevron picking up the accent — previously
+    // the whole bar filled with the accent wash, which on an accented host read
+    // as a saturated block competing with the agent rows underneath it.
+    property color expandedFill: colorsObject.card
+    property color collapsedFill: colorsObject.cardAlt
+    property color expandedBorder: colorsObject.border
+    property color collapsedBorder: colorsObject.border
     property color expandedAccent: colorsObject.blue
-    property color collapsedAccent: colorsObject.textDim
+    property color collapsedAccent: colorsObject.muted
 
     signal clicked()
 
@@ -64,13 +69,15 @@ Rectangle {
             elide: Text.ElideRight
         }
 
+        // Count reads as a secondary badge: outlined rather than filled, so it
+        // sits on either header surface without becoming a dark hole.
         Rectangle {
             width: sectionCount.implicitWidth + 12
             height: 20
             radius: sectionHeader.rootObject.radiusBadge
             color: sectionHeader.colorsObject.bg
-            border.color: "transparent"
-            border.width: 0
+            border.color: sectionHeader.colorsObject.border
+            border.width: 1
 
             Text {
                 id: sectionCount
