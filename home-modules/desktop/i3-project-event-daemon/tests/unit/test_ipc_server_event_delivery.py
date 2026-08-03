@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib
 import importlib.util
 import json
@@ -75,6 +76,61 @@ class _TransportWriter:
 
     def close(self):
         self.closed = True
+
+
+def _tree_cache_invalidating_subscriptions(source_path):
+    """Event names daemon.py subscribes to its invalidate_tree_cache handler."""
+    events = set()
+    for node in ast.walk(ast.parse(source_path.read_text(encoding="utf-8"))):
+        if not isinstance(node, ast.Call) or len(node.args) != 2:
+            continue
+        func = node.func
+        if not (isinstance(func, ast.Attribute) and func.attr == "subscribe"):
+            continue
+        event, handler = node.args
+        if (
+            isinstance(event, ast.Constant)
+            and isinstance(event.value, str)
+            and isinstance(handler, ast.Name)
+            and handler.id == "invalidate_tree_cache"
+        ):
+            events.add(event.value)
+    return events
+
+
+def _handler_notify_events(source_path):
+    """Map each event handlers.py notifies for to whether it drops the tree cache."""
+    notified = {}
+    for node in ast.walk(ast.parse(source_path.read_text(encoding="utf-8"))):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
+        if name != "_invalidate_cache_and_notify" or len(node.args) < 2:
+            continue
+        event = node.args[1]
+        if not (isinstance(event, ast.Constant) and isinstance(event.value, str)):
+            continue
+        invalidate_tree = True
+        for keyword in node.keywords:
+            if keyword.arg == "invalidate_tree" and isinstance(keyword.value, ast.Constant):
+                invalidate_tree = bool(keyword.value.value)
+        notified[event.value] = notified.get(event.value, False) or invalidate_tree
+    return notified
+
+
+def _record_sleeps(server, monkeypatch, *, arrivals=()):
+    """Record each coalescing wait, queueing one batch of events per wait."""
+    slept = []
+    queued = [set(batch) for batch in arrivals]
+
+    async def fake_sleep(duration):
+        slept.append(duration)
+        if queued:
+            server._dashboard_notify_pending |= queued.pop(0)
+
+    monkeypatch.setattr(ipc_server_module.asyncio, "sleep", fake_sleep)
+    return slept
 
 
 @pytest.fixture
@@ -175,16 +231,129 @@ def test_notify_coalesce_delay_keeps_tree_invalidating_events_wide():
     assert IPCServer._notify_coalesce_delay({"workspace::focus", "workspace::move"}) == slow
 
 
-def test_notify_coalesce_delay_stays_wide_for_git_bearing_batches():
+def test_notify_coalesce_delay_uses_middle_tier_for_agent_session_batches():
+    # herdr/agent rows are expensive by changed-keys (they hydrate git) but the
+    # services that queue them never drop the window-tree cache, so the rebuild
+    # is the warm one (~0.03s measured, vs ~0.11s cold). The wide window made an
+    # agent status change wait ~8x the rebuild it was protecting against.
+    fast = ipc_server_module.FAST_DASHBOARD_NOTIFY_COALESCE_S
+    medium = ipc_server_module.MEDIUM_DASHBOARD_NOTIFY_COALESCE_S
+    slow = ipc_server_module.SLOW_DASHBOARD_NOTIFY_COALESCE_S
+    assert fast < medium < slow
+
+    for event in ("ai_session_herdr_changed", "ai_session_git_changed", "agent_session_changed"):
+        assert IPCServer._notify_coalesce_delay({event}) == medium, event
+
+
+def test_notify_coalesce_delay_stays_wide_for_cold_rebuild_batches():
     slow = ipc_server_module.SLOW_DASHBOARD_NOTIFY_COALESCE_S
 
-    # These pull session/herdr rows, which hydrate git via subprocesses.
-    assert IPCServer._notify_coalesce_delay({"ai_session_herdr_changed"}) == slow
-    assert IPCServer._notify_coalesce_delay({"ai_session_git_changed"}) == slow
+    # A full invalidation rebuilds everything by definition.
     assert IPCServer._notify_coalesce_delay({"dashboard_invalidated"}) == slow
-    # One expensive member drags the whole batch to the wide window, because the
-    # payload is the union of every member's changed keys.
-    assert IPCServer._notify_coalesce_delay({"workspace::focus", "ai_session_herdr_changed"}) == slow
+    # `i3pm monitors reassign` / hotplug: the burst that the wide window exists for.
+    assert IPCServer._notify_coalesce_delay({"display_layout_changed"}) == slow
+    # Worktree refreshes are the other cache: the handler invalidates the
+    # worktree cache before notifying, and the payload carries the ~100KB array.
+    assert IPCServer._notify_coalesce_delay({"worktree_changed"}) == slow
+
+
+def test_notify_coalesce_delay_takes_the_widest_window_in_a_mixed_batch():
+    # The payload is the union of every member's changed keys, so the batch
+    # costs whatever its most expensive member costs.
+    medium = ipc_server_module.MEDIUM_DASHBOARD_NOTIFY_COALESCE_S
+    slow = ipc_server_module.SLOW_DASHBOARD_NOTIFY_COALESCE_S
+
+    assert IPCServer._notify_coalesce_delay(
+        {"workspace::focus", "window::focus", "ai_session_herdr_changed"}
+    ) == medium
+    assert IPCServer._notify_coalesce_delay(
+        {"ai_session_herdr_changed", "window::close"}
+    ) == slow
+    assert IPCServer._notify_coalesce_delay(
+        {"workspace::focus", "ai_session_git_changed", "display_layout_changed"}
+    ) == slow
+    # An empty batch has nothing to size against; stay conservative.
+    assert IPCServer._notify_coalesce_delay(set()) == slow
+
+
+def test_tree_cache_invalidating_events_match_daemon_subscriptions():
+    # ipc_server keeps its own copy of the list (importing daemon would be
+    # circular). This fails if daemon.py's invalidate_tree_cache subscriptions
+    # change, so the tier that protects cold rebuilds cannot silently drift.
+    subscribed = _tree_cache_invalidating_subscriptions(PACKAGE_ROOT / "daemon.py")
+
+    assert subscribed, "no invalidate_tree_cache subscriptions found in daemon.py"
+    assert subscribed == set(ipc_server_module.TREE_CACHE_INVALIDATING_STATE_EVENTS)
+
+
+def test_no_event_that_drops_the_tree_cache_drains_faster_than_slow():
+    # The real invariant behind the tiers: an event whose handler drops the
+    # window-tree cache rebuilds cold and must keep the wide window. handlers.py
+    # invalidates on every event it notifies for unless it passes
+    # invalidate_tree=False, so this catches a new fast/medium event too.
+    slow = ipc_server_module.SLOW_DASHBOARD_NOTIFY_COALESCE_S
+    notified = _handler_notify_events(PACKAGE_ROOT / "handlers.py")
+
+    assert "window::close" in notified, "handlers.py notify calls not found"
+    for event, invalidates_tree in sorted(notified.items()):
+        if invalidates_tree:
+            assert IPCServer._notify_coalesce_delay({event}) == slow, event
+
+
+@pytest.mark.asyncio
+async def test_drain_gives_an_upgraded_batch_the_rest_of_the_wider_window(server, monkeypatch):
+    # A focus batch that grows an agent event mid-wait must not fire the more
+    # expensive rebuild on the fast schedule — it waits out the medium window.
+    fast = ipc_server_module.FAST_DASHBOARD_NOTIFY_COALESCE_S
+    medium = ipc_server_module.MEDIUM_DASHBOARD_NOTIFY_COALESCE_S
+    slept = _record_sleeps(server, monkeypatch, arrivals=[{"ai_session_herdr_changed"}])
+
+    server._dashboard_notify_pending = {"window::focus", "workspace::focus"}
+    server.notify_state_change = AsyncMock()
+    await server._drain_scheduled_state_notifications()
+
+    assert slept == [pytest.approx(fast), pytest.approx(medium - fast)]
+    assert sum(slept) == pytest.approx(medium)
+
+
+@pytest.mark.asyncio
+async def test_drain_upgrade_path_walks_all_three_tiers(server, monkeypatch):
+    # fast -> medium -> slow: re-checking only once would have fired the cold
+    # rebuild after 60ms, which is what the wide window exists to prevent.
+    fast = ipc_server_module.FAST_DASHBOARD_NOTIFY_COALESCE_S
+    medium = ipc_server_module.MEDIUM_DASHBOARD_NOTIFY_COALESCE_S
+    slow = ipc_server_module.SLOW_DASHBOARD_NOTIFY_COALESCE_S
+    slept = _record_sleeps(
+        server,
+        monkeypatch,
+        arrivals=[{"ai_session_herdr_changed"}, {"workspace::move"}],
+    )
+
+    server._dashboard_notify_pending = {"window::focus"}
+    server.notify_state_change = AsyncMock()
+    await server._drain_scheduled_state_notifications()
+
+    assert slept == [
+        pytest.approx(fast),
+        pytest.approx(medium - fast),
+        pytest.approx(slow - medium),
+    ]
+    assert sum(slept) == pytest.approx(slow)
+    server.notify_state_change.assert_awaited_once_with(
+        {"window::focus", "ai_session_herdr_changed", "workspace::move"}
+    )
+
+
+@pytest.mark.asyncio
+async def test_drain_does_not_extend_a_batch_that_stays_in_its_tier(server, monkeypatch):
+    medium = ipc_server_module.MEDIUM_DASHBOARD_NOTIFY_COALESCE_S
+    slept = _record_sleeps(server, monkeypatch, arrivals=[{"agent_session_changed"}])
+
+    server._dashboard_notify_pending = {"ai_session_herdr_changed"}
+    server.notify_state_change = AsyncMock()
+    await server._drain_scheduled_state_notifications()
+
+    assert slept == [pytest.approx(medium)]
 
 
 @pytest.mark.asyncio

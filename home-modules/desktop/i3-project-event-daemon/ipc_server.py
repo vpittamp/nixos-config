@@ -55,7 +55,8 @@ from .services.dashboard_model import (
     DASHBOARD_EVENT_SCHEMA_VERSION,
     DASHBOARD_SCHEMA_VERSION,
     build_dashboard_projects as build_dashboard_project_cards,
-    dashboard_changed_keys_for_events,
+    dashboard_changed_keys_for_event,
+    dashboard_event_type_for_state_change,
 )
 from .services.daemon_contract_service import DaemonContractService
 from .services.dashboard_service import DashboardService
@@ -102,20 +103,66 @@ WORKSPACE_ASSIGNMENTS_PATH = Path.home() / ".config/sway/workspace-assignments.j
 CHROME_SCOPED_TMP_PREFIX = "/tmp/com.google.Chrome.scoped_dir."
 FOCUS_STATE_SCHEMA_VERSION = "i3pm.focus_state.v2"
 
-# Events that change only which thing is focused. They are the ones the user
-# watches (the workspace pill) and the only ones that leave the window-tree cache
-# intact — handlers pass invalidate_tree=False for exactly these — so their
-# rebuild is warm and cheap. Every other event drops the tree cache, making its
-# rebuild a cold multi-round-trip Sway query that must stay behind the wide
-# coalescing window. See _notify_coalesce_delay.
+# Sway events that change only which thing is focused. They are the ones the
+# user watches (the workspace pill) and the only Sway events that leave the
+# window-tree cache intact — handlers pass invalidate_tree=False for exactly
+# these — so their rebuild is warm and cheap. See _notify_coalesce_delay.
 FOCUS_ONLY_STATE_EVENTS = frozenset({"workspace::focus", "window::focus", "focus_changed"})
+# Sway events subscribed to daemon.py's invalidate_tree_cache. handlers.py drops
+# the same cache on the other structural events, so this is a lower bound on
+# "rebuild will be cold", not the whole set — it is here so the wide window is
+# tied to the authoritative list rather than to event names that read as
+# structural. test_tree_cache_invalidating_events_match_daemon_subscriptions
+# re-parses daemon.py and fails if the subscriptions drift.
+TREE_CACHE_INVALIDATING_STATE_EVENTS = frozenset(
+    {"window::close", "window::move", "workspace::empty", "workspace::move"}
+)
+# Typed dashboard events that only reshape herdr/agent-session rows. They are
+# queued by the herdr service, never by a Sway handler, so they never drop the
+# window-tree cache and always rebuild warm.
+#
+# Note the git service does NOT reach this tier: dashboard_git_service is handed
+# `notify_state_change` directly rather than `notify_state_change_background`,
+# so its ai_session_git_changed events bypass the coalescer altogether. That is
+# pre-existing and out of scope here, but it means this tier currently covers
+# herdr events only — do not read the name as "all agent-row events".
+AGENT_STATE_DASHBOARD_EVENT_TYPES = frozenset({"session.changed", "herdr.changed"})
 # Changed keys whose payload additionally needs git hydration (subprocess probes)
 # or a full invalidation.
 EXPENSIVE_DASHBOARD_CHANGED_KEYS = frozenset(
     {"active_ai_sessions", "herdr", "worktrees", "dashboard"}
 )
+# Changed keys that mean a rebuild is not the warm agent-row path after all: a
+# full invalidation, or the ~100KB worktrees array whose own cache the handler
+# queueing the event just dropped.
+COLD_REBUILD_DASHBOARD_CHANGED_KEYS = frozenset({"dashboard", "worktrees"})
 FAST_DASHBOARD_NOTIFY_COALESCE_S = 0.02
+MEDIUM_DASHBOARD_NOTIFY_COALESCE_S = 0.06
 SLOW_DASHBOARD_NOTIFY_COALESCE_S = 0.25
+
+
+def _state_event_coalesce_delay(event_type: str) -> float:
+    """Coalescing window one pending event needs on its own.
+
+    Tier rationale lives on IPCServer._notify_coalesce_delay, which takes the
+    widest window any member of the batch asks for.
+    """
+    if event_type in TREE_CACHE_INVALIDATING_STATE_EVENTS:
+        return SLOW_DASHBOARD_NOTIFY_COALESCE_S
+    changed_keys = set(dashboard_changed_keys_for_event(event_type))
+    if event_type in FOCUS_ONLY_STATE_EVENTS:
+        # Belt and braces: should the key mapping ever give a focus event a
+        # git-bearing key, cost wins over classification.
+        if changed_keys & EXPENSIVE_DASHBOARD_CHANGED_KEYS:
+            return SLOW_DASHBOARD_NOTIFY_COALESCE_S
+        return FAST_DASHBOARD_NOTIFY_COALESCE_S
+    if (
+        dashboard_event_type_for_state_change(event_type) in AGENT_STATE_DASHBOARD_EVENT_TYPES
+        and not changed_keys & COLD_REBUILD_DASHBOARD_CHANGED_KEYS
+    ):
+        return MEDIUM_DASHBOARD_NOTIFY_COALESCE_S
+    return SLOW_DASHBOARD_NOTIFY_COALESCE_S
+
 
 _DISCOVERED_WORKTREE_CACHE: Dict[str, Any] = {
     "file_path": "",
@@ -3118,44 +3165,78 @@ class IPCServer:
     def _notify_coalesce_delay(pending: set[str]) -> float:
         """Pick a coalescing window sized to what the pending batch will rebuild.
 
-        Only a purely-focus batch drains fast. That is narrower than "cheap to
-        build", deliberately:
+        Three tiers, and the batch takes the widest window any member asks for —
+        the payload is the union of every member's changed keys, so the batch
+        costs whatever its most expensive event costs.
 
-        - It has to cover a real workspace switch, which is two events and not
-          one: Sway emits window::focus alongside workspace::focus whenever the
-          target workspace holds a window. Classifying by typed event name put
-          those two in different buckets, so the batch the pill actually depends
-          on kept the wide window and nothing improved.
-        - It has to exclude the structural workspace and window events. They look
-          comparably cheap by changed-keys, but their handlers drop the
-          window-tree cache first, so each rebuild becomes a cold get_tree +
-          get_workspaces + get_outputs. Draining those every 20ms would turn a
-          burst — a monitor hotplug, or `i3pm monitors reassign` moving every
-          workspace — into repeated cold rebuilds competing for the same Sway
-          connection as the commands driving the burst.
+        FAST (20ms) — focus only. This tier is narrower than "cheap to build",
+        deliberately: it has to cover a real workspace switch, which is two
+        events and not one, because Sway emits window::focus alongside
+        workspace::focus whenever the target workspace holds a window.
+        Classifying by typed event name put those two in different buckets, so
+        the batch the pill actually depends on kept the wide window and nothing
+        improved. Their handlers pass invalidate_tree=False, so the rebuild is
+        warm and touches no git.
+
+        MEDIUM (60ms) — herdr/agent-session rows. These are queued by the herdr
+        and git services, never by a Sway handler, so they never drop the
+        window-tree cache: their rebuild is the warm path, measured at ~0.03s
+        against ~0.11s cold. They are expensive by changed-keys
+        (active_ai_sessions/herdr hydrate git), which used to be enough to put
+        them behind the wide window — but git probes now run off the event loop,
+        the git metadata cache has a TTL instead of being wiped per build, and
+        agent-session events no longer ship the worktrees array, so
+        changed-keys alone no longer implies a cold rebuild. At 250ms an agent
+        status change waited ~8x the cost of the rebuild the wait was protecting
+        against. 60ms is ~2x that warm rebuild: still wide enough to swallow the
+        burst of ticks a single herdr transition emits and to leave the daemon
+        loop mostly free, narrow enough that the panel reads as immediate.
+
+        SLOW (250ms) — everything else: structural window/workspace events,
+        display changes, full invalidations, worktree refreshes. Structural
+        events look comparably cheap by changed-keys, but their handlers drop the
+        window-tree cache first, so each rebuild becomes a cold get_tree +
+        get_workspaces + get_outputs. Draining those every 20ms — or every 60ms —
+        would turn a burst (a monitor hotplug, or `i3pm monitors reassign` moving
+        every workspace) into repeated cold rebuilds competing for the same Sway
+        connection as the commands driving the burst. worktree_changed sits here
+        for the same reason on the other cache: its handler invalidates the
+        worktree cache and its payload carries the ~100KB worktrees array.
         """
-        if not pending or not pending <= FOCUS_ONLY_STATE_EVENTS:
+        if not pending:
             return SLOW_DASHBOARD_NOTIFY_COALESCE_S
-        # Belt and braces: should the key mapping ever give a focus event a
-        # git-bearing key, cost wins over classification.
-        changed_keys = set(dashboard_changed_keys_for_events(sorted(pending)))
-        if changed_keys & EXPENSIVE_DASHBOARD_CHANGED_KEYS:
-            return SLOW_DASHBOARD_NOTIFY_COALESCE_S
-        return FAST_DASHBOARD_NOTIFY_COALESCE_S
+        return max(_state_event_coalesce_delay(event_type) for event_type in pending)
 
     async def _drain_scheduled_state_notifications(self) -> None:
         """Drain pending notification requests with coalescing to avoid focus backpressure."""
         # Let the action RPC that scheduled this task flush its response before
         # dashboard event shaping does any heavier work on the daemon loop.
-        delay = self._notify_coalesce_delay(set(self._dashboard_notify_pending))
-        await asyncio.sleep(delay)
-        # Events arriving during that wait can upgrade the batch to one that
-        # needs git hydration. Give it the rest of the wide window instead of
-        # paying for an expensive rebuild on the fast schedule.
-        remaining = self._notify_coalesce_delay(set(self._dashboard_notify_pending)) - delay
-        if remaining > 0:
+        waited = self._notify_coalesce_delay(set(self._dashboard_notify_pending))
+        await asyncio.sleep(waited)
+        # Events arriving during that wait can upgrade the batch to a wider tier
+        # (focus -> agent rows, agent rows -> structural). Give it the rest of
+        # the wider window instead of paying for the more expensive rebuild on
+        # the narrower schedule, and re-check after each extension so a two-step
+        # upgrade still ends up on the widest tier the batch reached. The delay
+        # is a max over members and members are only added while we wait, so it
+        # is monotonic: this settles after at most one extension per tier.
+        while True:
+            remaining = self._notify_coalesce_delay(set(self._dashboard_notify_pending)) - waited
+            if remaining <= 0:
+                break
             await asyncio.sleep(remaining)
+            waited += remaining
+        first_batch = True
         while self._dashboard_notify_pending:
+            # Every batch pays a coalescing window, not just the first. Events
+            # queued while notify_state_change was awaiting a rebuild would
+            # otherwise drain immediately on the next loop turn, so a burst
+            # arriving during a slow build skipped coalescing entirely.
+            if not first_batch:
+                await asyncio.sleep(
+                    self._notify_coalesce_delay(set(self._dashboard_notify_pending))
+                )
+            first_batch = False
             pending = set(self._dashboard_notify_pending)
             self._dashboard_notify_pending.clear()
             # Pass the whole batch so the delta is the lossless union of every
