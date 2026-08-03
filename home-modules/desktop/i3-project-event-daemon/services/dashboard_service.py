@@ -149,6 +149,14 @@ class DashboardService:
                 and str(session.get("session_key") or "").strip() == current_key
             )
             session["is_current_window"] = is_current
+            # `herdr_focused` is deliberately NOT overwritten here. These four
+            # fields are sway-authoritative — they feed _build_herdr_spaces
+            # (called with the ALREADY-flattened sessions), the expose sort and
+            # the DashboardState invariants — whereas `herdr_focused` is a
+            # verbatim copy of Herdr's own per-pane flag and must survive the
+            # flatten untouched. `session = dict(row)` above already carries it
+            # through, so this block needs no edit; adding it here would erase
+            # the one signal that still knows where the user would return to.
             if str(session.get("source") or "").strip() == "herdr":
                 session["focused"] = is_current
                 session["pane_active"] = is_current
@@ -237,6 +245,12 @@ class DashboardService:
                     and str(session.get("session_key") or "").strip() == current_session_key
                 )
                 session["is_current_window"] = is_current
+                # Same rule as sessions_with_authoritative_focus: only the
+                # sway-authoritative fields are re-derived. `herdr_focused`
+                # rides through on `dict(row)` above and must not be added to
+                # this block — on this path the previous snapshot's Herdr flag
+                # is the only surviving record of the return target, since no
+                # Herdr snapshot is refetched for a focus-only event.
                 if str(session.get("source") or "").strip() == "herdr":
                     session["focused"] = is_current
                     session["pane_active"] = is_current

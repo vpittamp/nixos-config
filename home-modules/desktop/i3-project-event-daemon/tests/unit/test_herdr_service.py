@@ -506,13 +506,22 @@ def test_herdr_service_applies_remote_focus_cache():
     assert service.snapshot_cache["sessions"][1]["is_current_window"] is True
     assert service.snapshot_cache["panes"][0]["focused"] is False
     assert service.snapshot_cache["panes"][1]["focused"] is True
+    # The optimistic cache write also moves Herdr's own per-pane flag, so the
+    # return-target hint does not keep pointing at the pre-click pane until the
+    # next remote snapshot lands.
+    assert service.snapshot_cache["sessions"][0]["herdr_focused"] is False
+    assert service.snapshot_cache["sessions"][1]["herdr_focused"] is True
+    assert service.snapshot_cache["panes"][0]["herdr_focused"] is False
+    assert service.snapshot_cache["panes"][1]["herdr_focused"] is True
     remote_sessions = service.snapshot_cache["remote_snapshots"][0]["sessions"]
     assert remote_sessions[0]["focused"] is False
     assert remote_sessions[0]["is_current_window"] is False
     assert remote_sessions[0]["pane_active"] is False
+    assert remote_sessions[0]["herdr_focused"] is False
     assert remote_sessions[1]["focused"] is True
     assert remote_sessions[1]["is_current_window"] is True
     assert remote_sessions[1]["pane_active"] is True
+    assert remote_sessions[1]["herdr_focused"] is True
 
 
 def test_herdr_service_loads_remote_targets_from_env(monkeypatch):
@@ -1030,6 +1039,115 @@ def test_herdr_service_normalizes_local_and_remote_sessions(monkeypatch):
             "app_name": "herdr-ryzen",
         },
     }
+
+
+def _herdr_focused_service(monkeypatch):
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    monkeypatch.setattr(
+        service,
+        "effective_cwd",
+        lambda row, *, ssh_target="": str(row.get("foreground_cwd") or row.get("cwd") or ""),
+    )
+    monkeypatch.setattr(
+        service,
+        "git_space_metadata",
+        lambda path, *, ssh_target="", normalize_connection_key: {},
+    )
+    return service
+
+
+def test_herdr_service_session_row_copies_herdr_focused_from_pane(monkeypatch):
+    # Herdr's own per-pane flag is copied verbatim here, beside (never instead
+    # of) the sway-authoritative fields, because this is the last point where
+    # the raw flag is still authoritative.
+    service = _herdr_focused_service(monkeypatch)
+
+    focused = service.normalize_session_row(
+        {"pane_id": "pane-a", "agent": "codex", "focused": True},
+        local_host="thinkpad",
+        normalize_connection_key=lambda value: value,
+        project_for_cwd=lambda path: {"project_name": "global", "project_path": path},
+    )
+    unfocused = service.normalize_session_row(
+        {"pane_id": "pane-b", "agent": "codex", "focused": False},
+        local_host="thinkpad",
+        normalize_connection_key=lambda value: value,
+        project_for_cwd=lambda path: {"project_name": "global", "project_path": path},
+    )
+    missing = service.normalize_session_row(
+        {"pane_id": "pane-c", "agent": "codex"},
+        local_host="thinkpad",
+        normalize_connection_key=lambda value: value,
+        project_for_cwd=lambda path: {"project_name": "global", "project_path": path},
+    )
+
+    assert focused["herdr_focused"] is True
+    assert unfocused["herdr_focused"] is False
+    assert missing["herdr_focused"] is False
+
+
+def test_herdr_service_normalize_sessions_dedupes_herdr_focused_per_host(monkeypatch):
+    # Herdr reports at most one focused pane per host; if a stale snapshot ever
+    # ships two, the extra rows lose `herdr_focused` alongside the four
+    # sway-authoritative flags so only one row can claim the return target.
+    service = _herdr_focused_service(monkeypatch)
+
+    rows = service.normalize_sessions(
+        {
+            "agents": [],
+            "panes": [
+                {"pane_id": "pane-a", "agent": "codex", "focused": True},
+                {"pane_id": "pane-b", "agent": "claude", "focused": True},
+            ],
+        },
+        local_host="thinkpad",
+        normalize_connection_key=lambda value: value,
+        project_for_cwd=lambda path: {"project_name": "global", "project_path": path},
+    )
+
+    by_pane = {row["pane_id"]: row for row in rows}
+    assert by_pane["pane-a"]["herdr_focused"] is True
+    assert by_pane["pane-a"]["focused"] is True
+    assert by_pane["pane-b"]["herdr_focused"] is False
+    assert by_pane["pane-b"]["focused"] is False
+    assert [row["herdr_focused"] for row in rows].count(True) == 1
+
+
+def test_herdr_service_remote_proxy_row_falls_back_to_focused_for_herdr_focused():
+    # The remote proxy hop carries the remote's already-flattened dashboard
+    # rows: a remote already emitting `herdr_focused` keeps its value, while a
+    # remote on an older daemon omits it and degrades to `focused` — which is
+    # sway-derived over there, so in practice "no return target from that host".
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    target = {
+        "host": "Ryzen",
+        "ssh_target": "ryzen",
+        "connection_key": "VPITTAMP@RYZEN:22",
+    }
+
+    legacy = service.normalize_remote_proxy_session_row(
+        {"pane_id": "pane-a", "focused": True},
+        target=target,
+        normalize_connection_key=lambda value: value.lower(),
+    )
+    current = service.normalize_remote_proxy_session_row(
+        {"pane_id": "pane-b", "focused": False, "herdr_focused": True},
+        target=target,
+        normalize_connection_key=lambda value: value.lower(),
+    )
+
+    assert legacy["herdr_focused"] is True
+    assert current["herdr_focused"] is True
+    # The remote's Herdr flag is independent of this host's sway focus, so the
+    # sway-authoritative fields stay derived from `focused` alone.
+    assert current["focused"] is False
+    assert current["pane_active"] is False
 
 
 def test_herdr_service_builds_spaces_with_worktree_groups():

@@ -25,6 +25,17 @@ Rectangle {
 
     readonly property bool effectiveHovered: interactive ? rowHoverLatched : hovered
     readonly property bool isCurrent: currentOverrideSet ? currentOverride : rootObject.sessionIsCurrent(session)
+    // Strictly weaker second tier: "the session you would return to" (herdr's
+    // own focused pane), never "the session that has the keyboard".
+    //
+    // Per row the two are mutually exclusive by the !isCurrent guard below.
+    // Across rows the shell root's global gate guarantees it on the surfaces
+    // that bind currentOverride live (RuntimePanelWindow, AgentMonitorWindow).
+    // LauncherWindow and WindowSwitcherWindow instead freeze `row_current` into
+    // their entries at list-build time, so there a stale tier A could in
+    // principle sit beside a live tier B — only if herdr's focused pane moved
+    // after the list was built, and never on the same row.
+    readonly property bool isReturnTarget: !isCurrent && rootObject.sessionIsReturnTarget(session)
     readonly property string primaryLabel: rootObject.sessionPrimaryLabel(session)
     readonly property string secondaryLabel: rootObject.sessionSecondaryLabel(session)
     readonly property string activityLabel: rootObject.sessionActivityChipLabel(session)
@@ -51,9 +62,12 @@ Rectangle {
     // Radar ping runs only while the row actually needs a human and is on
     // screen; an off-screen infinite animation would just burn wakeups.
     readonly property bool blockedPingActive: isBlocked && surfaceVisible && sessionRow.visible
-    readonly property real idleRowOpacity: isIdle ? (isCurrent ? 0.9 : 0.76) : 1
-    readonly property real idleTextOpacity: isIdle ? (isCurrent ? 0.86 : 0.72) : 1
-    readonly property real idleChipOpacity: isIdle ? (isCurrent ? 0.9 : 0.76) : 1
+    // Return rows share the focused row's idle floors so the marker and the
+    // RETURN chip never fade out on an idle session — the whole point of the
+    // tier is being legible when nothing is happening.
+    readonly property real idleRowOpacity: isIdle ? ((isCurrent || isReturnTarget) ? 0.9 : 0.76) : 1
+    readonly property real idleTextOpacity: isIdle ? ((isCurrent || isReturnTarget) ? 0.86 : 0.72) : 1
+    readonly property real idleChipOpacity: isIdle ? ((isCurrent || isReturnTarget) ? 0.9 : 0.76) : 1
     readonly property real toolIconOpacity: hasMotion ? 0.96 : (isIdle ? (isCurrent ? 0.64 : 0.5) : 0.92)
     property bool hasMotion: rootObject.sessionHasMotion(session)
     readonly property var activitySpinnerFrames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -72,18 +86,36 @@ Rectangle {
     // pointing at. Merely selected rows drop to a neutral surface, so a list of
     // seven agents no longer renders as seven accent blocks; selection there is
     // carried by the border instead.
+    //
+    // The return row gets an achromatic lift instead of the blue fill: blue is
+    // reserved for "has the keyboard", and reusing any of it here would let the
+    // two states be confused at a glance.
     readonly property color baseRowColor: isCurrent
         ? (effectiveHovered ? Qt.tint(colorsObject.blueBg, Theme.elevationSoft) : colorsObject.blueBg)
-        : (selected ? colorsObject.card : (effectiveHovered ? colorsObject.cardAlt : "transparent"))
+        : (isReturnTarget
+            // Hover must brighten. cardAlt is DARKER than card (#131316 vs
+            // #18181b), so swapping the base on hover the way untinted rows do
+            // would dim the row instead — compose the elevation on top of the
+            // same base rather than switching bases.
+            ? (effectiveHovered
+                ? Qt.tint(Qt.tint(colorsObject.card, Theme.subtleWash), Theme.elevationSoft)
+                : Qt.tint(colorsObject.card, Theme.subtleWash))
+            : (selected ? colorsObject.card : (effectiveHovered ? colorsObject.cardAlt : "transparent")))
 
     implicitHeight: rowHeight
     radius: rootObject.radiusControl
     // Blocked rows get a subtle wash toward redBg so the attention state reads
     // at the row level, not just on the badge.
     color: isBlocked ? Qt.tint(baseRowColor, Theme.redWash) : baseRowColor
+    // `selected` (launcher/expose keyboard cursor) is orthogonal to the tier, so
+    // it has to be desaturated on a return row: blue is reserved for "has the
+    // keyboard", and a blue-bordered return row is exactly the confusion this
+    // tier exists to avoid. Selection there is carried by the strong border.
     border.color: isCurrent
         ? (effectiveHovered ? colorsObject.blue : colorsObject.blueMuted)
-        : (selected ? colorsObject.blue : (effectiveHovered ? colorsObject.borderStrong : "transparent"))
+        : (isReturnTarget
+            ? ((selected || effectiveHovered) ? colorsObject.borderStrong : "transparent")
+            : (selected ? colorsObject.blue : (effectiveHovered ? colorsObject.borderStrong : "transparent")))
     border.width: 1
     opacity: (closePending ? 0.9 : 1) * idleRowOpacity
 
@@ -147,6 +179,20 @@ Rectangle {
         interval: 120
         repeat: false
         onTriggered: rowHoverLatched = false
+    }
+
+    // Return marker: sits OUTSIDE the status rail (x 2 vs 8, 2px vs 3px, subtle
+    // vs status hue) so geometry alone separates it from the focused row's rail,
+    // before colour is considered at all.
+    Rectangle {
+        visible: isReturnTarget
+        anchors.left: parent.left
+        anchors.leftMargin: 2
+        anchors.verticalCenter: parent.verticalCenter
+        width: 2
+        height: railHeight
+        radius: 1
+        color: Qt.alpha(colorsObject.subtle, 0.55)
     }
 
     // Status rail: carries the canonical status hue (not the launcher accent)
@@ -366,7 +412,11 @@ Rectangle {
             Text {
                 Layout.fillWidth: true
                 text: primaryLabel
-                color: isCurrent ? colorsObject.text : (selected ? colorsObject.blue : colorsObject.text)
+                // Same reason as border.color: no blue on a return row, even
+                // when it is the launcher's keyboard selection.
+                color: (isCurrent || isReturnTarget)
+                    ? colorsObject.text
+                    : (selected ? colorsObject.blue : colorsObject.text)
                 font.pixelSize: rootObject.fontTitle
                 font.weight: Font.DemiBold
                 elide: Text.ElideRight
@@ -442,12 +492,15 @@ Rectangle {
             }
         }
 
+        // One widget, two states that share no channel: CURRENT is filled and
+        // blue, RETURN is outlined and subtle. The word is the channel that
+        // survives a squint, a stale frame, and colour blindness.
         Rectangle {
-            visible: showCurrentChip && isCurrent
+            visible: (showCurrentChip && isCurrent) || isReturnTarget
             height: chipHeight
             radius: rootObject.radiusBadge
-            color: colorsObject.panelAlt
-            border.color: colorsObject.lineSoft
+            color: isReturnTarget ? "transparent" : colorsObject.panelAlt
+            border.color: isReturnTarget ? Qt.alpha(colorsObject.subtle, 0.45) : colorsObject.lineSoft
             border.width: 1
             opacity: idleChipOpacity
             Layout.preferredWidth: currentChipText.implicitWidth + 12
@@ -455,8 +508,8 @@ Rectangle {
             Text {
                 id: currentChipText
                 anchors.centerIn: parent
-                text: "Current"
-                color: currentAccentColor
+                text: isReturnTarget ? "Return" : "Current"
+                color: isReturnTarget ? colorsObject.subtle : currentAccentColor
                 font.pixelSize: rootObject.fontMicro
                 font.capitalization: Font.AllUppercase
                 font.letterSpacing: 0.5

@@ -4850,6 +4850,48 @@ function normalizeLauncherMode(mode) {
         return false;
     }
 
+    // Second tier for the spaces list, mirroring sessionIsReturnTarget() one
+    // level down. herdrSpaceIsFocused() above is sway-derived and goes false the
+    // instant focus leaves the terminal, which is the same bug the agent rows
+    // had. Derived from the return-target ROW's space rather than from
+    // space.focused so the two lists can never point at different workspaces;
+    // space.focused is only consulted when no row carries herdr_focused at all
+    // (herdr's focused pane may legitimately have no agent).
+    function herdrSpaceIsReturnTarget(space) {
+        if (!space || !herdrReturnTierAvailable(dashboard, dashboardStale)) {
+            return false;
+        }
+
+        const returnKey = herdrReturnSessionKey;
+        const targetSpaceKey = herdrSpaceKey(space);
+        if (returnKey.length > 0) {
+            const sessions = activeSessions();
+            for (let i = 0; i < sessions.length; i += 1) {
+                const session = sessions[i];
+                if (!sessionMatchesKey(session, returnKey)) {
+                    continue;
+                }
+                const sessionSpace = herdrSessionSpace(session);
+                return !!sessionSpace && herdrSpaceKey(sessionSpace) === targetSpaceKey;
+            }
+            return false;
+        }
+
+        if (!herdrFocusFieldPresent()) {
+            // Version skew, not "herdr's pane has no agent": a daemon that does
+            // not ship herdr_focused at all leaves nothing to be second-tier
+            // about, so degrade to today's rendering instead of inventing a
+            // claim out of space.focused.
+            return false;
+        }
+        if (anySessionCarriesHerdrFocus()) {
+            // A row owns the claim but resolved to no space — say nothing rather
+            // than point somewhere else.
+            return false;
+        }
+        return boolOrFalse(space.focused);
+    }
+
     function toggleHerdrSpaceGroup(groupKey) {
         const key = stringOrEmpty(groupKey);
         if (!key) {
@@ -4973,12 +5015,20 @@ function normalizeLauncherMode(mode) {
                 ? Qt.tint(colors.cardAlt, Theme.tealWash)
                 : Qt.tint(colors.cardAlt, Theme.tealWash);
         }
+        // The return space (herdrSpaceIsReturnTarget) deliberately falls through
+        // to the plain row fill and is carried by its border alone: the tealWash
+        // fill stays exclusive to the space that actually has focus, so
+        // filled-vs-outlined reads the same way here as it does on the agent
+        // rows one level up. Do not give it a fill.
         return hovered ? colors.cardAlt : "transparent";
     }
 
     function herdrSpaceBorder(space, hovered) {
         if (herdrSpaceIsFocused(space)) {
             return hovered ? colors.lineSoft : "transparent";
+        }
+        if (herdrSpaceIsReturnTarget(space)) {
+            return Qt.alpha(colors.teal, 0.30);
         }
         return hovered ? colors.lineSoft : "transparent";
     }
@@ -5881,6 +5931,121 @@ function normalizeLauncherMode(mode) {
             return "Kilo";
         }
         return "AI";
+    }
+
+    // Herdr's own focused pane — the session the user would land back in — as
+    // opposed to sessionIsCurrent(), which answers "who has the keyboard right
+    // now" and is sway-derived. The two are different questions: switching
+    // panes inside the herdr terminal emits no sway event at all, so any
+    // "last sway-focused session" heuristic points at the wrong pane. herdr
+    // itself always knows, and ships it per row as `herdr_focused`.
+    //
+    // Memoized on `dashboard` because applyEvent/applySnapshot replace that
+    // object wholesale, so it is the correct (and cheapest) invalidation key;
+    // dashboardStale is a second key because a frozen stream must not promise a
+    // destination. Absent the daemon half of this change the field is
+    // undefined, boolOrFalse yields false, this stays "" and every surface
+    // renders exactly as it does today.
+    readonly property string herdrReturnSessionKey: computeHerdrReturnSessionKey(dashboard, dashboardStale)
+
+    // Global gate for the return tier. It is deliberately NOT per-row: two
+    // independent signals (focus_state and the sway window list) must both say
+    // "no herdr surface has focus" before a return hint may render, so a lagging
+    // focus_state on its own can never paint a live row and a return row at the
+    // same time.
+    function herdrReturnTierAvailable(dashboardState, stale) {
+        if (!dashboardState || typeof dashboardState !== "object" || stale) {
+            return false;
+        }
+        if (localPendingFocusIntentFor("herdr_pane_focus") || pendingFocusIntentFor("herdr_pane_focus")) {
+            return false;
+        }
+        const focus = dashboardFocusState();
+        if (stringOrEmpty(focus.current_session_key).length > 0) {
+            return false;
+        }
+        if (stringOrEmpty(focus.current_herdr_pane_id).length > 0) {
+            return false;
+        }
+        return !herdrWindowHasSwayFocus();
+    }
+
+    function herdrWindowHasSwayFocus() {
+        const projects = arrayOrEmpty(dashboard.projects);
+        for (let i = 0; i < projects.length; i += 1) {
+            const windows = arrayOrEmpty(projects[i] && projects[i].windows);
+            for (let j = 0; j < windows.length; j += 1) {
+                const windowData = windows[j];
+                if (!boolOrFalse(windowData && windowData.focused)) {
+                    continue;
+                }
+                if (stringOrEmpty(windowData && windowData.app_key).toLowerCase().indexOf("herdr") === 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    function computeHerdrReturnSessionKey(dashboardState, stale) {
+        if (!herdrReturnTierAvailable(dashboardState, stale)) {
+            return "";
+        }
+
+        // At most one key, resolved local-first: the daemon guarantees one
+        // herdr_focused row per host, and a local pane beats a remote one when
+        // both hosts report their own focused pane.
+        const sessions = activeSessions();
+        let remoteKey = "";
+        for (let i = 0; i < sessions.length; i += 1) {
+            const session = sessions[i];
+            if (stringOrEmpty(session && session.source) !== "herdr") {
+                continue;
+            }
+            if (!boolOrFalse(session && session.herdr_focused)) {
+                continue;
+            }
+            const key = sessionIdentityKey(session);
+            if (!key) {
+                continue;
+            }
+            if (sessionIsCurrentHost(session)) {
+                return key;
+            }
+            if (!remoteKey) {
+                remoteKey = key;
+            }
+        }
+        return remoteKey;
+    }
+
+    function anySessionCarriesHerdrFocus() {
+        const sessions = activeSessions();
+        for (let i = 0; i < sessions.length; i += 1) {
+            if (boolOrFalse(sessions[i] && sessions[i].herdr_focused)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Distinguishes "the daemon does not ship herdr_focused" (field absent on
+    // every row) from "herdr's focused pane simply has no agent" (field present
+    // and false everywhere). Only the second case may fall back to a space's own
+    // focused flag; the first must render exactly as it does today.
+    function herdrFocusFieldPresent() {
+        const sessions = activeSessions();
+        for (let i = 0; i < sessions.length; i += 1) {
+            const session = sessions[i];
+            if (session && typeof session === "object" && typeof session.herdr_focused === "boolean") {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function sessionIsReturnTarget(session) {
+        return herdrReturnSessionKey.length > 0 && sessionMatchesKey(session, herdrReturnSessionKey);
     }
 
     function sessionIsCurrent(session) {
@@ -8096,6 +8261,13 @@ function normalizeLauncherMode(mode) {
         return arrayOrEmpty(event.changed_keys).map(key => stringOrEmpty(key)).filter(key => key.length > 0);
     }
 
+    // Reconciles the SWAY-authoritative focus fields against focus_state so a
+    // lagging row cannot claim the keyboard. `herdr_focused` is deliberately NOT
+    // reconciled here and must never be folded into the three overwrites below:
+    // it is herdr's own per-pane truth, not sway's, and rewriting it from
+    // current_session_key would collapse it back into `focused` and re-create
+    // the bug it exists to fix (no highlight at all once sway focus leaves the
+    // terminal).
     function dashboardWithReconciledSessionFocus(state) {
         if (!state || typeof state !== "object") {
             return state;

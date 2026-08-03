@@ -715,6 +715,29 @@ def validate_dashboard_payload(
     elif current_rows:
         issues.append("current_session_row_without_key")
 
+    # `herdr_focused` is a verbatim copy of Herdr's own per-pane focus flag,
+    # independent of sway focus. Herdr guarantees at most one focused pane per
+    # host and normalize_sessions re-enforces that per host, so more than one
+    # row claiming it (or a non-Herdr row carrying it at all) means the shell
+    # could highlight two return targets. Warnings only, never issues — see the
+    # remote_herdr_focus_mismatch note below: raising a hint like this as a hard
+    # invariant blanked the whole snapshot.
+    herdr_focused_hosts: List[str] = []
+    foreign_herdr_focused = False
+    for session in sessions:
+        if not bool(session.get("herdr_focused", False)):
+            continue
+        if str(session.get("source") or "").strip() != "herdr":
+            foreign_herdr_focused = True
+            continue
+        herdr_focused_hosts.append(
+            str(session.get("herdr_host") or session.get("host_name") or "").strip().lower()
+        )
+    if foreign_herdr_focused:
+        warnings.append("non_herdr_row_with_herdr_focused")
+    if len(herdr_focused_hosts) != len(set(herdr_focused_hosts)):
+        warnings.append("duplicate_herdr_focused_sessions")
+
     window_rows: List[Dict[str, Any]] = []
     for project in payload.get("projects", []) or []:
         if not isinstance(project, dict):

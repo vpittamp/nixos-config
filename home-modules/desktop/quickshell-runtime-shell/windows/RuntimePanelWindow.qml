@@ -54,7 +54,15 @@ PanelWindow {
         for (let i = 0; i < sourceSpaces.length; i += 1) {
             const space = sourceSpaces[i];
             const groupKey = root.herdrSpaceGroupKey(space);
-            if (!root.boolOrFalse(space && space.is_linked_worktree) || !root.herdrSpaceGroupCollapsed(groupKey) || root.herdrSpaceIsFocused(space)) {
+            // The return target has to be pinned out of a collapsed group for
+            // the same reason the focused space is: herdrSpaceIsFocused() is
+            // sway-derived and is false in exactly the conditions that make a
+            // return target exist, so without this the highlighted space would
+            // be the one space the list hides.
+            if (!root.boolOrFalse(space && space.is_linked_worktree)
+                || !root.herdrSpaceGroupCollapsed(groupKey)
+                || root.herdrSpaceIsFocused(space)
+                || root.herdrSpaceIsReturnTarget(space)) {
                 visibleSpaces.push(space);
             }
         }

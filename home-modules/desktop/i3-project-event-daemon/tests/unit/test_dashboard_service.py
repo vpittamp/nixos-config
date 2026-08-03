@@ -342,6 +342,7 @@ async def test_focus_event_payload_updates_session_rows_without_snapshot_reload(
                 "pane_id": "pane-a",
                 "host_name": "ryzen",
                 "focused": True,
+                "herdr_focused": True,
                 "is_current_window": True,
                 "pane_active": True,
                 "window_active": True,
@@ -354,6 +355,7 @@ async def test_focus_event_payload_updates_session_rows_without_snapshot_reload(
                 "host_name": "ryzen",
                 "tool": "codex",
                 "focused": False,
+                "herdr_focused": False,
                 "is_current_window": False,
                 "pane_active": False,
                 "window_active": False,
@@ -369,6 +371,129 @@ async def test_focus_event_payload_updates_session_rows_without_snapshot_reload(
     assert payload["focus_state"]["active_session"]["session_key"] == "session-b"
     assert [row["is_current_window"] for row in payload["active_ai_sessions"]] == [False, True]
     assert [row["focused"] for row in payload["active_ai_sessions"]] == [False, True]
+    # `herdr_focused` is Herdr's own per-pane flag, not sway's: while `focused`
+    # is re-derived from the new sway focus above, this one must ride through
+    # the focus-only delta path verbatim. No Herdr snapshot is refetched here,
+    # so if this block ever starts overwriting it the shell loses the only
+    # record of which pane the user would return to.
+    assert [row["herdr_focused"] for row in payload["active_ai_sessions"]] == [True, False]
+
+
+@pytest.mark.asyncio
+async def test_snapshot_keeps_herdr_focused_while_reauthorizing_sway_focus() -> None:
+    # Mirror of the delta-path assertion above for the full snapshot build:
+    # sessions_with_authoritative_focus rebuilds each row with dict(row) and
+    # overwrites only the sway-authoritative fields, so `herdr_focused` must
+    # survive that flatten unchanged.
+    async def runtime_loader(params):
+        return _runtime_snapshot(), [
+            {
+                "source": "herdr",
+                "session_key": "session-a",
+                "pane_id": "pane-a",
+                "host_name": "ryzen",
+                "focused": True,
+                "herdr_focused": True,
+                "is_current_window": True,
+                "pane_active": True,
+                "window_active": True,
+            },
+            {
+                "source": "herdr",
+                "session_key": "session-b",
+                "pane_id": "pane-b",
+                "host_name": "ryzen",
+                "focused": False,
+                "herdr_focused": False,
+                "is_current_window": False,
+                "pane_active": False,
+                "window_active": False,
+            },
+        ], {}
+
+    service = DashboardService(
+        runtime_loader=runtime_loader,
+        display_snapshot=lambda: _async_value({"outputs": []}),
+        build_projects=lambda runtime, sessions: [],
+        build_worktrees=lambda runtime: _empty_worktrees(),
+        build_focus_state=lambda runtime, sessions, *, generation: {
+            "schema_version": "i3pm.focus_state.v2",
+            "generation": generation,
+            "current_session_key": "session-b",
+            "current_window_id": 0,
+            "current_workspace_name": "",
+            "current_herdr_pane_id": "pane-b",
+            "current_herdr_host": "ryzen",
+            "pending_intent_id": "",
+        },
+        build_herdr_spaces=lambda herdr_snapshot, sessions: [],
+        list_launches=lambda **kwargs: [],
+        invalidate_worktree_cache=lambda: None,
+        timestamp=lambda: 42.0,
+    )
+
+    payload = await service.snapshot({})
+
+    rows = payload["active_ai_sessions"]
+    assert [row["focused"] for row in rows] == [False, True]
+    assert [row["is_current_window"] for row in rows] == [False, True]
+    assert [row["herdr_focused"] for row in rows] == [True, False]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_herdr_focused_rows_warn_without_failing_the_snapshot() -> None:
+    # Two rows claiming Herdr's per-pane focus on one host would let the shell
+    # advertise two return targets. That is worth flagging, but only as a
+    # warning: raising it as an issue would flip the payload out of "ok" over a
+    # cosmetic hint, exactly the regression remote_herdr_focus_mismatch was
+    # downgraded to avoid.
+    async def runtime_loader(params):
+        return _runtime_snapshot(), [
+            {
+                "source": "herdr",
+                "session_key": "session-a",
+                "pane_id": "pane-a",
+                "host_name": "ryzen",
+                "focused": False,
+                "herdr_focused": True,
+            },
+            {
+                "source": "herdr",
+                "session_key": "session-b",
+                "pane_id": "pane-b",
+                "host_name": "ryzen",
+                "focused": False,
+                "herdr_focused": True,
+            },
+        ], {}
+
+    service = DashboardService(
+        runtime_loader=runtime_loader,
+        display_snapshot=lambda: _async_value({"outputs": []}),
+        build_projects=lambda runtime, sessions: [],
+        build_worktrees=lambda runtime: _empty_worktrees(),
+        build_focus_state=lambda runtime, sessions, *, generation: {
+            "schema_version": "i3pm.focus_state.v2",
+            "generation": generation,
+            "current_session_key": "",
+            "current_window_id": 0,
+            "current_workspace_name": "",
+            "current_herdr_pane_id": "",
+            "current_herdr_host": "",
+            "pending_intent_id": "",
+        },
+        build_herdr_spaces=lambda herdr_snapshot, sessions: [],
+        list_launches=lambda **kwargs: [],
+        invalidate_worktree_cache=lambda: None,
+        timestamp=lambda: 42.0,
+    )
+
+    payload = await service.snapshot({})
+
+    invariants = payload["dashboard_invariants"]
+    assert "duplicate_herdr_focused_sessions" in invariants["warnings"]
+    assert "duplicate_herdr_focused_sessions" not in invariants["issues"]
+    assert payload["status"] == "ok"
 
 
 @pytest.mark.asyncio

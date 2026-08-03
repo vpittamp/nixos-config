@@ -460,8 +460,12 @@ class HerdrService:
         focused_session_key = ""
         updated = False
 
+        # Every focus field is written here so a future refactor cannot miss
+        # one: leaving `herdr_focused` out would leave the return-target hint
+        # pointing at the pre-click pane until the next remote snapshot.
         def apply_focus_fields(row: Dict[str, Any], *, focused: bool) -> None:
             row["focused"] = focused
+            row["herdr_focused"] = focused
             row["is_current_window"] = focused
             row["window_active"] = focused
             row["pane_active"] = focused
@@ -619,6 +623,15 @@ class HerdrService:
             "session_key": session_key,
             "render_session_key": session_key,
             "focused": focused,
+            # These are the remote's already-flattened dashboard rows
+            # (apply_remote_proxy_payload_cache feeds us payload
+            # ["active_ai_sessions"]), so a remote running this code keeps the
+            # `herdr_focused` it computed. A remote on an older daemon omits the
+            # field entirely and falls back to `focused`, which on that hop is
+            # sway-derived and therefore usually False — a best-effort
+            # degradation meaning "no return target from that host", not the
+            # remote's Herdr flag.
+            "herdr_focused": bool(normalized.get("herdr_focused", focused)),
             "agent_status": agent_status,
             "agent_status_state": self.agent_status_state(agent_status),
             "state_labels": self.normalize_state_labels(normalized.get("state_labels")),
@@ -1407,6 +1420,17 @@ class HerdrService:
             "agent_status": agent_status,
             "agent_status_state": agent_status_state,
             "focused": bool(row.get("focused", False)),
+            # Verbatim copy of Herdr's own per-pane focus flag, kept beside the
+            # sway-authoritative fields below rather than instead of them.
+            # Downstream, `focused`/`is_current_window`/`window_active`/
+            # `pane_active` are re-derived from sway focus, which goes false the
+            # moment the user focuses any non-Herdr window — but Herdr still
+            # knows which pane the user would return to, and that flag also
+            # moves on pane switches INSIDE the terminal (which emit no sway
+            # event). This is the single point where the raw flag is still
+            # authoritative: upstream of both dashboard flatteners and of the
+            # remote-proxy hop.
+            "herdr_focused": bool(row.get("focused", False)),
             "is_current_window": bool(row.get("focused", False)),
             "window_active": bool(row.get("focused", False)),
             "pane_active": bool(row.get("focused", False)),
@@ -1529,6 +1553,7 @@ class HerdrService:
                 continue
             if host_key in focused_hosts:
                 session["focused"] = False
+                session["herdr_focused"] = False
                 session["is_current_window"] = False
                 session["window_active"] = False
                 session["pane_active"] = False
