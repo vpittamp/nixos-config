@@ -26,6 +26,8 @@ Item {
     property alias exposeOpenTimerRef: exposeOpenTimer
     property alias exposeRefreshTimerRef: exposeRefreshTimer
     property alias sessionPreviewDebounceRef: sessionPreviewDebounce
+    property alias sessionPreviewReaderRef: sessionPreviewReader
+    property alias sessionPreviewPollTimerRef: sessionPreviewPollTimer
     property alias settingsFocusTimerRef: settingsFocusTimer
     property alias settingsCommandQueryDebounceRef: settingsCommandQueryDebounce
     property alias sessionClosePendingPruneTimerRef: sessionClosePendingPruneTimer
@@ -523,6 +525,43 @@ Item {
         onExited: function () {
             notificationRestartTimer.restart();
         }
+    }
+
+    Process {
+        id: sessionPreviewReader
+        // One-shot read of a Herdr pane's visible viewport, re-run by
+        // sessionPreviewPollTimer while the launcher's session preview is open.
+        // Reading a pane does not focus it, which is the whole point: the user
+        // watches an agent without leaving the window they are in.
+        command: shellRoot.sessionPreviewCommand
+        running: false
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                shellRoot.appendSessionPreviewLine(data);
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                if (data && data.trim()) {
+                    shellRoot.noteSessionPreviewError(data);
+                }
+            }
+        }
+        onExited: function (exitCode) {
+            shellRoot.finishSessionPreviewRead(exitCode);
+        }
+    }
+
+    Timer {
+        id: sessionPreviewPollTimer
+        // Cheap enough to feel live: a read measured ~2ms, and this only runs
+        // while the launcher is showing a Herdr session.
+        interval: 750
+        repeat: true
+        running: false
+        onTriggered: shellRoot.pollSessionPreview()
     }
 
     Process {

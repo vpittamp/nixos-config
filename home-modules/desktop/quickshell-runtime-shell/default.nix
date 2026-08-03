@@ -92,6 +92,7 @@ QtObject {
   readonly property bool notificationMarkupEnabled: ${if cfg.notifications.enableMarkup then "true" else "false"}
   readonly property string hostName: "${hostName}"
   readonly property string i3pmBin: "${config.home.profileDirectory}/bin/i3pm"
+  readonly property string herdrBin: "${config.home.profileDirectory}/bin/herdr"
   readonly property string i3pmWatchBin: "${quickshellI3pmWatchScript}/bin/quickshell-i3pm-watch"
   readonly property string notificationMonitorBin: "${notificationMonitorScript}/bin/quickshell-notification-monitor"
   readonly property string networkStatusBin: "${networkStatusScript}/bin/quickshell-network-status"

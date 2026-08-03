@@ -39,6 +39,13 @@ ShellRoot {
     readonly property var exposeOpenTimer: runtimeServices ? runtimeServices.exposeOpenTimerRef : null
     readonly property var exposeRefreshTimer: runtimeServices ? runtimeServices.exposeRefreshTimerRef : null
     readonly property var sessionPreviewDebounce: runtimeServices ? runtimeServices.sessionPreviewDebounceRef : null
+    readonly property var sessionPreviewReader: runtimeServices ? runtimeServices.sessionPreviewReaderRef : null
+    readonly property var sessionPreviewPollTimer: runtimeServices ? runtimeServices.sessionPreviewPollTimerRef : null
+    // Command the reader runs; rebuilt per target pane before each poll.
+    property var sessionPreviewCommand: []
+    property string sessionPreviewPaneId: ""
+    property string sessionPreviewBuffer: ""
+    property string sessionPreviewErrorText: ""
     readonly property var settingsFocusTimer: runtimeServices ? runtimeServices.settingsFocusTimerRef : null
     readonly property var settingsCommandQueryDebounce: runtimeServices ? runtimeServices.settingsCommandQueryDebounceRef : null
     readonly property var snippetEditorProcess: runtimeServices ? runtimeServices.snippetEditorProcessRef : null
@@ -4030,6 +4037,7 @@ function normalizeLauncherMode(mode) {
     function clearSessionPreview() {
         sessionPreviewTargetKey = "";
         sessionPreview = emptySessionPreview();
+        stopSessionPreviewPolling();
     }
 
     function restartSessionPreview() {
@@ -4075,6 +4083,20 @@ function normalizeLauncherMode(mode) {
                 ? "Focus this Herdr pane to inspect live output."
                 : "Focus the corresponding Herdr pane for live inspection."
         });
+
+        // Local Herdr panes can be read without focusing them, so replace the
+        // placeholder with a live viewport; anything else keeps it.
+        if (sessionPreviewLiveEligible(entry)) {
+            sessionPreview = Object.assign({}, sessionPreview, {
+                status: "loading",
+                preview_mode: "live",
+                preview_reason: "",
+                message: "Reading pane…"
+            });
+            startSessionPreviewPolling(stringOrEmpty(entry.pane_id));
+        } else {
+            stopSessionPreviewPolling();
+        }
     }
 
     function ensureSessionPreviewForSelection() {
@@ -4132,6 +4154,97 @@ function normalizeLauncherMode(mode) {
             bits.push(availability);
         }
         return bits.join("  •  ");
+    }
+
+    // ---- Live pane preview -------------------------------------------------
+    // `herdr pane read` returns a pane's visible viewport without focusing it,
+    // so the launcher can show what an agent is doing while the user stays put.
+    // Only local panes: a remote pane would need the SSH proxy hop per poll, so
+    // those keep the focus-required placeholder.
+    function sessionPreviewLiveEligible(entry) {
+        return !!entry
+            && stringOrEmpty(entry.pane_id).length > 0
+            && !boolOrFalse(entry.is_remote_herdr)
+            && sessionIsCurrentHost(entry)
+            && stringOrEmpty(shellConfig.herdrBin).length > 0;
+    }
+
+    function startSessionPreviewPolling(paneId) {
+        const pane = stringOrEmpty(paneId);
+        if (!pane || !sessionPreviewPollTimer) {
+            stopSessionPreviewPolling();
+            return;
+        }
+        sessionPreviewPaneId = pane;
+        sessionPreviewPollTimer.running = true;
+        pollSessionPreview();
+    }
+
+    function stopSessionPreviewPolling() {
+        sessionPreviewPaneId = "";
+        if (sessionPreviewPollTimer) {
+            sessionPreviewPollTimer.running = false;
+        }
+    }
+
+    function pollSessionPreview() {
+        if (!sessionPreviewReader || !sessionPreviewPaneId) {
+            stopSessionPreviewPolling();
+            return;
+        }
+        // Self-terminating: closeLauncher() only flips launcherVisible, so the
+        // poll checks its own preconditions rather than relying on every close
+        // path remembering to stop it.
+        if (!launcherVisible || launcherMode !== "sessions") {
+            stopSessionPreviewPolling();
+            return;
+        }
+        // Skip rather than queue: a read that has not returned yet means the
+        // next tick would only stack processes on a stalled herdr.
+        if (sessionPreviewReader.running) {
+            return;
+        }
+        sessionPreviewBuffer = "";
+        sessionPreviewErrorText = "";
+        sessionPreviewCommand = [
+            shellConfig.herdrBin, "pane", "read", sessionPreviewPaneId,
+            "--source", "visible", "--lines", "40", "--format", "text"
+        ];
+        sessionPreviewReader.running = true;
+    }
+
+    function appendSessionPreviewLine(line) {
+        sessionPreviewBuffer += stringOrEmpty(line) + "\n";
+    }
+
+    function noteSessionPreviewError(line) {
+        sessionPreviewErrorText = stringOrEmpty(line);
+    }
+
+    function finishSessionPreviewRead(exitCode) {
+        // The selection may have moved on while the read was in flight; drop a
+        // result that no longer belongs to what is on screen.
+        if (!sessionPreviewPaneId || stringOrEmpty(sessionPreview.pane_id) !== sessionPreviewPaneId) {
+            return;
+        }
+        if (Number(exitCode || 0) !== 0) {
+            sessionPreview = Object.assign({}, sessionPreview, {
+                status: "error",
+                is_live: false,
+                message: sessionPreviewErrorText || "Could not read this Herdr pane.",
+                content: ""
+            });
+            return;
+        }
+        sessionPreview = Object.assign({}, sessionPreview, {
+            status: "ready",
+            kind: "output",
+            preview_mode: "live",
+            preview_reason: "",
+            is_live: true,
+            content: sessionPreviewBuffer.replace(/\s+$/, ""),
+            updated_at: String(Date.now())
+        });
     }
 
     function sessionPreviewBody() {
