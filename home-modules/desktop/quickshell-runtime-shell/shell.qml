@@ -4177,6 +4177,9 @@ function normalizeLauncherMode(mode) {
         }
         sessionPreviewPaneId = pane;
         sessionPreviewPollTimer.running = true;
+        // A freshly selected pane always opens at the bottom, whatever the
+        // scroll position of the pane the user was looking at before.
+        scrollSessionPreviewToBottom();
         pollSessionPreview();
     }
 
@@ -4213,6 +4216,40 @@ function normalizeLauncherMode(mode) {
         sessionPreviewReader.running = true;
     }
 
+    // "Is this turn still running?" is answered by the LAST line — a live
+    // "Working (1m 18s · esc to interrupt)" counter while the agent is mid-turn,
+    // or a bare prompt once it has stopped. A Flickable starts at the top, which
+    // showed mid-scrollback instead, so the preview tails like a terminal.
+    function sessionPreviewScrollMax() {
+        const flick = sessionPreviewFlick;
+        if (!flick) {
+            return 0;
+        }
+        return Math.max(0, Number(flick.contentHeight || 0) - Number(flick.height || 0));
+    }
+
+    // Only stick to the bottom when the user is already there; scrolling up to
+    // read back must not be yanked away by the next 750ms refresh.
+    function sessionPreviewAtBottom() {
+        const flick = sessionPreviewFlick;
+        if (!flick) {
+            return true;
+        }
+        const max = sessionPreviewScrollMax();
+        return max <= 0 || Number(flick.contentY || 0) >= max - 24;
+    }
+
+    function scrollSessionPreviewToBottom() {
+        // Deferred: contentHeight only settles after the TextEdit re-paints.
+        Qt.callLater(function () {
+            const flick = sessionPreviewFlick;
+            if (!flick) {
+                return;
+            }
+            flick.contentY = sessionPreviewScrollMax();
+        });
+    }
+
     function appendSessionPreviewLine(line) {
         sessionPreviewBuffer += stringOrEmpty(line) + "\n";
     }
@@ -4236,6 +4273,7 @@ function normalizeLauncherMode(mode) {
             });
             return;
         }
+        const stickToBottom = sessionPreviewAtBottom();
         sessionPreview = Object.assign({}, sessionPreview, {
             status: "ready",
             kind: "output",
@@ -4245,6 +4283,9 @@ function normalizeLauncherMode(mode) {
             content: sessionPreviewBuffer.replace(/\s+$/, ""),
             updated_at: String(Date.now())
         });
+        if (stickToBottom) {
+            scrollSessionPreviewToBottom();
+        }
     }
 
     function sessionPreviewBody() {
@@ -5733,21 +5774,36 @@ function normalizeLauncherMode(mode) {
     // make the ring reshuffle underneath the user as agents change status.
     function sessionCycleCandidates(sessions) {
         const all = arrayOrEmpty(sessions);
-        const attention = all.filter(session => sessionWantsAttention(session));
-        if (attention.length === 0) {
-            return all;
+        const current = effectiveCurrentSessionKey();
+
+        // Order, don't filter: every session stays reachable, but the ones
+        // doing something come first so Tab walks the agents that want you
+        // before it reaches the idle ones.
+        //
+        // The session you are on leads the ring regardless of its own state.
+        // That is what makes one press from an idle session land on the first
+        // ACTIVE session rather than the next idle one beside it, while still
+        // giving findIndex a stable anchor to step off.
+        const currentSession = current
+            ? all.find(session => sessionMatchesKey(session, current))
+            : null;
+
+        const attention = [];
+        const resting = [];
+        for (let i = 0; i < all.length; i += 1) {
+            const session = all[i];
+            if (currentSession && session === currentSession) {
+                continue;
+            }
+            if (sessionWantsAttention(session)) {
+                attention.push(session);
+            } else {
+                resting.push(session);
+            }
         }
 
-        const current = effectiveCurrentSessionKey();
-        if (!current) {
-            return attention;
-        }
-        const alreadyIncluded = attention.some(session => sessionMatchesKey(session, current));
-        if (alreadyIncluded) {
-            return attention;
-        }
-        const currentSession = all.find(session => sessionMatchesKey(session, current));
-        return currentSession ? [currentSession].concat(attention) : attention;
+        const ordered = attention.concat(resting);
+        return currentSession ? [currentSession].concat(ordered) : ordered;
     }
 
     function sessionBadgeColor(session) {
