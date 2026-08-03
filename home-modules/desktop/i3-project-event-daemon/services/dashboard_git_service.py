@@ -31,6 +31,17 @@ class DashboardGitService:
         self._snapshot_cache: Dict[str, Dict[str, Any]] = {}
         self._snapshot_tasks: Dict[str, asyncio.Task] = {}
 
+    def cached_snapshot_for_path(self, worktree_path: str) -> Optional[Dict[str, Any]]:
+        """Return an already-probed snapshot for a checkout, without probing.
+
+        build_spaces is synchronous and cannot await a probe, so a space with no
+        sessions to inherit git fields from reads whatever hydration has already
+        cached for its own checkout.
+        """
+        entry = self._snapshot_cache.get(str(worktree_path or "").strip())
+        snapshot = entry.get("snapshot") if isinstance(entry, dict) else None
+        return snapshot if isinstance(snapshot, dict) else None
+
     def clear_snapshot_cache(self) -> None:
         """Clear all cached live git snapshots."""
         self._snapshot_cache.clear()
@@ -425,17 +436,11 @@ class DashboardGitService:
                 snapshots_by_path.get(self.session_checkout_path(session)),
             )
 
-        for space in self.herdr_spaces(runtime_snapshot):
-            if bool(space.get("is_remote_herdr", False)):
-                continue
-            # Only fill a space the sessions did not already light: build_spaces
-            # copies git fields down from a space's own sessions, and that
-            # inherited value is the more specific one.
-            if str(space.get("git_state") or "").strip():
-                continue
-            snapshot = snapshots_by_path.get(str(space.get("checkout_path") or "").strip())
-            if snapshot:
-                self.apply_snapshot_to_session(space, snapshot)
+        # Deliberately NOT applied to the space rows here: the payload's spaces
+        # come from a fresh build_spaces() call at assembly time, so mutating
+        # these would write to a throwaway object. Probing above is what matters
+        # — it fills the cache that build_spaces reads via
+        # cached_snapshot_for_path().
 
     @staticmethod
     def herdr_spaces(runtime_snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:

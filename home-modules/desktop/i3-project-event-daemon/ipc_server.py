@@ -673,7 +673,7 @@ class IPCServer:
                 *args,
                 **kwargs,
             ),
-            build_herdr_spaces=lambda herdr_snapshot, sessions: self.herdr_service.build_spaces(
+            build_herdr_spaces=lambda herdr_snapshot, sessions: self._build_herdr_spaces_with_git(
                 herdr_snapshot,
                 sessions,
             ),
@@ -2729,6 +2729,34 @@ class IPCServer:
             attribution=attribution,
             notify_state_change=self.notify_state_change,
         )
+
+    def _build_herdr_spaces_with_git(
+        self,
+        herdr_snapshot: Dict[str, Any],
+        sessions: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Build herdr space rows, filling git state for spaces with no sessions.
+
+        build_spaces copies git fields down from a space's own session rows, so
+        a space whose panes carry no agent produces none and renders with no git
+        chip at all. Those spaces own a checkout like any session; hydration has
+        already probed it, so read the cached answer here rather than leaving
+        the row blank. Sync on purpose — build_spaces cannot await.
+        """
+        spaces = self.herdr_service.build_spaces(herdr_snapshot, sessions)
+        for space in spaces:
+            if not isinstance(space, dict):
+                continue
+            if str(space.get("git_state") or "").strip():
+                continue
+            if bool(space.get("is_remote_herdr", False)):
+                continue
+            snapshot = self.dashboard_git_service.cached_snapshot_for_path(
+                str(space.get("checkout_path") or "").strip()
+            )
+            if snapshot:
+                self.dashboard_git_service.apply_snapshot_to_session(space, snapshot)
+        return spaces
 
     async def _hydrate_runtime_git_state(
         self,

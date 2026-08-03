@@ -367,9 +367,11 @@ async def test_refresh_git_snapshot_notifies_only_after_cached_fingerprint_chang
 
 @pytest.mark.asyncio
 async def test_hydrate_probes_agentless_herdr_space_checkout() -> None:
-    # A space whose panes carry no agent produces no session rows. Walking only
-    # sessions left it with no git chip at all (live: space wA). It owns a
-    # checkout like any session, so it must be probed too.
+    # A space whose panes carry no agent produces no session rows, so a
+    # session-only walk never probed its checkout and it rendered with no git
+    # chip. Hydration must still probe it — the payload's space rows are built
+    # fresh later and read the result out of the cache, so what matters here is
+    # that the probe happened for the right path, not that this row mutated.
     service = DashboardGitService()
     runtime_snapshot = {
         "current_session_key": "",
@@ -384,12 +386,7 @@ async def test_hydrate_probes_agentless_herdr_space_checkout() -> None:
             ]
         },
     }
-    get_snapshot = AsyncMock(return_value={
-        "state": "dirty",
-        "status_compact": "● 2",
-        "freshness": "fresh",
-        "attribution": "exact_worktree",
-    })
+    get_snapshot = AsyncMock(return_value={"state": "dirty", "status_compact": "● 2"})
 
     await service.hydrate_runtime_git_state(
         runtime_snapshot,
@@ -400,34 +397,22 @@ async def test_hydrate_probes_agentless_herdr_space_checkout() -> None:
     get_snapshot.assert_awaited_once()
     assert get_snapshot.await_args.kwargs["worktree_path"] == "/tmp/agentless-worktree"
     assert get_snapshot.await_args.kwargs["branch_hint"] == "feat/no-agent"
-    space = runtime_snapshot["herdr"]["spaces"][0]
+
+
+def test_cached_snapshot_for_path_serves_build_spaces() -> None:
+    # build_spaces is synchronous and cannot await a probe, so it reads whatever
+    # hydration already cached for the space's own checkout.
+    service = DashboardGitService()
+    assert service.cached_snapshot_for_path("/tmp/never-probed") is None
+
+    service._snapshot_cache["/tmp/probed"] = {
+        "snapshot": {"state": "dirty", "status_compact": "● 2"},
+        "fingerprint": "x",
+    }
+    cached = service.cached_snapshot_for_path("/tmp/probed")
+    assert cached is not None and cached["state"] == "dirty"
+
+    space: Dict[str, Any] = {"checkout_path": "/tmp/probed"}
+    DashboardGitService.apply_snapshot_to_session(space, cached)
     assert space["git_state"] == "dirty"
     assert space["git_compact"] == "● 2"
-
-
-@pytest.mark.asyncio
-async def test_hydrate_does_not_override_space_git_inherited_from_sessions() -> None:
-    # build_spaces copies git fields down from a space's own sessions; that
-    # inherited value is more specific than a re-probe of the space checkout.
-    service = DashboardGitService()
-    runtime_snapshot = {
-        "current_session_key": "",
-        "herdr": {
-            "spaces": [
-                {
-                    "workspace_id": "wB",
-                    "checkout_path": "/tmp/has-agent",
-                    "git_state": "clean",
-                }
-            ]
-        },
-    }
-    get_snapshot = AsyncMock(return_value={"state": "dirty", "status_compact": "● 9"})
-
-    await service.hydrate_runtime_git_state(
-        runtime_snapshot,
-        [],
-        get_or_schedule_git_snapshot=get_snapshot,
-    )
-
-    assert runtime_snapshot["herdr"]["spaces"][0]["git_state"] == "clean"
