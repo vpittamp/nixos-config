@@ -561,7 +561,14 @@ ShellRoot {
             return ({ color: colors.red, bg: colors.redBg });
         }
         if (state === "working") {
-            return ({ color: colors.amber, bg: colors.amberBg });
+            // Violet, not amber. The chip is a low-alpha fill over a near-black
+            // row, and a dark warm hue is brown — that is what dark amber IS,
+            // so no alpha or mixing fixes it (amber lands on #423411 here).
+            // Only red, green, teal, blue and violet stay chromatic when
+            // darkened this far, and the first four are already spoken for:
+            // blocked, done, SSH/focus, and the accent. Violet is the one hue
+            // left that still reads as itself at this lightness.
+            return ({ color: colors.violet, bg: colors.violetBg });
         }
         if (state === "done") {
             return ({ color: colors.green, bg: colors.greenBg });
