@@ -4251,7 +4251,8 @@ function normalizeLauncherMode(mode) {
 
     function launcherSessionSwitcherEntries() {
         const entries = [];
-        const sessions = arrayOrEmpty(sessionMru()).filter(session => sessionIsDisplayEligible(session));
+        const eligible = arrayOrEmpty(sessionMru()).filter(session => sessionIsDisplayEligible(session));
+        const sessions = sessionCycleCandidates(eligible);
         for (let i = 0; i < sessions.length; i += 1) {
             entries.push(sessionLauncherEntry(sessions[i]));
         }
@@ -5530,6 +5531,42 @@ function normalizeLauncherMode(mode) {
         return sessionPhase(session);
     }
 
+    // A session "wants attention" when the agent is mid-turn or has stopped for
+    // a reason the user has to act on. Session cycling (Mod+Tab, Alt+[ / Alt+])
+    // is how the user reaches an agent they are actively working with, so idle
+    // and unknown/stale sessions are deliberately not cycle targets.
+    function sessionWantsAttention(session) {
+        const state = sessionBadgeState(session);
+        return state === "working" || state === "blocked" || state === "done" || state === "needs_attention";
+    }
+
+    // Narrow a session list to the ones cycling should visit.
+    //
+    // Two guards keep the gesture from becoming a dead end: with nothing
+    // wanting attention the full list is returned (so Mod+Tab still moves), and
+    // the session the user is currently on is kept in the ring even when it is
+    // idle, so the switcher opens anchored on "you are here" and can cycle back
+    // to it. The incoming order (MRU) is preserved — re-sorting by state would
+    // make the ring reshuffle underneath the user as agents change status.
+    function sessionCycleCandidates(sessions) {
+        const all = arrayOrEmpty(sessions);
+        const attention = all.filter(session => sessionWantsAttention(session));
+        if (attention.length === 0) {
+            return all;
+        }
+
+        const current = currentSessionKey();
+        if (!current) {
+            return attention;
+        }
+        const alreadyIncluded = attention.some(session => sessionMatchesKey(session, current));
+        if (alreadyIncluded) {
+            return attention;
+        }
+        const currentSession = all.find(session => sessionMatchesKey(session, current));
+        return currentSession ? [currentSession].concat(attention) : attention;
+    }
+
     function sessionBadgeColor(session) {
         return sessionStatusStyle(sessionBadgeState(session)).color;
     }
@@ -6804,19 +6841,21 @@ function normalizeLauncherMode(mode) {
     }
 
     function cycleSessions(direction) {
-        const sessions = panelSessions();
+        // Same attention filtering as the Mod+Tab switcher: Alt+[ / Alt+] is the
+        // no-UI version of the same gesture and must land on the same sessions.
+        const sessions = sessionCycleCandidates(panelSessions());
         if (!sessions.length) {
             return;
         }
 
         const current = currentSessionKey();
-        let index = sessions.findIndex(item => stringOrEmpty(item.session_key) === current);
-        if (index < 0) {
-            index = 0;
-        }
-
+        const index = sessions.findIndex(item => stringOrEmpty(item.session_key) === current);
         const delta = direction === "prev" ? -1 : 1;
-        const nextIndex = (index + delta + sessions.length) % sessions.length;
+        // Nothing focused (browser, or an idle session filtered out): step onto
+        // the first/last candidate rather than skipping it.
+        const nextIndex = index < 0
+            ? (delta > 0 ? 0 : sessions.length - 1)
+            : (index + delta + sessions.length) % sessions.length;
         focusSession(sessions[nextIndex]);
     }
 
@@ -6850,15 +6889,18 @@ function normalizeLauncherMode(mode) {
         }
 
         const current = currentSessionKey();
-        let index = entries.findIndex(item => stringOrEmpty(item.session_key) === current);
-        if (index < 0) {
-            index = 0;
-        }
+        const index = entries.findIndex(item => stringOrEmpty(item.session_key) === current);
 
         launcherPointerSelectionEnabled = false;
         launcherSelectionMode = "keyboard";
         launcherViewportPrimed = true;
-        launcherSelectedIndex = (index + delta + entries.length) % entries.length;
+        // No entry owns focus — the user is in a browser, or is on an idle
+        // session that attention filtering left out of the ring. Land on the
+        // first (or last, going backwards) entry instead of stepping off a
+        // phantom index 0, which used to skip the first session entirely.
+        launcherSelectedIndex = index < 0
+            ? (delta > 0 ? 0 : entries.length - 1)
+            : (index + delta + entries.length) % entries.length;
     }
 
     function commitLauncherSessionSwitch() {
