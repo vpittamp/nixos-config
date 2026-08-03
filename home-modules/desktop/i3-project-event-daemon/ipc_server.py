@@ -5703,11 +5703,16 @@ class IPCServer:
             sessions,
             current_session_key=current_session_key,
         )
+        # Publish what hydration reads BEFORE calling it. It resolves the
+        # "current" probe priority from runtime_snapshot["current_session_key"]
+        # and finds agentless spaces under runtime_snapshot["herdr"]["spaces"];
+        # both used to be assigned below it, so the priority never applied and
+        # spaces were never probed at all.
+        runtime_snapshot["current_session_key"] = current_session_key
+        runtime_snapshot["herdr"] = herdr_snapshot
         if not bool(params.get("skip_git_hydration", False)):
             await self._hydrate_runtime_git_state(runtime_snapshot, sessions)
         runtime_snapshot["sessions"] = sessions
-        runtime_snapshot["current_session_key"] = current_session_key
-        runtime_snapshot["herdr"] = herdr_snapshot
         runtime_snapshot["focused_window_id"] = focused_window_id
         return runtime_snapshot
 
