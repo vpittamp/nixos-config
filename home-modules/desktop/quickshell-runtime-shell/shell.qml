@@ -44,6 +44,7 @@ ShellRoot {
     // Command the reader runs; rebuilt per target pane before each poll.
     property var sessionPreviewCommand: []
     property string sessionPreviewPaneId: ""
+    property bool sessionPreviewStickToBottom: true
     property string sessionPreviewBuffer: ""
     property string sessionPreviewErrorText: ""
     readonly property var settingsFocusTimer: runtimeServices ? runtimeServices.settingsFocusTimerRef : null
@@ -4216,38 +4217,17 @@ function normalizeLauncherMode(mode) {
         sessionPreviewReader.running = true;
     }
 
-    // "Is this turn still running?" is answered by the LAST line — a live
-    // "Working (1m 18s · esc to interrupt)" counter while the agent is mid-turn,
-    // or a bare prompt once it has stopped. A Flickable starts at the top, which
-    // showed mid-scrollback instead, so the preview tails like a terminal.
-    function sessionPreviewScrollMax() {
-        const flick = sessionPreviewFlick;
-        if (!flick) {
-            return 0;
-        }
-        return Math.max(0, Number(flick.contentHeight || 0) - Number(flick.height || 0));
-    }
-
-    // Only stick to the bottom when the user is already there; scrolling up to
-    // read back must not be yanked away by the next 750ms refresh.
-    function sessionPreviewAtBottom() {
-        const flick = sessionPreviewFlick;
-        if (!flick) {
-            return true;
-        }
-        const max = sessionPreviewScrollMax();
-        return max <= 0 || Number(flick.contentY || 0) >= max - 24;
-    }
-
+    // "Is this turn still running?" is answered by the newest output, so the
+    // preview tails. The snapping itself lives on the Flickable
+    // (onContentHeightChanged) because only it knows when the TextEdit has
+    // finished laying out; this flag is just the on/off switch, flipped off
+    // when the user scrolls away and back on when they return to the end.
     function scrollSessionPreviewToBottom() {
-        // Deferred: contentHeight only settles after the TextEdit re-paints.
-        Qt.callLater(function () {
-            const flick = sessionPreviewFlick;
-            if (!flick) {
-                return;
-            }
-            flick.contentY = sessionPreviewScrollMax();
-        });
+        sessionPreviewStickToBottom = true;
+        const flick = sessionPreviewFlick;
+        if (flick) {
+            flick.contentY = Math.max(0, Number(flick.contentHeight || 0) - Number(flick.height || 0));
+        }
     }
 
     function appendSessionPreviewLine(line) {
@@ -4273,7 +4253,6 @@ function normalizeLauncherMode(mode) {
             });
             return;
         }
-        const stickToBottom = sessionPreviewAtBottom();
         sessionPreview = Object.assign({}, sessionPreview, {
             status: "ready",
             kind: "output",
@@ -4283,9 +4262,6 @@ function normalizeLauncherMode(mode) {
             content: sessionPreviewBuffer.replace(/\s+$/, ""),
             updated_at: String(Date.now())
         });
-        if (stickToBottom) {
-            scrollSessionPreviewToBottom();
-        }
     }
 
     function sessionPreviewBody() {

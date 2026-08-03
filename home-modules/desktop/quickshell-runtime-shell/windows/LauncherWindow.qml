@@ -1073,6 +1073,20 @@ PanelWindow {
                                             policy: ScrollBar.AsNeeded
                                         }
 
+                                        // Tail like a terminal. contentHeight is bound to the
+                                        // TextEdit's paintedHeight, which only settles after the
+                                        // re-layout — so a deferred scroll from the shell computed
+                                        // the OLD bottom and always fell short. Reacting to the
+                                        // layout change itself is exact.
+                                        onContentHeightChanged: {
+                                            if (root.sessionPreviewStickToBottom) {
+                                                contentY = Math.max(0, contentHeight - height);
+                                            }
+                                        }
+                                        // Scrolling away stops the tail so reading back is not
+                                        // yanked by the next poll; returning to the end resumes it.
+                                        onMovementEnded: root.sessionPreviewStickToBottom = atYEnd
+
                                         TextEdit {
                                             id: sessionPreviewText
                                             width: sessionPreviewFlick.width
