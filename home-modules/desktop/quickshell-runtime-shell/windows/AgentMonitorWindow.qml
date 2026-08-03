@@ -5,6 +5,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
 import ".." as RootComponents
+import "root:/"
 
 // Always-on-top AI-agents monitor strip. Designed to sit on the side of a
 // fullscreen app (e.g. the YouTube / YouTube TV PWA) so agent progress can be
@@ -169,11 +170,11 @@ PanelWindow {
         gradient: Gradient {
             GradientStop {
                 position: 0.0
-                color: Qt.rgba(0.075, 0.114, 0.165, 0.86)
+                color: Theme.cardGlass
             }
             GradientStop {
                 position: 1.0
-                color: Qt.rgba(0.051, 0.067, 0.09, 0.82)
+                color: Theme.panelGlass
             }
         }
         border.color: colors.borderStrong
@@ -182,7 +183,7 @@ PanelWindow {
         layer.effect: MultiEffect {
             shadowEnabled: true
             shadowBlur: 1.0
-            shadowColor: Qt.rgba(0, 0, 0, 0.55)
+            shadowColor: Theme.shadow
             shadowVerticalOffset: 6
             shadowHorizontalOffset: 0
         }
@@ -193,7 +194,7 @@ PanelWindow {
             anchors.margins: -1
             radius: parent.radius + 1
             color: "transparent"
-            border.color: Qt.rgba(0, 0, 0, 0.4)
+            border.color: Theme.edgeShadow
             border.width: 1
         }
 
@@ -202,7 +203,7 @@ PanelWindow {
             anchors.margins: 1
             radius: parent.radius - 1
             color: "transparent"
-            border.color: Qt.rgba(1, 1, 1, 0.05)
+            border.color: Theme.edgeHighlightSoft
             border.width: 1
         }
 

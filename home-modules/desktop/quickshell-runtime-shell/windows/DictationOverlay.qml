@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
+import "root:/"
 
 // Prominent on-screen dictation feedback. Appears only while voxtype is
 // recording or transcribing, on the active monitor (clamshell-correct). While
@@ -92,7 +93,7 @@ PanelWindow {
         height: 64
         width: contentRow.implicitWidth + 36
         radius: 16
-        color: Qt.rgba(0.05, 0.07, 0.09, 0.93)
+        color: Theme.toastGlass
         border.width: 1.5
         border.color: overlay.accent
         opacity: overlay.visible ? 1 : 0

@@ -60,7 +60,7 @@ Rectangle {
             Layout.preferredHeight: compact ? 34 : 38
             radius: 12
             color: rootObject.notificationAvatarFill(itemData)
-            border.color: Qt.rgba(1, 1, 1, 0.08)
+            border.color: Theme.edgeHighlight
             border.width: 1
 
             Item {
@@ -150,8 +150,8 @@ Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: visible ? 128 : 0
                 radius: 12
-                color: Qt.rgba(1, 1, 1, 0.02)
-                border.color: Qt.rgba(1, 1, 1, 0.05)
+                color: Theme.elevationFaint
+                border.color: Theme.edgeHighlightSoft
                 border.width: 1
                 clip: true
 
@@ -182,8 +182,8 @@ Rectangle {
                     Layout.preferredWidth: visible ? actionText.implicitWidth + 18 : 0
                     radius: 9
                     opacity: card.actionable ? 1 : 0.4
-                    color: actionMouse.containsMouse ? Qt.tint(accentColor, Qt.rgba(1, 1, 1, 0.16)) : Qt.tint(accentColor, Qt.rgba(0, 0, 0, 0.58))
-                    border.color: Qt.tint(accentColor, Qt.rgba(1, 1, 1, 0.16))
+                    color: actionMouse.containsMouse ? Qt.tint(accentColor, Theme.elevationStrong) : Qt.tint(accentColor, Theme.shadow)
+                    border.color: Qt.tint(accentColor, Theme.elevationStrong)
                     border.width: 1
 
                     Text {
@@ -209,8 +209,8 @@ Rectangle {
                     Layout.preferredHeight: 26
                     Layout.preferredWidth: 26
                     radius: 9
-                    color: dismissMouse.containsMouse ? colorsObject.redBg : Qt.rgba(1, 1, 1, 0.02)
-                    border.color: Qt.rgba(1, 1, 1, 0.04)
+                    color: dismissMouse.containsMouse ? colorsObject.redBg : Theme.elevationFaint
+                    border.color: Theme.elevationSoft
                     border.width: 1
 
                     Text {

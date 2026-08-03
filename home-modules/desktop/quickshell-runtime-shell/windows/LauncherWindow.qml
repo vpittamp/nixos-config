@@ -6,6 +6,7 @@ import Quickshell.Wayland
 import Quickshell.Widgets
 
 import ".." as RootComponents
+import "root:/"
 
 PanelWindow {
     required property QtObject shellRoot
@@ -34,7 +35,7 @@ PanelWindow {
 
     Rectangle {
         anchors.fill: parent
-        color: "#66070b12"
+        color: Theme.scrim
 
         MouseArea {
             anchors.fill: parent

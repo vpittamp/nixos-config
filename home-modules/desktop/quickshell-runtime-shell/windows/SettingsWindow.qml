@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Widgets
+import "root:/"
 
 PanelWindow {
     required property QtObject shellRoot
@@ -30,7 +31,7 @@ PanelWindow {
 
     Rectangle {
         anchors.fill: parent
-        color: "#66070b12"
+        color: Theme.scrim
 
         MouseArea {
             anchors.fill: parent

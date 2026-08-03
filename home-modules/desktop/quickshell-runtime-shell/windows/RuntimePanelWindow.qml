@@ -8,6 +8,7 @@ import Quickshell.Widgets
 
 import "." as WindowComponents
 import ".." as RootComponents
+import "root:/"
 
 PanelWindow {
     required property QtObject shellRoot
@@ -286,11 +287,11 @@ PanelWindow {
         gradient: Gradient {
             GradientStop {
                 position: 0.0
-                color: "#131d2a"
+                color: Theme.panelAlt
             }
             GradientStop {
                 position: 1.0
-                color: "#0d1117"
+                color: Theme.bg
             }
         }
         border.color: colors.border
@@ -299,7 +300,7 @@ PanelWindow {
         layer.effect: MultiEffect {
             shadowEnabled: true
             shadowBlur: 1.0
-            shadowColor: Qt.rgba(0, 0, 0, 0.55)
+            shadowColor: Theme.shadow
             shadowVerticalOffset: 6
             shadowHorizontalOffset: 0
         }
@@ -316,7 +317,7 @@ PanelWindow {
             anchors.margins: -1
             radius: parent.radius + 1
             color: "transparent"
-            border.color: Qt.rgba(0, 0, 0, 0.4)
+            border.color: Theme.edgeShadow
             border.width: 1
         }
 
@@ -325,7 +326,7 @@ PanelWindow {
             anchors.margins: 1
             radius: parent.radius > 0 ? parent.radius - 1 : 0
             color: "transparent"
-            border.color: Qt.rgba(1, 1, 1, 0.05)
+            border.color: Theme.edgeHighlightSoft
             border.width: 1
         }
 

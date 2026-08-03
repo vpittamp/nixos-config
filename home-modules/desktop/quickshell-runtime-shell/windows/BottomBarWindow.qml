@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Widgets
 import ".." as RootComponents
+import "root:/"
 
 PanelWindow {
     id: bottomBarWindow
@@ -146,7 +147,7 @@ PanelWindow {
                     Rectangle {
                         width: 1
                         height: 18
-                        color: root.launcherVisible ? Qt.rgba(0.05, 0.07, 0.09, 0.45) : colors.border
+                        color: root.launcherVisible ? Theme.scrim : colors.border
                     }
 
                     Text {

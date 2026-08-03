@@ -514,38 +514,12 @@ ShellRoot {
     ]
 
 
-    readonly property var colors: ({
-            bg: "#0d1117",
-            panel: "#111827",
-            panelAlt: "#131d2a",
-            card: "#161f2c",
-            cardAlt: "#0f1722",
-            border: "#273244",
-            borderStrong: "#334155",
-            text: "#e7edf5",
-            muted: "#92a1b5",
-            subtle: "#64748b",
-            lineSoft: "#202b3a",
-            textDim: "#b4c0d1",
-            accent: "#d1fae5",
-            accentBg: "#123329",
-            green: "#86efac",
-            greenBg: "#10281c",
-            blue: "#93c5fd",
-            blueBg: "#16243a",
-            blueMuted: "#5d7ba2",
-            blueWash: "#152231",
-            amber: "#f7d38c",
-            amberBg: "#3a2912",
-            orange: "#fb923c",
-            orangeBg: "#3a2414",
-            red: "#fda4af",
-            redBg: "#3b1820",
-            teal: "#67e8f9",
-            tealBg: "#102a33",
-            violet: "#c4b5fd",
-            violetBg: "#241b43"
-        })
+    // The palette lives in Theme.qml, a Quickshell singleton. This alias keeps
+    // the existing `colors.foo` spelling working at ~1000 call sites (and keeps
+    // the `colors:` property every window already declares), while there is now
+    // exactly one file to edit to restyle the shell. New code can reference
+    // Theme directly and skip the prop-drilling entirely.
+    readonly property var colors: Theme
     readonly property int fastColorMs: 90
 
     // Type scale for the herd surfaces (SessionRow, runtime panel, agent
@@ -596,7 +570,7 @@ ShellRoot {
             return ({ color: colors.orange, bg: colors.orangeBg });
         }
         if (state === "idle") {
-            return ({ color: colors.subtle, bg: Qt.rgba(0.39, 0.45, 0.55, 0.08) });
+            return ({ color: colors.subtle, bg: Theme.subtleWash });
         }
         return ({ color: colors.muted, bg: colors.cardAlt });
     }
@@ -858,12 +832,12 @@ ShellRoot {
         const behind = Number(source.behind || snapshot.behind || 0);
         const ahead = Number(source.ahead || snapshot.ahead || 0);
         if (state === "conflicted" || state === "dirty" || dirtyCount > 0 || behind > 0) {
-            return Qt.tint(colors.panelAlt, Qt.rgba(0.99, 0.64, 0.69, 0.08));
+            return Qt.tint(colors.panelAlt, Theme.redWash);
         }
         if (ahead > 0) {
-            return Qt.tint(colors.panelAlt, Qt.rgba(0.53, 0.94, 0.67, 0.06));
+            return Qt.tint(colors.panelAlt, Theme.greenWash);
         }
-        return Qt.tint(colors.panelAlt, Qt.rgba(0.53, 0.94, 0.67, 0.04));
+        return Qt.tint(colors.panelAlt, Theme.greenWash);
     }
 
     function currentContextGitTooltip() {
@@ -4988,8 +4962,8 @@ function normalizeLauncherMode(mode) {
     function herdrSpaceFill(space, hovered) {
         if (herdrSpaceIsFocused(space)) {
             return hovered
-                ? Qt.tint(colors.cardAlt, Qt.rgba(0.40, 0.86, 0.92, 0.11))
-                : Qt.tint(colors.cardAlt, Qt.rgba(0.40, 0.86, 0.92, 0.07));
+                ? Qt.tint(colors.cardAlt, Theme.tealWash)
+                : Qt.tint(colors.cardAlt, Theme.tealWash);
         }
         return hovered ? colors.cardAlt : "transparent";
     }
@@ -5093,15 +5067,15 @@ function normalizeLauncherMode(mode) {
         const snapshot = herdrSpaceGitSnapshot(space);
         const state = herdrSpaceGitState(space);
         if (state === "conflicted" || state === "dirty") {
-            return Qt.tint(colors.panelAlt, Qt.rgba(0.99, 0.64, 0.69, 0.08));
+            return Qt.tint(colors.panelAlt, Theme.redWash);
         }
         if (Number(snapshot.behind || 0) > 0) {
-            return Qt.tint(colors.panelAlt, Qt.rgba(0.99, 0.64, 0.69, 0.07));
+            return Qt.tint(colors.panelAlt, Theme.redWash);
         }
         if (Number(snapshot.ahead || 0) > 0) {
-            return Qt.tint(colors.panelAlt, Qt.rgba(0.53, 0.94, 0.67, 0.06));
+            return Qt.tint(colors.panelAlt, Theme.greenWash);
         }
-        return Qt.tint(colors.panelAlt, Qt.rgba(0.53, 0.94, 0.67, 0.04));
+        return Qt.tint(colors.panelAlt, Theme.greenWash);
     }
 
     function herdrSpaceGitTooltip(space) {
@@ -6032,12 +6006,12 @@ function normalizeLauncherMode(mode) {
     function sessionGitChipBackground(session) {
         const state = sessionGitState(session);
         if (state === "conflicted" || state === "dirty") {
-            return Qt.tint(colors.panelAlt, Qt.rgba(0.99, 0.64, 0.69, 0.08));
+            return Qt.tint(colors.panelAlt, Theme.redWash);
         }
         if (Number(session && session.git_snapshot && session.git_snapshot.behind || 0) > 0) {
-            return Qt.tint(colors.panelAlt, Qt.rgba(0.97, 0.83, 0.55, 0.08));
+            return Qt.tint(colors.panelAlt, Theme.amberWash);
         }
-        return Qt.tint(colors.panelAlt, Qt.rgba(0.53, 0.94, 0.67, 0.06));
+        return Qt.tint(colors.panelAlt, Theme.greenWash);
     }
 
     function findWindowById(windowId) {

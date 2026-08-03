@@ -6,6 +6,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Widgets
+import "root:/"
 
 PanelWindow {
     required property QtObject shellRoot
@@ -46,7 +47,7 @@ PanelWindow {
 
     Rectangle {
         anchors.fill: parent
-        color: "#66070b12"
+        color: Theme.scrim
 
         MouseArea {
             anchors.fill: parent
@@ -70,7 +71,7 @@ PanelWindow {
             layer.effect: MultiEffect {
                 shadowEnabled: true
                 shadowBlur: 1.0
-                shadowColor: Qt.rgba(0, 0, 0, 0.55)
+                shadowColor: Theme.shadow
                 shadowVerticalOffset: 6
                 shadowHorizontalOffset: 0
             }
@@ -81,7 +82,7 @@ PanelWindow {
                 anchors.margins: -1
                 radius: parent.radius + 1
                 color: "transparent"
-                border.color: Qt.rgba(0, 0, 0, 0.4)
+                border.color: Theme.edgeShadow
                 border.width: 1
             }
 
@@ -115,7 +116,7 @@ PanelWindow {
                         Layout.preferredHeight: 36
                         radius: 12
                         color: root.notificationDetailItem ? root.notificationAvatarFill(root.notificationDetailItem) : colors.card
-                        border.color: Qt.rgba(1, 1, 1, 0.08)
+                        border.color: Theme.edgeHighlight
                         border.width: 1
 
                         Item {
@@ -169,8 +170,8 @@ PanelWindow {
                         Layout.preferredWidth: 28
                         Layout.preferredHeight: 28
                         radius: 10
-                        color: detailCloseMouse.containsMouse ? colors.redBg : Qt.rgba(1, 1, 1, 0.03)
-                        border.color: Qt.rgba(1, 1, 1, 0.06)
+                        color: detailCloseMouse.containsMouse ? colors.redBg : Theme.elevationFaint
+                        border.color: Theme.elevation
                         border.width: 1
 
                         Text {

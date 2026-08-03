@@ -7,6 +7,7 @@ import Quickshell.Wayland
 import Quickshell.Widgets
 
 import ".." as RootComponents
+import "root:/"
 
 // Full-screen window-switcher exposé, GROUPED BY MONITOR. Windows are arranged
 // into one panel per monitor, ordered left-to-right to match the physical
@@ -183,7 +184,7 @@ PanelWindow {
                         Rectangle {
                             visible: projText.text.length > 0
                             radius: 6
-                            color: Qt.rgba(0, 0, 0, 0.25)
+                            color: Theme.shadowSoft
                             border.color: cell.accentColor
                             border.width: 1
                             Layout.preferredHeight: 19
@@ -248,7 +249,7 @@ PanelWindow {
                     width: 24
                     height: 24
                     radius: 12
-                    color: closeMouse.containsMouse ? colors.redBg : Qt.rgba(0, 0, 0, 0.45)
+                    color: closeMouse.containsMouse ? colors.redBg : Theme.edgeShadow
                     border.color: closeMouse.containsMouse ? colors.red : colors.border
                     border.width: 1
                     opacity: closeMouse.containsMouse ? 1.0 : (cell.selected ? 0.9 : 0.5)
@@ -289,7 +290,7 @@ PanelWindow {
                             height: 28
                             width: moveRow.implicitWidth + 18
                             radius: 8
-                            color: moveMouse.containsMouse ? colors.blueBg : Qt.rgba(0, 0, 0, 0.4)
+                            color: moveMouse.containsMouse ? colors.blueBg : Theme.edgeShadow
                             border.width: 1
                             border.color: moveMouse.containsMouse ? colors.blue : colors.border
                             Behavior on color { ColorAnimation { duration: root.fastColorMs } }
@@ -330,7 +331,7 @@ PanelWindow {
 
     Rectangle {
         anchors.fill: parent
-        color: "#cc070b12"
+        color: Theme.scrimStrong
         // Fade the dark backdrop in when the overlay maps (entrance-only; the
         // window unmaps immediately on close so there's no exit tween to show).
         opacity: root.exposeVisible ? 1 : 0
@@ -548,7 +549,7 @@ PanelWindow {
                         Layout.fillHeight: true
                         Layout.preferredWidth: 1     // equal share among panels
                         radius: 18
-                        color: activePanel ? Qt.rgba(0.20, 0.52, 0.95, 0.08) : Qt.rgba(1, 1, 1, 0.025)
+                        color: activePanel ? Theme.blueSelection : Theme.elevationFaint
                         border.color: activePanel ? colors.blue : colors.border
                         border.width: activePanel ? 2 : 1
                         Behavior on border.color { ColorAnimation { duration: root.fastColorMs } }

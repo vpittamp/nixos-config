@@ -32,14 +32,14 @@ Rectangle {
     implicitWidth: preferredWidth
     implicitHeight: toastColumn.implicitHeight + 20
     radius: rootObject.radiusFloat
-    color: Qt.rgba(0.055, 0.074, 0.11, critical ? 0.94 : 0.88)
-    border.color: Qt.tint(accentColor, Qt.rgba(1, 1, 1, critical ? 0.22 : 0.1))
+    color: Qt.rgba(Theme.panel.r, Theme.panel.g, Theme.panel.b, critical ? 0.94 : 0.88)
+    border.color: Qt.tint(accentColor, (critical ? Theme.elevationStrong : Theme.elevation))
     border.width: 1
     layer.enabled: shadowCapable
     layer.effect: MultiEffect {
         shadowEnabled: true
         shadowBlur: 1.0
-        shadowColor: Qt.rgba(0, 0, 0, 0.55)
+        shadowColor: Theme.shadow
         shadowVerticalOffset: 6
         shadowHorizontalOffset: 0
     }
@@ -50,7 +50,7 @@ Rectangle {
         anchors.margins: -1
         radius: parent.radius + 1
         color: "transparent"
-        border.color: Qt.rgba(0, 0, 0, 0.4)
+        border.color: Theme.edgeShadow
         border.width: 1
     }
 
@@ -59,7 +59,7 @@ Rectangle {
         anchors.margins: 1
         radius: parent.radius - 1
         color: "transparent"
-        border.color: critical ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(1, 1, 1, 0.04)
+        border.color: critical ? Theme.edgeHighlight : Theme.elevationSoft
         border.width: 1
     }
 
@@ -91,7 +91,7 @@ Rectangle {
                 Layout.preferredHeight: 42
                 radius: rootObject.radiusCard
                 color: rootObject.notificationAvatarFill(itemData)
-                border.color: Qt.rgba(1, 1, 1, 0.08)
+                border.color: Theme.edgeHighlight
                 border.width: 1
 
                 Item {
@@ -146,8 +146,8 @@ Rectangle {
                 Layout.preferredWidth: 28
                 Layout.preferredHeight: 28
                 radius: rootObject.radiusControl
-                color: closeMouse.containsMouse ? colorsObject.redBg : Qt.rgba(1, 1, 1, 0.03)
-                border.color: Qt.rgba(1, 1, 1, 0.06)
+                color: closeMouse.containsMouse ? colorsObject.redBg : Theme.elevationFaint
+                border.color: Theme.elevation
                 border.width: 1
 
                 Text {
@@ -198,8 +198,8 @@ Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: visible ? 116 : 0
             radius: rootObject.radiusCard
-            color: Qt.rgba(1, 1, 1, 0.02)
-            border.color: Qt.rgba(1, 1, 1, 0.06)
+            color: Theme.elevationFaint
+            border.color: Theme.elevation
             border.width: 1
             clip: true
 
@@ -230,8 +230,8 @@ Rectangle {
                 Layout.preferredHeight: 28
                 Layout.preferredWidth: visible ? actionLabel.implicitWidth + 22 : 0
                 radius: rootObject.radiusControl
-                color: actionMouse.containsMouse ? Qt.tint(accentColor, Qt.rgba(1, 1, 1, 0.18)) : Qt.tint(accentColor, Qt.rgba(0, 0, 0, 0.58))
-                border.color: Qt.tint(accentColor, Qt.rgba(1, 1, 1, 0.22))
+                color: actionMouse.containsMouse ? Qt.tint(accentColor, Theme.elevationStrong) : Qt.tint(accentColor, Theme.shadow)
+                border.color: Qt.tint(accentColor, Theme.elevationStrong)
                 border.width: 1
 
                 Text {

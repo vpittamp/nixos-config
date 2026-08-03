@@ -69,11 +69,11 @@ PopupWindow {
         gradient: Gradient {
             GradientStop {
                 position: 0.0
-                color: "#131d2a"
+                color: Theme.panelAlt
             }
             GradientStop {
                 position: 1.0
-                color: "#0d1117"
+                color: Theme.bg
             }
         }
         border.color: barTooltip.colors.border
@@ -88,7 +88,7 @@ PopupWindow {
             anchors.margins: -1
             radius: parent.radius + 1
             color: "transparent"
-            border.color: Qt.rgba(0, 0, 0, 0.4)
+            border.color: Theme.edgeShadow
             border.width: 1
         }
 
@@ -97,7 +97,7 @@ PopupWindow {
             anchors.margins: 1
             radius: parent.radius - 1
             color: "transparent"
-            border.color: Qt.rgba(1, 1, 1, 0.05)
+            border.color: Theme.edgeHighlightSoft
             border.width: 1
         }
 

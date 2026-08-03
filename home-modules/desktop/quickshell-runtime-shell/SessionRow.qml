@@ -69,14 +69,14 @@ Rectangle {
     readonly property bool stoppedNotification: activityState === "stopped"
 
     readonly property color baseRowColor: isCurrent
-        ? (effectiveHovered ? Qt.tint(colorsObject.blueBg, Qt.rgba(1, 1, 1, 0.035)) : colorsObject.blueBg)
+        ? (effectiveHovered ? Qt.tint(colorsObject.blueBg, Theme.elevationSoft) : colorsObject.blueBg)
         : (selected ? colorsObject.blueBg : (effectiveHovered ? colorsObject.cardAlt : "transparent"))
 
     implicitHeight: rowHeight
     radius: rootObject.radiusControl
     // Blocked rows get a subtle wash toward redBg so the attention state reads
     // at the row level, not just on the badge.
-    color: isBlocked ? Qt.tint(baseRowColor, Qt.rgba(0.99, 0.64, 0.69, 0.08)) : baseRowColor
+    color: isBlocked ? Qt.tint(baseRowColor, Theme.redWash) : baseRowColor
     border.color: isCurrent
         ? (effectiveHovered ? colorsObject.blue : colorsObject.blueMuted)
         : (selected ? colorsObject.blue : (effectiveHovered ? colorsObject.borderStrong : "transparent"))
@@ -108,7 +108,7 @@ Rectangle {
         anchors.fill: parent
         anchors.margins: 1
         radius: parent.radius - 1
-        color: Qt.rgba(1, 1, 1, effectiveHovered ? 0.018 : 0.012)
+        color: (effectiveHovered ? Theme.hoverWashStrong : Theme.hoverWash)
         border.color: "transparent"
         border.width: 0
     }
@@ -487,7 +487,7 @@ Rectangle {
             // Doubled-up tint keeps the chip readable on near-black rows; the
             // status-alpha border ties it to the rail/dot hue.
             color: stoppedNotification
-                ? Qt.tint(rootObject.sessionBadgeBackground(session), Qt.rgba(1, 1, 1, isCurrent ? 0.05 : 0.02))
+                ? Qt.tint(rootObject.sessionBadgeBackground(session), (isCurrent ? Theme.edgeHighlightSoft : Theme.elevationFaint))
                 : Qt.tint(rootObject.sessionBadgeBackground(session), Qt.alpha(statusColor, 0.10))
             border.color: Qt.alpha(statusColor, 0.35)
             border.width: 1

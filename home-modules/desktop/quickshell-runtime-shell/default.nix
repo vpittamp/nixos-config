@@ -40,19 +40,34 @@ let
     exec ${pkgs.python3}/bin/python3 ${../scripts/dictation-level.py} ${pkgs.pipewire}/bin/pw-record
   '';
 
-  # Build shell.qml with accent color substitution
-  accentShellQml = pkgs.runCommandLocal "quickshell-accent-shell-qml" { } ''
+  # Build Theme.qml with accent color substitution.
+  #
+  # The palette now lives in the Theme singleton, so this substitution follows
+  # it there. It also verifies each edit landed: a sed pattern that silently
+  # stops matching would leave the accent* options looking configurable while
+  # doing nothing, which is exactly what would have happened when the palette
+  # moved out of shell.qml.
+  accentThemeQml = pkgs.runCommandLocal "quickshell-accent-theme-qml" { } ''
     ${pkgs.gnused}/bin/sed \
-      -e 's|blue: "#93c5fd"|blue: "${cfg.accentColor}"|' \
-      -e 's|blueBg: "#16243a"|blueBg: "${cfg.accentBg}"|' \
-      -e 's|blueMuted: "#5d7ba2"|blueMuted: "${cfg.accentMuted}"|' \
-      -e 's|blueWash: "#152231"|blueWash: "${cfg.accentWash}"|' \
-      ${./shell.qml} > "$out"
+      -e 's|blue: "#60a5fa"|blue: "${cfg.accentColor}"|' \
+      -e 's|blueBg: "#111a2e"|blueBg: "${cfg.accentBg}"|' \
+      -e 's|blueMuted: "#3b5f8f"|blueMuted: "${cfg.accentMuted}"|' \
+      -e 's|blueWash: "#101725"|blueWash: "${cfg.accentWash}"|' \
+      ${./Theme.qml} > "$out"
+
+    for decl in 'blue: "${cfg.accentColor}"' 'blueBg: "${cfg.accentBg}"' \
+                'blueMuted: "${cfg.accentMuted}"' 'blueWash: "${cfg.accentWash}"'; do
+      grep -qF "$decl" "$out" || {
+        echo "accent substitution did not apply: $decl" >&2
+        exit 1
+      }
+    done
   '';
 
   shellConfigDir = pkgs.runCommandLocal "i3pm-quickshell-runtime-shell" { } ''
     mkdir -p "$out"
-    cp ${accentShellQml} "$out/shell.qml"
+    cp ${./shell.qml} "$out/shell.qml"
+    cp ${accentThemeQml} "$out/Theme.qml"
     cp -r ${./controllers} "$out/controllers"
     cp -r ${./windows} "$out/windows"
     cp ${./SessionRow.qml} "$out/SessionRow.qml"
