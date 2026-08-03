@@ -54,22 +54,33 @@ Singleton {
     // ---- status ---------------------------------------------------------
     // Tailwind 400s. The *Bg variants are the same hue collapsed onto the
     // background — used as chip fills behind the matching foreground colour.
+    // The blue family is the accent and stays literal: home-manager rewrites
+    // these four declarations per host (see accentColor in default.nix).
     readonly property color blue: "#60a5fa"
     readonly property color blueBg: "#111a2e"
     readonly property color blueMuted: "#3b5f8f"    // border weight of blue
     readonly property color blueWash: "#101725"     // faintest blue fill
+
     readonly property color green: "#4ade80"
-    readonly property color greenBg: "#0e2318"
     readonly property color red: "#f87171"
-    readonly property color redBg: "#2a1416"
     readonly property color amber: "#fbbf24"
-    readonly property color amberBg: "#2a1f0d"
     readonly property color orange: "#fb923c"
-    readonly property color orangeBg: "#2a1a0e"
     readonly property color teal: "#2dd4bf"
-    readonly property color tealBg: "#0c2422"
     readonly property color violet: "#a78bfa"
-    readonly property color violetBg: "#1d1830"
+
+    // Status chip fills are the hue itself at low alpha, not a hand-mixed dark
+    // colour. Mixing them by hand is how amber ended up as #2a1f0d — a warm
+    // hue at that lightness stops reading as amber and just reads brown, and
+    // the same trap applies to orange. Deriving them keeps every chip an
+    // unmistakable tint of its own status colour and keeps them consistent
+    // with each other, the way shadcn writes bg-{hue}/15.
+    readonly property real statusFillAlpha: 0.15
+    readonly property color greenBg: Qt.rgba(theme.green.r, theme.green.g, theme.green.b, theme.statusFillAlpha)
+    readonly property color redBg: Qt.rgba(theme.red.r, theme.red.g, theme.red.b, theme.statusFillAlpha)
+    readonly property color amberBg: Qt.rgba(theme.amber.r, theme.amber.g, theme.amber.b, theme.statusFillAlpha)
+    readonly property color orangeBg: Qt.rgba(theme.orange.r, theme.orange.g, theme.orange.b, theme.statusFillAlpha)
+    readonly property color tealBg: Qt.rgba(theme.teal.r, theme.teal.g, theme.teal.b, theme.statusFillAlpha)
+    readonly property color violetBg: Qt.rgba(theme.violet.r, theme.violet.g, theme.violet.b, theme.statusFillAlpha)
 
     // ---- elevation ------------------------------------------------------
     // On a dark theme a surface is "lifted" by a white film; on a light one it

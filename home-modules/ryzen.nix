@@ -83,10 +83,16 @@ in
 
   programs.quickshell-runtime-shell = {
     enable = true;
-    accentColor = "#c4b5fd";
-    accentBg = "#241b43";
-    accentMuted = "#8b7bb5";
-    accentWash = "#1e1639";
+    # Accent. Tailwind blue-400 and its darker companions — the hue shadcn
+    # itself reaches for, and the only one left that carries no meaning here:
+    # green is done, amber working, red blocked, orange needs-attention, and
+    # teal already marks SSH sessions and focused inputs, so a cyan accent
+    # would read as "this is remote". To try another, change these four
+    # together — colour, chip fill, border weight, faintest fill.
+    accentColor = "#60a5fa";
+    accentBg = "#15233d";
+    accentMuted = "#3b5f8f";
+    accentWash = "#111a2e";
     notifications.toastMaxPerOutput = 0;
   };
 
