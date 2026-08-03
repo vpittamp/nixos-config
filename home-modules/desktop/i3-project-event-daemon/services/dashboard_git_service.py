@@ -384,6 +384,24 @@ class DashboardGitService:
             if qualified_name and not str(existing.get("qualified_name") or "").strip():
                 existing["qualified_name"] = qualified_name
 
+        # Herdr spaces whose panes carry no agent produce no session rows, so a
+        # session-only walk never probes them and they render with no git chip
+        # at all (verified live: space wA, an agent-created worktree with two
+        # agentless panes). They own a checkout just like a session does, so
+        # probe it too — deduped against the session targets above.
+        for space in self.herdr_spaces(runtime_snapshot):
+            checkout_path = str(space.get("checkout_path") or "").strip()
+            if not checkout_path or checkout_path in target_specs:
+                continue
+            if bool(space.get("is_remote_herdr", False)):
+                continue
+            target_specs[checkout_path] = {
+                "priority": "background",
+                "attribution": "exact_worktree",
+                "branch_hint": str(space.get("branch_label") or "").strip(),
+                "qualified_name": str(space.get("project_name") or "").strip(),
+            }
+
         get_snapshot = get_or_schedule_git_snapshot or self.get_or_schedule_git_snapshot
         snapshots_by_path: Dict[str, Dict[str, Any]] = {}
         for checkout_path, spec in target_specs.items():
@@ -406,6 +424,25 @@ class DashboardGitService:
                 session,
                 snapshots_by_path.get(self.session_checkout_path(session)),
             )
+
+        for space in self.herdr_spaces(runtime_snapshot):
+            if bool(space.get("is_remote_herdr", False)):
+                continue
+            # Only fill a space the sessions did not already light: build_spaces
+            # copies git fields down from a space's own sessions, and that
+            # inherited value is the more specific one.
+            if str(space.get("git_state") or "").strip():
+                continue
+            snapshot = snapshots_by_path.get(str(space.get("checkout_path") or "").strip())
+            if snapshot:
+                self.apply_snapshot_to_session(space, snapshot)
+
+    @staticmethod
+    def herdr_spaces(runtime_snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Herdr space rows carried by a runtime snapshot, if any."""
+        herdr = runtime_snapshot.get("herdr") if isinstance(runtime_snapshot, dict) else None
+        spaces = herdr.get("spaces") if isinstance(herdr, dict) else None
+        return [space for space in (spaces or []) if isinstance(space, dict)]
 
     def snapshot_ttl(self, priority: str, *, success: bool = True) -> float:
         """Return the cache TTL for a live git snapshot priority bucket."""

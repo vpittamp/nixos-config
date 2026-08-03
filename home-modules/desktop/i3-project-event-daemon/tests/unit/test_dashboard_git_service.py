@@ -363,3 +363,71 @@ async def test_refresh_git_snapshot_notifies_only_after_cached_fingerprint_chang
     )
 
     assert notifications == ["ai_session_git_changed"]
+
+
+@pytest.mark.asyncio
+async def test_hydrate_probes_agentless_herdr_space_checkout() -> None:
+    # A space whose panes carry no agent produces no session rows. Walking only
+    # sessions left it with no git chip at all (live: space wA). It owns a
+    # checkout like any session, so it must be probed too.
+    service = DashboardGitService()
+    runtime_snapshot = {
+        "current_session_key": "",
+        "herdr": {
+            "spaces": [
+                {
+                    "workspace_id": "wA",
+                    "checkout_path": "/tmp/agentless-worktree",
+                    "branch_label": "feat/no-agent",
+                    "project_name": "acme/repo:feat/no-agent",
+                }
+            ]
+        },
+    }
+    get_snapshot = AsyncMock(return_value={
+        "state": "dirty",
+        "status_compact": "● 2",
+        "freshness": "fresh",
+        "attribution": "exact_worktree",
+    })
+
+    await service.hydrate_runtime_git_state(
+        runtime_snapshot,
+        [],
+        get_or_schedule_git_snapshot=get_snapshot,
+    )
+
+    get_snapshot.assert_awaited_once()
+    assert get_snapshot.await_args.kwargs["worktree_path"] == "/tmp/agentless-worktree"
+    assert get_snapshot.await_args.kwargs["branch_hint"] == "feat/no-agent"
+    space = runtime_snapshot["herdr"]["spaces"][0]
+    assert space["git_state"] == "dirty"
+    assert space["git_compact"] == "● 2"
+
+
+@pytest.mark.asyncio
+async def test_hydrate_does_not_override_space_git_inherited_from_sessions() -> None:
+    # build_spaces copies git fields down from a space's own sessions; that
+    # inherited value is more specific than a re-probe of the space checkout.
+    service = DashboardGitService()
+    runtime_snapshot = {
+        "current_session_key": "",
+        "herdr": {
+            "spaces": [
+                {
+                    "workspace_id": "wB",
+                    "checkout_path": "/tmp/has-agent",
+                    "git_state": "clean",
+                }
+            ]
+        },
+    }
+    get_snapshot = AsyncMock(return_value={"state": "dirty", "status_compact": "● 9"})
+
+    await service.hydrate_runtime_git_state(
+        runtime_snapshot,
+        [],
+        get_or_schedule_git_snapshot=get_snapshot,
+    )
+
+    assert runtime_snapshot["herdr"]["spaces"][0]["git_state"] == "clean"
