@@ -4296,6 +4296,56 @@ function normalizeLauncherMode(mode) {
         return stringOrEmpty(sessionPreview.message);
     }
 
+    // Resolve the previewed session from the live dashboard rather than the
+    // snapshot captured when the preview opened, so the badge follows the agent
+    // as it flips working -> idle while the launcher stays open.
+    function sessionPreviewLiveSession() {
+        const key = stringOrEmpty(sessionPreview.session_key);
+        if (!key) {
+            return null;
+        }
+        return sessionByKey(key);
+    }
+
+    function sessionPreviewAgentState() {
+        const live = sessionPreviewLiveSession();
+        if (live) {
+            return sessionBadgeState(live);
+        }
+        const fallback = stringOrEmpty(sessionPreview.agent_status_state)
+            || stringOrEmpty(sessionPreview.agent_status);
+        return fallback ? herdrStatusState(fallback) : "";
+    }
+
+    function sessionPreviewAgentStateLabel() {
+        const state = sessionPreviewAgentState();
+        if (state === "working") {
+            return "Working";
+        }
+        if (state === "blocked") {
+            return "Blocked";
+        }
+        if (state === "done") {
+            return "Done";
+        }
+        if (state === "idle") {
+            return "Idle";
+        }
+        return "";
+    }
+
+    // Badge colour follows the same canonical status map the agent rows use, so
+    // "Working" in the preview is the same amber as the working chip in the panel.
+    function sessionPreviewBadgeAccent() {
+        const state = sessionPreviewAgentState();
+        return state ? sessionStatusStyle(state).color : colors.textDim;
+    }
+
+    function sessionPreviewBadgeFill() {
+        const state = sessionPreviewAgentState();
+        return state ? sessionStatusStyle(state).bg : colors.panelAlt;
+    }
+
     function sessionPreviewBadgeText() {
         if (stringOrEmpty(sessionPreview.status) === "loading") {
             return "Loading";
@@ -4304,7 +4354,13 @@ function normalizeLauncherMode(mode) {
             return "Focus";
         }
         if (boolOrFalse(sessionPreview.is_live)) {
-            return "Live";
+            // "Live" only said the feed was working, not whether the AGENT was.
+            // Terminal text cannot answer that reliably — a working pane and an
+            // idle one end in the same status bar, and the "Working (1m 18s)"
+            // line only exists for some agent CLIs and drifts up the buffer.
+            // herdr already detects the state, so report it instead of parsing.
+            const label = sessionPreviewAgentStateLabel();
+            return label || "Live";
         }
         if (boolOrFalse(sessionPreview.is_remote)) {
             return "Remote";

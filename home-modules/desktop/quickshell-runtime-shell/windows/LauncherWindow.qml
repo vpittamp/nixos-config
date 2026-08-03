@@ -995,8 +995,12 @@ PanelWindow {
                                     Rectangle {
                                         height: 20
                                         radius: 6
-                                        color: boolOrFalse(root.sessionPreview.is_live) ? colors.accentBg : (boolOrFalse(root.sessionPreview.is_remote) ? colors.orangeBg : (root.stringOrEmpty(root.sessionPreview.status) === "error" ? colors.redBg : colors.panelAlt))
-                                        border.color: boolOrFalse(root.sessionPreview.is_live) ? colors.accent : (boolOrFalse(root.sessionPreview.is_remote) ? colors.orange : (root.stringOrEmpty(root.sessionPreview.status) === "error" ? colors.red : colors.border))
+                                        // A live preview colours the badge by the AGENT's state
+                                        // (same canonical map as the panel chips), so "Working"
+                                        // here is the same amber as a working row. Non-live keeps
+                                        // the old remote/error/neutral treatment.
+                                        color: boolOrFalse(root.sessionPreview.is_live) ? root.sessionPreviewBadgeFill() : (boolOrFalse(root.sessionPreview.is_remote) ? colors.orangeBg : (root.stringOrEmpty(root.sessionPreview.status) === "error" ? colors.redBg : colors.panelAlt))
+                                        border.color: boolOrFalse(root.sessionPreview.is_live) ? root.sessionPreviewBadgeAccent() : (boolOrFalse(root.sessionPreview.is_remote) ? colors.orange : (root.stringOrEmpty(root.sessionPreview.status) === "error" ? colors.red : colors.border))
                                         border.width: 1
                                         Layout.preferredWidth: previewSessionBadgeText.implicitWidth + 12
 
@@ -1004,7 +1008,7 @@ PanelWindow {
                                             id: previewSessionBadgeText
                                             anchors.centerIn: parent
                                             text: root.sessionPreviewBadgeText()
-                                            color: boolOrFalse(root.sessionPreview.is_live) ? colors.accent : (boolOrFalse(root.sessionPreview.is_remote) ? colors.orange : (root.stringOrEmpty(root.sessionPreview.status) === "error" ? colors.red : colors.textDim))
+                                            color: boolOrFalse(root.sessionPreview.is_live) ? root.sessionPreviewBadgeAccent() : (boolOrFalse(root.sessionPreview.is_remote) ? colors.orange : (root.stringOrEmpty(root.sessionPreview.status) === "error" ? colors.red : colors.textDim))
                                             font.pixelSize: 8
                                             font.weight: Font.DemiBold
                                         }
