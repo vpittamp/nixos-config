@@ -27,7 +27,6 @@ let
 
       # Ensure key command sources are packaged.
       for required in \
-        "$out/share/i3pm/src/commands/context.ts" \
         "$out/share/i3pm/src/commands/dashboard.ts" \
         "$out/share/i3pm/src/commands/display.ts" \
         "$out/share/i3pm/src/commands/health.ts" \
@@ -35,7 +34,8 @@ let
         "$out/share/i3pm/src/commands/quickshell.ts" \
         "$out/share/i3pm/src/commands/session.ts" \
         "$out/share/i3pm/src/commands/workspace.ts" \
-        "$out/share/i3pm/src/commands/window.ts"
+        "$out/share/i3pm/src/commands/window.ts" \
+        "$out/share/i3pm/src/commands/worktrees.ts"
       do
         if [ ! -f "$required" ]; then
           echo "ERROR: missing ''${required#$out/share/i3pm/} in i3pm package output" >&2
