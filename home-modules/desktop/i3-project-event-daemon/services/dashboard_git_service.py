@@ -395,24 +395,6 @@ class DashboardGitService:
             if qualified_name and not str(existing.get("qualified_name") or "").strip():
                 existing["qualified_name"] = qualified_name
 
-        # Herdr spaces whose panes carry no agent produce no session rows, so a
-        # session-only walk never probes them and they render with no git chip
-        # at all (verified live: space wA, an agent-created worktree with two
-        # agentless panes). They own a checkout just like a session does, so
-        # probe it too — deduped against the session targets above.
-        for space in self.herdr_spaces(runtime_snapshot):
-            checkout_path = str(space.get("checkout_path") or "").strip()
-            if not checkout_path or checkout_path in target_specs:
-                continue
-            if bool(space.get("is_remote_herdr", False)):
-                continue
-            target_specs[checkout_path] = {
-                "priority": "background",
-                "attribution": "exact_worktree",
-                "branch_hint": str(space.get("branch_label") or "").strip(),
-                "qualified_name": str(space.get("project_name") or "").strip(),
-            }
-
         get_snapshot = get_or_schedule_git_snapshot or self.get_or_schedule_git_snapshot
         snapshots_by_path: Dict[str, Dict[str, Any]] = {}
         for checkout_path, spec in target_specs.items():
@@ -441,13 +423,6 @@ class DashboardGitService:
         # these would write to a throwaway object. Probing above is what matters
         # — it fills the cache that build_spaces reads via
         # cached_snapshot_for_path().
-
-    @staticmethod
-    def herdr_spaces(runtime_snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Herdr space rows carried by a runtime snapshot, if any."""
-        herdr = runtime_snapshot.get("herdr") if isinstance(runtime_snapshot, dict) else None
-        spaces = herdr.get("spaces") if isinstance(herdr, dict) else None
-        return [space for space in (spaces or []) if isinstance(space, dict)]
 
     def snapshot_ttl(self, priority: str, *, success: bool = True) -> float:
         """Return the cache TTL for a live git snapshot priority bucket."""

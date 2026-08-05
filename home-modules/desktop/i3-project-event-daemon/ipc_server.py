@@ -2751,12 +2751,46 @@ class IPCServer:
                 continue
             if bool(space.get("is_remote_herdr", False)):
                 continue
-            snapshot = self.dashboard_git_service.cached_snapshot_for_path(
-                str(space.get("checkout_path") or "").strip()
-            )
+            checkout_path = str(space.get("checkout_path") or "").strip()
+            if not checkout_path:
+                continue
+            snapshot = self.dashboard_git_service.cached_snapshot_for_path(checkout_path)
             if snapshot:
                 self.dashboard_git_service.apply_snapshot_to_session(space, snapshot)
+                continue
+            # Nothing cached yet. build_spaces is the ONLY place that knows a
+            # space's checkout — the raw herdr snapshot has no `spaces` key at
+            # all, it is assembled here — so hydration upstream cannot have
+            # probed it. Schedule the probe now; this row stays blank and the
+            # next snapshot (events fire constantly) renders it.
+            self._schedule_space_git_probe(space, checkout_path)
         return spaces
+
+    def _schedule_space_git_probe(self, space: Dict[str, Any], checkout_path: str) -> None:
+        """Fire-and-forget git probe for a space checkout nothing has probed."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = loop.create_task(
+            self._get_or_schedule_git_snapshot(
+                worktree_path=checkout_path,
+                qualified_name=str(space.get("project_name") or "").strip(),
+                branch_hint=str(space.get("branch_label") or "").strip(),
+                priority="background",
+                attribution="exact_worktree",
+            )
+        )
+
+        def _consume(fut: "asyncio.Future") -> None:
+            try:
+                fut.result()
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.debug("space git probe failed for %s", checkout_path, exc_info=True)
+
+        task.add_done_callback(_consume)
 
     async def _hydrate_runtime_git_state(
         self,

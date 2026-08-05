@@ -365,40 +365,6 @@ async def test_refresh_git_snapshot_notifies_only_after_cached_fingerprint_chang
     assert notifications == ["ai_session_git_changed"]
 
 
-@pytest.mark.asyncio
-async def test_hydrate_probes_agentless_herdr_space_checkout() -> None:
-    # A space whose panes carry no agent produces no session rows, so a
-    # session-only walk never probed its checkout and it rendered with no git
-    # chip. Hydration must still probe it — the payload's space rows are built
-    # fresh later and read the result out of the cache, so what matters here is
-    # that the probe happened for the right path, not that this row mutated.
-    service = DashboardGitService()
-    runtime_snapshot = {
-        "current_session_key": "",
-        "herdr": {
-            "spaces": [
-                {
-                    "workspace_id": "wA",
-                    "checkout_path": "/tmp/agentless-worktree",
-                    "branch_label": "feat/no-agent",
-                    "project_name": "acme/repo:feat/no-agent",
-                }
-            ]
-        },
-    }
-    get_snapshot = AsyncMock(return_value={"state": "dirty", "status_compact": "● 2"})
-
-    await service.hydrate_runtime_git_state(
-        runtime_snapshot,
-        [],
-        get_or_schedule_git_snapshot=get_snapshot,
-    )
-
-    get_snapshot.assert_awaited_once()
-    assert get_snapshot.await_args.kwargs["worktree_path"] == "/tmp/agentless-worktree"
-    assert get_snapshot.await_args.kwargs["branch_hint"] == "feat/no-agent"
-
-
 def test_cached_snapshot_for_path_serves_build_spaces() -> None:
     # build_spaces is synchronous and cannot await a probe, so it reads whatever
     # hydration already cached for the space's own checkout.
