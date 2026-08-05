@@ -47,14 +47,13 @@ Workflow operations use the workspace authenticated by the `wfb_...` key. Do
 not pass a session ID as workflow ownership. Optional session attachment is
 verified goal, trace, and lineage context only.
 
-Dev-environment workflows (`preview-development-lifecycle`,
-`preview-host-development`, and `microservice-dev-session`) launch ONLY via
-`start_dev_environment_session` — `execute_workflow` and
-`run_workflow_script` reject them with HTTP 409 ("requires the target-aware Dev
-launcher"). For the preferred preview flow, launch `system-live` through the
-preview MCP tools, wait for Ready, then start `preview-host-development` with
-`previewTarget: { previewName }`; the server resolves the origin and pins the
-complete tuple.
+Preview development is a privileged application path. Create an `app-live` or
+`system-live` PreviewEnvironment, wait for its exact generation to become
+Ready, then use `development_run_start`. The server compiles the immutable
+ChangeSet, Generation, DevelopmentPlan, and DevelopmentExecution and launches
+the internal `preview-host-development` workflow. Generic workflow start tools
+must reject that seeded workflow; users and agents never select it directly.
+Use the `preview-environments` skill for the complete lifecycle.
 
 Prefer Workflow MCP or the UI. The bundled
 `scripts/upsert-workflow.py <workflow.json>` is a secondary authenticated BFF
@@ -95,19 +94,16 @@ interactive runtime without that declaration or its registry-owned
 - Preserve user-scoped subscription OAuth delivery through `cliAuth` and the
   session Secret path. Do not replace it with a provider API key, SDK, print
   mode, `codex exec`, or another noninteractive subprocess.
-- For `app-live` or `system-live` preview development, CLI sessions run through host-owned
-  `preview-host-development` profiles (`claude-code-cli-host`,
-  `codex-cli-host`, `kimi-code-cli-host`, ordered `cli-fanout`, or persistent
-  `claude-code-cli-interactive-host`, `codex-cli-interactive-host`,
-  `kimi-code-cli-interactive-host`, and `agy-cli-interactive-host`). The
-  execution-scoped workspace syncs through the immutable preview-control
-  broker; never copy the OAuth Secret or CLI pod into the vCluster.
-- In an interactive profile, edit the seeded host checkout and run
-  `wfb-preview-sync` after each coherent generation. Inspect the adopted page
-  through the session's Playwright MCP. The parent remains durably parked at
-  `preview.development.control` until its run page sends the fixed
-  `submit_preview_pr` or `discard` action; arbitrary event payloads and actions
-  against unrelated gates are rejected.
+- For `app-live` or `system-live` preview development, public profiles are
+  `dapr-agent-py`, `claude-code-cli`, `codex-cli`, `kimi-code-cli`, `agy-cli`,
+  and ordered `cli-fanout`. Fixture-local `*-host` values are internal adapter
+  mappings and must not be exposed as caller input. `adk-agent-py` is retired.
+- In a persistent CLI profile, edit the seeded host checkout and run
+  `wfb-development apply`, `observe`, or `verify`. The application reconstructs
+  the parent DevelopmentRun and compiler-owned adapter from session identity.
+  Inspect through the session's Playwright MCP. Submission and cancellation are
+  parent-run gates; arbitrary event payloads and unrelated workflow actions are
+  rejected. Never copy an OAuth Secret or CLI pod into the vCluster.
 - Kimi Code uses device-login OAuth from the exact
   `$KIMI_CODE_HOME/credentials/kimi-code.json` file. Capture and rotate only
   that file; remove Kimi and Moonshot API-key variables before launching the
@@ -167,14 +163,15 @@ interactive runtime without that declaration or its registry-owned
   metadata is not image input.
 - Runtime identity and capabilities come from the runtime registry and resolved
   saved-agent configuration, not a pod label or sandbox template name.
-- `/workspaces/<slug>/runs` is the canonical run entry point. Host-owned
-  `preview-host-development` activity uses the ordinary host run detail and its
-  Live tab; preview-local activity and sealed evidence enter through federated,
+- `/workspaces/<slug>/runs` is the canonical run entry point. A host-owned
+  DevelopmentRun uses the ordinary run detail and its Live tab. Legacy
+  preview-local activity and sealed evidence enter only through federated,
   read-only application ports. Presentation code must not know preview database
   credentials, namespaces, broker URLs, or Kubernetes clients.
-- `get_preview_development_system` is the host `system-live` activity/read-model
-  surface. `get_preview_development_run` is the separate preview-local child
-  lineage adapter; do not substitute one for the other.
+- Preview development uses `development_run_get` and
+  `development_run_follow_output`; checkpoint, fork, handoff, and reproduction
+  use their corresponding `development_run_*` commands on the same run. Generic
+  workflow continuation is not a second preview-development path.
 - Agent MCP configuration is resolved at session launch. Project access is the
   ceiling; per-agent allowed tools can only narrow it.
 - OAuth and ActivePieces credentials are reference-forwarded. Plaintext must not
@@ -312,7 +309,7 @@ the exact diff a single step produced.
 - `promote_run_to_pr` opens a REAL GitHub PR (or pushes a branch). With no
   `artifactId` it promotes the single unpromoted code version, or returns the
   version list when the choice is ambiguous; re-call with a chosen `artifactId`.
-  Strict preview captures promote through preview continuation, not here.
+  DevelopmentRun delivery uses `development_run_submit`, not this generic tool.
 - Checkpoint reads need `workflow:read`; restore, resume, and promote need
   `workflow:execute`.
 

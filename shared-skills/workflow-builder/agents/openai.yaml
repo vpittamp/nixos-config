@@ -1,4 +1,4 @@
 interface:
   display_name: "Workflow Builder"
   short_description: "Author and inspect durable runs and evidence."
-  default_prompt: "Use $workflow-builder to author, run, or debug a durable workflow, host or preview run, agent session, live trace, or sealed execution-evidence package."
+  default_prompt: "Use $workflow-builder to author, run, or debug an ordinary durable workflow or agent session, inspect its live trace or sealed evidence, and defer PreviewEnvironment lifecycle and canonical DevelopmentRuns to $preview-environments."

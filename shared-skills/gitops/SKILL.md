@@ -62,6 +62,7 @@ matters.
 | Rotate or repair secrets                                 | Trace ExternalSecret -> ClusterSecretStore -> remote key -> consuming pod; verify sync before restart and never print values                                    |
 | Recreate a cluster                                       | Use `cluster-desired-state`                                                                                                                                     |
 | Operate a preview vCluster                               | Use `preview-environments`                                                                                                                                      |
+| Deliver a verified DevelopmentRun                        | Start from its linked delivery receipts, then prove review/merge -> Tekton build/digest -> image/config pins -> hydration/promotion where applicable -> ArgoCD reconciliation -> live user/runtime path; do not create another source writer |
 | Deliver a `system-live` platform/runtime change          | Validate the compiled contract and pre-admission boundaries, rebuild any image-baked runner/runtime, render pins, advance the exact dev-preview-platform pointer, finish with one admitted runner digest, then prove a fresh generation, session, evidence receipt, and teardown |
 
 ## Rollout Proof
@@ -132,6 +133,11 @@ controllers to hide the first causal error.
   `development-module` use hot reload; `dapr-agent-py` is a session runtime and
   requires a built/pinned image plus a fresh session. Do not direct-patch a
   running durable agent or describe the retired Pydantic runtime as current.
+- DevelopmentRun `submit` is the only preview-development delivery entry point.
+  Its linked receipts are inputs to the ordinary GitOps chain, not permission
+  for an agent to choose branches, repositories, commits, PRs, pins, or ArgoCD
+  operations. Keep Tekton, renderer, Hydrator/Promoter, and ArgoCD ownership
+  unchanged.
 - Preview admission is physical-dev authority: the compiled contract binds the
   runner, policies, catalog, Dapr/runtime registry, effective agent/APM
   snapshot, database journal/template, seed set, capacity plan, and matching
