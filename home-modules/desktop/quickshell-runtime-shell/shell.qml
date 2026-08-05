@@ -5191,7 +5191,18 @@ function normalizeLauncherMode(mode) {
         if (boolOrFalse(space && space.is_linked_worktree)) {
             const label = stringOrEmpty(space && space.label);
             const branchLabel = herdrSpaceBranchLabel(space);
+            // A label that differs from the repo name is the worktree's own
+            // name and the most specific title available.
             if (label.length > 0 && label !== stringOrEmpty(space && space.repo_name)) {
+                return label;
+            }
+            // Otherwise keep the repo name. Falling through to the bare branch
+            // here titled every stacks row "main" — the secondary line already
+            // carries the branch, so the branch alone is both redundant and
+            // loses which repository the row belongs to. (This only surfaced
+            // once repo_name stopped being mis-derived as the directory name,
+            // which had made the test above pass by accident.)
+            if (label.length > 0) {
                 return label;
             }
             if (branchLabel.length > 0) {
