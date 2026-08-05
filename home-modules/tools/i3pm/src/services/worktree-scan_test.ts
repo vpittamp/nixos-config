@@ -121,18 +121,29 @@ Deno.test("worktreeTags names every property worth acting on", () => {
   assertEquals(worktreeTags(row({ missing: true, is_clean: false })), ["missing"]);
 });
 
-Deno.test("findBareRepositories globs <root>/<account>/<repo>/.bare", async () => {
+Deno.test("findBareRepositories finds both the .bare layout and ordinary clones", async () => {
   const root = await Deno.makeTempDir();
   try {
     await Deno.mkdir(`${root}/acct/repo/.bare`, { recursive: true });
     await Deno.mkdir(`${root}/acct/plain-checkout/.git`, { recursive: true });
+    // A .git FILE means "I am a linked worktree of some other repository".
+    // Treating it as a root re-enumerates the whole parent repo once per
+    // sibling worktree, so it must NOT be discovered as a repository.
+    await Deno.mkdir(`${root}/acct/linked-worktree`, { recursive: true });
+    await Deno.writeTextFile(`${root}/acct/linked-worktree/.git`, "gitdir: /elsewhere/.bare/worktrees/x\n");
     await Deno.writeTextFile(`${root}/loose-file`, "");
 
     const found = await findBareRepositories([root]);
-    assertEquals(found.length, 1);
-    assertEquals(found[0].account, "acct");
-    assertEquals(found[0].repo, "repo");
-    assertEquals(found[0].bare_path, `${root}/acct/repo/.bare`);
+    const byRepo = new Map(found.map((entry) => [entry.repo, entry]));
+
+    assertEquals(found.length, 2);
+    assertEquals(byRepo.get("repo")?.bare_path, `${root}/acct/repo/.bare`);
+    // git is driven from the bare database for that layout...
+    assertEquals(byRepo.get("repo")?.git_cwd, `${root}/acct/repo/.bare`);
+    assertEquals(byRepo.get("plain-checkout")?.bare_path, `${root}/acct/plain-checkout/.git`);
+    // ...and from the working-tree root for an ordinary clone.
+    assertEquals(byRepo.get("plain-checkout")?.git_cwd, `${root}/acct/plain-checkout`);
+    assertEquals(byRepo.has("linked-worktree"), false);
   } finally {
     await Deno.remove(root, { recursive: true });
   }

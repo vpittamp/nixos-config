@@ -30,7 +30,21 @@ export interface BareRepositoryRef {
   account: string;
   repo: string;
   repo_path: string;
+  /**
+   * Where this repository's git database lives — `<repo>/.bare` for the bare
+   * layout, `<repo>/.git` otherwise. Identity only: git is always driven with
+   * `repo_path`, because it resolves the database from the working directory
+   * in either layout and a linked worktree's `.git` is a FILE that cannot be
+   * chdir'd into.
+   */
   bare_path: string;
+  /**
+   * Directory git is driven from. The bare database for a `.bare` layout, the
+   * working-tree root for an ordinary clone. Kept separate from `bare_path`
+   * because the two coincide only in the bare case, and separate from
+   * `repo_path` because a `.bare` container is not itself a work tree.
+   */
+  git_cwd: string;
 }
 
 /** One checkout git knows about, with everything git can say about it. */
@@ -126,15 +140,32 @@ export async function findBareRepositories(roots: string[]): Promise<BareReposit
       for (const repo of await listDirectory(accountPath)) {
         const repoPath = path.join(accountPath, repo);
         const barePath = path.join(repoPath, ".bare");
+        // Accept BOTH layouts. The ~/repos/<account>/<repo>/.bare form and an
+        // ordinary clone with a .git directory (or a .git pointer file, which
+        // stat reports as a regular file) are equally real repositories. Globbing
+        // only for .bare silently omitted every normal clone — three of them
+        // here — while still reporting success, which is the failure mode this
+        // command exists to avoid.
         // "unreadable" is deliberately kept: git is asked anyway, and failing
         // there surfaces the repository as a reported skip instead of quietly
         // dropping it.
-        if (await probeDirectory(barePath) === "absent") continue;
+        const hasBare = await probeDirectory(barePath) !== "absent";
+        const gitPath = path.join(repoPath, ".git");
+        // A .git DIRECTORY is a repository root. A .git FILE is not: it means
+        // this directory is a linked worktree OF some other repository, and
+        // treating it as a root re-enumerates the whole parent (1561 rows
+        // instead of 566, every worktree counted once per sibling worktree).
+        const hasGit = hasBare ? false : await probeDirectory(gitPath) !== "absent";
+        if (!hasBare && !hasGit) continue;
         found.push({
           account,
           repo,
           repo_path: repoPath,
-          bare_path: barePath,
+          // git resolves the database from the repo directory itself in either
+          // layout, so this is only the identity of the layout, not a path git
+          // is driven with.
+          bare_path: hasBare ? barePath : gitPath,
+          git_cwd: hasBare ? barePath : repoPath,
         });
       }
     }
@@ -223,7 +254,7 @@ export async function pruneRepositories(
     // default). Without it a repository reported as having dead registrations
     // is pruned to no effect, because git is still holding them in the grace
     // period — the command would promise a cleanup and quietly not do it.
-    const args = ["-C", repository.bare_path, "worktree", "prune", "--verbose", "--expire=now"];
+    const args = ["-C", repository.git_cwd, "worktree", "prune", "--verbose", "--expire=now"];
     if (dryRun) args.push("--dry-run");
     const result = await git.run(args);
 
@@ -233,7 +264,7 @@ export async function pruneRepositories(
     return {
       account: repository.account,
       repo: repository.repo,
-      repo_path: repository.repo_path,
+      repo_path: repository.git_cwd,
       ok: result.ok,
       dry_run: dryRun,
       removed: result.ok ? lines : [],
@@ -254,14 +285,14 @@ async function scanRepository(
   git: GitRunner,
   staleDays: number,
 ): Promise<RepositoryScan> {
-  const listed = await git.run(["-C", repository.bare_path, "worktree", "list", "--porcelain"]);
+  const listed = await git.run(["-C", repository.git_cwd, "worktree", "list", "--porcelain"]);
   if (!listed.ok) {
     return {
       worktrees: [],
       skip: {
         account: repository.account,
         repo: repository.repo,
-        repo_path: repository.repo_path,
+        repo_path: repository.git_cwd,
         reason: listed.stderr || git.spawnFailure() || "git worktree list failed",
       },
     };
@@ -271,8 +302,8 @@ async function scanRepository(
     !record.bare && record.path && !record.path.endsWith("/.bare")
   );
 
-  const defaultBranch = await resolveDefaultBranch(repository.bare_path, git);
-  const merge = await resolveMergeContext(repository.bare_path, defaultBranch, git);
+  const defaultBranch = await resolveDefaultBranch(repository.git_cwd, git);
+  const merge = await resolveMergeContext(repository.git_cwd, defaultBranch, git);
   const nowSeconds = Math.floor(Date.now() / 1000);
 
   const worktrees = await Promise.all(
@@ -310,7 +341,7 @@ async function buildReport(context: {
     present ? readStatus(record.path, git) : Promise.resolve(null),
     present
       ? readLastCommit(record.path, git)
-      : readLastCommit(repository.bare_path, git, record.commit),
+      : readLastCommit(repository.git_cwd, git, record.commit),
   ]);
 
   const isMerged = await resolveMerged(context, isTrunk);
@@ -326,7 +357,7 @@ async function buildReport(context: {
   return {
     account: repository.account,
     repo: repository.repo,
-    repo_path: repository.repo_path,
+    repo_path: repository.git_cwd,
     path: record.path,
     commit: record.commit,
     branch: record.branch || null,
@@ -368,7 +399,7 @@ async function resolveMerged(
   if (!merge.target || !record.commit) return false;
   const ancestor = await context.git.run([
     "-C",
-    context.repository.bare_path,
+    context.repository.git_cwd,
     "merge-base",
     "--is-ancestor",
     record.commit,
@@ -594,6 +625,7 @@ export async function probeDirectory(target: string): Promise<PathProbe> {
     return error instanceof Deno.errors.NotFound ? "absent" : "unreadable";
   }
 }
+
 
 /**
  * Build a git runner that never has more than `limit` processes in flight.
