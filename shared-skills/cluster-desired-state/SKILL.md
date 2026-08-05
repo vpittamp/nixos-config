@@ -135,6 +135,5 @@ Start with these current sources in `PittampalliOrg/stacks`:
 - `packages/components/spoke-tailscale-secrets/CONTRACT.md`
 - `packages/components/hub-onepassword/README.md`
 
-Use `docs/gitops-architecture-overview.md`, `docs/hub-cluster-setup.md`, and
-`docs/hub-recovery-runbook.md` as orientation only where they agree with the
-executable sources above.
+Use `docs/gitops-architecture-overview.md` and `docs/cluster-operations.md` as
+orientation only where they agree with the executable sources above.

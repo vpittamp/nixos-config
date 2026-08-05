@@ -20,7 +20,6 @@ Read the current versions of:
 - Workflow Builder `docs/host-preview-development-lifecycle.md`
 - Workflow Builder `docs/execution-evidence.md`
 - stacks `docs/preview-environment-architecture.md`
-- stacks `docs/host-driven-preview-development.md`
 - stacks `docs/preview-environment-runbook.md`
 - this skill's [DevelopmentRun contract](references/development-run-contract.md)
 
@@ -50,12 +49,12 @@ IDs, or timings.
 
 ## Choose A Profile
 
-| Need | Profile |
-| --- | --- |
-| Namespaced stacks and application changes in one generation | `system-live` |
-| Application HMR or a pull-request preview | `app-live` |
-| Immutable namespaced stacks validation | `manifest-candidate` |
-| Talos, CNI/CSI, host network/storage, Tailscale, or argocd-agent | `host-candidate` |
+| Need                                                             | Profile              |
+| ---------------------------------------------------------------- | -------------------- |
+| Namespaced stacks and application changes in one generation      | `system-live`        |
+| Application HMR or a pull-request preview                        | `app-live`           |
+| Immutable namespaced stacks validation                           | `manifest-candidate` |
+| Talos, CNI/CSI, host network/storage, Tailscale, or argocd-agent | `host-candidate`     |
 
 `host-candidate` uses a disposable physical cluster. Hub management, Source
 Hydrator, and GitOps Promoter changes have no vCluster preview lane.
