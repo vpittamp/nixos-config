@@ -504,18 +504,24 @@ in
           position = "0,0";
         };
       } else {
-        # Standard laptop display (1920x1200 @ ~162 PPI on 14" panel)
-        # 1.25 scale provides comfortable UI size without sacrificing too much screen real estate
+        # Standard laptop display.
+        # ThinkPad: 1920x1200 @ ~162 PPI — 1.25 gives comfortable UI size.
+        # Surface Laptop 2: 2256x1504 @ ~201 PPI — at 1.25 the effective density
+        # is still ~161 DPI so everything reads small. 1.5 (1504x1003 logical,
+        # ~134 effective DPI) is the comfort/quality sweet spot: fractional-
+        # scale-v1 keeps native Wayland clients (Firefox 146+, Chrome/Ozone)
+        # pixel-sharp, so quality is preserved.
         "eDP-1" = {
-          scale = "1.25";                   # 1.25x scaling for comfortable readability
+          scale = if hostName == "surface" then "1.5" else "1.25";
           position = "0,0";
         };
 
-        # External monitor (auto-detect, 1:1 scaling)
+        # External monitor (auto-detect, 1:1 scaling), right of the built-in
+        # panel (1920/1.25 = 1536, 2256/1.5 = 1504 logical pixels).
         "HDMI-A-1" = {
           scale = "1.0";
           mode = "1920x1080@60Hz";
-          position = "1536,0";  # Right of built-in (1920/1.25 = 1536 logical pixels)
+          position = if hostName == "surface" then "1504,0" else "1536,0";
         };
       };
 

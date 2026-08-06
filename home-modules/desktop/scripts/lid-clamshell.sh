@@ -38,8 +38,17 @@ STATE_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/sway/output-states.json"
 # Scale applied to unrecognized externals (fallback path).
 EXTERNAL_SCALE="1.25"
 
-# Built-in panel scale (eDP-1, native 1920x1200 -> logical 1536x960).
-PANEL_SCALE="1.25"
+# Built-in panel scale/mode (host-aware). ThinkPad: 1920x1200 @ 1.25 ->
+# logical 1536x960. Surface Laptop 2: 2256x1504 @ ~201 PPI @ 1.5 -> logical
+# 1504x1003; at 1.25 the effective density stays ~161 DPI and everything
+# reads too small. Keep in sync with the eDP-1 scale in sway.nix.
+if [ "$(hostname)" = "surface" ]; then
+  PANEL_SCALE="1.5"
+  PANEL_MODE="2256x1504"
+else
+  PANEL_SCALE="1.25"
+  PANEL_MODE="1920x1200"
+fi
 
 # In extended mode the Verbatim sits parallel to (left of) the built-in panel
 # but a little higher: its top edge is raised this many logical px above the
@@ -237,7 +246,7 @@ layout_extended() {
   local panel_x=0; [ -n "$verb" ] && panel_x="$vw"
   local panel_y="$top_gap"
 
-  swaymsg "output $PANEL enable mode 1920x1200 position $panel_x $panel_y scale $PANEL_SCALE" >/dev/null 2>&1 || true
+  swaymsg "output $PANEL enable mode $PANEL_MODE position $panel_x $panel_y scale $PANEL_SCALE" >/dev/null 2>&1 || true
 
   # Samsung directly above the panel.
   if [ -n "$sam" ]; then
@@ -279,7 +288,7 @@ run_open() {
   if [ -n "$(external_outputs)" ]; then
     layout_extended
   else
-    swaymsg "output $PANEL enable position 0 0 scale 1.25" >/dev/null 2>&1 || true
+    swaymsg "output $PANEL enable position 0 0 scale $PANEL_SCALE" >/dev/null 2>&1 || true
   fi
 }
 
