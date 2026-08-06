@@ -112,10 +112,12 @@ in
           "XDG_CACHE_HOME=/var/cache/cachix"
         ];
 
-        # Security hardening
-        NoNewPrivileges = false;  # Need privileges for system activation
-        ProtectSystem = false;    # Need to modify system
-        ProtectHome = "read-only";
+        # The agent runs switch-to-configuration, including Home Manager
+        # activation. ProtectHome also makes /run/user read-only and can make
+        # /etc/nixos read-only when it points into the user's checkout.
+        NoNewPrivileges = false;
+        ProtectSystem = false;
+        ProtectHome = false;
         PrivateTmp = true;
 
         # Resource limits
