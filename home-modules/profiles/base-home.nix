@@ -119,7 +119,7 @@ in
   modules.tools.docker.enable = true; # Docker with 1Password integration
   modules.tools.remoteKubeconfig.enable = true;
   modules.tools.fleetKubeconfigs.enable = true;  # `sync-fleet-kubeconfigs` → token-free fleet kubectl over Tailscale
-  modules.aiAssistants.workflowBuilderMcp.enable = builtins.elem hostName [ "ryzen" "thinkpad" ];
+  modules.aiAssistants.workflowBuilderMcp.enable = builtins.elem hostName [ "ryzen" "thinkpad" "surface" ];
   programs.pwa-url-router.enable = false;  # Feature 113: DISABLED - using Chrome as default browser
 
   # VSCode profile configuration

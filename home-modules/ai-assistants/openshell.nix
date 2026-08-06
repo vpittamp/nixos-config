@@ -5,7 +5,7 @@ let
     if osConfig != null && osConfig ? networking && osConfig.networking ? hostName
     then osConfig.networking.hostName
     else null;
-  supportedHosts = [ "ryzen" "thinkpad" ];
+  supportedHosts = [ "ryzen" "thinkpad" "surface" ];
   enableRyzenGateway = builtins.elem hostName supportedHosts;
   gatewayName = "ryzen-internal";
   gatewayEndpoint = "https://openshell-ryzen.tail286401.ts.net:8080";

@@ -1,5 +1,5 @@
 {
-  description = "NixOS configuration for the thinkpad and ryzen Sway workstations";
+  description = "NixOS configuration for the thinkpad, ryzen, and surface Sway workstations";
 
   inputs = {
     # Core

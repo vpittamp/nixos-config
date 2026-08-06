@@ -44,6 +44,25 @@ in
     ];
   };
 
+  # Microsoft Surface Laptop 2 (Intel Core i5-8250U + UHD 620)
+  # Physical laptop with the full Sway/Wayland desktop stack (mirrors thinkpad).
+  # Deploy from another host:
+  #   nixos-rebuild switch --flake .#surface --target-host vpittamp@surface
+  surface = helpers.mkSystem {
+    hostname = "surface";
+    system = "x86_64-linux";
+    modules = [
+      ../configurations/surface.nix
+
+      # Home Manager integration with Surface-specific config
+      (helpers.mkHomeManagerConfig {
+        system = "x86_64-linux";
+        user = "vpittamp";
+        modules = [ ../home-modules/surface.nix ];
+      })
+    ];
+  };
+
   # ARCHIVED/REMOVED CONFIGURATIONS:
   # The following have been moved to archived/obsolete-configs/
   # - hetzner.nix (Hetzner Cloud Server with Sway - no longer in use)

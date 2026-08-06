@@ -10,6 +10,7 @@
     checks = lib.optionalAttrs (system == "x86_64-linux") {
       thinkpad-system = self.nixosConfigurations.thinkpad.config.system.build.toplevel;
       ryzen-system = self.nixosConfigurations.ryzen.config.system.build.toplevel;
+      surface-system = self.nixosConfigurations.surface.config.system.build.toplevel;
     };
   };
 }
