@@ -230,8 +230,9 @@ in
   };
 
   # Display configuration - UHD 620 via modesetting
-  # Panel is 2256x1504 (~201 PPI); scaling is handled by Sway (scale 1.25)
-  # rather than X DPI since the session is Wayland-native.
+  # Panel is 2256x1504 (~201 PPI); scaling is handled by Sway (scale 1.5,
+  # see home-modules/desktop/sway.nix) rather than X DPI since the session
+  # is Wayland-native.
   services.xserver = {
     videoDrivers = [ "modesetting" ];
   };

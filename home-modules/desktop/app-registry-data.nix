@@ -757,11 +757,11 @@ let
     })
 
   ]
-  # WS33: Herdr Agent Multiplexer (REMOTE ryzen instance, thinkpad only).
+  # WS33: Herdr Agent Multiplexer (REMOTE ryzen instance, laptop clients only).
   # Its own Ghostty window with app-id com.herdr.ryzen so the daemon focuses
-  # THIS window for ryzen rows (vs the local com.herdr.thinkpad window).
+  # THIS window for ryzen rows (vs the local com.herdr.<host> window).
   # Daemon mapping: remote rows with herdr_host=ryzen -> app "herdr-ryzen".
-  ++ lib.optional (hostName == "thinkpad") (mkApp {
+  ++ lib.optional (builtins.elem hostName [ "thinkpad" "surface" ]) (mkApp {
     name = "herdr-ryzen";
     display_name = "Herdr (ryzen)";
     command = "ghostty";

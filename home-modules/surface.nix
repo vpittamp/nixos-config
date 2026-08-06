@@ -1,7 +1,8 @@
 # Home-manager configuration for Microsoft Surface Laptop 2
 # Physical laptop display with Sway, i3pm daemon, walker launcher.
 # Mirrors home-modules/thinkpad.nix, minus the Ryzen-streaming client bits
-# (Moonlight config seeding, herdr remote target, Moonlight window rules).
+# (Moonlight config seeding, Moonlight window rules). The herdr-ryzen remote
+# target is configured like the thinkpad (daemon aggregation + registry app).
 { lib, pkgs, ... }:
 
 {
@@ -46,6 +47,15 @@
   programs.i3-project-daemon = {
     enable = true;
     logLevel = "INFO";
+    # Same remote herdr aggregation as the thinkpad: ryzen rows map to the
+    # herdr-ryzen registry app (Ghostty window with app-id com.herdr.ryzen).
+    herdrRemoteTargets = [
+      {
+        host = "ryzen";
+        ssh_target = "ryzen";
+        connection_key = "vpittamp@ryzen:22";
+      }
+    ];
   };
 
   # Plain laptop profile: the built-in panel plus EDID-recognized physical
