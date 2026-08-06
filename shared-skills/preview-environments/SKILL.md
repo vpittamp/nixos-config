@@ -109,6 +109,12 @@ on physical dev. Persistent sessions edit the host checkout and invoke
 `wfb-development apply`, `observe`, or `verify`. Submission and cleanup remain
 parent DevelopmentRun commands.
 
+For `system-live`, watch mode covers the primary checkout plus every imported
+ChangeSet repository under `/sandbox/work/repositories` and coalesces one burst
+into one ordered content generation. Infrastructure edits must remain under the
+generation's immutable `candidatePaths`. Agents edit source only; they never
+receive Kubernetes credentials or apply rendered manifests.
+
 Dapr workflow history is immutable. A `session-runtime` target verifies one
 fixed source canary, then requires a built and pinned image plus a fresh session
 for deployed proof. Never hot-patch an existing durable workflow.
@@ -135,6 +141,17 @@ logical product data, NATS state, and mutable workspaces are disposable.
 ## Apply, Verify, And Deliver
 
 - One logical apply uses one generation across the full service set.
+- An infrastructure apply renders the exact stacks baseline and candidate in
+  separate trusted trees, then hands a digest-bound delta to the preview-local
+  receiver under one run-generation Lease.
+- During infrastructure ownership, only the exact preview ArgoCD Application
+  is paused. The receiver admits bounded namespaced resources, uses one
+  server-side-apply field manager, waits for readiness, and returns resource,
+  event, workload-log, Dapr, trace, and browser evidence through
+  DevelopmentOutput.
+- A failed infrastructure generation restores the prior successful generation.
+  Cancel and cleanup restore the exact baseline before the local and hub Leases
+  are released and ArgoCD resumes.
 - Require one `APPLIED` receipt per service plus global terminal convergence.
 - Source-only HMR keeps adopted pod UIDs stable; replacement is rollout
   evidence, not HMR evidence.
@@ -155,6 +172,13 @@ For a changed development boundary, require fresh dev-cluster proof:
 - invalid/no-op requests create zero lifecycle resources and return typed
   reasons;
 - source-only HMR returns applied plus terminal ready/failed output within 10s;
+- infrastructure file detection is within 1s, render/policy is within 5s,
+  admitted API-visible resources converge within 10s, and Deployment or Job
+  readiness is decisive within 60s;
+- unsupported scope or authority is rejected with zero host/shared mutation;
+  rollback completes within 30s and release restores the exact baseline;
+- a combined application plus stacks edit is one coalesced generation, and a
+  controlled restart causes no duplicate apply;
 - command submission returns a durable receipt within 2s;
 - delivery returns a receipt or typed failure within 120s;
 - required GitHub checks start within 30s of PR creation or return a typed block;
