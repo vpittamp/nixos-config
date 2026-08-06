@@ -335,10 +335,16 @@ in
   # Fallback password for initial setup (change with passwd)
   users.users.vpittamp.initialPassword = lib.mkDefault "nixos";
 
-  # Add user to required groups
-  users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" "input" "onepassword" ];
+  # TPM 2.0: udev rules + tss group resource manager access
+  security.tpm2.enable = true;
 
-  # Bluetooth support (Intel 8265 combo card)
+  # surface-control udev rules (SAM sysfs permissions)
+  services.udev.packages = [ pkgs.surface-control ];
+
+  # Add user to required groups
+  users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" "input" "onepassword" "tss" ];
+
+  # Bluetooth support (Marvell 88W8897 AVASTAR WiFi/BT composite, USB-attached BT)
   hardware.bluetooth = {
     enable = true;
     powerOnBoot = true;
@@ -418,11 +424,32 @@ in
     # Webcam (Surface Laptop 2 has a 720p front camera)
     v4l-utils         # Video4Linux utilities
     cameractrls       # Webcam controls
+    libcamera         # IPU3 camera pipeline tools (cam/qcam) — both the front
+                      # 720p and the IR (Windows Hello) sensors hang off the
+                      # Intel IPU3, so apps only see a camera once libcamera
+                      # claims /dev/media*; PipeWire's libcamera SPA plugin
+                      # (already in the closure) then exposes it to browsers.
+
+    # Surface ACPI (SAM) control: performance/cooling modes, battery info and
+    # (if the SL2 firmware exposes it) the battery charge limiter
+    surface-control
+
+    # TPM 2.0 tooling (/dev/tpm0 present on the SL2)
+    tpm2-tools
 
     # Screen recording / screenshots (Wayland)
     wf-recorder       # Wayland screen recorder with VAAPI support
     grim              # Screenshot utility for Wayland
     slurp             # Region selection for screenshots/recording
+
+    # Miracast / WiFi Display (both directions):
+    #   source: cast this screen to a TV/receiver ("Connect to a wireless display")
+    #   sink:   receive another device's cast on this screen
+    # Uses NetworkManager P2P (Marvell 88W8897 supports P2P-client + P2P-GO)
+    # plus xdg-desktop-portal-wlr for capture (already configured in
+    # modules/desktop/sway.nix). NM backend must stay wpa_supplicant — the
+    # thinkpad's iwd backend does not work with gnome-network-displays.
+    gnome-network-displays
   ];
 
   # Firefox configuration with PWA support
@@ -440,7 +467,8 @@ in
   # Firewall configuration
   networking.firewall = {
     enable = true;
-    allowedTCPPorts = [ 22 ];  # SSH
+    allowedTCPPorts = [ 22 ]  # SSH
+      ++ [ 7236 ];            # Miracast sink: RTSP control (gnome-network-displays)
     checkReversePath = "loose";  # For Tailscale
   };
 
