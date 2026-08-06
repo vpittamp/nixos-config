@@ -2905,14 +2905,15 @@ in
       CONFIG_DIR="$HOME/.config/quickshell/${cfg.configName}"
       QMLLS_INI="$CONFIG_DIR/.qmlls.ini"
 
-      if [ ! -d "$CONFIG_DIR" ]; then
-        exit 0
-      fi
-
-      if [ ! -e "$QMLLS_INI" ] || [ -L "$QMLLS_INI" ]; then
-        ${pkgs.coreutils}/bin/rm -f "$QMLLS_INI"
-        ${pkgs.coreutils}/bin/touch "$QMLLS_INI"
-        ${pkgs.coreutils}/bin/chmod 0644 "$QMLLS_INI"
+      # NOTE: never `exit` from an activation snippet — home-manager
+      # concatenates all snippets into one script, so exit would abort every
+      # later step (including linkGeneration) with a fake success.
+      if [ -d "$CONFIG_DIR" ]; then
+        if [ ! -e "$QMLLS_INI" ] || [ -L "$QMLLS_INI" ]; then
+          ${pkgs.coreutils}/bin/rm -f "$QMLLS_INI"
+          ${pkgs.coreutils}/bin/touch "$QMLLS_INI"
+          ${pkgs.coreutils}/bin/chmod 0644 "$QMLLS_INI"
+        fi
       fi
     '';
 

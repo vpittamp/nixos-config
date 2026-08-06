@@ -79,18 +79,19 @@ in
     set -euo pipefail
 
     SKILLS_ROOT="$HOME/.codex/skills"
-    if [ ! -d "$SKILLS_ROOT" ]; then
-      exit 0
+    # NOTE: never `exit` from an activation snippet — home-manager concatenates
+    # all snippets into one script, so exit would abort every later step
+    # (checkLinkTargets, writeBoundary, linkGeneration) with a fake success.
+    if [ -d "$SKILLS_ROOT" ]; then
+      for d in "$SKILLS_ROOT"/*; do
+        [ -d "$d" ] || continue
+        name="$(${pkgs.coreutils}/bin/basename "$d")"
+        [ "$name" = ".system" ] && continue
+        if [ -f "$d/SKILL.md" ] && [ ! -L "$d/SKILL.md" ]; then
+          ${pkgs.coreutils}/bin/rm -f "$d/SKILL.md"
+        fi
+      done
     fi
-
-    for d in "$SKILLS_ROOT"/*; do
-      [ -d "$d" ] || continue
-      name="$(${pkgs.coreutils}/bin/basename "$d")"
-      [ "$name" = ".system" ] && continue
-      if [ -f "$d/SKILL.md" ] && [ ! -L "$d/SKILL.md" ]; then
-        ${pkgs.coreutils}/bin/rm -f "$d/SKILL.md"
-      fi
-    done
   '';
 
   # Codex currently ignores skills whose `SKILL.md` is a symlink (home-manager typically
@@ -100,24 +101,24 @@ in
     set -euo pipefail
 
     SKILLS_ROOT="$HOME/.codex/skills"
-    if [ ! -d "$SKILLS_ROOT" ]; then
-      exit 0
-    fi
+    # See preMaterializeCodexSkills: no `exit` inside activation snippets —
+    # it would abort every later activation step with a fake success.
+    if [ -d "$SKILLS_ROOT" ]; then
+      # Only touch user-installed skills; Codex manages `.system` itself.
+      for d in "$SKILLS_ROOT"/*; do
+        [ -d "$d" ] || continue
+        name="$(${pkgs.coreutils}/bin/basename "$d")"
+        [ "$name" = ".system" ] && continue
 
-    # Only touch user-installed skills; Codex manages `.system` itself.
-    for d in "$SKILLS_ROOT"/*; do
-      [ -d "$d" ] || continue
-      name="$(${pkgs.coreutils}/bin/basename "$d")"
-      [ "$name" = ".system" ] && continue
-
-      if [ -L "$d/SKILL.md" ]; then
-        target="$(${pkgs.coreutils}/bin/readlink -f "$d/SKILL.md" || true)"
-        if [ -n "$target" ] && [ -f "$target" ]; then
-          ${pkgs.coreutils}/bin/rm -f "$d/SKILL.md"
-          ${pkgs.coreutils}/bin/install -m 0644 "$target" "$d/SKILL.md"
+        if [ -L "$d/SKILL.md" ]; then
+          target="$(${pkgs.coreutils}/bin/readlink -f "$d/SKILL.md" || true)"
+          if [ -n "$target" ] && [ -f "$target" ]; then
+            ${pkgs.coreutils}/bin/rm -f "$d/SKILL.md"
+            ${pkgs.coreutils}/bin/install -m 0644 "$target" "$d/SKILL.md"
+          fi
         fi
-      fi
-    done
+      done
+    fi
   '';
 
   home.activation.setupCodexMcpRuntimeDirs = lib.mkIf enableBrowserMcpServers (lib.hm.dag.entryAfter ["writeBoundary"] ''
