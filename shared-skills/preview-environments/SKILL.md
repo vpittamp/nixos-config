@@ -98,7 +98,6 @@ Public builder profiles are:
 - `codex-cli`
 - `kimi-code-cli`
 - `agy-cli`
-- `cli-fanout`
 
 Fixture-local `*-host` identifiers are internal mappings, not caller input.
 `adk-agent-py` is retired. Do not restore it or a Pydantic preview runtime.
@@ -108,8 +107,7 @@ they are not Workflow Builder runtime authority.
 Official CLI pods, OAuth files, native hooks, transcripts, and MCP sessions stay
 on physical dev. Persistent sessions edit the host checkout and invoke
 `wfb-development apply`, `observe`, or `verify`. Submission and cleanup remain
-parent DevelopmentRun commands. `cli-fanout` is ordered because its writers
-share one mutable execution-scoped workspace.
+parent DevelopmentRun commands.
 
 Dapr workflow history is immutable. A `session-runtime` target verifies one
 fixed source canary, then requires a built and pinned image plus a fresh session
