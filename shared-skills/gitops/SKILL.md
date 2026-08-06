@@ -132,7 +132,9 @@ controllers to hide the first causal error.
   paths and Workflow Builder services. Cataloged Deployments and the registered
   `development-module` use hot reload; `dapr-agent-py` is a session runtime and
   requires a built/pinned image plus a fresh session. Do not direct-patch a
-  running durable agent or describe the retired Pydantic runtime as current.
+  running durable agent or describe the retired Pydantic runtime as current. A
+  rendered infrastructure no-op acquires no temporary writer. Cleanup releases
+  application adoption first and restores the baseline before ArgoCD resumes.
 - DevelopmentRun `submit` is the only preview-development delivery entry point.
   Its linked receipts are inputs to the ordinary GitOps chain, not permission
   for an agent to choose branches, repositories, commits, PRs, pins, or ArgoCD

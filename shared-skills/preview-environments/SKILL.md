@@ -115,6 +115,12 @@ into one ordered content generation. Infrastructure edits must remain under the
 generation's immutable `candidatePaths`. Agents edit source only; they never
 receive Kubernetes credentials or apply rendered manifests.
 
+The watcher publishes the same composite-digest verdict ledger into every
+member checkout. After editing any repository, run `wfb-development await-sync`
+with `--wait --repo <edited-checkout>` and require `applied` before inspecting
+the environment. `failed`, `unwatched`, and `timeout` are not success. A busy
+durable phase defers the batch; do not start a second apply authority.
+
 Dapr workflow history is immutable. A `session-runtime` target verifies one
 fixed source canary, then requires a built and pinned image plus a fresh session
 for deployed proof. Never hot-patch an existing durable workflow.
@@ -152,6 +158,11 @@ logical product data, NATS state, and mutable workspaces are disposable.
 - A failed infrastructure generation restores the prior successful generation.
   Cancel and cleanup restore the exact baseline before the local and hub Leases
   are released and ArgoCD resumes.
+- An admitted stacks tree with no rendered delta succeeds without acquiring
+  infrastructure ownership or scheduling readiness work.
+- Cleanup releases application adoption before infrastructure ownership,
+  retries transient receiver transport failures, and resumes ArgoCD only after
+  baseline restoration.
 - Require one `APPLIED` receipt per service plus global terminal convergence.
 - Source-only HMR keeps adopted pod UIDs stable; replacement is rollout
   evidence, not HMR evidence.
@@ -169,7 +180,7 @@ logical product data, NATS state, and mutable workspaces are disposable.
 
 For a changed development boundary, require fresh dev-cluster proof:
 
-- invalid/no-op requests create zero lifecycle resources and return typed
+- invalid/no-op launch requests create zero lifecycle resources and return typed
   reasons;
 - source-only HMR returns applied plus terminal ready/failed output within 10s;
 - infrastructure file detection is within 1s, render/policy is within 5s,

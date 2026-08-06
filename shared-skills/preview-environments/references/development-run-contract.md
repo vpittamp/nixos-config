@@ -63,9 +63,19 @@ credential-shaped fields and embedded credential values. Missing output should
 be fixed at the adapter or telemetry boundary, not normalized into unbounded
 pod-log access.
 
+For supervised delivery, one composite content digest covers the primary
+checkout and every imported repository. The watcher writes the same membership
+and verdict into each checkout. `await-sync` from the edited checkout must prove
+that exact digest before observation; it is read-only and never creates another
+apply path.
+
 ## Terminal Contract
 
 Success means required gates and delivery receipts passed, persistent changes
 were built and reconciled when applicable, runtime behavior was verified on a
 fresh generation/session, terminal evidence sealed, and cleanup completed.
 `COMPLETED` workflow status, a green pod, or a created PR is insufficient alone.
+
+An infrastructure no-op does not acquire ownership or run readiness. Cleanup
+orders application adoption release before infrastructure restoration and must
+restore the exact baseline before ArgoCD resumes.

@@ -101,6 +101,9 @@ interactive runtime without that declaration or its registry-owned
 - In a persistent CLI profile, edit the seeded host checkout and run
   `wfb-development apply`, `observe`, or `verify`. The application reconstructs
   the parent DevelopmentRun and compiler-owned adapter from session identity.
+  When supervised watch mode is active, run `wfb-development await-sync` with
+  `--wait --repo <edited-checkout>` and require `applied` before inspecting the
+  result; the verdict covers the primary checkout and every imported repository.
   Inspect through the session's Playwright MCP. Submission and cancellation are
   parent-run gates; arbitrary event payloads and unrelated workflow actions are
   rejected. Never copy an OAuth Secret or CLI pod into the vCluster.
@@ -172,6 +175,10 @@ interactive runtime without that declaration or its registry-owned
   `development_run_follow_output`; checkpoint, fork, handoff, and reproduction
   use their corresponding `development_run_*` commands on the same run. Generic
   workflow continuation is not a second preview-development path.
+- A `system-live` stacks tree with no rendered infrastructure delta is a
+  successful no-op: it acquires no temporary ownership and has no readiness
+  work. Cancellation releases application adoption before infrastructure
+  ownership and restores the exact baseline before ArgoCD resumes.
 - Agent MCP configuration is resolved at session launch. Project access is the
   ceiling; per-agent allowed tools can only narrow it.
 - OAuth and ActivePieces credentials are reference-forwarded. Plaintext must not
