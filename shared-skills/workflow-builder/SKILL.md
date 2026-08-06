@@ -95,9 +95,9 @@ interactive runtime without that declaration or its registry-owned
   session Secret path. Do not replace it with a provider API key, SDK, print
   mode, `codex exec`, or another noninteractive subprocess.
 - For `app-live` or `system-live` preview development, public profiles are
-  `dapr-agent-py`, `claude-code-cli`, `codex-cli`, `kimi-code-cli`, `agy-cli`,
-  and ordered `cli-fanout`. Fixture-local `*-host` values are internal adapter
-  mappings and must not be exposed as caller input. `adk-agent-py` is retired.
+  `dapr-agent-py`, `claude-code-cli`, `codex-cli`, `kimi-code-cli`, and
+  `agy-cli`. Fixture-local `*-host` values are internal adapter mappings and
+  must not be exposed as caller input. `adk-agent-py` is retired.
 - In a persistent CLI profile, edit the seeded host checkout and run
   `wfb-development apply`, `observe`, or `verify`. The application reconstructs
   the parent DevelopmentRun and compiler-owned adapter from session identity.

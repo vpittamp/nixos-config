@@ -20,7 +20,6 @@ Read the current versions of:
 - Workflow Builder `docs/host-preview-development-lifecycle.md`
 - Workflow Builder `docs/execution-evidence.md`
 - stacks `docs/preview-environment-architecture.md`
-- stacks `docs/host-driven-preview-development.md`
 - stacks `docs/preview-environment-runbook.md`
 - this skill's [DevelopmentRun contract](references/development-run-contract.md)
 
@@ -50,12 +49,12 @@ IDs, or timings.
 
 ## Choose A Profile
 
-| Need | Profile |
-| --- | --- |
-| Namespaced stacks and application changes in one generation | `system-live` |
-| Application HMR or a pull-request preview | `app-live` |
-| Immutable namespaced stacks validation | `manifest-candidate` |
-| Talos, CNI/CSI, host network/storage, Tailscale, or argocd-agent | `host-candidate` |
+| Need                                                             | Profile              |
+| ---------------------------------------------------------------- | -------------------- |
+| Namespaced stacks and application changes in one generation      | `system-live`        |
+| Application HMR or a pull-request preview                        | `app-live`           |
+| Immutable namespaced stacks validation                           | `manifest-candidate` |
+| Talos, CNI/CSI, host network/storage, Tailscale, or argocd-agent | `host-candidate`     |
 
 `host-candidate` uses a disposable physical cluster. Hub management, Source
 Hydrator, and GitOps Promoter changes have no vCluster preview lane.
@@ -99,7 +98,6 @@ Public builder profiles are:
 - `codex-cli`
 - `kimi-code-cli`
 - `agy-cli`
-- `cli-fanout`
 
 Fixture-local `*-host` identifiers are internal mappings, not caller input.
 `adk-agent-py` is retired. Do not restore it or a Pydantic preview runtime.
@@ -109,8 +107,7 @@ they are not Workflow Builder runtime authority.
 Official CLI pods, OAuth files, native hooks, transcripts, and MCP sessions stay
 on physical dev. Persistent sessions edit the host checkout and invoke
 `wfb-development apply`, `observe`, or `verify`. Submission and cleanup remain
-parent DevelopmentRun commands. `cli-fanout` is ordered because its writers
-share one mutable execution-scoped workspace.
+parent DevelopmentRun commands.
 
 Dapr workflow history is immutable. A `session-runtime` target verifies one
 fixed source canary, then requires a built and pinned image plus a fresh session
