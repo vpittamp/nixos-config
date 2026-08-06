@@ -1,6 +1,6 @@
 # Cachix Deploy - Automated NixOS Deployments
 #
-# This workflow builds NixOS configurations for thinkpad and ryzen,
+# This workflow builds NixOS configurations for thinkpad, ryzen, and surface,
 # pushes them to Cachix, and triggers deployment to agents.
 #
 # Required secrets:
@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        host: [thinkpad, ryzen]
+        host: [thinkpad, ryzen, surface]
 
     steps:
       - name: Checkout repository
@@ -139,7 +139,7 @@ jobs:
           echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Deploy spec**: \`${{ steps.build-spec.outputs.spec }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Targets**: thinkpad, ryzen" >> $GITHUB_STEP_SUMMARY
+          echo "- **Targets**: thinkpad, ryzen, surface" >> $GITHUB_STEP_SUMMARY
           echo "- **Status**: Activation triggered" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Agents will pull and activate the new configuration." >> $GITHUB_STEP_SUMMARY

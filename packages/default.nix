@@ -40,6 +40,7 @@
           agents = {
             thinkpad = self.nixosConfigurations.thinkpad.config.system.build.toplevel;
             ryzen = self.nixosConfigurations.ryzen.config.system.build.toplevel;
+            surface = self.nixosConfigurations.surface.config.system.build.toplevel;
           };
         };
     };
