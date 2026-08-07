@@ -129,6 +129,10 @@ let
     if hostName == "hetzner" then "headless"
     else if hostName == "ryzen" then "desktop4"
     else "laptop";
+
+  # Built-in panels dense enough to want 1.5 rather than the 1.25 default:
+  # Surface Laptop 2 (2256x1504, ~201 PPI) and Surface Pro 3 (2160x1440, ~216 PPI).
+  hiDpiPanel = builtins.elem hostName [ "surface" "surface-pro3" ];
   swayProfileMode =
     if config.programs.sway-profile.mode == "auto"
     then detectedSwayProfileMode
@@ -511,17 +515,22 @@ in
         # ~134 effective DPI) is the comfort/quality sweet spot: fractional-
         # scale-v1 keeps native Wayland clients (Firefox 146+, Chrome/Ozone)
         # pixel-sharp, so quality is preserved.
+        # Surface Pro 3: 2160x1440 @ ~216 PPI — denser still than the Laptop 2,
+        # so it takes the same 1.5 (1440x960 logical, ~144 effective DPI).
         "eDP-1" = {
-          scale = if hostName == "surface" then "1.5" else "1.25";
+          scale = if hiDpiPanel then "1.5" else "1.25";
           position = "0,0";
         };
 
         # External monitor (auto-detect, 1:1 scaling), right of the built-in
-        # panel (1920/1.25 = 1536, 2256/1.5 = 1504 logical pixels).
+        # panel (1920/1.25 = 1536, 2256/1.5 = 1504, 2160/1.5 = 1440 logical px).
         "HDMI-A-1" = {
           scale = "1.0";
           mode = "1920x1080@60Hz";
-          position = if hostName == "surface" then "1504,0" else "1536,0";
+          position =
+            if hostName == "surface" then "1504,0"
+            else if hostName == "surface-pro3" then "1440,0"
+            else "1536,0";
         };
       };
 

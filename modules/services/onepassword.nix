@@ -181,8 +181,16 @@ in
       # Enable 1Password system integration
       programs._1password.enable = true;
 
-      # Create base directories
+      # Create base directories.
+      # ~/.config must be listed explicitly and FIRST. Everything below creates
+      # it implicitly as a parent, and an implicitly-created parent is owned by
+      # root — which then blocks home-manager's linkGeneration (it runs as the
+      # user and cannot mkdir inside a root-owned ~/.config). This is invisible
+      # on hosts where ~/.config already existed before 1Password was first
+      # activated, and only bites a fresh install. See also the chown of the
+      # parent in the onePasswordSettings/onePasswordSSHConfig scripts below.
       systemd.tmpfiles.rules = [
+        "d /home/${cfg.user}/.config 0755 ${cfg.user} users -"
         "d /home/${cfg.user}/.1password 0700 ${cfg.user} users -"
         "d /home/${cfg.user}/.config/op 0700 ${cfg.user} users -"
         "d /home/${cfg.user}/.config/1Password 0700 ${cfg.user} users -"
@@ -325,6 +333,10 @@ in
       # Create 1Password directories without overwriting settings
       system.activationScripts.onePasswordSettings = ''
         mkdir -p /home/${cfg.user}/.config/1Password/settings
+        # mkdir -p above creates ~/.config as root when it does not yet exist;
+        # the recursive chown below only covers 1Password/ and deeper, so the
+        # parent has to be claimed separately or home-manager cannot write there.
+        chown ${cfg.user}:users /home/${cfg.user}/.config
         chown -R ${cfg.user}:users /home/${cfg.user}/.config/1Password
         chmod 700 /home/${cfg.user}/.config/1Password
         chmod 700 /home/${cfg.user}/.config/1Password/settings
@@ -392,6 +404,8 @@ in
           vault = "${vault}"
         '') cfg.ssh.vaults}
         EOF
+        # Same parent-ownership hazard as onePasswordSettings above.
+        chown ${cfg.user}:users /home/${cfg.user}/.config
         chown -R ${cfg.user}:users /home/${cfg.user}/.config/1Password
         chmod 700 /home/${cfg.user}/.config/1Password/ssh
         chmod 600 /home/${cfg.user}/.config/1Password/ssh/agent.toml

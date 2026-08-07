@@ -63,6 +63,27 @@ in
     ];
   };
 
+  # Microsoft Surface Pro 3 (Intel Core i5-4300U Haswell + HD Graphics 4400)
+  # 3.7 GiB RAM, 128GB SATA SSD. Near-parity with the Laptop 2's Sway/Quickshell
+  # desktop; drops only the linux-surface kernel (the Pro 3 uses an N-trig HID
+  # digitizer that mainline drives — IPTS is Pro 4 and newer), Podman and CUPS.
+  # Always build on ryzen rather than on the device itself:
+  #   nixos-rebuild switch --flake .#surface-pro3 \
+  #     --target-host vpittamp@surface-pro --use-remote-sudo
+  surface-pro3 = helpers.mkSystem {
+    hostname = "surface-pro3";
+    system = "x86_64-linux";
+    modules = [
+      ../configurations/surface-pro3.nix
+
+      (helpers.mkHomeManagerConfig {
+        system = "x86_64-linux";
+        user = "vpittamp";
+        modules = [ ../home-modules/surface-pro3.nix ];
+      })
+    ];
+  };
+
   # ARCHIVED/REMOVED CONFIGURATIONS:
   # The following have been moved to archived/obsolete-configs/
   # - hetzner.nix (Hetzner Cloud Server with Sway - no longer in use)
