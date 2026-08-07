@@ -34,6 +34,7 @@ Item {
     property alias dashboardWatcherRef: dashboardWatcher
     property alias notificationWatcherRef: notificationWatcher
     property alias networkWatcherRef: networkWatcher
+    property alias castWatcherRef: castWatcher
     property alias systemStatsWatcherRef: systemStatsWatcher
     property alias lidPolicyWatcherRef: lidPolicyWatcher
     property alias brightnessActionProcessRef: brightnessActionProcess
@@ -344,6 +345,13 @@ Item {
     }
 
     Timer {
+        id: castRefreshTimer
+        interval: 10000
+        repeat: false
+        onTriggered: castWatcher.running = true
+    }
+
+    Timer {
         id: systemStatsRestartTimer
         interval: 2000
         repeat: false
@@ -584,6 +592,30 @@ Item {
         }
         onExited: function () {
             networkRefreshTimer.restart();
+        }
+    }
+
+    // One-shot cast (Miracast) status probe — reruns on a slow refresh cycle.
+    Process {
+        id: castWatcher
+        command: [runtimeConfig.castStatusBin]
+        running: true
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                shellRoot.parseCast(data);
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                if (data && data.trim()) {
+                    console.warn("cast.watch:", data);
+                }
+            }
+        }
+        onExited: function () {
+            castRefreshTimer.restart();
         }
     }
 

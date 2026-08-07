@@ -992,6 +992,57 @@ PanelWindow {
                 }
 
                 Rectangle {
+                    id: castChip
+                    // Miracast-capable hosts only (surface); on the focused bar.
+                    visible: topBarWindow.isFocusedBar && runtimeConfig.supportsCasting
+                    radius: root.radiusControl
+                    color: root.castChipFill(castMouse.containsMouse)
+                    border.color: root.castChipBorder(castMouse.containsMouse)
+                    border.width: 1
+                    implicitWidth: castGlyph.implicitWidth + 18
+                    Layout.fillHeight: true
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Behavior on border.color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Text {
+                        id: castGlyph
+                        anchors.centerIn: parent
+                        text: "\u{F0118}"
+                        color: root.castChipText(castMouse.containsMouse)
+                        font.family: "FiraCode Nerd Font"
+                        font.pixelSize: 11
+                    }
+
+                    MouseArea {
+                        id: castMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.powerMenuVisible = false;
+                            root.audioPopupVisible = false;
+                            root.bluetoothPopupVisible = false;
+                            root.displaySelectorVisible = false;
+                            root.barPopupOutputName = topBarWindow.topOutputName;
+                            root.castPopupVisible = !root.castPopupVisible;
+                            if (root.castWatcherProcess && !root.castWatcherProcess.running) {
+                                root.castWatcherProcess.running = true;
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
                     id: powerChip
                     // On the focused monitor's bar (was configured-primary only).
                     visible: topBarWindow.isFocusedBar
@@ -1786,6 +1837,70 @@ PanelWindow {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: root.triggerPowerAction(modelData.command)
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    PopupWindow {
+        visible: root.castPopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName
+        color: "transparent"
+        implicitWidth: 260
+        implicitHeight: castPopupCard.implicitHeight + 16
+        anchor.window: topBarWindow
+        anchor.item: castChip
+        anchor.edges: Edges.Bottom | Edges.Right
+        anchor.gravity: Edges.Bottom | Edges.Left
+        anchor.margins.top: 6
+
+        Rectangle {
+            id: castPopupCard
+            implicitWidth: 260
+            implicitHeight: castPopupColumn.implicitHeight + 20
+            radius: 12
+            color: colors.panel
+            border.color: colors.borderStrong
+            border.width: 1
+
+            ColumnLayout {
+                id: castPopupColumn
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 10
+                spacing: 10
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+
+                    Text {
+                        text: "Cast (Miracast)"
+                        color: colors.text
+                        font.pixelSize: 12
+                        font.weight: Font.DemiBold
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.stringOrEmpty(root.castState.detail)
+                        color: colors.subtle
+                        font.pixelSize: 9
+                        wrapMode: Text.WordWrap
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Item {
+                        Layout.fillWidth: true
+                    }
+
+                    Button {
+                        text: "Open Network Displays"
+                        onClicked: root.launchCast()
                     }
                 }
             }

@@ -59,6 +59,7 @@ ShellRoot {
     readonly property var brightnessActionProcess: runtimeServices ? runtimeServices.brightnessActionProcessRef : null
     readonly property var lidPolicyApplyProcess: runtimeServices ? runtimeServices.lidPolicyApplyProcessRef : null
     readonly property var lidInhibitActionProcess: runtimeServices ? runtimeServices.lidInhibitActionProcessRef : null
+    readonly property var castWatcherProcess: runtimeServices ? runtimeServices.castWatcherRef : null
     readonly property var dashboardWatcher: runtimeServices ? runtimeServices.dashboardWatcherRef : null
     readonly property var dashboardRestartTimer: runtimeServices ? runtimeServices.dashboardRestartTimerRef : null
 
@@ -96,6 +97,11 @@ ShellRoot {
             kind: "offline",
             label: "Offline",
             signal: null
+        })
+    // Cast (Miracast) state, fed by the one-shot castStatusBin probe.
+    property var castState: ({
+            active: false,
+            detail: "Checking…"
         })
     property var daemonHealthState: ({
             status: "unknown",
@@ -171,6 +177,7 @@ ShellRoot {
     property string runtimePanelExpandedSection: "sessions"
     property bool dockedMode: true
     property bool powerMenuVisible: false
+    property bool castPopupVisible: false
     property bool audioPopupVisible: false
     // PipeWire: bind default sink/source so their properties (ready, audio) become available
     readonly property PwNode pipewireSink: Pipewire.defaultAudioSink
@@ -1789,22 +1796,23 @@ ShellRoot {
         displaySelectorOutputName = "";
     }
 
-    // Close every top-bar chip popup (volume / bluetooth / power / displays).
+    // Close every top-bar chip popup (volume / bluetooth / power / displays / cast).
     // Used by the click-away backdrop so any of them dismisses on an outside click.
     function closeBarPopups() {
         audioPopupVisible = false;
         bluetoothPopupVisible = false;
         powerMenuVisible = false;
+        castPopupVisible = false;
         displaySelectorVisible = false;
         displaySelectorOutputName = "";
     }
 
     // Whether any top-bar chip popup is currently open on the given output (drives
-    // the per-monitor click-away backdrop's visibility). audio/bluetooth/power use
-    // barPopupOutputName; the display selector tracks its own output.
+    // the per-monitor click-away backdrop's visibility). audio/bluetooth/power/cast
+    // use barPopupOutputName; the display selector tracks its own output.
     function anyBarPopupOpenOnOutput(outputName) {
         const o = stringOrEmpty(outputName);
-        if ((audioPopupVisible || bluetoothPopupVisible || powerMenuVisible)
+        if ((audioPopupVisible || bluetoothPopupVisible || powerMenuVisible || castPopupVisible)
             && stringOrEmpty(barPopupOutputName) === o) {
             return true;
         }
@@ -3531,6 +3539,18 @@ ShellRoot {
 
     function powerChipText(hovered) {
         return root.powerMenuVisible ? colors.red : neutralChipText(hovered);
+    }
+
+    function castChipFill(hovered) {
+        return (root.castPopupVisible || boolOrFalse(root.castState.active)) ? colors.blueBg : neutralChipFill(hovered);
+    }
+
+    function castChipBorder(hovered) {
+        return (root.castPopupVisible || boolOrFalse(root.castState.active)) ? colors.blue : neutralChipBorder(hovered);
+    }
+
+    function castChipText(hovered) {
+        return (root.castPopupVisible || boolOrFalse(root.castState.active)) ? colors.blue : neutralChipText(hovered);
     }
 
     function notificationLabel() {
@@ -8213,6 +8233,11 @@ function normalizeLauncherMode(mode) {
         runDetached(command);
     }
 
+    function launchCast() {
+        root.closeBarPopups();
+        runDetached([shellConfig.castLauncherBin]);
+    }
+
     function emptyDashboardState(status, errorMessage) {
         return {
             status: stringOrEmpty(status) || "loading",
@@ -8527,6 +8552,22 @@ function normalizeLauncherMode(mode) {
             networkState = JSON.parse(raw);
         } catch (error) {
             console.warn("Failed to parse network payload", error, raw);
+        }
+    }
+
+    function parseCast(payload) {
+        const raw = stringOrEmpty(payload).trim();
+        if (!raw || raw === "undefined" || raw === "null") {
+            return;
+        }
+        if (raw.indexOf("{") !== 0) {
+            return;
+        }
+
+        try {
+            castState = JSON.parse(raw);
+        } catch (error) {
+            console.warn("Failed to parse cast payload", error, raw);
         }
     }
 

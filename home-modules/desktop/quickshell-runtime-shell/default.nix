@@ -13,6 +13,7 @@ let
     && osConfig.services ? "power-profiles-daemon"
     && osConfig.services."power-profiles-daemon".enable;
   supportsLidPolicyControls = hostName == "thinkpad";
+  supportsCasting = hostName == "surface";
   # NVIDIA's Qt6/Wayland EGL buffer import is unstable, so those hosts fall back
   # to the software Qt Quick backend. Intel/AMD hosts must NOT — software
   # rendering of the animated shell there produces glitchy/stuttering UI.
@@ -104,6 +105,8 @@ QtObject {
   readonly property string oskToggleBin: "${config.home.homeDirectory}/.local/bin/osk-toggle"
   readonly property string lidClamshellBin: "${config.home.homeDirectory}/.local/bin/lid-clamshell"
   readonly property string brightnessActionBin: "${brightnessActionScript}/bin/quickshell-brightness-action"
+  readonly property string castLauncherBin: "${pkgs.gnome-network-displays}/bin/gnome-network-displays"
+  readonly property string castStatusBin: "${castStatusScript}/bin/quickshell-cast-status"
   readonly property string lidPolicyStatusBin: "${lidPolicyStatusScript}/bin/quickshell-lid-policy-status"
   readonly property string lidPolicyApplyBin: "${lidPolicyApplyScript}/bin/quickshell-lid-policy-apply"
   readonly property string lidInhibitBin: "${lidInhibitScript}/bin/quickshell-lid-inhibit"
@@ -139,6 +142,7 @@ QtObject {
   readonly property string tailscaleIcon: "${../../../assets/icons/tailscale.svg}"
   readonly property bool supportsPowerProfiles: ${if supportsPowerProfiles then "true" else "false"}
   readonly property bool supportsLidPolicyControls: ${if supportsLidPolicyControls then "true" else "false"}
+  readonly property bool supportsCasting: ${if supportsCasting then "true" else "false"}
   readonly property string lidPolicyFragmentPath: "${lidPolicyFragmentPath}"
 }
 EOF
@@ -654,6 +658,41 @@ print(json.dumps({
     "percent": clamped_percent,
 }), flush=True)
 PY
+  '';
+  castStatusScript = pkgs.writeShellScriptBin "quickshell-cast-status" ''
+    set -euo pipefail
+
+    # One-shot cast (Miracast) status probe for the QuickShell bar chip: prints
+    # a single JSON line and exits. gnome-network-displays has no CLI API, so
+    # status is inferred from the process, Wi-Fi P2P link, and RTSP sink port.
+    gnd_count="$(${pkgs.procps}/bin/pgrep -c -f gnome-network-displays 2>/dev/null || true)"
+    gnd_running=false
+    if [ "''${gnd_count:-0}" -gt 0 ]; then
+      gnd_running=true
+    fi
+
+    p2p_active=false
+    if ${pkgs.networkmanager}/bin/nmcli -t -f DEVICE,TYPE,STATE dev 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q '^p2p-.*:.*:connected'; then
+      p2p_active=true
+    fi
+
+    sink_listening=false
+    if ${pkgs.iproute2}/bin/ss -tln 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q ':7236'; then
+      sink_listening=true
+    fi
+
+    active=false
+    detail="Idle — no active cast"
+    if [ "$p2p_active" = true ] || [ "$sink_listening" = true ]; then
+      active=true
+      detail="Streaming or receiving display cast"
+    elif [ "$gnd_running" = true ]; then
+      active=true
+      detail="Network Displays app open"
+    fi
+
+    printf '{"gnd_running":%s,"p2p_active":%s,"sink_listening":%s,"active":%s,"detail":"%s"}\n' \
+      "$gnd_running" "$p2p_active" "$sink_listening" "$active" "$detail"
   '';
 
   lidPolicyStatusScript = pkgs.writeShellScriptBin "quickshell-lid-policy-status" ''
@@ -2868,6 +2907,7 @@ in
       systemStatsScript
       brightnessStatusScript
       brightnessActionScript
+      castStatusScript
       lidPolicyStatusScript
       lidPolicyApplyScript
       lidInhibitScript
