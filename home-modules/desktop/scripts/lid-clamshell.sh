@@ -22,6 +22,13 @@
 #                                     Samsung (else to the right of the externals).
 #   open  + no external           -> just the panel.
 #
+# Clamshell-default hosts (surface-pro3): the docked setup is permanent and the
+# device has no lid (Type Cover lid events are not meaningful), so an enabled
+# connected external ALWAYS owns the screen — the built-in panel never displays
+# output while one is attached. The panel only comes on when no external is
+# connected, or when every external is UI-disabled in output-states.json. Lid
+# close on these hosts never suspends; it just re-applies this policy.
+#
 # logind keeps HandleLidSwitchDocked=ignore so it won't suspend while an external
 # is connected; this script owns the battery-vs-AC suspend decision.
 set -euo pipefail
@@ -41,14 +48,22 @@ EXTERNAL_SCALE="1.25"
 # Built-in panel scale/mode (host-aware). ThinkPad: 1920x1200 @ 1.25 ->
 # logical 1536x960. Surface Laptop 2: 2256x1504 @ ~201 PPI @ 1.5 -> logical
 # 1504x1003; at 1.25 the effective density stays ~161 DPI and everything
-# reads too small. Keep in sync with the eDP-1 scale in sway.nix.
-if [ "$(hostname)" = "surface" ]; then
-  PANEL_SCALE="1.5"
-  PANEL_MODE="2256x1504"
-else
-  PANEL_SCALE="1.25"
-  PANEL_MODE="1920x1200"
-fi
+# reads too small. Surface Pro 3: 2160x1440 @ ~216 PPI @ 1.5 -> logical
+# 1440x960. Keep in sync with the eDP-1 scale in sway.nix.
+case "$(hostname)" in
+  surface)
+    PANEL_SCALE="1.5"
+    PANEL_MODE="2256x1504"
+    ;;
+  surface-pro3)
+    PANEL_SCALE="1.5"
+    PANEL_MODE="2160x1440"
+    ;;
+  *)
+    PANEL_SCALE="1.25"
+    PANEL_MODE="1920x1200"
+    ;;
+esac
 
 # In extended mode the Verbatim sits parallel to (left of) the built-in panel
 # but a little higher: its top edge is raised this many logical px above the
@@ -130,6 +145,25 @@ output_enabled() {
   v="$(jq -r --arg o "$1" '.outputs[$o].enabled' "$STATE_FILE" 2>/dev/null)"
   [ "$v" = "false" ] && return 1
   return 0
+}
+
+# True on hosts whose docked configuration is permanent (surface-pro3): a
+# connected, enabled external is always the sole monitor and the panel never
+# displays output — independent of any lid/Type Cover state.
+clamshell_default() {
+  [ "$(hostname)" = "surface-pro3" ]
+}
+
+# True when at least one connected external is enabled (not UI-disabled via
+# output-states.json). Guards clamshell-default hosts from switching every
+# output off when the user disabled all externals in the displays dialog.
+any_enabled_external() {
+  local out
+  while read -r out; do
+    [ -n "$out" ] || continue
+    output_enabled "$out" && return 0
+  done < <(external_outputs)
+  return 1
 }
 
 # Integer division (value / scale), used for logical width and height.
@@ -274,7 +308,15 @@ layout_extended() {
 
 run_close() {
   if [ -n "$(external_outputs)" ]; then
-    if plugged_in; then
+    # Clamshell-default hosts have no real lid: never suspend on a Type Cover
+    # close — just re-apply the permanent docked policy.
+    if clamshell_default; then
+      if any_enabled_external; then
+        layout_clamshell
+      else
+        layout_extended   # every external UI-disabled -> panel is the only output
+      fi
+    elif plugged_in; then
       layout_clamshell
     else
       systemctl suspend
@@ -286,7 +328,15 @@ run_close() {
 
 run_open() {
   if [ -n "$(external_outputs)" ]; then
-    layout_extended
+    # Clamshell-default hosts: a connected, enabled external is the sole
+    # monitor even with the lid open. Only when every external is UI-disabled
+    # does the panel take over (the extended layout with no live externals =
+    # panel alone at the origin).
+    if clamshell_default && any_enabled_external; then
+      layout_clamshell
+    else
+      layout_extended
+    fi
   else
     swaymsg "output $PANEL enable position 0 0 scale $PANEL_SCALE" >/dev/null 2>&1 || true
   fi

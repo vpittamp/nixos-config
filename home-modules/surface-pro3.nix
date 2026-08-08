@@ -58,8 +58,10 @@
     ];
   };
 
-  # Plain laptop profile: the built-in panel plus EDID-recognized physical
-  # externals (managed by lid-clamshell).
+  # Laptop profile with clamshell-default policy (lid-clamshell): this host is
+  # permanently docked, so a connected, enabled external display is always the
+  # sole monitor and the built-in panel never displays output. The panel only
+  # comes on when no external is connected.
   programs.sway-profile.mode = "laptop";
 
   programs.disk-guardrails.enable = true;
