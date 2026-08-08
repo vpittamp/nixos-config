@@ -310,7 +310,10 @@ PY
     IFS=: read -r device type _state connection <<<"$active_line"
 
     if [ "$type" = "wifi" ]; then
-      signal="$(nmcli -t -f IN-USE,SIGNAL dev wifi list ifname "$device" 2>/dev/null | ${pkgs.gawk}/bin/awk -F: '$1=="*" { print $2; exit }')"
+      # --rescan no: read NM's cached scan results only. Triggering a rescan
+      # every refresh starves Wi-Fi Direct (P2P) discovery of radio time,
+      # which breaks Miracast sink detection (gnome-network-displays).
+      signal="$(nmcli -t -f IN-USE,SIGNAL dev wifi list ifname "$device" --rescan no 2>/dev/null | ${pkgs.gawk}/bin/awk -F: '$1=="*" { print $2; exit }')"
       if [ -z "$signal" ]; then
         signal=null
       fi

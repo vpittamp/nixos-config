@@ -19,6 +19,10 @@ let
     system = pkgs.stdenv.hostPlatform.system;
     config.allowUnfree = true;
   };
+  # wpa_supplicant 2.10 for Miracast P2P peer discovery (see flake.nix)
+  pkgs-wpasupplicant = import inputs.nixpkgs-wpasupplicant {
+    system = pkgs.stdenv.hostPlatform.system;
+  };
 in
 {
   imports = [
@@ -85,6 +89,19 @@ in
   # Firefox 146+ overlay for native Wayland fractional scaling support
   nixpkgs.overlays = [
     (final: prev: {
+      # wpa_supplicant 2.10: 2.11 breaks NetworkManager Wi-Fi P2P peer import,
+      # killing Miracast sink discovery (see flake.nix nixpkgs-wpasupplicant).
+      wpa_supplicant = pkgs-wpasupplicant.wpa_supplicant.overrideAttrs (old: {
+        postInstall = (old.postInstall or "") + ''
+          # The 26.11 unit runs the supplicant as the wpa_supplicant user, but
+          # the 2.10 D-Bus policy has no group="wpa_supplicant" rule, so the
+          # service fails with "Request to own name refused by policy" (no
+          # Wi-Fi at all). Reuse the newer package's policy, which adds it.
+          cp ${prev.wpa_supplicant}/share/dbus-1/system.d/dbus-wpa_supplicant.conf \
+             $out/share/dbus-1/system.d/dbus-wpa_supplicant.conf
+        '';
+      });
+
       firefox = pkgs-unstable.firefox;
       firefox-unwrapped = pkgs-unstable.firefox-unwrapped;
 
@@ -185,6 +202,25 @@ in
   # NetworkManager for WiFi (wpa_supplicant backend — the thinkpad uses iwd,
   # but switching backends here would need the profile re-provisioned).
   networking.networkmanager.enable = true;
+
+  # Miracast / Wi-Fi Direct support requires two wpa_supplicant tweaks:
+  #
+  # 1. Run it as root (enableHardening=false): NetworkManager never imports
+  #    Wi-Fi Direct peers (WifiP2P.Peers stays empty despite the supplicant
+  #    emitting P2PDevice.DeviceFound on D-Bus) when the supplicant runs as
+  #    the unprivileged wpa_supplicant user (the 26.11 default). Verified on
+  #    this machine: unprivileged fails, root imports peers within seconds,
+  #    with the pinned 2.10 build (see the wpa_supplicant overlay above).
+  # 2. interfaces=[wlp2s0]: opts out of the stock udev rule that runs
+  #    `systemctl try-restart wpa_supplicant.service` on every wlan net-device
+  #    add/remove (meant for USB-wifi hotplug). The rule fires when the P2P
+  #    group interface (p2p-wlp2s0-0) appears/disappears, killing Miracast
+  #    connections mid-negotiation. The per-interface unit this creates gets
+  #    an alias so D-Bus activation of fi.w1.wpa_supplicant1 (which points at
+  #    wpa_supplicant.service) still resolves.
+  networking.wireless.enableHardening = false;
+  networking.wireless.interfaces = [ "wlp2s0" ];
+  systemd.services.wpa_supplicant-wlp2s0.aliases = [ "wpa_supplicant.service" ];
 
   # Declarative Wi-Fi profile for the home network. The PSK is NOT in this
   # repo: it is substituted at runtime from /etc/NetworkManager/secrets.env on

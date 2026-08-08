@@ -15,6 +15,19 @@
     # catches these versions up.
     nixpkgs-lazygit.url = "github:NixOS/nixpkgs/nixos-unstable";
 
+    # wpa_supplicant 2.10 (nixos-24.05) for the surface. The 2.11 shipped by
+    # the main channel breaks Wi-Fi Direct peer import into NetworkManager
+    # (P2PDevice.DeviceFound is emitted on D-Bus but NM never populates
+    # WifiP2P.Peers), which makes gnome-network-displays see zero Miracast
+    # sinks. Verified on the surface: 2.11 fails with both NM 1.46 and 1.56,
+    # 2.10 works with both. Consumed by the nixpkgs.overlays entry in
+    # configurations/surface.nix.
+    # TODO(wpasupplicant-pin): drop once hostap 2.12+ (or a nixpkgs patch)
+    # restores NM P2P peer discovery; re-test with `i3pm`-style manual find:
+    #   gdbus call --system -d org.freedesktop.NetworkManager \
+    #     -o $(nm path) -m ...Device.WifiP2P.StartFind '{}' && check Peers
+    nixpkgs-wpasupplicant.url = "github:NixOS/nixpkgs/nixos-24.05";
+
     # Antigravity CLI — Google's Gemini-CLI successor (announced 2026-05-19, I/O 2026).
     # Gemini CLI sunsets requests for Google AI Pro/Ultra/Free on 2026-06-18.
     #
