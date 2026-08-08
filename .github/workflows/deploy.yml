@@ -1,7 +1,8 @@
 # Cachix Deploy - Automated NixOS Deployments
 #
-# This workflow builds NixOS configurations for thinkpad, ryzen, and surface,
-# pushes them to Cachix, and triggers deployment to agents.
+# This workflow builds NixOS configurations for thinkpad, ryzen, surface, and
+# surface-pro3, pushes them to Cachix, and triggers deployment to agents.
+# surface-pro3 is build+cache only (no cachix-deploy agent on that host).
 #
 # Required secrets:
 #   - CACHIX_AUTH_TOKEN: Write access to pittampalli cache
@@ -37,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        host: [thinkpad, ryzen, surface]
+        host: [thinkpad, ryzen, surface, surface-pro3]
 
     steps:
       - name: Checkout repository
