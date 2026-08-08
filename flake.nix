@@ -1,6 +1,24 @@
 {
   description = "NixOS configuration for the thinkpad, ryzen, and surface Sway workstations";
 
+  # Cache awareness for contexts that don't read this repo's NixOS-managed
+  # /etc/nix/nix.conf: CI runners (deploy.yml already sets
+  # accept-flake-config = true), devcontainers, and fresh local checkouts
+  # (e.g. a first build on a newly mirrored device). NixOS hosts get the same
+  # substituters declaratively from configurations/base.nix.
+  nixConfig = {
+    extra-substituters = [
+      "https://nix-community.cachix.org"
+      "https://backstage.cachix.org"
+      "https://pittampalli.cachix.org"
+    ];
+    extra-trusted-public-keys = [
+      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+      "backstage.cachix.org-1:MMgCWqeGJWbqGEC4CwNUnVvs0edWlxkolNChfTTzoUU="
+      "pittampalli.cachix.org-1:DXxPXHm3F3DxxXw9puhmhXyBd9lS2N83FWpyNiTrg1s="
+    ];
+  };
+
   inputs = {
     # Core
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
