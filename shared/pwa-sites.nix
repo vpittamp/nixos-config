@@ -330,22 +330,27 @@ let
     }
 
     # Home Assistant
+    # 2026-08-08: repointed localhost:8123 -> surface-pro.tail286401.ts.net:8123.
+    # HA now runs on surface-pro3 only; the tailnet URL works on every device
+    # (MagicDNS), while localhost only ever worked on the HA host itself.
+    # Icon swapped the monochrome simple-icons SVG for the official colored PNG.
     {
       name = "Home Assistant";
-      url = "http://localhost:8123";
-      domain = "localhost";
-      icon = iconPath "home-assistant.svg";
+      url = "http://surface-pro.tail286401.ts.net:8123";
+      domain = "surface-pro.tail286401.ts.net";
+      icon = iconPath "home-assistant.png";
       description = "Home Assistant - Open source home automation";
       categories = "Network;Utility;";
       keywords = "home;automation;iot;smart-home;homeassistant;";
-      scope = "http://localhost:8123/";
+      scope = "http://surface-pro.tail286401.ts.net:8123/";
       ulid = "3TH05T0Z8NQQTVZQ86ZNNQDTPA";  # Generated 2025-11-15 (valid ULID format)
       # App registry metadata
       app_scope = "global";
       preferred_workspace = 64;
       preferred_monitor_role = "secondary";
-      # Feature 113: URL routing - localhost is too generic
-      routing_domains = [ ];  # Disabled - localhost:8123 would conflict with other local services
+      # Feature 113: URL routing - unique tailnet domain, so links to the HA
+      # instance route into this PWA (was disabled at localhost:8123).
+      routing_domains = [ "surface-pro.tail286401.ts.net" ];
     }
 
     # 1Password
