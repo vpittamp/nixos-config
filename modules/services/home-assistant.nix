@@ -1,0 +1,72 @@
+# Home Assistant Core (services.home-assistant) for surface-pro3.
+#
+# Added 2026-08-08. The version is whatever the pinned nixpkgs carries —
+# 2026.6.1 at the current lock (2026-06-10 nixos-unstable). Upstream latest is
+# 2026.8.x, but nixpkgs packaged it only after this lock's date; tracking
+# monthly upstream releases means a full nixpkgs input bump, i.e. a whole-
+# system rebuild — better done on the normal channel-bump cadence (with CI
+# pushing to pittampalli.cachix.org) than ad-hoc on a 2-core / 3.7 GiB host.
+#
+# Integrations referenced in `config` below are auto-detected by the module's
+# useComponent logic, so adding e.g. a `mqtt = { };` block here is enough — do
+# NOT also list it in extraComponents. extraComponents below therefore only
+# repeats the module defaults (the onboarding set) plus integrations that have
+# no configuration.yaml schema and so can only be declared there:
+# homekit_controller (Apple HomeKit Device — imports HomeKit accessories INTO
+# HA; discovered/UI-paired only). The `homekit = { };` config block covers the
+# other direction (HomeKit Bridge — exposes HA entities back to Apple Home).
+{ config, lib, pkgs, ... }:
+
+{
+  services.home-assistant = {
+    enable = true;
+
+    # Opens TCP 8123 (frontend). modules/services/networking.nix does not trust
+    # tailscale0, so this is what makes the UI reachable over both the LAN and
+    # the tailnet — and this host is administered entirely over tailscale.
+    openFirewall = true;
+
+    # Opens per-integration ports per the module's table. For `homekit` that is
+    # TCP 21063 (bridge pairing/HAP) + UDP 5353 (mDNS, which homekit_controller
+    # discovery also relies on).
+    openFirewallForComponents = true;
+
+    # Module defaults (onboarding set) + homekit_controller, which has no
+    # configuration.yaml schema — it is discovered and paired from the UI, so
+    # this is the only way to get its dependencies packaged.
+    #
+    # The remaining entries were seen failing to load their config flows in the
+    # journal (ModuleNotFoundError) when discovery probed them on this LAN;
+    # packaged here so their discovered devices become configurable in the UI:
+    #   apple_tv         - Apple TV (pyatv)
+    #   sonos            - Sonos speakers (soco)
+    #   samsungtv        - Samsung TVs (getmac)
+    #   ibeacon          - iBeacon trackers (ibeacon_ble)
+    #   google_translate - default_config's built-in TTS entry (gtts)
+    #   ecobee           - Ecobee thermostat, per docs/HOMEKIT_DEVICES.md (pyecobee)
+    #   cast             - Google/Chromecast devices (pychromecast)
+    extraComponents = [
+      "default_config" "met" "esphome" "homekit_controller"
+      "apple_tv" "sonos" "samsungtv" "ibeacon" "google_translate"
+      "ecobee" "cast"
+    ];
+
+    config = {
+      # Meta-integration pulling the standard set (frontend, recorder,
+      # history, logbook, ssdp, zeroconf, ...).
+      default_config = { };
+
+      # HomeKit Bridge: expose HA entities back to Apple Home. The { } default
+      # advertises "Home Assistant Bridge" on TCP 21063 with the default domain
+      # filter. Pair from the HA UI (Settings -> Devices & Services -> the
+      # HomeKit Bridge card shows the setup code/QR).
+      homekit = { };
+
+      # Core settings. Location/units are left for the onboarding UI to ask.
+      homeassistant = {
+        name = "Surface Pro 3";
+        time_zone = config.time.timeZone; # America/New_York (base.nix)
+      };
+    };
+  };
+}

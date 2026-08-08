@@ -51,6 +51,10 @@ in
     ../modules/services/onepassword.nix
     ../modules/services/development.nix
 
+    # Home Assistant Core — see that file for the version rationale (pinned
+    # nixpkgs carries 2026.6.1; upstream 2026.8.x needs a full channel bump).
+    ../modules/services/home-assistant.nix
+
     # Bare metal essentials (no Podman/printing here — see below)
     ../modules/services/bare-metal.nix
 
