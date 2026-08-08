@@ -74,6 +74,7 @@
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIrT8Vmnk8M7HAzM+C0Y14XU3YPDgEcjIm+2zDKwsF3K nixos-desktop-ops ryzen 2026-06-11"
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEn2TDfltckiH9frRezHXR6ckFNRunEGrxb1qesM7sb+ nixos-desktop-ops thinkpad 2026-06-11"
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIOH0R2WOQsfkzZz6TB61DB6RjTShbKr3evCsdmrgpCb nixos-desktop-ops surface 2026-08-06"
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII2HtLIOeE7uXIloDNIjushcT7E3zkqGhxq3QCD6iWOP nixos-desktop-ops surface-pro3 2026-08-08"
       ];
       # Password will be set per-system if needed
     };
