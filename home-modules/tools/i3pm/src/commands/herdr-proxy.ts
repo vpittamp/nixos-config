@@ -91,6 +91,21 @@ export function buildHerdrProxyEvent(
     }
   }
 
+  // The proxy contract is "THIS host's local herdr view". This daemon may
+  // itself aggregate remotes (herdr-remote-targets.json), in which case its
+  // dashboard active_ai_sessions is a MERGED list. Forwarding it wholesale
+  // makes the receiving daemon attribute other hosts' rows to us (sessions
+  // duplicated under the wrong host group downstream). Rows this daemon
+  // considers remote carry is_current_host=false — drop them. Rows without
+  // the field (legacy peers) are kept.
+  if (Array.isArray(payload.active_ai_sessions)) {
+    payload.active_ai_sessions = payload.active_ai_sessions.filter((row) =>
+      !row || typeof row !== "object" || Array.isArray(row)
+        ? true
+        : (row as Record<string, unknown>).is_current_host !== false
+    );
+  }
+
   return {
     schema_version: "i3pm.herdr_proxy.event.v1",
     protocol_version: 1,

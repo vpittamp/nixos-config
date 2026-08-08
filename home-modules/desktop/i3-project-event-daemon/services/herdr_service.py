@@ -767,6 +767,13 @@ class HerdrService:
             )
             for item in (raw_sessions or [])
             if isinstance(item, dict)
+            # A proxy event is the sender's LOCAL herdr view. If the sender
+            # aggregates its own remotes, its dashboard payload is a merged
+            # list; rows it marks is_current_host=False belong to other hosts
+            # and must not be re-attributed to this target (they duplicate the
+            # row under the wrong host downstream). Rows without the field
+            # (legacy senders) are kept.
+            and item.get("is_current_host") is not False
         ]
 
         cache_updated = False

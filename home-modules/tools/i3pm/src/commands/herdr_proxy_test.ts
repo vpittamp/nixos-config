@@ -114,3 +114,30 @@ Deno.test("buildHerdrProxyEvent tolerates missing daemon payload", () => {
     payload: {},
   });
 });
+
+Deno.test("buildHerdrProxyEvent drops sessions this daemon considers remote", () => {
+  // A daemon that aggregates its own remotes emits a MERGED session list.
+  // Forwarding rows with is_current_host=false re-attributes other hosts'
+  // sessions to this proxy's target downstream (cross-host duplication).
+  const event = buildHerdrProxyEvent({
+    event_type: "session.changed",
+    generation: 12,
+    changed_keys: ["active_ai_sessions"],
+    timestamp: 123.5,
+    payload: {
+      active_ai_sessions: [
+        { session_key: "herdr:pane:w1:p1", is_current_host: true },
+        { session_key: "herdr:ryzen:pane:wB:p6", is_current_host: false },
+        { session_key: "legacy-row-no-host-field" },
+      ],
+    },
+  });
+
+  assertEquals(
+    (event?.payload as Record<string, unknown>).active_ai_sessions,
+    [
+      { session_key: "herdr:pane:w1:p1", is_current_host: true },
+      { session_key: "legacy-row-no-host-field" },
+    ],
+  );
+});

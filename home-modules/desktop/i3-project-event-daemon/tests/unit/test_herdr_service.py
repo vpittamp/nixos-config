@@ -2425,3 +2425,62 @@ async def test_herdr_service_local_snapshot_reconciles_status_subscription_tasks
 
     kept_task.cancel()
     await asyncio.gather(kept_task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_apply_remote_proxy_payload_cache_drops_sender_remote_rows():
+    """A proxy event must be the sender's LOCAL view only.
+
+    When the sender daemon aggregates its own remotes, its dashboard payload
+    is a merged list. Rows it marks is_current_host=False belong to other
+    hosts; re-attributing them to this target duplicates those sessions under
+    the wrong host downstream.
+    """
+    service = HerdrService(
+        notify_state_change=lambda event_type: asyncio.sleep(0),
+        invalidate_snapshot_cache=lambda: None,
+    )
+    target = {
+        "host": "ryzen",
+        "ssh_target": "ryzen",
+        "connection_key": "vpittamp@ryzen:22",
+    }
+    service.snapshot_cache = {
+        "sessions": [
+            {"session_key": "herdr:pane:w1:p6", "herdr_host": "surface", "is_current_host": True, "pane_id": "w1:p6"},
+        ],
+        "remote_snapshots": [],
+    }
+    event = {
+        "snapshot_version": 42,
+        "payload": {
+            "active_ai_sessions": [
+                {"pane_id": "wB:p6", "is_current_host": True, "agent": "kimi", "project_name": "vpittamp/nixos-config:main"},
+                {"pane_id": "wC:p1", "is_current_host": True, "agent": "claude", "project_name": "PittampalliOrg/workflow-builder:main"},
+                # Merged row from the sender's own remote (surface-pro3) — must be dropped.
+                {"pane_id": "w1:p2", "is_current_host": False, "herdr_host": "surface-pro3", "agent": "kimi"},
+            ],
+        },
+    }
+
+    result = service.apply_remote_proxy_payload_cache(
+        target=target,
+        event=event,
+        now=1_000_000.0,
+        normalize_connection_key=lambda value: value,
+    )
+
+    assert result["applied"] is True
+    sessions = service.snapshot_cache["sessions"]
+    assert {s["session_key"] for s in sessions} == {
+        "herdr:pane:w1:p6",
+        "herdr:ryzen:pane:wB:p6",
+        "herdr:ryzen:pane:wC:p1",
+    }
+    # Nothing attributed to ryzen may carry the sender's remote pane id.
+    assert not [
+        s for s in sessions
+        if s.get("herdr_host") == "ryzen" and s.get("pane_id") == "w1:p2"
+    ]
+    remote_snapshot = service.snapshot_cache["remote_snapshots"][0]
+    assert {s["pane_id"] for s in remote_snapshot["sessions"]} == {"wB:p6", "wC:p1"}
