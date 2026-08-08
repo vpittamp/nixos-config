@@ -1387,6 +1387,7 @@ ShellRoot {
                     monitor_role: stringOrEmpty(workspace?.monitor_role),
                     app_name: stringOrEmpty(workspace?.app_name),
                     app_names: arrayOrEmpty(workspace?.app_names),
+                    agent_chip: focused ? activeAgentChip() : null,
                     output: target
                 });
             }
@@ -1409,14 +1410,14 @@ ShellRoot {
     }
 
     function barWorkspacesForOutput(outputName) {
-        // Single source of truth: the i3pm daemon snapshot (dashboard.outputs).
-        // The daemon owns the i3ipc connection and now pushes `outputs` live on
-        // every workspace-membership change, so the bar renders purely from it.
-        // No compositor-side fallback (Quickshell's I3.workspaces) — a second,
-        // independently-tracked source could disagree with the daemon and
-        // render phantom or missing workspaces. Before the first snapshot (or
-        // while the daemon is unreachable) this returns [] and the workspace
-        // strip is empty, matching the rest of the daemon-sourced bar.
+        // Membership/icons come from the single source of truth: the i3pm
+        // daemon snapshot (dashboard.outputs). The daemon owns the i3ipc
+        // connection and pushes `outputs` live on every workspace-membership
+        // change, so the bar renders purely from it. The focused HIGHLIGHT is
+        // the one exception: workspaceIsFocused() prefers Quickshell.I3
+        // (compositor ground truth) over the daemon's event chain so keyboard
+        // switches can never lag or stick — the same reconciler precedent as
+        // dashboardWithReconciledSessionFocus for session rows.
         return dashboardWorkspacesForOutput(outputName);
     }
 
@@ -2459,8 +2460,52 @@ ShellRoot {
         if (pendingWorkspaceFocus) {
             return pendingFocusIntentMatches("workspace_focus", workspaceName);
         }
+        // Fast path: Quickshell's own I3 tracking is compositor ground truth.
+        // The daemon remains the authority for membership/icons (and for the
+        // agent chip below), but routing the highlight through the daemon's
+        // event chain made keyboard switches visibly lag — or stick entirely
+        // when a watch delta got deduped/dropped. The reconciler pattern is
+        // the same one dashboardWithReconciledSessionFocus uses for sessions.
+        const i3Focused = i3FocusedWorkspaceName();
+        if (i3Focused !== "") {
+            return workspaceName !== "" && workspaceName === i3Focused;
+        }
+        // I3 IPC not up yet (shell start): fall back to the daemon's view.
         const currentWorkspace = stringOrEmpty(dashboardFocusState().current_workspace_name);
         return workspaceName !== "" && currentWorkspace !== "" && workspaceName === currentWorkspace;
+    }
+
+    function i3FocusedWorkspaceName() {
+        const workspaces = I3.workspaces;
+        const values = workspaces && workspaces.values !== undefined ? workspaces.values : workspaces;
+        if (!values || values.length === 0) {
+            return "";
+        }
+        for (let i = 0; i < values.length; i += 1) {
+            const workspace = values[i];
+            if (workspace && workspace.focused) {
+                return stringOrEmpty(workspace.name);
+            }
+        }
+        return "";
+    }
+
+    // The agent session currently active inside a herdr window, projected for
+    // the focused workspace's bar pill. Daemon focus_state is the authority
+    // (it resolves WHICH pane is active, not just which window).
+    function activeAgentChip() {
+        const focusState = dashboardFocusState();
+        const session = sessionByKey(stringOrEmpty(focusState && focusState.current_session_key));
+        if (!session) {
+            return null;
+        }
+        const hostKey = sessionHostKey(session);
+        return {
+            "tool_icon": toolIconSource(session),
+            "host_key": hostKey,
+            "host_color": hostColorFor(hostKey),
+            "status_state": stringOrEmpty(session && session.agent_status_state)
+        };
     }
 
     function audioNode() {
@@ -5604,6 +5649,85 @@ function normalizeLauncherMode(mode) {
 
         const mode = stringOrEmpty(session && session.execution_mode).toLowerCase() === "ssh" ? "remote" : localHostDisplayName().trim().toLowerCase();
         return mode || "unknown";
+    }
+
+    // ---- Host identity: stable per-host color + icon ----
+    // Multi-server herdr means "where does this agent run" is the first
+    // question the monitor must answer. Every surface (panel headers, row
+    // chips, bar dots) resolves identity through these helpers so hosts read
+    // identically everywhere. Colors are Theme status hues only: known hosts
+    // are pinned to the hue of their app-registry icon, unknown hosts fall
+    // back to a deterministic hash pick, and the local host stays neutral —
+    // it is the default frame of reference, so it does not need a hue.
+    function sessionHostKey(session) {
+        const hostName = stringOrEmpty(session && (session.herdr_host || session.host_name || session.target_host)).trim().toLowerCase();
+        if (hostName.length > 0) {
+            return hostName;
+        }
+        if (boolOrFalse(session && session.is_current_host)) {
+            return stringOrEmpty(shellConfig.hostName).trim().toLowerCase();
+        }
+        return "";
+    }
+
+    function hostIsRemoteKey(hostKey) {
+        const local = stringOrEmpty(shellConfig.hostName).trim().toLowerCase();
+        return hostKey.length > 0 && local.length > 0 && hostKey !== local;
+    }
+
+    function hostColorFor(hostKey) {
+        const key = stringOrEmpty(hostKey).trim().toLowerCase();
+        if (!key.length || !hostIsRemoteKey(key)) {
+            return colors.textDim;
+        }
+        const pinned = {
+            "ryzen": colors.orange,
+            "surface-pro3": colors.teal
+        };
+        if (pinned[key] !== undefined) {
+            return pinned[key];
+        }
+        const palette = [colors.teal, colors.violet, colors.orange, colors.green, colors.amber];
+        let hash = 0;
+        for (let i = 0; i < key.length; i += 1) {
+            hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+        }
+        return palette[hash % palette.length];
+    }
+
+    function hostIconSource(hostKey) {
+        const key = stringOrEmpty(hostKey).trim().toLowerCase();
+        if (!key.length || !hostIsRemoteKey(key)) {
+            return "file://" + shellConfig.herdrIcon;
+        }
+        // Matches the app-registry naming (herdr-ryzen.svg, herdr-surface-pro3.svg).
+        // Callers pair this with a theme-icon fallback for hosts without a glyph.
+        return "file://" + shellConfig.herdrIconsDir + "/herdr-" + key + ".svg";
+    }
+
+    function hostIconFallbackSource(hostKey) {
+        if (hostIsRemoteKey(hostKey)) {
+            return "file://" + shellConfig.tailscaleIcon;
+        }
+        return resolveThemeIcon(["computer-symbolic", "computer-laptop-symbolic", "video-display-symbolic", "desktop-symbolic"]);
+    }
+
+    // Per-host health as projected by the daemon (dashboard.herdr.hosts).
+    // Returns null when the host is unknown to the payload — callers must
+    // render NO indicator in that case, never a false red.
+    function herdrHostHealth(hostKey) {
+        const key = stringOrEmpty(hostKey).trim().toLowerCase();
+        if (!key.length) {
+            return null;
+        }
+        const hosts = arrayOrEmpty(dashboard && dashboard.herdr && dashboard.herdr.hosts);
+        for (let i = 0; i < hosts.length; i += 1) {
+            const entry = hosts[i];
+            if (stringOrEmpty(entry && entry.host).trim().toLowerCase() === key) {
+                return entry;
+            }
+        }
+        return null;
     }
 
     function windowHostToken(windowData) {

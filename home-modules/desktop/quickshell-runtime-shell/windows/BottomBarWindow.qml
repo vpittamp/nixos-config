@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.I3
 import Quickshell.Wayland
 import Quickshell.Widgets
 import ".." as RootComponents
@@ -26,6 +27,7 @@ PanelWindow {
         // Only reassign when something a delegate renders actually changed —
         // a plain-array Repeater rebuilds every delegate on assignment.
         const fingerprint = JSON.stringify(next.map(function(workspace) {
+            const chip = workspace && workspace.agent_chip;
             return [
                 Number(workspace && workspace.num || 0),
                 root.stringOrEmpty(workspace && workspace.name),
@@ -34,6 +36,7 @@ PanelWindow {
                 root.boolOrFalse(workspace && workspace.urgent),
                 Number(workspace && workspace.window_count || 0),
                 root.arrayOrEmpty(workspace && workspace.icon_sources),
+                chip ? [chip.tool_icon, chip.host_key, chip.status_state] : null,
             ];
         }));
         if (fingerprint === barWorkspacesFingerprint) {
@@ -53,6 +56,12 @@ PanelWindow {
             refreshBarWorkspaces();
         }
     }
+
+    // The focused highlight rides Quickshell.I3 (see workspaceIsFocused), not
+    // the daemon's event chain — so I3 workspace changes must repaint too,
+    // otherwise the fast path would be fast but never triggered.
+    readonly property var i3Workspaces: I3.workspaces
+    onI3WorkspacesChanged: refreshBarWorkspaces()
 
     screen: barScreen
     visible: runtimeConfig.perMonitorBars
@@ -266,6 +275,7 @@ PanelWindow {
 
                                             delegate: Rectangle {
                                                 required property var modelData
+                                                required property int index
                                                 width: 18
                                                 height: 18
                                                 radius: root.radiusBadge
@@ -279,6 +289,34 @@ PanelWindow {
                                                     source: String(modelData)
                                                     visible: source !== ""
                                                     mipmap: true
+                                                }
+
+                                                // Active agent badge: only on the leading
+                                                // (focused window) icon, only when the
+                                                // daemon says a herdr session is active
+                                                // on this workspace. Host-colored ring,
+                                                // tool glyph inside.
+                                                Rectangle {
+                                                    readonly property var agentChip: index === 0 ? (workspace && workspace.agent_chip) : null
+                                                    visible: agentChip !== null && agentChip !== undefined
+                                                    anchors.right: parent.right
+                                                    anchors.top: parent.top
+                                                    anchors.rightMargin: -5
+                                                    anchors.topMargin: -5
+                                                    width: 11
+                                                    height: 11
+                                                    radius: 6
+                                                    color: colors.bg
+                                                    border.color: (agentChip && root.stringOrEmpty(agentChip.host_color)) || colors.borderStrong
+                                                    border.width: 1.5
+
+                                                    IconImage {
+                                                        anchors.centerIn: parent
+                                                        implicitSize: 8
+                                                        source: agentChip ? root.stringOrEmpty(agentChip.tool_icon) : ""
+                                                        visible: source !== ""
+                                                        mipmap: true
+                                                    }
                                                 }
                                             }
                                         }

@@ -248,6 +248,43 @@ This allows:
 - deterministic close through `herdr.pane.close`
 - status chips that render raw Herdr `agent_status`
 
+### Multi-Host Herdr UX
+
+Multiple herdr servers (local + remotes from `herdr-remote-targets.json`, e.g.
+ryzen, surface-pro3) are merged by the daemon and presented as one unified
+fleet with a stable per-host visual identity:
+
+- `dashboard.herdr.hosts` (daemon `dashboard_model.py
+  build_herdr_dashboard_summary`) projects per-host health
+  (`{host, is_current_host, healthy, agents, error}`) from the merged
+  `remote_snapshots`, so the shell can render proxy reachability without a
+  second IPC call. Unknown hosts get no entry — the UI never shows a false red.
+- `shell.qml` host identity helpers: `sessionHostKey`, `hostIsRemoteKey`,
+  `hostColorFor` (pinned hues ryzen→orange, surface-pro3→teal, deterministic
+  hash fallback, local stays neutral), `hostIconSource` (`herdr.svg` /
+  `herdr-<host>.svg`, matching the app-registry icon naming),
+  `hostIconFallbackSource`, `herdrHostHealth`.
+- The panel's agents list groups sessions under per-host headers (icon,
+  label, count, health dot) via identity-keyed header entries interleaved in
+  `buildAgentListEntries` (RuntimePanelWindow). Per-row host chips are
+  redundant there and hidden; the launcher keeps them.
+- Host color is strictly secondary to status: `SessionRow.hostColor` drives a
+  corner dot on the tool icon and the token-chip border; the status rail and
+  presence dot stay status-colored. Spaces rows get a host-colored monogram
+  border; the top bar "Agents" chip shows per-host mini dots when the fleet
+  spans hosts.
+
+### Bottom Bar Focus Fast Path
+
+The workspace pill membership/icons still come only from the daemon snapshot,
+but the focused highlight now prefers `Quickshell.I3` (compositor ground
+truth) over the daemon event chain — keyboard workspace switches cannot lag
+or stick when a watch delta is deduped or dropped (same reconciler precedent
+as `dashboardWithReconciledSessionFocus`). The daemon falls back only before
+I3 IPC is up. The focused pill also renders an `agent_chip` badge (active
+session's tool glyph with a host-colored ring) from
+`focus_state.current_session_key`.
+
 ### Performance
 
 The dashboard path previously duplicated expensive work:

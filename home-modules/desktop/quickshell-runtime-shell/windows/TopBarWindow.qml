@@ -104,6 +104,19 @@ PanelWindow {
                     readonly property bool anyBlocked: agentSessionsList.some(function (s) { return root.sessionPhase(s) === "blocked"; })
                     readonly property bool anyDone: agentSessionsList.some(function (s) { return root.sessionPhase(s) === "done"; })
                     readonly property bool anyWorking: agentSessionsList.some(function (s) { return root.sessionPhase(s) === "working"; })
+                    // Distinct herdr hosts with live agents, in session order
+                    // (local first — sessions arrive stableSessionCompare-sorted).
+                    readonly property var agentHostKeys: {
+                        const seen = [];
+                        const sessions = agentSessionsList;
+                        for (let i = 0; i < sessions.length; i += 1) {
+                            const key = root.sessionHostKey(sessions[i]);
+                            if (key.length > 0 && seen.indexOf(key) === -1) {
+                                seen.push(key);
+                            }
+                        }
+                        return seen;
+                    }
                     radius: root.radiusControl
                     color: root.stateChipFill(root.agentMonitorVisible, agentMonitorMouse.containsMouse, colors.blueBg)
                     border.color: agentMonitorChip.anyBlocked && !root.dashboardStale
@@ -167,6 +180,29 @@ PanelWindow {
                             opacity: agentMonitorChip.anyBlocked && !root.dashboardStale && !root.attentionBlinkOn
                                 ? 0.3
                                 : 1.0
+                        }
+
+                        // Per-host presence dots (only when agents actually span
+                        // hosts — a single-host fleet needs no legend). Colors
+                        // match the panel's host group headers via hostColorFor.
+                        Row {
+                            Layout.alignment: Qt.AlignVCenter
+                            visible: agentMonitorChip.agentHostKeys.length > 1 && !root.dashboardStale
+                            spacing: 3
+
+                            Repeater {
+                                model: agentMonitorChip.agentHostKeys.slice(0, 3)
+
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    width: 6
+                                    height: 6
+                                    radius: 3
+                                    color: root.hostColorFor(String(modelData))
+                                    border.color: colors.border
+                                    border.width: 1
+                                }
+                            }
                         }
 
                         Text {

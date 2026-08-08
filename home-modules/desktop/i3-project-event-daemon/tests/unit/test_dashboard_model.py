@@ -866,6 +866,61 @@ def test_build_dashboard_snapshot_payload_shapes_herdr_summary() -> None:
     assert payload["herdr"]["spaces"] == [{"id": "space-1", "pane_count": 1}]
 
 
+def test_build_herdr_dashboard_summary_projects_per_host_health() -> None:
+    herdr_snapshot = {
+        "sessions": [
+            {"session_key": "herdr:pane:a", "is_current_host": True, "herdr_host": "surface"},
+            {"session_key": "herdr:pane:b", "is_current_host": True, "herdr_host": "surface"},
+            {"session_key": "herdr:ryzen:pane:c", "is_current_host": False, "herdr_host": "ryzen"},
+        ],
+        "remote_snapshots": [
+            {
+                "success": True,
+                "host": "ryzen",
+                "sessions": [{"session_key": "herdr:ryzen:pane:c"}],
+                "errors": [],
+            },
+            {
+                "success": False,
+                "host": "surface-pro3",
+                "sessions": [],
+                "errors": [{"remote": True, "host": "surface-pro3", "error": "ssh: connect timed out"}],
+            },
+        ],
+    }
+
+    summary = dashboard_model.build_herdr_dashboard_summary(herdr_snapshot, spaces=[])
+
+    assert summary["hosts"] == [
+        {"host": "surface", "is_current_host": True, "healthy": True, "agents": 2, "error": ""},
+        {"host": "ryzen", "is_current_host": False, "healthy": True, "agents": 1, "error": ""},
+        {
+            "host": "surface-pro3",
+            "is_current_host": False,
+            "healthy": False,
+            "agents": 0,
+            "error": "ssh: connect timed out",
+        },
+    ]
+
+
+def test_build_herdr_dashboard_summary_hosts_tolerate_empty_and_missing_data() -> None:
+    summary = dashboard_model.build_herdr_dashboard_summary({}, spaces=[])
+    # No sessions and no remotes: local entry still present, host unknown.
+    assert summary["hosts"] == [
+        {"host": "", "is_current_host": True, "healthy": True, "agents": 0, "error": ""},
+    ]
+
+    summary = dashboard_model.build_herdr_dashboard_summary(
+        {"remote_snapshots": [{"success": True}, "not-a-dict"]},
+        spaces=[],
+    )
+    # Remote entry without a host key is skipped, non-dicts are ignored.
+    assert summary["hosts"] == [
+        {"host": "", "is_current_host": True, "healthy": True, "agents": 0, "error": ""},
+    ]
+
+
 def test_build_dashboard_snapshot_payload_degrades_gracefully_on_invariant_violation() -> None:
     # An invariant violation must NOT raise / blank the panel. The payload is
     # returned with dashboard_status='degraded' and the issue recorded in

@@ -140,6 +140,11 @@ QtObject {
   readonly property string kimiIcon: "${../../../assets/icons/kimi.svg}"
   readonly property string aiFallbackIcon: "${../../../assets/icons/ai-chatbot.svg}"
   readonly property string tailscaleIcon: "${../../../assets/icons/tailscale.svg}"
+  // Per-host Herdr glyphs (local herdr.svg + herdr-<host>.svg remotes) used by
+  // the monitor's host group headers and host badges. The directory lets QML
+  // resolve herdr-<host>.svg for hosts that have no dedicated ShellConfig entry.
+  readonly property string herdrIcon: "${../../../assets/icons/herdr.svg}"
+  readonly property string herdrIconsDir: "${../../../assets/icons}"
   readonly property bool supportsPowerProfiles: ${if supportsPowerProfiles then "true" else "false"}
   readonly property bool supportsLidPolicyControls: ${if supportsLidPolicyControls then "true" else "false"}
   readonly property bool supportsCasting: ${if supportsCasting then "true" else "false"}

@@ -56,6 +56,8 @@ QuickShell runtime-shell notes:
 - shell actions should prefer `context.ensure` / `context.clear` as the canonical switch surface
 - the shell renders a daemon-provided `dashboard.worktrees` model rather than inferring worktree state locally
 - the shell uses native `Quickshell.I3` for monitor/workspace awareness, but never owns window filtering rules
+- multi-herdr fleets (local + remote `herdr-remote-targets.json` hosts) are rendered as one unified system: the daemon projects per-host health at `dashboard.herdr.hosts`, and the shell gives every host a stable identity (`hostColorFor` hue + `herdr-<host>.svg` icon) shown as panel group headers, row corner dots, and top-bar mini dots; host color is always secondary to agent status color
+- the bottom bar's workspace pill highlight prefers `Quickshell.I3` focus over the daemon event chain (fast path), while workspace membership/icons remain daemon-only; the focused pill shows the active agent session as a host-ringed tool badge
 - terminal launches should prefer explicit context-carrying `i3pm launch open` flows rather than ambient implicit state where possible
 
 Notes:

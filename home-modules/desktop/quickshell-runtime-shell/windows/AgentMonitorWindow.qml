@@ -320,6 +320,7 @@ PanelWindow {
                     interactive: true
                     compact: true
                     showHostToken: true
+                    hostColor: root.hostColorFor(root.sessionHostKey(liveSession))
                     showCurrentChip: false
                     closePending: root.sessionClosePending(liveSession)
                     onClicked: root.focusSession(liveSession)

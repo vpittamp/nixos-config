@@ -20,6 +20,11 @@ Rectangle {
     property bool showHostToken: true
     property bool showCurrentChip: false
     property bool showCloseAction: interactive
+    // Per-host identity accent (rootObject.hostColorFor). Kept strictly
+    // secondary: the status rail and presence dot stay status-colored, host
+    // gets a corner dot on the tool icon plus the token-chip border.
+    property color hostColor: "transparent"
+    readonly property bool hasHostColor: !Qt.colorEqual(hostColor, "transparent")
     signal clicked
     signal closeRequested
 
@@ -380,6 +385,20 @@ Rectangle {
                     mipmap: true
                     opacity: 1
                 }
+
+                // Host identity dot: top-right corner, so the presence badge
+                // (bottom-right) stays the single status channel.
+                Rectangle {
+                    visible: hasHostColor
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    width: compact ? 6 : 7
+                    height: width
+                    radius: width / 2
+                    color: hostColor
+                    border.color: colorsObject.bg
+                    border.width: 1
+                }
             }
 
             // Presence badge: ringed with the panel background so the status
@@ -438,8 +457,8 @@ Rectangle {
             height: chipHeight
             radius: rootObject.radiusBadge
             color: hostTokenData ? hostTokenData.background : colorsObject.panelAlt
-            border.color: colorsObject.lineSoft
-            border.width: 1
+            border.color: hasHostColor ? hostColor : colorsObject.lineSoft
+            border.width: hasHostColor ? 1.5 : 1
             Layout.preferredWidth: launcherHostTokenRow.implicitWidth + 16
             Layout.maximumWidth: 132
             opacity: idleChipOpacity

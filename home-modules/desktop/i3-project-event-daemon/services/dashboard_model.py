@@ -404,6 +404,62 @@ def dashboard_event_payload_from_snapshot(
     return payload
 
 
+def _herdr_host_summaries(herdr_snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Project per-host health for dashboard consumers (panel group headers).
+
+    Session rows already carry their host key, so the shell can compute
+    membership and counts itself; what it cannot see is whether each remote
+    proxy is reachable, because ``remote_snapshots``/``remote_errors`` were
+    never part of the dashboard payload. Entries are keyed by the same
+    normalized host key sessions expose as ``host_name``/``herdr_host``.
+    Health is only ever reported from real data: a host with no snapshot
+    entry simply does not appear here (the shell renders no dot rather than
+    a false red).
+    """
+    hosts: List[Dict[str, Any]] = []
+    sessions = [
+        session for session in herdr_snapshot.get("sessions", []) or []
+        if isinstance(session, dict)
+    ]
+    local_sessions = [s for s in sessions if bool(s.get("is_current_host", False))]
+    local_host = ""
+    for session in local_sessions:
+        local_host = str(
+            session.get("herdr_host") or session.get("host_name") or ""
+        ).strip()
+        if local_host:
+            break
+    hosts.append({
+        "host": local_host,
+        "is_current_host": True,
+        "healthy": True,
+        "agents": len(local_sessions),
+        "error": "",
+    })
+    for remote in herdr_snapshot.get("remote_snapshots", []) or []:
+        if not isinstance(remote, dict):
+            continue
+        host = str(remote.get("host") or "").strip()
+        if not host:
+            continue
+        errors = [
+            error for error in remote.get("errors", []) or []
+            if isinstance(error, dict)
+        ]
+        first_error = str(errors[0].get("error") or "").strip() if errors else ""
+        hosts.append({
+            "host": host,
+            "is_current_host": False,
+            "healthy": bool(remote.get("success", False)),
+            "agents": len([
+                session for session in remote.get("sessions", []) or []
+                if isinstance(session, dict)
+            ]),
+            "error": first_error,
+        })
+    return hosts
+
+
 def build_herdr_dashboard_summary(
     herdr_snapshot: Dict[str, Any],
     *,
@@ -422,6 +478,7 @@ def build_herdr_dashboard_summary(
         "pane_count": len(herdr_snapshot.get("panes", []) or []),
         "agent_count": len(herdr_snapshot.get("agents", []) or []),
         "errors": herdr_snapshot.get("errors", []),
+        "hosts": _herdr_host_summaries(herdr_snapshot),
         "spaces": spaces,
     }
 

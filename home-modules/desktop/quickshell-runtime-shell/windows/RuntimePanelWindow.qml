@@ -23,6 +23,10 @@ PanelWindow {
     // drop click releases.
     readonly property int dashboardGeneration: root.dashboardGeneration(root.dashboard)
     property var sessionEntries: []
+    // sessionEntries interleaved with per-host group headers for the agents
+    // ListView. Kept separate so every count/summary that reads sessionEntries
+    // stays a pure session count.
+    property var agentListEntries: []
     property var spaceEntries: []
     property bool panelReady: false
     property bool herdrSpacesExpanded: false
@@ -85,6 +89,44 @@ PanelWindow {
             });
         }
         return entries;
+    }
+
+    // Sessions arrive host-clustered from stableSessionCompare (local first,
+    // then host key), so a host header is simply inserted whenever the group
+    // key changes. Header fields that can tick (health) are resolved live in
+    // the delegate via root.herdrHostHealth — the entry itself stays static,
+    // so status updates never rebuild the list.
+    function buildAgentListEntries(entries) {
+        const list = [];
+        let lastGroupKey = "";
+        let currentHeader = null;
+        for (let i = 0; i < entries.length; i += 1) {
+            const entry = entries[i];
+            const session = entry && entry.snapshot;
+            const groupKey = root.sessionHostGroupKey(session);
+            if (groupKey !== lastGroupKey) {
+                lastGroupKey = groupKey;
+                const hostKey = root.sessionHostKey(session);
+                const isRemote = root.hostIsRemoteKey(hostKey);
+                currentHeader = {
+                    "identity_key": "host:" + groupKey,
+                    "entry_kind": "host_header",
+                    "host_key": hostKey,
+                    "is_remote": isRemote,
+                    "label": isRemote ? root.displayHostName(hostKey) : (root.localHostDisplayName() + " (this device)"),
+                    "color": root.hostColorFor(hostKey),
+                    "icon": root.hostIconSource(hostKey),
+                    "fallback_icon": root.hostIconFallbackSource(hostKey),
+                    "count": 0,
+                };
+                list.push(currentHeader);
+            }
+            if (currentHeader) {
+                currentHeader.count += 1;
+            }
+            list.push(entry);
+        }
+        return list;
     }
 
     function buildSpaceEntries() {
@@ -186,6 +228,7 @@ PanelWindow {
         const nextSessions = buildSessionEntries();
         if (!sameEntries(sessionEntries, nextSessions)) {
             sessionEntries = nextSessions;
+            agentListEntries = buildAgentListEntries(nextSessions);
             membershipChanged = true;
         }
         // Only a membership change can reset the viewport. Restoring on every
@@ -870,12 +913,13 @@ PanelWindow {
                                     Rectangle {
                                         id: spaceHostChip
                                         readonly property var hostTok: root.spaceHostToken(space)
+                                        readonly property color hostAccent: root.hostColorFor(root.stringOrEmpty(space && space.host_key))
                                         Layout.preferredWidth: 16
                                         Layout.preferredHeight: 14
                                         Layout.alignment: Qt.AlignVCenter
                                         radius: 4
                                         color: spaceHostChip.hostTok.background
-                                        border.color: spaceHostChip.hostTok.border
+                                        border.color: Qt.colorEqual(spaceHostChip.hostAccent, "transparent") ? spaceHostChip.hostTok.border : spaceHostChip.hostAccent
                                         border.width: 1
                                         opacity: herdrSpaceRow.spaceFocused ? 1.0 : 0.85
 
@@ -1006,7 +1050,7 @@ PanelWindow {
 
                         ScriptModel {
                             id: herdrAgentsModel
-                            values: panelWindow.sessionEntries
+                            values: panelWindow.agentListEntries
                             objectProp: "modelData"
                         }
 
@@ -1055,24 +1099,126 @@ PanelWindow {
                                 policy: herdrAgentsList.contentHeight > herdrAgentsList.height ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
                             }
 
-                            delegate: RootComponents.SessionRow {
+                            delegate: Item {
+                                id: agentListDelegate
                                 required property var modelData
-                                readonly property var liveSession: panelWindow.liveSessionForEntry(modelData, panelWindow.dashboardGeneration)
+                                readonly property bool isHostHeader: root.stringOrEmpty(modelData && modelData.entry_kind) === "host_header"
                                 width: herdrAgentsList.width
-                                rootObject: root
-                                colorsObject: colors
-                                surfaceVisible: root.panelVisible
-                                session: liveSession
-                                selected: false
-                                currentOverrideSet: true
-                                currentOverride: root.sessionCurrentOverride(liveSession)
-                                interactive: true
-                                compact: true
-                                showHostToken: true
-                                showCurrentChip: false
-                                closePending: root.sessionClosePending(liveSession)
-                                onClicked: root.focusSession(liveSession)
-                                onCloseRequested: root.closeSession(liveSession)
+                                height: isHostHeader ? 22 : herdrSessionContent.rowHeight
+
+                                Loader {
+                                    anchors.fill: parent
+                                    // Loaded items read this as parent.entryData (the
+                                    // loaded item is parented to the Loader).
+                                    property var entryData: agentListDelegate.modelData
+                                    sourceComponent: agentListDelegate.isHostHeader ? hostGroupHeaderComponent : sessionRowComponent
+                                }
+                            }
+
+                            Component {
+                                id: hostGroupHeaderComponent
+
+                                Item {
+                                    readonly property var headerData: parent ? parent.entryData : null
+                                    readonly property string hostKey: root.stringOrEmpty(headerData && headerData.host_key)
+                                    readonly property var health: root.herdrHostHealth(hostKey)
+                                    readonly property string hostColor: root.stringOrEmpty(headerData && headerData.color)
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 2
+                                        anchors.rightMargin: 2
+                                        spacing: 6
+
+                                        // Host glyph over a generic fallback, so hosts
+                                        // without a herdr-<host>.svg still get an icon.
+                                        Item {
+                                            width: 14
+                                            height: 14
+
+                                            IconImage {
+                                                anchors.fill: parent
+                                                source: root.stringOrEmpty(headerData && headerData.fallback_icon)
+                                                visible: source !== ""
+                                            }
+
+                                            IconImage {
+                                                anchors.fill: parent
+                                                source: root.stringOrEmpty(headerData && headerData.icon)
+                                                visible: status === Image.Ready
+                                                mipmap: true
+                                            }
+                                        }
+
+                                        Text {
+                                            text: root.stringOrEmpty(headerData && headerData.label)
+                                            color: colors.textDim
+                                            font.pixelSize: root.fontLabel
+                                            font.weight: Font.DemiBold
+                                        }
+
+                                        Rectangle {
+                                            width: headerCountText.implicitWidth + 10
+                                            height: 16
+                                            radius: root.radiusBadge
+                                            color: "transparent"
+                                            border.color: hostColor || colors.border
+                                            border.width: 1
+
+                                            Text {
+                                                id: headerCountText
+                                                anchors.centerIn: parent
+                                                text: String(Number(headerData && headerData.count || 0))
+                                                color: hostColor || colors.muted
+                                                font.pixelSize: root.fontCaption
+                                                font.weight: Font.DemiBold
+                                            }
+                                        }
+
+                                        // Proxy health: only rendered when the daemon
+                                        // actually reports the host (null = no dot,
+                                        // never a false red).
+                                        Rectangle {
+                                            visible: health !== null
+                                            width: 7
+                                            height: 7
+                                            radius: 4
+                                            color: (health && root.boolOrFalse(health.healthy)) ? colors.green : colors.red
+                                        }
+
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            height: 1
+                                            radius: 1
+                                            color: colors.lineSoft
+                                        }
+                                    }
+                                }
+                            }
+
+                            Component {
+                                id: sessionRowComponent
+
+                                RootComponents.SessionRow {
+                                    readonly property var entryData: parent ? parent.entryData : null
+                                    readonly property var liveSession: panelWindow.liveSessionForEntry(entryData, panelWindow.dashboardGeneration)
+                                    width: herdrAgentsList.width
+                                    rootObject: root
+                                    colorsObject: colors
+                                    surfaceVisible: root.panelVisible
+                                    session: liveSession
+                                    selected: false
+                                    currentOverrideSet: true
+                                    currentOverride: root.sessionCurrentOverride(liveSession)
+                                    interactive: true
+                                    compact: true
+                                    showHostToken: false
+                                    hostColor: root.hostColorFor(root.sessionHostKey(liveSession))
+                                    showCurrentChip: false
+                                    closePending: root.sessionClosePending(liveSession)
+                                    onClicked: root.focusSession(liveSession)
+                                    onCloseRequested: root.closeSession(liveSession)
+                                }
                             }
                         }
                     }
