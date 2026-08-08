@@ -148,6 +148,11 @@ EOF
         ssh_target = "ryzen";
         connection_key = "vpittamp@ryzen:22";
       }
+      {
+        host = "surface-pro3";
+        ssh_target = "surface-pro";  # Tailscale MagicDNS name; "surface-pro3" does not resolve
+        connection_key = "vpittamp@surface-pro3:22";
+      }
     ];
   };
 

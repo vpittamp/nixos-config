@@ -19,7 +19,7 @@ in
       # Desktop host administration must not depend on an unlocked
       # 1Password GUI. This key is local-only; only the public key is
       # declared in NixOS authorized_keys.
-      Host ryzen thinkpad
+      Host ryzen thinkpad surface-pro
         HostName %h.tail286401.ts.net
         User vpittamp
         IdentityAgent none

@@ -69,7 +69,15 @@ in
   programs.i3-project-daemon = {
     enable = true;
     logLevel = "INFO";
-    herdrRemoteTargets = [];
+    # ryzen is the local herdr host here; aggregate surface-pro3's herdr
+    # server so its rows map to the herdr-surface-pro3 registry app.
+    herdrRemoteTargets = [
+      {
+        host = "surface-pro3";
+        ssh_target = "surface-pro";  # Tailscale MagicDNS name; "surface-pro3" does not resolve
+        connection_key = "vpittamp@surface-pro3:22";
+      }
+    ];
   };
 
   programs.disk-guardrails.enable = true;

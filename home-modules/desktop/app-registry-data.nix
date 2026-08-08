@@ -777,6 +777,28 @@ let
     aliases = [ "herdr-remote" "agent-mux-ryzen" "ryzen-herdr" ];
     description = "Terminal workspace manager attached to ryzen's herdr server over SSH";
   })
+  # WS39: Herdr Agent Multiplexer (REMOTE surface-pro3 instance, all other hosts).
+  # Its own Ghostty window with app-id com.herdr.surface_pro3 so the daemon
+  # focuses THIS window for surface-pro3 rows (vs the local com.herdr.<host>
+  # window). Daemon mapping: remote rows with herdr_host=surface-pro3 -> app
+  # "herdr-surface-pro3". `--remote` takes the SSH target: surface-pro3 is not
+  # a resolvable name, its Tailscale MagicDNS name is "surface-pro".
+  ++ lib.optional (builtins.elem hostName [ "thinkpad" "surface" "ryzen" ]) (mkApp {
+    name = "herdr-surface-pro3";
+    display_name = "Herdr (surface-pro3)";
+    command = "ghostty";
+    parameters = "--class=com.herdr.surface_pro3 --title=herdr:surface-pro3 -e herdr --remote surface-pro --remote-keybindings local";
+    scope = "global";
+    expected_class = "com.herdr.surface_pro3";
+    preferred_workspace = 39;  # 33 is the local herdr, 37 herdr-ryzen; registry forbids sharing a workspace
+    preferred_monitor_role = "primary";
+    icon = iconPath "herdr-surface-pro3.svg";  # surface-blue Herdr glyph, distinct from herdr.svg and herdr-ryzen.svg
+    nix_package = "inputs.herdr.packages.<system>.default";
+    multi_instance = false;
+    fallback_behavior = "skip";
+    aliases = [ "agent-mux-surface-pro3" "surface-pro3-herdr" ];
+    description = "Terminal workspace manager attached to surface-pro3's herdr server over SSH";
+  })
   ++ lib.optional (hostName == "thinkpad") (mkApp {
     name = "ryzen-desktop";
     display_name = "Ryzen Desktop";
