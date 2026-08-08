@@ -134,6 +134,15 @@ in
     enablePrinting = false;        # resident daemon; no printer on this host
     enableFingerprint = false;     # Surface Pro 3 has no fingerprint reader
     enableGaming = false;
+
+    # This host is administered entirely over tailscale — it has no local user
+    # session most of the time, so a lid-triggered suspend takes it off the
+    # network with no way to bring it back short of physically pressing power.
+    # It dropped off the tailnet exactly that way during bring-up. The default
+    # externalPower/docked values already keep it awake; "lock" on battery is
+    # the deliberate divergence, trading standby time for reachability. (Type
+    # Cover closed == lid closed on a Surface, which makes this easy to trip.)
+    lidPolicy.battery = "lock";
   };
 
   # Display manager - greetd for Wayland/Sway login

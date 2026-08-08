@@ -17,7 +17,14 @@
 #   - hooks / skills (Antigravity CLI keeps Agent Skills, Hooks, Subagents)
 
 let
-  antigravityCliPackage = pkgs-unstable.antigravity-cli;
+  # Pinned to nixpkgs master rather than pkgs-unstable: the unstable channel
+  # lags master on this package (1.1.8 vs 1.1.11 as of 2026-08-07). See the
+  # nixpkgs-antigravity input in flake.nix, which carries the TODO to revert
+  # this to `pkgs-unstable.antigravity-cli` once the channel catches up.
+  antigravityCliPackage = (import inputs.nixpkgs-antigravity {
+    inherit (pkgs.stdenv.hostPlatform) system;
+    config.allowUnfree = true;
+  }).antigravity-cli;
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
   workflowBuilderMcpConfig = pkgs.writeText "antigravity-workflow-builder-mcp_config.json" (
     builtins.toJSON {
