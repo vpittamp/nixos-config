@@ -3,20 +3,33 @@
 # bundles its own webkitgtk-4.1 / gtk-3 / libsoup-3, and its AppRun forces
 # GDK_BACKEND=x11 (Tauri crashes on the Wayland backend, tauri-apps/tauri#8541),
 # so under Sway it renders through XWayland with X11 WM class "github".
-{ lib, stdenv, fetchurl, appimageTools }:
+#
+# NixOS quirks (keep an eye on these at every version bump):
+# - The app's runtime-downloaded "embedded git" is linked against Debian's
+#   libcurl-gnutls.so.4 (CURL_GNUTLS_3 symbols), which does not exist in this
+#   FHS env, so every GitHub clone fails instantly with "error while loading
+#   shared libraries: libcurl-gnutls.so.4" (upstream: github/app#2244, fixed
+#   for real in v1.1.5 via host-git fallback). We still force
+#   LOCAL_GIT_DIRECTORY to the system profile below so the app always uses the
+#   NixOS git instead of the bundled one.
+# - The built-in self-updater can never work here: the app lives in the
+#   read-only /nix/store, so applying a staged update fails with
+#   "Invalid cross-device link", and the app downloads ~485MB and exits on
+#   every launch once a newer release exists. Bump this package instead.
+{ lib, stdenv, fetchurl, appimageTools, bash }:
 
 let
   pname = "github-copilot";
-  version = "1.1.2";
+  version = "1.1.5";
 
   # Select architecture-specific source
   src = fetchurl (
     if stdenv.isx86_64 then {
       url = "https://github.com/github/app/releases/download/v${version}/GitHub-Copilot-linux-x64.AppImage";
-      sha256 = "sha256-EKBbXoMGKaUJPA0s39XuxAtrl1CzjctDXHaofDXsiMo=";
+      sha256 = "sha256-rw3s0q8w4t1GlYHTdoj2P+clzRw8sI3e64SK6OFDDv8=";
     } else if stdenv.isAarch64 then {
       url = "https://github.com/github/app/releases/download/v${version}/GitHub-Copilot-linux-arm64.AppImage";
-      sha256 = "sha256-6oQmtMcoUL8uhEhvoc14in8xKYS7IB6V8guDZ/vGC8c=";
+      sha256 = "sha256-zmEs1LaePn71ym/t0MFd486HYvGZ8Todtehms0RyC1g=";
     } else throw "Unsupported platform for github-copilot"
   );
 
@@ -40,6 +53,18 @@ if stdenv.isLinux then
       # Install icon (hicolor) so menus/launchers resolve Icon=github-copilot.
       install -m 444 -D "${appimageContents}/GitHub Copilot.png" \
         "$out/share/icons/hicolor/512x512/apps/${pname}.png"
+
+      # Route the app at the NixOS git (see header comment). The app appends
+      # bin/git to LOCAL_GIT_DIRECTORY, so point it at the system profile.
+      mv "$out/bin/${pname}" "$out/bin/.${pname}-unwrapped"
+      cat > "$out/bin/${pname}" <<'EOF'
+      #!${bash}/bin/bash
+      # Default to the NixOS system git unless the user overrides it; the
+      # app's bundled git cannot resolve libcurl-gnutls.so.4 on NixOS.
+      export LOCAL_GIT_DIRECTORY="''${LOCAL_GIT_DIRECTORY:-/run/current-system/sw}"
+      exec "$(dirname "$0")/.${pname}-unwrapped" "$@"
+      EOF
+      chmod +x "$out/bin/${pname}"
     '';
 
     meta = with lib; {
