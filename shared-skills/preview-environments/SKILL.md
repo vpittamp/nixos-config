@@ -65,7 +65,10 @@ Hydrator, and GitOps Promoter changes have no vCluster preview lane.
    `list_preview_environments`.
 2. Launch a `system-live` or `app-live` PreviewEnvironment with the typed MCP or
    UI surface. The server resolves full revisions and policy.
-3. Poll `get_preview_environment` until that exact generation is Ready.
+3. Poll `get_preview_environment` until that exact generation is Ready. For
+   cold-start work, inspect `bootSeconds` and `preview-boot-telemetry/v1`; use
+   its `controlPlane`, `argoCD`, `workloads`, `auth`, and `exposure` totals
+   before drilling into raw step timings.
 4. Call `development_run_start` with the environment name, intent, selected
    target IDs, and optional public builder profile.
 5. Use only `development_run_get`, `development_run_apply`,
@@ -121,6 +124,14 @@ with `--wait --repo <edited-checkout>` and require `applied` before inspecting
 the environment. `failed`, `unwatched`, and `timeout` are not success. A busy
 durable phase defers the batch; do not start a second apply authority.
 
+Policy, scope, and admission rejections are permanent for that composite
+digest. Only command-gate transitions and responses explicitly marked
+`retryable` may defer the same tree. The watcher owns the bounded retry and uses
+a fresh operation identity; the Dapr action activity must not replay a
+persisted privileged-preview verdict. Removing a rejected edit must trigger
+exactly one recovery apply, even when the tree returns to the prior successful
+digest.
+
 Dapr workflow history is immutable. A `session-runtime` target verifies one
 fixed source canary, then requires a built and pinned image plus a fresh session
 for deployed proof. Never hot-patch an existing durable workflow.
@@ -138,6 +149,11 @@ metric browser-console browser-network deployment
 Reads are bounded and cursor-based. Cursors are fenced to the run generation
 and selected signals. Preserve prompt and tool content; mask only
 credential-shaped fields and embedded credential values.
+
+For browser-required work, verify screenshots or named observations appear
+while the session remains active. CLI supervisors periodically upload and
+deduplicate new proof; Dapr Agent sessions persist it after browser tool calls.
+Final recording closure and evidence sealing are additional terminal steps.
 
 Use direct pod, SEA, or receiver logs only after bounded product evidence shows
 a specific gap. Terminal host and legacy preview-local runs seal separately as
@@ -190,6 +206,9 @@ For a changed development boundary, require fresh dev-cluster proof:
   rollback completes within 30s and release restores the exact baseline;
 - a combined application plus stacks edit is one coalesced generation, and a
   controlled restart causes no duplicate apply;
+- permanent policy rejection consumes no retry loop, transient retry preserves
+  the digest but rotates operation identity, and removing the rejection causes
+  exactly one recovery apply;
 - command submission returns a durable receipt within 2s;
 - delivery returns a receipt or typed failure within 120s;
 - required GitHub checks start within 30s of PR creation or return a typed block;

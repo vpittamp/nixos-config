@@ -69,6 +69,19 @@ and verdict into each checkout. `await-sync` from the edited checkout must prove
 that exact digest before observation; it is read-only and never creates another
 apply path.
 
+Policy, scope, and admission failures are permanent verdicts for the digest.
+Command-gate transitions and responses explicitly marked `retryable` defer the
+same digest and use a fresh operation identity on the next bounded watcher
+attempt. The Dapr activity layer does not independently replay a persisted
+privileged-preview verdict. Returning from a rejected tree to the prior
+successful digest requires exactly one recovery apply before `applied` is
+published.
+
+Browser screenshots and named observations are persisted and deduplicated while
+an interactive CLI remains active, and Dapr Agent browser tools persist their
+evidence after tool calls. Terminal video flush and package sealing complete the
+record but are not the first capture boundary.
+
 ## Terminal Contract
 
 Success means required gates and delivery receipts passed, persistent changes
