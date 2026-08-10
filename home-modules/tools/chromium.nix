@@ -15,6 +15,11 @@ let
     "--disable-zero-copy"
   ];
 
+  geminiChromeArgs = [
+    "--enable-features=OptimizationGuideModelDownloading,PromptAPIForGeminiNano,WriterAPIForGeminiNano,RewriterAPIForGeminiNano,SummarizationAPIForGeminiNano"
+    "--optimization-guide-model-execution-override-command-line-flag"
+  ];
+
   pwaRouteEntries =
     builtins.concatMap
       (pwa:
@@ -1033,6 +1038,7 @@ let
       cmd=(
         ${pkgs.google-chrome}/bin/google-chrome-stable
         ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) ryzenCaptureSafeChromeArgs)}
+        ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) geminiChromeArgs)}
         ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) extraArgs)}
         "$@"
       )

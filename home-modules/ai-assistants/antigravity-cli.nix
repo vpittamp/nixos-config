@@ -25,40 +25,61 @@ let
     inherit (pkgs.stdenv.hostPlatform) system;
     config.allowUnfree = true;
   }).antigravity-cli;
+
+  sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
+  nodeNpx = "${pkgs.nodejs_22}/bin/npx";
+  enableBrowserMcpServers = sharedBrowserMcp.enableBrowserMcpServers;
+
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
-  workflowBuilderMcpConfig = pkgs.writeText "antigravity-workflow-builder-mcp_config.json" (
-    builtins.toJSON {
-      mcpServers = {
-        "workflow-builder" = {
-          # Use the same authenticated proxy as the other local AI clients so
-          # workspace identity and optional session lineage have one contract.
-          command = "${workflowBuilderMcp.proxyCommand}";
-          args = [];
-          timeoutSeconds = 300;
-          strictArgumentValidation = true;
-          enabledTools = [
-            "get_workflow_context"
-            "list_workflows"
-            "get_workflow"
-            "execute_workflow"
-            "get_workflow_script_spec"
-            "validate_workflow_script"
-            "run_workflow_script"
-            "save_workflow_script"
-          ];
-        };
+
+  mcpServers =
+    (lib.optionalAttrs workflowBuilderMcp.enable {
+      "workflow-builder" = {
+        # Use the same authenticated proxy as the other local AI clients so
+        # workspace identity and optional session lineage have one contract.
+        command = "${workflowBuilderMcp.proxyCommand}";
+        args = [];
+        timeoutSeconds = 300;
+        strictArgumentValidation = true;
+        enabledTools = [
+          "get_workflow_context"
+          "list_workflows"
+          "get_workflow"
+          "execute_workflow"
+          "get_workflow_script_spec"
+          "validate_workflow_script"
+          "run_workflow_script"
+          "save_workflow_script"
+        ];
       };
-    } + "\n"
+    })
+    // (lib.optionalAttrs enableBrowserMcpServers {
+      "chrome-devtools" = {
+        command = nodeNpx;
+        args = [
+          "-y"
+          "chrome-devtools-mcp@latest"
+          "--browserUrl"
+          "${sharedBrowserMcp.chromeDevtoolsBrowserUrl}"
+        ];
+        timeoutSeconds = 300;
+      };
+    });
+
+  enableMcpConfig = mcpServers != { };
+
+  antigravityMcpConfigJson = pkgs.writeText "antigravity-mcp_config.json" (
+    builtins.toJSON { inherit mcpServers; } + "\n"
   );
 in
 {
   home.packages = [ antigravityCliPackage ];
 
-  home.activation.materializeAntigravityMcpConfig = lib.mkIf workflowBuilderMcp.enable (lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  home.activation.materializeAntigravityMcpConfig = lib.mkIf enableMcpConfig (lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     set -euo pipefail
 
     CONFIG="$HOME/.gemini/config/mcp_config.json"
-    SRC="${workflowBuilderMcpConfig}"
+    SRC="${antigravityMcpConfigJson}"
     TEMP="$(${pkgs.coreutils}/bin/mktemp)"
 
     ${pkgs.coreutils}/bin/mkdir -p "$HOME/.gemini/config"
