@@ -87,6 +87,7 @@ let
     chafa # Terminal image viewer for fzf previews
     television # TUI fuzzy finder with built-in channels
     glib # For gio command (desktop file launcher and file operations)
+    catt # Chromecast CLI tool for direct IP streaming
   ];
 
   # AI and LLM tools

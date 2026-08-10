@@ -23,6 +23,10 @@ let
       --password-store=basic \
       --allow-insecure-localhost
   '';
+  gnomeNetworkDisplaysWrapped = pkgs.writeShellScriptBin "gnome-network-displays" ''
+    export GSK_RENDERER=ngl
+    exec ${pkgs.gnome-network-displays}/bin/gnome-network-displays "$@"
+  '';
 in
 {
   imports = [
@@ -63,7 +67,10 @@ in
     executable = true;
   };
 
-  home.packages = [ sunshineWebUi ];
+  home.packages = [
+    sunshineWebUi
+    gnomeNetworkDisplaysWrapped
+  ];
 
   # Feature 117: i3 project event listener daemon (user service)
   programs.i3-project-daemon = {

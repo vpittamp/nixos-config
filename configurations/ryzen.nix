@@ -144,6 +144,9 @@ in
     # Chrome sign-in + sync policy (allow user to sign in, sync bookmarks etc.)
     ../modules/desktop/chrome-sync.nix
 
+    # Chrome policy for native Gemini and Generative AI features
+    ../modules/desktop/chrome-gemini.nix
+
     # Sunshine game streaming (NVIDIA NVENC hardware encoding)
     ../modules/desktop/sunshine.nix
 
@@ -170,16 +173,13 @@ in
       gh-enhance = prev.callPackage ../packages/gh-enhance.nix { };
       diffnav = prev.callPackage ../packages/diffnav.nix { };
 
-      # Update Google Chrome Stable to latest available without updating entire nixpkgs
-      google-chrome = prev.google-chrome.overrideAttrs (old: rec {
-        version = "145.0.7632.159";
-        src = prev.fetchurl {
-          url = "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${version}-1_amd64.deb";
-          hash = "sha256-xi7xUT9BSvF7g690gaEsubTwAN181Y08FSPD2+pFJdk=";
-        };
-      });
+      # NOTE: google-chrome stable comes straight from nixpkgs (149+). Do NOT pin
+      # an older version here: Chrome's fallback Cast CRL expires 20 weeks after
+      # the browser build date (cast_crl.cc "CRL - Not time-valid"), after which
+      # cast device auth fails and the picker shows "No devices found".
+      # (A stale 145 pin caused exactly that on 2026-07-29.)
 
-      # Chrome 146 beta/dev channel (for testing features behind newer flags)
+      # Chrome beta/dev channel (for testing features behind newer flags)
       google-chrome-beta = prev.callPackage ../packages/google-chrome-beta.nix { };
       google-chrome-unstable = prev.callPackage ../packages/google-chrome-unstable.nix { };
     })
@@ -538,6 +538,7 @@ in
   boot.kernelParams = [
     # AMD-specific
     "amd_pstate=active"           # Use AMD P-State driver for Zen 4
+    "cfg80211.regdomain=US"       # Set Wi-Fi regulatory domain for 5GHz P2P active scanning
     # Performance settings for desktop
     "mitigations=off"             # Optional: disable CPU mitigations for max performance
                                   # Remove this line if security is priority
@@ -597,9 +598,17 @@ in
     };
   };
 
-  # NetworkManager for ethernet (desktop)
+  # NetworkManager for ethernet & Wi-Fi (desktop)
+  # Use iwd backend for superior Wi-Fi Direct (P2P / Miracast) support
   networking.networkmanager = {
     enable = true;
+    wifi.backend = "iwd";
+  };
+
+  # Enable Avahi for network display (Miracast / mDNS) discovery
+  services.avahi = {
+    enable = lib.mkForce true;
+    nssmdns4 = true;
   };
 
   # Fonts - Nerd Fonts for desktop shell glyph icons
@@ -758,8 +767,9 @@ in
   # Hardware acceleration
   hardware.graphics.enable = true;
 
-  # Firmware updates
+  # Firmware & wireless regulatory database updates
   hardware.enableRedistributableFirmware = true;
+  hardware.wirelessRegulatoryDatabase = true;
 
   # Enable fwupd for firmware updates (LVFS)
   services.fwupd.enable = true;
@@ -981,7 +991,8 @@ in
   # Firewall configuration
   networking.firewall = {
     enable = true;
-    allowedTCPPorts = [ 22 ];  # SSH (VNC 5900/5901 dropped with the retired wayvnc stack)
+    allowedTCPPorts = [ 22 7236 ];  # SSH (22), Miracast RTSP (7236) for Wireless Display Adapter
+    allowedUDPPorts = [ 5353 ];     # mDNS (5353) for Chrome Chromecast / TV discovery on LAN
     # Phase 4: OTEL remote-session sink (port 4320) retired — cross-host
     # sessions now flow through the K8s session-aggregator instead.
     interfaces."tailscale0".allowedTCPPorts = lib.mkAfter [ 21116 21118 ];  # RustDesk direct IP (Ollama 11434 dropped: services.ollama disabled)
@@ -989,6 +1000,7 @@ in
     extraInputRules = ''
       iifname "tailscale0" tcp dport { 21116, 21118 } accept comment "RustDesk over Tailscale"
       iifname "tailscale0" udp dport { 21116, 21119 } accept comment "RustDesk over Tailscale"
+      iifname "p2p-*" accept comment "Wi-Fi Direct P2P interface"
     '';
     checkReversePath = "loose";  # For Tailscale
     # Incus bridge needs DHCP/DNS from host-side dnsmasq.

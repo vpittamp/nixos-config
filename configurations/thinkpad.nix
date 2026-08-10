@@ -329,6 +329,9 @@ in
     # Chrome sign-in + sync policy (allow user to sign in, sync bookmarks etc.)
     ../modules/desktop/chrome-sync.nix
 
+    # Chrome policy for native Gemini and Generative AI features
+    ../modules/desktop/chrome-gemini.nix
+
     # Sunshine game streaming (Intel Quick Sync hardware encoding)
     ../modules/desktop/sunshine.nix
 
@@ -355,14 +358,13 @@ in
       gh-enhance = prev.callPackage ../packages/gh-enhance.nix { };
       diffnav = prev.callPackage ../packages/diffnav.nix { };
 
-      # Update Google Chrome Stable to latest available without updating entire nixpkgs
-      google-chrome = prev.google-chrome.overrideAttrs (old: rec {
-        version = "145.0.7632.159";
-        src = prev.fetchurl {
-          url = "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${version}-1_amd64.deb";
-          hash = "sha256-xi7xUT9BSvF7g690gaEsubTwAN181Y08FSPD2+pFJdk=";
-        };
-      });
+      # NOTE: google-chrome stable comes straight from nixpkgs (149+). Do NOT pin
+      # an older version here: Chrome's fallback Cast CRL expires 20 weeks after
+      # the browser build date (cast_crl.cc "CRL - Not time-valid"), after which
+      # cast device auth fails and the picker shows "No devices found".
+      # (A stale 145 pin caused exactly that on 2026-07-29.)
+
+      # Chrome beta/dev channel (for testing features behind newer flags)
 
       # Chrome 146 beta/dev channel (for testing features behind newer flags)
       google-chrome-beta = prev.callPackage ../packages/google-chrome-beta.nix { };
@@ -819,6 +821,7 @@ in
   networking.firewall = {
     enable = true;
     allowedTCPPorts = [ 22 5900 ];  # SSH and VNC
+    allowedUDPPorts = [ 5353 ];     # mDNS for Chrome Chromecast / TV discovery on LAN
     # Phase 4: OTEL remote-session sink (port 4320) retired — cross-host
     # sessions now flow through the K8s session-aggregator at
     # ai-sessions-ryzen.tail286401.ts.net, not host-to-host push.

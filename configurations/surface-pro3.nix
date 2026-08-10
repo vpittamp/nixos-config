@@ -68,6 +68,7 @@ in
     ../modules/desktop/chrome-kimi-webbridge.nix
     ../modules/desktop/chrome-bookmarks.nix
     ../modules/desktop/chrome-sync.nix
+    ../modules/desktop/chrome-gemini.nix
 
     # ========== DELIBERATELY NOT IMPORTED (vs configurations/surface.nix) ==========
     #
@@ -106,16 +107,13 @@ in
       gh-enhance = prev.callPackage ../packages/gh-enhance.nix { };
       diffnav = prev.callPackage ../packages/diffnav.nix { };
 
-      # Update Google Chrome Stable to latest available without updating entire nixpkgs
-      google-chrome = prev.google-chrome.overrideAttrs (old: rec {
-        version = "145.0.7632.159";
-        src = prev.fetchurl {
-          url = "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${version}-1_amd64.deb";
-          hash = "sha256-xi7xUT9BSvF7g690gaEsubTwAN181Y08FSPD2+pFJdk=";
-        };
-      });
+      # NOTE: google-chrome stable comes straight from nixpkgs (149+). Do NOT pin
+      # an older version here: Chrome's fallback Cast CRL expires 20 weeks after
+      # the browser build date (cast_crl.cc "CRL - Not time-valid"), after which
+      # cast device auth fails and the picker shows "No devices found".
+      # (A stale 145 pin caused exactly that on 2026-07-29.)
 
-      # Chrome 146 beta/dev channel (for testing features behind newer flags)
+      # Chrome beta/dev channel (for testing features behind newer flags)
       google-chrome-beta = prev.callPackage ../packages/google-chrome-beta.nix { };
       google-chrome-unstable = prev.callPackage ../packages/google-chrome-unstable.nix { };
     })
@@ -197,6 +195,10 @@ in
   # seeded into /etc/NetworkManager/system-connections during install and is
   # stateful, which keeps the PSK out of this repo.
   networking.networkmanager.enable = true;
+
+  # Firewall: base networking.nix enables it with SSH/Tailscale only; also allow
+  # mDNS so Chrome Chromecast / TV discovery works on the LAN.
+  networking.firewall.allowedUDPPorts = [ 5353 ];
 
   # Fonts - Nerd Fonts for desktop shell glyph icons
   fonts = {

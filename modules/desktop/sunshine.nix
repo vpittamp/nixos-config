@@ -327,9 +327,9 @@ in {
       };
     };
 
-    # Disable Avahi when using Tailscale-only mode (we don't need mDNS discovery)
-    # The upstream Sunshine module enables avahi, but we override it
-    services.avahi.enable = mkIf cfg.tailscaleOnly (mkForce false);
+    # Disable Avahi by default when using Tailscale-only mode (unless enabled by host)
+    # The upstream Sunshine module enables avahi, but we override default
+    services.avahi.enable = mkIf cfg.tailscaleOnly (mkDefault false);
 
     # Firewall configuration
     networking.firewall = mkIf cfg.openFirewall (

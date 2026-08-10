@@ -190,11 +190,11 @@ let
 in
 stdenvNoCC.mkDerivation (finalAttrs: {
   inherit pname meta;
-  version = "146.0.7680.65";
+  version = "152.0.7977.30";
 
   src = fetchurl {
     url = "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-beta/google-chrome-beta_${finalAttrs.version}-1_amd64.deb";
-    hash = "sha256-u1u0PiUyXi3CS7G6vKAl93Jhct0R6qn1nCRFEkCm47E=";
+    hash = "sha256-v4behXUqR1PtKnZCAvTkLVOGaN52I0NrW9gpLHuK424=";
   };
 
   # With strictDeps on, some shebangs were not being patched correctly
@@ -277,7 +277,11 @@ stdenvNoCC.mkDerivation (finalAttrs: {
       --add-flags ${lib.escapeShellArg commandLineArgs}
 
     # Make sure that libGL and libvulkan are found by ANGLE libGLESv2.so
-    patchelf --set-rpath $rpath $out/share/google/${appname}/lib*GL*
+    # (Chrome >= 151 no longer ships libEGL/libGLESv2; with nullglob the
+    # unguarded glob expands to nothing and patchelf fails.)
+    for gl in $out/share/google/${appname}/lib*GL*; do
+      [ -e "$gl" ] && patchelf --set-rpath $rpath "$gl"
+    done
 
     for elf in $out/share/google/${appname}/{chrome,chrome-sandbox,chrome_crashpad_handler}; do
       patchelf --set-rpath $rpath $elf

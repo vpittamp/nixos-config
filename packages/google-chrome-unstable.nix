@@ -190,11 +190,11 @@ let
 in
 stdenvNoCC.mkDerivation (finalAttrs: {
   inherit pname meta;
-  version = "147.0.7719.3";
+  version = "153.0.7993.0";
 
   src = fetchurl {
     url = "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-unstable/google-chrome-unstable_${finalAttrs.version}-1_amd64.deb";
-    hash = "sha256-TB3uFBtFeHdP3H48gVRzbkmECvcOHWzGRfMPUqdnYkI=";
+    hash = "sha256-t8n7i7wSz273hbAJzBvFkt3X6JFxvxxrlyCXvQjj3yo=";
   };
 
   strictDeps = false;
@@ -271,7 +271,11 @@ stdenvNoCC.mkDerivation (finalAttrs: {
       --add-flags "--simulate-outdated-no-au='Tue, 31 Dec 2099 23:59:59 GMT'" \
       --add-flags ${lib.escapeShellArg commandLineArgs}
 
-    patchelf --set-rpath $rpath $out/share/google/${appname}/lib*GL*
+    # (Chrome >= 151 no longer ships libEGL/libGLESv2; with nullglob the
+    # unguarded glob expands to nothing and patchelf fails.)
+    for gl in $out/share/google/${appname}/lib*GL*; do
+      [ -e "$gl" ] && patchelf --set-rpath $rpath "$gl"
+    done
 
     for elf in $out/share/google/${appname}/{chrome,chrome-sandbox,chrome_crashpad_handler}; do
       patchelf --set-rpath $rpath $elf
