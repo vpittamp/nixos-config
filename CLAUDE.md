@@ -228,9 +228,19 @@ some buttons are 22 — about 4mm at the Surface panel's 1.5 scale, against a ~9
 touch guideline. Scaling fixes all of them at once and is reversible; it only
 touches screens you actually touch, so a plain monitor keeps its density.
 
+Scaling is **relative**: each touched output's existing scale is multiplied
+(default 1.25x, snapped to quarter steps), not driven to one absolute value. A
+fixed target cannot suit both displays — the Surface panel sits at 1.5 where 2.0
+is a mild step, while the Verbatim sits at 1.25 where the same 2.0 overshoots.
+
 ```bash
-touch-mode {on|off|toggle|status} [scale]   # default 2.0
+touch-mode {on|off|toggle|status} [scale]   # bare = relative step
+touch-mode on 1.75                          # explicit absolute scale
+TOUCH_MODE_FACTOR=1.5 touch-mode on         # different multiplier, this run only
 ```
+
+`off` restores the exact scale each output had, recorded at the time it was
+enabled — not a guess at the default.
 
 Three ways in, all driving the same state: the **top-bar chip** (finger icon,
 right of the keyboard chip — teal when active), the **two-finger bottom-edge
