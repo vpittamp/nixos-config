@@ -276,7 +276,28 @@ PanelWindow {
                                 readonly property bool workspaceHovered: workspaceMouse.containsMouse
                                 readonly property var workspaceIcons: root.arrayOrEmpty(workspace && workspace.icon_sources)
                                 readonly property int workspaceCount: Number(workspace && workspace.window_count || 0)
-                                width: Math.max(34, workspaceText.implicitWidth + (workspaceIcons.length ? 30 : 0) + (workspaceCount > 1 ? 16 : 0) + 12)
+                                // Icons carry the identity; the number is only a
+                                // fallback. Nothing types workspace numbers any
+                                // more — there are no Mod+<digit> bindings and no
+                                // digit-entry mode left — so the label was
+                                // spending most of the pill's width saying
+                                // something nobody reads, while the icon you
+                                // actually aim at stayed small.
+                                //
+                                // Dropping it both enlarges the icon and narrows
+                                // the pill, and the narrowing matters as much as
+                                // the enlarging: nine pills went to ~570 logical
+                                // px against a strip of roughly 600, i.e. one
+                                // workspace away from overflowing — and overflow
+                                // is what makes the Flickable interactive again
+                                // and brings back the swallowed taps.
+                                //
+                                // Icons overlap by 5 (Row spacing -5), so N of
+                                // them span 21N + 5.
+                                readonly property int iconStripWidth: workspaceIcons.length > 0
+                                    ? (21 * workspaceIcons.length + 5)
+                                    : 0
+                                width: Math.max(34, (workspaceIcons.length > 0 ? iconStripWidth : workspaceText.implicitWidth) + (workspaceCount > 1 ? 16 : 0) + 14)
                                 // Fill the strip rather than sitting at a fixed
                                 // 28 inside it: any height left over is dead
                                 // space that silently swallows taps. Width is
@@ -315,8 +336,13 @@ PanelWindow {
                                             delegate: Rectangle {
                                                 required property var modelData
                                                 required property int index
-                                                width: 18
-                                                height: 18
+                                                // 26 rather than 18: with the
+                                                // number gone this is the whole
+                                                // target, and 18 logical px is
+                                                // 5.4mm on the Verbatim against
+                                                // the ~9mm a fingertip needs.
+                                                width: 26
+                                                height: 26
                                                 radius: root.radiusBadge
                                                 color: colors.bg
                                                 border.color: workspaceFocused ? colors.blue : colors.borderStrong
@@ -324,7 +350,7 @@ PanelWindow {
 
                                                 IconImage {
                                                     anchors.centerIn: parent
-                                                    implicitSize: 14
+                                                    implicitSize: 20
                                                     source: String(modelData)
                                                     visible: source !== ""
                                                     mipmap: true
@@ -363,6 +389,12 @@ PanelWindow {
 
                                     Text {
                                         id: workspaceText
+                                        // Fallback only. A workspace with no
+                                        // window — or one whose app supplies no
+                                        // icon, which some of the Chrome PWAs do
+                                        // — would otherwise render as a blank
+                                        // pill with nothing to tell it apart.
+                                        visible: workspaceIcons.length === 0
                                         text: workspaceLabelValue
                                         color: workspaceFocused ? colors.bg : (workspaceHovered ? colors.text : colors.textDim)
                                         font.pixelSize: root.fontBody
