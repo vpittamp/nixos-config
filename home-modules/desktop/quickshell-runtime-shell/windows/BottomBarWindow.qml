@@ -453,6 +453,110 @@ PanelWindow {
                 }
             }
 
+            // On-screen keyboard and touch mode, moved down from the top bar.
+            // These are the two controls reached for with a finger, and the
+            // bottom edge is where the hand already is — the top bar is the
+            // furthest point on the screen from it.
+            //
+            // Both pin their width for the same reason the workspace strip
+            // does: a RowLayout shrinks children to Layout.minimumWidth, which
+            // defaults to 0, and turning touch mode on is what makes the bar
+            // run out of room.
+            Rectangle {
+                id: keyboardChip
+                Layout.preferredWidth: implicitWidth
+                Layout.minimumWidth: implicitWidth
+                Layout.fillHeight: true
+                Layout.alignment: Qt.AlignVCenter
+                radius: root.radiusControl
+                color: root.neutralChipFill(keyboardMouse.containsMouse)
+                border.color: root.neutralChipBorder(keyboardMouse.containsMouse)
+                border.width: 1
+                implicitWidth: keyboardIcon.implicitWidth + 22
+
+                Behavior on color { ColorAnimation { duration: root.fastColorMs } }
+                Behavior on border.color { ColorAnimation { duration: root.fastColorMs } }
+
+                Text {
+                    id: keyboardIcon
+                    anchors.centerIn: parent
+                    // nf-fa-keyboard
+                    text: "\u{F11C}"
+                    color: root.neutralChipText(keyboardMouse.containsMouse)
+                    font.family: "FiraCode Nerd Font"
+                    font.pixelSize: 13
+                }
+
+                MouseArea {
+                    id: keyboardMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.runDetached([bottomBarWindow.runtimeConfig.oskToggleBin])
+                }
+
+                RootComponents.BarTooltip {
+                    anchorWindow: bottomBarWindow
+                    anchorItem: keyboardMouse
+                    above: true
+                    active: keyboardMouse.containsMouse
+                    text: "On-screen keyboard"
+                    colors: bottomBarWindow.colors
+                }
+            }
+
+            // Hidden entirely on machines with no touchscreen bound, so it does
+            // not become dead chrome on the desktop hosts sharing this bar.
+            Rectangle {
+                id: touchModeChip
+                visible: root.touchModeAvailable
+                Layout.preferredWidth: implicitWidth
+                Layout.minimumWidth: implicitWidth
+                Layout.fillHeight: true
+                Layout.alignment: Qt.AlignVCenter
+                radius: root.radiusControl
+                color: root.stateChipFill(root.touchModeActive, touchModeMouse.containsMouse, colors.tealBg)
+                border.color: root.stateChipBorder(root.touchModeActive, touchModeMouse.containsMouse, colors.teal)
+                border.width: 1
+                implicitWidth: touchModeIcon.implicitWidth + 26
+
+                Behavior on color { ColorAnimation { duration: root.fastColorMs } }
+                Behavior on border.color { ColorAnimation { duration: root.fastColorMs } }
+
+                Text {
+                    id: touchModeIcon
+                    anchors.centerIn: parent
+                    // nf-fa-hand_pointer_o — an extended index finger, which
+                    // reads as "tap" at bar size.
+                    text: "\u{F25A}"
+                    color: root.stateChipText(root.touchModeActive, touchModeMouse.containsMouse, colors.teal)
+                    font.family: "FiraCode Nerd Font"
+                    font.pixelSize: 14
+                }
+
+                MouseArea {
+                    id: touchModeMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    // Fire and forget: the chip's state comes from the status
+                    // feed, so it reflects the real outcome rather than assuming
+                    // the toggle succeeded.
+                    onClicked: root.runDetached([bottomBarWindow.runtimeConfig.touchModeBin, "toggle"])
+                }
+
+                RootComponents.BarTooltip {
+                    anchorWindow: bottomBarWindow
+                    anchorItem: touchModeMouse
+                    above: true
+                    active: touchModeMouse.containsMouse
+                    text: root.touchModeActive
+                        ? "Touch mode ON · tap to restore normal scale"
+                        : "Touch mode OFF · tap to enlarge touch targets"
+                    colors: bottomBarWindow.colors
+                }
+            }
+
             // Dictation toggle, right-aligned next to the status group. The
             // workspace area (fillWidth, to its left) takes the whole middle, so
             // the button neither overlaps nor squeezes the workspace buttons.
