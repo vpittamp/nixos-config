@@ -222,10 +222,20 @@ PanelWindow {
                 Layout.fillHeight: true
 
                 Flickable {
+                    id: workspaceFlick
                     anchors.fill: parent
                     clip: true
                     contentWidth: workspaceRow.implicitWidth
                     contentHeight: workspaceRow.implicitHeight
+                    // Only intercept input when there is actually something to
+                    // scroll to. A Flickable takes the pointer grab on press to
+                    // work out whether the gesture is a flick, and only hands it
+                    // back to its children if the finger barely moved — so with
+                    // a fingertip's normal jitter a tap on a workspace button is
+                    // swallowed as a would-be drag and has to be repeated. When
+                    // the buttons already fit, none of that arbitration is
+                    // wanted, and turning it off makes the first tap land.
+                    interactive: contentWidth > width
 
                     Row {
                         id: workspaceRow
@@ -356,6 +366,25 @@ PanelWindow {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onPressed: root.activateWorkspace(workspace)
+                                }
+
+                                // Touch path, for when the row does overflow and
+                                // the Flickable above has to stay interactive.
+                                // A pointer handler takes part in grab
+                                // arbitration properly, so it can still claim a
+                                // tap the Flickable is only *considering* as a
+                                // flick; MouseArea, on the legacy path, just
+                                // loses the grab and the tap goes nowhere.
+                                // ReleaseWithinBounds keeps a real drag scrolling.
+                                //
+                                // Scoped to touchscreens so the mouse keeps its
+                                // existing press-to-activate feel. Activating
+                                // twice would be harmless anyway — switching to
+                                // the workspace you are already on is a no-op.
+                                TapHandler {
+                                    acceptedDevices: PointerDevice.TouchScreen
+                                    gesturePolicy: TapHandler.ReleaseWithinBounds
+                                    onTapped: root.activateWorkspace(workspace)
                                 }
                             }
                         }

@@ -30,10 +30,29 @@ PanelWindow {
     property var spaceEntries: []
     property bool panelReady: false
     property bool herdrSpacesExpanded: false
-    screen: root.findScreenByOutputName(root.panelOutputName) || root.activeScreen
+    readonly property var panelScreen: root.findScreenByOutputName(root.panelOutputName) || root.activeScreen
+    screen: panelScreen
     visible: root.panelVisible
     color: "transparent"
-    implicitWidth: runtimeConfig.panelWidth
+    // Configured width, capped to a share of the screen it is on.
+    //
+    // panelWidth is a *logical* pixel count, and raising an output's scale
+    // shrinks the logical desktop — so a fixed 440 quietly grows as a share of
+    // the screen exactly when space is tightest. On the Surface at scale 2.0 the
+    // desktop is 1128 logical wide, where 440 is 39% of it.
+    //
+    // Touch mode gets the tighter share: it is already spending screen area to
+    // make controls finger-sized, so the panel has to give some of that back.
+    // At the ordinary scales both machines run, the cap is above panelWidth and
+    // nothing changes — this only bites when space is genuinely short.
+    implicitWidth: {
+        const avail = panelScreen ? panelScreen.width : 0;
+        if (avail <= 0) {
+            return runtimeConfig.panelWidth;
+        }
+        const share = root.touchModeActive ? 0.26 : 0.33;
+        return Math.max(280, Math.min(runtimeConfig.panelWidth, Math.round(avail * share)));
+    }
     anchors.top: true
     anchors.bottom: true
     anchors.right: true
