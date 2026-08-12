@@ -69,7 +69,15 @@ PanelWindow {
     anchors.left: true
     anchors.right: true
     anchors.bottom: true
-    implicitHeight: runtimeConfig.barHeight
+    // Taller in touch mode, because the workspace chips are the thing most
+    // often mis-tapped and there is nowhere else for them to grow. At the
+    // default 38 the chips get 28 logical px once the bar's margins are taken
+    // out — 8.4mm on the Verbatim, under the ~9mm a fingertip needs, and the
+    // remaining margin sits between the chips and the screen edge, which is
+    // exactly where a finger reaching for the bottom of the screen lands.
+    implicitHeight: root.touchModeActive
+        ? Math.round(runtimeConfig.barHeight * 1.4)
+        : runtimeConfig.barHeight
     exclusiveZone: implicitHeight
     focusable: false
     aboveWindows: true
@@ -87,8 +95,12 @@ PanelWindow {
             anchors.fill: parent
             anchors.leftMargin: 8
             anchors.rightMargin: 8
-            anchors.topMargin: 5
-            anchors.bottomMargin: 5
+            // Thinner vertical margins in touch mode. This margin is dead space
+            // between the chips and the bottom of the screen, and a target that
+            // reaches a screen edge is effectively unmissable from that side —
+            // giving it away costs accuracy for nothing.
+            anchors.topMargin: root.touchModeActive ? 2 : 5
+            anchors.bottomMargin: root.touchModeActive ? 2 : 5
             spacing: 8
 
             Rectangle {
@@ -253,7 +265,12 @@ PanelWindow {
                                 readonly property var workspaceIcons: root.arrayOrEmpty(workspace && workspace.icon_sources)
                                 readonly property int workspaceCount: Number(workspace && workspace.window_count || 0)
                                 width: Math.max(34, workspaceText.implicitWidth + (workspaceIcons.length ? 30 : 0) + (workspaceCount > 1 ? 16 : 0) + 12)
-                                height: 28
+                                // Fill the strip rather than sitting at a fixed
+                                // 28 inside it: any height left over is dead
+                                // space that silently swallows taps. Width is
+                                // already fine (34 logical minimum ≈ 10mm), so
+                                // the height is the whole of the problem.
+                                height: workspaceFlick.height > 0 ? workspaceFlick.height : 28
                                 radius: root.radiusControl
                                 color: workspaceFocused ? colors.blue : (workspaceHovered ? colors.card : (root.boolOrFalse(workspace && workspace.active) ? colors.card : colors.cardAlt))
                                 border.color: workspaceFocused ? colors.blue : (root.boolOrFalse(workspace && workspace.urgent) ? colors.red : (workspaceHovered ? colors.borderStrong : colors.border))
