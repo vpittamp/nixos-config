@@ -914,6 +914,15 @@ PanelWindow {
                     // control you reach for *with a finger*, usually before
                     // touch mode has made everything else finger-sized.
                     implicitWidth: touchModeIcon.implicitWidth + 26
+                    // Refuse to be squeezed. A RowLayout shrinks children to
+                    // Layout.minimumWidth (0 by default) when the bar runs out
+                    // of room, and turning touch mode on is exactly what makes
+                    // it run out of room — the logical width drops as the scale
+                    // rises. Without this the one control that switches the
+                    // mode back off is the first thing to disappear once it is
+                    // on, which is the worst possible thing to hide.
+                    Layout.preferredWidth: implicitWidth
+                    Layout.minimumWidth: implicitWidth
                     Layout.fillHeight: true
 
                     Behavior on color {

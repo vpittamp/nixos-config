@@ -22,7 +22,17 @@ set -uo pipefail
 
 STATE_FILE="${XDG_RUNTIME_DIR:-/tmp}/touch-map.state"   # written by touch-map
 SAVED="${XDG_RUNTIME_DIR:-/tmp}/touch-mode.saved"       # pre-touch-mode scales
-TOUCH_SCALE_DEFAULT=2.0
+
+# Touch mode enlarges each screen *relative to how it was already configured*,
+# rather than driving everything to one absolute scale. A fixed target cannot be
+# right for both: the Surface panel sits at 1.5, so 2.0 is a mild 1.33x bump,
+# while the Verbatim sits at 1.25, where the same 2.0 is a 1.6x jump that
+# overshoots badly. The multiplier keeps the step proportional on any display.
+#
+# Snapped to quarter steps because arbitrary fractional scales make Qt and XWayland
+# clients resample text; the quarter steps are the ones compositors handle cleanly.
+TOUCH_SCALE_FACTOR="${TOUCH_MODE_FACTOR:-1.25}"
+TOUCH_SCALE_MAX=3.0
 
 log() { printf 'touch-mode: %s\n' "$*" >&2; }
 
@@ -39,8 +49,26 @@ current_scale_of() {
 
 is_on() { [ -s "$SAVED" ]; }
 
+# Scale this output should take in touch mode: an explicit absolute value if the
+# caller gave one, otherwise the current scale stepped up by the factor and
+# snapped to the nearest quarter (never below where it already was).
+touch_scale_for() {
+  local cur="$1" explicit="${2:-}"
+  if [ -n "$explicit" ]; then
+    printf '%s' "$explicit"
+    return
+  fi
+  awk -v cur="$cur" -v f="$TOUCH_SCALE_FACTOR" -v max="$TOUCH_SCALE_MAX" 'BEGIN {
+    s = cur * f
+    s = int(s * 4 + 0.5) / 4          # snap to 0.25 steps
+    if (s > max) s = max
+    if (s < cur) s = cur
+    printf "%.2f", s
+  }'
+}
+
 mode_on() {
-  local want="${1:-$TOUCH_SCALE_DEFAULT}" outs any=0
+  local want="${1:-}" outs any=0
   outs="$(touched_outputs)"
   [ -z "$outs" ] && { log "no touchscreen bound to any output; nothing to scale"; return 1; }
 
@@ -54,11 +82,16 @@ mode_on() {
     [ -z "$out" ] && continue
     local cur; cur="$(current_scale_of "$out")"
     [ -z "$cur" ] || [ "$cur" = "null" ] && { log "skipping $out (no live scale)"; continue; }
+    local target; target="$(touch_scale_for "$cur" "$want")"
+    if [ "$target" = "$cur" ]; then
+      log "$out: already at $cur; nothing to enlarge"
+      continue
+    fi
     # Remember the exact scale we are replacing, so "off" restores the user's
     # own value rather than a guess at what the default was.
     printf '%s\t%s\n' "$out" "$cur" >> "$SAVED"
-    swaymsg output "$out" scale "$want" >/dev/null 2>&1 \
-      && { log "$out: $cur -> $want"; any=1; } \
+    swaymsg output "$out" scale "$target" >/dev/null 2>&1 \
+      && { log "$out: $cur -> $target"; any=1; } \
       || log "$out: failed to set scale"
   done <<<"$outs"
 

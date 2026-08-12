@@ -110,18 +110,46 @@ has_virtual_twin_for() {
   return 1
 }
 
-# How many real touchscreens (fingers, not pens) this machine has. A raw
-# digitizer that iptsd supersedes is not counted: a device plus its own virtual
-# twin would read as two screens, defeating the single-touchscreen fail-safe on
-# exactly the hardware that needs it.
-touchscreen_count=0
-for _id in "${touch_ids[@]}"; do
-  [ "$(type_of "$_id")" = "touch" ] || continue
-  if is_raw_digitizer "$_id" && has_virtual_twin_for "$_id"; then
-    continue
-  fi
-  touchscreen_count=$((touchscreen_count + 1))
-done
+# sway's identifier is vendor:product:name-with-underscores, not a device path,
+# so go through the kernel's device list to find the evdev node.
+event_node_for() {
+  awk -v want="$1" '
+    /^N: Name=/ {
+      name = $0
+      sub(/^N: Name="/, "", name); sub(/"$/, "", name)
+      gsub(/ /, "_", name)
+    }
+    /^H: Handlers=/ && name == want {
+      match($0, /event[0-9]+/)
+      if (RSTART) { print substr($0, RSTART, RLENGTH); exit }
+    }
+  ' /proc/bus/input/devices
+}
+
+# How the digitizer physically attaches — the strongest automatic signal for
+# whether a panel is part of the machine.
+#
+#   internal  i2c-hid / platform / PCI-MEI. Built into the chassis.
+#   usb       A USB HID panel. External monitors and portable touchscreens.
+#   unknown   uinput. iptsd republishes the Surface digitizer as a virtual
+#             device, so its bus says nothing; fall back to the name.
+#
+# This distinction is load-bearing. On the ThinkPad the only touchscreen is a
+# Verbatim MT17 portable monitor, which hot-plugs behind a chain of USB hubs;
+# treating an unrecognised digitizer as built-in would drag its touches onto the
+# laptop panel whenever the lid is open.
+device_attachment() {
+  local node syspath
+  node="$(event_node_for "${1#*:*:}")"
+  [ -z "$node" ] && { printf 'unknown'; return; }
+  syspath="$(readlink -f "/sys/class/input/$node/device" 2>/dev/null)"
+  case "$syspath" in
+    "")                   printf 'unknown' ;;
+    */devices/virtual/*)  printf 'unknown' ;;
+    */usb[0-9]*/*)        printf 'usb' ;;
+    *)                    printf 'internal' ;;
+  esac
+}
 
 # --- decide the target output for one device --------------------------------
 #
@@ -183,33 +211,27 @@ target_output_for() {
     esac
   fi
 
-  # 2. A digitizer we recognise as built-in belongs to the built-in panel.
-  #
-  # Note this is a *name* test on purpose. The bus is not usable evidence: the
-  # ThinkPad's built-in touchscreen enumerates on USB
-  # (pci0000:00/.../usb3/3-1/...), exactly like a plugged-in USB panel would, so
-  # "USB means external" is precisely backwards there.
-  case "$id" in
-    *IPTS*|*IPTSD*|*N-trig*|*ELAN*|*Wacom*|*SYNAPTICS*|*SYNA*|*SiS*|*Silicon_Integrated*)
-      [ -n "$internal_output" ] && { printf '%s' "$internal_output"; return 0; } ;;
-  esac
-
-  # 3. A machine with exactly one touchscreen: that touchscreen is the machine's
-  #    own screen. This is the fail-safe that matters most. Guessing "external"
-  #    for an unrecognised digitizer makes the laptop's own glass drive a
-  #    different monitor the moment anything is plugged in — the built-in screen
-  #    stops responding where you touch it, which is far worse than an external
-  #    panel needing a one-line rule. Only when a second touchscreen shows up is
-  #    there real evidence that one of them is not the built-in one.
-  if [ "$touchscreen_count" -le 1 ]; then
+  # 2. Physically part of the machine -> the machine's own panel. Checked before
+  #    the name list because the bus is evidence, while a name is a guess.
+  if [ "$(device_attachment "$id")" = "internal" ]; then
     [ -n "$internal_output" ] && { printf '%s' "$internal_output"; return 0; }
   fi
 
-  # 4. Several touchscreens and this one is not the recognised built-in, so it
-  #    is an external panel. With exactly one external monitor this is
-  #    unambiguous (the Verbatim case). With several, the first is a guess —
-  #    that is what touch-mapping.json is for, and the guess is logged so it is
-  #    visible rather than silently wrong.
+  # 3. A digitizer republished over uinput has no usable bus, so fall back to
+  #    recognising the known built-in technologies by name. iptsd's Surface
+  #    devices are the case this exists for. Deliberately conservative: only
+  #    digitizer families that are *always* built into a chassis are listed.
+  #    Generic HID controllers (SiS, Goodix and friends) ship in external
+  #    panels far more often than internal ones and must not be listed here.
+  case "$id" in
+    *IPTS*|*IPTSD*|*N-trig*|*Wacom*)
+      [ -n "$internal_output" ] && { printf '%s' "$internal_output"; return 0; } ;;
+  esac
+
+  # 4. USB or otherwise unidentified: an external panel. With exactly one
+  #    external monitor this is unambiguous (the Verbatim case). With several,
+  #    the first is a guess — that is what touch-mapping.json is for, and the
+  #    guess is logged so it is visible rather than silently wrong.
   if [ "${#external_outputs[@]}" -gt 0 ]; then
     [ "${#external_outputs[@]}" -gt 1 ] && \
       log "note: '$id' assigned to ${external_outputs[0]} (${#external_outputs[@]} externals active; add a rule to $RULES_FILE to pin it)"
