@@ -110,6 +110,19 @@ has_virtual_twin_for() {
   return 1
 }
 
+# How many real touchscreens (fingers, not pens) this machine has. A raw
+# digitizer that iptsd supersedes is not counted: a device plus its own virtual
+# twin would read as two screens, defeating the single-touchscreen fail-safe on
+# exactly the hardware that needs it.
+touchscreen_count=0
+for _id in "${touch_ids[@]}"; do
+  [ "$(type_of "$_id")" = "touch" ] || continue
+  if is_raw_digitizer "$_id" && has_virtual_twin_for "$_id"; then
+    continue
+  fi
+  touchscreen_count=$((touchscreen_count + 1))
+done
+
 # --- decide the target output for one device --------------------------------
 #
 # Precedence: an explicit user rule wins; otherwise the built-in digitizer goes
@@ -170,16 +183,33 @@ target_output_for() {
     esac
   fi
 
-  # 2. The machine's own digitizer belongs to the machine's own panel.
+  # 2. A digitizer we recognise as built-in belongs to the built-in panel.
+  #
+  # Note this is a *name* test on purpose. The bus is not usable evidence: the
+  # ThinkPad's built-in touchscreen enumerates on USB
+  # (pci0000:00/.../usb3/3-1/...), exactly like a plugged-in USB panel would, so
+  # "USB means external" is precisely backwards there.
   case "$id" in
-    *IPTS*|*IPTSD*|*N-trig*|*ELAN*|*Wacom*|*SYNAPTICS*)
+    *IPTS*|*IPTSD*|*N-trig*|*ELAN*|*Wacom*|*SYNAPTICS*|*SYNA*|*SiS*|*Silicon_Integrated*)
       [ -n "$internal_output" ] && { printf '%s' "$internal_output"; return 0; } ;;
   esac
 
-  # 3. Anything else is an external touchscreen. With exactly one external
-  #    monitor this is unambiguous (the Verbatim case). With several, the first
-  #    one is a guess — that is what touch-mapping.json is for, and the guess is
-  #    logged so it is visible rather than silently wrong.
+  # 3. A machine with exactly one touchscreen: that touchscreen is the machine's
+  #    own screen. This is the fail-safe that matters most. Guessing "external"
+  #    for an unrecognised digitizer makes the laptop's own glass drive a
+  #    different monitor the moment anything is plugged in — the built-in screen
+  #    stops responding where you touch it, which is far worse than an external
+  #    panel needing a one-line rule. Only when a second touchscreen shows up is
+  #    there real evidence that one of them is not the built-in one.
+  if [ "$touchscreen_count" -le 1 ]; then
+    [ -n "$internal_output" ] && { printf '%s' "$internal_output"; return 0; }
+  fi
+
+  # 4. Several touchscreens and this one is not the recognised built-in, so it
+  #    is an external panel. With exactly one external monitor this is
+  #    unambiguous (the Verbatim case). With several, the first is a guess —
+  #    that is what touch-mapping.json is for, and the guess is logged so it is
+  #    visible rather than silently wrong.
   if [ "${#external_outputs[@]}" -gt 0 ]; then
     [ "${#external_outputs[@]}" -gt 1 ] && \
       log "note: '$id' assigned to ${external_outputs[0]} (${#external_outputs[@]} externals active; add a rule to $RULES_FILE to pin it)"
