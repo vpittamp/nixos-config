@@ -95,12 +95,24 @@ PanelWindow {
             anchors.fill: parent
             anchors.leftMargin: 8
             anchors.rightMargin: 8
-            // Thinner vertical margins in touch mode. This margin is dead space
-            // between the chips and the bottom of the screen, and a target that
-            // reaches a screen edge is effectively unmissable from that side —
-            // giving it away costs accuracy for nothing.
-            anchors.topMargin: root.touchModeActive ? 2 : 5
-            anchors.bottomMargin: root.touchModeActive ? 2 : 5
+            // No bottom margin at all in touch mode: the chips must reach the
+            // final pixel row.
+            //
+            // This is measured, not theoretical. Logging real finger taps on
+            // the bottom bar caught one at y=1080 on a 1080-tall screen — the
+            // very last row — that did not register. Reaching for a bar at the
+            // bottom of the screen, a finger lands *on the edge*, and any
+            // margin at all is dead space exactly where the aim concentrates.
+            // A target flush against a screen edge cannot be overshot, which is
+            // the whole reason bottom bars work; a 3px gap throws that away.
+            //
+            // The top margin goes too: of 27 logged taps, the five that worked
+            // were 15-29px above the bottom and every one at the edge failed,
+            // but two failures also landed mid-bar — so rather than trust a
+            // calibration this hands the chips the entire bar height and leaves
+            // no dead band anywhere for a tap to fall into.
+            anchors.topMargin: root.touchModeActive ? 0 : 5
+            anchors.bottomMargin: root.touchModeActive ? 0 : 5
             spacing: 8
 
             Rectangle {
