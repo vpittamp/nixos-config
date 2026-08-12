@@ -465,6 +465,33 @@ Item {
         onTriggered: shellRoot.restartSettingsCommandQuery()
     }
 
+    // Touch-mode state feed. The script only emits on change, so this stays
+    // idle until the mode is actually toggled — including when it is toggled by
+    // the two-finger gesture or the CLI rather than by the bar chip, which is
+    // why the chip reads a feed instead of tracking its own clicks.
+    Process {
+        id: touchModeWatcher
+        command: [runtimeConfig.touchModeStatusBin]
+        running: true
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                const value = (data || "").trim();
+                if (value === "on" || value === "off" || value === "none") {
+                    shellRoot.touchModeState = value;
+                }
+            }
+        }
+        onExited: touchModeRestartTimer.restart()
+    }
+
+    Timer {
+        id: touchModeRestartTimer
+        interval: 3000
+        repeat: false
+        onTriggered: touchModeWatcher.running = true
+    }
+
     Process {
         id: dashboardWatcher
         command: [runtimeConfig.i3pmWatchBin, "dashboard", "watch"]

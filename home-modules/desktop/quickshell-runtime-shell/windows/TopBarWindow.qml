@@ -900,6 +900,68 @@ PanelWindow {
                     }
                 }
 
+                // Touch mode toggle. Hidden entirely on machines with no
+                // touchscreen bound, so it does not become dead chrome on the
+                // desktop hosts that share this bar.
+                Rectangle {
+                    id: touchModeChip
+                    visible: root.touchModeAvailable
+                    radius: root.radiusControl
+                    color: root.stateChipFill(root.touchModeActive, touchModeMouse.containsMouse, colors.tealBg)
+                    border.color: root.stateChipBorder(root.touchModeActive, touchModeMouse.containsMouse, colors.teal)
+                    border.width: 1
+                    // Wider than the neighbouring chips on purpose: this is the
+                    // control you reach for *with a finger*, usually before
+                    // touch mode has made everything else finger-sized.
+                    implicitWidth: touchModeIcon.implicitWidth + 26
+                    Layout.fillHeight: true
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Behavior on border.color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    Text {
+                        id: touchModeIcon
+                        anchors.centerIn: parent
+                        // nf-fa-hand_pointer_o — an extended index finger, which
+                        // reads as "tap" at bar size. (Not nf-md-gesture_tap:
+                        // in this Nerd Font build that codepoint is a gantry.)
+                        text: "\u{F25A}"
+                        color: root.stateChipText(root.touchModeActive, touchModeMouse.containsMouse, colors.teal)
+                        font.family: "FiraCode Nerd Font"
+                        font.pixelSize: 12
+                    }
+
+                    MouseArea {
+                        id: touchModeMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        // Fire and forget: the chip's state comes from the
+                        // status feed, so it reflects the real outcome rather
+                        // than assuming the toggle succeeded.
+                        onClicked: root.runDetached([topBarWindow.runtimeConfig.touchModeBin, "toggle"])
+                    }
+
+                    RootComponents.BarTooltip {
+                        anchorWindow: topBarWindow
+                        anchorItem: touchModeMouse
+                        active: touchModeMouse.containsMouse
+                        text: root.touchModeActive
+                            ? "Touch mode ON · tap to restore normal scale"
+                            : "Touch mode OFF · tap to enlarge touch targets"
+                        colors: topBarWindow.colors
+                    }
+                }
+
                 Rectangle {
                     id: batteryChip
                     visible: root.batteryReady()

@@ -162,6 +162,85 @@ unit (sway.nix disables any left over from older generations).
 **Device controls**: Volume 󰕾 | Brightness 󰃟 | Bluetooth 󰂯 | Battery 󰁹 (click to expand)
 **Devices tab**: `Mod+M` → `Alt+7`
 
+## Touch Input
+
+Touchscreens are bound to the output they physically are. Sway maps an absolute
+device across the *whole* output layout by default, so the moment a second
+monitor is attached, touching the right edge of the built-in panel lands the
+cursor on the external screen. `touch-map` fixes that and re-applies on every
+hot-plug and every sway reload (a reload silently drops IPC-applied input
+config, so `exec_always` re-runs it).
+
+The built-in digitizer goes to the built-in panel; anything else is treated as
+an external touchscreen and bound to the external output. On Surface hardware
+the raw IPTS node is disabled whenever iptsd is publishing its calibrated
+`IPTSD Virtual` twin — libinput binds both otherwise and every finger is
+reported twice.
+
+```bash
+touch-map --dry-run                     # show the plan without applying it
+cat $XDG_RUNTIME_DIR/touch-map.state    # live device → output → type bindings
+journalctl --user -u touch-map-watch -f
+journalctl --user -u touch-gestures -f
+```
+
+Override the heuristic in `~/.config/sway/touch-mapping.json` (hot-read, no
+rebuild). `match` is a regex against the sway input identifier; `output` is an
+output name or the literals `internal`/`external`; `calibration_matrix` is
+optional and only needed for panels whose digitizer is rotated or mirrored:
+
+```json
+{ "rules": [ { "match": "Verbatim", "output": "HDMI-A-1" } ] }
+```
+
+If iptsd is not running, `touch-map` re-enables the raw digitizer instead, so a
+crashed iptsd degrades the screen rather than killing it. That fallback is why
+the disable is conditional and is re-evaluated on every run.
+
+**Recovering iptsd** (surface): `systemctl restart iptsd@dev-hidraw1` alone does
+*not* work once the daemon has been stopped — it reconnects to the device and
+then dies on a HIDIOCSFEATURE ioctl (`Resource temporarily unavailable`, then
+`No such device`). Reloading the `ipts` module does not help either; the ME side
+of the link stays wedged. Rebinding the MEI device is what actually resets it:
+
+```bash
+DEV=0000:00:16.4-3e8d0870-271a-4208-8eb5-9acb9402ae04
+echo $DEV | sudo tee /sys/bus/mei/drivers/ipts/unbind
+echo $DEV | sudo tee /sys/bus/mei/drivers/ipts/bind
+sudo systemctl reset-failed iptsd@dev-hidraw1 && sudo systemctl start iptsd@dev-hidraw1
+```
+
+**Gestures**: sway's `bindgesture` is built on libinput *pointer* gestures, which
+only touchpads emit — it never sees the glass. `touch-gestures` runs one lisgd
+per touchscreen, sized to that screen's output:
+
+| Gesture | Action |
+|---------|--------|
+| 1 finger, bottom edge ↑ | Toggle on-screen keyboard (wvkbd) |
+| 1 finger, top edge ↓ | Window switcher |
+| 1 finger, left edge → | Browser back |
+| 1 finger, right edge ← | Browser forward |
+| 2 fingers, bottom edge ↑ | Toggle touch mode |
+
+**Touch mode** raises the scale of every output that has a touchscreen bound, so
+pointer-sized controls become finger-sized. The bars are 30/38 logical px and
+some buttons are 22 — about 4mm at the Surface panel's 1.5 scale, against a ~9mm
+touch guideline. Scaling fixes all of them at once and is reversible; it only
+touches screens you actually touch, so a plain monitor keeps its density.
+
+```bash
+touch-mode {on|off|toggle|status} [scale]   # default 2.0
+```
+
+Three ways in, all driving the same state: the **top-bar chip** (finger icon,
+right of the keyboard chip — teal when active), the **two-finger bottom-edge
+swipe**, and the CLI. The chip reads a state feed
+(`quickshell-touch-mode-status`) rather than tracking its own clicks, so it
+stays correct when the mode is toggled by gesture or CLI. It hides itself
+entirely when no touchscreen is bound, so it is not dead chrome on desktops.
+"On" is keyed to the saved-scales file, not to the scale value — a user who
+picks 2.0 themselves does not make the chip claim ownership of it.
+
 ## Workspace Navigation (Feature 042)
 
 Enter mode (`CapsLock`/`Ctrl+0`) → type digits → `Enter` | `Escape` cancel | `+Shift` move window

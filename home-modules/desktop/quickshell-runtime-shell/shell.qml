@@ -47,6 +47,12 @@ ShellRoot {
     property bool sessionPreviewStickToBottom: true
     property string sessionPreviewBuffer: ""
     property string sessionPreviewErrorText: ""
+
+    // Touch mode ("none" = no touchscreen bound, so the bar chip stays hidden).
+    // Fed by the touch-mode status watcher in RuntimeServices.
+    property string touchModeState: "none"
+    readonly property bool touchModeActive: touchModeState === "on"
+    readonly property bool touchModeAvailable: touchModeState !== "none"
     readonly property var settingsFocusTimer: runtimeServices ? runtimeServices.settingsFocusTimerRef : null
     readonly property var settingsCommandQueryDebounce: runtimeServices ? runtimeServices.settingsCommandQueryDebounceRef : null
     readonly property var snippetEditorProcess: runtimeServices ? runtimeServices.snippetEditorProcessRef : null

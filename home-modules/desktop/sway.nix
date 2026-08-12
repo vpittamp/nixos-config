@@ -807,6 +807,15 @@ in
         # hot-plug watcher (below) handles connect/disconnect separately.
         # Laptop-only — see isLaptop.
         { command = "~/.local/bin/lid-clamshell auto"; always = true; }
+      ] ++ lib.optionals (!isHeadless) [
+        # Re-bind touchscreens/styli to their outputs on EVERY sway reload.
+        # touch-map applies its bindings over IPC, and a reload re-reads the
+        # static config and drops them — so without exec_always, Mod+Shift+C (or
+        # any home-manager switch) silently returns touch to spanning the whole
+        # desktop. The sleep lets the display layout above settle first, so the
+        # mapper sees the final set of active outputs; the hot-plug watcher
+        # covers connect/disconnect, which a reload does not signal.
+        { command = "sleep 2 && ~/.local/bin/touch-map"; always = true; }
       ];
       # NOTE: login-time + hot-plug display layout is handled by the
       # monitor-layout-watch user service (connector-agnostic), not a startup
@@ -964,6 +973,7 @@ in
     swaylock         # Screen locker
     swayidle         # Idle management
     wvkbdWithBacktick  # On-screen keyboard (wlroots/Wayland) for clamshell typing
+    lisgd            # Touchscreen gesture daemon; sway's bindgesture is touchpad-only
     lxqt.lxqt-policykit  # Polkit authentication agent for fingerprint/password prompts
     # sway-easyfocus now managed by home-manager module (desktop/sway-easyfocus.nix)
   ] ++ lib.optionals isHeadless [
@@ -1017,6 +1027,30 @@ in
   # when there's no physical keyboard in clamshell mode).
   home.file.".local/bin/tap-key" = {
     source = ./scripts/tap-key.sh;
+    executable = true;
+  };
+  # Binds each touchscreen/stylus to the output it physically is, so touch does
+  # not span the whole multi-monitor desktop. Also silences the raw Surface
+  # digitizer when iptsd is publishing its calibrated virtual twin.
+  home.file.".local/bin/touch-map" = {
+    source = ./scripts/touch-map.sh;
+    executable = true;
+  };
+  home.file.".local/bin/touch-map-watch" = {
+    source = ./scripts/touch-map-watch.sh;
+    executable = true;
+  };
+  # Edge swipes on the glass (OSK, window switcher, browser back/forward).
+  # Separate from the sway bindgesture set, which only sees the touchpad.
+  home.file.".local/bin/touch-gestures" = {
+    source = ./scripts/touch-gestures.sh;
+    executable = true;
+  };
+  # Scales up the outputs that have a touchscreen bound, so the pointer-sized
+  # controls in the bars and settings surfaces become finger-sized. Reversible
+  # at runtime, unlike baking larger sizes into the Quickshell config.
+  home.file.".local/bin/touch-mode" = {
+    source = ./scripts/touch-mode.sh;
     executable = true;
   };
 
@@ -1078,6 +1112,55 @@ in
     Service = {
       Type = "simple";
       ExecStart = "${config.home.homeDirectory}/.local/bin/monitor-layout-watch";
+      Restart = "on-failure";
+      RestartSec = "3";
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+
+  # Keeps touchscreen/stylus→output bindings correct across monitor and USB
+  # hot-plug. Not laptop-gated: a desktop with an external touchscreen (the
+  # Verbatim panel on Ryzen) needs exactly the same binding, and the mapper
+  # exits quietly on hosts that have no absolute pointing devices at all.
+  systemd.user.services.touch-map-watch = lib.mkIf (!isHeadless) {
+    Unit = {
+      Description = "Bind touchscreens and styli to their own output on hot-plug";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" ];
+      # Re-run the initial mapping whenever the logic changes, for the same
+      # reason as monitor-layout-watch: ExecStart points at a stable symlink, so
+      # the unit text alone would not change on a rebuild.
+      X-Restart-Triggers = [
+        "${./scripts/touch-map.sh}"
+        "${./scripts/touch-map-watch.sh}"
+      ];
+    };
+    Service = {
+      Type = "simple";
+      ExecStart = "${config.home.homeDirectory}/.local/bin/touch-map-watch";
+      Restart = "on-failure";
+      RestartSec = "3";
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+
+  # Touchscreen edge gestures. Depends on touch-map having published its
+  # device→output state: the edge bands are sized to the output each screen is
+  # bound to, so starting before that would size them to the wrong display.
+  systemd.user.services.touch-gestures = lib.mkIf (!isHeadless) {
+    Unit = {
+      Description = "Edge swipe gestures on touchscreens (lisgd)";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" "touch-map-watch.service" ];
+      Wants = [ "touch-map-watch.service" ];
+      X-Restart-Triggers = [ "${./scripts/touch-gestures.sh}" ];
+    };
+    Service = {
+      Type = "simple";
+      # The unit's PATH is minimal, so point at the store binary directly rather
+      # than hoping lisgd is resolvable.
+      Environment = [ "LISGD_BIN=${pkgs.lisgd}/bin/lisgd" ];
+      ExecStart = "${config.home.homeDirectory}/.local/bin/touch-gestures";
       Restart = "on-failure";
       RestartSec = "3";
     };

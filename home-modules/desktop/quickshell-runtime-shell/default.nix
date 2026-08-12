@@ -103,6 +103,8 @@ QtObject {
   readonly property string dictationBin: "${config.home.homeDirectory}/.local/bin/dictation"
   readonly property string dictationLevelBin: "${dictationLevelScript}/bin/quickshell-dictation-level"
   readonly property string oskToggleBin: "${config.home.homeDirectory}/.local/bin/osk-toggle"
+  readonly property string touchModeBin: "${config.home.homeDirectory}/.local/bin/touch-mode"
+  readonly property string touchModeStatusBin: "${touchModeStatusScript}/bin/quickshell-touch-mode-status"
   readonly property string lidClamshellBin: "${config.home.homeDirectory}/.local/bin/lid-clamshell"
   readonly property string brightnessActionBin: "${brightnessActionScript}/bin/quickshell-brightness-action"
   readonly property string castLauncherBin: "${pkgs.gnome-network-displays}/bin/gnome-network-displays"
@@ -667,6 +669,41 @@ print(json.dumps({
 }), flush=True)
 PY
   '';
+  # Long-running touch-mode state feed for the bar chip. Emits a line only when
+  # the state actually changes (plus one at startup so the chip has a value
+  # immediately), so this costs one sleeping shell rather than a process spawn
+  # per tick.
+  #
+  # Three states, because the chip should not exist at all on a machine with no
+  # touchscreen: "none" (nothing to toggle), "off", "on".
+  touchModeStatusScript = pkgs.writeShellScriptBin "quickshell-touch-mode-status" ''
+    set -uo pipefail
+
+    runtime="''${XDG_RUNTIME_DIR:-/tmp}"
+    saved="$runtime/touch-mode.saved"      # written by touch-mode while it is on
+    bindings="$runtime/touch-map.state"    # written by touch-map
+
+    last=""
+    while :; do
+      # Presence of the saved-scales file is the authoritative "on" signal. The
+      # output scale alone is not: the user may have chosen 2.0 themselves, and
+      # the chip must not then claim touch mode owns it.
+      if [ -s "$saved" ]; then
+        cur=on
+      elif ${pkgs.gnugrep}/bin/grep -qP '\ttouch$' "$bindings" 2>/dev/null; then
+        cur=off
+      else
+        cur=none
+      fi
+
+      if [ "$cur" != "$last" ]; then
+        printf '%s\n' "$cur"
+        last="$cur"
+      fi
+      sleep 1
+    done
+  '';
+
   castStatusScript = pkgs.writeShellScriptBin "quickshell-cast-status" ''
     set -euo pipefail
 
