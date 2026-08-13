@@ -246,19 +246,24 @@ PanelWindow {
                     anchors.top: parent.top
                     anchors.left: parent.left
                     anchors.margins: 8
-                    width: 24
-                    height: 24
-                    radius: 12
+                    // Touch mode: 24 logical is ~6mm — a close button that
+                    // destroys a window has to be hittable on purpose and
+                    // hard to hit by accident, which means bigger, not luck.
+                    // Hover cannot reveal it on glass either, so it rests
+                    // more opaque there.
+                    width: root.touchModeActive ? 34 : 24
+                    height: root.touchModeActive ? 34 : 24
+                    radius: width / 2
                     color: closeMouse.containsMouse ? colors.redBg : Theme.edgeShadow
                     border.color: closeMouse.containsMouse ? colors.red : colors.border
                     border.width: 1
-                    opacity: closeMouse.containsMouse ? 1.0 : (cell.selected ? 0.9 : 0.5)
+                    opacity: closeMouse.containsMouse ? 1.0 : (cell.selected ? 0.9 : (root.touchModeActive ? 0.85 : 0.5))
                     Behavior on opacity { NumberAnimation { duration: root.fastColorMs } }
                     Behavior on color { ColorAnimation { duration: root.fastColorMs } }
                     Text {
                         anchors.centerIn: parent
                         text: "✕"
-                        font.pixelSize: 11
+                        font.pixelSize: root.touchModeActive ? 15 : 11
                         font.weight: Font.Bold
                         color: closeMouse.containsMouse ? colors.red : colors.textDim
                     }

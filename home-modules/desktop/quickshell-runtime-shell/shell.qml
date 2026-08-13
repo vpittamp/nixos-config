@@ -212,7 +212,30 @@ ShellRoot {
     property bool launcherVisible: false
     property bool launcherLoading: false
     property bool launcherNormalizingInput: false
+
+    // Touch mode: surfaces that open with a text field ready for input raise
+    // the on-screen keyboard themselves — a tablet keyboard appears when a
+    // text box is selected, it is not summoned by hand. Gated on touch mode
+    // rather than always-on because outside it the launcher is usually opened
+    // from a physical keyboard (Meta+D), where a keyboard sliding over the
+    // bottom third of the screen is exactly the "unintended impact" to avoid.
+    //
+    // auto-show / auto-hide rather than show / hide: osk-toggle tracks whether
+    // the keyboard was raised for this surface or already up because the user
+    // put it there, and a user's keyboard survives the surface closing. The
+    // script keeps that state, not this shell — the bar chip and the edge
+    // gesture also move the keyboard, and they don't pass through here.
+    function syncOskForInputSurface(visible) {
+        if (!touchModeActive) {
+            return;
+        }
+        runDetached([shellConfig.oskToggleBin, visible ? "auto-show" : "auto-hide"]);
+    }
+
+    onLauncherVisibleChanged: syncOskForInputSurface(launcherVisible)
+
     property bool settingsVisible: false
+    onSettingsVisibleChanged: syncOskForInputSurface(settingsVisible)
     property string settingsSection: "commands"
     property string settingsCommandQuery: ""
     property bool settingsCommandNormalizingInput: false

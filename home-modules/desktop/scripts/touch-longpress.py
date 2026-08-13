@@ -22,8 +22,10 @@ Positions are therefore converted device -> that touchscreen's output rect ->
 fraction of the entire layout, which is what makes this correct with more than
 one screen attached.
 
-Only single-finger contacts count. Anything with a second finger down is a
-gesture (lisgd handles those) and must never turn into a right click.
+Only single-finger contacts become right clicks. A second finger cancels that —
+but TWO fingers held still are their own gesture: dictation toggle, the glass
+twin of the touchpad's hold:4 binding. Moving multi-finger contacts (pinches,
+scrolls, lisgd swipes) cancel both holds by exceeding the movement tolerance.
 """
 import errno
 import json
@@ -117,6 +119,12 @@ def open_touch_devices(bindings):
 
 
 DOTOOL = os.environ.get("DOTOOL_BIN", "dotool")
+# Two fingers held still toggle dictation — the glass twin of the touchpad's
+# hold:4 binding, for when speaking beats pecking at an on-screen keyboard.
+DICTATION_BIN = os.environ.get(
+    "DICTATION_BIN",
+    os.path.expanduser("~/.local/bin/dictation"),
+)
 
 
 def right_click_at(fx, fy):
@@ -189,7 +197,26 @@ def main():
         if right_click_at((lx - bx) / bw, (ly - by) / bh):
             log(f"right click at layout ({lx:.0f}, {ly:.0f}) on {output}")
 
+    def state_mtime():
+        try:
+            return os.stat(STATE_FILE).st_mtime
+        except OSError:
+            return 0.0
+
+    seen_mtime = state_mtime()
+    next_check = time.monotonic() + 2.0
+
     while True:
+        # touch-map rewrites its state file whenever the touchscreen set or
+        # its output bindings change (hot-plug, iptsd restart). Our fds go
+        # stale at exactly those moments — a destroyed device's fd just stops
+        # delivering, silently — so re-exec and open the current set fresh.
+        if time.monotonic() >= next_check:
+            next_check = time.monotonic() + 2.0
+            if state_mtime() != seen_mtime:
+                log("touch mapping changed; re-execing to reopen devices")
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+
         # Short timeout so a hold can mature even when the device goes quiet —
         # a perfectly still finger emits nothing at all after touching down.
         for key, _ in sel.select(timeout=0.05):
@@ -207,24 +234,45 @@ def main():
                         if ev.value == -1:
                             st["fingers"] = max(0, st.get("fingers", 1) - 1)
                             st["armed"] = False
+                            # Any lift ends a two-finger hold too — a matured
+                            # one has already fired, an immature one is a tap.
+                            st["armed2"] = False
                         else:
                             st["fingers"] = st.get("fingers", 0) + 1
-                            # A second finger means this is a gesture, not a
-                            # press-and-hold. Disarm for the whole sequence.
-                            if st["fingers"] > 1:
+                            # A second finger ends the single-finger hold and
+                            # starts the two-finger one (touch dictation, the
+                            # glass twin of the touchpad's hold:4). Per-slot
+                            # baselines: st["x"] interleaves both fingers'
+                            # positions, which reads as wild movement.
+                            if st["fingers"] == 2:
                                 st["armed"] = False
                                 st["multi"] = True
+                                st["armed2"] = True
+                                st["down2"] = time.monotonic()
+                                st["base2"] = dict(st.get("pos", {}))
+                            elif st["fingers"] > 2:
+                                st["armed"] = False
+                                st["armed2"] = False
                     elif ev.code in (e.ABS_MT_POSITION_X, e.ABS_X):
                         st["x"] = ev.value
+                        if ev.code == e.ABS_MT_POSITION_X:
+                            slot = st.get("slot", 0)
+                            pos = st.setdefault("pos", {})
+                            pos[slot] = (ev.value, pos.get(slot, (0, 0))[1])
                     elif ev.code in (e.ABS_MT_POSITION_Y, e.ABS_Y):
                         st["y"] = ev.value
+                        if ev.code == e.ABS_MT_POSITION_Y:
+                            slot = st.get("slot", 0)
+                            pos = st.setdefault("pos", {})
+                            pos[slot] = (pos.get(slot, (0, 0))[0], ev.value)
                 elif ev.type == e.EV_KEY and ev.code == e.BTN_TOUCH:
                     if ev.value == 1:
                         st.update(down=time.monotonic(), armed=True, multi=False,
                                   fingers=max(1, st.get("fingers", 0)),
                                   x0=st.get("x"), y0=st.get("y"))
                     else:
-                        st.update(armed=False, multi=False, fingers=0)
+                        st.update(armed=False, multi=False, fingers=0,
+                                  armed2=False, pos={})
 
             # Movement cancels the hold.
             if st.get("armed") and st.get("x0") is not None:
@@ -233,9 +281,35 @@ def main():
                 if max(dx, dy) > MOVE_TOLERANCE:
                     st["armed"] = False
 
+            # Two-finger hold: each finger is judged against its own start
+            # point. A pinch or scroll moves at least one finger well past the
+            # tolerance and cancels; two fingers resting still do not. The
+            # second finger's first position can arrive after the baseline was
+            # taken, so it is adopted late rather than read as a jump.
+            if st.get("armed2"):
+                base = st.setdefault("base2", {})
+                for slot, xy in st.get("pos", {}).items():
+                    if slot not in base:
+                        base[slot] = xy
+                        continue
+                    if (abs(xy[0] - base[slot][0]) / ax.max > MOVE_TOLERANCE
+                            or abs(xy[1] - base[slot][1]) / ay.max > MOVE_TOLERANCE):
+                        st["armed2"] = False
+                        break
+
         # Mature any held contact.
         for dev, ident, output, ax, ay in devices:
             st = state[ident]
+            if st.get("armed2") and st.get("fingers") == 2 \
+                    and time.monotonic() - st.get("down2", 0) >= HOLD_SECONDS:
+                st["armed2"] = False
+                log("two-finger hold -> dictation toggle")
+                try:
+                    subprocess.Popen([DICTATION_BIN, "toggle"],
+                                     stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL)
+                except Exception as exc:
+                    log(f"dictation toggle failed: {exc}")
             if not st.get("armed") or st.get("multi"):
                 continue
             if time.monotonic() - st.get("down", 0) >= HOLD_SECONDS:

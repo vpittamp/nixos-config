@@ -45,8 +45,13 @@ PanelWindow {
         Rectangle {
             id: launcherCard
             anchors.centerIn: parent
+            // Touch mode auto-raises the on-screen keyboard under this card,
+            // and wvkbd claims the bottom 260 logical px. Centered, the card's
+            // lower half — the results — would sit behind the keys. Shift up
+            // and shrink so the card occupies the space the keyboard leaves.
+            anchors.verticalCenterOffset: root.touchModeActive ? -Math.round(260 / 2) : 0
             width: Math.min(root.launcherMode === "sessions" && root.activeLauncherSessionEntry() !== null ? 980 : 760, parent.width - 96)
-            height: Math.min(560, parent.height - 96)
+            height: Math.min(560, parent.height - 96 - (root.touchModeActive ? 260 : 0))
             radius: 12
             color: colors.panel
             border.color: colors.borderStrong
@@ -90,8 +95,11 @@ PanelWindow {
                             property bool hovered: false
                             readonly property string iconSrc: root.iconSource(root.stringOrEmpty(meta && meta.icon), root.stringOrEmpty(meta && meta.iconFile))
 
-                            width: modePillRow.implicitWidth + 18
-                            height: 26
+                            // Touch mode: 26 logical is ~5mm even after the
+                            // scale bump — a chip you tap to change modes has
+                            // to take a fingertip.
+                            width: modePillRow.implicitWidth + (root.touchModeActive ? 24 : 18)
+                            height: root.touchModeActive ? 34 : 26
                             radius: 6
                             color: selected ? root.themeColor(root.stringOrEmpty(meta && meta.accentBgKey), colors.cardAlt) : (hovered ? colors.cardAlt : colors.card)
                             border.color: selected ? root.themeColor(root.stringOrEmpty(meta && meta.accentColorKey), colors.borderStrong) : (hovered ? colors.borderStrong : colors.border)
@@ -317,7 +325,7 @@ PanelWindow {
                             property bool hovered: false
                             readonly property string iconSrc: root.iconSource(root.stringOrEmpty(filterMeta && filterMeta.icon), "")
 
-                            height: 24
+                            height: root.touchModeActive ? 32 : 24
                             radius: 6
                             color: selected ? colors.blueBg : (hovered ? colors.cardAlt : colors.card)
                             border.color: selected ? colors.blue : (hovered ? colors.borderStrong : colors.border)
@@ -871,6 +879,17 @@ PanelWindow {
                                                     }
                                                 }
                                             }
+
+                                            TapHandler {
+                                                acceptedDevices: PointerDevice.TouchScreen
+                                                gesturePolicy: TapHandler.ReleaseWithinBounds
+                                                onTapped: {
+                                                    if (itemIndex >= 0) {
+                                                        root.updateLauncherPointerSelection(itemIndex);
+                                                        root.activateLauncherEntry(root.launcherEntries[itemIndex], "close");
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
 
@@ -878,7 +897,13 @@ PanelWindow {
                                         id: entryMouse
                                         anchors.fill: parent
                                         hoverEnabled: true
-                                        preventStealing: true
+                                        // preventStealing protects a mouse press
+                                        // from the ListView, but on a touchscreen
+                                        // it pins finger-drags to the row — and
+                                        // rows tile the list, so the results
+                                        // could not be scrolled by touch at all.
+                                        // The TapHandler below keeps taps landing.
+                                        preventStealing: !root.touchModeAvailable
                                         cursorShape: Qt.PointingHandCursor
                                         onEntered: {
                                             if (root.launcherPointerInputReady && root.launcherPointerSelectionEnabled) {
@@ -886,6 +911,20 @@ PanelWindow {
                                             }
                                         }
                                         onClicked: {
+                                            root.updateLauncherPointerSelection(itemIndex);
+                                            root.activateLauncherEntry(entry);
+                                        }
+                                    }
+
+                                    // Touch path: claims a tap the ListView is
+                                    // still weighing as a flick; MouseArea on
+                                    // the legacy path just loses that grab and
+                                    // the tap goes nowhere. A real drag still
+                                    // scrolls (ReleaseWithinBounds).
+                                    TapHandler {
+                                        acceptedDevices: PointerDevice.TouchScreen
+                                        gesturePolicy: TapHandler.ReleaseWithinBounds
+                                        onTapped: {
                                             root.updateLauncherPointerSelection(itemIndex);
                                             root.activateLauncherEntry(entry);
                                         }

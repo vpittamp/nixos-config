@@ -564,6 +564,10 @@ PanelWindow {
             Rectangle {
                 id: dictateButton
                 Layout.preferredWidth: dictateRow.implicitWidth + 24
+                // Pinned like the keyboard/touch chips: dictation is the main
+                // text-entry alternative on glass, and touch mode shrinking the
+                // bar must not be what squeezes it out of reach.
+                Layout.minimumWidth: dictateRow.implicitWidth + 24
                 Layout.fillHeight: true
                 Layout.alignment: Qt.AlignVCenter
                 radius: root.radiusControl

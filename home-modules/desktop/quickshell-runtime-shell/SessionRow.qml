@@ -715,7 +715,12 @@ Rectangle {
         enabled: interactive
         acceptedButtons: Qt.LeftButton
         hoverEnabled: interactive
-        preventStealing: true
+        // preventStealing keeps the ListView from hijacking a mouse press, but
+        // on a touchscreen it makes rows unscrollable: a finger-drag that
+        // starts on a row (i.e. anywhere, the rows tile the list) is pinned to
+        // the row instead of flicking the list. With a touchscreen bound the
+        // list must win drags; the TapHandler below keeps taps reliable.
+        preventStealing: !(rootObject && rootObject.touchModeAvailable)
         scrollGestureEnabled: false
         cursorShape: closeActionHovered || interactive ? Qt.PointingHandCursor : Qt.ArrowCursor
         onEntered: {
@@ -726,6 +731,26 @@ Rectangle {
         onCanceled: hoverReleaseTimer.restart()
         onClicked: function(mouse) {
             if (pointInsideItem(Qt.point(mouse.x, mouse.y), closeActionHitbox)) {
+                if (!closePending) {
+                    sessionRow.closeRequested();
+                }
+                return;
+            }
+            sessionRow.clicked();
+        }
+    }
+
+    // Touch path. A pointer handler takes part in grab arbitration properly,
+    // so it can still claim a tap the ListView is only *considering* as a
+    // flick, where the MouseArea above (on the legacy path) just loses the
+    // grab and the tap goes nowhere. ReleaseWithinBounds keeps a real drag
+    // scrolling the list.
+    TapHandler {
+        enabled: interactive
+        acceptedDevices: PointerDevice.TouchScreen
+        gesturePolicy: TapHandler.ReleaseWithinBounds
+        onTapped: function(eventPoint) {
+            if (pointInsideItem(eventPoint.position, closeActionHitbox)) {
                 if (!closePending) {
                     sessionRow.closeRequested();
                 }

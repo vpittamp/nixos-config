@@ -225,12 +225,23 @@ per touchscreen, sized to that screen's output:
 | 3 fingers, ← / → | Next / previous workspace |
 | 3 fingers, ↑ | App launcher |
 | **Hold still ~0.6s** | **Right click** (`touch-longpress`) |
+| **2 fingers, hold still** | **Dictation toggle** (glass twin of the touchpad's `hold:4`) |
 
 Edge gestures use one finger; anything away from an edge needs three. A
 one-finger swipe mid-screen is indistinguishable from scrolling a page, while no
 ordinary application claims three simultaneous touches. This set deliberately
 does *not* mirror the touchpad's 3/4-finger bindings above — multi-finger on
 glass means covering the screen with a hand.
+
+**Touch-native surfaces**: in touch mode the launcher and settings window
+auto-raise the on-screen keyboard (`osk-toggle auto-show`/`auto-hide` — a
+keyboard the user opened manually survives the surface closing; state lives in
+`$XDG_RUNTIME_DIR/osk.state` because wvkbd cannot be queried). The launcher card
+lifts and shrinks so results clear the keys, its chips grow, and the exposé
+close button grows. Rows inside ListViews (launcher results, herdr panel
+agents/spaces) carry touch-scoped TapHandlers — MouseArea alone loses the grab
+to flick arbitration and taps go nowhere — and their `preventStealing` relaxes
+when a touchscreen is bound so finger-drags can scroll the lists at all.
 
 **Long press → right click** (`touch-longpress.py`) exists because a touchscreen
 has no second button and nothing else in the stack synthesises one, so context

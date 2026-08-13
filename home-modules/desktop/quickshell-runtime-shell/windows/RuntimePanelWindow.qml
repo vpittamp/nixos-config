@@ -1019,6 +1019,18 @@ PanelWindow {
                                     onClicked: root.focusHerdrSpace(space)
                                 }
 
+                                // Touch path: rows tile the spaces list, so the
+                                // enclosing ListView contends for every touch;
+                                // a pointer handler holds its claim on a tap
+                                // where MouseArea loses the grab to the flick
+                                // arbitration and the tap goes nowhere.
+                                TapHandler {
+                                    enabled: herdrSpaceRow.canFocus
+                                    acceptedDevices: PointerDevice.TouchScreen
+                                    gesturePolicy: TapHandler.ReleaseWithinBounds
+                                    onTapped: root.focusHerdrSpace(space)
+                                }
+
                                 // No hover ToolTip here: a QtQuick.Controls ToolTip is a
                                 // Popup whose overlay grabbed the pointer inside this
                                 // panel, flipping spaceMouse.containsMouse on/off
