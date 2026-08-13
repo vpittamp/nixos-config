@@ -213,29 +213,39 @@ ShellRoot {
     property bool launcherLoading: false
     property bool launcherNormalizingInput: false
 
-    // Touch mode: surfaces that open with a text field ready for input raise
-    // the on-screen keyboard themselves — a tablet keyboard appears when a
-    // text box is selected, it is not summoned by hand. Gated on touch mode
-    // rather than always-on because outside it the launcher is usually opened
-    // from a physical keyboard (Meta+D), where a keyboard sliding over the
-    // bottom third of the screen is exactly the "unintended impact" to avoid.
-    //
-    // auto-show / auto-hide rather than show / hide: osk-toggle tracks whether
-    // the keyboard was raised for this surface or already up because the user
-    // put it there, and a user's keyboard survives the surface closing. The
-    // script keeps that state, not this shell — the bar chip and the edge
-    // gesture also move the keyboard, and they don't pass through here.
-    function syncOskForInputSurface(visible) {
-        if (!touchModeActive) {
-            return;
-        }
-        runDetached([shellConfig.oskToggleBin, visible ? "auto-show" : "auto-hide"]);
+    // On-screen keyboard, tablet-style: a FINGER tapping a text field raises
+    // it (see the TapHandlers on the launcher and settings fields — touch-only,
+    // so a mouse click or Meta+D never summons it), and closing the surface
+    // drops it again. auto-show / auto-hide rather than show / hide: osk-toggle
+    // tracks whether the keyboard was raised for a surface or already up
+    // because the user put it there, and a user's keyboard survives the
+    // surface closing. The script keeps that state, not this shell — the bar
+    // chip and the edge gesture also move the keyboard without passing
+    // through here.
+    function oskFieldTouched() {
+        runDetached([shellConfig.oskToggleBin, "auto-show"]);
     }
 
-    onLauncherVisibleChanged: syncOskForInputSurface(launcherVisible)
+    function oskSurfaceClosed() {
+        runDetached([shellConfig.oskToggleBin, "auto-hide"]);
+    }
+
+    // Live keyboard visibility, fed by quickshell-osk-status. The launcher
+    // resizes around the keys, so it has to see raises it did not perform.
+    property bool oskVisible: false
+
+    onLauncherVisibleChanged: {
+        if (!launcherVisible) {
+            oskSurfaceClosed();
+        }
+    }
 
     property bool settingsVisible: false
-    onSettingsVisibleChanged: syncOskForInputSurface(settingsVisible)
+    onSettingsVisibleChanged: {
+        if (!settingsVisible) {
+            oskSurfaceClosed();
+        }
+    }
     property string settingsSection: "commands"
     property string settingsCommandQuery: ""
     property bool settingsCommandNormalizingInput: false

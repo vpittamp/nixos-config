@@ -105,6 +105,7 @@ QtObject {
   readonly property string oskToggleBin: "${config.home.homeDirectory}/.local/bin/osk-toggle"
   readonly property string touchModeBin: "${config.home.homeDirectory}/.local/bin/touch-mode"
   readonly property string touchModeStatusBin: "${touchModeStatusScript}/bin/quickshell-touch-mode-status"
+  readonly property string oskStatusBin: "${oskStatusScript}/bin/quickshell-osk-status"
   readonly property string lidClamshellBin: "${config.home.homeDirectory}/.local/bin/lid-clamshell"
   readonly property string brightnessActionBin: "${brightnessActionScript}/bin/quickshell-brightness-action"
   readonly property string castLauncherBin: "${pkgs.gnome-network-displays}/bin/gnome-network-displays"
@@ -701,6 +702,26 @@ PY
         last="$cur"
       fi
       sleep 1
+    done
+  '';
+
+  # On-screen keyboard visibility feed for the shell. osk-toggle records every
+  # transition in $XDG_RUNTIME_DIR/osk.state (wvkbd itself cannot be queried);
+  # the launcher reads this to give the keyboard room the moment it appears —
+  # however it was raised: field tap, bar chip, edge gesture or CLI. Emits only
+  # on change, plus one line at startup.
+  oskStatusScript = pkgs.writeShellScriptBin "quickshell-osk-status" ''
+    set -uo pipefail
+    state_file="''${XDG_RUNTIME_DIR:-/tmp}/osk.state"
+    last=""
+    while :; do
+      cur="$(cat "$state_file" 2>/dev/null | ${pkgs.coreutils}/bin/cut -d' ' -f1)"
+      cur="''${cur:-hidden}"
+      if [ "$cur" != "$last" ]; then
+        printf '%s\n' "$cur"
+        last="$cur"
+      fi
+      sleep 0.3
     done
   '';
 

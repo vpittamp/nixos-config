@@ -267,9 +267,18 @@ def main():
                             pos[slot] = (pos.get(slot, (0, 0))[0], ev.value)
                 elif ev.type == e.EV_KEY and ev.code == e.BTN_TOUCH:
                     if ev.value == 1:
-                        st.update(down=time.monotonic(), armed=True, multi=False,
-                                  fingers=max(1, st.get("fingers", 0)),
-                                  x0=st.get("x"), y0=st.get("y"))
+                        # BTN_TOUCH arrives AFTER the tracking IDs when two
+                        # fingers land in the same frame — which is how people
+                        # actually place two fingers. Arming the single-finger
+                        # hold here regardless turned every two-finger hold
+                        # into a right click (observed live: the journal filled
+                        # with right-click attempts and no dictation toggles).
+                        # Only a lone contact arms the single-finger path.
+                        if st.get("fingers", 0) <= 1:
+                            st.update(down=time.monotonic(), armed=True,
+                                      multi=False,
+                                      fingers=max(1, st.get("fingers", 0)),
+                                      x0=st.get("x"), y0=st.get("y"))
                     else:
                         st.update(armed=False, multi=False, fingers=0,
                                   armed2=False, pos={})

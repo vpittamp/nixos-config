@@ -44,14 +44,28 @@ PanelWindow {
 
         Rectangle {
             id: launcherCard
+            // The space the on-screen keyboard is NOT using. Keyed to the live
+            // keyboard state rather than to touch mode: the keyboard only
+            // appears when a finger asks for it (field tap, chip, gesture), and
+            // while it is down the card gets the full screen back. wvkbd claims
+            // the bottom 260 logical px when up.
+            readonly property int oskReserve: root.oskVisible ? 260 : 0
+            readonly property int availableHeight: parent.height - oskReserve
             anchors.centerIn: parent
-            // Touch mode auto-raises the on-screen keyboard under this card,
-            // and wvkbd claims the bottom 260 logical px. Centered, the card's
-            // lower half — the results — would sit behind the keys. Shift up
-            // and shrink so the card occupies the space the keyboard leaves.
-            anchors.verticalCenterOffset: root.touchModeActive ? -Math.round(260 / 2) : 0
+            anchors.verticalCenterOffset: -Math.round(oskReserve / 2)
             width: Math.min(root.launcherMode === "sessions" && root.activeLauncherSessionEntry() !== null ? 980 : 760, parent.width - 96)
-            height: Math.min(560, parent.height - 96 - (root.touchModeActive ? 260 : 0))
+            // The 96px breathing margin is a luxury of large screens; with the
+            // keyboard up on a small logical desktop it is the difference
+            // between showing results and showing less than one, so it shrinks
+            // to 32 before the results do.
+            height: Math.min(560, availableHeight - (availableHeight > 656 ? 96 : 32))
+
+            Behavior on height {
+                NumberAnimation {
+                    duration: 120
+                    easing.type: Easing.OutQuad
+                }
+            }
             radius: 12
             color: colors.panel
             border.color: colors.borderStrong
@@ -153,6 +167,17 @@ PanelWindow {
                     placeholderText: root.launcherPlaceholderText()
                     color: colors.text
                     font.pixelSize: 18
+
+                    // A finger tapping the text bar is the request for a
+                    // keyboard — the tablet convention. Touch-only, so Meta+D
+                    // plus physical typing never sees the OSK; the field is
+                    // focused either way, which is why focus alone cannot be
+                    // the trigger.
+                    TapHandler {
+                        acceptedDevices: PointerDevice.TouchScreen
+                        gesturePolicy: TapHandler.ReleaseWithinBounds
+                        onTapped: root.oskFieldTouched()
+                    }
 
                     background: Rectangle {
                         radius: 8

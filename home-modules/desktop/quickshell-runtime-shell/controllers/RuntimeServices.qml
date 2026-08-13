@@ -469,6 +469,29 @@ Item {
     // idle until the mode is actually toggled — including when it is toggled by
     // the two-finger gesture or the CLI rather than by the bar chip, which is
     // why the chip reads a feed instead of tracking its own clicks.
+    // Keyboard visibility feed — same pattern as the touch-mode watcher below:
+    // the state lives in a runtime file only a script can own, and the shell
+    // needs it live to reflow the launcher around the keys.
+    Process {
+        id: oskWatcher
+        command: [runtimeConfig.oskStatusBin]
+        running: true
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                shellRoot.oskVisible = (data || "").trim() === "visible";
+            }
+        }
+        onExited: oskRestartTimer.restart()
+    }
+
+    Timer {
+        id: oskRestartTimer
+        interval: 3000
+        repeat: false
+        onTriggered: oskWatcher.running = true
+    }
+
     Process {
         id: touchModeWatcher
         command: [runtimeConfig.touchModeStatusBin]

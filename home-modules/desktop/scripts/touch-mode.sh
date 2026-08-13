@@ -33,6 +33,14 @@ SAVED="${XDG_RUNTIME_DIR:-/tmp}/touch-mode.saved"       # pre-touch-mode scales
 # clients resample text; the quarter steps are the ones compositors handle cleanly.
 TOUCH_SCALE_FACTOR="${TOUCH_MODE_FACTOR:-1.25}"
 TOUCH_SCALE_MAX=3.0
+# Scaling trades logical space for physical size, and below a floor the trade
+# stops being worth it: the launcher plus the 260-logical-px on-screen keyboard
+# need roughly this much height to coexist. The Surface panel (1504/2.0 = 752)
+# clears it; the Verbatim (1080/1.5 = 720) does not, so a 17" panel whose UI is
+# already physically large keeps its scale and gets only the touch affordances
+# (taller bar, bigger chips, gestures) — measured complaint: the launcher was
+# squeezed to less than one visible result there.
+TOUCH_MIN_LOGICAL_H="${TOUCH_MODE_MIN_LOGICAL_HEIGHT:-750}"
 
 log() { printf 'touch-mode: %s\n' "$*" >&2; }
 
@@ -49,19 +57,23 @@ current_scale_of() {
 
 is_on() { [ -s "$SAVED" ]; }
 
-# Scale this output should take in touch mode: an explicit absolute value if the
-# caller gave one, otherwise the current scale stepped up by the factor and
-# snapped to the nearest quarter (never below where it already was).
+# Scale this output should take in touch mode: an explicit absolute value if
+# the caller gave one, otherwise the current scale stepped up by the factor,
+# snapped to the nearest quarter (never below where it already was), and backed
+# off while it would leave fewer than TOUCH_MIN_LOGICAL_H logical rows.
 touch_scale_for() {
-  local cur="$1" explicit="${2:-}"
+  local cur="$1" phys_h="$2" explicit="${3:-}"
   if [ -n "$explicit" ]; then
     printf '%s' "$explicit"
     return
   fi
-  awk -v cur="$cur" -v f="$TOUCH_SCALE_FACTOR" -v max="$TOUCH_SCALE_MAX" 'BEGIN {
+  awk -v cur="$cur" -v f="$TOUCH_SCALE_FACTOR" -v max="$TOUCH_SCALE_MAX" \
+      -v ph="$phys_h" -v minh="$TOUCH_MIN_LOGICAL_H" 'BEGIN {
     s = cur * f
     s = int(s * 4 + 0.5) / 4          # snap to 0.25 steps
     if (s > max) s = max
+    if (s < cur) s = cur
+    while (s > cur && ph > 0 && ph / s < minh) s -= 0.25
     if (s < cur) s = cur
     printf "%.2f", s
   }'
@@ -82,16 +94,23 @@ mode_on() {
     [ -z "$out" ] && continue
     local cur; cur="$(current_scale_of "$out")"
     [ -z "$cur" ] || [ "$cur" = "null" ] && { log "skipping $out (no live scale)"; continue; }
-    local target; target="$(touch_scale_for "$cur" "$want")"
+    local phys_h
+    phys_h="$(swaymsg -t get_outputs 2>/dev/null \
+      | jq -r --arg o "$out" '.[]|select(.name==$o)|.current_mode.height // 0')"
+    local target; target="$(touch_scale_for "$cur" "$phys_h" "$want")"
+    # Recorded in SAVED even when the scale stays put: touch mode is not only
+    # scaling — the bar height, chip sizes and keyboard behaviour all key off
+    # the mode being ON, which the status feed reads from this file. On a large
+    # panel the guard below often leaves the scale alone, and skipping the
+    # record here would silently disable every other touch affordance with it.
+    printf '%s\t%s\n' "$out" "$cur" >> "$SAVED"
+    any=1
     if [ "$target" = "$cur" ]; then
-      log "$out: already at $cur; nothing to enlarge"
+      log "$out: keeping scale $cur (logical height floor ${TOUCH_MIN_LOGICAL_H})"
       continue
     fi
-    # Remember the exact scale we are replacing, so "off" restores the user's
-    # own value rather than a guess at what the default was.
-    printf '%s\t%s\n' "$out" "$cur" >> "$SAVED"
     swaymsg output "$out" scale "$target" >/dev/null 2>&1 \
-      && { log "$out: $cur -> $target"; any=1; } \
+      && log "$out: $cur -> $target" \
       || log "$out: failed to set scale"
   done <<<"$outs"
 

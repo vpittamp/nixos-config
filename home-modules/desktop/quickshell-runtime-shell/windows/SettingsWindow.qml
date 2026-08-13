@@ -474,6 +474,14 @@ PanelWindow {
                                             placeholderText: "Search commands"
                                             color: colors.text
                                             selectByMouse: true
+
+                                            // Finger on the text bar raises the
+                                            // on-screen keyboard (touch-only).
+                                            TapHandler {
+                                                acceptedDevices: PointerDevice.TouchScreen
+                                                gesturePolicy: TapHandler.ReleaseWithinBounds
+                                                onTapped: root.oskFieldTouched()
+                                            }
                                             background: Rectangle {
                                                 radius: 8
                                                 color: colors.panel
