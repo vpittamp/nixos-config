@@ -23,6 +23,21 @@ LISGD="${LISGD_BIN:-lisgd}"
 STATE_FILE="${XDG_RUNTIME_DIR:-/tmp}/touch-map.state"   # written by touch-map
 declare -a CHILDREN=()
 
+# lisgd hands each command to /bin/sh, which inherits this unit's PATH — and a
+# systemd user unit's PATH is minimal. Resolve the binaries once, here, where a
+# missing one is visible in the log, rather than having gestures silently do
+# nothing because the shell could not find them.
+resolve() {
+  local found; found="$(command -v "$1" 2>/dev/null)"
+  if [ -n "$found" ]; then printf '%s' "$found"; else
+    printf '%s' "$1"
+    printf 'touch-gestures: WARNING: %s not on PATH; its gesture will do nothing\n' "$1" >&2
+  fi
+}
+SWAYMSG="$(resolve swaymsg)"
+LAUNCHER="$(resolve toggle-app-launcher)"
+TOGGLE_PANEL="$(resolve toggle-runtime-panel)"
+
 log() { printf 'touch-gestures: %s\n' "$*" >&2; }
 
 stop_children() {
@@ -86,15 +101,34 @@ spawn_for() {
   #   right  -> left  browser forward           (3-finger swipe left)
   # browser-nav is scoped to browser windows, so the horizontal pair is a no-op
   # in a terminal rather than a surprise.
-  # The two-finger variant toggles touch sizing. It has to be a gesture rather
-  # than a keybinding: the whole point is to be reachable when the machine is
-  # being used as a tablet, with no keyboard and no trackpad in reach.
+  # Two groups, deliberately different in kind:
+  #
+  #   Edge, one finger — system surfaces. Starting at an edge is what keeps
+  #   these from firing while scrolling or dragging inside an application, and
+  #   it is the idiom every touch platform already trains people in.
+  #
+  #   Three fingers, anywhere — navigation. A one-finger swipe away from an edge
+  #   is unusable here (it is indistinguishable from scrolling a page), while no
+  #   ordinary application claims three simultaneous touches, so the middle of
+  #   the screen is free for them.
+  #
+  # Horizontal workspace direction follows the content, not the finger: pushing
+  # leftward (RL) reveals what is to the right, so it advances. This matches
+  # every trackpad and tablet convention.
+  #
+  # Deliberately NOT mirroring the touchpad's 3/4-finger set from sway.nix.
+  # Multi-finger on glass means covering the screen with a hand, and the edge
+  # gestures already cover what the touchpad uses those fingers for.
   "$LISGD" -d "/dev/input/$node" -w "$w" -h "$h" \
     -g "1,DU,B,*,R,$HOME/.local/bin/osk-toggle" \
     -g "1,UD,T,*,R,show-window-switcher-action toggle" \
     -g "1,LR,L,*,R,$HOME/.local/bin/browser-nav back" \
     -g "1,RL,R,*,R,$HOME/.local/bin/browser-nav forward" \
     -g "2,DU,B,*,R,$HOME/.local/bin/touch-mode toggle" \
+    -g "2,UD,T,*,R,$TOGGLE_PANEL" \
+    -g "3,RL,*,*,R,$SWAYMSG workspace next" \
+    -g "3,LR,*,*,R,$SWAYMSG workspace prev" \
+    -g "3,DU,*,*,R,$LAUNCHER" \
     >/dev/null 2>&1 &
   CHILDREN+=($!)
 }
