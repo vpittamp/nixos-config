@@ -221,6 +221,25 @@ per touchscreen, sized to that screen's output:
 | 1 finger, left edge → | Browser back |
 | 1 finger, right edge ← | Browser forward |
 | 2 fingers, bottom edge ↑ | Toggle touch mode |
+| 2 fingers, top edge ↓ | Toggle the runtime panel |
+| 3 fingers, ← / → | Next / previous workspace |
+| 3 fingers, ↑ | App launcher |
+| **Hold still ~0.6s** | **Right click** (`touch-longpress`) |
+
+Edge gestures use one finger; anything away from an edge needs three. A
+one-finger swipe mid-screen is indistinguishable from scrolling a page, while no
+ordinary application claims three simultaneous touches. This set deliberately
+does *not* mirror the touchpad's 3/4-finger bindings above — multi-finger on
+glass means covering the screen with a hand.
+
+**Long press → right click** (`touch-longpress.py`) exists because a touchscreen
+has no second button and nothing else in the stack synthesises one, so context
+menus are otherwise unreachable. It watches the digitizer and, after a still
+hold, drives `dotool` to place a right click under the finger. Two things to
+know: it needs the `uinput` group, which only applies to a session started
+*after* the grant (the log says so explicitly if not), and it does not grab the
+device — the touch still reaches the application, so in a terminal you may get a
+text selection alongside the menu.
 
 **Touch mode** raises the scale of every output that has a touchscreen bound, so
 pointer-sized controls become finger-sized. The bars are 30/38 logical px and

@@ -101,6 +101,11 @@ let
   # Feature 125: Pass hostName for host-specific parameterization
   hostName = if osConfig ? networking && osConfig.networking ? hostName then osConfig.networking.hostName else "";
 
+  # Python with evdev, for the long-press-to-right-click daemon. It reads the
+  # touch devices directly (the user is in the "input" group) and shells out to
+  # dotool to place the click.
+  touchLongpressPython = pkgs.python3.withPackages (ps: [ ps.evdev ]);
+
   # wvkbd with a backtick key added to the main QWERTY layers. Backtick is the
   # tmux/herdr prefix, so it must be reachable without switching to the symbols
   # layer. We add a 1.0-wide grave key left of the spacebar and shrink the
@@ -1140,6 +1145,31 @@ in
       ExecStart = "${config.home.homeDirectory}/.local/bin/touch-map-watch";
       Restart = "on-failure";
       RestartSec = "3";
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+
+  # Hold a finger still to get a right click. A touchscreen has no second
+  # button, so without this, context menus are simply unreachable by touch —
+  # libinput does not synthesise one and neither does sway.
+  #
+  # Depends on touch-map's published state for which devices to watch and which
+  # output each is bound to, since the click has to be placed in layout
+  # coordinates.
+  systemd.user.services.touch-longpress = lib.mkIf (!isHeadless) {
+    Unit = {
+      Description = "Long press to right click on touchscreens";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" "touch-map-watch.service" ];
+      Wants = [ "touch-map-watch.service" ];
+      X-Restart-Triggers = [ "${./scripts/touch-longpress.py}" ];
+    };
+    Service = {
+      Type = "simple";
+      Environment = [ "DOTOOL_BIN=${pkgs.dotool}/bin/dotool" ];
+      ExecStart = "${touchLongpressPython}/bin/python3 ${./scripts/touch-longpress.py}";
+      Restart = "on-failure";
+      RestartSec = "5";
     };
     Install.WantedBy = [ "graphical-session.target" ];
   };

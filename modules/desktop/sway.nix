@@ -138,5 +138,15 @@ in {
     services.udev.extraRules = ''
       KERNEL=="uinput", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"
     '';
+
+    # ...and join the uinput group as well, because that rule does not win.
+    #
+    # hardware.uinput — pulled in by services.sunshine — ships its own rule
+    # leaving /dev/uinput as root:uinput 0660, so the "input" rule above has no
+    # effect and dotool fails with "could not open device file". That is silent
+    # unless something tries to use it: it was only noticed when the long-press
+    # right click needed to position a pointer. Joining the group works whichever
+    # rule ends up applying, rather than fighting over the node's ownership.
+    users.users.vpittamp.extraGroups = [ "uinput" ];
   };
 }
