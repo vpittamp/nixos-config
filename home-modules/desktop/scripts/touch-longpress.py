@@ -155,22 +155,43 @@ def right_click_at(fx, fy):
     return True
 
 
+def wait_for_state_change(reason):
+    """Sleep until touch-map rewrites its state file, then re-exec fresh.
+
+    Exiting here instead used to look harmless — status 0, tidy log line — but
+    a clean exit does not trigger Restart=on-failure, so the first touchscreen
+    unplug quietly killed long-press and dictation until someone restarted the
+    unit by hand (observed live when the Verbatim's USB cable failed). A hold
+    daemon with nothing to hold should wait for hardware, not resign.
+    """
+    log(f"{reason}; waiting for the touch mapping to change")
+    try:
+        seen = os.stat(STATE_FILE).st_mtime
+    except OSError:
+        seen = 0.0
+    while True:
+        time.sleep(3)
+        try:
+            now = os.stat(STATE_FILE).st_mtime
+        except OSError:
+            now = 0.0
+        if now != seen:
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
 def main():
     bindings = read_bindings()
     if not bindings:
-        log(f"no touchscreens in {STATE_FILE}; nothing to do")
-        return 0
+        wait_for_state_change(f"no touchscreens in {STATE_FILE}")
 
     devices = open_touch_devices(bindings)
     if not devices:
-        log("no readable touchscreen among the bound devices")
-        return 0
+        wait_for_state_change("no readable touchscreen among the bound devices")
 
     outputs = sway("get_outputs") or []
     bounds = layout_bounds(outputs)
     if not bounds:
-        log("no active outputs")
-        return 0
+        wait_for_state_change("no active outputs")
     out_rects = {o["name"]: o["rect"] for o in outputs if o.get("active")}
 
     log(f"hold {HOLD_SECONDS}s to right click; watching "
