@@ -799,6 +799,28 @@ let
     aliases = [ "agent-mux-surface-pro3" "surface-pro3-herdr" ];
     description = "Terminal workspace manager attached to surface-pro3's herdr server over SSH";
   })
+  # WS41: Herdr Agent Multiplexer (REMOTE thinkpad instance, every other host).
+  # Its own Ghostty window with app-id com.herdr.thinkpad so the daemon focuses
+  # THIS window for thinkpad rows (vs the local com.herdr.<host> window). On the
+  # thinkpad itself the local herdr app already owns that app-id, which is why
+  # this is gated to the other hosts. Daemon mapping: remote rows with
+  # herdr_host=thinkpad -> app "herdr-thinkpad".
+  ++ lib.optional (builtins.elem hostName [ "surface" "ryzen" "surface-pro3" ]) (mkApp {
+    name = "herdr-thinkpad";
+    display_name = "Herdr (thinkpad)";
+    command = "ghostty";
+    parameters = "--class=com.herdr.thinkpad --title=herdr:thinkpad -e herdr --remote thinkpad --remote-keybindings local";
+    scope = "global";
+    expected_class = "com.herdr.thinkpad";
+    preferred_workspace = 41;  # 33 local herdr, 37 ryzen, 39 surface-pro3; registry forbids sharing a workspace
+    preferred_monitor_role = "primary";
+    icon = iconPath "herdr-thinkpad.svg";  # ThinkPad-red Herdr glyph, distinct from the other herdr tints
+    nix_package = "inputs.herdr.packages.<system>.default";
+    multi_instance = false;
+    fallback_behavior = "skip";
+    aliases = [ "agent-mux-thinkpad" "thinkpad-herdr" ];
+    description = "Terminal workspace manager attached to thinkpad's herdr server over SSH";
+  })
   ++ lib.optional (hostName == "thinkpad") (mkApp {
     name = "ryzen-desktop";
     display_name = "Ryzen Desktop";

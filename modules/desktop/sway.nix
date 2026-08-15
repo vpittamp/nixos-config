@@ -104,8 +104,12 @@ in {
         enable = mkDefault true;
         settings.screencast = {
           max_fps = mkDefault 30;
-          chooser_type = mkDefault "simple";
-          chooser_cmd = mkDefault "${pkgs.slurp}/bin/slurp -f 'Monitor: %o' -or";
+          # dmenu-style chooser (walker) instead of slurp: slurp can only draw
+          # on visible outputs, so it can never pick the headless output that
+          # cast-extend (~/.local/bin/cast-extend) creates for Chromecast
+          # "extended display" casting. A text menu lists every output.
+          chooser_type = mkDefault "dmenu";
+          chooser_cmd = mkDefault "${pkgs.walker}/bin/walker --dmenu -p 'Share screen:'";
         };
       };
       config.sway = {

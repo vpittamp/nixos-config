@@ -918,8 +918,9 @@ PanelWindow {
 
                 Rectangle {
                     id: castChip
-                    // Miracast-capable hosts only (surface); on the focused bar.
-                    visible: topBarWindow.isFocusedBar && runtimeConfig.supportsCasting
+                    // Chromecast "extended display" via cast-extend; every Sway
+                    // host can cast through Chrome, so show on the focused bar.
+                    visible: topBarWindow.isFocusedBar
                     radius: root.radiusControl
                     color: root.castChipFill(castMouse.containsMouse)
                     border.color: root.castChipBorder(castMouse.containsMouse)
@@ -1801,7 +1802,7 @@ PanelWindow {
                     spacing: 2
 
                     Text {
-                        text: "Cast (Miracast)"
+                        text: "Cast (Chromecast)"
                         color: colors.text
                         font.pixelSize: 12
                         font.weight: Font.DemiBold
@@ -1810,6 +1811,14 @@ PanelWindow {
                     Text {
                         Layout.fillWidth: true
                         text: root.stringOrEmpty(root.castState.detail)
+                        color: colors.subtle
+                        font.pixelSize: 9
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Mirror: Chrome → Cast → Cast screen, pick a real monitor.\nExtend: enable the output here, then pick the HEADLESS-* entry instead."
                         color: colors.subtle
                         font.pixelSize: 9
                         wrapMode: Text.WordWrap
@@ -1824,8 +1833,8 @@ PanelWindow {
                     }
 
                     Button {
-                        text: "Open Network Displays"
-                        onClicked: root.launchCast()
+                        text: root.boolOrFalse(root.castState.active) ? "Disable cast output" : "Enable cast output"
+                        onClicked: root.castToggle()
                     }
                 }
             }

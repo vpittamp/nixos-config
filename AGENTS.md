@@ -120,6 +120,14 @@ Implications:
 
 ## Recent System Updates (this cycle)
 
+- Removed the Miracast stack (unreliable; casting now goes through Chrome's built-in Cast / Google Cast):
+  - dropped gnome-network-displays (surface system packages, ryzen home packages) and the QuickShell "Cast (Miracast)" bar chip + status probe
+  - dropped the wpa_supplicant 2.10 pin (flake input `nixpkgs-wpasupplicant`) and the root-supplicant/per-interface tweaks on surface; RTSP port 7236 closed on surface/ryzen
+  - mDNS UDP 5353 stays open (Chrome Cast discovery)
+- Added `cast-extend` (`~/.local/bin/cast-extend`, from `home-modules/desktop/scripts/cast-extend.sh`):
+  - emulates a wireless extended display: creates a headless Sway output that Chrome Cast screen can capture and stream to a Chromecast receiver (Google Cast has no native extend mode)
+  - xdg-desktop-portal-wlr screencast chooser switched from slurp to walker dmenu (slurp cannot pick invisible outputs)
+  - the QuickShell cast chip (all hosts, focused bar) now targets this flow: a swaymsg-based probe reports the headless-output state, the popup toggles it via `cast-extend on|off` and shows the Chrome → Cast → Cast screen steps
 - Remote project/session launch is now a deterministic control plane:
   - daemon resolves exact launch specs and returns immediately
   - packaged remote launcher helpers own SSH/tmux execution and launch status files

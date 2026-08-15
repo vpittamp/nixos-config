@@ -598,14 +598,13 @@ in
     };
   };
 
-  # NetworkManager for ethernet & Wi-Fi (desktop)
-  # Use iwd backend for superior Wi-Fi Direct (P2P / Miracast) support
+  # NetworkManager for ethernet & Wi-Fi (desktop), iwd backend
   networking.networkmanager = {
     enable = true;
     wifi.backend = "iwd";
   };
 
-  # Enable Avahi for network display (Miracast / mDNS) discovery
+  # Avahi for mDNS LAN discovery (Chrome Cast / TV discovery, network services)
   services.avahi = {
     enable = lib.mkForce true;
     nssmdns4 = true;
@@ -991,7 +990,7 @@ in
   # Firewall configuration
   networking.firewall = {
     enable = true;
-    allowedTCPPorts = [ 22 7236 ];  # SSH (22), Miracast RTSP (7236) for Wireless Display Adapter
+    allowedTCPPorts = [ 22 ];       # SSH
     allowedUDPPorts = [ 5353 ];     # mDNS (5353) for Chrome Chromecast / TV discovery on LAN
     # Phase 4: OTEL remote-session sink (port 4320) retired — cross-host
     # sessions now flow through the K8s session-aggregator instead.

@@ -1002,6 +1002,13 @@ in
     source = ./scripts/monitor-profile-reconcile.sh;
     executable = true;
   };
+  # Wireless "extended display" over Chromecast: creates a headless sway output
+  # that Chrome's Cast screen can capture (Google Cast has no native extend
+  # mode, so a headless output + cast-of-that-output emulates one).
+  home.file.".local/bin/cast-extend" = {
+    source = ./scripts/cast-extend.sh;
+    executable = true;
+  };
   # Mic-aware voxtype front-end (prefers Jabra mic; trackpad/bar trigger).
   home.file.".local/bin/dictation" = {
     source = ./scripts/dictation.sh;

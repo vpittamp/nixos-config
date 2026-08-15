@@ -55,6 +55,11 @@
         ssh_target = "ryzen";
         connection_key = "vpittamp@ryzen:22";
       }
+      {
+        host = "thinkpad";
+        ssh_target = "thinkpad";
+        connection_key = "vpittamp@thinkpad:22";
+      }
     ];
   };
 

@@ -23,10 +23,6 @@ let
       --password-store=basic \
       --allow-insecure-localhost
   '';
-  gnomeNetworkDisplaysWrapped = pkgs.writeShellScriptBin "gnome-network-displays" ''
-    export GSK_RENDERER=ngl
-    exec ${pkgs.gnome-network-displays}/bin/gnome-network-displays "$@"
-  '';
 in
 {
   imports = [
@@ -69,7 +65,6 @@ in
 
   home.packages = [
     sunshineWebUi
-    gnomeNetworkDisplaysWrapped
   ];
 
   # Feature 117: i3 project event listener daemon (user service)
@@ -83,6 +78,11 @@ in
         host = "surface-pro3";
         ssh_target = "surface-pro";  # Tailscale MagicDNS name; "surface-pro3" does not resolve
         connection_key = "vpittamp@surface-pro3:22";
+      }
+      {
+        host = "thinkpad";
+        ssh_target = "thinkpad";
+        connection_key = "vpittamp@thinkpad:22";
       }
     ];
   };

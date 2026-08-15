@@ -13,7 +13,6 @@ let
     && osConfig.services ? "power-profiles-daemon"
     && osConfig.services."power-profiles-daemon".enable;
   supportsLidPolicyControls = hostName == "thinkpad";
-  supportsCasting = hostName == "surface";
   # NVIDIA's Qt6/Wayland EGL buffer import is unstable, so those hosts fall back
   # to the software Qt Quick backend. Intel/AMD hosts must NOT — software
   # rendering of the animated shell there produces glitchy/stuttering UI.
@@ -108,7 +107,7 @@ QtObject {
   readonly property string oskStatusBin: "${oskStatusScript}/bin/quickshell-osk-status"
   readonly property string lidClamshellBin: "${config.home.homeDirectory}/.local/bin/lid-clamshell"
   readonly property string brightnessActionBin: "${brightnessActionScript}/bin/quickshell-brightness-action"
-  readonly property string castLauncherBin: "${pkgs.gnome-network-displays}/bin/gnome-network-displays"
+  readonly property string castExtendBin: "${config.home.homeDirectory}/.local/bin/cast-extend"
   readonly property string castStatusBin: "${castStatusScript}/bin/quickshell-cast-status"
   readonly property string lidPolicyStatusBin: "${lidPolicyStatusScript}/bin/quickshell-lid-policy-status"
   readonly property string lidPolicyApplyBin: "${lidPolicyApplyScript}/bin/quickshell-lid-policy-apply"
@@ -150,7 +149,6 @@ QtObject {
   readonly property string herdrIconsDir: "${../../../assets/icons}"
   readonly property bool supportsPowerProfiles: ${if supportsPowerProfiles then "true" else "false"}
   readonly property bool supportsLidPolicyControls: ${if supportsLidPolicyControls then "true" else "false"}
-  readonly property bool supportsCasting: ${if supportsCasting then "true" else "false"}
   readonly property string lidPolicyFragmentPath: "${lidPolicyFragmentPath}"
 }
 EOF
@@ -318,9 +316,8 @@ PY
     IFS=: read -r device type _state connection <<<"$active_line"
 
     if [ "$type" = "wifi" ]; then
-      # --rescan no: read NM's cached scan results only. Triggering a rescan
-      # every refresh starves Wi-Fi Direct (P2P) discovery of radio time,
-      # which breaks Miracast sink detection (gnome-network-displays).
+      # --rescan no: read NM's cached scan results only; triggering a rescan
+      # on every bar refresh would churn the Wi-Fi radio for no benefit.
       signal="$(nmcli -t -f IN-USE,SIGNAL dev wifi list ifname "$device" --rescan no 2>/dev/null | ${pkgs.gawk}/bin/awk -F: '$1=="*" { print $2; exit }')"
       if [ -z "$signal" ]; then
         signal=null
@@ -725,40 +722,29 @@ PY
     done
   '';
 
+  # One-shot cast probe for the bar chip: prints a single JSON line and exits.
+  # State source is the cast-extend headless output (sway IPC) — whether the
+  # "extended display" surface exists and is live. The actual stream to the
+  # receiver is Chrome's Cast screen session, which is not observable here.
   castStatusScript = pkgs.writeShellScriptBin "quickshell-cast-status" ''
     set -euo pipefail
 
-    # One-shot cast (Miracast) status probe for the QuickShell bar chip: prints
-    # a single JSON line and exits. gnome-network-displays has no CLI API, so
-    # status is inferred from the process, Wi-Fi P2P link, and RTSP sink port.
-    gnd_count="$(${pkgs.procps}/bin/pgrep -c -f gnome-network-displays 2>/dev/null || true)"
-    gnd_running=false
-    if [ "''${gnd_count:-0}" -gt 0 ]; then
-      gnd_running=true
+    payload="$(${pkgs.sway}/bin/swaymsg -t get_outputs 2>/dev/null || true)"
+    if [ -z "$payload" ]; then
+      printf '{"active":false,"output":"","detail":"Sway IPC unavailable"}\n'
+      exit 0
     fi
-
-    p2p_active=false
-    if ${pkgs.networkmanager}/bin/nmcli -t -f DEVICE,TYPE,STATE dev 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q '^p2p-.*:.*:connected'; then
-      p2p_active=true
-    fi
-
-    sink_listening=false
-    if ${pkgs.iproute2}/bin/ss -tln 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q ':7236'; then
-      sink_listening=true
-    fi
-
-    active=false
-    detail="Idle — no active cast"
-    if [ "$p2p_active" = true ] || [ "$sink_listening" = true ]; then
-      active=true
-      detail="Streaming or receiving display cast"
-    elif [ "$gnd_running" = true ]; then
-      active=true
-      detail="Network Displays app open"
-    fi
-
-    printf '{"gnd_running":%s,"p2p_active":%s,"sink_listening":%s,"active":%s,"detail":"%s"}\n' \
-      "$gnd_running" "$p2p_active" "$sink_listening" "$active" "$detail"
+    printf '%s' "$payload" | ${pkgs.jq}/bin/jq -c '
+      [.[] | select(.name | startswith("HEADLESS-"))] as $h
+      | ([$h[] | select(.active)] | .[0]) as $live
+      | if $live != null then
+          {active: true, output: $live.name,
+           detail: ("Cast output " + $live.name + " live (" + ($live.current_mode.width | tostring) + "x" + ($live.current_mode.height | tostring) + ") — in Chrome: Cast → Cast screen → " + $live.name)}
+        elif ($h | length) > 0 then
+          {active: false, output: $h[0].name, detail: "Cast output disabled — re-enable to resume casting"}
+        else
+          {active: false, output: "", detail: "Off — enable a cast output, then Chrome → Cast → Cast screen"}
+        end'
   '';
 
   lidPolicyStatusScript = pkgs.writeShellScriptBin "quickshell-lid-policy-status" ''

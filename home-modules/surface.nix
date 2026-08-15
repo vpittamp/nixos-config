@@ -60,6 +60,11 @@
         ssh_target = "surface-pro";  # Tailscale MagicDNS name; "surface-pro3" does not resolve
         connection_key = "vpittamp@surface-pro3:22";
       }
+      {
+        host = "thinkpad";
+        ssh_target = "thinkpad";
+        connection_key = "vpittamp@thinkpad:22";
+      }
     ];
   };
 

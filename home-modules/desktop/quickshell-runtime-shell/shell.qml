@@ -66,6 +66,7 @@ ShellRoot {
     readonly property var lidPolicyApplyProcess: runtimeServices ? runtimeServices.lidPolicyApplyProcessRef : null
     readonly property var lidInhibitActionProcess: runtimeServices ? runtimeServices.lidInhibitActionProcessRef : null
     readonly property var castWatcherProcess: runtimeServices ? runtimeServices.castWatcherRef : null
+    readonly property var castActionProcess: runtimeServices ? runtimeServices.castActionProcessRef : null
     readonly property var dashboardWatcher: runtimeServices ? runtimeServices.dashboardWatcherRef : null
     readonly property var dashboardRestartTimer: runtimeServices ? runtimeServices.dashboardRestartTimerRef : null
 
@@ -104,9 +105,11 @@ ShellRoot {
             label: "Offline",
             signal: null
         })
-    // Cast (Miracast) state, fed by the one-shot castStatusBin probe.
+    // Cast (Chromecast) state, fed by the one-shot castStatusBin probe: tracks
+    // the cast-extend headless output. Streaming itself happens in Chrome.
     property var castState: ({
             active: false,
+            output: "",
             detail: "Checking…"
         })
     property var daemonHealthState: ({
@@ -1836,7 +1839,7 @@ ShellRoot {
         displaySelectorOutputName = "";
     }
 
-    // Close every top-bar chip popup (volume / bluetooth / power / displays / cast).
+    // Close every top-bar chip popup (volume / bluetooth / power / cast / displays).
     // Used by the click-away backdrop so any of them dismisses on an outside click.
     function closeBarPopups() {
         audioPopupVisible = false;
@@ -8396,9 +8399,16 @@ function normalizeLauncherMode(mode) {
         runDetached(command);
     }
 
-    function launchCast() {
-        root.closeBarPopups();
-        runDetached([shellConfig.castLauncherBin]);
+    // Enable/disable the headless cast output via cast-extend. The Chromecast
+    // stream itself can't be driven from here — Chrome owns the Cast screen
+    // session; the popup tells the user to pick the HEADLESS output there.
+    // castActionProcess.onExited re-runs the status probe.
+    function castToggle() {
+        if (!castActionProcess || castActionProcess.running) {
+            return;
+        }
+        castActionProcess.command = [shellConfig.castExtendBin, boolOrFalse(castState.active) ? "off" : "on"];
+        castActionProcess.running = true;
     }
 
     function emptyDashboardState(status, errorMessage) {
@@ -8720,10 +8730,7 @@ function normalizeLauncherMode(mode) {
 
     function parseCast(payload) {
         const raw = stringOrEmpty(payload).trim();
-        if (!raw || raw === "undefined" || raw === "null") {
-            return;
-        }
-        if (raw.indexOf("{") !== 0) {
+        if (!raw || raw.indexOf("{") !== 0) {
             return;
         }
 

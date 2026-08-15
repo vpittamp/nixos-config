@@ -40,6 +40,7 @@ Item {
     property alias brightnessActionProcessRef: brightnessActionProcess
     property alias lidPolicyApplyProcessRef: lidPolicyApplyProcess
     property alias lidInhibitActionProcessRef: lidInhibitActionProcess
+    property alias castActionProcessRef: castActionProcess
     property alias snippetEditorProcessRef: snippetEditorProcess
     property alias settingsCommandQueryProcessRef: settingsCommandQueryProcess
     property alias launcherQueryProcessRef: launcherQueryProcess
@@ -645,7 +646,8 @@ Item {
         }
     }
 
-    // One-shot cast (Miracast) status probe — reruns on a slow refresh cycle.
+    // One-shot cast (Chromecast / cast-extend) status probe — reruns on a slow
+    // refresh cycle, and immediately after castActionProcess completes.
     Process {
         id: castWatcher
         command: [runtimeConfig.castStatusBin]
@@ -1098,6 +1100,25 @@ Item {
             shellRoot.displayScaleTarget = "";
             shellRoot.displayScaleStdout = "";
             shellRoot.displayScaleStderr = "";
+        }
+    }
+
+    // cast-extend on/off action. Command is replaced by shellRoot.castToggle();
+    // the probe reruns on exit so the chip reflects the settled output state.
+    Process {
+        id: castActionProcess
+        command: [runtimeConfig.castExtendBin, "status"]
+        running: false
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: function (data) {
+                if (data && data.trim()) {
+                    console.warn("cast.action:", data);
+                }
+            }
+        }
+        onExited: function () {
+            castWatcher.running = true;
         }
     }
 
