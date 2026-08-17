@@ -7,7 +7,7 @@ let
   baseClaudeCode = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
 
   # Define settings specifically for the GLM variant
-  # Inherit default settings but override model to target Sonnet (which is mapped to GLM-5.2[1m])
+  # Inherit default settings but override model to target Sonnet (which is mapped to GLM-5.3[1m])
   glmSettings = config.programs.claude-code.settings // {
     model = "claude-3-5-sonnet-20241022";
   };
@@ -21,9 +21,9 @@ let
       cat <<'INNER_EOF' > "$ENV_FILE"
 ANTHROPIC_AUTH_TOKEN="op://hub-eso/ZAI-API-KEY/password"
 ANTHROPIC_BASE_URL="https://api.z.ai/api/anthropic"
-ANTHROPIC_DEFAULT_HAIKU_MODEL="glm-5.2[1m]"
-ANTHROPIC_DEFAULT_SONNET_MODEL="glm-5.2[1m]"
-ANTHROPIC_DEFAULT_OPUS_MODEL="glm-5.2[1m]"
+ANTHROPIC_DEFAULT_HAIKU_MODEL="glm-5.3[1m]"
+ANTHROPIC_DEFAULT_SONNET_MODEL="glm-5.3[1m]"
+ANTHROPIC_DEFAULT_OPUS_MODEL="glm-5.3[1m]"
 CLAUDE_CODE_AUTO_COMPACT_WINDOW="1000000"
 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1"
 API_TIMEOUT_MS="3000000"

@@ -26,6 +26,7 @@ declare -A ICON_MAP=(
   [mcp-inspector-proxy]="mcp-inspector.svg"
   [mimir]="mimir.svg"
   [mlflow]="mlflow.svg"
+  [neo4j]="neo4j.svg"
   [phoenix]="phoenix-azire.svg"
   [redisinsight]="redis-insights.svg"
   [tekton]="tekton.svg"
@@ -43,12 +44,16 @@ NO_RYZEN_SERVICES=(loki mimir)
 # Services that only exist on dev/staging
 DEV_STAGING_ONLY_SERVICES=(kueueviz)
 
+# Services that only exist on dev
+DEV_ONLY_SERVICES=(neo4j)
+
 # Services that only exist on the hub cluster
 HUB_ONLY_SERVICES=(mlflow)
 
 ENVS_ALL=(dev staging prod ryzen)
 ENVS_NO_RYZEN=(dev staging prod)
 ENVS_DEV_STAGING=(dev staging)
+ENVS_DEV_ONLY=(dev)
 ENVS_HUB_ONLY=(hub)
 
 COUNT=0
@@ -104,6 +109,25 @@ for service in "${DEV_STAGING_ONLY_SERVICES[@]}"; do
     continue
   fi
   for env in "${ENVS_DEV_STAGING[@]}"; do
+    output="$ICONS_DIR/${service}-${env}.png"
+    if "$GENERATE_SCRIPT" "$source_svg" "$env" "$output"; then
+      ((COUNT++)) || true
+    else
+      echo "ERROR: Failed to generate $output" >&2
+      ((ERRORS++)) || true
+    fi
+  done
+done
+
+# Generate icons for dev-only services
+for service in "${DEV_ONLY_SERVICES[@]}"; do
+  source_svg="$ICONS_DIR/${ICON_MAP[$service]}"
+  if [[ ! -f "$source_svg" ]]; then
+    echo "WARNING: Source icon not found: $source_svg (skipping $service)" >&2
+    ((ERRORS++)) || true
+    continue
+  fi
+  for env in "${ENVS_DEV_ONLY[@]}"; do
     output="$ICONS_DIR/${service}-${env}.png"
     if "$GENERATE_SCRIPT" "$source_svg" "$env" "$output"; then
       ((COUNT++)) || true

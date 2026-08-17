@@ -1411,6 +1411,23 @@ let
       routing_domains = [ "mimir-dev.tail286401.ts.net" ];
     }
 
+    # Neo4j Dev
+    {
+      name = "Neo4j Dev";
+      url = "https://workflow-builder-neo4j-dev.tail286401.ts.net/browser/";
+      domain = "workflow-builder-neo4j-dev.tail286401.ts.net";
+      icon = iconPath "neo4j-dev.png";
+      description = "Neo4j Browser graph database console - Dev environment";
+      categories = "Development;Network;";
+      keywords = "neo4j;graph;database;cypher;browser;workflow;builder;dev;";
+      scope = "https://workflow-builder-neo4j-dev.tail286401.ts.net/";
+      ulid = "5TXPA56WTTNKE37KGPH3FF0WRM";
+      app_scope = "global";
+      preferred_workspace = 176;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "workflow-builder-neo4j-dev.tail286401.ts.net" ];
+    }
+
     # Phoenix Dev
     {
       name = "Phoenix Dev";
