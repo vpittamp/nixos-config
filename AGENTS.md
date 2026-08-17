@@ -121,7 +121,8 @@ Implications:
 ## Recent System Updates (this cycle)
 
 - Desktop casting is now one command (`cast`, from `home-modules/desktop/casting.nix`):
-  - Chrome's own cast engine driven over the CDP `Cast` domain (`Cast.startDesktopMirroring`/`stopCasting`) against a dedicated-profile caster Chrome (`cast-caster.service`, started on demand, `--remote-debugging-port=9333`, `--enable-features=PulseaudioLoopbackForCast` for desktop audio, `--auto-select-desktop-capture-source` so the portal chooser is the only prompt)
+  - Chrome's own cast engine driven over the CDP `Cast` domain (`Cast.startDesktopMirroring`/`stopCasting`) against a dedicated-profile caster Chrome (`cast-caster.service`, started on demand, `--remote-debugging-port=9333`, `--enable-features=PulseaudioLoopbackForCast` for desktop audio)
+  - casting is non-interactive end to end: `cast-portal-chooser` (xdg-desktop-portal-wlr chooser_cmd, `chooser_type=simple`) auto-picks the pinned output for cast flows (headless for extend, focused screen for mirror) and falls back to the walker dmenu for other apps — the interactive portal menu mid-cast was the original failure (xdpw "no output found" when the menu was dismissed)
   - `cast extend` = cast-extend headless output + mirror → the TV becomes a wireless extended display; `Mod+Shift+D` toggles it, `;c ` opens the receiver/menu in Elephant
   - the QuickShell cast chip reports the live CDP session (mode + receiver + caster health) instead of only the headless-output state
   - the caster window is parked on workspace 87 (the 85-91 gap in the PWA map) — it must stay mapped (an unmapped caster stalls the portal consent chain) but is never seen

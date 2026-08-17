@@ -1818,7 +1818,7 @@ PanelWindow {
 
                     Text {
                         Layout.fillWidth: true
-                        text: "Extend: the TV becomes its own display — in the share menu that opens, pick the HEADLESS-* entry (the TV); move windows with cast-extend send.\nMirror: cast start, then pick a real monitor in the share menu.\nMenu: ;c in the launcher."
+                        text: "Extend: the TV becomes its own display — the TV output is picked automatically; move windows with cast-extend send.\nMirror: cast start — casts the focused screen.\nMenu: ;c in the launcher."
                         color: colors.subtle
                         font.pixelSize: 9
                         wrapMode: Text.WordWrap

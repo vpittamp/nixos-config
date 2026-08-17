@@ -179,12 +179,15 @@ cast stop                 # stop the cast (+ disable the headless output)
 cast status --json        # caster health + live session (feeds the cast chip)
 ```
 
-`;c ` in the launcher is the same surface as a menu (receiver list, extend,
-stop). The one visible prompt per cast is the **walker screen-share menu**
-(the portal chooser — nothing bypasses it on Wayland): pick a real monitor to
-mirror, or the `HEADLESS-*` entry to extend. The top-bar cast chip shows live
-state; its button is the toggle. Chrome must stay fresh — the Cast CRL expires
-20 weeks after build date (`configurations/ryzen.nix`).
+`;c ` in the launcher is the same surface as a menu (mirror, extend, stop).
+Casting is fully non-interactive: the CLI pins the output choice for the
+portal chooser (`cast-extend` → the `HEADLESS-*` output, mirror → the focused
+screen) via `cast-portal-chooser` (`modules/desktop/sway.nix`), which falls
+back to the walker dmenu for other apps' screen shares (OBS etc.). A receiver
+is auto-picked when only one is on the LAN, walker dmenu otherwise. The
+top-bar cast chip shows live state; its button is the toggle. Chrome must
+stay fresh — the Cast CRL expires 20 weeks after build date
+(`configurations/ryzen.nix`).
 
 ```bash
 journalctl --user -u cast-caster -f

@@ -6,6 +6,39 @@ with lib;
 
 let
   cfg = config.services.sway;
+
+  # Portal screencast chooser (chooser_cmd for xdg-desktop-portal-wlr).
+  # Cast flows (`cast start/extend`, home-modules/desktop/casting.nix) pin
+  # their choice in $XDG_RUNTIME_DIR/cast.picker ("headless" | "focused" |
+  # "output:NAME") so no interactive menu is shown mid-cast — the CLI already
+  # knows which output it wants. Everything else (OBS, manual screen share)
+  # falls through to the walker dmenu, which unlike slurp can list the
+  # invisible HEADLESS-* outputs. chooser_type stays "simple" so xdpw also
+  # matches the bare output name this script prints (not just the
+  # "Monitor: <name> <description>" label the walker path returns).
+  castPortalChooser = pkgs.writeShellScriptBin "cast-portal-chooser" ''
+    pick="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/cast.picker"
+    spec=""
+    [ -f "$pick" ] && spec="$(cat "$pick" 2>/dev/null)"
+
+    if [ -n "$spec" ]; then
+      sel=""
+      case "$spec" in
+        headless) sel='select(.name | startswith("HEADLESS-")) | select(.active)';;
+        focused) sel='select(.focused)';;
+        output:*) name="$(printf '%s' "$spec" | cut -d: -f2-)"; sel="select(.name == \"$name\")";;
+      esac
+      if [ -n "$sel" ]; then
+        name="$(${pkgs.sway}/bin/swaymsg -t get_outputs 2>/dev/null | ${pkgs.jq}/bin/jq -r "[.[] | $sel][0].name // empty" 2>/dev/null)"
+        if [ -n "$name" ]; then
+          printf '%s\n' "$name"
+          exit 0
+        fi
+      fi
+    fi
+
+    exec ${pkgs.walker}/bin/walker --dmenu -p 'Share screen:'
+  '';
 in {
   options.services.sway = {
     enable = mkEnableOption "Sway wayland compositor";
@@ -104,12 +137,12 @@ in {
         enable = mkDefault true;
         settings.screencast = {
           max_fps = mkDefault 30;
-          # dmenu-style chooser (walker) instead of slurp: slurp can only draw
-          # on visible outputs, so it can never pick the headless output that
-          # cast-extend (~/.local/bin/cast-extend) creates for Chromecast
-          # "extended display" casting. A text menu lists every output.
-          chooser_type = mkDefault "dmenu";
-          chooser_cmd = mkDefault "${pkgs.walker}/bin/walker --dmenu -p 'Share screen:'";
+          # chooser_type "simple" + the cast-portal-chooser script: cast
+          # commands auto-pick their output (no portal menu mid-cast), other
+          # apps get the walker dmenu — which, unlike slurp, can list the
+          # invisible HEADLESS-* output cast-extend creates.
+          chooser_type = mkDefault "simple";
+          chooser_cmd = mkDefault "${castPortalChooser}/bin/cast-portal-chooser";
         };
       };
       config.sway = {

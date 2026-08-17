@@ -42,6 +42,10 @@ const RUNTIME_DIR =
   Deno.env.get("XDG_RUNTIME_DIR") ?? `/run/user/${typeof Deno.uid === "function" ? Deno.uid() : 1000}`;
 const STATE_FILE = `${RUNTIME_DIR}/cast.state`;
 const LOCK_FILE = `${RUNTIME_DIR}/cast.lock`;
+// Pinned choice for the portal screencast chooser (cast-portal-chooser):
+// "headless" for extend, "focused" for mirror — the cast flow picks its
+// output itself instead of putting an interactive menu mid-cast.
+const PICKER_FILE = `${RUNTIME_DIR}/cast.picker`;
 const CAST_EXTEND = `${Deno.env.get("HOME") ?? "/home"}/.local/bin/cast-extend`;
 
 // startDesktopMirroring resolves only after the user satisfies the portal
@@ -465,15 +469,18 @@ async function cmdStart(mode: "mirror" | "extend", sinkArg?: string, sizeArg?: s
     const sink = await pickSink(sinks, sinkArg);
     resolvedSink = sink;
 
-    const hint = mode === "extend"
-      ? "pick the HEADLESS-* entry (the TV) in the screen-share menu…"
-      : "pick the output to mirror in the screen-share menu…";
-    console.error(`cast: ${mode === "extend" ? "extending" : "mirroring"} to ${sink} — ${hint}`);
+    // The portal chooser (cast-portal-chooser) reads this while Chrome's
+    // picker chain runs: extend captures the headless TV output, mirror the
+    // currently focused screen. No interactive portal menu appears.
+    Deno.writeTextFileSync(PICKER_FILE, mode === "extend" ? "headless" : "focused");
+    console.error(
+      `cast: ${mode === "extend" ? "extending" : "mirroring"} to ${sink} — ${mode === "extend" ? "the TV output" : "the focused screen"} is picked automatically`,
+    );
 
     await withCdp(async (cdp) => {
       await cdp.send("Cast.enable");
-      // Resolves only once the portal picker is satisfied; a picker cancel
-      // comes back as an error.
+      // Resolves once the portal session is up (the pinned choice makes it
+      // non-interactive); a portal failure comes back as an error.
       await cdp.send("Cast.startDesktopMirroring", { sinkName: sink }, MIRROR_TIMEOUT_MS);
     });
     saveState({ mode, sink, startedAt: new Date().toISOString() });
@@ -484,6 +491,11 @@ async function cmdStart(mode: "mirror" | "extend", sinkArg?: string, sizeArg?: s
     }
     throw err;
   } finally {
+    try {
+      Deno.removeSync(PICKER_FILE);
+    } catch {
+      // already gone
+    }
     try {
       Deno.removeSync(LOCK_FILE);
     } catch {

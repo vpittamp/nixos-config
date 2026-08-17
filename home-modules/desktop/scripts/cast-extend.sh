@@ -14,9 +14,10 @@
 #   cast-extend status     print the cast output's current state
 #
 # The stream itself is driven by `cast` (desktop/casting.nix), which automates
-# Chrome's Cast screen over CDP: `cast extend` runs this script and then starts
-# the mirror — pick the HEADLESS-* entry in the walker screen-share menu.
-# Manual path: Chrome -> menu -> Cast -> Sources -> Cast screen.
+# Chrome's Cast screen over CDP: `cast extend` runs this script, then starts
+# the mirror with the output pinned to the headless one (cast-portal-chooser,
+# no portal menu). Manual path: Chrome -> menu -> Cast -> Sources -> Cast
+# screen.
 #
 # Notes:
 # - Sway cannot destroy runtime-created outputs; `off` disables it (a Sway
@@ -82,10 +83,9 @@ cmd_on() {
   echo "$name" > "$STATE_FILE"
   cat <<EOF
 Cast output ready: $name ($mode, parked at +$PARK_X; invisible locally)
-  1. Run: cast extend   (starts the Chrome cast session for you)
-  2. In the screen-share menu pick "$name"; a lone receiver is auto-picked,
-     a picker appears if several are on the LAN
-  3. Move windows over with: cast-extend send
+  1. Run: cast extend   (starts the Chrome cast session for you; the output
+     and a lone receiver are picked automatically)
+  2. Move windows over with: cast-extend send
 Stop with: cast stop
 EOF
 }
