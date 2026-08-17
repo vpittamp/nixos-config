@@ -58,6 +58,19 @@ type CastState = { mode: "mirror" | "extend"; sink: string; startedAt: string };
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+// sway helpers (cast-extend, headlessOutput) need SWAYSOCK; a desktop
+// context always has it, a foreign ssh shell does not — find the socket.
+if (!Deno.env.get("SWAYSOCK")) {
+  try {
+    const swaysock = [...Deno.readDirSync(RUNTIME_DIR)]
+      .filter((e) => e.isFile && e.name.startsWith("sway-ipc."))
+      .map((e) => `${RUNTIME_DIR}/${e.name}`)[0];
+    if (swaysock) Deno.env.set("SWAYSOCK", swaysock);
+  } catch {
+    // no runtime dir readable — desktop contexts have SWAYSOCK anyway
+  }
+}
+
 function fail(message: string): never {
   console.error(`cast: ${message}`);
   Deno.exit(1);
@@ -515,6 +528,11 @@ async function cmdStop(sinkArg?: string): Promise<void> {
   if (sink && await casterUp()) {
     try {
       await withCdp(async (cdp) => {
+        // Cast.enable first: without it the handler has no sink list and
+        // every stopCasting answers "Sink not found" — leaving a live cast
+        // running while the caller believes it stopped.
+        await cdp.send("Cast.enable");
+        await cdp.waitForSinks(3_000);
         await cdp.send("Cast.stopCasting", { sinkName: sink });
       });
       stopped = true;
@@ -530,7 +548,9 @@ async function cmdStop(sinkArg?: string): Promise<void> {
   // a mirror-mode state or a lost state file must not strand it.
   await run(CAST_EXTEND, ["off"], { quiet: true }).catch(() => {});
   clearState();
-  console.log(stopped ? `Stopped casting to ${sink}.` : "No active cast found.");
+  console.log(
+    stopped ? `Stopped casting to ${sink}.` : `No active cast${sink ? ` on ${sink}` : ""}.`,
+  );
 }
 
 async function cmdStatus(asJson: boolean): Promise<void> {
