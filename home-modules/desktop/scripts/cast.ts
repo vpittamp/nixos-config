@@ -62,9 +62,15 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 // context always has it, a foreign ssh shell does not — find the socket.
 if (!Deno.env.get("SWAYSOCK")) {
   try {
+    // NB: no isFile filter — the sway IPC socket is a unix socket, which
+    // DirEntry does not classify as a file. Newest mtime wins: a crashed
+    // session leaves its socket behind and only the live one answers.
     const swaysock = [...Deno.readDirSync(RUNTIME_DIR)]
-      .filter((e) => e.isFile && e.name.startsWith("sway-ipc."))
-      .map((e) => `${RUNTIME_DIR}/${e.name}`)[0];
+      .filter((e) => e.name.startsWith("sway-ipc."))
+      .map((e) => `${RUNTIME_DIR}/${e.name}`)
+      .sort((a, b) =>
+        (Deno.statSync(b).mtime?.getTime() ?? 0) - (Deno.statSync(a).mtime?.getTime() ?? 0)
+      )[0];
     if (swaysock) Deno.env.set("SWAYSOCK", swaysock);
   } catch {
     // no runtime dir readable — desktop contexts have SWAYSOCK anyway
