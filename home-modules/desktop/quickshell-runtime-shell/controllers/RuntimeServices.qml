@@ -1103,8 +1103,9 @@ Item {
         }
     }
 
-    // cast-extend on/off action. Command is replaced by shellRoot.castToggle();
-    // the probe reruns on exit so the chip reflects the settled output state.
+    // Cast toggle action (`cast toggle` — stops a live cast, otherwise extends
+    // to the TV). Command is replaced by shellRoot.castToggle(); the probe
+    // reruns on exit so the chip reflects the settled cast state.
     Process {
         id: castActionProcess
         command: [runtimeConfig.castExtendBin, "status"]

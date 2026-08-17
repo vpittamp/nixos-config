@@ -119,10 +119,10 @@ BINDINGS
 echo "" >> "$TMPFILE"
 
 # ============================================================================
-# FZF LAUNCHER (Mod4+Shift+d)
+# FZF LAUNCHER (Mod4+Shift+f)
 # ============================================================================
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$TMPFILE"
-echo "FZF LAUNCHER (Mod4+Shift+d)" >> "$TMPFILE"
+echo "FZF LAUNCHER (Mod4+Shift+f)" >> "$TMPFILE"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$TMPFILE"
 
 cat >> "$TMPFILE" << 'LAUNCHER'
@@ -169,6 +169,19 @@ cat >> "$TMPFILE" << 'CLIPCAT'
 Mod4+v                    Show clipboard history
 Mod4+Shift+v              Clear clipboard history
 CLIPCAT
+
+echo "" >> "$TMPFILE"
+
+# ============================================================================
+# CASTING (CHROMECAST)
+# ============================================================================
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$TMPFILE"
+echo "CASTING (Chromecast via Chrome cast engine)" >> "$TMPFILE"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$TMPFILE"
+
+cat >> "$TMPFILE" << 'CASTING'
+Mod4+Shift+d              Toggle cast: TV as wireless display / stop
+CASTING
 
 echo "" >> "$TMPFILE"
 

@@ -13,8 +13,10 @@
 #   cast-extend send       move the focused workspace to the cast output
 #   cast-extend status     print the cast output's current state
 #
-# Then: Chrome -> menu -> Cast -> Sources -> Cast screen, pick the HEADLESS-*
-# entry in the walker chooser, and select your Chromecast receiver.
+# The stream itself is driven by `cast` (desktop/casting.nix), which automates
+# Chrome's Cast screen over CDP: `cast extend` runs this script and then starts
+# the mirror — pick the HEADLESS-* entry in the walker screen-share menu.
+# Manual path: Chrome -> menu -> Cast -> Sources -> Cast screen.
 #
 # Notes:
 # - Sway cannot destroy runtime-created outputs; `off` disables it (a Sway
@@ -80,10 +82,11 @@ cmd_on() {
   echo "$name" > "$STATE_FILE"
   cat <<EOF
 Cast output ready: $name ($mode, parked at +$PARK_X; invisible locally)
-  1. Chrome -> menu -> Cast -> Sources -> Cast screen
-  2. Pick "$name" in the screen-share menu, then your Chromecast receiver
+  1. Run: cast extend   (starts the Chrome cast session for you)
+  2. In the screen-share menu pick "$name"; a lone receiver is auto-picked,
+     a picker appears if several are on the LAN
   3. Move windows over with: cast-extend send
-Stop with: cast-extend off
+Stop with: cast stop
 EOF
 }
 

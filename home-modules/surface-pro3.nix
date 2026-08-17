@@ -15,6 +15,7 @@
     # Desktop Environment: Sway (Wayland)
     ./desktop/python-environment.nix
     ./desktop/sway.nix
+    ./desktop/casting.nix
     ./desktop/quickshell-runtime-shell.nix
 
     # Project management (works with Sway via IPC)

@@ -120,6 +120,11 @@ Implications:
 
 ## Recent System Updates (this cycle)
 
+- Desktop casting is now one command (`cast`, from `home-modules/desktop/casting.nix`):
+  - Chrome's own cast engine driven over the CDP `Cast` domain (`Cast.startDesktopMirroring`/`stopCasting`) against a dedicated-profile caster Chrome (`cast-caster.service`, started on demand, `--remote-debugging-port=9333`, `--enable-features=PulseaudioLoopbackForCast` for desktop audio, `--auto-select-desktop-capture-source` so the portal chooser is the only prompt)
+  - `cast extend` = cast-extend headless output + mirror → the TV becomes a wireless extended display; `Mod+Shift+D` toggles it, `;c ` opens the receiver/menu in Elephant
+  - the QuickShell cast chip reports the live CDP session (mode + receiver + caster health) instead of only the headless-output state
+  - the caster window is parked on workspace 87 (the 85-91 gap in the PWA map) — it must stay mapped (an unmapped caster stalls the portal consent chain) but is never seen
 - Removed the Miracast stack (unreliable; casting now goes through Chrome's built-in Cast / Google Cast):
   - dropped gnome-network-displays (surface system packages, ryzen home packages) and the QuickShell "Cast (Miracast)" bar chip + status probe
   - dropped the wpa_supplicant 2.10 pin (flake input `nixpkgs-wpasupplicant`) and the root-supplicant/per-interface tweaks on surface; RTSP port 7236 closed on surface/ryzen

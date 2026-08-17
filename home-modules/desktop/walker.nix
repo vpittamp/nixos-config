@@ -1243,6 +1243,11 @@ in
         prefix = ";s "
         provider = "menus:sesh"
 
+        # Desktop casting via the CDP-driven caster (desktop/casting.nix)
+        [[providers.prefixes]]
+        prefix = ";c "
+        provider = "menus:cast"
+
         [[providers.prefixes]]
         prefix = ";w "
         provider = "menus:window-actions"
@@ -1785,6 +1790,49 @@ in
         end
 
         return entries
+    end
+  '';
+
+  # Desktop casting menu (Elephant Lua menu). Deliberately STATIC: GetEntries
+  # never shells out — a dynamic `cast list` here would block the menu for the
+  # mDNS settle window on every keystroke (Cache=false re-runs it) and would
+  # cold-start the caster Chrome as a side effect of merely opening the menu.
+  # Receiver selection happens at action time instead: `cast start` auto-picks
+  # a lone receiver and opens a walker dmenu when several are on the LAN.
+  # Actions are backgrounded so elephant never waits out the portal picker
+  # (up to 3 minutes) — cast's own stderr/exit carries the outcome.
+  xdg.configFile."elephant/menus/cast.lua".text = ''
+    Name = "cast"
+    NamePretty = "Cast"
+    Icon = "video-display"
+    Cache = false
+    Action = "cast %VALUE% >/dev/null 2>&1 &"
+    HideFromProviderlist = false
+    Description = "Cast the screen to a Chromecast receiver"
+    SearchName = true
+    GlobalSearch = false  -- Keep local to ;c prefix
+
+    function GetEntries()
+        return {
+            {
+                Text = "Extend TV (wireless display)",
+                Value = "extend",
+                Icon = "video-display",
+                Keywords = {"cast", "extend", "tv", "display", "headless"}
+            },
+            {
+                Text = "Mirror screen (pick receiver)",
+                Value = "start",
+                Icon = "video-display",
+                Keywords = {"cast", "mirror", "screen", "tv", "duplicate"}
+            },
+            {
+                Text = "Stop casting",
+                Value = "stop",
+                Icon = "media-playback-stop",
+                Keywords = {"cast", "stop", "off"}
+            }
+        }
     end
   '';
 

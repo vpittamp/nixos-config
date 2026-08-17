@@ -128,7 +128,7 @@ Possible improvements:
 
 | Feature | Send to Window | Background Commands |
 |---------|---------------|---------------------|
-| **Keybinding** | `Mod4+Ctrl+d` | `Mod4+Shift+d` then `Ctrl+B` |
+| **Keybinding** | `Mod4+Ctrl+d` | `Mod4+Shift+f` then `Ctrl+B` |
 | **Execution** | In visible terminal | Hidden background process |
 | **Output** | Visible in terminal | Saved to file + notification |
 | **Use Case** | Interactive commands | Long-running builds/deploys |

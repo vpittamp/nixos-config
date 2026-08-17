@@ -2,11 +2,11 @@
 
 ## Overview
 
-The FZF launcher (`Mod4+Shift+d`) now supports running long-running commands in the background with desktop notifications when they complete.
+The FZF launcher (`Mod4+Shift+f`) now supports running long-running commands in the background with desktop notifications when they complete.
 
 ## How It Works
 
-1. Open the FZF launcher with `Mod4+Shift+d`
+1. Open the FZF launcher with `Mod4+Shift+f`
 2. Type or select a command (e.g., `sudo nixos-rebuild switch --flake .#hetzner`)
 3. Press **Ctrl+B** to run it in the background
 4. The launcher closes immediately
@@ -50,17 +50,17 @@ bglog
 
 ### NixOS Rebuild
 ```
-Mod4+Shift+d → type "sudo nixos-rebuild switch --flake .#hetzner" → Ctrl+B
+Mod4+Shift+f → type "sudo nixos-rebuild switch --flake .#hetzner" → Ctrl+B
 ```
 
 ### Docker Build
 ```
-Mod4+Shift+d → type "docker build -t myapp ." → Ctrl+B
+Mod4+Shift+f → type "docker build -t myapp ." → Ctrl+B
 ```
 
 ### Long Test Suite
 ```
-Mod4+Shift+d → type "pytest tests/" → Ctrl+B
+Mod4+Shift+f → type "pytest tests/" → Ctrl+B
 ```
 
 ## Technical Details
@@ -135,7 +135,7 @@ sleep 86400 && rm -f "$OUTPUT_FILE" &
 ## Integration
 
 This feature integrates seamlessly with:
-- **i3 window manager** - Mod4+Shift+d launcher
+- **i3 window manager** - Mod4+Shift+f launcher
 - **FZF** - Fuzzy command search
 - **Dunst** - Native i3 notification daemon
 - **Tmux** - Commands can access tmux sessions

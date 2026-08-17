@@ -108,6 +108,7 @@ QtObject {
   readonly property string lidClamshellBin: "${config.home.homeDirectory}/.local/bin/lid-clamshell"
   readonly property string brightnessActionBin: "${brightnessActionScript}/bin/quickshell-brightness-action"
   readonly property string castExtendBin: "${config.home.homeDirectory}/.local/bin/cast-extend"
+  readonly property string castBin: "${config.home.profileDirectory}/bin/cast"
   readonly property string castStatusBin: "${castStatusScript}/bin/quickshell-cast-status"
   readonly property string lidPolicyStatusBin: "${lidPolicyStatusScript}/bin/quickshell-lid-policy-status"
   readonly property string lidPolicyApplyBin: "${lidPolicyApplyScript}/bin/quickshell-lid-policy-apply"
@@ -723,11 +724,27 @@ PY
   '';
 
   # One-shot cast probe for the bar chip: prints a single JSON line and exits.
-  # State source is the cast-extend headless output (sway IPC) — whether the
-  # "extended display" surface exists and is live. The actual stream to the
-  # receiver is Chrome's Cast screen session, which is not observable here.
+  # Primary source is the `cast` CLI (desktop/casting.nix), which reports the
+  # real CDP-driven cast session (mode + receiver, verified against the live
+  # route) plus caster health and the cast-extend headless output in one
+  # probe. Fast path: with no session and no headless output, skip the CLI
+  # (a Deno boot every 10s is not free). The sway-only fallback emits
+  # active:false — it cannot see the cast session, so it must never claim one.
   castStatusScript = pkgs.writeShellScriptBin "quickshell-cast-status" ''
     set -euo pipefail
+
+    runtime="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    if [ ! -f "$runtime/cast.state" ] \
+      && ! ${pkgs.sway}/bin/swaymsg -t get_outputs 2>/dev/null \
+        | ${pkgs.jq}/bin/jq -e 'any(.[]; (.name | startswith("HEADLESS-")) and .active)' >/dev/null 2>&1; then
+      printf '{"active":false,"output":"","detail":"Off — cast extend turns the TV into a display"}\n'
+      exit 0
+    fi
+
+    if payload="$("${config.home.profileDirectory}/bin/cast" status --json 2>/dev/null)"; then
+      printf '%s\n' "$payload"
+      exit 0
+    fi
 
     payload="$(${pkgs.sway}/bin/swaymsg -t get_outputs 2>/dev/null || true)"
     if [ -z "$payload" ]; then
@@ -738,12 +755,12 @@ PY
       [.[] | select(.name | startswith("HEADLESS-"))] as $h
       | ([$h[] | select(.active)] | .[0]) as $live
       | if $live != null then
-          {active: true, output: $live.name,
-           detail: ("Cast output " + $live.name + " live (" + ($live.current_mode.width | tostring) + "x" + ($live.current_mode.height | tostring) + ") — in Chrome: Cast → Cast screen → " + $live.name)}
+          {active: false, output: $live.name,
+           detail: ("Cast output " + $live.name + " live (" + ($live.current_mode.width | tostring) + "x" + ($live.current_mode.height | tostring) + ") — no cast session (run: cast extend)")}
         elif ($h | length) > 0 then
           {active: false, output: $h[0].name, detail: "Cast output disabled — re-enable to resume casting"}
         else
-          {active: false, output: "", detail: "Off — enable a cast output, then Chrome → Cast → Cast screen"}
+          {active: false, output: "", detail: "Off — cast extend turns the TV into a display"}
         end'
   '';
 

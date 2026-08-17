@@ -34,6 +34,7 @@ home-modules/       # User environment
 | `Win+C/G/Y` | VS Code / Lazygit / Yazi (global, open in $HOME) |
 | `CapsLock` (M1) / `Ctrl+0` | Workspace mode |
 | `Mod+Tab` | Workspace overview |
+| `Mod+Shift+D` | Cast toggle — TV as wireless display / stop |
 
 ## Walker/Elephant Launcher
 
@@ -49,6 +50,7 @@ home-modules/       # User environment
 | `>` | Runner | Shell commands |
 | `?` | Help | List all providers |
 | `;s ` | Sesh | Tmux session switcher |
+| `;c ` | Cast | Receiver list + mirror/extend/stop (see Desktop Casting) |
 | `;h ` | History | Browser history |
 
 **1Password Integration**: Requires 1Password GUI running and `op` CLI authenticated.
@@ -161,6 +163,32 @@ unit (sway.nix disables any left over from older generations).
 
 **Device controls**: Volume 󰕾 | Brightness 󰃟 | Bluetooth 󰂯 | Battery 󰁹 (click to expand)
 **Devices tab**: `Mod+M` → `Alt+7`
+
+## Desktop Casting
+
+Desktop-level Google Cast drives **Chrome's own cast engine** over the DevTools
+Protocol's `Cast` domain — identical receivers, quality, and latency to the
+browser's Cast menu, without walking its UI. A dedicated-profile caster Chrome
+(`cast-caster.service`, started on demand, port 9333) owns the session.
+
+```bash
+cast list                 # receivers the caster discovered (mDNS)
+cast extend               # TV as wireless extended display (Mod+Shift+D toggles)
+cast start [sink]         # mirror: pick the output in the walker share menu
+cast stop                 # stop the cast (+ disable the headless output)
+cast status --json        # caster health + live session (feeds the cast chip)
+```
+
+`;c ` in the launcher is the same surface as a menu (receiver list, extend,
+stop). The one visible prompt per cast is the **walker screen-share menu**
+(the portal chooser — nothing bypasses it on Wayland): pick a real monitor to
+mirror, or the `HEADLESS-*` entry to extend. The top-bar cast chip shows live
+state; its button is the toggle. Chrome must stay fresh — the Cast CRL expires
+20 weeks after build date (`configurations/ryzen.nix`).
+
+```bash
+journalctl --user -u cast-caster -f
+```
 
 ## Touch Input
 

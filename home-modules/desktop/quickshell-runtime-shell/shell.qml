@@ -105,8 +105,9 @@ ShellRoot {
             label: "Offline",
             signal: null
         })
-    // Cast (Chromecast) state, fed by the one-shot castStatusBin probe: tracks
-    // the cast-extend headless output. Streaming itself happens in Chrome.
+    // Cast (Chromecast) state, fed by the one-shot castStatusBin probe: the
+    // live CDP cast session (mode + receiver, see desktop/casting.nix) plus
+    // caster health and the cast-extend headless output.
     property var castState: ({
             active: false,
             output: "",
@@ -8399,15 +8400,16 @@ function normalizeLauncherMode(mode) {
         runDetached(command);
     }
 
-    // Enable/disable the headless cast output via cast-extend. The Chromecast
-    // stream itself can't be driven from here — Chrome owns the Cast screen
-    // session; the popup tells the user to pick the HEADLESS output there.
+    // One-command cast via the CDP-driven caster (cast toggle): stop when a
+    // cast is live, otherwise extend — headless output + Chrome mirror of it,
+    // so the TV becomes a wireless display. Receiver and output pickers are
+    // walker menus, the same surface the portal chooser already uses.
     // castActionProcess.onExited re-runs the status probe.
     function castToggle() {
         if (!castActionProcess || castActionProcess.running) {
             return;
         }
-        castActionProcess.command = [shellConfig.castExtendBin, boolOrFalse(castState.active) ? "off" : "on"];
+        castActionProcess.command = [shellConfig.castBin, "toggle"];
         castActionProcess.running = true;
     }
 
