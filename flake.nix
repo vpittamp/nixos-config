@@ -37,13 +37,13 @@
     # Gemini CLI sunsets requests for Google AI Pro/Ultra/Free on 2026-06-18.
     #
     # Was consumed from `pkgs-unstable`, but the unstable channel lags master:
-    # as of 2026-08-07 nixpkgs-unstable still ships 1.1.8 while master has
-    # 1.1.11. Pinned to a master revision so `agy` tracks upstream, in the same
+    # as of 2026-08-18 nixpkgs-unstable still lags master on antigravity-cli.
+    # Pinned to a master revision so `agy` tracks upstream, in the same
     # shape as the nixpkgs-lazygit workaround above. Consumed by
     # home-modules/ai-assistants/antigravity-cli.nix.
     # TODO(antigravity-pin): drop this input once nixpkgs-unstable catches up,
     # and revert that module to `pkgs-unstable.antigravity-cli`.
-    nixpkgs-antigravity.url = "github:NixOS/nixpkgs/d05cc67bfb9510da6eea5a4cabc0f4a8566efd5a";
+    nixpkgs-antigravity.url = "github:NixOS/nixpkgs/d2dbdf997c7e0e3b16da918e83b9eaddaa468890";
 
     # Flake organization
     flake-parts = {

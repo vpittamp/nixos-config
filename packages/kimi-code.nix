@@ -22,7 +22,7 @@
 
 let
   pname = "kimi-code";
-  version = "0.34.0";
+  version = "0.37.2";
   nodejs = nodejs_22;
 in
 stdenvNoCC.mkDerivation {
@@ -31,7 +31,7 @@ stdenvNoCC.mkDerivation {
   src = fetchurl {
     url = "https://registry.npmjs.org/@moonshot-ai/kimi-code/-/kimi-code-${version}.tgz";
     # npm dist.integrity is already an SRI hash — use it verbatim.
-    hash = "sha512-Z2zNKXrGRirZJ0DsVBvTNsl6xMmt5SoDQkHwBw3lrssFNiu/mz+w9RRm5lYAidoKbEdGMduqQ08xwfcd5QU+/g==";
+    hash = "sha512-TAteYb84mV44MEzCaAlfz5f3TiN2yMHuwj9Kd0ePEIMBUqgjlqV1w7PvMT9TN0t87LYfv7BhIYz+ZCHDOM5aJw==";
   };
 
   nativeBuildInputs = [ makeWrapper ];
