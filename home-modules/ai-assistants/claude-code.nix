@@ -4,6 +4,7 @@ let
   repoRoot = ../../.;
 
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
+  contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
 
   # Use claude-code from the dedicated flake for latest version
   # Fall back to nixpkgs-unstable if flake not available
@@ -503,11 +504,20 @@ lib.mkIf enableClaudeCode {
     # MCP Servers configuration
     # Uses full Nix store paths to work in isolated environments (devenv, nix-shell)
     # Enable interactively via `/mcp` command or `@` menu when needed
-    mcpServers = lib.optionalAttrs workflowBuilderMcp.enable {
-      workflow-builder = {
-        command = "${workflowBuilderMcp.proxyCommand}";
-        args = [];
-      };
-    };
+    mcpServers =
+      (lib.optionalAttrs workflowBuilderMcp.enable {
+        workflow-builder = {
+          command = "${workflowBuilderMcp.proxyCommand}";
+          args = [];
+        };
+      })
+      // (lib.optionalAttrs contextGraphMcp.enable {
+        # Graph memory (Neo4j context graph) over the tailnet — auth-less,
+        # tailnet-scoped; see home-modules/ai-assistants/context-graph-mcp.nix.
+        context-graph = {
+          command = "${contextGraphMcp.proxyCommand}";
+          args = [];
+        };
+      });
   };
 }

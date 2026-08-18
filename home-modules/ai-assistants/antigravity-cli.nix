@@ -31,6 +31,7 @@ let
   enableBrowserMcpServers = sharedBrowserMcp.enableBrowserMcpServers;
 
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
+  contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
 
   mcpServers =
     (lib.optionalAttrs workflowBuilderMcp.enable {
@@ -51,6 +52,17 @@ let
           "run_workflow_script"
           "save_workflow_script"
         ];
+      };
+    })
+    // (lib.optionalAttrs contextGraphMcp.enable {
+      # Graph memory (Neo4j context graph) over the tailnet — auth-less,
+      # tailnet-scoped; see home-modules/ai-assistants/context-graph-mcp.nix.
+      "context-graph" = {
+        command = "${contextGraphMcp.proxyCommand}";
+        args = [];
+        timeoutSeconds = 120;
+        strictArgumentValidation = true;
+        enabledTools = contextGraphMcp.toolNames;
       };
     })
     // (lib.optionalAttrs enableBrowserMcpServers {

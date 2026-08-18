@@ -27,6 +27,7 @@
 let
   repoRoot = ../../.;
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
+  contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
   sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
   enableBrowserMcpServers = sharedBrowserMcp.enableBrowserMcpServers;
   nodeNpx = "${pkgs.nodejs}/bin/npx";
@@ -51,7 +52,15 @@ let
   playwrightOutputDir = "${kimiMcpStateRoot}/playwright";
 
   mcpServers =
-    lib.optionalAttrs workflowBuilderMcp.enable {
+    lib.optionalAttrs contextGraphMcp.enable {
+      "context-graph" = {
+        command = "${contextGraphMcp.proxyCommand}";
+        args = [];
+        startupTimeoutMs = 30000;
+        toolTimeoutMs = 120000;
+      };
+    }
+    // lib.optionalAttrs workflowBuilderMcp.enable {
       "workflow-builder" = {
         command = "${workflowBuilderMcp.proxyCommand}";
         args = [];

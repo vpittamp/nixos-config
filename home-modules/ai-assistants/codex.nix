@@ -5,6 +5,7 @@ let
   sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
 
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
+  contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
 
   sharedSkillsDir = repoRoot + "/shared-skills";
   sharedSkillEntries = if builtins.pathExists sharedSkillsDir then builtins.readDir sharedSkillsDir else {};
@@ -216,6 +217,18 @@ env_vars = [
 ]
 startup_timeout_sec = 30
 tool_timeout_sec = 300
+''}
+
+${lib.optionalString contextGraphMcp.enable ''
+[mcp_servers.context-graph]
+args = []
+command = "${contextGraphMcp.proxyCommand}"
+enabled = true
+env_vars = [
+  "CONTEXT_GRAPH_MCP_URL",
+]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
 ''}
 
 ${lib.optionalString enableBrowserMcpServers ''

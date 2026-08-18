@@ -90,6 +90,7 @@ in
 
     # AI Assistant configurations
     ../ai-assistants/workflow-builder-mcp.nix
+    ../ai-assistants/context-graph-mcp.nix
     ../ai-assistants/claude-code.nix
     ../ai-assistants/claude-code-glm.nix
     ../ai-assistants/codex.nix
@@ -120,6 +121,7 @@ in
   modules.tools.remoteKubeconfig.enable = true;
   modules.tools.fleetKubeconfigs.enable = true;  # `sync-fleet-kubeconfigs` → token-free fleet kubectl over Tailscale
   modules.aiAssistants.workflowBuilderMcp.enable = builtins.elem hostName [ "ryzen" "thinkpad" "surface" ];
+  modules.aiAssistants.contextGraphMcp.enable = builtins.elem hostName [ "ryzen" "thinkpad" "surface" ];
   programs.pwa-url-router.enable = false;  # Feature 113: DISABLED - using Chrome as default browser
 
   # VSCode profile configuration
