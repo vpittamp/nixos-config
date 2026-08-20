@@ -59,6 +59,26 @@ IDs, or timings.
 `host-candidate` uses a disposable physical cluster. Hub management, Source
 Hydrator, and GitOps Promoter changes have no vCluster preview lane.
 
+### Source-baseline clamp
+
+A hot-reload receiver seeds its workspace from the pinned `workflow-builder-dev`
+image's BAKED source, so that revision — not repository HEAD — is the only
+source a preview can truthfully serve. A default launch therefore resolves
+`sourceRevision` to the dev image's baked revision
+(`WORKFLOW_BUILDER_DEV_IMAGE_SOURCE_REVISION`, published in the image-pins
+ConfigMap and pinned on the preview-control broker). An explicit
+`sourceRef`/`sourceRevision` that resolves elsewhere is refused with
+`source-baseline-mismatch`, and SEA preflight carries the
+`dev-image-source-revision-mismatch` backstop for callers that bypass the host
+resolver.
+
+Treat that refusal as correct: without the clamp, every file changed between
+the image revision and HEAD that the builder does not itself edit is simply
+ABSENT from the receiver (digest delivery never re-sends unmodified files), so
+routes 500 on missing imports and browser evidence can never be captured. The
+fix is to rebuild and repin `workflow-builder-dev` for the wanted revision, not
+to relaunch.
+
 ## Canonical Flow
 
 1. Discover services and targets with `list_preview_services`, then inspect
@@ -111,6 +131,47 @@ Official CLI pods, OAuth files, native hooks, transcripts, and MCP sessions stay
 on physical dev. Persistent sessions edit the host checkout and invoke
 `wfb-development apply`, `observe`, or `verify`. Submission and cleanup remain
 parent DevelopmentRun commands.
+
+### CLI execution mode: headless print turns
+
+A CLI builder runs in one of two execution modes, and the mode is a runtime
+property — never a caller input:
+
+- `native-tui`: the CLI runs as a herdr pane and prompts are injected into its
+  pty. Default for `claude-code-cli`, `codex-cli`, and `kimi-code-cli`.
+- `headless-print`: each turn is its own subprocess speaking the CLI's
+  structured stdio protocol (`agy -p --output-format stream-json
+  --conversation`, `claude -p --output-format stream-json --verbose --resume`,
+  `kimi --prompt --output-format stream-json --session`, `codex exec [resume
+  <id>] --json`). Default and only supported mode for `agy-cli`, whose TUI
+  wedges under pty injection; opt-in elsewhere via
+  `CLI_AGENT_{CLAUDE,KIMI,CODEX}_HEADLESS=1`.
+
+No CLI in this fleet exposes ACP (agent client protocol); print mode is the
+native structured-transport equivalent. Subscription auth is unaffected —
+headless inherits the same OAuth token env the pane uses.
+
+Headless invariants (each traces to a live dev failure):
+
+- The `wfb-development` CLI resolves identity from the process environment. A
+  headless turn is a direct subprocess with an EXPLICIT env, so the runtime
+  widens the curated pane env with `DAPR_AGENT_SESSION_ID`,
+  `DAPR_AGENT_SESSION_HOST_INSTANCE_ID`, `WORKFLOW_BUILDER_URL`, and
+  `INTERNAL_API_TOKEN` — and nothing else. Provider API keys never cross.
+  Without this every stage transition fails
+  `interactive session identity is unavailable` while transport looks healthy.
+- A headless turn ENDS its subprocess, so a per-turn CLI hook is a turn edge,
+  not a session edge. `SessionEnd` is suppressed while a headless runner is
+  active; otherwise the durable session dies after turn one.
+- Turn continuity is the CLI's own resume handle (conversation / session /
+  thread id) captured from the first turn's events. Resume argv is NOT the
+  fresh argv: `codex exec resume` accepts only bare flags (`--cd`/`--model`/
+  `-c` are a usage error), and kimi rejects `--agent`/`--agent-file` plus every
+  permission-mode flag (`--yolo`, `--auto`) in prompt mode.
+- Tool governance still runs through the wfb hook relay. For codex that
+  requires `--dangerously-bypass-hook-trust` in the rebuilt `exec` argv;
+  without it codex runs with NO hooks and emits no tool events at all while
+  still reporting successful turns.
 
 For `system-live`, watch mode covers the primary checkout plus every imported
 ChangeSet repository under `/sandbox/work/repositories` and coalesces one burst
@@ -237,6 +298,23 @@ Cancel the DevelopmentRun first. A legacy preview-local active-use refusal must
 be handled through its owning legacy surface, then sealed or explicitly
 quarantined. Do not launch another. `forceFailed` is only for failed or aged
 generations and records evidence loss. Never remove finalizers to bypass owners.
+
+## Readiness Stalls
+
+`PreviewEnvironment` status on the hub is lifecycle truth, and the controller
+flips `Ready` only when the preview's Argo CD Application is Synced, Healthy,
+at the expected revision, AND its last sync `operationState.phase` is
+`Succeeded`. A sync that FAILS transiently and then self-heals leaves the app
+Synced+Healthy with a `Failed` operation, and the controller's hard refresh
+advances `reconciledAt` without creating a new operation — so the CR waits
+forever and every `development_run_start` is refused as not Ready.
+
+Diagnose in this order, not with kubectl guesses: CR
+`status.conditions[Ready].reason` (`WaitingForApplication`), then the
+Application's `operationState.phase`. When that phase is `Failed` while sync
+and health are good, request one fresh sync operation so a `Succeeded` lands.
+A preview whose up-Job succeeded and whose origin serves traffic is healthy —
+the stall is projection, not provisioning.
 
 ## Validation
 
