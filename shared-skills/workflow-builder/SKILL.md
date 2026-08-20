@@ -84,16 +84,33 @@ the supported control and capture path still covers the workflow.
 
 ## Native CLI Runtime Contract
 
-`claude-code-cli`, `codex-cli`, `kimi-code-cli`, and other `interactive-cli`
-runtimes run the official interactive binary inside Herdr's PTY for both
-attached sessions and workflow auto-turns. The runtime registry must declare
-`capabilities.cliExecutionMode: native-tui`; the workflow bridge rejects an
-interactive runtime without that declaration or its registry-owned
-`cliAdapter`.
+`claude-code-cli`, `codex-cli`, `kimi-code-cli`, `agy-cli`, and other
+`interactive-cli` runtimes run the official vendor binary — never an SDK
+reimplementation — in one of two execution modes. Do not confuse the mode with
+the registry field: `capabilities.cliExecutionMode` accepts only `native-tui`
+and asserts terminal-attachability, which the workflow bridge requires of every
+`interactiveTerminal` runtime (agy included) alongside the registry-owned
+`cliAdapter`. The per-turn mode is an adapter env switch, reported back as
+`executionMode` in the start result:
+
+- `native-tui` — the binary runs inside Herdr's PTY and prompts are injected
+  into it. Default for claude, codex, and kimi; required for attached
+  human sessions, which need a live terminal.
+- `headless-print` — each turn is its own subprocess speaking the vendor's
+  structured stdio protocol (claude `-p --output-format stream-json --verbose`,
+  kimi `--prompt --output-format stream-json`, codex `exec --json`, agy
+  `-p --output-format stream-json`), with turn continuity through that CLI's
+  own resume handle. Default and only supported mode for `agy-cli`, whose TUI
+  wedges under pty injection; opt-in for the others via
+  `CLI_AGENT_{CLAUDE,KIMI,CODEX}_HEADLESS=1`. No vendor here offers ACP —
+  print mode is the structured-transport equivalent.
 
 - Preserve user-scoped subscription OAuth delivery through `cliAuth` and the
-  session Secret path. Do not replace it with a provider API key, SDK, print
-  mode, `codex exec`, or another noninteractive subprocess.
+  session Secret path. Do not replace it with a provider API key or an SDK
+  client. Headless print mode is NOT such a replacement: it runs the same
+  binary under the same subscription token (verified live — a headless turn
+  reports the subscription's own rate-limit window, not API billing), so the
+  auth contract is unchanged in either execution mode.
 - For `app-live` or `system-live` preview development, public profiles are
   `dapr-agent-py`, `claude-code-cli`, `codex-cli`, `kimi-code-cli`, and
   `agy-cli`. Fixture-local `*-host` values are internal adapter mappings and
