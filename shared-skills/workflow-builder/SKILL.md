@@ -86,9 +86,12 @@ the supported control and capture path still covers the workflow.
 
 `claude-code-cli`, `codex-cli`, `kimi-code-cli`, `agy-cli`, and other
 `interactive-cli` runtimes run the official vendor binary — never an SDK
-reimplementation — in one of two execution modes, declared by the runtime
-registry as `capabilities.cliExecutionMode` and enforced by the workflow
-bridge alongside the registry-owned `cliAdapter`:
+reimplementation — in one of two execution modes. Do not confuse the mode with
+the registry field: `capabilities.cliExecutionMode` accepts only `native-tui`
+and asserts terminal-attachability, which the workflow bridge requires of every
+`interactiveTerminal` runtime (agy included) alongside the registry-owned
+`cliAdapter`. The per-turn mode is an adapter env switch, reported back as
+`executionMode` in the start result:
 
 - `native-tui` — the binary runs inside Herdr's PTY and prompts are injected
   into it. Default for claude, codex, and kimi; required for attached
