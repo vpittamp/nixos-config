@@ -65,10 +65,53 @@
       # HomeKit Bridge card shows the setup code/QR).
       homekit = { };
 
+      # Motion push for the Circle View cameras (homekit_controller pairings,
+      # 2026-08-20). The cameras themselves cannot be re-exposed to Apple Home
+      # (snapshot-only, no stream), so motion lands on the iPhone via the HA
+      # companion app's notify target instead; tapping opens the "Cameras"
+      # Lovelace dashboard (storage-mode, /cameras). The module cannot emit
+      # "!include automations.yaml", so these live here, declaratively.
+      automation =
+        let
+          motion = room: entity: {
+            id = "motion-${room}";
+            alias = "Motion — ${entity}";
+            description = "Push to iPhone when the ${entity} camera sees motion";
+            triggers = [{
+              platform = "state";
+              entity_id = "binary_sensor.${room}_motion";
+              to = "on";
+            }];
+            conditions = [ ];
+            actions = [{
+              # mobile_app's own notify service (notify.send_message on the
+              # entity rejects the nested push "data" extras).
+              action = "notify.mobile_app_iphone_2";
+              data = {
+                title = "${entity} — motion";
+                message = "Motion detected by the ${entity} camera.";
+                data.url = "/cameras";
+              };
+            }];
+            mode = "single";
+          };
+        in
+        [
+          (motion "living_room" "Living Room")
+          (motion "bedroom" "Bedroom")
+          (motion "kitchen" "Kitchen")
+          (motion "hallway" "Hallway")
+        ];
+
       # Core settings. Location/units are left for the onboarding UI to ask.
       homeassistant = {
         name = "Surface Pro 3";
         time_zone = config.time.timeZone; # America/New_York (base.nix)
+        # Companion-app routing: the app switches on reachability, and
+        # notification tap-throughs resolve away from home via the tailnet
+        # (surface-pro3 = 100.106.239.88). Never port-forward 8123 instead.
+        internal_url = "http://192.168.1.161:8123";
+        external_url = "http://100.106.239.88:8123";
       };
     };
   };
