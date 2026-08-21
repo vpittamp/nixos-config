@@ -16,6 +16,9 @@ let
       lib.nameValuePair ".codex/skills/${name}" {
         source = sharedSkillsDir + "/${name}";
         recursive = true;
+        # shared-skills is declarative authority; CLI/plugin updates can
+        # materialize files over HM symlinks and must not wedge activation.
+        force = true;
       }
     )
     sharedSkillDirs;
