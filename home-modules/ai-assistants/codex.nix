@@ -6,6 +6,7 @@ let
 
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
   contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
+  homeAssistantMcp = config.modules.aiAssistants.homeAssistantMcp;
 
   sharedSkillsDir = repoRoot + "/shared-skills";
   sharedSkillEntries = if builtins.pathExists sharedSkillsDir then builtins.readDir sharedSkillsDir else {};
@@ -226,6 +227,27 @@ command = "${contextGraphMcp.proxyCommand}"
 enabled = true
 env_vars = [
   "CONTEXT_GRAPH_MCP_URL",
+]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+''}
+
+${lib.optionalString homeAssistantMcp.enable ''
+[mcp_servers.homeassistant]
+args = []
+command = "${homeAssistantMcp.proxyCommand}"
+enabled = true
+env_vars = [
+  "DBUS_SESSION_BUS_ADDRESS",
+  "DISPLAY",
+  "OP_BIOMETRIC_UNLOCK_ENABLED",
+  "OP_SERVICE_ACCOUNT_TOKEN",
+  "HASS_TOKEN",
+  "HASS_TOKEN_OP_REF",
+  "HASS_MCP_URL",
+  "HOMEASSISTANT_TOKEN",
+  "WAYLAND_DISPLAY",
+  "XDG_RUNTIME_DIR",
 ]
 startup_timeout_sec = 30
 tool_timeout_sec = 120

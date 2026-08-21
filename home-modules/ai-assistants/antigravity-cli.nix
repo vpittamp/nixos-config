@@ -32,6 +32,7 @@ let
 
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
   contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
+  homeAssistantMcp = config.modules.aiAssistants.homeAssistantMcp;
 
   mcpServers =
     (lib.optionalAttrs workflowBuilderMcp.enable {
@@ -63,6 +64,14 @@ let
         timeoutSeconds = 120;
         strictArgumentValidation = true;
         enabledTools = contextGraphMcp.toolNames;
+      };
+    })
+    // (lib.optionalAttrs homeAssistantMcp.enable {
+      # Home Assistant MCP server (Streamable HTTP) via authenticated mcp-remote proxy.
+      "homeassistant" = {
+        command = "${homeAssistantMcp.proxyCommand}";
+        args = [];
+        timeoutSeconds = 120;
       };
     })
     // (lib.optionalAttrs enableBrowserMcpServers {

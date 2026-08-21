@@ -52,6 +52,7 @@
       "default_config" "met" "esphome" "homekit_controller"
       "apple_tv" "sonos" "samsungtv" "ibeacon" "google_translate"
       "ecobee" "cast" "hunterdouglas_powerview"
+      "mcp_server"
     ];
 
     config = {

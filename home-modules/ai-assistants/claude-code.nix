@@ -5,6 +5,7 @@ let
 
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
   contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
+  homeAssistantMcp = config.modules.aiAssistants.homeAssistantMcp;
 
   # Use claude-code from the dedicated flake for latest version
   # Fall back to nixpkgs-unstable if flake not available
@@ -342,6 +343,7 @@ lib.mkIf enableClaudeCode {
           "mcp__workflow-builder__validate_workflow_script"
           "mcp__workflow-builder__run_workflow_script"
           "mcp__workflow-builder__save_workflow_script"
+          "mcp__homeassistant"
         ];
       };
 
@@ -516,6 +518,13 @@ lib.mkIf enableClaudeCode {
         # tailnet-scoped; see home-modules/ai-assistants/context-graph-mcp.nix.
         context-graph = {
           command = "${contextGraphMcp.proxyCommand}";
+          args = [];
+        };
+      })
+      // (lib.optionalAttrs homeAssistantMcp.enable {
+        # Home Assistant MCP server (Streamable HTTP) via authenticated mcp-remote proxy.
+        homeassistant = {
+          command = "${homeAssistantMcp.proxyCommand}";
           args = [];
         };
       });

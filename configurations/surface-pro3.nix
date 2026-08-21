@@ -199,6 +199,7 @@ in
   # Firewall: base networking.nix enables it with SSH/Tailscale only; also allow
   # mDNS so Chrome Chromecast / TV discovery works on the LAN.
   networking.firewall.allowedUDPPorts = [ 5353 ];
+  networking.firewall.checkReversePath = "loose";  # For Tailscale
 
   # Fonts - Nerd Fonts for desktop shell glyph icons
   fonts = {
