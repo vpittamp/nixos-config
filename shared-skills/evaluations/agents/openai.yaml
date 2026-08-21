@@ -1,4 +1,4 @@
 interface:
   display_name: "Evaluations"
-  short_description: "Run and debug evaluations and SWE-bench on dev."
-  default_prompt: "Use $evaluations to launch, inspect, or debug a Workflow Builder evaluation or benchmark on dev."
+  short_description: "Operate canonical agent evaluation campaigns on dev."
+  default_prompt: "Use $evaluations to launch, inspect, or debug a native, SWE-bench, or Harbor evaluation campaign on dev."

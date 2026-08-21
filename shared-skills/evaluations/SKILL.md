@@ -1,168 +1,143 @@
 ---
 name: evaluations
-description: "Build, run, inspect, or debug Workflow Builder evaluations and official SWE-bench benchmarks on dev. Use for datasets, eval definitions, graders, code-eval templates, benchmark campaigns, exact-ready inference images, evaluator Jobs, runtime/provider canaries, MLflow comparison, provenance, cancellation, and cleanup. Use kubernetes-capacity for shared Kueue and physical-capacity tuning, gitops for image delivery, and workflow-builder for general workflow or session behavior."
+description: "Build, run, inspect, or debug Workflow Builder evaluation campaigns on dev, including native datasets, immutable subjects, scorers, SWE-bench official harnesses, Harbor task/verifier adapters, DSPy offline optimization inputs, provenance, cancellation, and cleanup. Use kubernetes-capacity for shared Kueue or physical-capacity policy and gitops for image delivery."
 ---
 
 # Evaluations
 
-Use `dev` for shared evaluation work unless the user explicitly names another
-target. Do not copy model defaults, capacity limits, or previous run IDs from
-this skill; resolve them from current code, runtime registry, deployment env,
-and live capacity.
+Use the canonical evaluation control plane on `dev`. SWE-bench and Harbor are
+catalog/environment/scorer adapters, not separate products or coordinator
+stacks. Historical benchmark and first-generation evaluation rows are
+throwaway after the full cutover; do not restore their APIs or runtime paths.
 
-## Two Product Models
+Resolve the current workflow-builder/stacks source, runtime registry, desired
+images, rendered manifests, and live capacity before using a model, version,
+run ID, limit, or image reference.
 
-| Model      | Use it for                                                 | Primary storage and surface                      |
-| ---------- | ---------------------------------------------------------- | ------------------------------------------------ |
-| Evaluation | Dataset + reusable eval definition + run + ordered graders | `evaluation_*`, `/workspaces/<slug>/evaluations` |
-| Benchmark  | Official SWE-bench inference and harness evaluation        | `benchmark_*`, `/workspaces/<slug>/benchmarks`   |
+## Architecture boundary
 
-The legacy SWE-bench evaluation template is not the official harness path.
-Use the Benchmarks surface whenever official resolved/unresolved outcomes and
-harness provenance are required.
+Keep the evaluation bounded context hexagonal:
 
-## Start From Source
+- application services own campaign creation, admission, cancellation, cleanup,
+  and read models;
+- ports describe catalog, campaign persistence, Dapr orchestration, capacity,
+  OCI environments, scorers, lineage, and cleanup;
+- Postgres, Dapr, capacity-observer, registries, Harbor, Hugging Face,
+  Tekton/Kueue, and lifecycle control are adapters;
+- domain/application code must not import Kubernetes, registry, Dapr SDK, or
+  database clients;
+- Python orchestrator domain/ports stay separate from Dapr and HTTP adapters.
 
-```bash
-WFB_ROOT=/home/vpittamp/repos/PittampalliOrg/workflow-builder/main
-STACKS_ROOT=/home/vpittamp/repos/PittampalliOrg/stacks/main
-git -C "$WFB_ROOT" fetch origin
-git -C "$WFB_ROOT" status --short --branch
-```
+The durable tree is campaign -> shard -> trial -> ordinary dynamic-script
+workflow -> scorer workflow. Subject execution must reuse the normal workflow
+engine. Reference answers, expected patches, and verifier scripts are
+scorer-only; never place them in subject input.
 
-Use clean worktrees for edits. Before changing behavior, inspect the route,
-application service, coordinator, runtime, manifests, and tests that own the
-reported stage.
+Read first:
 
-## Task Map
+- workflow-builder `docs/evaluation-control-plane.md`
+- stacks `docs/evaluation-control-plane.md`
+- workflow-builder `src/lib/server/application/domain/evaluations/`
+- workflow-builder `src/lib/server/application/ports/evaluation-control-plane.ts`
+- workflow-builder `services/evaluation-orchestrator/`
+- stacks `packages/components/workloads/evaluation-control-plane/`
 
-| Task                                         | Read or inspect                                                                                     |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Evaluation data model, UI, and run lifecycle | `src/lib/server/evaluations/`, evaluation routes/components, and `services/evaluation-coordinator/` |
-| Grader behavior                              | `graders.ts`, `grader-runners.ts`, and the target runtime grader endpoint                           |
-| Code-eval templates                          | Template API routes and saved `code-eval-item` workflow definition                                  |
-| Official SWE-bench operations                | `docs/swebench-dapr-workflow-operations.md`                                                         |
-| Campaign concurrency and admission           | `docs/swebench-concurrency.md`, run preflight, and live capacity snapshots                          |
-| Shared quota, PSI, and physical headroom     | Use `kubernetes-capacity`                                                                            |
-| Inference images and exact-ready selection   | `docs/swebench-image-builds-and-caching.md` and environment build code                              |
-| Same-instance comparisons and MLflow         | `docs/swebench-mlflow-comparison.md` and `docs/benchmark-statistics.md`                             |
-| Runtime selection or capability mismatch     | `services/shared/runtime-registry.json` and `docs/durable-session-runtime-contract.md`              |
-| Image rollout                                | Use the `gitops` skill                                                                              |
+## Campaign workflow
 
-## Run Workflow
+1. Define the question and distinguish subject quality, runtime correctness,
+   capacity, environment preparation, and scorer correctness.
+2. Publish a versioned dataset, immutable subject version, and scorer versions.
+   Native, SWE-bench, and Harbor imports must normalize into the same records.
+3. Confirm task environments are linux/amd64, digest-pinned, and `ready` with a
+   validation receipt. Builds are separate hub work; campaigns never build an
+   image in-band.
+4. Inspect `/workspaces/<slug>/capacity/debug`. Requested concurrency is only a
+   ceiling; fresh exact-shape quota/cohort and physical-headroom evidence decides
+   each shard. Stale observer data must park and retry.
+5. Start through the Evaluations UI or authenticated canonical API. Do not
+   create, repair, or terminalize rows with SQL.
+6. Follow campaign lineage, trial ordinary workflow/session, Kueue Workload or
+   TaskRun, scorer completion, artifacts, and terminal outcome.
+7. Verify exact task/subject/repetition coverage, immutable digests, model and
+   runtime identity, scores, scorer/harness provenance, and resource cleanup.
 
-1. **Define the question.** Separate product correctness, model quality,
-   runtime routing, infrastructure capacity, and evaluator correctness. Do not
-   use one run to answer all five.
-2. **Select the model.** Choose Evaluation or Benchmark explicitly. Record the
-   target project, subject, saved version, runtime, model key, suite, and fixed
-   instance set where applicable.
-3. **Preflight readiness.** Verify orchestrator readiness, runtime capability,
-   exact environment coverage, Kueue admission, fresh capacity-observer
-   headroom, evaluator capacity, provider limits, and zero conflicting active
-   work. Use the capacity debug surface when the campaign competes with preview
-   or interactive-agent queues.
-4. **Launch through the owning surface.** Use the UI, authenticated application
-   API, or checked-in launch script. Do not create or repair runs with direct
-   SQL.
-5. **Observe stage transitions.** Follow the parent run, coordinator workflow,
-   per-item execution/session, Sandbox and Kueue Workload, inference events,
-   predictions artifacts, evaluator Job/TaskRuns, and callback.
-6. **Verify results and provenance.** Confirm selected instance coverage,
-   prediction validity, artifact hashes, evaluator image, harness output,
-   runtime/model identity, and active-resource cleanup.
-7. **Cancel through the owner.** Cancel the evaluation or benchmark run; do not
-   stop a coordinator-owned instance independently.
+Campaigns also appear in unified Runs. Use the campaign detail for frozen
+snapshot, capacity arithmetic, trial/score matrix, environment artifacts, and
+lineage; use Runs for the common activity and trace lens.
 
-## Diagnosis Ladder
+## SWE-bench
 
-For a stuck or zero-token benchmark, check in order:
+- Freeze the Hugging Face dataset to a revision.
+- Resolve the official `swebench/sweb.eval.x86_64.<instance>` Docker Hub image
+  to its linux/amd64 platform digest; do not launch from `latest`.
+- Require exact-ready artifact coverage before start.
+- Treat official harness output as the resolution authority. An empty patch is
+  a valid subject outcome, not automatically infrastructure failure.
+- A useful canary proves ordinary dynamic-script inference, official verifier
+  scoring, immutable environment provenance, terminal lineage, and cleanup.
 
-1. Run and instance status plus active resource leases.
-2. Preflight child workflow and exact-ready environment decision.
-3. Hub environment-image PipelineRun when a build is required.
-4. Workflow execution and session IDs.
-5. Kueue admission and Sandbox/pod readiness.
-6. Runtime and `daprd` logs.
-7. `agent.llm_usage` and terminal session events.
-8. Predictions/dataset artifacts and evaluator Job.
-9. Internal callback and final summary recomputation.
-10. For terminal workflow evidence that must survive preview teardown, read the
-    sealed receipt/package part and evidence-keyed telemetry through Workflow
-    MCP rather than depending on a live preview database.
+## Harbor
 
-This order distinguishes build waiting, queue pressure, runtime startup,
-provider failure, and harness failure without mutating state.
+The Harbor anti-corruption adapter converts a versioned task bundle into the
+native catalog. Shared-image verifiers run in the task image. A separate
+verifier image must be digest-pinned and receives only the declared artifact
+boundary. Require canonical `reward.json`/`reward.txt`, logs, and provenance;
+Harbor containers do not own campaign state or retries.
 
-## Stable Invariants
+## DSPy
 
-- Official SWE-bench resolved/unresolved status comes from the harness callback,
-  not an LLM scorer or a UI inference.
-- Random launch readiness and coordinator preflight must use the same exact
-  environment-spec predicate. A coarse repo/version match is insufficient.
-- Effective concurrency is the minimum of BFF policy, Kueue quota, node
-  headroom, runtime slots, Dapr worker limits, evaluator capacity, image
-  readiness, and provider limits.
-- Benchmark scorers and Evaluation graders are separate lifecycles and storage
-  models even when they reuse transport code.
-- Runtime identity comes from the saved run, runtime registry resolution,
-  workflow output, traces, and live image/env. A workspace template or container
-  label alone is not proof.
-- Cancellation is request/confirm work owned by the run and Lifecycle
-  Controller. Product rows must not be marked terminal before durable children
-  and Sandboxes converge.
-- A durable workflow that RETURNS a failure payload is `COMPLETED` to Dapr.
-  Read the orchestrator's terminal outcome envelope
-  (`customStatus.terminal`, mirrored as `terminalOutcome`) rather than
-  `runtimeStatus` before scoring an item successful or blaming the harness.
-- `workflowstatestore` remains the sole actor/workflow state store, now enforced
-  by a stacks CI validator. Do not add a per-agent actor store to solve an
-  evaluation incident.
-- Evaluation and grader prompts/tool calls remain queryable in durable
-  execution evidence when captured. Mask credentials, not ordinary prompt or
-  tool content; use evidence completeness rather than assuming preview teardown
-  preserved every required part.
+DSPy is an optional offline optimizer adapter. It may propose versioned
+instructions, demonstrations, plans, or dynamic scripts, but it must not call
+`action()`, save workflows, access credentials/Kubernetes, or own Dapr
+execution. Publish each candidate as an immutable subject and compare it in a
+canonical campaign. Select/promote from canonical scores only.
 
-## Safety Rules
+For dynamic-script authoring, keep the reviewed platform contract fixed and
+optimize `SelectActions -> DraftScript -> RepairScript`. Apply deterministic
+validation/action-schema gates before semantic scoring. Start with a baseline
+and BootstrapFewShot, then GEPA for feedback-rich failures; compare MIPROv2 only
+when joint instruction/demo search is justified. DSPy `compile()` remains an
+offline batch activity, not a Dapr workflow scheduler.
 
-- Do not roll workflow-builder, orchestrator, coordinator, evaluator, or agent
-  runtime images while a proof run is active; durable replay can break across
-  code schedules.
-- Do not raise concurrency from a historical checkpoint. Read current live
-  capacity with `kubernetes-capacity` and increase one layer at a time.
-- Do not run parallel benchmark campaigns on ryzen unless explicitly requested
-  and capacity-proven.
-- Do not expose dataset secrets, provider keys, predictions, or admin database
-  credentials in logs or PRs.
-- Do not treat an empty patch as infrastructure failure when the harness records
-  it as a valid model outcome.
-- Do not merge or deploy an image change until the `gitops` delivery chain and
-  live runtime identity are proven.
+## Cancellation and terminal truth
 
-## Completion Evidence
+Cancel the campaign through its owner. The required order is harness cleanup,
+ordinary workflow lifecycle purge, confirmed absence/removal, then terminal
+trial/campaign/lineage writes. The cancellation reconciler retries abandoned
+requests using the same ports and leaves rows nonterminal while cleanup is
+pending.
 
-A useful handoff records:
+Dapr `COMPLETED` does not prove product success: a workflow can return an error
+envelope. Require the explicit terminal outcome and scorer evidence. Never
+infer terminal rows from a missing Dapr instance or edit them to unblock the UI.
 
-- Target, source revision, run ID, and fixed cohort.
-- Agent/version, runtime, model key, and effective concurrency.
-- Exact-ready environment source and image digest summary.
-- Stage timings, official outcomes, grader/scorer results, and artifacts.
-- Evaluator identity and provenance.
-- Durable evidence keys and completeness for terminal host or preview workflow
-  runs used in the conclusion.
-- Final counts for active runs, leases, sessions, workflows, Sandboxes, and
-  evaluator workloads.
+## Diagnosis order
 
-## Canonical Sources
+1. Campaign snapshot, status, cancellation intent, and lineage.
+2. Environment artifact discovery/resolution/build/validation receipt.
+3. Fresh capacity decision and Kueue admission condition.
+4. Trial ordinary workflow execution, session/Sandbox, runtime image, and Dapr
+   sidecar/workflow worker readiness.
+5. Subject output/patch and scorer plan.
+6. Harness TaskRun, verifier logs, callback/event, and score provenance.
+7. Cleanup receipt and reconciler result.
 
-- `docs/swebench-concurrency.md`
-- `docs/swebench-dapr-workflow-operations.md`
-- `docs/swebench-image-builds-and-caching.md`
-- `docs/swebench-mlflow-comparison.md`
-- `docs/benchmark-statistics.md`
-- `src/lib/server/evaluations/`
-- `src/lib/server/benchmarks/`
-- `src/routes/api/{evaluations,benchmarks,internal/benchmarks}/`
-- `services/{evaluation-coordinator,swebench-coordinator,swebench-evaluator}/`
-- `services/shared/runtime-registry.json`
-- stacks workload, Kueue, Tekton, and release-pin manifests
+This order separates build waiting, capacity parking, runtime failure, subject
+failure, scorer failure, and cleanup convergence without mutating evidence.
+
+## Safety and delivery
+
+- Do not roll workflow, evaluation, scorer, harness, or runtime images during a
+  proof campaign whose replay depends on them.
+- Do not expose provider keys, dataset secrets, expected answers, patches from
+  private data, internal tokens, or kubeconfigs.
+- Use `kubernetes-capacity` for quota/cohort/PSI tuning, `gitops` for builds and
+  Argo delivery, and `workflow-builder` for non-evaluation workflow behavior.
+- Never resize, reprovision, replace, or delete Hetzner servers. Software
+  upgrades use separately authorized in-place Talos procedures.
+
+Completion evidence must link source SHA -> hub PipelineRun -> GHCR digest ->
+release pin/render -> Argo sync/health -> live image/env -> canonical campaign.
+Record task coverage, subject/runtime/model identity, effective concurrency,
+environment digests, scores/provenance, terminal lineage, and final absence of
+TaskRuns, Workloads, Sandboxes, leases, and active workflow resources.

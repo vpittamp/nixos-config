@@ -42,6 +42,7 @@ let
       lib.nameValuePair ".agents/skills/${name}" {
         source = sharedSkillsDir + "/${name}";
         recursive = true;
+        force = true;
       }
     )
     sharedSkillDirs;

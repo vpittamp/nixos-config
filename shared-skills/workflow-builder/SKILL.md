@@ -169,7 +169,7 @@ and asserts terminal-attachability, which the workflow bridge requires of every
 | Diagnose a rollout               | Use `gitops`                                                                           |
 | Develop or inspect runs inside a preview | Use `preview-environments`; start at `/previews`, then use the exact `/dev/system` detail and host `/runs` surfaces |
 | Explain capacity or admission    | Start at `/workspaces/<slug>/capacity/debug`; use `kubernetes-capacity` for queue, observer, PSI, or policy work |
-| Run SWE-bench or evals           | Use `evaluations`                                                                      |
+| Run SWE-bench, Harbor, or evals  | Use `evaluations`; campaigns are canonical Runs and execute only on dev                |
 
 ## Stable Invariants
 

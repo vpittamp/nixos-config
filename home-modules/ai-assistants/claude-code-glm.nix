@@ -51,6 +51,7 @@ INNER_EOF
       lib.nameValuePair ".claude-glm/skills/${name}" {
         source = sharedSkillsDir + "/${name}";
         recursive = true;
+        force = true;
       }
     )
     sharedSkillDirs;
