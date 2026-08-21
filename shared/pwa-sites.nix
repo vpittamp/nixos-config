@@ -334,7 +334,7 @@ let
       name = "Home Assistant 114";
       url = "http://ryzen.tail286401.ts.net:8123";
       domain = "ryzen.tail286401.ts.net";
-      icon = iconPath "home-assistant-114.svg";
+      icon = iconPath "home-assistant-114.png";
       description = "Home Assistant (Home 114) - Open source home automation";
       categories = "Network;Utility;";
       keywords = "home;automation;iot;smart-home;homeassistant;114;";
@@ -351,7 +351,7 @@ let
       name = "Home Assistant 215";
       url = "http://surface-pro.tail286401.ts.net:8123";
       domain = "surface-pro.tail286401.ts.net";
-      icon = iconPath "home-assistant-215.svg";
+      icon = iconPath "home-assistant-215.png";
       description = "Home Assistant (Home 215) - Open source home automation";
       categories = "Network;Utility;";
       keywords = "home;automation;iot;smart-home;homeassistant;215;";
