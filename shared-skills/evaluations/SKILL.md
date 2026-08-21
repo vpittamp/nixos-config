@@ -65,12 +65,33 @@ Campaigns also appear in unified Runs. Use the campaign detail for frozen
 snapshot, capacity arithmetic, trial/score matrix, environment artifacts, and
 lineage; use Runs for the common activity and trace lens.
 
+UI ownership is deliberate:
+
+- Dashboard and Runs show the campaign parent and its ordinary workflow child
+  once a trial reaches subject execution.
+- Workflows is the reusable-definition catalog. It shows `Evaluation coding
+  subject` and its recent ordinary child executions, but must not duplicate the
+  campaign parent.
+- A campaign parked on environment preparation or capacity has no ordinary
+  workflow child yet, so it belongs only in Dashboard/Runs and Evaluations.
+
 ## SWE-bench
 
 - Freeze the Hugging Face dataset to a revision.
+- Treat each imported `offset`/row-count window as a distinct immutable dataset
+  version. Re-importing another window must not reuse the project/name/version
+  identity or attach cases to an older subset.
 - Resolve the official `swebench/sweb.eval.x86_64.<instance>` Docker Hub image
   to its linux/amd64 platform digest; do not launch from `latest`.
+- Validate the `openshell-compat-v4` boundary: default user and primary group
+  `sandbox`, non-root UID, `HOME=/sandbox`, writable `/sandbox/.git`, Python,
+  Git, POSIX shell, `ip`, and `getent`. If the official image fails, the
+  expected path is a separate minimal hub-built compatibility image; never
+  modify the image during campaign execution.
 - Require exact-ready artifact coverage before start.
+- Each harness step must declare ephemeral-storage requests and limits. Keep
+  every container within the namespace LimitRange ratio so Kueue can account
+  the materialized TaskRun instead of losing it at pod admission.
 - Treat official harness output as the resolution authority. An empty patch is
   a valid subject outcome, not automatically infrastructure failure.
 - A useful canary proves ordinary dynamic-script inference, official verifier
@@ -110,6 +131,10 @@ pending.
 Dapr `COMPLETED` does not prove product success: a workflow can return an error
 envelope. Require the explicit terminal outcome and scorer evidence. Never
 infer terminal rows from a missing Dapr instance or edit them to unblock the UI.
+Cancellation of an already terminal campaign is an idempotent no-op. If a
+terminal row moves back to `cancelling`, treat that as a lifecycle defect; both
+the application service and persistence adapter must protect the terminal
+outcome boundary against a late-write race.
 
 ## Diagnosis order
 
@@ -124,6 +149,18 @@ infer terminal rows from a missing Dapr instance or edit them to unblock the UI.
 
 This order separates build waiting, capacity parking, runtime failure, subject
 failure, scorer failure, and cleanup convergence without mutating evidence.
+
+For a Dapr multi-app error saying an orchestrator was not registered, verify in
+this order: the target worker calls `register_workflow(..., name=<exact
+versioned public name>)`; the parent uses that same name with the target
+`app_id`; both apps are in the same namespace and share the same actor state
+store; then inspect `WorkflowAccessPolicy`. A Python bound-method name is an
+implementation detail and must never become the cross-app durable identity.
+
+The platform-owned evaluation subject is reconciled from the canonical seed;
+ordinary saved workflows remain owner-editable. Do not launch a campaign while
+that seed/Deployment rollout is converging: publish the immutable subject only
+after the live workflow spec digest is stable.
 
 ## Safety and delivery
 
