@@ -168,6 +168,7 @@ and asserts terminal-attachability, which the workflow bridge requires of every
 | Edit prompts or presets          | Prompt Workbench components, prompt APIs, and current prompt docs                      |
 | Diagnose a rollout               | Use `gitops`                                                                           |
 | Develop or inspect runs inside a preview | Use `preview-environments`; start at `/previews`, then use the exact `/dev/system` detail and host `/runs` surfaces |
+| Explain capacity or admission    | Start at `/workspaces/<slug>/capacity/debug`; use `kubernetes-capacity` for queue, observer, PSI, or policy work |
 | Run SWE-bench or evals           | Use `evaluations`                                                                      |
 
 ## Stable Invariants
@@ -263,7 +264,9 @@ For a failed or silent run, inspect in order:
    status.
 8. Only then inspect Kueue Workload, Sandbox, pod scheduling, init containers,
    orchestrator/runtime logs, and both app and `daprd` containers when the
-   bounded product evidence identifies a runtime gap.
+   bounded product evidence identifies a runtime gap. Use
+   `/workspaces/<slug>/capacity/debug` and `kubernetes-capacity` when the failure
+   is admission or physical headroom rather than session behavior.
 9. Confirm the same result through the user-facing API/UI state.
 
 A `running` execution row is a PROJECTION, not the authority — the durable
@@ -376,6 +379,7 @@ A workflow change is complete when:
 - `docs/mcp-agent-workflows.md`
 - `docs/workflow-artifacts.md`
 - `docs/execution-evidence.md`
+- `docs/session-resource-metrics-and-kueue-admission.md`
 - `services/shared/runtime-registry.json`
 - `services/workflow-orchestrator/`
 - `services/workflow-mcp-server/`

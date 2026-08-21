@@ -1,0 +1,4 @@
+interface:
+  display_name: "Kubernetes Capacity"
+  short_description: "Audit and tune shared Kubernetes capacity"
+  default_prompt: "Use $kubernetes-capacity to audit current dev capacity and explain the limiting signals."

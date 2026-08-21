@@ -34,9 +34,9 @@ Crossplane claims and compositions are retired and are not a control surface.
 | Recreate ryzen Talos-in-Docker     | `cluster-desired-state` and `deployment/scripts/bootstrap-spoke-cluster.sh`                              |
 | Recreate or repair hub machines    | `cluster-desired-state`, `deployment/scripts/recreate-hub.sh`, and the `talos-cluster` repo              |
 | Resize worker capacity             | Modify the imperative provisioner inputs and regenerate; do not patch a retired claim                    |
-| Upgrade Kubernetes only            | Use a Talos-supported Kubernetes upgrade after health and etcd backup checks                             |
-| Upgrade Talos                      | Use machine configuration/image upgrade semantics; verify compatibility before Kubernetes changes        |
-| Validate benchmark capacity        | Inspect live node allocatable/requested resources, Kueue quotas, and workflow-builder capacity snapshots |
+| Upgrade Kubernetes only            | Use a Talos-supported in-place Kubernetes upgrade after health and etcd backup checks                     |
+| Upgrade Talos                      | Use an in-place Talos image upgrade; verify compatibility before Kubernetes changes                       |
+| Validate benchmark capacity        | Use `kubernetes-capacity` for exact shapes, Kueue, observer, PSI, and dynamic concurrency                 |
 
 ## Change Workflow
 
@@ -56,9 +56,23 @@ Crossplane claims and compositions are retired and are not a control surface.
 7. **Hand back to GitOps.** Once nodes and core services are healthy, use
    `cluster-desired-state` or `gitops` to verify agent and workload convergence.
 
+### In-place Hetzner upgrade contract
+
+Talos and Kubernetes upgrades on existing hub/dev Hetzner servers must preserve
+the HCloud server objects and IDs. Use Talos-supported rolling upgrade APIs and
+wait for each node to recover. Never call the provision, recreate, resize,
+replace, or delete paths as an upgrade fallback: doing so can reprice servers
+that currently have preferred pricing. If in-place upgrade cannot proceed,
+stop and report the blocker rather than reprovisioning.
+
+After each bounded upgrade, verify Kueue controllers/webhooks, capacity-observer
+freshness, eligible-node PSI coverage, queue admission, and one representative
+workload in addition to ordinary node/CNI/storage health.
+
 ## Capacity Checks
 
-Do not infer safe benchmark concurrency from node count or a UI slider. Before
+Use `kubernetes-capacity` for workload-level tuning. At this infrastructure
+boundary, do not infer safe concurrency from node count or a UI slider. Before
 raising a limit, verify:
 
 - Node allocatable CPU, memory, ephemeral storage, and current requests.
@@ -90,6 +104,8 @@ verification gate and confirm the target agent/Application view converges.
 ## Safety Rules
 
 - Require explicit user intent before deleting or recreating machines.
+- Never resize, reprovision, replace, or delete an existing Hetzner Cloud server
+  as part of a Talos, Kubernetes, Kueue, or CNI upgrade.
 - Preserve etcd quorum and never upgrade all control-plane nodes together.
 - Do not mix Talos ISO replacement with an in-place Kubernetes upgrade.
 - Do not expose generated kubeconfig, talosconfig, machine secrets, or HCloud

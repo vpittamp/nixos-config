@@ -1,6 +1,6 @@
 ---
 name: evaluations
-description: "Build, run, inspect, or debug Workflow Builder evaluations and official SWE-bench benchmarks on dev. Use for datasets, eval definitions, graders, code-eval templates, benchmark campaigns, exact-ready inference images, Kueue capacity, evaluator Jobs, runtime/provider canaries, MLflow comparison, provenance, cancellation, and cleanup. Use gitops for image delivery and workflow-builder for general workflow or session behavior."
+description: "Build, run, inspect, or debug Workflow Builder evaluations and official SWE-bench benchmarks on dev. Use for datasets, eval definitions, graders, code-eval templates, benchmark campaigns, exact-ready inference images, evaluator Jobs, runtime/provider canaries, MLflow comparison, provenance, cancellation, and cleanup. Use kubernetes-capacity for shared Kueue and physical-capacity tuning, gitops for image delivery, and workflow-builder for general workflow or session behavior."
 ---
 
 # Evaluations
@@ -42,7 +42,8 @@ reported stage.
 | Grader behavior                              | `graders.ts`, `grader-runners.ts`, and the target runtime grader endpoint                           |
 | Code-eval templates                          | Template API routes and saved `code-eval-item` workflow definition                                  |
 | Official SWE-bench operations                | `docs/swebench-dapr-workflow-operations.md`                                                         |
-| Concurrency and admission                    | `docs/swebench-concurrency.md`, Kueue manifests, and live capacity snapshots                        |
+| Campaign concurrency and admission           | `docs/swebench-concurrency.md`, run preflight, and live capacity snapshots                          |
+| Shared quota, PSI, and physical headroom     | Use `kubernetes-capacity`                                                                            |
 | Inference images and exact-ready selection   | `docs/swebench-image-builds-and-caching.md` and environment build code                              |
 | Same-instance comparisons and MLflow         | `docs/swebench-mlflow-comparison.md` and `docs/benchmark-statistics.md`                             |
 | Runtime selection or capability mismatch     | `services/shared/runtime-registry.json` and `docs/durable-session-runtime-contract.md`              |
@@ -57,8 +58,10 @@ reported stage.
    target project, subject, saved version, runtime, model key, suite, and fixed
    instance set where applicable.
 3. **Preflight readiness.** Verify orchestrator readiness, runtime capability,
-   exact environment coverage, Kueue quota, node headroom, evaluator capacity,
-   provider limits, and zero conflicting active work.
+   exact environment coverage, Kueue admission, fresh capacity-observer
+   headroom, evaluator capacity, provider limits, and zero conflicting active
+   work. Use the capacity debug surface when the campaign competes with preview
+   or interactive-agent queues.
 4. **Launch through the owning surface.** Use the UI, authenticated application
    API, or checked-in launch script. Do not create or repair runs with direct
    SQL.
@@ -126,7 +129,7 @@ provider failure, and harness failure without mutating state.
   runtime images while a proof run is active; durable replay can break across
   code schedules.
 - Do not raise concurrency from a historical checkpoint. Read current live
-  capacity and increase one layer at a time.
+  capacity with `kubernetes-capacity` and increase one layer at a time.
 - Do not run parallel benchmark campaigns on ryzen unless explicitly requested
   and capacity-proven.
 - Do not expose dataset secrets, provider keys, predictions, or admin database

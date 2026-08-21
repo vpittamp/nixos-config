@@ -21,6 +21,7 @@ Read the current versions of:
 - Workflow Builder `docs/execution-evidence.md`
 - stacks `docs/preview-environment-architecture.md`
 - stacks `docs/preview-environment-runbook.md`
+- stacks `docs/capacity-management.md`
 - this skill's [DevelopmentRun contract](references/development-run-contract.md)
 
 Then inspect current target/service catalogs, runtime registry, effective APM
@@ -58,6 +59,28 @@ IDs, or timings.
 
 `host-candidate` uses a disposable physical cluster. Hub management, Source
 Hydrator, and GitOps Promoter changes have no vCluster preview lane.
+
+Public exposure and compute capacity are independent. A public preview consumes
+one origin from the current public pool; a headless preview consumes none.
+Choose headless when browser or callback exposure is unnecessary, but never
+present origin availability as proof that Kubernetes capacity exists.
+
+### Adaptive capacity
+
+SEA compiles an immutable plan from the selected profile, services, execution
+concurrency, and margin. One synthetic Kueue Workload reserves that exact shape
+on physical dev; it does not launch pods. Provisioning begins only after Kueue
+admission and a forced-fresh capacity-observer headroom check.
+
+Use `/workspaces/<slug>/capacity/debug` to explain versions, decision inputs,
+exact reservations, materialized and observed usage, queue arithmetic, node
+headroom, PSI, lifecycle timers, and raw evidence. For cluster-wide quota,
+cohort, PSI, right-sizing, or concurrency work, use `kubernetes-capacity`.
+
+Pressure may accelerate evidence-gated sleep of idle previews, but it cannot
+terminate active or protected work. Observer failure is never permission to
+reclaim. Treat total preview objects, awake capacity, public origins, and exact
+Kueue admission as separate limits.
 
 ### Source-baseline clamp
 
@@ -138,14 +161,22 @@ A CLI builder runs in one of two execution modes, and the mode is a runtime
 property — never a caller input:
 
 - `native-tui`: the CLI runs as a herdr pane and prompts are injected into its
-  pty. Default for `claude-code-cli`, `codex-cli`, and `kimi-code-cli`.
+  pty. This remains the preview-local baseline for `claude-code-cli`,
+  `codex-cli`, and `kimi-code-cli` when no headless gate is delivered.
 - `headless-print`: each turn is its own subprocess speaking the CLI's
   structured stdio protocol (`agy -p --output-format stream-json
   --conversation`, `claude -p --output-format stream-json --verbose --resume`,
   `kimi --prompt --output-format stream-json --session`, `codex exec [resume
   <id>] --json`). Default and only supported mode for `agy-cli`, whose TUI
-  wedges under pty injection; opt-in elsewhere via
+  wedges under pty injection; selected physical-dev runtimes opt in via
   `CLI_AGENT_{CLAUDE,KIMI,CODEX}_HEADLESS=1`.
+
+Read the current host and preview ConfigMaps before asserting a mode. The
+physical-dev runtime is presently the bounded headless testbed for Claude,
+Kimi, and Codex, while the preview-local runtime policy deliberately omits
+those gates and retains native TUI. That difference is classified in
+`preview-runtime-config-policy.json`; do not copy the gates into previews or
+change the classification as incidental drift cleanup.
 
 No CLI in this fleet exposes ACP (agent client protocol); print mode is the
 native structured-transport equivalent. Subscription auth is unaffected —
@@ -339,6 +370,8 @@ fresh generation, user-path proof, evidence proof, and teardown proof.
   traces, and evidence outside preview lifecycle.
 - Use `gitops` after DevelopmentRun delivery for builds, pins, promotion, ArgoCD,
   and live deployment proof.
+- Use `kubernetes-capacity` for shared quota, cohorts, PSI, physical headroom,
+  exact-plan tuning, pressure policy, and dynamic concurrency.
 - Use `skaffold-dev-loop` only for the trusted ryzen operator loop.
 - Use `dapr-agents-workflow` for standalone upstream Dapr Agents Python apps.
 - Do not create another DevelopmentRun skill; it would duplicate this authority.
