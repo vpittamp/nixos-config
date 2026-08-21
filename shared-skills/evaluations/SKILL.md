@@ -89,6 +89,15 @@ UI ownership is deliberate:
   expected path is a separate minimal hub-built compatibility image; never
   modify the image during campaign execution.
 - Require exact-ready artifact coverage before start.
+- Require the `evaluation-hermetic` OpenShell policy profile for subject
+  workspaces. Subject commands are outbound-default-deny: inference and the
+  official harness run outside that sandbox, so the checkout needs no source
+  host, package registry, or model-provider access.
+- Prove hermeticity on a canary by attempting a bounded request to the task's
+  public source host from the subject workspace. Any successful source lookup,
+  including reference-code access through `raw.githubusercontent.com`,
+  contaminates the result: cancel the campaign, discard its scores, correct the
+  policy boundary, and rerun from a fresh immutable trial.
 - Each harness step must declare ephemeral-storage requests and limits. Keep
   every container within the namespace LimitRange ratio so Kueue can account
   the materialized TaskRun instead of losing it at pod admission.
@@ -127,6 +136,12 @@ ordinary workflow lifecycle purge, confirmed absence/removal, then terminal
 trial/campaign/lineage writes. The cancellation reconciler retries abandoned
 requests using the same ports and leaves rows nonterminal while cleanup is
 pending.
+
+Evaluation trials are immutable and throwaway, so their lifecycle adapter uses
+`reset` for cancellation. If Dapr reports the workflow terminal but rejects
+purge with `actor is stalled`, the lifecycle controller may delete only the
+resolved, execution-scoped durable state; it must still reap the Sandbox and
+workspace before terminal rows are written. Do not emulate this with SQL.
 
 Dapr `COMPLETED` does not prove product success: a workflow can return an error
 envelope. Require the explicit terminal outcome and scorer evidence. Never
