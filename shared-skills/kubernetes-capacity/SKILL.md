@@ -19,6 +19,7 @@ Read current source before using remembered versions or limits:
 - stacks `packages/components/workloads/capacity-observer/`
 - stacks preview-control and system-executor manifests
 - Workflow Builder `docs/session-resource-metrics-and-kueue-admission.md`
+- stacks and Workflow Builder `docs/evaluation-control-plane.md`
 - Workflow Builder preview capacity compiler, pressure policy, API, and page
 
 Inspect the rendered target and live cluster after source. Distinguish desired,
@@ -116,6 +117,12 @@ Pressure only accelerates evidence-gated return of idle previews and warm
 pools. It must not terminate active or protected work, bypass lifecycle owners,
 or treat a missing observer as authorization to mutate. Preserve operator
 cordons; a node guard may recover only nodes it owns under its current policy.
+
+Evaluation concurrency follows the same live authority. Each Dapr campaign
+shard asks the capacity port for an exact trial-shape decision. A stale observer
+parks the campaign; it never fails the campaign or authorizes new work. The
+materialized Tekton TaskRun or Sandbox remains Kueue-owned, while campaign
+state and cancellation remain evaluation-owned.
 
 ## Changing Capacity Policy
 
