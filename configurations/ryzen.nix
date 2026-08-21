@@ -150,6 +150,9 @@ in
     # Sunshine game streaming (NVIDIA NVENC hardware encoding)
     ../modules/desktop/sunshine.nix
 
+    # Home Assistant (Home 114)
+    ../modules/services/home-assistant.nix
+
     # Cachix Deploy for automated deployments
     ../modules/services/cachix-deploy.nix
   ];
