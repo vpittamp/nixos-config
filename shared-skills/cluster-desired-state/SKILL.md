@@ -55,11 +55,18 @@ Identity path on a spoke.
 | Enroll or repair dev agent mapping   | `deployment/scripts/argocd-agent/enroll-dev-agent.sh`                            |
 | Enroll or repair ryzen agent mapping | `deployment/scripts/argocd-agent/enroll-ryzen-agent.sh`                          |
 | Narrow Talos resize or upgrade       | Use the `talos-clusters` skill                                                   |
+| Shared quota or dynamic concurrency  | Use the `kubernetes-capacity` skill                                              |
 | Application drift or image delivery  | Use the `gitops` skill                                                           |
 
 Read each script's `--help` and source before execution. The wrapper scripts own
 ordering, secret transport, agent enrollment, Headlamp credential refresh, and
 verification; do not manually replay a remembered subset of their steps.
+
+An upgrade is not a recreate. For Talos, Kubernetes, Kueue, or CNI upgrades on
+hub/dev, route to `talos-clusters` and preserve the existing Hetzner server
+objects and IDs. Never fall through to a provision/recreate wrapper when an
+in-place upgrade fails; stop and report the blocker because replacement,
+resizing, or deletion may change preferred server pricing.
 
 ## Recreate Workflow
 
@@ -109,6 +116,9 @@ Do not call a rebuild complete until all of these are demonstrated:
 
 - Never recreate a cluster while live benchmark, preview, or durable workflow
   work is still running.
+- Never resize, reprovision, replace, or delete an existing Hetzner Cloud server
+  unless the user separately and explicitly authorizes that infrastructure
+  lifecycle change.
 - Never infer a spoke's authority from a legacy Secret name. Inspect its current
   argocd-agent mode and local Applications.
 - Never delete a Tailscale device or service reservation until the current

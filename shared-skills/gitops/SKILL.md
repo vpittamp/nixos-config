@@ -1,6 +1,6 @@
 ---
 name: gitops
-description: "Operate PittampalliOrg/stacks delivery and recovery, with dev as the default shared target. Use for ArgoCD or argocd-agent health, Source Hydrator and GitOps Promoter, hub Tekton builds, release and runtime image pins, generated overlays, deployment inventory, secrets, Tailscale exposure, Dapr workload readiness, Workflow MCP deployment/auth wiring, and live rollout proof. Use preview-environments for PreviewEnvironment lifecycles and cluster-desired-state for full cluster recreation."
+description: "Operate PittampalliOrg/stacks delivery and recovery, with dev as the default shared target. Use for ArgoCD or argocd-agent health, Source Hydrator and GitOps Promoter, hub Tekton builds, release and runtime image pins, generated overlays, deployment inventory, secrets, Tailscale exposure, Dapr workload readiness, Workflow MCP deployment/auth wiring, and live rollout proof. Use kubernetes-capacity for shared capacity policy, preview-environments for PreviewEnvironment lifecycles, and cluster-desired-state for full cluster recreation."
 ---
 
 # GitOps
@@ -62,6 +62,7 @@ matters.
 | Rotate or repair secrets                                 | Trace ExternalSecret -> ClusterSecretStore -> remote key -> consuming pod; verify sync before restart and never print values                                    |
 | Recreate a cluster                                       | Use `cluster-desired-state`                                                                                                                                     |
 | Operate a preview vCluster                               | Use `preview-environments`                                                                                                                                      |
+| Audit or tune shared capacity                            | Use `kubernetes-capacity`; deliver its reviewed manifests and controller changes through this skill                                                            |
 | Deliver a verified DevelopmentRun                        | Start from its linked delivery receipts, then prove review/merge -> Tekton build/digest -> image/config pins -> hydration/promotion where applicable -> ArgoCD reconciliation -> live user/runtime path; do not create another source writer |
 | Deliver a `system-live` platform/runtime change          | Validate the compiled contract and pre-admission boundaries, rebuild any image-baked runner/runtime, render pins, advance the exact dev-preview-platform pointer, finish with one admitted runner digest, then prove a fresh generation, session, evidence receipt, and teardown |
 
@@ -169,6 +170,9 @@ controllers to hide the first causal error.
   path as retired or inventory-only.
 - A direct live patch is diagnostic only. Encode the durable fix in source and
   prove reconciliation restores it.
+- Kueue quota, exact preview shapes, physical headroom, observed PSI, public
+  origins, and lifecycle limits are separate controls. Use the current capacity
+  profiles and `docs/capacity-management.md`; do not tune from one live number.
 
 ## Safety Rules
 
@@ -205,6 +209,7 @@ In `PittampalliOrg/stacks`:
 - `AGENTS.md`
 - `docs/gitops-architecture-overview.md`
 - `docs/outer-loop-promotion.md`
+- `docs/capacity-management.md`
 - `packages/components/hub-management/`
 - `packages/components/hub-spoke-appsets/`
 - `packages/components/workloads/`
