@@ -50,9 +50,9 @@
     #                      motorized shades; config-flow only (aiopvapi)
     extraComponents = [
       "default_config" "met" "esphome" "homekit_controller"
-      "apple_tv" "sonos" "samsungtv" "ibeacon" "google_translate"
+      "apple_tv" "sonos" "samsungtv" "smartthings" "ibeacon" "google_translate"
       "ecobee" "cast" "hunterdouglas_powerview"
-      "mcp_server"
+      "mcp_server" "google_generative_ai_conversation"
     ];
 
     config = {

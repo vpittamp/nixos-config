@@ -30,7 +30,52 @@ in
     if [ -d "$HOME/.kimi-code" ]; then
       run ${herdrPackage}/bin/herdr integration install kimi || true
     fi
+    if [ -d "$HOME/.gemini" ]; then
+      run ${herdrPackage}/bin/herdr integration install antigravity-cli || true
+    fi
   '';
+
+  xdg.configFile."herdr/agent-detection/agy.toml" = {
+    force = true;
+    onChange = ''
+      ${herdrPackage}/bin/herdr server reload-agent-manifests >/dev/null 2>&1 || true
+    '';
+    text = ''
+      id = "agy"
+      version = "2026.08.21.3"
+      min_engine_version = 1
+      updated_at = "2026-08-21T00:00:00Z"
+      aliases = ["antigravity", "antigravity-cli"]
+
+      [[rules]]
+      id = "permission_prompt"
+      state = "blocked"
+      priority = 300
+      region = "bottom_non_empty_lines(12)"
+      visible_blocker = true
+      contains = ["requesting permission for:"]
+      any = [
+        { contains = ["do you want to proceed?"] },
+        { contains = ["tab amend", "edit command"] },
+      ]
+
+      [[rules]]
+      id = "spinner_working"
+      state = "working"
+      priority = 200
+      region = "bottom_non_empty_lines(12)"
+      visible_working = true
+      line_regex = ['^\s*[\u2800-\u28FF]+\s+\p{Alphabetic}+\w*ing\b']
+
+      [[rules]]
+      id = "prompt_idle"
+      state = "idle"
+      priority = 100
+      region = "bottom_non_empty_lines(12)"
+      visible_idle = true
+      line_regex = ['^>\s*$']
+    '';
+  };
 
   xdg.configFile."herdr/config.toml" = {
     force = true;

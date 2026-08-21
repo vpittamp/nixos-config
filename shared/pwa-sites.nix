@@ -329,28 +329,38 @@ let
       routing_domains = [ "ubereats.com" "www.ubereats.com" ];
     }
 
-    # Home Assistant
-    # 2026-08-08: repointed localhost:8123 -> surface-pro.tail286401.ts.net:8123.
-    # HA now runs on surface-pro3 only; the tailnet URL works on every device
-    # (MagicDNS), while localhost only ever worked on the HA host itself.
-    # Icon swapped the monochrome simple-icons SVG for the official colored PNG.
+    # Home Assistant 114 (Ryzen)
     {
-      name = "Home Assistant";
-      url = "http://surface-pro.tail286401.ts.net:8123";
-      domain = "surface-pro.tail286401.ts.net";
-      icon = iconPath "home-assistant.png";
-      description = "Home Assistant - Open source home automation";
+      name = "Home Assistant 114";
+      url = "http://ryzen.tail286401.ts.net:8123";
+      domain = "ryzen.tail286401.ts.net";
+      icon = iconPath "home-assistant-114.png";
+      description = "Home Assistant (Home 114) - Open source home automation";
       categories = "Network;Utility;";
-      keywords = "home;automation;iot;smart-home;homeassistant;";
-      scope = "http://surface-pro.tail286401.ts.net:8123/";
-      ulid = "3TH05T0Z8NQQTVZQ86ZNNQDTPA";  # Generated 2025-11-15 (valid ULID format)
-      # App registry metadata
+      keywords = "home;automation;iot;smart-home;homeassistant;114;";
+      scope = "http://ryzen.tail286401.ts.net:8123/";
+      ulid = "3TH05T0Z8NQQTVZQ86ZNNQDTPA";
       app_scope = "global";
       preferred_workspace = 64;
       preferred_monitor_role = "secondary";
-      # Feature 113: URL routing - unique tailnet domain, so links to the HA
-      # instance route into this PWA (was disabled at localhost:8123).
-      routing_domains = [ "surface-pro.tail286401.ts.net" ];
+      routing_domains = [ "ryzen.tail286401.ts.net" "100.96.102.1" ];
+    }
+
+    # Home Assistant 215 (Surface Pro 3)
+    {
+      name = "Home Assistant 215";
+      url = "http://surface-pro.tail286401.ts.net:8123";
+      domain = "surface-pro.tail286401.ts.net";
+      icon = iconPath "home-assistant-215.png";
+      description = "Home Assistant (Home 215) - Open source home automation";
+      categories = "Network;Utility;";
+      keywords = "home;automation;iot;smart-home;homeassistant;215;";
+      scope = "http://surface-pro.tail286401.ts.net:8123/";
+      ulid = "01M0JTPWA21500000000000000";
+      app_scope = "global";
+      preferred_workspace = 85;
+      preferred_monitor_role = "secondary";
+      routing_domains = [ "surface-pro.tail286401.ts.net" "100.106.239.88" ];
     }
 
     # 1Password
