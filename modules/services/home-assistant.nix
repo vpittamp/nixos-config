@@ -53,7 +53,52 @@
       "apple_tv" "sonos" "samsungtv" "smartthings" "ibeacon" "google_translate"
       "ecobee" "cast" "hunterdouglas_powerview"
       "mcp_server" "google_generative_ai_conversation"
+      "bluetooth"
     ];
+
+    customComponents =
+      let
+        py = config.services.home-assistant.package.python3Packages;
+        python-ember-mug = py.buildPythonPackage rec {
+          pname = "python-ember-mug";
+          version = "1.4.0b2";
+          pyproject = true;
+          src = py.fetchPypi {
+            pname = "python_ember_mug";
+            inherit version;
+            hash = "sha256-Wamfs0drzm7qYY1GDwLFnH4J4SRUUsn+JzN+LYJNQZs=";
+          };
+          nativeBuildInputs = with py; [
+            hatchling
+            pythonRelaxDepsHook
+          ];
+          pythonRelaxDeps = [ "bleak" ];
+          propagatedBuildInputs = with py; [
+            bleak
+            bleak-retry-connector
+          ];
+          pythonImportsCheck = [ "ember_mug" ];
+          doCheck = false;
+        };
+
+        ember-mug-component = pkgs.buildHomeAssistantComponent rec {
+          owner = "sopelj";
+          domain = "ember_mug";
+          version = "1.5.0";
+          src = pkgs.fetchFromGitHub {
+            owner = "sopelj";
+            repo = "hass_ember_mug";
+            rev = version;
+            hash = "sha256-mLQ9rtGqO5plIZOlEJ4RlHmaMHy46Mr+l3USDB3SlNw=";
+          };
+          dependencies = [
+            python-ember-mug
+          ];
+        };
+      in
+      [
+        ember-mug-component
+      ];
 
     config = {
       # Meta-integration pulling the standard set (frontend, recorder,
