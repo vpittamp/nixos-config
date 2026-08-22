@@ -48,7 +48,6 @@ in
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
-    ../modules/services/home-assistant.nix
     # Feature 117: System service removed - now runs as home-manager user service
 
     # Bare metal optimizations (Podman, printing; no KVM/fingerprint on Surface)
