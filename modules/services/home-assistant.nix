@@ -152,27 +152,51 @@
         script = {
           notify_nixos_sms = {
             alias = "Notify NixOS Workstations (SMS)";
-            description = "Send iOS text message notification to all connected NixOS Tailscale workstations";
+            description = "Send iOS text message notification with metadata to all connected NixOS Tailscale workstations";
             icon = "mdi:message-text";
             fields = {
               sender = {
-                description = "Name or phone number of the sender";
+                description = "Name of the sender (e.g. Mom, John Doe)";
                 example = "Mom";
                 required = true;
                 selector.text = { };
               };
               message = {
-                description = "Content of the received text message";
-                example = "Dinner at 7pm!";
+                description = "Body content of the received text message";
+                example = "Dinner at 7pm tonight!";
                 required = true;
+                selector.text = { };
+              };
+              phone_number = {
+                description = "Sender phone number or Apple ID email";
+                example = "+15551234567";
+                required = false;
+                selector.text = { };
+              };
+              date = {
+                description = "Timestamp or date received";
+                example = "10:52 AM";
+                required = false;
+                selector.text = { };
+              };
+              group = {
+                description = "Group name or thread participants";
+                example = "Family";
+                required = false;
+                selector.text = { };
+              };
+              subject = {
+                description = "Subject line if present";
+                example = "Photos";
+                required = false;
                 selector.text = { };
               };
             };
             sequence = [{
               action = "shell_command.broadcast_desktop_notification";
               data = {
-                title = "💬 {{ sender }}";
-                message = "{{ message }}";
+                title = "💬 {{ sender }}{% if phone_number is defined and phone_number and phone_number != sender %} ({{ phone_number }}){% endif %}";
+                message = "{% if subject is defined and subject %}📌 {{ subject }}\n{% endif %}{{ message }}{% if group is defined and group %}\n👥 {{ group }}{% endif %}\n🕒 {{ date if date is defined and date else now().strftime('%I:%M %p') }} · 📱 iPhone";
                 app_name = "Messages";
               };
             }];
@@ -227,7 +251,7 @@
             iosSmsNotification = {
               id = "ios-sms-received-notification";
               alias = "iOS SMS Received — Desktop Notification";
-              description = "Broadcast text message from iOS Shortcut to Tailscale NixOS workstations";
+              description = "Broadcast text message with metadata from iOS Shortcut to Tailscale NixOS workstations";
               triggers = [
                 {
                   platform = "webhook";
@@ -251,8 +275,8 @@
               actions = [{
                 action = "shell_command.broadcast_desktop_notification";
                 data = {
-                  title = "💬 {{ trigger.json.sender if trigger.platform == 'webhook' and trigger.json is defined and trigger.json.sender is defined else (trigger.event.data.sender if trigger.event is defined and trigger.event.data is defined and trigger.event.data.sender is defined else 'Text Message') }}";
-                  message = "{{ trigger.json.message if trigger.platform == 'webhook' and trigger.json is defined and trigger.json.message is defined else (trigger.event.data.message if trigger.event is defined and trigger.event.data is defined and trigger.event.data.message is defined else (trigger.event.data.actionData if trigger.event is defined and trigger.event.data is defined and trigger.event.data.actionData is defined else 'New message received')) }}";
+                  title = "{% set s = trigger.json.sender if (trigger.platform == 'webhook' and trigger.json is defined and trigger.json.sender is defined) else (trigger.event.data.sender if (trigger.event is defined and trigger.event.data is defined and trigger.event.data.sender is defined) else 'Text Message') %}{% set p = trigger.json.phone_number if (trigger.platform == 'webhook' and trigger.json is defined and trigger.json.phone_number is defined) else (trigger.event.data.phone_number if (trigger.event is defined and trigger.event.data is defined and trigger.event.data.phone_number is defined) else '') %}💬 {{ s }}{% if p and p != s %} ({{ p }}){% endif %}";
+                  message = "{% set m = trigger.json.message if (trigger.platform == 'webhook' and trigger.json is defined and trigger.json.message is defined) else (trigger.event.data.message if (trigger.event is defined and trigger.event.data is defined and trigger.event.data.message is defined) else (trigger.event.data.actionData if (trigger.event is defined and trigger.event.data is defined and trigger.event.data.actionData is defined) else 'New message received')) %}{% set d = trigger.json.date if (trigger.platform == 'webhook' and trigger.json is defined and trigger.json.date is defined) else (trigger.event.data.date if (trigger.event is defined and trigger.event.data is defined and trigger.event.data.date is defined) else now().strftime('%I:%M %p')) %}{% set g = trigger.json.group if (trigger.platform == 'webhook' and trigger.json is defined and trigger.json.group is defined) else (trigger.event.data.group if (trigger.event is defined and trigger.event.data is defined and trigger.event.data.group is defined) else '') %}{% set sub = trigger.json.subject if (trigger.platform == 'webhook' and trigger.json is defined and trigger.json.subject is defined) else (trigger.event.data.subject if (trigger.event is defined and trigger.event.data is defined and trigger.event.data.subject is defined) else '') %}{% if sub %}📌 {{ sub }}\n{% endif %}{{ m }}{% if g %}\n👥 {{ g }}{% endif %}\n🕒 {{ d }} · 📱 iPhone";
                   app_name = "Messages";
                 };
               }];
