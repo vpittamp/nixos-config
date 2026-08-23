@@ -92,3 +92,13 @@ fresh generation/session, terminal evidence sealed, and cleanup completed.
 An infrastructure no-op does not acquire ownership or run readiness. Cleanup
 orders application adoption release before infrastructure restoration and must
 restore the exact baseline before ArgoCD resumes.
+
+Cancellation is persisted by the host before a runtime-specific local
+preemption is attempted. Closing provider I/O and emitting
+`agent.turn_preempted` can shorten the active turn, but neither is terminal
+authority; the DevelopmentRun remains pending until durable runtime closure,
+physical restoration, and the evidence seal converge.
+
+A checkpoint continuation from a terminal source is an independent recovery
+session, not a DevelopmentRun command. It retains read-only lineage but carries
+no preview tuple, adapter, receiver, delivery, or `wfb-development` authority.

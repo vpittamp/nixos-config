@@ -136,6 +136,18 @@ Honor server-issued next actions, typed failures, refresh delays, cursors, and
 generation fences. Generic workflow start, continuation, and promotion tools
 are not preview-development alternatives.
 
+Cancellation is host-owned and durable. The runtime may preempt a process-local
+provider stream only after persisting the request; `agent.turn_preempted` proves
+that fast path but not terminal cleanup. Cross-pod delivery still converges
+through Dapr state and the parent DevelopmentRun.
+
+A generic checkpoint continuation is intentionally outside the active
+DevelopmentRun. It is permitted only after the source execution is terminal,
+materializes a detached tree that may have no `.git`, and has no
+`wfb-development`, receiver, preview synchronization, or submission authority.
+Use `development_run_handoff` or `development_run_reproduce` to remain inside
+the canonical preview-development lifecycle.
+
 ## Targets And Builders
 
 Target kinds are `deployment-service`, `greenfield-module`, `session-runtime`,
