@@ -3,10 +3,6 @@
 # Desktop with Sway, i3pm daemon, walker launcher
 { pkgs, ... }:
 let
-  rustdeskStop = pkgs.writeShellScript "rustdesk-stop" ''
-    ${pkgs.procps}/bin/pkill -f 'rustdesk --tray' >/dev/null 2>&1 || true
-    ${pkgs.procps}/bin/pkill -f 'rustdesk --server' >/dev/null 2>&1 || true
-  '';
   sunshineWebUi = pkgs.writeShellScriptBin "sunshine-web-ui" ''
     set -euo pipefail
 
@@ -152,29 +148,9 @@ in
     Environment="LD_LIBRARY_PATH=/run/opengl-driver/lib"
   '';
 
-  # RustDesk direct-access host for the logged-in Sway session.
-  systemd.user.services.rustdesk = {
-    Unit = {
-      Description = "RustDesk host session";
-      Documentation = "https://rustdesk.com/docs/";
-      After = [ "sway-session.target" "network.target" ];
-      BindsTo = [ "sway-session.target" ];
-      PartOf = [ "sway-session.target" ];
-    };
-    Service = {
-      Type = "simple";
-      ExecStart = "${pkgs.rustdesk}/bin/rustdesk --server";
-      ExecStop = rustdeskStop;
-      Restart = "on-failure";
-      RestartSec = "5s";
-      KillMode = "mixed";
-      Environment = [
-        "PULSE_LATENCY_MSEC=60"
-        "PIPEWIRE_LATENCY=1024/48000"
-      ];
-    };
-    Install = {
-      WantedBy = [ "sway-session.target" ];
-    };
-  };
+  # RustDesk host service removed 2026-08-23 (slimming). The rustdesk and
+  # rustdesk-flutter packages were both installed on this host (~394 MiB) and the
+  # client last stored state on 2026-03-20. Sunshine (above) plus Tailscale cover
+  # remote access; restore this unit together with the packages in
+  # configurations/ryzen.nix if RustDesk is wanted again.
 }

@@ -1,5 +1,14 @@
-{ config, pkgs, lib, osConfig, ... }:
+{ config, pkgs, lib, osConfig ? null, ... }:
 
+let
+  # The NixOS module's `package` option applies a `polkitPolicyOwners` override, so
+  # referencing pkgs._1password-gui directly builds a *second*, otherwise identical
+  # 1Password (~513 MiB in the closure). Take the system's package when we can see it.
+  # 2026-08-23 slimming.
+  onepasswordGui =
+    if osConfig == null then pkgs._1password-gui
+    else osConfig.programs._1password-gui.package or pkgs._1password-gui;
+in
 {
   # Add convenience script to check 1Password status
   home.packages = with pkgs; [
@@ -90,7 +99,7 @@
       # --ozone-platform-hint=auto: Auto-detect X11/Wayland
       # Keep the GUI app in the normal desktop session. The privileged boundary
       # belongs in the setgid BrowserSupport wrapper, not in the app launch.
-      ExecStart = "${pkgs._1password-gui}/bin/1password --silent --ozone-platform-hint=auto --enable-features=UseOzonePlatform";
+      ExecStart = "${onepasswordGui}/bin/1password --silent --ozone-platform-hint=auto --enable-features=UseOzonePlatform";
       Restart = "on-failure";
       RestartSec = 5;
       # Ensure 1Password stays running

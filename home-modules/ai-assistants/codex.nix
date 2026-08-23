@@ -40,8 +40,11 @@ let
   playwrightOutputDir = "${codexMcpStateRoot}/playwright";
   chromeDevtoolsBrowserUrl = sharedBrowserMcp.chromeDevtoolsBrowserUrl;
 
+  # google-chrome rather than pkgs.chromium — see home-modules/tools/vscode.nix for the
+  # rationale: chromium was in the closure only because these MCP definitions
+  # interpolated its store path (~673 MiB), while google-chrome is already installed.
   chromiumConfig = lib.optionalAttrs enableBrowserMcpServers {
-    chromiumBin = "${pkgs.chromium}/bin/chromium";
+    chromiumBin = "${pkgs.google-chrome}/bin/google-chrome-stable";
   };
 
   codexBasePackage = inputs.codex-cli-nix.packages.${pkgs.system}.default or pkgs-unstable.codex or pkgs.codex;

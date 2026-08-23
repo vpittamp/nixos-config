@@ -196,7 +196,13 @@ in
     # Full hardware video encoding/decoding (not available on Hetzner pixman renderer)
     hardware.graphics = {
       enable = true;
-      enable32Bit = true;
+      # 32-bit GL follows enableGaming (2026-08-23 slimming). It was unconditionally
+      # true while every host sets enableGaming = false, which cost ~1.6 GiB of closure
+      # per host: a second Mesa (272 MiB), that Mesa's own LLVM (528 MiB), and the
+      # NVIDIA lib32 driver (550 MiB). The only consumers are 32-bit GL clients —
+      # Steam, Wine/Proton, lutris, steam-run — all of which are already gated on
+      # enableGaming below, so turning that flag on restores this automatically.
+      enable32Bit = cfg.enableGaming;
     };
 
     # ========== TPM 2.0 SUPPORT ==========

@@ -19,8 +19,6 @@
 
   # Development packages
   environment.systemPackages = with pkgs; let
-    # Headlamp package with desktop entry and icon
-    headlamp = pkgs.callPackage ../../packages/headlamp.nix { };
     # virtctl - KubeVirt CLI tool
     virtctl = pkgs.callPackage ../../packages/virtctl.nix { };
   in
@@ -39,25 +37,30 @@
     minikube
     virtctl # KubeVirt CLI for managing VMs in Kubernetes
     argocd # Argo CD CLI
-    devspace # DevSpace for Kubernetes development
+    # devspace removed 2026-08-23 (slimming, ~428 MiB); skaffold covers the same
+    # local Kubernetes dev loop and is actively used.
     vcluster # Virtual Kubernetes clusters
     nssTools # Provides certutil for Chromium certificate import
 
     # Cloud tools
-    terraform
+    # terraform removed 2026-08-23 (slimming, ~113 MiB); ~/.terraform.d last written
+    # 2026-03-03. Infrastructure here is Talos + GitOps, not Terraform.
     # awscli2 # Commented out - not currently used, slow to build
     # azure-cli-bin # Moved to user packages for Codespaces compatibility
     google-cloud-sdk
     hcloud # Hetzner Cloud CLI
 
     # Development tools
-    vscode
+    # vscode removed 2026-08-23 (slimming, ~928 MiB): home-manager's programs.vscode
+    # already installs it into the per-user profile, so it was built and stored twice
+    # (`which -a code` returned both). home-modules/tools/vscode.nix is the owner.
     nodejs
     deno
     python3
     go
-    rustc
-    cargo
+    # rustc/cargo removed 2026-08-23 (slimming, ~3.4 GiB including rustc-doc and the
+    # rustc/cargo bootstrap closures). rust-analyzer + rustfmt stay in the user profile
+    # (~112 MiB, they do not pull the toolchain); use a devshell for actual Rust builds.
 
     # Build tools
     gcc
@@ -67,19 +70,22 @@
 
     # Database clients
     postgresql
-    mariadb
+    # mariadb -> mariadb's client only: the full server package was ~262 MiB and this
+    # list is explicitly "database clients" (2026-08-23 slimming).
+    mariadb.client
     redis
     mongodb-tools
 
     # API tools
     curl
     httpie
-    postman
+    # postman removed 2026-08-23 (slimming, ~376 MiB): last used 2026-02-13, and it was
+    # installed twice (here plus home-modules/tools/postman.nix).
     jq
     yq
 
-    # Kubernetes Dashboard
-    headlamp # Kubernetes Dashboard UI (now supports both x86_64 and aarch64)
+    # headlamp removed 2026-08-23 (slimming, ~441 MiB): last used 2026-06-14 and k9s
+    # covers the same job. Desktop entry removed in home-modules/tools/kubernetes-apps.nix.
     # idpbuilder moved to user packages for Codespaces compatibility
   ];
 

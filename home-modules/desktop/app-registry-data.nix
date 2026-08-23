@@ -439,25 +439,6 @@ let
       description = "Terminal diff navigator with GitHub-style file tree";
     })
 
-    # WS38: GitHub Copilot desktop (github/app) — agent-native GUI.
-    # Tauri/WebKitGTK AppImage; forces GDK_BACKEND=x11 so under Sway it renders
-    # via XWayland with X11 WM class "Github" (app_id is null for XWayland).
-    (mkApp {
-      name = "github-copilot";
-      display_name = "GitHub Copilot";
-      command = "github-copilot";
-      parameters = "";
-      scope = "global";
-      expected_class = "Github";
-      preferred_workspace = 38;
-      preferred_monitor_role = "primary";
-      icon = iconPath "github-copilot.png";
-      nix_package = "pkgs.github-copilot";
-      multi_instance = false;
-      fallback_behavior = "skip";
-      aliases = [ "copilot" "github" "ghc" ];
-      description = "GitHub Copilot agent-native desktop app for running and landing work across GitHub repositories";
-    })
 
     # WS13: Docker Tools (lazydocker)
     (mkApp {
@@ -493,22 +474,6 @@ let
       description = "Qt-based GUI git client";
     })
 
-    # WS14: GitKraken (Feature-rich Git GUI)
-    (mkApp {
-      name = "gitkraken";
-      display_name = "GitKraken";
-      command = "gitkraken";
-      parameters = "--path $HOME";
-      scope = "global";
-      expected_class = "GitKraken";
-      preferred_workspace = 14;
-      preferred_monitor_role = "secondary";
-      icon = "gitkraken";
-      nix_package = "pkgs.gitkraken";
-      multi_instance = true;
-      fallback_behavior = "use_home";
-      description = "Feature-rich Git GUI client with GitHub integration";
-    })
 
     # WS6: GUI File Managers (Primary: thunar)
     (mkApp {
@@ -608,38 +573,7 @@ let
       description = "Kubernetes cluster management via Tailscale";
     })
 
-    # WS10: Kubernetes UI (Primary: headlamp)
-    (mkApp {
-      name = "headlamp";
-      display_name = "Headlamp";
-      command = "headlamp";
-      parameters = "--disable-gpu";
-      scope = "global";
-      expected_class = "Headlamp";
-      preferred_workspace = 10;
-      icon = iconPath "headlamp.svg";
-      nix_package = "pkgs.headlamp";
-      multi_instance = false;
-      fallback_behavior = "skip";
-      description = "Kubernetes web UI for cluster management via Tailscale";
-    })
 
-    # WS11: AI Agents (Primary: goose-desktop) - HEADLESS-1
-    (mkApp {
-      name = "goose-desktop";
-      display_name = "Goose AI Agent";
-      command = "goose-desktop";
-      parameters = "";
-      scope = "global";
-      expected_class = "goose";  # Electron app class
-      preferred_workspace = 11;
-      preferred_monitor_role = "primary";  # Always on HEADLESS-1
-      icon = iconPath "goose.svg";
-      nix_package = "pkgs.goose-desktop";
-      multi_instance = false;
-      fallback_behavior = "skip";
-      description = "Open-source AI agent with desktop interface";
-    })
 
     # WS33: Herdr Agent Multiplexer (LOCAL instance — attaches this host's herdr server)
     # Launched as its own Ghostty window with a per-host GTK app-id so the daemon
@@ -692,21 +626,6 @@ let
       description = "Moonlight game streaming client";
     })
 
-    # WS25: Remote Desktop (RustDesk)
-    (mkApp {
-      name = "rustdesk";
-      display_name = "RustDesk";
-      command = "rustdesk";
-      parameters = "";
-      scope = "global";
-      expected_class = "rustdesk";
-      preferred_workspace = 25;
-      icon = iconPath "rustdesk.svg";
-      nix_package = "pkgs.rustdesk-flutter";
-      multi_instance = false;
-      fallback_behavior = "skip";
-      description = "Open-source remote desktop client and server";
-    })
 
     # WS21: Speech-to-Text (Voxtype)
     (mkApp {
@@ -724,21 +643,6 @@ let
       description = "Push-to-talk speech-to-text for Wayland (Vulkan GPU-accelerated)";
     })
 
-    # WS20: API Development (Postman)
-    (mkApp {
-      name = "postman";
-      display_name = "Postman";
-      command = "postman";
-      parameters = "";
-      scope = "global";
-      expected_class = "postman";
-      preferred_workspace = 20;
-      icon = "postman";
-      nix_package = "pkgs.postman";
-      multi_instance = false;
-      fallback_behavior = "skip";
-      description = "API development and testing platform";
-    })
 
     # WS22: 1Password (global - password/passkey manager)
     (mkApp {

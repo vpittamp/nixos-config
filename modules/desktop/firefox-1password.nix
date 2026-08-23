@@ -5,6 +5,10 @@
 with lib;
 
 let
+  # config.programs._1password-gui.package rather than pkgs._1password-gui: that option
+  # has an `apply` that re-overrides the package with polkitPolicyOwners, so referencing
+  # the bare pkgs attribute here built a *second*, otherwise identical 1Password
+  # (~513 MiB in the closure, differing only in the polkit policy file). 2026-08-23.
   cfg = config.programs.firefox-1password;
   browserSupportHostPath = "/run/current-system/sw/bin/1password-browser-support-host";
 in
@@ -138,7 +142,7 @@ in
         mkdir -p /home/vpittamp/.mozilla/native-messaging-hosts
 
         # Link 1Password native messaging host for user
-        ln -sf ${pkgs._1password-gui}/share/1password/mozilla/native-messaging-hosts/*.json \
+        ln -sf ${config.programs._1password-gui.package}/share/1password/mozilla/native-messaging-hosts/*.json \
           /home/vpittamp/.mozilla/native-messaging-hosts/ 2>/dev/null || true
 
         # Set proper permissions
@@ -262,7 +266,7 @@ in
 
               # Set up native messaging
               mkdir -p "$profile/.mozilla/native-messaging-hosts"
-              for host in ${pkgs._1password-gui}/share/1password/mozilla/native-messaging-hosts/*.json; do
+              for host in ${config.programs._1password-gui.package}/share/1password/mozilla/native-messaging-hosts/*.json; do
                 target="$profile/.mozilla/native-messaging-hosts/$(basename "$host")"
                 ln -sf "$host" "$target"
               done
@@ -312,7 +316,7 @@ in
           for profile_dir in /home/vpittamp/.local/share/firefoxpwa/profiles/*/; do
             if [ -d "$profile_dir" ]; then
               mkdir -p "$profile_dir/.mozilla/native-messaging-hosts"
-              ln -sf ${pkgs._1password-gui}/share/1password/mozilla/native-messaging-hosts/*.json \
+              ln -sf ${config.programs._1password-gui.package}/share/1password/mozilla/native-messaging-hosts/*.json \
                 "$profile_dir/.mozilla/native-messaging-hosts/" 2>/dev/null || true
             fi
           done

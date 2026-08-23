@@ -5,11 +5,15 @@ let
   # This ensures consistent extension/settings across all activities
   primaryProfile = config.modules.tools.vscode.defaultProfile or "default";
 
-  # Chromium is only available on Linux
+  # Browser-backed MCP servers are only wired up on Linux.
   enableChromiumMcpServers = pkgs.stdenv.isLinux;
 
+  # google-chrome rather than pkgs.chromium: chromium was in the closure *only* because
+  # these MCP server definitions interpolated its store path (~673 MiB), while
+  # google-chrome is already installed and used as the session browser. Both
+  # @playwright/mcp and chrome-devtools-mcp drive a Chrome binary happily.
   chromiumConfig = lib.optionalAttrs enableChromiumMcpServers {
-    chromiumBin = "${pkgs.chromium}/bin/chromium";
+    chromiumBin = "${pkgs.google-chrome}/bin/google-chrome-stable";
   };
 
   # Use latest VSCode from unstable channel for newest features and fixes

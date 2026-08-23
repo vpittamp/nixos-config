@@ -1,7 +1,14 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, osConfig ? null, ... }:
 
 let
   gitSigningPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIYPmr7VOVazmcseVIUsqiXIcPBwzownP4ejkOuNg+o7";
+  # The NixOS module's `package` option applies a `polkitPolicyOwners` override, so
+  # referencing pkgs._1password-gui directly builds a *second*, otherwise identical
+  # 1Password (~513 MiB in the closure). Take the system's package when we can see it.
+  # 2026-08-23 slimming.
+  onepasswordGui =
+    if osConfig == null then pkgs._1password-gui
+    else osConfig.programs._1password-gui.package or pkgs._1password-gui;
 in
 {
   # GitHub/GitLab transport should not depend on an unlocked 1Password SSH
@@ -86,7 +93,7 @@ in
       gpg = {
         format = "ssh";
         ssh = {
-          program = "${pkgs._1password-gui or pkgs._1password-cli}/bin/op-ssh-sign";
+          program = "${onepasswordGui}/bin/op-ssh-sign";
           allowedSignersFile = "~/.config/git/allowed_signers";
         };
       };

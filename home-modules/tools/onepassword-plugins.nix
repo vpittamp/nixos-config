@@ -94,7 +94,7 @@
     mysql() {
       local env_file=$(mktemp)
       echo 'MYSQL_PWD="op://Employee/rqa74rt2b4meswwvutf2dqwy5q/password"' > "$env_file"
-      op run --env-file="$env_file" -- ${pkgs.mariadb}/bin/mysql "$@"
+      op run --env-file="$env_file" -- ${pkgs.mariadb.client}/bin/mysql "$@"
       local exit_code=$?
       rm -f "$env_file"
       return $exit_code

@@ -903,6 +903,14 @@ in
   # no laptop battery, but exposing the DBus service keeps the runtime shell quiet.
   services.upower.enable = true;
 
+  # speech-dispatcher is enabled by default upstream, and the default backend set
+  # pulls mbrola plus its voice corpus — ~700 MiB in the closure, 645 MiB of which is
+  # mbrola-voices alone. Nothing in this configuration asks for text-to-speech
+  # (voxtype is speech-to-*text*, the opposite direction). Disabling it costs browser
+  # "read aloud" and Orca screen-reader speech; re-enable if either is ever wanted.
+  # 2026-08-23 slimming.
+  services.speechd.enable = lib.mkForce false;
+
   # Additional packages for desktop
   environment.systemPackages = with pkgs; [
     # Terminal
@@ -915,14 +923,16 @@ in
     librsvg
 
     # Remote access
+    # rustdesk / rustdesk-flutter removed 2026-08-23 (slimming): both variants were
+    # installed side by side (~394 MiB) and last used 2026-03-20. Sunshine + Tailscale
+    # cover remote access; see home-modules/ryzen.nix for the retired server unit.
     tailscale
-    rustdesk
     remmina
-    rustdesk-flutter  # Open-source remote desktop
     sunshinePrimaryMonitorEnsure
 
-    # 1Password GUI
-    _1password-gui
+    # 1Password GUI is installed by modules/services/onepassword.nix via
+    # programs._1password-gui (with the polkit override). Listing it here too added a
+    # duplicate build of the same version to the closure. 2026-08-23.
 
     # Hardware monitoring tools
     lm_sensors     # Temperature monitoring
@@ -942,7 +952,8 @@ in
     vdpauinfo      # VDPAU verification
     vulkan-tools   # Vulkan verification (vulkaninfo)
     clinfo         # OpenCL verification
-    cudaPackages.cuda_nvcc  # CUDA compiler (optional, for CUDA development)
+    # cuda_nvcc removed 2026-08-23 (slimming, ~578 MiB). It was always optional; add
+    # it back in a devshell when CUDA compilation is actually needed.
     nvidia-container-toolkit  # nvidia-ctk CLI for CDI specs + kind GPU plumbing
 
     # Disk encryption and security
@@ -958,7 +969,9 @@ in
 
     # ========== SCREEN RECORDING (Feature 115) ==========
     # Hardware-accelerated screen recording with NVIDIA NVENC
-    obs-studio        # PipeWire/portal screen capture validation and streaming
+    # obs-studio removed 2026-08-23 (slimming, ~2.29 GiB, 1.99 GiB of it cef-binary).
+    # Never launched on this host (no ~/.config/obs-studio, zero journal hits in 90d);
+    # wf-recorder below already provides NVENC screen capture.
     wf-recorder       # Wayland screen recorder with NVENC support
     grim              # Screenshot utility for Wayland
     slurp             # Region selection for screenshots/recording

@@ -22,9 +22,11 @@ let
     '';
   };
 
-  # Claude Desktop for Linux (unofficial community package)
-  # Use claude-desktop-with-fhs for MCP server support (npx, uvx, docker)
-  claudeDesktopPackage = inputs.claude-desktop.packages.${pkgs.system}.claude-desktop-with-fhs or null;
+  # Claude Desktop removed 2026-08-23 (slimming, ~2.31 GiB — the -with-fhs variant
+  # carries its own Electron and a full FHS rootfs including a second Docker).
+  # It was never launched on ryzen: no ~/.config/Claude and zero journal hits in 90
+  # days. The inputs.claude-desktop flake input is still declared, so restoring this
+  # is a one-line change.
 
   # Claude Code's home-manager module has Chromium dependencies that break on Darwin
   # Only enable on Linux where Chromium is available
@@ -179,11 +181,6 @@ lib.mkIf enableClaudeCode {
   # Chromium is installed via programs.chromium in tools/chromium.nix
   # No need to install it here - avoids conflicts
 
-  # Install Claude Desktop if available
-  # Provides native desktop app with git worktree support for parallel sessions
-  home.packages = lib.optionals (claudeDesktopPackage != null) [
-    claudeDesktopPackage
-  ];
 
   # Claude Code configuration with home-manager module
   # Only enabled on Linux due to Chromium dependencies in the module

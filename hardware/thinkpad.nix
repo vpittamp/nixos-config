@@ -57,7 +57,10 @@
   # Hardware acceleration - Intel Arc graphics (Meteor Lake integrated)
   hardware.graphics = {
     enable = true;
-    enable32Bit = true;  # For 32-bit application compatibility (Steam, Wine, etc.)
+    # enable32Bit is set centrally by modules/services/bare-metal.nix, where it follows
+    # services.bare-metal.enableGaming (2026-08-23 slimming). Defining it true here as
+    # well both conflicted with that and cost ~1.6 GiB — a second Mesa, its own LLVM,
+    # and the NVIDIA lib32 driver — for Wine/Steam that are not installed.
 
     extraPackages = with pkgs; [
       intel-media-driver    # VAAPI driver for Intel Gen 8+ (including Arc/Meteor Lake)

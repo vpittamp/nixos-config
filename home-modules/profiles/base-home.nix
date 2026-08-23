@@ -80,8 +80,10 @@ in
     ../tools/nix.nix
     ../tools/nix-bloat-audit.nix
     ../tools/vscode.nix
-    ../tools/gitkraken.nix
-    ../tools/postman.nix
+    # gitkraken.nix / postman.nix removed 2026-08-23 (slimming). GitKraken (~636 MiB,
+    # last used 2026-06-02) and Postman (~376 MiB, last used 2026-02-13) each installed
+    # their own copy here on top of the system-level ones. gitkraken.nix also pinned
+    # pkgs.vscode, which was the second VS Code build in the closure.
     ../tools/kubernetes-apps.nix
     ../tools/remote-kubeconfig.nix
     ../tools/fleet-kubeconfigs.nix  # token-free tailnet kubectl access to fleet clusters

@@ -4,20 +4,15 @@
 { pkgs, lib, inputs ? { }, ... }:
 
 let
-  # Azure CLI from stable nixpkgs for Python 3.12 compatibility
-  # Moved to user packages for Codespaces compatibility
-  azure-cli-bin = pkgs.callPackage ../packages/azure-cli-bin.nix { };
-
   # IDP Builder - x86_64 only
   idpbuilder = pkgs.callPackage ../packages/idpbuilder.nix {
     idpbuilderSrc = inputs.idpbuilder-src or null;
   };
 
-  # Goose Desktop - AI Agent Desktop Application (x86_64 only)
-  goose-desktop = pkgs.callPackage ../packages/goose-desktop.nix { };
-
-  # GitHub Copilot - agent-native desktop app (github/app AppImage; x86_64 + aarch64)
-  github-copilot = pkgs.callPackage ../packages/github-copilot.nix { };
+  # goose-desktop and github-copilot (desktop AppImage) removed 2026-08-23 (slimming,
+  # ~399 MiB and ~1.30 GiB). Goose state was last written 2026-03-24; the Copilot GUI
+  # was never launched (only the CLI's ~/.config/github-copilot exists). The package
+  # definitions remain at ../packages/{goose-desktop,github-copilot}.nix if wanted back.
 
   # Kimi Code CLI (`kimi`) - MoonshotAI coding agent, packaged from the
   # self-contained npm bundle (@moonshot-ai/kimi-code). See packages/kimi-code.nix.
@@ -95,19 +90,19 @@ let
   aiTools = [
     herdr
     hunk # Hunk review-first terminal diff viewer (upstream flake)
-    github-copilot # GitHub Copilot agent-native desktop app (custom package)
     kimi-code # Kimi Code CLI (`kimi`) — MoonshotAI coding agent (custom package)
   ] ++ (with pkgs; [
     agent-browser # Vercel Labs browser automation CLI for AI agents (Rust, CDP)
-    goose-cli # Goose AI Agent CLI (from nixpkgs)
     openai # OpenAI Python CLI
-    playwright-test # Playwright CLI (codegen, test, inspector)
+    # goose-cli removed 2026-08-23 (slimming, ~455 MiB alongside goose-desktop's 399 MiB);
+    # ~/.config/goose last written 2026-03-24.
+    # playwright-test removed 2026-08-23 (slimming, ~1.11 GiB — the CLI drags in bundled
+    # chromium/firefox/webkit/headless-shell builds). The @playwright/mcp server in
+    # home-modules/tools/vscode.nix is fetched by npx and does not need this package.
     # Note: gitingest is run on-demand via: uvx gitingest <repo-url>
     # This ensures we always use the latest version without pre-installation
     # See /etc/nixos/.claude/commands/gitingest.md for usage
-  ]) ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
-    goose-desktop # Goose AI Agent Desktop (custom package, x86_64 only)
-  ];
+  ]);
 
   # Shell enhancements
   shellTools = with pkgs; [
@@ -144,7 +139,10 @@ let
 
     # Rust
     rust-analyzer
-    rustfmt
+    # rustfmt removed 2026-08-23 (slimming): it was the last thing referencing the
+    # 1.0 GiB rustc-1.95.0 closure after rustc/cargo left systemPackages, so keeping it
+    # would have undone most of that saving. rust-analyzer above is standalone (~93 MiB)
+    # and `cargo fmt` inside a Rust devshell is the right home for formatting.
   ];
 
   # Package managers (from nixpkgs)
@@ -179,8 +177,8 @@ let
     gh-enhance
     diffnav
     gittyup # GUI git client (Qt-based, lightweight alternative to GitKraken)
-  ] ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
-    gitkraken # Git GUI client (x86_64 only)
+    # gitkraken removed 2026-08-23 (slimming, ~636 MiB): last used 2026-06-02, and
+    # gittyup above plus lazygit already cover the GUI/TUI git workflow.
   ];
 
   # Kubernetes and cloud tools
@@ -199,9 +197,16 @@ let
   ];
 
   # Cloud tools (for containers/Codespaces)
-  cloudTools = [
-    azure-cli-bin # Azure CLI (from stable nixpkgs)
-  ];
+  # azure-cli-bin removed 2026-08-23 (slimming, ~1.88 GiB — the CLI plus its whole
+  # azure-mgmt-* SDK tree). The fleet moved off Azure Key Vault to 1Password
+  # (ClusterSecretStore onepassword-store, onepasswordSDK provider; no azurekv store
+  # exists on hub or dev), and the last runtime consumer — the ryzen host-passthrough
+  # step in home-modules/tools/fleet-kubeconfigs.nix — went with the decommissioned
+  # ryzen Talos cluster. Scripts under scripts/ that still shell out to `az`
+  # (langfuse-auth.sh, sync-jwks-to-azure.sh, setup-1password-entra-sso.sh,
+  # deploy-nixos-ssh.sh) need it back on PATH first; `nix shell nixpkgs#azure-cli`
+  # covers a one-off run.
+  cloudTools = [ ];
 
   # Documentation and help
   documentation = with pkgs; [

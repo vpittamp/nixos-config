@@ -93,7 +93,7 @@ let
           "--browser"
           "chromium"
           "--executable-path"
-          "${pkgs.chromium}/bin/chromium"
+          "${pkgs.google-chrome}/bin/google-chrome-stable"
           "--user-data-dir"
           playwrightProfileDir
           "--output-dir"

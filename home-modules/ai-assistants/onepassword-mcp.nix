@@ -1,9 +1,16 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, osConfig ? null, ... }:
 
 with lib;
 
 let
   cfg = config.modules.aiAssistants.onepasswordMcp;
+  # The NixOS module's `package` option applies a `polkitPolicyOwners` override, so
+  # referencing pkgs._1password-gui directly builds a *second*, otherwise identical
+  # 1Password (~513 MiB in the closure). Take the system's package when we can see it.
+  # 2026-08-23 slimming.
+  onepasswordGui =
+    if osConfig == null then pkgs._1password-gui
+    else osConfig.programs._1password-gui.package or pkgs._1password-gui;
 in
 {
   options.modules.aiAssistants.onepasswordMcp = {
@@ -11,8 +18,8 @@ in
 
     package = mkOption {
       type = types.package;
-      default = pkgs._1password-gui;
-      defaultText = literalExpression "pkgs._1password-gui";
+      default = onepasswordGui;
+      defaultText = literalExpression "osConfig.programs._1password-gui.package";
       description = "1Password desktop package shipping share/1password/onepassword-mcp.";
     };
 

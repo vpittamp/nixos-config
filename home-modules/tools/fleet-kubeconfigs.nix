@@ -37,25 +37,19 @@ in {
       description = ''
         Tailscale operator apiserver-proxy Service names to register TOKEN-FREE via
         `tailscale configure kubeconfig` (impersonation via the device owner's
-        policy.hujson grant). NOTE: ryzen is intentionally NOT here — it uses the
-        raw host-passthrough endpoint below (no auth proxy).
+        policy.hujson grant).
       '';
     };
 
-    keyvault = mkOption {
-      type = types.str;
-      default = "keyvault-thcmfmoo5oeow";
-      description = "Azure Key Vault holding the host-passthrough cluster SA tokens + CAs.";
-    };
   };
 
   config = mkIf cfg.enable {
     home.packages = [
       (pkgs.writeShellScriptBin "sync-fleet-kubeconfigs" ''
         set -uo pipefail
-        PATH="${makeBinPath [ pkgs.tailscale pkgs.kubectl pkgs.azure-cli pkgs.coreutils pkgs.gnugrep ]}:$PATH"
+        PATH="${makeBinPath [ pkgs.tailscale pkgs.kubectl pkgs.coreutils pkgs.gnugrep ]}:$PATH"
 
-        echo "→ [1/2] operator apiserver-proxy clusters (token-free via Tailscale identity)"
+        echo "→ operator apiserver-proxy clusters (token-free via Tailscale identity)"
         for svc in ${concatStringsSep " " cfg.proxyServices}; do
           if tailscale configure kubeconfig "$svc" 2>/dev/null; then
             echo "  ✓ $svc"
@@ -69,25 +63,15 @@ in {
         kubectl config delete-context ryzen-api-v3.tail286401.ts.net >/dev/null 2>&1 || true
         kubectl config delete-cluster ryzen-api-v3.tail286401.ts.net >/dev/null 2>&1 || true
 
-        echo "→ [2/2] ryzen host-passthrough (host endpoint + Talos CA + SA token from KV)"
-        if ! command -v az >/dev/null || ! az account show >/dev/null 2>&1; then
-          echo "  ⚠ az not logged in — run 'az login', then re-run. (ryzen context skipped)"
-        else
-          tok="$(az keyvault secret show --vault-name ${cfg.keyvault} --name ARGOCD-CLUSTER-RYZEN-TOKEN --query value -o tsv 2>/dev/null || true)"
-          cab="$(az keyvault secret show --vault-name ${cfg.keyvault} --name ARGOCD-CLUSTER-RYZEN-CA    --query value -o tsv 2>/dev/null || true)"
-          if [ -z "$tok" ] || [ -z "$cab" ]; then
-            echo "  ⚠ could not read ARGOCD-CLUSTER-RYZEN-{TOKEN,CA} from KV ${cfg.keyvault} (ryzen skipped)"
-          else
-            catmp="$(mktemp)"; trap 'rm -f "$catmp"' EXIT
-            printf '%s' "$cab" | base64 -d > "$catmp"
-            kubectl config set-cluster ryzen \
-              --server=https://ryzen.tail286401.ts.net:6443 \
-              --certificate-authority="$catmp" --embed-certs=true >/dev/null
-            kubectl config set-credentials ryzen --token="$tok" >/dev/null
-            kubectl config set-context ryzen --cluster=ryzen --user=ryzen >/dev/null
-            echo "  ✓ ryzen (https://ryzen.tail286401.ts.net:6443, full TLS verify)"
-          fi
-        fi
+        # The ryzen host-passthrough step was removed 2026-08-23: the ryzen Talos
+        # cluster has been decommissioned (no Talos containers on the host, no
+        # `tailscale serve --tcp=6443` passthrough, and no working ryzen kube
+        # context). It pulled ARGOCD-CLUSTER-RYZEN-{TOKEN,CA} from Azure Key Vault
+        # and was the last runtime consumer of azure-cli (~1.88 GiB in the closure).
+        # The hub/dev fleet moved to 1Password (ClusterSecretStore onepassword-store,
+        # onepasswordSDK provider); no azurekv store exists on any cluster. If a
+        # ryzen cluster ever comes back, prefer `talosctl kubeconfig` or the operator
+        # apiserver-proxy above over reintroducing a cloud secret store here.
 
         echo "kubectl contexts now available:"
         kubectl config get-contexts -o name 2>/dev/null | sed 's/^/  /'

@@ -52,7 +52,10 @@
   # Hardware acceleration - NVIDIA GPU (RTX 5070 Blackwell)
   hardware.graphics = {
     enable = true;
-    enable32Bit = true;  # For 32-bit application compatibility (Wine, etc.)
+    # enable32Bit is set centrally by modules/services/bare-metal.nix, where it follows
+    # services.bare-metal.enableGaming (2026-08-23 slimming). Defining it true here as
+    # well both conflicted with that and cost ~1.6 GiB — a second Mesa, its own LLVM,
+    # and the NVIDIA lib32 driver — for Wine/Steam that are not installed.
   };
 
   # NVIDIA kernel parameters for Wayland

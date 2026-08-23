@@ -172,10 +172,12 @@ in
     # Always applied when 1Password is enabled
     {
       # Core packages - CLI always, GUI conditionally
+      # The GUI is installed by programs._1password-gui below (that module puts
+      # cfg.package into systemPackages itself, with the polkit override applied).
+      # Listing pkgs._1password-gui here as well added a second, un-overridden build
+      # of the same version to the closure — ~513 MiB. 2026-08-23.
       environment.systemPackages = with pkgs; [
         _1password-cli
-      ] ++ optionals cfg.gui.enable [
-        _1password-gui
       ];
 
       # Enable 1Password system integration
