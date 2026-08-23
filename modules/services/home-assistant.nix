@@ -53,7 +53,7 @@
       "apple_tv" "sonos" "samsungtv" "smartthings" "ibeacon" "google_translate"
       "ecobee" "cast" "hunterdouglas_powerview"
       "mcp_server" "google_generative_ai_conversation"
-      "bluetooth" "shell_command" "webhook"
+      "bluetooth" "shell_command" "webhook" "script" "ios"
     ];
 
     customComponents =
@@ -147,6 +147,55 @@
           broadcast_desktop_notification = ''
             ${broadcastNotification}/bin/broadcast-desktop-notification "{{ title }}" "{{ message }}" "{{ app_name }}"
           '';
+        };
+
+        script = {
+          notify_nixos_sms = {
+            alias = "Notify NixOS Workstations (SMS)";
+            description = "Send iOS text message notification to all connected NixOS Tailscale workstations";
+            icon = "mdi:message-text";
+            fields = {
+              sender = {
+                description = "Name or phone number of the sender";
+                example = "Mom";
+                required = true;
+                selector.text = { };
+              };
+              message = {
+                description = "Content of the received text message";
+                example = "Dinner at 7pm!";
+                required = true;
+                selector.text = { };
+              };
+            };
+            sequence = [{
+              action = "shell_command.broadcast_desktop_notification";
+              data = {
+                title = "💬 {{ sender }}";
+                message = "{{ message }}";
+                app_name = "Messages";
+              };
+            }];
+            mode = "queued";
+          };
+        };
+
+        ios = {
+          actions = [
+            {
+              name = "sms_received";
+              label = {
+                text = "Notify NixOS (SMS)";
+                color = "#FFFFFF";
+              };
+              icon = {
+                icon = "message.fill";
+                color = "#34C759";
+              };
+              show_in_carplay = false;
+              show_in_watch = true;
+            }
+          ];
         };
 
         # Motion push for the Circle View cameras and iOS SMS desktop notification
