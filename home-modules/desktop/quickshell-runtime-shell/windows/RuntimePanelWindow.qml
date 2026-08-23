@@ -542,12 +542,15 @@ PanelWindow {
                     }
                 }
 
+                // Do-not-disturb is a real control here, not just a status
+                // chip — this is the discoverable way to toggle what the
+                // keybinding and CLI also drive. Critical toasts still break
+                // through while it is on.
                 Rectangle {
-                    visible: root.notificationDnd
                     height: 20
                     radius: root.radiusBadge
-                    color: colors.amberBg
-                    border.color: colors.amber
+                    color: root.notificationDnd ? colors.amberBg : (notificationDndMouse.containsMouse ? colors.cardAlt : "transparent")
+                    border.color: root.notificationDnd ? colors.amber : (notificationDndMouse.containsMouse ? colors.borderStrong : colors.border)
                     border.width: 1
                     Layout.preferredWidth: notificationDndText.implicitWidth + 12
 
@@ -555,10 +558,18 @@ PanelWindow {
                         id: notificationDndText
                         anchors.centerIn: parent
                         text: "DND"
-                        color: colors.amber
+                        color: root.notificationDnd ? colors.amber : colors.subtle
                         font.pixelSize: root.fontMicro
                         font.letterSpacing: 0.5
                         font.weight: Font.DemiBold
+                    }
+
+                    MouseArea {
+                        id: notificationDndMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.toggleNotificationDnd()
                     }
                 }
 
@@ -638,19 +649,6 @@ PanelWindow {
                         onClicked: root.clearNotifications()
                     }
                 }
-            }
-
-            RootComponents.NotificationRailCard {
-                Layout.fillWidth: true
-                visible: !root.notificationCenterVisible && root.notificationHeroItem() !== null
-                rootObject: root
-                colorsObject: colors
-                itemData: root.notificationHeroItem()
-                compact: true
-                onDismissRequested: (notificationId) => root.dismissNotification(notificationId)
-                onActionInvoked: (notificationId, actionId) => root.invokeNotificationAction(notificationId, actionId)
-                onMarkReadRequested: (notificationId) => root.markNotificationRead(notificationId)
-                onDetailRequested: (notificationId) => root.showNotificationDetail(notificationId)
             }
 
             ScriptModel {
@@ -787,7 +785,6 @@ PanelWindow {
                             rootObject: root
                             colorsObject: colors
                             itemData: modelData.item
-                            compact: false
                             stackCount: Number(modelData.stack_count || 0)
                             onDismissRequested: (notificationId) => root.dismissNotification(notificationId)
                             onActionInvoked: (notificationId, actionId) => root.invokeNotificationAction(notificationId, actionId)
@@ -795,6 +792,32 @@ PanelWindow {
                             onDetailRequested: (notificationId) => root.showNotificationDetail(notificationId)
                             onExpandRequested: root.toggleNotificationGroup(modelData.group_key)
                         }
+                    }
+                }
+            }
+
+            Item {
+                Layout.fillWidth: true
+                visible: root.notificationCenterVisible && notificationRailList.count === 0
+                implicitHeight: 52
+
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    spacing: 2
+
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: root.notificationDnd ? "󰂛" : "󰂚"
+                        color: colors.subtle
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 16
+                    }
+
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: root.notificationDnd ? "Do not disturb" : "No notifications"
+                        color: colors.subtle
+                        font.pixelSize: root.fontCaption
                     }
                 }
             }

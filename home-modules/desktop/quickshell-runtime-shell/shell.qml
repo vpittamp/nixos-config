@@ -1315,12 +1315,18 @@ ShellRoot {
     }
 
     function notificationToastTopInset() {
-        return shellConfig.topBarHeight + notificationToastOuterMargin();
+        // The top bar reserves an exclusive zone that already pushes the
+        // toast window below it — adding topBarHeight here doubled the gap.
+        return notificationToastOuterMargin();
     }
 
     function notificationToastRightInset(outputName) {
         let inset = notificationToastOuterMargin();
-        if (panelVisible && stringOrEmpty(outputName) === primaryOutputName) {
+        // Only an overlay-mode panel needs dodging manually: a docked panel
+        // reserves an exclusive zone that already pushes the toast window
+        // left of it, so adding panelWidth again doubles the offset (the
+        // toast ended up floating mid-screen on the single-output surface).
+        if (panelVisible && !dockedMode && stringOrEmpty(outputName) === primaryOutputName) {
             inset += shellConfig.panelWidth + 12;
         }
         return inset;
@@ -2102,14 +2108,6 @@ ShellRoot {
 
     function notificationPanelItems() {
         return notificationFeed.slice(0, Math.max(1, Number(shellConfig.notificationHistoryLimit || 80)));
-    }
-
-    function notificationHeroItem() {
-        const live = visibleNotificationItems();
-        if (live.length > 0) {
-            return live[0];
-        }
-        return notificationFeed.length > 0 ? notificationFeed[0] : null;
     }
 
     function notificationGroupKeyFor(item) {
