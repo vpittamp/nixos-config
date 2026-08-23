@@ -162,7 +162,7 @@ and asserts terminal-attachability, which the workflow bridge requires of every
 | Set or debug a persistent goal   | `docs/goal-loop.md` and goal application adapters                                      |
 | Produce typed run artifacts      | `docs/workflow-artifacts.md`                                                           |
 | Query terminal/post-teardown evidence | `docs/execution-evidence.md` and Workflow MCP execution-evidence tools            |
-| Inspect or restore run code      | `list_code_checkpoints`, `get_checkpoint_diff`, `restore_checkpoint`                    |
+| Inspect or restore run code      | `list_code_checkpoints`, `get_checkpoint_diff`, `restore_checkpoint`, `continue_checkpoint` |
 | Resume or fork a run             | `resume_workflow_execution` and `docs/dynamic-script-workflows.md`                      |
 | Promote a run's code to a PR     | `promote_run_to_pr`                                                                     |
 | Edit prompts or presets          | Prompt Workbench components, prompt APIs, and current prompt docs                      |
@@ -231,6 +231,10 @@ and asserts terminal-attachability, which the workflow bridge requires of every
   self-heal and exists as a roll-back lever, not as a way past the error.
 - All user stop paths use the Lifecycle Controller and request/confirm semantics.
   Coordinator-owned eval or benchmark instances are stopped through their run.
+- An active provider stream may be preempted only through the runtime's
+  cancellation port after the request is durably persisted. Treat
+  `agent.turn_preempted` as fast-path evidence, not terminal authority; cross-pod
+  convergence still comes from durable state and the Lifecycle Controller.
 - Usage and goal-budget calculations depend on the normalized
   `agent.llm_usage` event contract. Diagnose raw events before changing budget
   logic.
@@ -326,6 +330,18 @@ the exact diff a single step produced.
   restored.
 - `restore_checkpoint` is destructive: it hard-resets the target live sandbox's
   workspace to the checkpoint's commit. Pass the intended `sandboxName`.
+- `continue_checkpoint` is the recovery path when the source execution is
+  terminal or its live host is gone. It creates or reuses an independently
+  runnable session, restores the durable ref once before the first turn, and
+  leaves the source execution read-only. Restore and later captures retain the
+  source execution ID as checkpoint-chain owner, so the restored SHA is the
+  next mutation's parent rather than a full-tree addition.
+- A recovery workspace is a detached source materialization and may have no
+  `.git`. Use checkpoint rows and `get_checkpoint_diff`, not `git status` or
+  `git diff`, as recovery authority. Runtime `.wfb-diff-git` bookkeeping is
+  excluded from captures. A recovery session is not an active DevelopmentRun:
+  never run `wfb-development` there, and leave preview synchronization,
+  verification, and submission to a later DevelopmentRun or delivery action.
 - `resume_workflow_execution` starts a NEW run, never mutating the source. For an
   SW-graph run it forks from a node (`fromNodeId`, or the in-flight node when
   omitted). For a dynamic-script run it is resume-after-edit: the source must be
