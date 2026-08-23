@@ -53,7 +53,7 @@
       "apple_tv" "sonos" "samsungtv" "smartthings" "ibeacon" "google_translate"
       "ecobee" "cast" "hunterdouglas_powerview"
       "mcp_server" "google_generative_ai_conversation"
-      "bluetooth"
+      "bluetooth" "shell_command" "webhook"
     ];
 
     customComponents =
@@ -113,54 +113,110 @@
         uber-eats-component
       ];
 
-    config = {
-      # Meta-integration pulling the standard set (frontend, recorder,
-      # history, logbook, ssdp, zeroconf, ...).
-      default_config = { };
+    config =
+      let
+        broadcastNotification = pkgs.writeShellScriptBin "broadcast-desktop-notification" ''
+          TITLE="''${1:-Text Message}"
+          MESSAGE="''${2:-New message received}"
+          APP="''${3:-Messages}"
+          SSH_KEY="/var/lib/hass/.ssh/id_ed25519"
 
-      # HomeKit Bridge: expose HA entities back to Apple Home. The { } default
-      # advertises "Home Assistant Bridge" on TCP 21063 with the default domain
-      # filter. Pair from the HA UI (Settings -> Devices & Services -> the
-      # HomeKit Bridge card shows the setup code/QR).
-      homekit = { };
+          HOSTS=("ryzen" "surface" "thinkpad")
 
-      # Motion push for the Circle View cameras (homekit_controller pairings,
-      # 2026-08-20). The cameras themselves cannot be re-exposed to Apple Home
-      # (snapshot-only, no stream), so motion lands on the iPhone via the HA
-      # companion app's notify target instead; tapping opens the "Cameras"
-      # Lovelace dashboard (storage-mode, /cameras). The module cannot emit
-      # "!include automations.yaml", so these live here, declaratively.
-      automation =
-        let
-          motion = room: entity: {
-            id = "motion-${room}";
-            alias = "Motion — ${entity}";
-            description = "Push to iPhone when the ${entity} camera sees motion";
-            triggers = [{
-              platform = "state";
-              entity_id = "binary_sensor.${room}_motion";
-              to = "on";
-            }];
-            conditions = [ ];
-            actions = [{
-              # mobile_app's own notify service (notify.send_message on the
-              # entity rejects the nested push "data" extras).
-              action = "notify.mobile_app_iphone_2";
-              data = {
-                title = "${entity} — motion";
-                message = "Motion detected by the ${entity} camera.";
-                data.url = "/cameras";
-              };
-            }];
-            mode = "single";
-          };
-        in
-        [
-          (motion "living_room" "Living Room")
-          (motion "bedroom" "Bedroom")
-          (motion "kitchen" "Kitchen")
-          (motion "hallway" "Hallway")
-        ];
+          for host in "''${HOSTS[@]}"; do
+            ${pkgs.openssh}/bin/ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=2 -i "$SSH_KEY" "vpittamp@$host" "
+              DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus \
+              PATH=/run/current-system/sw/bin:/etc/profiles/per-user/vpittamp/bin:\$PATH \
+              notify-send -a '$APP' -u normal '$TITLE' '$MESSAGE'
+            " >/dev/null 2>&1 &
+          done
+        '';
+      in
+      {
+        # Meta-integration pulling the standard set (frontend, recorder,
+        # history, logbook, ssdp, zeroconf, ...).
+        default_config = { };
+
+        # HomeKit Bridge: expose HA entities back to Apple Home. The { } default
+        # advertises "Home Assistant Bridge" on TCP 21063 with the default domain
+        # filter. Pair from the HA UI (Settings -> Devices & Services -> the
+        # HomeKit Bridge card shows the setup code/QR).
+        homekit = { };
+
+        shell_command = {
+          broadcast_desktop_notification = ''
+            ${broadcastNotification}/bin/broadcast-desktop-notification "{{ title }}" "{{ message }}" "{{ app_name }}"
+          '';
+        };
+
+        # Motion push for the Circle View cameras and iOS SMS desktop notification
+        automation =
+          let
+            motion = room: entity: {
+              id = "motion-${room}";
+              alias = "Motion — ${entity}";
+              description = "Push to iPhone when the ${entity} camera sees motion";
+              triggers = [{
+                platform = "state";
+                entity_id = "binary_sensor.${room}_motion";
+                to = "on";
+              }];
+              conditions = [ ];
+              actions = [{
+                # mobile_app's own notify service (notify.send_message on the
+                # entity rejects the nested push "data" extras).
+                action = "notify.mobile_app_iphone_2";
+                data = {
+                  title = "${entity} — motion";
+                  message = "Motion detected by the ${entity} camera.";
+                  data.url = "/cameras";
+                };
+              }];
+              mode = "single";
+            };
+
+            iosSmsNotification = {
+              id = "ios-sms-received-notification";
+              alias = "iOS SMS Received — Desktop Notification";
+              description = "Broadcast text message from iOS Shortcut to Tailscale NixOS workstations";
+              triggers = [
+                {
+                  platform = "webhook";
+                  webhook_id = "ios_sms_received";
+                  allowed_methods = [ "POST" ];
+                  local_only = false;
+                }
+                {
+                  platform = "event";
+                  event_type = "ios_sms_received";
+                }
+                {
+                  platform = "event";
+                  event_type = "ios.action_fired";
+                  event_data = {
+                    actionName = "sms_received";
+                  };
+                }
+              ];
+              conditions = [ ];
+              actions = [{
+                action = "shell_command.broadcast_desktop_notification";
+                data = {
+                  title = "💬 {{ trigger.json.sender if trigger.platform == 'webhook' and trigger.json is defined and trigger.json.sender is defined else (trigger.event.data.sender if trigger.event is defined and trigger.event.data is defined and trigger.event.data.sender is defined else 'Text Message') }}";
+                  message = "{{ trigger.json.message if trigger.platform == 'webhook' and trigger.json is defined and trigger.json.message is defined else (trigger.event.data.message if trigger.event is defined and trigger.event.data is defined and trigger.event.data.message is defined else (trigger.event.data.actionData if trigger.event is defined and trigger.event.data is defined and trigger.event.data.actionData is defined else 'New message received')) }}";
+                  app_name = "Messages";
+                };
+              }];
+              mode = "queued";
+            };
+          in
+          [
+            (motion "living_room" "Living Room")
+            (motion "bedroom" "Bedroom")
+            (motion "kitchen" "Kitchen")
+            (motion "hallway" "Hallway")
+            iosSmsNotification
+          ];
 
       # Core settings. Location/units are left for the onboarding UI to ask.
       homeassistant = {

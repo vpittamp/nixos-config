@@ -88,6 +88,7 @@ let
     television # TUI fuzzy finder with built-in channels
     glib # For gio command (desktop file launcher and file operations)
     catt # Chromecast CLI tool for direct IP streaming
+    libnotify # Desktop notification helper (notify-send)
   ];
 
   # AI and LLM tools
