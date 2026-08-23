@@ -99,6 +99,9 @@ ShellRoot {
     property bool notificationDetailVisible: false
     property var notificationDetailItem: null
     property bool notificationDnd: false
+    // App groups the user explicitly expanded in the notification center.
+    // Groups with a single item render expanded regardless.
+    property var notificationGroupExpanded: ({})
     property var networkState: ({
             connected: false,
             kind: "offline",
@@ -1934,8 +1937,17 @@ ShellRoot {
         return arrayOrEmpty(item && item.actions).length > 0;
     }
 
+    // Buttons worth rendering: the "default" action is bound to clicking the
+    // notification body per the freedesktop convention, so it never appears
+    // as a pill. Capped at three, matching what a card can carry legibly.
+    function notificationDisplayActions(item) {
+        return arrayOrEmpty(item && item.actions)
+            .filter(action => notificationActionIdentifier(action) !== "default")
+            .slice(0, 3);
+    }
+
     function notificationPrimaryAction(item) {
-        const actions = arrayOrEmpty(item && item.actions);
+        const actions = notificationDisplayActions(item);
         return actions.length > 0 ? actions[0] : null;
     }
 
@@ -2035,25 +2047,39 @@ ShellRoot {
         return colors.lineSoft;
     }
 
+    // Relative age of a notification, live-updating: reading clock.date inside
+    // the binding makes QML re-evaluate every clock tick (minute precision).
+    function notificationRelativeTime(item) {
+        const ts = Number(item && item.timestamp) || 0;
+        if (!ts) {
+            return "";
+        }
+        const reference = clock && clock.date ? clock.date.getTime() : Date.now();
+        const deltaSec = Math.max(0, Math.floor((reference - ts) / 1000));
+        if (deltaSec < 60) {
+            return "now";
+        }
+        if (deltaSec < 3600) {
+            return Math.floor(deltaSec / 60) + "m ago";
+        }
+        if (deltaSec < 86400) {
+            return Math.floor(deltaSec / 3600) + "h ago";
+        }
+        return Math.floor(deltaSec / 86400) + "d ago";
+    }
+
+    // State line for the rail card's footer. Relative time deliberately lives
+    // in the card header, not here — it was showing twice.
     function notificationMetaLabel(item) {
         const parts = [];
-        const appLabel = notificationAppLabel(item);
-        if (appLabel) {
-            parts.push(appLabel);
-        }
-        const outputName = stringOrEmpty(item && item.output_name);
-        if (outputName) {
-            parts.push(outputName);
-        }
         const closedReason = stringOrEmpty(item && item.closed_reason);
         if (closedReason) {
             parts.push(closedReason);
         } else if (notificationUnread(item)) {
             parts.push("Unread");
-        } else if (notificationClosed(item)) {
-            parts.push("Seen");
-        } else {
-            parts.push("Live");
+        }
+        if (notificationIsCritical(item)) {
+            parts.push("Critical");
         }
         return parts.join(" • ");
     }
@@ -2084,6 +2110,99 @@ ShellRoot {
             return live[0];
         }
         return notificationFeed.length > 0 ? notificationFeed[0] : null;
+    }
+
+    function notificationGroupKeyFor(item) {
+        return notificationAppLabel(item).toLowerCase();
+    }
+
+    // The notification center groups history per app, iOS-stack style: a
+    // collapsed group renders only its newest item (with a stacked-cards
+    // affordance) until the user expands it. Single-item groups are always
+    // expanded. Rows carry a stable row_id so ScriptModel can diff them.
+    function notificationPanelRows() {
+        const items = notificationPanelItems();
+        const groups = [];
+        const byKey = ({});
+        for (let i = 0; i < items.length; i += 1) {
+            const item = items[i];
+            const key = notificationGroupKeyFor(item);
+            let group = byKey[key];
+            if (!group) {
+                group = {
+                    key: key,
+                    label: notificationAppLabel(item),
+                    items: [],
+                    unread: 0
+                };
+                byKey[key] = group;
+                groups.push(group);
+            }
+            group.items.push(item);
+            if (notificationUnread(item)) {
+                group.unread += 1;
+            }
+        }
+        const rows = [];
+        for (let g = 0; g < groups.length; g += 1) {
+            const group = groups[g];
+            const expanded = group.items.length === 1 || boolOrFalse(notificationGroupExpanded[group.key]);
+            rows.push({
+                row_id: "header:" + group.key,
+                kind: "header",
+                group_key: group.key,
+                label: group.label,
+                count: group.items.length,
+                unread: group.unread,
+                expanded: expanded,
+                sample: group.items[0]
+            });
+            const visibleItems = expanded ? group.items : group.items.slice(0, 1);
+            for (let i = 0; i < visibleItems.length; i += 1) {
+                rows.push({
+                    row_id: "item:" + Number(visibleItems[i].id || 0),
+                    kind: "item",
+                    group_key: group.key,
+                    stack_count: (!expanded && group.items.length > 1) ? group.items.length - 1 : 0,
+                    item: visibleItems[i]
+                });
+            }
+        }
+        return rows;
+    }
+
+    function toggleNotificationGroup(groupKey) {
+        const key = stringOrEmpty(groupKey);
+        if (!key) {
+            return;
+        }
+        const next = Object.assign({}, notificationGroupExpanded);
+        next[key] = !boolOrFalse(next[key]);
+        notificationGroupExpanded = next;
+    }
+
+    function clearNotificationGroup(groupKey) {
+        const key = stringOrEmpty(groupKey);
+        if (!key) {
+            return;
+        }
+        // Dismiss the live runtime entries first, then drop the whole group
+        // from history. The closed handler is a no-op for ids no longer in the
+        // feed, so the dismissals cannot re-insert what we remove here.
+        const keep = [];
+        for (let i = 0; i < notificationFeed.length; i += 1) {
+            const item = notificationFeed[i];
+            if (notificationGroupKeyFor(item) !== key) {
+                keep.push(item);
+                continue;
+            }
+            const notification = notificationRuntimeMap[String(Number(item && item.id))];
+            if (notification) {
+                notification.dismiss();
+            }
+        }
+        notificationFeed = keep;
+        refreshNotificationState();
     }
 
     function toastItemsForOutput(outputName) {
@@ -2134,22 +2253,7 @@ ShellRoot {
             if (Number(item && item.id) !== targetId || !notificationUnread(item)) {
                 continue;
             }
-            replaceNotificationItem({
-                id: item.id,
-                app_name: item.app_name,
-                app_icon: item.app_icon,
-                desktop_entry: item.desktop_entry,
-                summary: item.summary,
-                body: item.body,
-                urgency: item.urgency,
-                output_name: item.output_name,
-                image: item.image,
-                unread: false,
-                closed: item.closed,
-                closed_reason: item.closed_reason,
-                toast_visible: item.toast_visible,
-                actions: arrayOrEmpty(item.actions)
-            });
+            replaceNotificationItem(Object.assign({}, item, { unread: false }));
             break;
         }
     }
@@ -2161,22 +2265,7 @@ ShellRoot {
                 return item;
             }
             changed = true;
-            return {
-                id: item.id,
-                app_name: item.app_name,
-                app_icon: item.app_icon,
-                desktop_entry: item.desktop_entry,
-                summary: item.summary,
-                body: item.body,
-                urgency: item.urgency,
-                output_name: item.output_name,
-                image: item.image,
-                unread: false,
-                closed: item.closed,
-                closed_reason: item.closed_reason,
-                toast_visible: item.toast_visible,
-                actions: arrayOrEmpty(item.actions)
-            };
+            return Object.assign({}, item, { unread: false });
         });
         if (changed) {
             notificationFeed = next;
@@ -2215,22 +2304,12 @@ ShellRoot {
                 if (Number(item && item.id) !== targetId) {
                     continue;
                 }
-                replaceNotificationItem({
-                    id: item.id,
-                    app_name: item.app_name,
-                    app_icon: item.app_icon,
-                    desktop_entry: item.desktop_entry,
-                    summary: item.summary,
-                    body: item.body,
-                    urgency: item.urgency,
-                    output_name: item.output_name,
-                    image: item.image,
+                replaceNotificationItem(Object.assign({}, item, {
                     unread: false,
                     closed: true,
                     closed_reason: "Dismissed",
-                    toast_visible: false,
-                    actions: arrayOrEmpty(item.actions)
-                });
+                    toast_visible: false
+                }));
                 break;
             }
         }
@@ -2264,6 +2343,37 @@ ShellRoot {
             action.invoke();
             break;
         }
+    }
+
+    // Freedesktop "default" action: what activating the notification body
+    // should do (usually raise the sending app). Falls back to the detail
+    // view when the sender registered no default action.
+    function invokeNotificationDefault(notificationId) {
+        const targetId = Number(notificationId || 0);
+        const notification = notificationRuntimeMap[String(targetId)];
+        if (notification) {
+            const actions = arrayOrEmpty(notification.actions);
+            for (let i = 0; i < actions.length; i += 1) {
+                if (notificationActionIdentifier(actions[i]) === "default") {
+                    markNotificationRead(targetId);
+                    actions[i].invoke();
+                    return;
+                }
+            }
+        }
+        showNotificationDetail(targetId);
+    }
+
+    function sendNotificationReply(notificationId, text) {
+        const targetId = Number(notificationId || 0);
+        const body = stringOrEmpty(text);
+        const notification = notificationRuntimeMap[String(targetId)];
+        if (!notification || !body) {
+            return;
+        }
+        notification.sendInlineReply(body);
+        markNotificationRead(targetId);
+        dismissNotification(targetId);
     }
 
     function showNotificationDetail(id) {
@@ -2312,23 +2422,17 @@ ShellRoot {
                 if (Number(item && item.id) !== targetId) {
                     continue;
                 }
-                replaceNotificationItem({
-                    id: item.id,
-                    app_name: item.app_name,
-                    app_icon: item.app_icon,
-                    desktop_entry: item.desktop_entry,
-                    summary: item.summary,
-                    body: item.body,
-                    urgency: item.urgency,
-                    output_name: item.output_name,
-                    image: item.image,
-                    unread: item.unread,
+                if (boolOrFalse(item.transient)) {
+                    // Freedesktop transient hint: never enters history.
+                    notificationFeed = notificationFeed.filter(entry => Number(entry && entry.id) !== targetId);
+                    refreshNotificationState();
+                    break;
+                }
+                replaceNotificationItem(Object.assign({}, item, {
                     closed: true,
                     closed_reason: reasonLabel,
-                    toast_visible: false,
-                    timeout_ms: item.timeout_ms,
-                    actions: arrayOrEmpty(item.actions)
-                });
+                    toast_visible: false
+                }));
                 break;
             }
         });
@@ -2362,6 +2466,10 @@ ShellRoot {
             closed_reason: "",
             toast_visible: !notificationDnd || stringOrEmpty(NotificationUrgency.toString(notification.urgency)).toLowerCase() === "critical",
             timeout_ms: notification.expireTimeout,
+            timestamp: Date.now(),
+            transient: boolOrFalse(notification.transient),
+            has_inline_reply: boolOrFalse(notification.hasInlineReply),
+            inline_reply_placeholder: stringOrEmpty(notification.inlineReplyPlaceholder),
             actions: arrayOrEmpty(notification.actions).map(action => ({
                 identifier: notificationActionIdentifier(action),
                 text: notificationActionText(action)

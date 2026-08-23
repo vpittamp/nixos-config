@@ -170,7 +170,9 @@ EOF
 
   programs.quickshell-runtime-shell = {
     enable = true;
-    notifications.toastMaxPerOutput = 0;
+    # Overlay toasts re-enabled 2026-08: the redesigned toast stack (hover-pause,
+    # swipe-dismiss, animated, per-id stable) replaced the old static cards whose
+    # timers reset on every feed change. Default limit is 4 per output.
   };
 
   wayland.windowManager.sway.config.window.commands = lib.mkAfter [

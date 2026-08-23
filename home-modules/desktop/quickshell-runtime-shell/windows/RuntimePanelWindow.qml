@@ -642,11 +642,11 @@ PanelWindow {
 
             RootComponents.NotificationRailCard {
                 Layout.fillWidth: true
-                visible: root.notificationHeroItem() !== null
+                visible: !root.notificationCenterVisible && root.notificationHeroItem() !== null
                 rootObject: root
                 colorsObject: colors
                 itemData: root.notificationHeroItem()
-                compact: !root.notificationCenterVisible
+                compact: true
                 onDismissRequested: (notificationId) => root.dismissNotification(notificationId)
                 onActionInvoked: (notificationId, actionId) => root.invokeNotificationAction(notificationId, actionId)
                 onMarkReadRequested: (notificationId) => root.markNotificationRead(notificationId)
@@ -655,31 +655,147 @@ PanelWindow {
 
             ScriptModel {
                 id: notificationPanelModel
-                values: root.notificationCenterVisible ? root.notificationPanelItems().slice(1) : []
-                objectProp: "modelData"
+                values: root.notificationCenterVisible ? root.notificationPanelRows() : []
+                objectProp: "row_id"
             }
 
             ListView {
                 id: notificationRailList
                 Layout.fillWidth: true
-                Layout.preferredHeight: Math.min(contentHeight, 288)
+                Layout.preferredHeight: Math.min(contentHeight, 320)
                 visible: root.notificationCenterVisible && count > 0
                 clip: true
                 spacing: 8
                 model: notificationPanelModel
                 boundsBehavior: Flickable.StopAtBounds
 
-                delegate: RootComponents.NotificationRailCard {
+                add: Transition {
+                    NumberAnimation {
+                        properties: "opacity"
+                        from: 0
+                        to: 1
+                        duration: 200
+                    }
+                    NumberAnimation {
+                        properties: "y"
+                        duration: 240
+                        easing.type: Easing.OutCubic
+                    }
+                }
+
+                displaced: Transition {
+                    NumberAnimation {
+                        properties: "y"
+                        duration: 240
+                        easing.type: Easing.OutCubic
+                    }
+                    NumberAnimation {
+                        properties: "opacity"
+                        to: 1
+                        duration: 240
+                    }
+                }
+
+                delegate: Loader {
                     required property var modelData
                     width: notificationRailList.width
-                    rootObject: root
-                    colorsObject: colors
-                    itemData: modelData
-                    compact: false
-                    onDismissRequested: (notificationId) => root.dismissNotification(notificationId)
-                    onActionInvoked: (notificationId, actionId) => root.invokeNotificationAction(notificationId, actionId)
-                    onMarkReadRequested: (notificationId) => root.markNotificationRead(notificationId)
-                    onDetailRequested: (notificationId) => root.showNotificationDetail(notificationId)
+                    sourceComponent: modelData.kind === "header" ? notificationGroupHeader : notificationGroupCard
+
+                    Component {
+                        id: notificationGroupHeader
+
+                        Item {
+                            implicitHeight: 26
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 2
+                                anchors.rightMargin: 2
+                                spacing: 6
+
+                                Text {
+                                    text: modelData.expanded ? "▾" : "▸"
+                                    color: colors.subtle
+                                    font.pixelSize: 9
+                                }
+
+                                Text {
+                                    text: modelData.label
+                                    color: colors.textDim
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
+                                    Layout.maximumWidth: notificationRailList.width * 0.5
+                                }
+
+                                Rectangle {
+                                    visible: modelData.count > 1
+                                    Layout.preferredHeight: 15
+                                    Layout.preferredWidth: groupCountText.implicitWidth + 10
+                                    radius: 7
+                                    color: modelData.unread > 0 ? colors.blueBg : Theme.elevationFaint
+                                    border.color: modelData.unread > 0 ? colors.blueMuted : Theme.elevation
+                                    border.width: 1
+
+                                    Text {
+                                        id: groupCountText
+                                        anchors.centerIn: parent
+                                        text: modelData.count
+                                        color: modelData.unread > 0 ? colors.blue : colors.subtle
+                                        font.pixelSize: 8
+                                        font.weight: Font.DemiBold
+                                    }
+                                }
+
+                                Item {
+                                    Layout.fillWidth: true
+                                }
+
+                                Text {
+                                    visible: groupHeaderMouse.containsMouse || groupClearMouse.containsMouse
+                                    text: "clear"
+                                    color: groupClearMouse.containsMouse ? colors.red : colors.subtle
+                                    font.pixelSize: 9
+                                    font.weight: Font.DemiBold
+
+                                    MouseArea {
+                                        id: groupClearMouse
+                                        anchors.fill: parent
+                                        anchors.margins: -4
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.clearNotificationGroup(modelData.group_key)
+                                    }
+                                }
+                            }
+
+                            MouseArea {
+                                id: groupHeaderMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                z: -1
+                                onClicked: root.toggleNotificationGroup(modelData.group_key)
+                            }
+                        }
+                    }
+
+                    Component {
+                        id: notificationGroupCard
+
+                        RootComponents.NotificationRailCard {
+                            rootObject: root
+                            colorsObject: colors
+                            itemData: modelData.item
+                            compact: false
+                            stackCount: Number(modelData.stack_count || 0)
+                            onDismissRequested: (notificationId) => root.dismissNotification(notificationId)
+                            onActionInvoked: (notificationId, actionId) => root.invokeNotificationAction(notificationId, actionId)
+                            onMarkReadRequested: (notificationId) => root.markNotificationRead(notificationId)
+                            onDetailRequested: (notificationId) => root.showNotificationDetail(notificationId)
+                            onExpandRequested: root.toggleNotificationGroup(modelData.group_key)
+                        }
+                    }
                 }
             }
 

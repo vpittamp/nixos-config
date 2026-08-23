@@ -109,7 +109,9 @@ in
     accentBg = "#15233d";
     accentMuted = "#3b5f8f";
     accentWash = "#111a2e";
-    notifications.toastMaxPerOutput = 0;
+    # Overlay toasts re-enabled 2026-08: the redesigned toast stack (hover-pause,
+    # swipe-dismiss, animated, per-id stable) replaced the old static cards whose
+    # timers reset on every feed change. Default limit is 4 per output.
   };
 
   # sway-easyfocus - Keyboard-driven window hints

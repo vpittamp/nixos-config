@@ -297,7 +297,7 @@ Item {
             actionsSupported: true
             actionIconsSupported: false
             imageSupported: runtimeConfig.notificationImagesEnabled
-            inlineReplySupported: false
+            inlineReplySupported: true
             onNotification: function (notification) {
                 shellRoot.handleNativeNotification(notification);
             }

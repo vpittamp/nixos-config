@@ -45,7 +45,36 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
 
+    onVisibleChanged: {
+        if (visible) {
+            detailEnterAnim.restart();
+        }
+    }
+
+    ParallelAnimation {
+        id: detailEnterAnim
+
+        NumberAnimation {
+            target: detailScrim
+            property: "opacity"
+            from: 0
+            to: 1
+            duration: 180
+            easing.type: Easing.OutCubic
+        }
+
+        NumberAnimation {
+            target: detailCard
+            property: "scale"
+            from: 0.96
+            to: 1
+            duration: 220
+            easing.type: Easing.OutCubic
+        }
+    }
+
     Rectangle {
+        id: detailScrim
         anchors.fill: parent
         color: Theme.scrim
 
@@ -147,7 +176,14 @@ PanelWindow {
 
                         Text {
                             Layout.fillWidth: true
-                            text: root.notificationDetailItem ? root.notificationAppLabel(root.notificationDetailItem) : ""
+                            text: {
+                                const item = root.notificationDetailItem;
+                                if (!item) {
+                                    return "";
+                                }
+                                const relative = root.notificationRelativeTime(item);
+                                return root.notificationAppLabel(item) + (relative ? " · " + relative : "");
+                            }
                             color: colors.textDim
                             font.pixelSize: 10
                             font.weight: Font.DemiBold
