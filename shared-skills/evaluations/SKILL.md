@@ -62,8 +62,9 @@ Read first:
    runtime identity, scores, scorer/harness provenance, and resource cleanup.
 
 Campaigns also appear in unified Runs. Use the campaign detail for frozen
-snapshot, capacity arithmetic, trial/score matrix, environment artifacts, and
-lineage; use Runs for the common activity and trace lens.
+snapshot, capacity arithmetic, campaign score/performance analytics,
+environment artifacts, and lineage; use Runs for the common activity and trace
+lens.
 
 UI ownership is deliberate:
 
@@ -75,6 +76,33 @@ UI ownership is deliberate:
 - A campaign parked on environment preparation or capacity has no ordinary
   workflow child yet, so it belongs only in Dashboard/Runs and Evaluations.
 
+## Campaign analytics
+
+Campaign detail consumes the canonical analytics application port with the
+exact project and campaign ID. It must not query Postgres, ClickHouse, Kueue,
+or trace storage from presentation code. Use the authenticated
+`/api/evaluation-analytics?range=all&campaign=<campaign-id>` projection when a
+machine-readable view is needed.
+
+Interpret the page precisely:
+
+- campaign wall duration and summed trial duration are different; their ratio
+  makes parallel overlap visible;
+- the headline token count is input plus output, while cache read and cache
+  creation remain separate provider-accounting facts;
+- canonical session events own LLM calls, tool calls/errors, first-LLM and
+  first-tool latency, and per-trial trace links;
+- observed peak CPU/memory is not a Kubernetes request, Kueue reservation, or
+  capacity decision;
+- direct API cost is shown only from the campaign's frozen rate-card basis;
+  subscription and unknown subjects remain explicitly unpriced; and
+- compare one exact scorer-version and metric at a time. Never average values
+  across scorer versions or scales.
+
+Use the interactive metric bars and outcome filter to find outliers, then open
+the selected ordinary workflow trace. Missing usage or duration on a terminal
+trial is a data-quality fault, not a zero observation.
+
 ## SWE-bench
 
 - Freeze the Hugging Face dataset to a revision.
@@ -83,10 +111,12 @@ UI ownership is deliberate:
   identity or attach cases to an older subset.
 - Resolve the official `swebench/sweb.eval.x86_64.<instance>` Docker Hub image
   to its linux/amd64 platform digest; do not launch from `latest`.
-- Validate the `openshell-compat-v4` boundary: default user and primary group
-  `sandbox`, non-root UID, `HOME=/sandbox`, writable `/sandbox/.git`, Python,
-  Git, POSIX shell, `ip`, and `getent`. If the official image fails, the
-  expected path is a separate minimal hub-built compatibility image; never
+- Validate the current `openshell-compat-v7` boundary: default user and primary
+  group `sandbox`, non-root UID, `HOME=/sandbox`, writable `/sandbox/.git`,
+  Python, Git, POSIX shell, `ip`, `getent`, and `rg`. A compatibility wrapper
+  seeds the official `/testbed` checkout into the native `/sandbox` workspace
+  without removing image-baked ignored artifacts. If the source image fails,
+  the expected path is a separate minimal hub-built compatibility image; never
   modify the image during campaign execution.
 - Require exact-ready artifact coverage before start.
 - Require the `evaluation-hermetic` OpenShell policy profile for subject

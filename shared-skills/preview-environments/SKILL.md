@@ -82,6 +82,12 @@ terminate active or protected work. Observer failure is never permission to
 reclaim. Treat total preview objects, awake capacity, public origins, and exact
 Kueue admission as separate limits.
 
+Preview vClusters are not an evaluation execution lane. Canonical evaluation
+campaigns, ordinary subject children, and scorer harnesses execute on physical
+dev through the `benchmark-eval` ledger. They share capacity-observer signals
+with previews but not lifecycle authority, reservations, or product read
+models. Use `evaluations` for campaign scores and trace-derived usage.
+
 ### Source-baseline clamp
 
 A hot-reload receiver seeds its workspace from the pinned `workflow-builder-dev`
