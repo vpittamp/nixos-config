@@ -95,9 +95,22 @@
             python-ember-mug
           ];
         };
+
+        uber-eats-component = pkgs.buildHomeAssistantComponent rec {
+          owner = "zodyking";
+          domain = "uber_eats";
+          version = "1.4.7";
+          src = pkgs.fetchFromGitHub {
+            owner = "zodyking";
+            repo = "uber-eats-order-tracker";
+            rev = "5153ae091bc31e3989121fe27987cd81a9d32e11";
+            hash = "sha256-VqgoVYMdMf8M201JPC4fj60sQ9ie8tMnIL1OTrtzDMs=";
+          };
+        };
       in
       [
         ember-mug-component
+        uber-eats-component
       ];
 
     config = {
