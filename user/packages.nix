@@ -9,10 +9,15 @@ let
     idpbuilderSrc = inputs.idpbuilder-src or null;
   };
 
-  # goose-desktop and github-copilot (desktop AppImage) removed 2026-08-23 (slimming,
-  # ~399 MiB and ~1.30 GiB). Goose state was last written 2026-03-24; the Copilot GUI
-  # was never launched (only the CLI's ~/.config/github-copilot exists). The package
-  # definitions remain at ../packages/{goose-desktop,github-copilot}.nix if wanted back.
+  # goose-desktop removed 2026-08-23 (slimming, ~399 MiB); state last written
+  # 2026-03-24. Definition remains at ../packages/goose-desktop.nix if wanted back.
+
+  # GitHub Copilot - agent-native desktop app (github/app AppImage; x86_64 + aarch64).
+  # Restored 2026-08-24 at 1.1.12 by request, after the 2026-08-23 slimming pass
+  # removed it as unused. See packages/github-copilot.nix for the NixOS quirks
+  # (notably: disable the app's "Use bundled git" experiment — its bundled git needs
+  # libcurl-gnutls.so.4, which NixOS does not ship).
+  github-copilot = pkgs.callPackage ../packages/github-copilot.nix { };
 
   # Kimi Code CLI (`kimi`) - MoonshotAI coding agent, packaged from the
   # self-contained npm bundle (@moonshot-ai/kimi-code). See packages/kimi-code.nix.
@@ -90,6 +95,7 @@ let
   aiTools = [
     herdr
     hunk # Hunk review-first terminal diff viewer (upstream flake)
+    github-copilot # GitHub Copilot agent-native desktop app (custom package)
     kimi-code # Kimi Code CLI (`kimi`) — MoonshotAI coding agent (custom package)
   ] ++ (with pkgs; [
     agent-browser # Vercel Labs browser automation CLI for AI agents (Rust, CDP)

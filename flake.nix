@@ -37,13 +37,14 @@
     # Gemini CLI sunsets requests for Google AI Pro/Ultra/Free on 2026-06-18.
     #
     # Was consumed from `pkgs-unstable`, but the unstable channel lags master:
-    # as of 2026-08-18 nixpkgs-unstable still lags master on antigravity-cli.
+    # as of 2026-08-24 nixpkgs-unstable still lags master on antigravity-cli
+    # (unstable 1.1.13 vs master 1.1.19), so this pin is still required.
     # Pinned to a master revision so `agy` tracks upstream, in the same
     # shape as the nixpkgs-lazygit workaround above. Consumed by
     # home-modules/ai-assistants/antigravity-cli.nix.
     # TODO(antigravity-pin): drop this input once nixpkgs-unstable catches up,
     # and revert that module to `pkgs-unstable.antigravity-cli`.
-    nixpkgs-antigravity.url = "github:NixOS/nixpkgs/d2dbdf997c7e0e3b16da918e83b9eaddaa468890";
+    nixpkgs-antigravity.url = "github:NixOS/nixpkgs/aab1f6e3b9fa2ab400580b251ef82cc7118a403d";
 
     # Flake organization
     flake-parts = {
@@ -114,7 +115,7 @@
     # Pinned to the release tag: upstream's main branch lags releases (main is
     # 0.17.0 while v0.17.1 is released), so tracking main misses versions.
     hunk = {
-      url = "github:modem-dev/hunk/v0.17.1";
+      url = "github:modem-dev/hunk/v0.19.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
