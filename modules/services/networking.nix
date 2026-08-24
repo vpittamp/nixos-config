@@ -7,8 +7,46 @@
     enable = true;
     openFirewall = true;
     useRoutingFeatures = lib.mkDefault "both";  # Enable subnet routing and exit node features
-    extraUpFlags = [ "--ssh" "--accept-routes" ];  # Enable Tailscale SSH
+    # NOT extraUpFlags: NixOS only applies those when services.tailscale.authKeyFile
+    # is set (it builds tailscaled-autoconnect.service under `mkIf (authKeyFile !=
+    # null)`, and `tailscale up` runs only there). No host here sets an authKeyFile,
+    # so every extraUpFlags entry this repo ever declared was silently inert --
+    # surface ran with --accept-routes unset for as long as tailscale has been on it,
+    # which is what produced "Some peers are advertising routes but --accept-routes
+    # is false". extraSetFlags runs `tailscale set` from tailscaled-set.service on
+    # every boot regardless, so the pref is genuinely declarative.
+    #
+    # Tailscale SSH is deliberately not enabled: these hosts are administered over
+    # plain OpenSSH on the tailnet (see the openssh block below). The tailnet policy
+    # has an `ssh` section, but no host advertises SSH, so those rules stay inert.
+    extraSetFlags = [ "--accept-routes" ];
   };
+
+  # DNS resilience floor.
+  #
+  # Tailscale registers itself as an *exclusive* openresolv subscriber, so
+  # /etc/resolv.conf lists only MagicDNS (100.100.100.100). Public names then
+  # depend entirely on tailscaled forwarding them to upstreams it captured from
+  # the OS at the instant it applied its DNS config. If no resolver is present
+  # at that instant -- a DHCP renew, a WAN flap, an ISP gateway switched to
+  # bridge mode -- it captures an *empty* upstream list and answers every public
+  # query with SERVFAIL:
+  #
+  #   dns: resolver: forward: no upstream resolvers set, returning SERVFAIL
+  #
+  # Nothing re-reads the base config afterwards, so the outage lasts until
+  # something forces a DNS reconfigure. Tailnet names keep resolving the whole
+  # time (MagicDNS answers those itself), which makes it look like the network
+  # is fine while every API call fails with ENOTFOUND. Surface sat in this state
+  # from 2026-08-06 to 2026-08-24, across reboots.
+  #
+  # networking.nameservers becomes a permanent `resolvconf -m 1 -a static`
+  # record, written at boot and independent of DHCP, so the captured upstream
+  # list is never empty. It ranks *after* the DHCP-provided resolver, so LAN
+  # names still resolve through the local gateway; these only act as a floor.
+  # Verified on surface by blocking the gateway's port 53 outright: public
+  # resolution continued via the fallback, and LAN names were unaffected.
+  networking.nameservers = lib.mkDefault [ "1.1.1.1" "8.8.8.8" ];
 
   # Enhanced SSH configuration
   services.openssh = {

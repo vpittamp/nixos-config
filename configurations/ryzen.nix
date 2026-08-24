@@ -991,7 +991,8 @@ in
   services.tailscale = {
     enable = true;
     useRoutingFeatures = "client";
-    extraUpFlags = [ "--ssh" "--accept-routes" ];
+    # --accept-routes is set centrally via extraSetFlags in
+    # modules/services/networking.nix (extraUpFlags never applied: no authKeyFile).
   };
 
   # Expose the Talos kube-apiserver on the tailnet for hub ArgoCD — the durable

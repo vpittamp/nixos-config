@@ -814,7 +814,8 @@ in
     useRoutingFeatures = "client";
     # Keep plain SSH over the tailnet so tagged infrastructure devices like
     # ryzen can still reach this user-owned workstation.
-    extraUpFlags = [ "--accept-routes" ];
+    # --accept-routes is set centrally via extraSetFlags in
+    # modules/services/networking.nix (extraUpFlags never applied: no authKeyFile).
   };
 
   # Firewall configuration

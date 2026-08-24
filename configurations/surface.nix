@@ -452,7 +452,8 @@ in
   services.tailscale = {
     enable = true;
     useRoutingFeatures = "client";
-    extraUpFlags = [ "--accept-routes" ];
+    # --accept-routes is set centrally via extraSetFlags in
+    # modules/services/networking.nix (extraUpFlags never applied: no authKeyFile).
   };
 
   # Firewall configuration
