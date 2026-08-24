@@ -54,6 +54,7 @@ in
     # Home Assistant Core — see that file for the version rationale (pinned
     # nixpkgs carries 2026.6.1; upstream 2026.8.x needs a full channel bump).
     ../modules/services/home-assistant.nix
+    ../modules/services/home-assistant-watchdog.nix
 
     # Bare metal essentials (no Podman/printing here — see below)
     ../modules/services/bare-metal.nix
@@ -145,6 +146,14 @@ in
     # the deliberate divergence, trading standby time for reachability. (Type
     # Cover closed == lid closed on a Surface, which makes this easy to trip.)
     lidPolicy.battery = "lock";
+
+    # Same reasoning as lidPolicy above, for the idle path: this host runs Home
+    # Assistant for the whole house and is reachable only over tailscale. It
+    # keeps a greetd/Sway session on tty1 that nobody touches, so logind's
+    # default IdleAction=suspend after 30min would put the automation hub to
+    # sleep with no way to wake it remotely -- suspend is not wakeable by
+    # inbound network traffic here. Observed repeatedly dropping off the tailnet.
+    idlePolicy.action = "ignore";
   };
 
   # Display manager - greetd for Wayland/Sway login

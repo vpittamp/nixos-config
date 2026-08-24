@@ -86,6 +86,25 @@ in
         description = "Action to take when the laptop lid closes while docked or using an external display.";
       };
     };
+
+    # Separate from lidPolicy: logind suspends on *session idle* regardless of
+    # the lid. On a host that is administered only over the network, that takes
+    # it off the tailnet with nothing able to wake it -- the same failure the
+    # lidPolicy comments describe, reached by a different route. Hosts that run
+    # a service others depend on should set action = "ignore".
+    idlePolicy = {
+      action = mkOption {
+        type = lidActionType;
+        default = "suspend";
+        description = "Action to take when all sessions have been idle for {option}`idlePolicy.delay`.";
+      };
+
+      delay = mkOption {
+        type = types.str;
+        default = "30min";
+        description = "How long all sessions must be idle before {option}`idlePolicy.action` fires.";
+      };
+    };
   };
 
   config = mkIf cfg.enable {
@@ -221,8 +240,8 @@ in
       HandleLidSwitchExternalPower = cfg.lidPolicy.externalPower;
       HandleLidSwitchDocked = cfg.lidPolicy.docked;
       HandlePowerKey = "suspend";
-      IdleAction = "suspend";
-      IdleActionSec = "30min";
+      IdleAction = cfg.idlePolicy.action;
+      IdleActionSec = cfg.idlePolicy.delay;
     };
 
     # ========== ADDITIONAL PACKAGES ==========
