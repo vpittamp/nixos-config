@@ -53,3 +53,9 @@ Trace-*.json
 .antigravitycli/
 # Claude Code scheduled-task lock (local runtime state)
 .claude/scheduled_tasks.lock
+
+# Agent session exports. These transcripts routinely contain secrets pasted
+# mid-conversation (router/gateway admin passwords, API tokens) and land in the
+# repo root, one `git add -A` away from being committed. Ignore them by pattern
+# rather than relying on noticing each one.
+*-export-session*.md
