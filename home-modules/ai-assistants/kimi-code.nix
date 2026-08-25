@@ -29,6 +29,7 @@ let
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
   contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
   homeAssistantMcp = config.modules.aiAssistants.homeAssistantMcp;
+  fabricMcp = config.modules.aiAssistants.fabricMcp;
   sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
   enableBrowserMcpServers = sharedBrowserMcp.enableBrowserMcpServers;
   nodeNpx = "${pkgs.nodejs}/bin/npx";
@@ -73,6 +74,14 @@ let
     // lib.optionalAttrs homeAssistantMcp.enable {
       homeassistant = {
         command = "${homeAssistantMcp.proxyCommand}";
+        args = [];
+        startupTimeoutMs = 30000;
+        toolTimeoutMs = 120000;
+      };
+    }
+    // lib.optionalAttrs fabricMcp.enable {
+      fabric = {
+        command = "${fabricMcp.proxyCommand}";
         args = [];
         startupTimeoutMs = 30000;
         toolTimeoutMs = 120000;

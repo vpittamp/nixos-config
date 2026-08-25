@@ -33,6 +33,7 @@ let
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
   contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
   homeAssistantMcp = config.modules.aiAssistants.homeAssistantMcp;
+  fabricMcp = config.modules.aiAssistants.fabricMcp;
 
   mcpServers =
     (lib.optionalAttrs workflowBuilderMcp.enable {
@@ -70,6 +71,14 @@ let
       # Home Assistant MCP server (Streamable HTTP) via authenticated mcp-remote proxy.
       "homeassistant" = {
         command = "${homeAssistantMcp.proxyCommand}";
+        args = [];
+        timeoutSeconds = 120;
+      };
+    })
+    // (lib.optionalAttrs fabricMcp.enable {
+      # Microsoft Fabric Core MCP server (Streamable HTTP) via authenticated mcp-remote proxy.
+      "fabric" = {
+        command = "${fabricMcp.proxyCommand}";
         args = [];
         timeoutSeconds = 120;
       };

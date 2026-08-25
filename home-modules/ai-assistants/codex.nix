@@ -7,6 +7,7 @@ let
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
   contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
   homeAssistantMcp = config.modules.aiAssistants.homeAssistantMcp;
+  fabricMcp = config.modules.aiAssistants.fabricMcp;
 
   sharedSkillsDir = repoRoot + "/shared-skills";
   sharedSkillEntries = if builtins.pathExists sharedSkillsDir then builtins.readDir sharedSkillsDir else {};
@@ -252,6 +253,28 @@ env_vars = [
   "HASS_TOKEN_OP_REF",
   "HASS_MCP_URL",
   "HOMEASSISTANT_TOKEN",
+  "WAYLAND_DISPLAY",
+  "XDG_RUNTIME_DIR",
+]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+''}
+
+${lib.optionalString fabricMcp.enable ''
+[mcp_servers.fabric]
+args = []
+command = "${fabricMcp.proxyCommand}"
+enabled = true
+env_vars = [
+  "DBUS_SESSION_BUS_ADDRESS",
+  "DISPLAY",
+  "OP_BIOMETRIC_UNLOCK_ENABLED",
+  "OP_SERVICE_ACCOUNT_TOKEN",
+  "FABRIC_TOKEN",
+  "FABRIC_TOKEN_OP_REF",
+  "FABRIC_MCP_URL",
+  "AZURE_FABRIC_TOKEN",
+  "AZURE_TOKEN",
   "WAYLAND_DISPLAY",
   "XDG_RUNTIME_DIR",
 ]

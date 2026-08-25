@@ -6,6 +6,7 @@ let
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
   contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
   homeAssistantMcp = config.modules.aiAssistants.homeAssistantMcp;
+  fabricMcp = config.modules.aiAssistants.fabricMcp;
 
   # Use claude-code from the dedicated flake for latest version
   # Fall back to nixpkgs-unstable if flake not available
@@ -342,6 +343,7 @@ lib.mkIf enableClaudeCode {
           "mcp__workflow-builder__run_workflow_script"
           "mcp__workflow-builder__save_workflow_script"
           "mcp__homeassistant"
+          "mcp__fabric"
         ];
       };
 
@@ -523,6 +525,13 @@ lib.mkIf enableClaudeCode {
         # Home Assistant MCP server (Streamable HTTP) via authenticated mcp-remote proxy.
         homeassistant = {
           command = "${homeAssistantMcp.proxyCommand}";
+          args = [];
+        };
+      })
+      // (lib.optionalAttrs fabricMcp.enable {
+        # Microsoft Fabric Core MCP server (Streamable HTTP) via authenticated mcp-remote proxy.
+        fabric = {
+          command = "${fabricMcp.proxyCommand}";
           args = [];
         };
       });
