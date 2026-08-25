@@ -42,16 +42,28 @@ PanelWindow {
         border.color: topBarWindow.isFocusedBar ? colors.blueMuted : colors.border
         border.width: 1
 
-        RowLayout {
+        // The three sections are ANCHORED, not cells of a RowLayout. A RowLayout
+        // with two fillWidth siblings splits the leftover space in equal shares,
+        // so the "centred" block only lands on the midpoint when the left and
+        // right clusters happen to be the same width — they never are, and the
+        // clock sat ~430px left of centre on a 1920px output. Worse, every width
+        // change on either side dragged it sideways: a percentage gaining a
+        // digit nudged it, and a focus change (which used to add or remove the
+        // tray, cast and power chips) threw it 75px while the right cluster
+        // jumped 153px. Anchoring pins each section to its own edge, so nothing
+        // any section does can move the other two.
+        Item {
             anchors.fill: parent
             anchors.leftMargin: 10
             anchors.rightMargin: 10
             anchors.topMargin: 4
             anchors.bottomMargin: 4
-            spacing: 4
 
             RowLayout {
-                Layout.fillWidth: true
+                id: leftCluster
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
                 spacing: 6
 
                 Rectangle {
@@ -235,13 +247,20 @@ PanelWindow {
             }
 
             Rectangle {
-                Layout.alignment: Qt.AlignHCenter
+                id: centerCluster
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
                 radius: root.radiusControl
                 color: colors.card
                 border.color: colors.border
                 border.width: 1
                 implicitWidth: centerRow.implicitWidth + 20
-                Layout.fillHeight: true
+                // Anchoring gives up the layout's collision avoidance, so drop
+                // the block rather than draw it through a side cluster on an
+                // output too narrow to hold all three.
+                visible: (parent.width - width) / 2
+                    > Math.max(leftCluster.width, rightCluster.width) + 8
 
                 RowLayout {
                     id: centerRow
@@ -286,8 +305,10 @@ PanelWindow {
             }
 
             RowLayout {
-                Layout.fillWidth: true
-                Layout.alignment: Qt.AlignRight
+                id: rightCluster
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
                 spacing: 6
 
                 Rectangle {
@@ -394,7 +415,18 @@ PanelWindow {
                     color: root.neutralChipFill(memoryMouse.containsMouse)
                     border.color: root.neutralChipBorder(memoryMouse.containsMouse)
                     border.width: 1
-                    implicitWidth: memoryLabel.implicitWidth + 18
+                    // Sized for the widest reading it can ever hold, not for the
+                    // current one. The percentage moves on every stats poll and
+                    // proportional digits are not the same width, so binding to
+                    // the live label shuffled every chip to its left a pixel or
+                    // two, several times a minute.
+                    implicitWidth: Math.ceil(memoryMetrics.width) + 18
+
+                    TextMetrics {
+                        id: memoryMetrics
+                        font: memoryLabel.font
+                        text: "Mem 100%"
+                    }
                     Layout.fillHeight: true
 
                     Behavior on color {
@@ -431,7 +463,13 @@ PanelWindow {
                     color: root.diskChipFill(diskMouse.containsMouse)
                     border.color: root.diskChipBorder(diskMouse.containsMouse)
                     border.width: 1
-                    implicitWidth: diskLabel.implicitWidth + 18
+                    implicitWidth: Math.ceil(diskMetrics.width) + 18
+
+                    TextMetrics {
+                        id: diskMetrics
+                        font: diskLabel.font
+                        text: "Disk 100%"
+                    }
                     Layout.fillHeight: true
 
                     Behavior on color {
@@ -843,9 +881,15 @@ PanelWindow {
 
                 RowLayout {
                     id: systemTrayRow
-                    // Show on the focused monitor's bar (not the configured primary,
-                    // which may be off) so the tray is reachable on the active screen.
-                    visible: topBarWindow.isFocusedBar && root.arrayOrEmpty(SystemTray.items ? SystemTray.items.values : []).length > 0
+                    // On every bar, not just the focused one. Following focus
+                    // meant the tray appeared and vanished on two bars at once
+                    // every time the pointer crossed a monitor, and since it is
+                    // the widest thing on the right it re-laid out the whole
+                    // cluster each time. Duplicating the icons per monitor is
+                    // what every other multi-head bar does, and it serves the
+                    // original intent — reachable on whatever screen you are
+                    // looking at — better than chasing focus did.
+                    visible: root.arrayOrEmpty(SystemTray.items ? SystemTray.items.values : []).length > 0
                     spacing: 4
 
                     // Tray items that should always be visible even when Status.Passive
@@ -919,8 +963,8 @@ PanelWindow {
                 Rectangle {
                     id: castChip
                     // Chromecast "extended display" via cast-extend; every Sway
-                    // host can cast through Chrome, so show on the focused bar.
-                    visible: topBarWindow.isFocusedBar
+                    // host can cast through Chrome, so show it on every bar.
+                    // Gating on focus only made the right cluster reflow.
                     radius: root.radiusControl
                     color: root.castChipFill(castMouse.containsMouse)
                     border.color: root.castChipBorder(castMouse.containsMouse)
@@ -970,8 +1014,9 @@ PanelWindow {
 
                 Rectangle {
                     id: powerChip
-                    // On the focused monitor's bar (was configured-primary only).
-                    visible: topBarWindow.isFocusedBar
+                    // On every bar. The popup already scopes itself to the bar
+                    // it was opened from via barPopupOutputName, so there is
+                    // nothing focus-specific left to gate on.
                     radius: root.radiusControl
                     color: root.powerChipFill(powerMouse.containsMouse)
                     border.color: root.powerChipBorder(powerMouse.containsMouse)

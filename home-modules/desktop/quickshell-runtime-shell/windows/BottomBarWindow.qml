@@ -362,6 +362,7 @@ PanelWindow {
                                                 // on this workspace. Host-colored ring,
                                                 // tool glyph inside.
                                                 Rectangle {
+                                                    id: agentBadge
                                                     readonly property var agentChip: index === 0 ? (workspace && workspace.agent_chip) : null
                                                     visible: agentChip !== null && agentChip !== undefined
                                                     anchors.right: parent.right
@@ -378,7 +379,15 @@ PanelWindow {
                                                     IconImage {
                                                         anchors.centerIn: parent
                                                         implicitSize: 8
-                                                        source: agentChip ? root.stringOrEmpty(agentChip.tool_icon) : ""
+                                                        // Via the id, not the bare name: QML resolves an
+                                                        // unqualified name against this object, the ids in
+                                                        // the component, and the component root — never an
+                                                        // intermediate parent. Bare `agentChip` threw a
+                                                        // ReferenceError on every re-evaluation, so the
+                                                        // glyph never drew and the journal filled up.
+                                                        source: agentBadge.agentChip
+                                                            ? root.stringOrEmpty(agentBadge.agentChip.tool_icon)
+                                                            : ""
                                                         visible: source !== ""
                                                         mipmap: true
                                                     }
