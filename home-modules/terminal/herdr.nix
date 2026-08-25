@@ -198,7 +198,17 @@ in
     accent = "cyan"
 
     [ui.toast]
-    delivery = "system"
+    # The i3pm daemon posts these instead (services/herdr_notifier.py), because
+    # Herdr's own "system" delivery shells out to notify-send with nothing but a
+    # summary and a body -- app name "notify-send", no actions, no hints. The
+    # pane it is about is not in there: the body's trailing numbers are the
+    # workspace and tab *display* indices, which renumber as tabs open and
+    # close, and two agents of the same kind in one workspace differ by nothing
+    # else. The daemon already subscribes to pane.agent_status_changed for every
+    # pane, so it can attach the pane identity as hints and let the Quickshell
+    # toast offer "Switch to pane". Set this back to "system" to hand the toasts
+    # back to Herdr (and lose the button).
+    delivery = "off"
     delay_seconds = 1
 
     [ui.sound]

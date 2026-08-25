@@ -2324,8 +2324,58 @@ ShellRoot {
         }
     }
 
+    // Switch to the Herdr pane a notification came from. Prefers the live
+    // session row (its focus_target already routes local vs remote correctly),
+    // and falls back to a direct pane focus when the pane is no longer in the
+    // snapshot the shell holds — a notification outlives a dashboard refresh.
+    function focusHerdrNotificationPane(item) {
+        const sessionKey = stringOrEmpty(item && item.herdr_session);
+        if (sessionKey && sessionByKey(sessionKey)) {
+            focusSession(sessionKey);
+            return true;
+        }
+        const paneId = stringOrEmpty(item && item.herdr_pane);
+        if (!paneId) {
+            return false;
+        }
+        // Only local panes can be addressed without the row: a remote focus
+        // needs the ssh target, which lives on the session row we just failed
+        // to find. Guessing one would focus the wrong machine, so decline.
+        const host = stringOrEmpty(item && item.herdr_host);
+        if (host && host !== stringOrEmpty(shellConfig.hostName)) {
+            return false;
+        }
+        runFocusTarget({
+            method: "herdr.pane.focus",
+            params: { pane_id: paneId }
+        });
+        return true;
+    }
+
+    function notificationItemById(notificationId) {
+        const targetId = Number(notificationId || 0);
+        for (let i = 0; i < notificationFeed.length; i += 1) {
+            const item = notificationFeed[i];
+            if (Number(item && item.id) === targetId) {
+                return item;
+            }
+        }
+        return null;
+    }
+
     function invokeNotificationAction(notificationId, actionId) {
         const targetId = Number(notificationId || 0);
+
+        // Shell-handled actions are resolved from the snapshot, not the D-Bus
+        // runtime entry, so they keep working after the sender is gone.
+        if (stringOrEmpty(actionId) === herdrFocusActionId) {
+            const item = notificationItemById(targetId);
+            markNotificationRead(targetId);
+            dismissNotification(targetId);
+            focusHerdrNotificationPane(item);
+            return;
+        }
+
         const notification = notificationRuntimeMap[String(targetId)];
         if (!notification) {
             console.warn("notification.action: no runtime entry for", targetId, "(closed?)");
@@ -2348,6 +2398,18 @@ ShellRoot {
     // view when the sender registered no default action.
     function invokeNotificationDefault(notificationId) {
         const targetId = Number(notificationId || 0);
+
+        // A Herdr agent notification has exactly one thing worth doing, so the
+        // body activates it too rather than opening a detail view of two lines
+        // of text. The sender registers no freedesktop default action.
+        const herdrItem = notificationItemById(targetId);
+        if (herdrItem && (stringOrEmpty(herdrItem.herdr_session) || stringOrEmpty(herdrItem.herdr_pane))) {
+            markNotificationRead(targetId);
+            dismissNotification(targetId);
+            focusHerdrNotificationPane(herdrItem);
+            return;
+        }
+
         const notification = notificationRuntimeMap[String(targetId)];
         if (notification) {
             const actions = arrayOrEmpty(notification.actions);
@@ -2468,13 +2530,49 @@ ShellRoot {
             transient: boolOrFalse(notification.transient),
             has_inline_reply: boolOrFalse(notification.hasInlineReply),
             inline_reply_placeholder: stringOrEmpty(notification.inlineReplyPlaceholder),
+            herdr_session: herdrNotificationSessionKey(notification),
+            herdr_pane: herdrNotificationHint(notification, "x-i3pm-herdr-pane"),
+            herdr_host: herdrNotificationHint(notification, "x-i3pm-herdr-host"),
             actions: arrayOrEmpty(notification.actions).map(action => ({
                 identifier: notificationActionIdentifier(action),
                 text: notificationActionText(action)
             }))
         };
 
+        // The daemon tags its Herdr agent notifications with the pane they are
+        // about (services/herdr_notifier.py). Turn that into a real button.
+        // It has to be synthetic rather than a freedesktop action: invoking one
+        // of those signals the *sending* process, and the sender is a
+        // notify-send that exited the moment it posted.
+        if (snapshot.herdr_session || snapshot.herdr_pane) {
+            snapshot.actions = [{
+                identifier: herdrFocusActionId,
+                text: "Switch to pane"
+            }].concat(snapshot.actions);
+        }
+
         replaceNotificationItem(snapshot);
+    }
+
+    // Shell-handled action identifiers are namespaced so they can never collide
+    // with an identifier a real sender chose.
+    readonly property string herdrFocusActionId: "i3pm:herdr-focus"
+
+    function herdrNotificationHint(notification, name) {
+        const hints = notification && notification.hints;
+        if (!hints || typeof hints !== "object") {
+            return "";
+        }
+        return stringOrEmpty(hints[name]);
+    }
+
+    function herdrNotificationSessionKey(notification) {
+        const explicit = herdrNotificationHint(notification, "x-i3pm-herdr-session");
+        if (explicit) {
+            return explicit;
+        }
+        const paneId = herdrNotificationHint(notification, "x-i3pm-herdr-pane");
+        return paneId ? "herdr:pane:" + paneId : "";
     }
 
     function topBarTimeText() {

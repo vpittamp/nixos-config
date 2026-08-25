@@ -15,6 +15,8 @@ import time
 from pathlib import Path, PurePath
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 
+from .herdr_notifier import HerdrNotifier
+
 logger = logging.getLogger(__name__)
 
 HERDR_EVENT_SUBSCRIPTION_TYPES = (
@@ -102,8 +104,13 @@ class HerdrService:
         load_remote_targets: Optional[Callable[[], List[Dict[str, str]]]] = None,
         local_host: Optional[Callable[[], str]] = None,
         project_for_cwd: Optional[Callable[[str], Dict[str, str]]] = None,
+        agent_notifier: Optional[HerdrNotifier] = None,
     ) -> None:
         self._notify_state_change = notify_state_change
+        # Desktop notifications for agent transitions. Herdr's own toast is set
+        # to delivery = "off" (home-modules/terminal/herdr.nix) because it could
+        # not say which pane it was about; see herdr_notifier for the detail.
+        self.agent_notifier = agent_notifier or HerdrNotifier()
         self._external_invalidate_snapshot_cache = invalidate_snapshot_cache
         self._socket_env_var = socket_env_var
         self.subscription_initial_backoff = subscription_initial_backoff
@@ -577,8 +584,13 @@ class HerdrService:
             updates["state_labels"] = self.normalize_state_labels(data.get("state_labels"))
 
         cache_updated = False
+        # The dashboard "sessions" row is the enriched one (repo, branch, title,
+        # session key). Capturing it here hands the notifier everything it needs
+        # without a second lookup, and it is already carrying `updates`.
+        session_row: Optional[Dict[str, Any]] = None
 
-        def update_rows(rows: Any) -> bool:
+        def update_rows(rows: Any, *, capture: bool = False) -> bool:
+            nonlocal session_row
             updated = False
             if not isinstance(rows, list):
                 return False
@@ -588,11 +600,16 @@ class HerdrService:
                 if str(row.get("pane_id") or "").strip() != pane_id:
                     continue
                 row.update(updates)
+                if capture and session_row is None:
+                    session_row = row
                 updated = True
             return updated
 
         for collection_name in ("sessions", "agents", "panes"):
-            cache_updated = update_rows(self.snapshot_cache.get(collection_name)) or cache_updated
+            cache_updated = update_rows(
+                self.snapshot_cache.get(collection_name),
+                capture=collection_name == "sessions",
+            ) or cache_updated
 
         remote_snapshots = self.snapshot_cache.get("remote_snapshots")
         if isinstance(remote_snapshots, list):
@@ -604,7 +621,40 @@ class HerdrService:
 
         if cache_updated:
             self.touch_snapshot_cache(now=time.time())
-        return {"applied": True, "cache_updated": cache_updated}
+        return {
+            "applied": True,
+            "cache_updated": cache_updated,
+            "pane_id": pane_id,
+            "status_state": updates["agent_status_state"],
+            # None when the snapshot cache is cold, which it is for the first
+            # event after a daemon start; the caller falls back to the event.
+            "session_row": session_row,
+        }
+
+    def status_event_fallback_row(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        """Build a minimal session row from a status event alone.
+
+        The snapshot cache is empty until something asks for a snapshot, so the
+        first agent transition after a daemon start has no enriched row to
+        notify from. Herdr's event carries enough to still name the agent and
+        address the pane; the body is thinner, which beats staying silent.
+        """
+        data = event.get("data") if isinstance(event, dict) else None
+        if not isinstance(data, dict):
+            return {}
+        pane_id = str(data.get("pane_id") or "").strip()
+        if not pane_id:
+            return {}
+        return {
+            "pane_id": pane_id,
+            "session_key": f"herdr:pane:{pane_id}",
+            "workspace_id": str(data.get("workspace_id") or "").strip(),
+            "agent": self.normalize_text_field(data.get("agent")),
+            "display_tool": self.normalize_text_field(data.get("display_agent")),
+            "terminal_title": self.normalize_text_field(data.get("title")),
+            "herdr_host": self._local_host() if self._local_host else "",
+            "is_remote_herdr": False,
+        }
 
     def remote_target_matcher(
         self,
@@ -847,6 +897,12 @@ class HerdrService:
             "remote_generation": self.remote_generation_for(host_key),
             "event_generation": self.remote_proxy_event_generation_for(host_key),
             "session_count": len(normalized_sessions),
+            "host_key": host_key,
+            # Handed to the notifier so a blocked agent on another machine can
+            # reach this desktop. Only meaningful when the payload actually
+            # carried sessions; a herdr-only payload must not read as "every
+            # agent went away".
+            "remote_sessions": normalized_sessions if has_session_payload else None,
         }
 
     def remote_targets_file(self) -> Path:
@@ -3462,6 +3518,13 @@ class HerdrService:
             if returncode != 0:
                 raise RuntimeError(f"remote Herdr proxy stream exited with {returncode}")
         finally:
+            # The stream is gone, so the next payload will be a fresh full
+            # snapshot rather than a diff. Drop the seed marker so the notifier
+            # re-seeds from it instead of announcing every agent that changed
+            # state while the link was down.
+            self.agent_notifier.forget_host(
+                self.normalize_host_key(target.get("host") or target.get("ssh_target"))
+            )
             if process.returncode is None:
                 process.terminate()
                 try:
@@ -3492,6 +3555,12 @@ class HerdrService:
         )
         if bool(result.get("stale", False)):
             return
+        remote_sessions = result.get("remote_sessions")
+        if remote_sessions is not None:
+            self.agent_notifier.sync_remote_rows(
+                host=str(result.get("host_key") or ""),
+                rows=remote_sessions,
+            )
         if not bool(result.get("applied", False)):
             self.bump_remote_generation(target.get("host") or target.get("ssh_target"))
             self.invalidate_snapshot_cache()
@@ -3537,6 +3606,11 @@ class HerdrService:
         if event_name in {HERDR_STATUS_EVENT_TYPE, "pane_agent_status_changed"}:
             result = self.apply_status_event_cache(event)
             applied_status_cache = bool(result.get("applied", False) and result.get("cache_updated", False))
+            if result.get("applied", False):
+                self.agent_notifier.note_local_status(
+                    row=result.get("session_row") or self.status_event_fallback_row(event),
+                    status_state=str(result.get("status_state") or ""),
+                )
         if applied_status_cache:
             # Fence in-flight snapshot builds: they must not store over this
             # cache patch with pre-event data (invalidation bumps on its own).
