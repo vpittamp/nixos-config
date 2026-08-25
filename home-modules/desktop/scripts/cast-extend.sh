@@ -9,7 +9,7 @@
 #
 # Usage:
 #   cast-extend on [WxH]   create/enable the cast output (default 1920x1080@60)
-#   cast-extend off        disable it (its workspaces move back automatically)
+#   cast-extend off        remove it (its workspaces move back automatically)
 #   cast-extend send       move the focused workspace to the cast output
 #   cast-extend status     print the cast output's current state
 #
@@ -20,8 +20,9 @@
 # screen.
 #
 # Notes:
-# - Sway cannot destroy runtime-created outputs; `off` disables it (a Sway
-#   restart removes it entirely).
+# - `off` destroys the output with `output <name> unplug` (sway 1.12), falling
+#   back to `disable` on a sway that lacks it. It used to only ever disable,
+#   which left the object behind to be re-enabled and drift into the layout.
 # - The output is parked at x=+100000 so it never overlaps real monitors.
 # - Headless outputs already in use (e.g. wayvnc on headless hosts) are never
 #   recycled: only disabled HEADLESS-* outputs are reused.
@@ -90,13 +91,60 @@ Stop with: cast stop
 EOF
 }
 
-cmd_off() {
+# Outputs `off` may disable: the recorded one if it is still live, otherwise
+# every active HEADLESS-*.
+#
+# The state file is a hint, not the truth. It lives in $XDG_RUNTIME_DIR and is
+# lost to a runtime-dir clean or an `on` that died before writing it, and the
+# old code answered a missing file by refusing to do anything at all. That
+# stranded the cast output ENABLED: nothing re-parks it at +$PARK_X once
+# cast-extend has stopped tracking it, so it drifted into the layout beside the
+# real monitors as a fourth screen, complete with its own bars and a workspace.
+# `cast stop` discards this script's exit status, so the failure was silent.
+# Sway's output list is the only thing that knows what is actually live.
+reclaimable() {
   local name
   name="$(live_recorded)"
-  [ -n "$name" ] || die "no active cast output (nothing to stop)"
-  swaymsg output "$name" disable >/dev/null
+  if [ -n "$name" ]; then
+    printf '%s\n' "$name"
+    return 0
+  fi
+  # Only ever reclaim a headless output while a real one is also active — on a
+  # headless host the desktop itself lives on one of these, and disabling the
+  # last output would take the session down with it.
+  list_outputs | jq -r '
+    [.[] | select(.active == true)] as $active
+    | if ($active | map(select(.name | startswith("HEADLESS-") | not)) | length) > 0
+      then $active[] | select(.name | startswith("HEADLESS-")) | .name
+      else empty
+      end'
+}
+
+cmd_off() {
+  local names name disabled=0
+
+  names="$(reclaimable)"
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    # Destroy it outright where sway can (1.12+). Merely disabling leaves the
+    # output object in the layout to be re-enabled later — which is how one
+    # came back as an unparked fourth screen. `disable` stays as the fallback
+    # for a sway without `unplug`; its workspaces move back either way.
+    if swaymsg output "$name" unplug >/dev/null 2>&1; then
+      echo "Cast output $name removed; its workspaces moved back to real outputs."
+    else
+      swaymsg output "$name" disable >/dev/null
+      echo "Cast output $name disabled; its workspaces moved back to real outputs."
+    fi
+    disabled=$((disabled + 1))
+  done <<EOF
+$names
+EOF
+
   rm -f "$STATE_FILE"
-  echo "Cast output $name disabled; its workspaces moved back to real outputs."
+  # Idempotent on purpose: `cast stop` calls this on every stop, including the
+  # mirror-mode ones that never made an output.
+  [ "$disabled" -gt 0 ] || echo "No cast output to disable."
 }
 
 cmd_send() {
@@ -108,15 +156,23 @@ cmd_send() {
 }
 
 cmd_status() {
-  local name
-  name="$(live_recorded)"
-  if [ -z "$name" ]; then
+  local report
+  # Report every HEADLESS-*, not just the recorded one — an output that outlived
+  # its state file is exactly the case worth seeing, and the old version
+  # answered it with "no cast output" while one sat enabled in the layout.
+  report="$(list_outputs | jq -r --arg recorded "$(recorded)" --argjson park "$PARK_X" '
+    .[] | select(.name | startswith("HEADLESS-"))
+    | "\(.name): \(if .active then "enabled" else "disabled" end)"
+      + ", \(.current_mode.width)x\(.current_mode.height)@\(.current_mode.refresh / 1000)Hz"
+      + ", pos \(.rect.x),\(.rect.y)"
+      + (if .name == $recorded then "" else "  [untracked]" end)
+      + (if .active and .rect.x != $park then "  [not parked — stop it with: cast stop]" else "" end)')"
+
+  if [ -z "$report" ]; then
     echo "no cast output (start one with: cast-extend on)"
     return 0
   fi
-  list_outputs | jq -r --arg name "$name" '
-    .[] | select(.name == $name)
-    | "\(.name): \(if .active then "enabled" else "disabled" end), \(.current_mode.width)x\(.current_mode.height)@\(.current_mode.refresh / 1000)Hz, pos \(.rect.x),\(.rect.y)"'
+  printf '%s\n' "$report"
 }
 
 case "${1:-}" in

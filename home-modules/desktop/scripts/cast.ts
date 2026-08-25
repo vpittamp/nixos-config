@@ -19,7 +19,7 @@
 //   cast extend [WxH]         wireless extended display: cast-extend on
 //                               (headless output) + start; pick the HEADLESS-*
 //                               entry in the portal picker
-//   cast stop [sink]          stop the current cast (+ disable headless)
+//   cast stop [sink]          stop the current cast (+ remove headless)
 //   cast toggle               stop if casting, otherwise extend
 //   cast status [--json]      caster health + live session + headless state
 //
