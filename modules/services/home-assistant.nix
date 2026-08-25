@@ -48,6 +48,13 @@
     #   hunterdouglas_powerview - Kirsch Automation Hub (rebadged Hunter Douglas
     #                      PowerView gen2 firmware at 192.168.1.127) driving the
     #                      motorized shades; config-flow only (aiopvapi)
+    #   openai_conversation - the Assist conversation agent for both homes,
+    #                      running gpt-5.6-luna. Replaced
+    #                      google_generative_ai_conversation, which was dropped
+    #                      rather than left packaged: on a 2-core/3.7 GiB host
+    #                      an unused integration is still resident dependencies.
+    #                      Config-flow only; the API key lives in 1Password at
+    #                      op://hub-eso/OPENAI-API-KEY and is entered in the UI.
     #   lutron_caseta    - Lutron Caseta Smart Bridge driving the in-wall
     #                      dimmers/switches and any Pico remotes. Config-flow
     #                      only (pylutron-caseta); pairing is a physical button
@@ -58,7 +65,7 @@
       "default_config" "met" "esphome" "homekit_controller"
       "apple_tv" "sonos" "samsungtv" "smartthings" "ibeacon" "google_translate"
       "ecobee" "cast" "hunterdouglas_powerview" "lutron_caseta"
-      "mcp_server" "google_generative_ai_conversation"
+      "mcp_server" "openai_conversation"
       "bluetooth" "shell_command" "webhook" "script" "ios"
     ];
 
