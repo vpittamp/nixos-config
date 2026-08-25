@@ -48,10 +48,16 @@
     #   hunterdouglas_powerview - Kirsch Automation Hub (rebadged Hunter Douglas
     #                      PowerView gen2 firmware at 192.168.1.127) driving the
     #                      motorized shades; config-flow only (aiopvapi)
+    #   lutron_caseta    - Lutron Caseta Smart Bridge driving the in-wall
+    #                      dimmers/switches and any Pico remotes. Config-flow
+    #                      only (pylutron-caseta); pairing is a physical button
+    #                      press on the bridge, which exchanges a client cert
+    #                      stored in HA -- so the bridge needs a *stable* IP or
+    #                      the entry breaks the way the PowerView one did.
     extraComponents = [
       "default_config" "met" "esphome" "homekit_controller"
       "apple_tv" "sonos" "samsungtv" "smartthings" "ibeacon" "google_translate"
-      "ecobee" "cast" "hunterdouglas_powerview"
+      "ecobee" "cast" "hunterdouglas_powerview" "lutron_caseta"
       "mcp_server" "google_generative_ai_conversation"
       "bluetooth" "shell_command" "webhook" "script" "ios"
     ];
