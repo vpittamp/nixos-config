@@ -237,7 +237,7 @@
 
           tv_launch_app = {
             alias = "TV — Launch App";
-            description = "Launch an application (YouTube, Netflix, Prime Video, Disney+, Plex, Spotify, Apple TV, Browser) on the Bedroom Samsung TV";
+            description = "Launch an application (YouTube, Netflix, Prime Video, Disney+, Plex, Spotify, Apple TV, Browser) on the TV";
             icon = "mdi:youtube-tv";
             fields = {
               app = {
@@ -255,11 +255,17 @@
                   "Internet"
                 ];
               };
+              entity_id = {
+                description = "Target TV media player entity (optional)";
+                example = "media_player.65_crystal_uhd_un65du7200fxza";
+                required = false;
+                selector.entity.domain = "media_player";
+              };
             };
             sequence = [{
               action = "media_player.select_source";
               target = {
-                entity_id = "media_player.55_crystal_uhd_un55du7200fxza";
+                entity_id = "{% if entity_id is defined and entity_id %}{{ entity_id }}{% elif states('media_player.65_crystal_uhd_un65du7200fxza') not in ['unknown', 'unavailable'] %}{% if states('media_player.65_crystal_uhd_un65du7200fxza') != '' %}media_player.65_crystal_uhd_un65du7200fxza{% else %}media_player.55_crystal_uhd_un55du7200fxza{% endif %}{% else %}media_player.55_crystal_uhd_un55du7200fxza{% endif %}";
               };
               data = {
                 source = "{{ app }}";
@@ -270,7 +276,7 @@
 
           tv_send_key = {
             alias = "TV — Send Remote Key";
-            description = "Send a remote control navigation key (e.g. KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_ENTER, KEY_RETURN, KEY_HOME, KEY_MENU, KEY_PLAY, KEY_PAUSE, KEY_VOLUP, KEY_VOLDOWN, KEY_MUTE, KEY_HDMI1, KEY_HDMI2) to the Bedroom Samsung TV";
+            description = "Send a remote control navigation key (e.g. KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_ENTER, KEY_RETURN, KEY_HOME, KEY_MENU, KEY_PLAY, KEY_PAUSE, KEY_VOLUP, KEY_VOLDOWN, KEY_MUTE, KEY_HDMI1, KEY_HDMI2) to the TV";
             icon = "mdi:remote";
             fields = {
               command = {
@@ -279,11 +285,17 @@
                 required = true;
                 selector.text = { };
               };
+              entity_id = {
+                description = "Target TV remote entity (optional)";
+                example = "remote.65_crystal_uhd_un65du7200fxza";
+                required = false;
+                selector.entity.domain = "remote";
+              };
             };
             sequence = [{
               action = "remote.send_command";
               target = {
-                entity_id = "remote.55_crystal_uhd_un55du7200fxza";
+                entity_id = "{% if entity_id is defined and entity_id %}{{ entity_id }}{% elif states('remote.65_crystal_uhd_un65du7200fxza') not in ['unknown', 'unavailable'] %}{% if states('remote.65_crystal_uhd_un65du7200fxza') != '' %}remote.65_crystal_uhd_un65du7200fxza{% else %}remote.55_crystal_uhd_un55du7200fxza{% endif %}{% else %}remote.55_crystal_uhd_un55du7200fxza{% endif %}";
               };
               data = {
                 command = "{{ command }}";
