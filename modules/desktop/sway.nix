@@ -37,7 +37,30 @@ let
       fi
     fi
 
-    exec ${pkgs.walker}/bin/walker --dmenu -p 'Share screen:'
+    # No pin: ask. The list has to be built here — chooser_type "simple" runs
+    # this command with NOTHING on stdin (only "dmenu" makes xdpw pipe the
+    # outputs in), so a bare `walker --dmenu` drew an empty menu, returned
+    # nothing, and every non-cast screen share died on xdpw's "no output
+    # found". Cap does not surface that: it falls back to X11 capture, which
+    # on Wayland yields no frames, so a recording runs to completion with a
+    # camera and a mic and an empty display track.
+    outputs="$(${pkgs.sway}/bin/swaymsg -t get_outputs 2>/dev/null \
+      | ${pkgs.jq}/bin/jq -r '.[] | select(.active) | .name' 2>/dev/null)"
+    [ -n "$outputs" ] || exit 1
+
+    sel="$(printf '%s\n' "$outputs" | ${pkgs.walker}/bin/walker --dmenu -p 'Share screen:')"
+    # Tolerate a decorated label ("Monitor: DP-2 <desc>") by taking the field
+    # that actually names an output.
+    for field in $sel; do
+      if printf '%s\n' "$outputs" | ${pkgs.gnugrep}/bin/grep -qx -- "$field"; then
+        printf '%s\n' "$field"
+        exit 0
+      fi
+    done
+
+    # Cancelled, or an unusable answer. Exit non-zero so the request is
+    # refused rather than quietly sharing a screen nobody picked.
+    exit 1
   '';
 in {
   options.services.sway = {
