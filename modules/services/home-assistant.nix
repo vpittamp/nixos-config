@@ -234,6 +234,63 @@
             }];
             mode = "queued";
           };
+
+          tv_launch_app = {
+            alias = "TV — Launch App";
+            description = "Launch an application (YouTube, Netflix, Prime Video, Disney+, Plex, Spotify, Apple TV, Browser) on the Bedroom Samsung TV";
+            icon = "mdi:youtube-tv";
+            fields = {
+              app = {
+                description = "Name of the app to launch";
+                example = "YouTube";
+                required = true;
+                selector.select.options = [
+                  "YouTube"
+                  "Netflix"
+                  "Prime Video"
+                  "Disney+"
+                  "Plex"
+                  "Spotify"
+                  "Apple TV"
+                  "Internet"
+                ];
+              };
+            };
+            sequence = [{
+              action = "media_player.select_source";
+              target = {
+                entity_id = "media_player.55_crystal_uhd_un55du7200fxza";
+              };
+              data = {
+                source = "{{ app }}";
+              };
+            }];
+            mode = "single";
+          };
+
+          tv_send_key = {
+            alias = "TV — Send Remote Key";
+            description = "Send a remote control navigation key (e.g. KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_ENTER, KEY_RETURN, KEY_HOME, KEY_MENU, KEY_PLAY, KEY_PAUSE, KEY_VOLUP, KEY_VOLDOWN, KEY_MUTE, KEY_HDMI1, KEY_HDMI2) to the Bedroom Samsung TV";
+            icon = "mdi:remote";
+            fields = {
+              command = {
+                description = "Key command or list of key commands";
+                example = "KEY_UP";
+                required = true;
+                selector.text = { };
+              };
+            };
+            sequence = [{
+              action = "remote.send_command";
+              target = {
+                entity_id = "remote.55_crystal_uhd_un55du7200fxza";
+              };
+              data = {
+                command = "{{ command }}";
+              };
+            }];
+            mode = "single";
+          };
         };
 
         ios = {
