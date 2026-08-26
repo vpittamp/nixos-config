@@ -176,6 +176,10 @@ in
       gh-enhance = prev.callPackage ../packages/gh-enhance.nix { };
       diffnav = prev.callPackage ../packages/diffnav.nix { };
 
+      # Cap screen recorder. Upstream publishes no Nix package and no GitHub
+      # release asset, so packages/cap.nix unpacks the .deb from their CDN.
+      cap = prev.callPackage ../packages/cap.nix { };
+
       # NOTE: google-chrome stable comes straight from nixpkgs (149+). Do NOT pin
       # an older version here: Chrome's fallback Cast CRL expires 20 weeks after
       # the browser build date (cast_crl.cc "CRL - Not time-valid"), after which
@@ -918,6 +922,10 @@ in
 
     # Voxtype - Push-to-talk speech-to-text (Vulkan, works in tmux/CLI)
     (callPackage ../packages/voxtype.nix { })
+
+    # Cap - screen recorder (WS42). Ships the GUI plus cap-cli, which records,
+    # exports and screenshots headlessly and is the half an agent can drive.
+    cap
 
     imagemagick
     librsvg
