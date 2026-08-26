@@ -120,10 +120,29 @@
             hash = "sha256-VqgoVYMdMf8M201JPC4fj60sQ9ie8tMnIL1OTrtzDMs=";
           };
         };
+
+        samsungtv-smart-component = pkgs.buildHomeAssistantComponent rec {
+          owner = "ollo69";
+          domain = "samsungtv_smart";
+          version = "0.14.5";
+          src = pkgs.fetchFromGitHub {
+            owner = "ollo69";
+            repo = "ha-samsungtv-smart";
+            rev = "v${version}";
+            hash = "sha256-J3+HD/jMJDIBSiVJnHvjOJ3yswck+DV3XpPqIoR5/sU=";
+          };
+          dependencies = with py; [
+            websocket-client
+            wakeonlan
+            aiofiles
+            casttube
+          ];
+        };
       in
       [
         ember-mug-component
         uber-eats-component
+        samsungtv-smart-component
       ];
 
     config =
