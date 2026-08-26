@@ -248,7 +248,6 @@ PanelWindow {
 
             Rectangle {
                 id: centerCluster
-                anchors.horizontalCenter: parent.horizontalCenter
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 radius: root.radiusControl
@@ -256,15 +255,36 @@ PanelWindow {
                 border.color: colors.border
                 border.width: 1
                 implicitWidth: centerRow.implicitWidth + 20
-                // Anchoring gives up the layout's collision avoidance, so drop
-                // the block rather than draw it through a side cluster on an
-                // output too narrow to hold all three.
-                visible: (parent.width - width) / 2
-                    > Math.max(leftCluster.width, rightCluster.width) + 8
+
+                // The span actually free between the two side clusters. Both
+                // ends are read off the side clusters, which know nothing about
+                // this block, so none of it can feed back into itself.
+                readonly property real gapStart: leftCluster.width + 8
+                readonly property real gapEnd: parent.width - rightCluster.width - 8
+                readonly property real freeSpan: Math.max(0, gapEnd - gapStart)
+
+                // Sit on the output's centre whenever that clears both clusters,
+                // and slide only as far as it must when it does not. Hiding on a
+                // collision — which is what this used to do — took the clock out
+                // with it on every output narrower than ~1700 logical px, i.e.
+                // the ThinkPad panel (1536 at scale 1.25) and both Surfaces
+                // (1504 / 1440 at 1.5); ryzen's 1920 cleared it by only 107px.
+                // A bar has room for the clock long before it has room to centre
+                // it, so position gives way first and visibility last.
+                width: Math.min(implicitWidth, freeSpan)
+                x: Math.max(gapStart, Math.min((parent.width - width) / 2, gapEnd - width))
+                visible: freeSpan >= 24
+                clip: true
 
                 RowLayout {
                     id: centerRow
-                    anchors.centerIn: parent
+                    // Right-anchored, not centred: at full width this is the
+                    // same 10px on either side, but on a bar too narrow to hold
+                    // the whole block the clipping then falls on the host label
+                    // rather than on the clock.
+                    anchors.right: parent.right
+                    anchors.rightMargin: 10
+                    anchors.verticalCenter: parent.verticalCenter
                     spacing: 6
 
                     Text {
