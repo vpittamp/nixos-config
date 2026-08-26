@@ -45,6 +45,7 @@
     #   google_translate - default_config's built-in TTS entry (gtts)
     #   ecobee           - Ecobee thermostat, per docs/HOMEKIT_DEVICES.md (pyecobee)
     #   cast             - Google/Chromecast devices (pychromecast)
+    #   vizio            - Vizio SmartCast TVs (pyvizio)
     #   hunterdouglas_powerview - Kirsch Automation Hub (rebadged Hunter Douglas
     #                      PowerView gen2 firmware at 192.168.1.127) driving the
     #                      motorized shades; config-flow only (aiopvapi)
@@ -63,7 +64,7 @@
     #                      the entry breaks the way the PowerView one did.
     extraComponents = [
       "default_config" "met" "esphome" "homekit_controller"
-      "apple_tv" "sonos" "samsungtv" "smartthings" "ibeacon" "google_translate"
+      "apple_tv" "sonos" "samsungtv" "vizio" "smartthings" "ibeacon" "google_translate"
       "ecobee" "cast" "hunterdouglas_powerview" "lutron_caseta"
       "mcp_server" "openai_conversation"
       "bluetooth" "shell_command" "webhook" "script" "ios"
