@@ -57,6 +57,11 @@
         connection_key = "vpittamp@ryzen:22";
       }
       {
+        host = "surface";
+        ssh_target = "surface";
+        connection_key = "vpittamp@surface:22";
+      }
+      {
         host = "thinkpad";
         ssh_target = "thinkpad";
         connection_key = "vpittamp@thinkpad:22";

@@ -68,9 +68,14 @@ in
   programs.i3-project-daemon = {
     enable = true;
     logLevel = "INFO";
-    # ryzen is the local herdr host here; aggregate surface-pro3's herdr
-    # server so its rows map to the herdr-surface-pro3 registry app.
+    # ryzen is the local herdr host here; aggregate surface, surface-pro3, and thinkpad
+    # servers so their rows map to their respective herdr-<host> registry apps.
     herdrRemoteTargets = [
+      {
+        host = "surface";
+        ssh_target = "surface";
+        connection_key = "vpittamp@surface:22";
+      }
       {
         host = "surface-pro3";
         ssh_target = "surface-pro";  # Tailscale MagicDNS name; "surface-pro3" does not resolve

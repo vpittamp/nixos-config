@@ -5929,7 +5929,9 @@ function normalizeLauncherMode(mode) {
         }
         const pinned = {
             "ryzen": colors.orange,
-            "surface-pro3": colors.teal
+            "surface-pro3": colors.teal,
+            "surface": colors.blue,
+            "thinkpad": colors.red
         };
         if (pinned[key] !== undefined) {
             return pinned[key];
