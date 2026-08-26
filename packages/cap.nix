@@ -32,6 +32,8 @@
 , openssl
 , pipewire
 , libxkbcommon
+, pulseaudio
+, vulkan-loader
 , wayland
 , webkitgtk_4_1
 , libx11
@@ -90,6 +92,14 @@ let
     libdrm
     libxkbcommon
     wayland
+    # wgpu dlopens libvulkan.so.1. Without it, it does not fail loudly — it
+    # quietly falls back to its OpenGL backend, reports
+    # adapter_backend=Gl / device_type=Other, and then dies creating the device:
+    #   "Failed to setup renderer: Parent device is lost"
+    # which reads as a driver problem rather than a missing loader. With it,
+    # the same call picks the discrete GPU over Vulkan and the export runs.
+    # /run/opengl-driver/lib carries the Mesa ICDs but not the loader itself.
+    vulkan-loader
   ];
 in
 stdenv.mkDerivation {
@@ -161,6 +171,12 @@ stdenv.mkDerivation {
       --prefix GST_PLUGIN_SYSTEM_PATH_1_0 : ${
         lib.makeSearchPathOutput "lib" "lib/gstreamer-1.0" gstPlugins
       }
+
+      # System-audio capture shells out to `pactl` to find the monitor source.
+      # Upstream's .deb declares pulseaudio-utils for this; without it Cap
+      # reports "no monitor input found", which points at ALSA config rather
+      # than at a missing binary (see CapSoftware/Cap#2142).
+      --prefix PATH : ${lib.makeBinPath [ pulseaudio ]}
     )
   '';
 
