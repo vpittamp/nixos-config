@@ -164,6 +164,123 @@
             " >/dev/null 2>&1 &
           done
         '';
+
+        vizioRemote = pkgs.writeShellScriptBin "vizio-remote" ''
+          exec ${pkgs.python3}/bin/python3 - "$@" << 'EOF'
+import sys, urllib.request, json, ssl
+
+ctx = ssl.create_default_context()
+ctx.check_hostname = False
+ctx.verify_mode = ssl.CERT_NONE
+
+AUTH = "Zpm670i03k"
+HOST = "192.168.1.195:7345"
+
+KEYMAP = {
+    "OK": (4, 1),
+    "ENTER": (4, 1),
+    "SELECT": (4, 1),
+    "DOWN": (4, 2),
+    "KEY_DOWN": (4, 2),
+    "HOME": (4, 3),
+    "KEY_HOME": (4, 3),
+    "SMARTCAST": (4, 3),
+    "INFO": (4, 6),
+    "KEY_INFO": (4, 6),
+    "LEFT": (4, 7),
+    "KEY_LEFT": (4, 7),
+    "UP": (4, 8),
+    "KEY_UP": (4, 8),
+    "RIGHT": (4, 9),
+    "KEY_RIGHT": (4, 9),
+    "MENU": (4, 0),
+    "KEY_MENU": (4, 0),
+    "BACK": (4, 0),
+    "KEY_RETURN": (4, 0),
+    "EXIT": (4, 0),
+    "POWER": (11, 1),
+    "KEY_POWER": (11, 1),
+    "POWER_OFF": (11, 0),
+    "POWER_ON": (11, 1),
+    "VOLUP": (5, 0),
+    "KEY_VOLUP": (5, 0),
+    "VOLDOWN": (5, 1),
+    "KEY_VOLDOWN": (5, 1),
+    "MUTE": (5, 2),
+    "KEY_MUTE": (5, 2),
+    "PLAY": (2, 2),
+    "KEY_PLAY": (2, 2),
+    "PAUSE": (2, 1),
+    "KEY_PAUSE": (2, 1),
+}
+
+if len(sys.argv) < 2:
+    print("usage: vizio-remote <key|input|power> [value]")
+    sys.exit(1)
+
+action = sys.argv[1].lower()
+
+if action in ("key", "send_key"):
+    key = sys.argv[2].upper() if len(sys.argv) > 2 else "OK"
+    if key in KEYMAP:
+        codeset, code = KEYMAP[key]
+        payload = {"KEYLIST": [{"CODESET": codeset, "CODE": code, "ACTION": "KEYPRESS"}]}
+        req = urllib.request.Request(
+            f"https://{HOST}/key_command/",
+            data=json.dumps(payload).encode(),
+            headers={"AUTH": AUTH, "Content-Type": "application/json"},
+            method="PUT"
+        )
+        with urllib.request.urlopen(req, context=ctx, timeout=5) as resp:
+            pass
+
+elif action in ("input", "set_input", "source"):
+    val = sys.argv[2].upper() if len(sys.argv) > 2 else "SMARTCAST"
+    if val in ("CAST", "SMARTCAST"):
+        val = "SMARTCAST"
+    elif "HDMI1" in val or "HDMI-1" in val or val == "1":
+        val = "HDMI-1"
+    elif "HDMI2" in val or "HDMI-2" in val or val == "2":
+        val = "HDMI-2"
+    elif "HDMI3" in val or "HDMI-3" in val or "CHROMECAST" in val or val == "3":
+        val = "HDMI-3"
+    elif "HDMI4" in val or "HDMI-4" in val or "APPLE TV" in val or val == "4":
+        val = "HDMI-4"
+    elif "COMP" in val:
+        val = "COMP"
+    payload = {
+        "HASHVAL": 2023834057,
+        "REQUEST": "MODIFY",
+        "VALUE": val
+    }
+    req = urllib.request.Request(
+        f"https://{HOST}/menu_native/dynamic/tv_settings/devices/current_input",
+        data=json.dumps(payload).encode(),
+        headers={"AUTH": AUTH, "Content-Type": "application/json"},
+        method="PUT"
+    )
+    with urllib.request.urlopen(req, context=ctx, timeout=5) as resp:
+        pass
+
+elif action in ("power", "power_mode"):
+    mode = sys.argv[2].lower() if len(sys.argv) > 2 else "toggle"
+    if mode == "toggle":
+        codeset, code = (11, 1)
+    elif mode in ("on", "1"):
+        codeset, code = (11, 1)
+    else:
+        codeset, code = (11, 0)
+    payload = {"KEYLIST": [{"CODESET": codeset, "CODE": code, "ACTION": "KEYPRESS"}]}
+    req = urllib.request.Request(
+        f"https://{HOST}/key_command/",
+        data=json.dumps(payload).encode(),
+        headers={"AUTH": AUTH, "Content-Type": "application/json"},
+        method="PUT"
+    )
+    with urllib.request.urlopen(req, context=ctx, timeout=5) as resp:
+        pass
+EOF
+        '';
       in
       {
         # Meta-integration pulling the standard set (frontend, recorder,
@@ -179,6 +296,15 @@
         shell_command = {
           broadcast_desktop_notification = ''
             ${broadcastNotification}/bin/broadcast-desktop-notification "{{ title }}" "{{ message }}" "{{ app_name }}"
+          '';
+          vizio_send_key = ''
+            ${vizioRemote}/bin/vizio-remote key "{{ command }}"
+          '';
+          vizio_set_input = ''
+            ${vizioRemote}/bin/vizio-remote input "{{ input }}"
+          '';
+          vizio_power = ''
+            ${vizioRemote}/bin/vizio-remote power "{{ mode }}"
           '';
         };
 
@@ -234,6 +360,96 @@
               };
             }];
             mode = "queued";
+          };
+
+          vizio_send_key = {
+            alias = "Vizio TV — Send Remote Key";
+            description = "Send remote control keypress (UP, DOWN, LEFT, RIGHT, OK, BACK, HOME, MENU, INFO, VOLUP, VOLDOWN, MUTE, POWER, PLAY, PAUSE) to the Vizio TV in 215";
+            icon = "mdi:remote";
+            fields = {
+              command = {
+                description = "Remote key to send";
+                example = "OK";
+                required = true;
+                selector.select.options = [
+                  "OK"
+                  "UP"
+                  "DOWN"
+                  "LEFT"
+                  "RIGHT"
+                  "BACK"
+                  "HOME"
+                  "MENU"
+                  "INFO"
+                  "VOLUP"
+                  "VOLDOWN"
+                  "MUTE"
+                  "POWER"
+                  "PLAY"
+                  "PAUSE"
+                ];
+              };
+            };
+            sequence = [{
+              action = "shell_command.vizio_send_key";
+              data = {
+                command = "{{ command }}";
+              };
+            }];
+            mode = "queued";
+          };
+
+          vizio_set_input = {
+            alias = "Vizio TV — Switch Input";
+            description = "Switch active input on the Vizio TV in 215 (HDMI-1, HDMI-2, HDMI-3/Chromecast, HDMI-4/Apple TV, SMARTCAST, COMP)";
+            icon = "mdi:video-input-hdmi";
+            fields = {
+              input = {
+                description = "Input name to switch to";
+                example = "HDMI-1";
+                required = true;
+                selector.select.options = [
+                  "SMARTCAST"
+                  "HDMI-1"
+                  "HDMI-2"
+                  "HDMI-3"
+                  "HDMI-4"
+                  "COMP"
+                ];
+              };
+            };
+            sequence = [{
+              action = "shell_command.vizio_set_input";
+              data = {
+                input = "{{ input }}";
+              };
+            }];
+            mode = "single";
+          };
+
+          vizio_power = {
+            alias = "Vizio TV — Power Control";
+            description = "Power toggle, turn on, or turn off the Vizio TV in 215";
+            icon = "mdi:power";
+            fields = {
+              mode = {
+                description = "Power mode (toggle, on, off)";
+                example = "toggle";
+                required = false;
+                selector.select.options = [
+                  "toggle"
+                  "on"
+                  "off"
+                ];
+              };
+            };
+            sequence = [{
+              action = "shell_command.vizio_power";
+              data = {
+                mode = "{{ mode if mode is defined and mode else 'toggle' }}";
+              };
+            }];
+            mode = "single";
           };
 
           tv_launch_app = {
