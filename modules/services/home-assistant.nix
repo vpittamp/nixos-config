@@ -177,41 +177,42 @@ AUTH = "Zpm670i03k"
 HOST = "192.168.1.195:7345"
 
 KEYMAP = {
-    "OK": (4, 1),
-    "ENTER": (4, 1),
-    "SELECT": (4, 1),
-    "DOWN": (4, 2),
-    "KEY_DOWN": (4, 2),
-    "HOME": (4, 3),
-    "KEY_HOME": (4, 3),
-    "SMARTCAST": (4, 3),
-    "INFO": (4, 6),
-    "KEY_INFO": (4, 6),
-    "LEFT": (4, 7),
-    "KEY_LEFT": (4, 7),
-    "UP": (4, 8),
-    "KEY_UP": (4, 8),
-    "RIGHT": (4, 9),
-    "KEY_RIGHT": (4, 9),
-    "MENU": (4, 0),
-    "KEY_MENU": (4, 0),
-    "BACK": (4, 0),
-    "KEY_RETURN": (4, 0),
-    "EXIT": (4, 0),
-    "POWER": (11, 1),
-    "KEY_POWER": (11, 1),
-    "POWER_OFF": (11, 0),
-    "POWER_ON": (11, 1),
-    "VOLUP": (5, 0),
-    "KEY_VOLUP": (5, 0),
-    "VOLDOWN": (5, 1),
-    "KEY_VOLDOWN": (5, 1),
-    "MUTE": (5, 2),
-    "KEY_MUTE": (5, 2),
-    "PLAY": (2, 2),
-    "KEY_PLAY": (2, 2),
-    "PAUSE": (2, 1),
-    "KEY_PAUSE": (2, 1),
+    "OK": [(4, 1)],
+    "ENTER": [(4, 1)],
+    "SELECT": [(4, 1)],
+    "DOWN": [(4, 2)],
+    "KEY_DOWN": [(4, 2)],
+    "HOME": [(4, 3)],
+    "KEY_HOME": [(4, 3)],
+    "SMARTCAST": [(4, 3)],
+    "INFO": [(4, 6)],
+    "KEY_INFO": [(4, 6)],
+    "LEFT": [(4, 7)],
+    "KEY_LEFT": [(4, 7)],
+    "UP": [(4, 8)],
+    "KEY_UP": [(4, 8)],
+    "RIGHT": [(4, 9)],
+    "KEY_RIGHT": [(4, 9)],
+    "MENU": [(4, 0)],
+    "KEY_MENU": [(4, 0)],
+    "BACK": [(4, 0)],
+    "KEY_RETURN": [(4, 0)],
+    "EXIT": [(4, 0)],
+    "POWER": [(11, 1)],
+    "KEY_POWER": [(11, 1)],
+    "POWER_OFF": [(11, 0)],
+    "POWER_ON": [(11, 1)],
+    "VOLUP": [(5, 0)],
+    "KEY_VOLUP": [(5, 0)],
+    "VOLDOWN": [(5, 1)],
+    "KEY_VOLDOWN": [(5, 1)],
+    "MUTE": [(5, 2)],
+    "KEY_MUTE": [(5, 2)],
+    "PLAY": [(3, 0), (2, 2), (3, 2), (4, 1)],
+    "KEY_PLAY": [(3, 0), (2, 2), (3, 2), (4, 1)],
+    "PAUSE": [(3, 1), (2, 1)],
+    "KEY_PAUSE": [(3, 1), (2, 1)],
+    "PLAY_PAUSE": [(3, 2), (4, 1)],
 }
 
 if len(sys.argv) < 2:
@@ -223,8 +224,10 @@ action = sys.argv[1].lower()
 if action in ("key", "send_key"):
     key = sys.argv[2].upper() if len(sys.argv) > 2 else "OK"
     if key in KEYMAP:
-        codeset, code = KEYMAP[key]
-        payload = {"KEYLIST": [{"CODESET": codeset, "CODE": code, "ACTION": "KEYPRESS"}]}
+        codes = KEYMAP[key]
+        if isinstance(codes, tuple):
+            codes = [codes]
+        payload = {"KEYLIST": [{"CODESET": cs, "CODE": cd, "ACTION": "KEYPRESS"} for (cs, cd) in codes]}
         req = urllib.request.Request(
             f"https://{HOST}/key_command/",
             data=json.dumps(payload).encode(),
