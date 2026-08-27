@@ -4,43 +4,69 @@
 
 let
   repoRoot = ../../.;
-  baseClaudeCode = inputs.claude-code-nix.packages.${pkgs.system}.claude-code or pkgs-unstable.claude-code or pkgs.claude-code;
 
-  # Define settings specifically for the GLM variant
-  # Inherit default settings but override model to target Sonnet (which is mapped to GLM-5.3[1m])
-  glmSettings = config.programs.claude-code.settings // {
-    model = "claude-3-5-sonnet-20241022";
-  };
+  # z.ai's model catalogue is authoritative: `curl https://api.z.ai/api/paas/v4/models`.
+  #
+  #   glm-5.3-flash  320B-A18B natively multimodal MoE, 1.31M context,
+  #                  131k max output. Flash-tier price, GLM-5 class quality.
+  #   glm-5.3        the full model; slower and dearer, same 131k output cap.
+  #
+  # Written bare, without the `[1m]` suffix these vars used to carry. That
+  # suffix is a Claude Code convention for a 1M-context variant, not part of
+  # any model id — the client appends it itself once CLAUDE_CODE_AUTO_COMPACT_WINDOW
+  # is 1000000, and strips it again before the request. z.ai's API rejects it
+  # if it ever reaches the wire (`1214 modelCode: does not exist`), so the bare
+  # id is the one that is true at both ends.
+  defaultModel = "glm-5.3-flash";
+  proModel = "glm-5.3";
 
-  # Create a wrapper script `claude-glm` that uses ~/.claude-glm as its configuration directory
-  # and injects GLM environment variables via 1Password at runtime
-  claudeGlmPackage = pkgs.writeShellScriptBin "claude-glm" ''
+  # Static, secret-free: the only sensitive value is an `op://` reference that
+  # `op run` resolves at launch. Living in the store means no mktemp to leak.
+  glmEnvFile = pkgs.writeText "claude-glm.env" ''
+    ANTHROPIC_AUTH_TOKEN="op://hub-eso/ZAI-API-KEY/password"
+    ANTHROPIC_BASE_URL="https://api.z.ai/api/anthropic"
+    CLAUDE_CODE_AUTO_COMPACT_WINDOW="1000000"
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1"
+    API_TIMEOUT_MS="3000000"
+  '';
+
+  # Wrapper around the base `claude` binary that points it at z.ai and keeps its
+  # configuration in ~/.claude-glm. `CLAUDE_GLM_MODEL` overrides the model for a
+  # single run, so any id in the catalogue is reachable without a rebuild.
+  #
+  # The model is selected with `--model`, NOT with ANTHROPIC_DEFAULT_*_MODEL.
+  # Those three vars are inert here: with claude-code 2.1.247 a deliberately
+  # bogus value in all three still produces a normal answer, so nothing they
+  # name reaches the wire. `--model` does — a bogus value there comes straight
+  # back as z.ai's `1214 modelCode: does not exist`. Without it the CLI sends
+  # its own built-in Claude id and z.ai silently serves whatever that alias maps
+  # to today (`claude-3-5-sonnet-20241022` currently resolves to glm-5.3-flash,
+  # and `glm-4.5-air` resolves to glm-4.7), which is a default nobody here
+  # chose. The flag is passed before "$@" so an explicit `claude-glm --model X`
+  # still wins.
+  mkGlmWrapper = { name, model }: pkgs.writeShellScriptBin name ''
     export CLAUDE_DIR="$HOME/.claude-glm"
     if command -v op >/dev/null 2>&1 && op account list >/dev/null 2>&1; then
-      ENV_FILE=$(mktemp)
-      cat <<'INNER_EOF' > "$ENV_FILE"
-ANTHROPIC_AUTH_TOKEN="op://hub-eso/ZAI-API-KEY/password"
-ANTHROPIC_BASE_URL="https://api.z.ai/api/anthropic"
-ANTHROPIC_DEFAULT_HAIKU_MODEL="glm-5.3[1m]"
-ANTHROPIC_DEFAULT_SONNET_MODEL="glm-5.3[1m]"
-ANTHROPIC_DEFAULT_OPUS_MODEL="glm-5.3[1m]"
-CLAUDE_CODE_AUTO_COMPACT_WINDOW="1000000"
-CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1"
-API_TIMEOUT_MS="3000000"
-INNER_EOF
+      GLM_MODEL="''${CLAUDE_GLM_MODEL:-${model}}"
 
-      # Run using op run to dynamically inject the API key
-      # We disable secret masking to ensure the command retains its TTY connection
-      # Use the final packaged/wrapped binary from the base configuration to preserve MCP configs
-      exec op run --no-masking --env-file="$ENV_FILE" -- "${config.programs.claude-code.finalPackage}/bin/claude" "$@"
-      EXIT_CODE=$?
-      rm -f "$ENV_FILE"
-      exit $EXIT_CODE
+      # Run using op run to dynamically inject the API key.
+      # We disable secret masking to ensure the command retains its TTY connection.
+      # Use the final packaged/wrapped binary from the base configuration to preserve MCP configs.
+      exec op run --no-masking --env-file="${glmEnvFile}" -- "${config.programs.claude-code.finalPackage}/bin/claude" --model "$GLM_MODEL" "$@"
     else
+      # No key available: fall through to stock Claude Code rather than failing.
+      # The GLM model vars are deliberately not exported on this path — they
+      # would point api.anthropic.com at model ids it does not have.
       echo "Warning: 1Password not authenticated/installed. GLM API key cannot be loaded." >&2
       exec "${config.programs.claude-code.finalPackage}/bin/claude" "$@"
     fi
   '';
+
+  # Settings for the GLM variant. Inherits the base settings but drops any
+  # `model` pin: the wrappers pass `--model` explicitly, and a settings pin
+  # naming an Anthropic alias (this used to be claude-3-5-sonnet-20241022) only
+  # obscures which GLM model z.ai ends up serving.
+  glmSettings = builtins.removeAttrs config.programs.claude-code.settings [ "model" ];
 
   # Resolve shared skills for the GLM environment
   sharedSkillsDir = repoRoot + "/shared-skills";
@@ -57,8 +83,12 @@ INNER_EOF
     sharedSkillDirs;
 in
 {
-  # Install the `claude-glm` wrapper package
-  home.packages = [ claudeGlmPackage ];
+  # Install the wrappers. Both share ~/.claude-glm, so skills, plugins, and
+  # settings are identical — only the model differs.
+  home.packages = [
+    (mkGlmWrapper { name = "claude-glm"; model = defaultModel; })
+    (mkGlmWrapper { name = "claude-glm-pro"; model = proModel; })
+  ];
 
   # Configure files for the ~/.claude-glm workspace
   home.file = sharedSkillHomeFiles // {

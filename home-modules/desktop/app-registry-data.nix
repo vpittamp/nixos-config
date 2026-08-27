@@ -664,6 +664,31 @@ let
     })
 
 
+    # WS42: Screen recording (Cap)
+    #
+    # 42 is the first free number above the herdr block (33/37/39/41); the
+    # registry throws on a duplicate preferred_workspace, so this must stay
+    # unique. Window matching is by I3PM_APP_NAME, not by class, so
+    # expected_class here is only the validation hint — Tauri publishes the
+    # GTK app-id from the .desktop StartupWMClass, which upstream sets to "Cap".
+    (mkApp {
+      name = "cap";
+      display_name = "Cap";
+      command = "Cap";
+      parameters = "";
+      scope = "global";
+      expected_class = "Cap";
+      preferred_workspace = 42;
+      preferred_monitor_role = "secondary";
+      icon = "Cap";
+      nix_package = "pkgs.cap";
+      multi_instance = false;
+      fallback_behavior = "skip";
+      aliases = [ "screen-recorder" "recorder" "loom" "screencast" ];
+      description = "Screen recorder — records, edits and shares screen captures";
+    })
+
+
     # WS22: 1Password (global - password/passkey manager)
     (mkApp {
       name = "1password";

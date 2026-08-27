@@ -145,16 +145,19 @@ let
 
   # NVIDIA OpenShell - sandboxed runtime for autonomous AI agents
   # https://github.com/NVIDIA/OpenShell
-  # Latest release: v0.0.42
+  # Pinned to v0.0.111, the newest release that still ships the linux
+  # platform wheel. v0.0.113 publishes only a py3-none-any wheel with no
+  # `.data/scripts/openshell` binary — taking it would silently remove the
+  # `openshell` command from PATH and leave just the Python library.
   # Requires Docker running for sandbox operations
   openshellPkg = pkgs.python3Packages.buildPythonPackage rec {
     pname = "openshell";
-    version = "0.0.42";
+    version = "0.0.111";
     format = "wheel";
 
     src = pkgs.fetchurl {
-      url = "https://files.pythonhosted.org/packages/14/e3/28d060f02932c64cd3aa25877c16e995f9cff3212d5b18eb3ab8f005b6f3/openshell-${version}-py3-none-manylinux_2_39_x86_64.whl";
-      hash = "sha256-PYN1Wk28ZYFSUNDTPl0q7hpN3k+eM1pgoSdTO2GsMe0=";
+      url = "https://files.pythonhosted.org/packages/13/43/5e7389d2404fb293e8b8d0f6af0a8c33c0292072a3cb709f11fa3594d9ad/openshell-${version}-py3-none-manylinux_2_39_x86_64.whl";
+      hash = "sha256-XtBIS+sqcl5azOQgRgB8prFA/cdNBBbKjqw/tzyLD88=";
     };
 
     nativeBuildInputs = [
@@ -168,6 +171,7 @@ let
     dependencies = with pkgs.python3Packages; [
       cloudpickle
       grpcio
+      httpx
       protobuf
     ];
 
