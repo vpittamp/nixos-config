@@ -34,6 +34,11 @@ let
   # configuration in ~/.claude-glm. `CLAUDE_GLM_MODEL` overrides the model for a
   # single run, so any id in the catalogue is reachable without a rebuild.
   #
+  # GLM-specific MCP servers are appended with --mcp-config; the base servers
+  # (workflow-builder, context-graph, homeassistant, fabric) arrive separately
+  # via the claude-code-hm-plugin the HM module hangs off finalPackage, and the
+  # two config sources merge by server name.
+  #
   # The model is selected with `--model`, NOT with ANTHROPIC_DEFAULT_*_MODEL.
   # Those three vars are inert here: with claude-code 2.1.247 a deliberately
   # bogus value in all three still produces a normal answer, so nothing they
@@ -52,7 +57,7 @@ let
       # Run using op run to dynamically inject the API key.
       # We disable secret masking to ensure the command retains its TTY connection.
       # Use the final packaged/wrapped binary from the base configuration to preserve MCP configs.
-      exec op run --no-masking --env-file="${glmEnvFile}" -- "${config.programs.claude-code.finalPackage}/bin/claude" --model "$GLM_MODEL" "$@"
+      exec op run --no-masking --env-file="${glmEnvFile}" -- "${config.programs.claude-code.finalPackage}/bin/claude" ${lib.optionalString (glmMcpServers != { }) ''--mcp-config "${glmMcpConfig}"''} --model "$GLM_MODEL" "$@"
     else
       # No key available: fall through to stock Claude Code rather than failing.
       # The GLM model vars are deliberately not exported on this path — they
@@ -66,7 +71,48 @@ let
   # `model` pin: the wrappers pass `--model` explicitly, and a settings pin
   # naming an Anthropic alias (this used to be claude-3-5-sonnet-20241022) only
   # obscures which GLM model z.ai ends up serving.
-  glmSettings = builtins.removeAttrs config.programs.claude-code.settings [ "model" ];
+  #
+  # The browser MCP servers ride along: `mcp__claude-in-chrome` is already in
+  # the inherited base allow list, and `mcp__kimi-webbridge` joins it when the
+  # browser stack below is enabled.
+  glmSettings = let
+    base = builtins.removeAttrs config.programs.claude-code.settings [ "model" ];
+    extraAllow =
+      lib.optionals browserShared.enableBrowserMcpServers [ "mcp__kimi-webbridge" ];
+  in
+    if extraAllow == [ ]
+    then base
+    else base // {
+      permissions = (base.permissions or { }) // {
+        allow = (base.permissions.allow or [ ]) ++ extraAllow;
+      };
+    };
+
+  # Browser MCP servers, handed to the wrappers via --mcp-config.
+  #
+  # claude-in-chrome needs no entry here: it is not a command-launched server
+  # but built into the CLI itself, enabled by the `--chrome` flag that
+  # config.programs.claude-code.finalPackage already bakes in — so the GLM
+  # wrappers inherit it (and its `mcp__claude-in-chrome` permission) as-is.
+  #
+  # kimi-webbridge CANNOT register as `kimi-webbridge mcp`: the persistent
+  # user-service bridge (kimi-webbridge.nix) owns ws://127.0.0.1:10086/ws and a
+  # second `mcp` process exits(1) on EADDRINUSE. The registered server is
+  # therefore the stdio⇄WebSocket proxy shipped alongside the CLI
+  # (kimi-webbridge-mcp-stdio), which plays the bridge's one-shot CLI-client
+  # role per tool call.
+  browserShared = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
+  kimi-webbridge = pkgs.callPackage ../../packages/kimi-webbridge.nix { };
+
+  glmMcpServers = lib.optionalAttrs browserShared.enableBrowserMcpServers {
+    kimi-webbridge = {
+      command = "${kimi-webbridge}/bin/kimi-webbridge-mcp-stdio";
+      args = [ ];
+    };
+  };
+
+  glmMcpConfig = pkgs.writeText "claude-glm-mcp.json"
+    (builtins.toJSON { mcpServers = glmMcpServers; });
 
   # Resolve shared skills for the GLM environment
   sharedSkillsDir = repoRoot + "/shared-skills";

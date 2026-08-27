@@ -14,7 +14,12 @@
 # interfaces (0.0.0.0). We patch src/mcp.js to bind localhost only — the
 # bridge must never be reachable off-machine. --replace-fail makes a future
 # upstream change fail loudly instead of silently dropping the patch.
-{ lib, buildNpmPackage, fetchurl }:
+#
+# Also ships `kimi-webbridge-mcp-stdio` (mcp-stdio.js): an MCP stdio ⇄
+# WebSocket proxy so agents can register kimi-webbridge as an MCP server
+# without a second `mcp` process fighting the user-service bridge for port
+# 10086. Needs Node ≥ 22 for the global WebSocket client.
+{ lib, buildNpmPackage, fetchurl, makeWrapper, nodejs }:
 
 buildNpmPackage rec {
   pname = "kimi-webbridge";
@@ -34,8 +39,19 @@ buildNpmPackage rec {
 
   npmDepsHash = "sha256-UsxvFITnyXSDjeaVTxuCuj47Qq7lZQBprxh4VNHsvyo=";
 
+  nativeBuildInputs = [ makeWrapper ];
+
   # Pure runtime package — upstream has no build script.
   dontNpmBuild = true;
+
+  # The stdio proxy is our own code, not upstream's — installed next to the
+  # CLI and wrapped with the same node the rest of the package runs on.
+  postInstall = ''
+    install -Dm644 ${./kimi-webbridge/mcp-stdio.js} \
+      $out/lib/node_modules/kimi-webbridge/mcp-stdio.js
+    makeWrapper ${nodejs}/bin/node $out/bin/kimi-webbridge-mcp-stdio \
+      --add-flags "$out/lib/node_modules/kimi-webbridge/mcp-stdio.js"
+  '';
 
   meta = {
     description = "Browser control CLI and MCP server for the Kimi WebBridge Chrome extension";
