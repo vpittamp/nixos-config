@@ -67,7 +67,7 @@
       "apple_tv" "sonos" "samsungtv" "vizio" "smartthings" "ibeacon" "google_translate"
       "ecobee" "cast" "hunterdouglas_powerview" "lutron_caseta"
       "mcp_server" "openai_conversation"
-      "bluetooth" "shell_command" "webhook" "script" "ios"
+      "bluetooth" "shell_command" "webhook" "script" "ios" "input_boolean"
     ];
 
     customComponents =
@@ -295,6 +295,14 @@ EOF
         # filter. Pair from the HA UI (Settings -> Devices & Services -> the
         # HomeKit Bridge card shows the setup code/QR).
         homekit = { };
+
+        # Helper toggles for Lovelace camera dashboard overlay
+        input_boolean = {
+          camera_activity = {
+            name = "Camera Activity & Controls";
+            icon = "mdi:motion-sensor";
+          };
+        };
 
         shell_command = {
           broadcast_desktop_notification = ''
