@@ -88,7 +88,7 @@ only the live nodes.
 | Drain | PDB-protected pods block the built-in drain: `kubectl drain --disable-eviction <node>`, then `talosctl upgrade --drain=false -n <node>` |
 | CNPG primary | Before draining the primary's node, move it with `kubectl patch cluster <name> --subresource=status` on `targetPrimary`; do not wait for the drain to trigger a failover |
 | Label and RuntimeClass | Nodes carry `stacks.io/gvisor=true`; RuntimeClass `secure-gvisor` uses that nodeSelector |
-| Prove | Interactive CLI profiles on execution class `interactive-cli-gvisor`: claude, kimi, and agy PASS the PTY + JuiceFS + headless-print matrix; codex needed a re-enrolled token |
+| Prove | Interactive CLI profiles on execution class `interactive-cli-gvisor`: claude and kimi PASS the PTY + JuiceFS + headless-print matrix; codex is blocked only by an expired user credential; agy and glm are NOT tested (agy needs `Unconfined` seccomp, which runsc cannot provide) — see workflow-builder `docs/interactive-cli-sessions.md`. Production `dapr-agent-py` stays on runc. |
 
 Repeat the drain/upgrade/uncordon cycle per worker and confirm the node reports
 the extension and the `stacks.io/gvisor=true` label before moving on.
