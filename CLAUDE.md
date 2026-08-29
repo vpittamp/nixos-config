@@ -75,6 +75,17 @@ is kept to `notifications.historyLimit`. Identical open notifications are
 coalesced; right-click dismisses a toast. `runtime-shell call
 replayNotifications 3` re-shows the last closed ones.
 
+**Agent usage chip** (after "Agents N" in the top bar; hidden until a record
+exists): Claude Code / Codex plan, 5-hour and weekly limits with reset times,
+today's tokens/prompts/sessions, tokens by day and by model. Left-click opens
+the panel, right-click refreshes, middle-click switches subscription;
+`runtime-shell summon agents`. Records come from Omarchy's MIT collectors
+(`quickshell-runtime-shell/agent-usage/*.py`) run by the
+`quickshell-agent-usage.timer` every 15 min into
+`~/.local/state/quickshell-runtime-shell/agents/usage/<agent>.json`; the shell
+file-watches them. "Sign-in expired" in the panel means `claude auth login`
+on that host; local token stats still show without it.
+
 **Lock + idle** are in-shell: `Mod+Ctrl+L` / power menu *Lock* /
 `lock-session` engage `windows/LockScreen.qml` (ext-session-lock + PAM
 `swaylock` service); `lock-session` falls back to swaylock if the shell is

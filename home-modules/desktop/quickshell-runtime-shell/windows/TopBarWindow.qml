@@ -244,6 +244,77 @@ PanelWindow {
                         colors: topBarWindow.colors
                     }
                 }
+
+                // AI subscription usage (Claude Code / Codex): session-window
+                // percentage on the chip, full panel on click. Self-hiding: a
+                // machine with no usage record draws nothing here.
+                Rectangle {
+                    id: agentUsageChip
+                    readonly property var usageRecord: root.agentUsageCurrent()
+                    readonly property int worstPercent: root.agentUsageChipPercent()
+                    visible: root.agentUsageAvailable()
+                    radius: root.radiusControl
+                    color: root.agentsPopupVisible ? colors.blueBg : root.neutralChipFill(agentUsageMouse.containsMouse)
+                    border.color: root.agentsPopupVisible ? colors.blue
+                        : worstPercent >= 90 ? colors.red
+                        : worstPercent >= 70 ? colors.amber
+                        : root.neutralChipBorder(agentUsageMouse.containsMouse)
+                    border.width: 1
+                    implicitWidth: agentUsageRow.implicitWidth + 18
+                    Layout.fillHeight: true
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    RowLayout {
+                        id: agentUsageRow
+                        anchors.centerIn: parent
+                        spacing: 5
+
+                        Image {
+                            Layout.alignment: Qt.AlignVCenter
+                            source: agentUsageChip.usageRecord ? root.agentUsageIcon(agentUsageChip.usageRecord.id) : ""
+                            sourceSize.width: 12
+                            sourceSize.height: 12
+                            width: 12
+                            height: 12
+                            smooth: true
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignVCenter
+                            text: root.agentUsageChipLabel() + " ▾"
+                            color: root.agentsPopupVisible ? colors.blue : root.neutralChipText(agentUsageMouse.containsMouse)
+                            font.pixelSize: root.fontLabel
+                            font.weight: Font.Medium
+                        }
+                    }
+
+                    MouseArea {
+                        id: agentUsageMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                        onClicked: function (mouse) {
+                            if (mouse.button === Qt.RightButton) {
+                                root.refreshAgentUsage();
+                                return;
+                            }
+                            if (mouse.button === Qt.MiddleButton) {
+                                root.cycleAgentUsage();
+                                return;
+                            }
+                            const open = !root.agentsPopupVisible;
+                            root.closeBarPopups();
+                            root.barPopupOutputName = topBarWindow.topOutputName;
+                            root.agentsPopupVisible = open;
+                        }
+                    }
+                }
             }
 
             Rectangle {
@@ -1827,6 +1898,341 @@ PanelWindow {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: root.triggerPowerAction(modelData.command)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ----- Agent usage panel -----
+    PopupWindow {
+        visible: root.agentsPopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName
+        color: "transparent"
+        implicitWidth: 380
+        implicitHeight: agentUsageCard.implicitHeight + 16
+        anchor.window: topBarWindow
+        anchor.item: agentUsageChip
+        anchor.edges: Edges.Bottom | Edges.Left
+        anchor.gravity: Edges.Bottom | Edges.Right
+        anchor.margins.top: 6
+
+        Rectangle {
+            id: agentUsageCard
+            readonly property var record: root.agentUsageCurrent()
+            readonly property var limits: root.agentUsageLimits(record)
+            readonly property var days: root.agentUsageDays(record)
+            readonly property var models: root.agentUsageModels(record)
+            readonly property var agents: root.agentUsageList()
+            implicitWidth: 380
+            implicitHeight: agentUsageColumn.implicitHeight + 24
+            radius: 12
+            color: colors.panel
+            border.color: colors.borderStrong
+            border.width: 1
+
+            ColumnLayout {
+                id: agentUsageColumn
+                anchors.fill: parent
+                anchors.margins: 12
+                spacing: 10
+
+                // Hero: mark, tool, plan, freshness, refresh.
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Image {
+                        source: agentUsageCard.record ? root.agentUsageIcon(agentUsageCard.record.id) : ""
+                        sourceSize.width: 22
+                        sourceSize.height: 22
+                        width: 22
+                        height: 22
+                        smooth: true
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 1
+
+                        Text {
+                            text: (agentUsageCard.record ? root.stringOrEmpty(agentUsageCard.record.name) : "Agents")
+                                + (agentUsageCard.record && root.stringOrEmpty(agentUsageCard.record.tierLabel) ? "  ·  " + agentUsageCard.record.tierLabel : "")
+                            color: colors.text
+                            font.pixelSize: 12
+                            font.weight: Font.DemiBold
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            text: root.agentUsageRefreshing ? "refreshing…" : root.agentUsageUpdatedText(agentUsageCard.record)
+                            color: colors.subtle
+                            font.pixelSize: 9
+                        }
+                    }
+
+                    Rectangle {
+                        width: 24
+                        height: 24
+                        radius: 7
+                        color: agentRefreshMouse.containsMouse ? colors.cardAlt : "transparent"
+                        border.color: colors.border
+                        border.width: 1
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "\uf021"
+                            color: root.agentUsageRefreshing ? colors.amber : colors.muted
+                            font.family: "FiraCode Nerd Font"
+                            font.pixelSize: 10
+                        }
+
+                        MouseArea {
+                            id: agentRefreshMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.refreshAgentUsage()
+                        }
+                    }
+                }
+
+                // Subscription switch, only when more than one agent reports.
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: agentUsageCard.agents.length > 1
+                    spacing: 6
+
+                    Repeater {
+                        model: agentUsageCard.agents
+
+                        delegate: Rectangle {
+                            required property var modelData
+                            readonly property bool current: agentUsageCard.record && root.stringOrEmpty(modelData.id) === root.stringOrEmpty(agentUsageCard.record.id)
+                            radius: 7
+                            color: current ? colors.blueBg : colors.cardAlt
+                            border.color: current ? colors.blue : colors.border
+                            border.width: 1
+                            implicitWidth: agentSwitchLabel.implicitWidth + 16
+                            implicitHeight: agentSwitchLabel.implicitHeight + 10
+
+                            Text {
+                                id: agentSwitchLabel
+                                anchors.centerIn: parent
+                                text: root.agentUsageShortName(modelData.id)
+                                color: parent.current ? colors.blue : colors.text
+                                font.pixelSize: 9
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.selectAgentUsage(modelData.id)
+                            }
+                        }
+                    }
+                }
+
+                // Auth / endpoint problems replace the meters.
+                Text {
+                    Layout.fillWidth: true
+                    visible: agentUsageCard.record && (root.stringOrEmpty(agentUsageCard.record.usageStatusText).length > 0)
+                    text: agentUsageCard.record ? root.stringOrEmpty(agentUsageCard.record.usageStatusText) : ""
+                    color: colors.amber
+                    font.pixelSize: 10
+                    wrapMode: Text.WordWrap
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: agentUsageCard.limits.length === 0 && agentUsageCard.record && root.stringOrEmpty(agentUsageCard.record.authHelpText).length > 0
+                    text: agentUsageCard.record ? root.stringOrEmpty(agentUsageCard.record.authHelpText) : ""
+                    color: colors.subtle
+                    font.pixelSize: 9
+                    wrapMode: Text.WordWrap
+                }
+
+                // Limits: percent used, meter, time to reset.
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    visible: agentUsageCard.limits.length > 0
+                    spacing: 7
+
+                    Repeater {
+                        model: agentUsageCard.limits
+
+                        delegate: ColumnLayout {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            spacing: 3
+
+                            RowLayout {
+                                Layout.fillWidth: true
+
+                                Text {
+                                    text: modelData.label
+                                    color: colors.textDim
+                                    font.pixelSize: 10
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    text: modelData.resetText
+                                    color: colors.subtle
+                                    font.pixelSize: 9
+                                }
+
+                                Text {
+                                    text: modelData.percent + "%"
+                                    color: root.agentUsageMeterColor(modelData.percent)
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                    Layout.preferredWidth: 34
+                                    horizontalAlignment: Text.AlignRight
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 5
+                                radius: 3
+                                color: colors.elevationStrong
+
+                                Rectangle {
+                                    width: parent.width * Math.min(1, modelData.percent / 100)
+                                    height: parent.height
+                                    radius: parent.radius
+                                    color: root.agentUsageMeterColor(modelData.percent)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { Layout.fillWidth: true; height: 1; color: colors.lineSoft }
+
+                // Today.
+                Text {
+                    Layout.fillWidth: true
+                    visible: !!agentUsageCard.record
+                    text: agentUsageCard.record
+                        ? "Today  ·  " + root.formatTokenCount(agentUsageCard.record.todayTotalTokens) + " tokens"
+                          + "  ·  " + (Number(agentUsageCard.record.todayPrompts) || 0) + " prompts"
+                          + "  ·  " + (Number(agentUsageCard.record.todaySessions) || 0) + " session" + (Number(agentUsageCard.record.todaySessions) === 1 ? "" : "s")
+                        : ""
+                    color: colors.textDim
+                    font.pixelSize: 10
+                    elide: Text.ElideRight
+                }
+
+                // Tokens by day, last week; today bold at the bottom.
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    visible: agentUsageCard.days.length > 0
+                    spacing: 3
+
+                    Text {
+                        text: "Tokens by day"
+                        color: colors.subtle
+                        font.pixelSize: 9
+                        font.weight: Font.DemiBold
+                    }
+
+                    Repeater {
+                        model: agentUsageCard.days
+
+                        delegate: RowLayout {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Text {
+                                text: modelData.label
+                                color: modelData.today ? colors.text : colors.muted
+                                font.pixelSize: 9
+                                font.weight: modelData.today ? Font.DemiBold : Font.Normal
+                                Layout.preferredWidth: 26
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 6
+                                radius: 3
+                                color: colors.elevationSoft
+
+                                Rectangle {
+                                    width: Math.max(2, parent.width * modelData.ratio)
+                                    height: parent.height
+                                    radius: parent.radius
+                                    color: modelData.today ? colors.blue : colors.blueMuted
+                                }
+                            }
+
+                            Text {
+                                text: root.formatTokenCount(modelData.tokens)
+                                color: modelData.today ? colors.text : colors.muted
+                                font.pixelSize: 9
+                                font.weight: modelData.today ? Font.DemiBold : Font.Normal
+                                Layout.preferredWidth: 44
+                                horizontalAlignment: Text.AlignRight
+                            }
+                        }
+                    }
+                }
+
+                // Tokens by model, all time.
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    visible: agentUsageCard.models.length > 0
+                    spacing: 3
+
+                    Text {
+                        text: "Tokens by model"
+                        color: colors.subtle
+                        font.pixelSize: 9
+                        font.weight: Font.DemiBold
+                    }
+
+                    Repeater {
+                        model: agentUsageCard.models
+
+                        delegate: RowLayout {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Text {
+                                text: modelData.name
+                                color: colors.textDim
+                                font.pixelSize: 9
+                                elide: Text.ElideRight
+                                Layout.preferredWidth: 110
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 6
+                                radius: 3
+                                color: colors.elevationSoft
+
+                                Rectangle {
+                                    width: Math.max(2, parent.width * modelData.ratio)
+                                    height: parent.height
+                                    radius: parent.radius
+                                    color: colors.violet
+                                }
+                            }
+
+                            Text {
+                                text: root.formatTokenCount(modelData.total)
+                                color: colors.muted
+                                font.pixelSize: 9
+                                Layout.preferredWidth: 44
+                                horizontalAlignment: Text.AlignRight
+                            }
                         }
                     }
                 }

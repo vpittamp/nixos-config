@@ -33,6 +33,7 @@ ShellRoot {
     readonly property var launcherFocusTimer: runtimeServices ? runtimeServices.launcherFocusTimerRef : null
     readonly property var osdHideTimer: runtimeServices ? runtimeServices.osdHideTimerRef : null
     readonly property var notificationStore: runtimeServices ? runtimeServices.notificationStoreRef : null
+    readonly property var agentUsageRefreshProcess: runtimeServices ? runtimeServices.agentUsageRefreshProcessRef : null
     readonly property var notificationPersistTimer: runtimeServices ? runtimeServices.notificationPersistTimerRef : null
     readonly property var launcherQueryDebounce: runtimeServices ? runtimeServices.launcherQueryDebounceRef : null
     readonly property var launcherSessionSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherSessionSwitcherOpenTimerRef : null
@@ -254,6 +255,260 @@ ShellRoot {
     property bool dockedMode: true
     property bool powerMenuVisible: false
     property bool castPopupVisible: false
+    property bool agentsPopupVisible: false
+
+    // ----- Agent usage (Claude Code / Codex subscriptions) -----
+    // Records are whatever quickshell-agent-usage-update wrote to
+    // agentUsageDir; RuntimeServices file-watches one FileView per agent and
+    // hands the JSON here. Nothing below knows how the numbers were made.
+    property var agentUsageRecords: ({})
+    property string agentUsageSelected: ""
+    property bool agentUsageRefreshing: false
+
+    function setAgentUsageRecord(agentId, text) {
+        const id = stringOrEmpty(agentId);
+        if (!id) {
+            return;
+        }
+        let record = null;
+        try {
+            const raw = stringOrEmpty(text).trim();
+            record = raw ? JSON.parse(raw) : null;
+        } catch (error) {
+            console.warn("agents.record:", id, error);
+            record = null;
+        }
+        const next = Object.assign({}, agentUsageRecords);
+        if (record && typeof record === "object") {
+            next[id] = record;
+        } else {
+            delete next[id];
+        }
+        agentUsageRecords = next;
+        if (!agentUsageSelected || !agentUsageRecords[agentUsageSelected]) {
+            const list = agentUsageList();
+            agentUsageSelected = list.length ? stringOrEmpty(list[0].id) : "";
+        }
+    }
+
+    function agentUsageList() {
+        const order = arrayOrEmpty(shellConfig.agentUsageAgents);
+        const out = [];
+        for (let i = 0; i < order.length; i += 1) {
+            const record = agentUsageRecords[order[i]];
+            if (record && boolOrFalse(record.ready)) {
+                out.push(record);
+            }
+        }
+        return out;
+    }
+
+    function agentUsageAvailable() {
+        return agentUsageList().length > 0;
+    }
+
+    function agentUsageCurrent() {
+        const selected = agentUsageRecords[agentUsageSelected];
+        if (selected && boolOrFalse(selected.ready)) {
+            return selected;
+        }
+        const list = agentUsageList();
+        return list.length ? list[0] : null;
+    }
+
+    function selectAgentUsage(agentId) {
+        if (agentUsageRecords[stringOrEmpty(agentId)]) {
+            agentUsageSelected = stringOrEmpty(agentId);
+        }
+    }
+
+    function cycleAgentUsage() {
+        const list = agentUsageList();
+        if (!list.length) {
+            return "no agent usage records";
+        }
+        let index = -1;
+        for (let i = 0; i < list.length; i += 1) {
+            if (stringOrEmpty(list[i].id) === agentUsageSelected) {
+                index = i;
+            }
+        }
+        agentUsageSelected = stringOrEmpty(list[(index + 1) % list.length].id);
+        return "ok";
+    }
+
+    function refreshAgentUsage() {
+        if (!agentUsageRefreshProcess) {
+            return "refresh unavailable";
+        }
+        if (agentUsageRefreshProcess.running) {
+            return "already refreshing";
+        }
+        agentUsageRefreshing = true;
+        agentUsageRefreshProcess.running = true;
+        return "ok";
+    }
+
+    function agentUsageShortName(agentId) {
+        const id = stringOrEmpty(agentId);
+        if (id === "claude") return "Claude";
+        if (id === "codex") return "Codex";
+        return id ? id.charAt(0).toUpperCase() + id.slice(1) : "Agent";
+    }
+
+    function agentUsageIcon(agentId) {
+        const id = stringOrEmpty(agentId);
+        if (id === "claude") return "file://" + shellConfig.claudeIcon;
+        if (id === "codex") return "file://" + shellConfig.codexIcon;
+        return "file://" + shellConfig.aiFallbackIcon;
+    }
+
+    function formatTokenCount(n) {
+        const value = Number(n || 0);
+        if (!isFinite(value) || value <= 0) return "0";
+        if (value >= 1e9) return (value / 1e9).toFixed(1) + "B";
+        if (value >= 1e6) return (value / 1e6).toFixed(1) + "M";
+        if (value >= 1e3) return (value / 1e3).toFixed(1) + "K";
+        return String(Math.round(value));
+    }
+
+    // Model ids arrive hyphenated with the version split across segments
+    // (claude-fable-5, gpt-5.6-sol): rejoin the numeric run and title-case.
+    function friendlyModelName(modelId) {
+        const name = stringOrEmpty(modelId).replace(/^claude-/, "").replace(/-\d{8}$/, "");
+        if (!name) return "Unknown";
+        const parts = name.split("-");
+        const words = [];
+        let version = [];
+        for (let i = 0; i < parts.length; i += 1) {
+            const part = parts[i];
+            if (!part) continue;
+            if (/^\d/.test(part)) {
+                version.push(part);
+                continue;
+            }
+            if (version.length) {
+                words.push(version.join("."));
+                version = [];
+            }
+            words.push(part === "gpt" ? "GPT" : part === "glm" ? "GLM" : part.charAt(0).toUpperCase() + part.slice(1));
+        }
+        if (version.length) words.push(version.join("."));
+        return words.length ? words.join(" ") : "Unknown";
+    }
+
+    function agentUsagePercent(value) {
+        const n = Number(value);
+        if (!isFinite(n) || n < 0) return -1;
+        return Math.round(n <= 1 ? n * 100 : n);
+    }
+
+    function agentUsageResetText(iso) {
+        const at = Date.parse(stringOrEmpty(iso));
+        if (isNaN(at)) return "";
+        const now = clock && clock.date ? clock.date.getTime() : Date.now();
+        const ms = at - now;
+        if (ms <= 0) return "resets now";
+        const hours = Math.floor(ms / 3600000);
+        const minutes = Math.floor((ms % 3600000) / 60000);
+        if (hours >= 48) return "resets in " + Math.round(hours / 24) + "d";
+        return "resets in " + (hours ? hours + "h " : "") + minutes + "m";
+    }
+
+    function agentUsageLimits(record) {
+        const out = [];
+        const limits = arrayOrEmpty(record && record.limits);
+        for (let i = 0; i < limits.length; i += 1) {
+            const limit = limits[i];
+            const percent = agentUsagePercent(limit && limit.percent);
+            if (percent < 0) continue;
+            out.push({
+                label: stringOrEmpty(limit.title || limit.label) || "Limit",
+                percent: percent,
+                resetText: agentUsageResetText(limit.resetsAt)
+            });
+        }
+        return out;
+    }
+
+    function agentUsageMeterColor(percent) {
+        if (percent >= 90) return colors.red;
+        if (percent >= 70) return colors.amber;
+        return colors.blue;
+    }
+
+    function agentUsageDays(record) {
+        const days = arrayOrEmpty(record && record.recentDays);
+        let max = 0;
+        for (let i = 0; i < days.length; i += 1) {
+            max = Math.max(max, Number(days[i] && days[i].messageCount) || 0);
+        }
+        const today = Qt.formatDate(clock && clock.date ? clock.date : new Date(), "yyyy-MM-dd");
+        return days.map(function (day) {
+            const date = stringOrEmpty(day && day.date);
+            const tokens = Number(day && day.messageCount) || 0;
+            const parsed = new Date(date + "T12:00:00");
+            return {
+                date: date,
+                label: isNaN(parsed.getTime()) ? date.slice(5) : Qt.formatDate(parsed, "ddd"),
+                tokens: tokens,
+                ratio: max > 0 ? tokens / max : 0,
+                today: date === today
+            };
+        });
+    }
+
+    function agentUsageModels(record) {
+        const usage = record && record.modelUsage && typeof record.modelUsage === "object" ? record.modelUsage : {};
+        const rows = [];
+        const keys = Object.keys(usage);
+        for (let i = 0; i < keys.length; i += 1) {
+            const entry = usage[keys[i]] || {};
+            const input = Number(entry.inputTokens) || 0;
+            const output = Number(entry.outputTokens) || 0;
+            const cache = (Number(entry.cacheReadInputTokens) || 0) + (Number(entry.cacheCreationInputTokens) || 0);
+            rows.push({ model: keys[i], name: friendlyModelName(keys[i]), input: input, output: output, cache: cache, total: input + output + cache });
+        }
+        rows.sort(function (a, b) { return b.total - a.total; });
+        const max = rows.length ? rows[0].total : 0;
+        return rows.slice(0, 6).map(function (row) {
+            return Object.assign({}, row, { ratio: max > 0 ? row.total / max : 0 });
+        });
+    }
+
+    function agentUsageUpdatedText(record) {
+        const at = Date.parse(stringOrEmpty(record && record.updatedAt));
+        if (isNaN(at)) return "";
+        const now = clock && clock.date ? clock.date.getTime() : Date.now();
+        const minutes = Math.max(0, Math.round((now - at) / 60000));
+        if (minutes < 1) return "updated just now";
+        if (minutes < 60) return "updated " + minutes + "m ago";
+        const hours = Math.round(minutes / 60);
+        return "updated " + hours + "h ago";
+    }
+
+    function agentUsageChipLabel() {
+        const record = agentUsageCurrent();
+        if (!record) return "";
+        const limits = agentUsageLimits(record);
+        let session = null;
+        for (let i = 0; i < limits.length; i += 1) {
+            if (/session/i.test(limits[i].label)) { session = limits[i]; break; }
+        }
+        if (!session && limits.length) session = limits[0];
+        // Compact on purpose: the agent's mark is the chip's icon, so the
+        // label is just the session window used (or today's tokens when the
+        // account has no live limits) — the bar is tight on a 1504px panel.
+        return session ? session.percent + "%" : formatTokenCount(record.todayTotalTokens);
+    }
+
+    function agentUsageChipPercent() {
+        const record = agentUsageCurrent();
+        const limits = record ? agentUsageLimits(record) : [];
+        let worst = -1;
+        for (let i = 0; i < limits.length; i += 1) worst = Math.max(worst, limits[i].percent);
+        return worst;
+    }
     property bool audioPopupVisible: false
 
     // ----- OSD (volume / mic / brightness / scale) -----
@@ -2017,6 +2272,7 @@ ShellRoot {
         bluetoothPopupVisible = false;
         powerMenuVisible = false;
         castPopupVisible = false;
+        agentsPopupVisible = false;
         displaySelectorVisible = false;
         displaySelectorOutputName = "";
     }
@@ -2026,7 +2282,7 @@ ShellRoot {
     // use barPopupOutputName; the display selector tracks its own output.
     function anyBarPopupOpenOnOutput(outputName) {
         const o = stringOrEmpty(outputName);
-        if ((audioPopupVisible || bluetoothPopupVisible || powerMenuVisible || castPopupVisible)
+        if ((audioPopupVisible || bluetoothPopupVisible || powerMenuVisible || castPopupVisible || agentsPopupVisible)
             && stringOrEmpty(barPopupOutputName) === o) {
             return true;
         }
@@ -7678,6 +7934,11 @@ function normalizeLauncherMode(mode) {
                 isOpen: function () { return castPopupVisible; },
                 open: function (payload) { openBarPopup(payload, function () { castPopupVisible = true; }); },
                 close: function () { castPopupVisible = false; }
+            },
+            "agents": {
+                isOpen: function () { return agentsPopupVisible; },
+                open: function (payload) { openBarPopup(payload, function () { agentsPopupVisible = true; }); },
+                close: function () { agentsPopupVisible = false; }
             },
             "lock": {
                 isOpen: function () { return sessionLocked; },

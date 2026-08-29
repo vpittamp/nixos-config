@@ -158,6 +158,9 @@ QtObject {
   readonly property int idleScreenOffSeconds: ${toString cfg.idle.screenOffSeconds}
   readonly property int idleLockSeconds: ${toString cfg.idle.lockSeconds}
   readonly property string lockPamService: "${cfg.lock.pamService}"
+  readonly property string agentUsageDir: "${agentUsageDir}"
+  readonly property var agentUsageAgents: ${builtins.toJSON agentUsageAgents}
+  readonly property string agentUsageUpdateBin: "${agentUsageUpdateScript}/bin/quickshell-agent-usage-update"
   readonly property string i3pmBin: "${config.home.profileDirectory}/bin/i3pm"
   readonly property string herdrBin: "${config.home.profileDirectory}/bin/herdr"
   readonly property string i3pmWatchBin: "${quickshellI3pmWatchScript}/bin/quickshell-i3pm-watch"
@@ -2888,6 +2891,46 @@ USAGE
     fi
   '';
 
+  # ---- Agent usage (Claude Code / Codex subscriptions) ------------------
+  # Collectors are Omarchy's (MIT, vendored under ./agent-usage with only the
+  # cache path changed). Each prints one display-ready JSON record; the update
+  # script writes them atomically to the usage dir, which the shell watches.
+  # Adding an agent is adding a collector: the panel renders whatever appears.
+  agentUsageDir = "${config.xdg.stateHome}/quickshell-runtime-shell/agents/usage";
+  agentUsageAgents = [ "claude" "codex" ];
+  agentUsageCollector = name: pkgs.writeShellScriptBin "quickshell-agent-usage-${name}" ''
+    exec ${lib.getExe pkgs.python3} ${./agent-usage + "/${name}.py"} "$@"
+  '';
+  agentUsageCollectors = map agentUsageCollector agentUsageAgents;
+  agentUsageUpdateScript = pkgs.writeShellScriptBin "quickshell-agent-usage-update" ''
+    set -uo pipefail
+    usage_dir="${agentUsageDir}"
+    mkdir -p "$usage_dir"
+    pids=()
+    collect() {
+      local agent="$1"; shift
+      local record tmp
+      if ! record="$("${"$"}{collector}" "$@")" || [ -z "$record" ]; then
+        echo "quickshell-agent-usage-update: $agent collector failed" >&2
+        return 1
+      fi
+      if ! printf '%s' "$record" | ${pkgs.jq}/bin/jq -e . >/dev/null 2>&1; then
+        echo "quickshell-agent-usage-update: $agent collector printed no JSON" >&2
+        return 1
+      fi
+      tmp="$(mktemp "$usage_dir/.$agent.XXXXXX")"
+      printf '%s\n' "$record" >"$tmp"
+      mv "$tmp" "$usage_dir/$agent.json"
+    }
+    ${lib.concatMapStringsSep "\n" (name: ''
+      collector=${agentUsageCollector name}/bin/quickshell-agent-usage-${name}
+      collect ${name} "$@" & pids+=($!)
+    '') agentUsageAgents}
+    status=0
+    for pid in "''${pids[@]}"; do wait "$pid" || status=1; done
+    exit $status
+  '';
+
   # Lock through the shell when it is up (themed ext-session-lock + PAM),
   # swaylock otherwise — a lock request must never be dropped.
   lockSessionScript = pkgs.writeShellScriptBin "lock-session" ''
@@ -3164,6 +3207,8 @@ in
       toggleKeybindingsHelpScript
       brightnessKeyScript
       lockSessionScript
+      agentUsageUpdateScript
+    ] ++ agentUsageCollectors ++ [
       toggleLauncherScript
       toggleAgentMonitorScript
       toggleSettingsScript
@@ -3218,6 +3263,31 @@ in
     # The notification store lives in XDG state; the placeholder makes sure
     # the directory exists before the shell's first atomic write.
     xdg.stateFile."quickshell-runtime-shell/.keep".text = "";
+    xdg.stateFile."quickshell-runtime-shell/agents/usage/.keep".text = "";
+
+    # Regenerate the usage records every 15 minutes; the shell file-watches
+    # the directory, and its refresh button runs the same script on demand.
+    systemd.user.services.quickshell-agent-usage = {
+      Unit.Description = "Refresh AI coding agent usage records for the runtime shell";
+      Service = {
+        Type = "oneshot";
+        ExecStart = "${agentUsageUpdateScript}/bin/quickshell-agent-usage-update";
+        Environment = [
+          "PATH=${config.home.profileDirectory}/bin:/run/current-system/sw/bin:%h/.local/bin:/run/wrappers/bin"
+        ];
+        TimeoutStartSec = "180s";
+      };
+    };
+    systemd.user.timers.quickshell-agent-usage = {
+      Unit.Description = "Refresh AI coding agent usage records every 15 minutes";
+      Timer = {
+        OnStartupSec = "90s";
+        OnUnitActiveSec = "15min";
+        RandomizedDelaySec = "60s";
+        AccuracySec = "1min";
+      };
+      Install.WantedBy = [ "timers.target" ];
+    };
 
     xdg.configFile."quickshell/${cfg.configName}" = {
       source = shellConfigDir;

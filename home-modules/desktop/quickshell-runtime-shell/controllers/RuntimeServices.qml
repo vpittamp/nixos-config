@@ -22,6 +22,7 @@ Item {
     property alias launcherFocusTimerRef: launcherFocusTimer
     property alias osdHideTimerRef: osdHideTimer
     property alias notificationStoreRef: notificationStore
+    property alias agentUsageRefreshProcessRef: agentUsageRefreshProcess
     property alias notificationPersistTimerRef: notificationPersistTimer
     property alias launcherQueryDebounceRef: launcherQueryDebounce
     property alias launcherSessionSwitcherOpenTimerRef: launcherSessionSwitcherOpenTimer
@@ -413,6 +414,30 @@ Item {
         repeat: false
         running: true
         onTriggered: shellRoot.restoreNotifications()
+    }
+
+    // ----- Agent usage records -----
+    // One watched file per known agent. A record that appears is an agent;
+    // one that fails to load (not written yet, collector failed) is absent.
+    Instantiator {
+        model: runtimeConfig.agentUsageAgents
+        delegate: FileView {
+            required property string modelData
+            path: runtimeConfig.agentUsageDir + "/" + modelData + ".json"
+            watchChanges: true
+            printErrors: false
+            onFileChanged: reload()
+            onLoaded: shellRoot.setAgentUsageRecord(modelData, text())
+            onLoadFailed: shellRoot.setAgentUsageRecord(modelData, "")
+        }
+    }
+
+    Process {
+        id: agentUsageRefreshProcess
+        command: [runtimeConfig.agentUsageUpdateBin, "--limits-only"]
+        onExited: function () {
+            shellRoot.agentUsageRefreshing = false;
+        }
     }
 
     // ----- Idle -----
@@ -1332,6 +1357,14 @@ Item {
 
         function lock(): string {
             return shellRoot.lockSession();
+        }
+
+        function refreshAgentUsage(): string {
+            return shellRoot.refreshAgentUsage();
+        }
+
+        function nextAgentUsage(): string {
+            return shellRoot.cycleAgentUsage();
         }
 
         // `runtime-shell call replayNotifications 3`
