@@ -1230,6 +1230,39 @@ Item {
     IpcHandler {
         target: "shell"
 
+        // ----- Generic surface verbs -----
+        // Every shell surface is addressable by id through these four calls
+        // (see shellRoot.surfaceRegistry), so keybindings, hooks, and scripts
+        // use `runtime-shell toggle <id> [json]` instead of one wrapper script
+        // per function. The bespoke functions below stay as aliases.
+        function ping(): string {
+            return "ok";
+        }
+
+        function summon(id: string, payload: string): string {
+            return shellRoot.summonSurface(id, payload);
+        }
+
+        function hide(id: string): string {
+            return shellRoot.hideSurface(id);
+        }
+
+        function toggle(id: string, payload: string): string {
+            return shellRoot.toggleSurface(id, payload);
+        }
+
+        function listSurfaces(): string {
+            return shellRoot.listSurfaces();
+        }
+
+        function showKeybindings() {
+            shellRoot.showLauncher("keys", "");
+        }
+
+        function toggleKeybindings() {
+            shellRoot.toggleKeybindings();
+        }
+
         function togglePanel() {
             shellRoot.togglePanelVisibility();
         }

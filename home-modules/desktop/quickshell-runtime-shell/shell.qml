@@ -486,6 +486,20 @@ ShellRoot {
             accentBgKey: "tealBg"
         },
         {
+            // Keybinding cheat sheet, generated from sway-keybindings-data.nix
+            // at build time (ShellConfig.keybindings), so it cannot drift from
+            // what sway actually runs. Enter dispatches the binding's command.
+            id: "keys",
+            label: "Keys",
+            title: "Keybindings",
+            placeholder: "Search keybindings by key, action, or group",
+            help: "Enter run  •  Tab modes  •  Ctrl+6 Keys  •  Super+Ctrl+K toggles",
+            icon: "preferences-desktop-keyboard-shortcuts",
+            fallbackGlyph: "⌨",
+            accentColorKey: "violet",
+            accentBgKey: "violetBg"
+        },
+        {
             id: "files",
             label: "Files",
             title: "Find File",
@@ -3911,6 +3925,14 @@ function normalizeLauncherMode(mode) {
         if (launcherQuery !== nextQuery) {
             launcherQuery = nextQuery;
         }
+        // A query summoned over IPC must land in the field too; the field only
+        // ever pushed text outward before, so it would show empty while the
+        // results were already filtered.
+        if (launcherField && launcherField.text !== nextQuery) {
+            launcherNormalizingInput = true;
+            launcherField.text = nextQuery;
+            launcherNormalizingInput = false;
+        }
 
         launcherQueryDebounce.stop();
         restartLauncherQuery();
@@ -4004,6 +4026,9 @@ function normalizeLauncherMode(mode) {
         if (launcherMode === "snippets") {
             return launcherEntries.length ? launcherEntries.length + " curated command" + (launcherEntries.length === 1 ? "" : "s") : "No matching curated commands";
         }
+        if (launcherMode === "keys") {
+            return launcherEntries.length ? launcherEntries.length + " keybinding" + (launcherEntries.length === 1 ? "" : "s") : "No matching keybindings";
+        }
         if (launcherMode === "sessions") {
             return launcherEntries.length ? launcherEntries.length + " AI session" + (launcherEntries.length === 1 ? "" : "s") : "No matching AI sessions";
         }
@@ -4043,6 +4068,9 @@ function normalizeLauncherMode(mode) {
         }
         if (launcherMode === "snippets") {
             return "No curated commands match the current query";
+        }
+        if (launcherMode === "keys") {
+            return "No keybindings match the current query";
         }
         if (launcherMode === "sessions") {
             return "No AI sessions match the current query";
@@ -4092,6 +4120,9 @@ function normalizeLauncherMode(mode) {
             nextQuery = nextQuery.slice(1).replace(/^\s+/, "");
         } else if (nextQuery.indexOf(";a") === 0) {
             nextMode = "apps";
+            nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
+        } else if (nextQuery.indexOf(";k") === 0) {
+            nextMode = "keys";
             nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
         }
 
@@ -7131,6 +7162,9 @@ function normalizeLauncherMode(mode) {
         if (kind === "snippet") {
             return colors.teal;
         }
+        if (kind === "keybinding") {
+            return colors.violet;
+        }
         return "transparent";
     }
 
@@ -7243,6 +7277,185 @@ function normalizeLauncherMode(mode) {
         return colors.blueBg;
     }
 
+    function keybindingEntries(query) {
+        const tokens = launcherQueryTokens(query);
+        const bindings = arrayOrEmpty(shellConfig.keybindings);
+        const entries = [];
+        for (let i = 0; i < bindings.length; i += 1) {
+            const binding = bindings[i];
+            if (!binding) {
+                continue;
+            }
+            const key = stringOrEmpty(binding.key);
+            const description = stringOrEmpty(binding.description);
+            const group = stringOrEmpty(binding.group);
+            const command = stringOrEmpty(binding.command);
+            if (!launcherTokensMatch(tokens, [key, description, group, command])) {
+                continue;
+            }
+            entries.push({
+                kind: "keybinding",
+                identifier: stringOrEmpty(binding.raw) || key,
+                text: key,
+                subtext: group ? description + "  •  " + group : description,
+                command: command,
+                group: group,
+                icon: "preferences-desktop-keyboard-shortcuts"
+            });
+        }
+        return entries;
+    }
+
+    function toggleKeybindings() {
+        if (launcherVisible && launcherMode === "keys") {
+            closeLauncher();
+            return;
+        }
+        showLauncher("keys", "");
+    }
+
+    // ----- Generic surface IPC -----
+    // One registry of everything the shell can show, keyed by a stable id, so
+    // `runtime-shell summon|hide|toggle <id> [json]` reaches any surface. Each
+    // entry knows whether it is open and how to open/close itself; the payload
+    // is the surface's own options (launcher mode/query, panel section, ...).
+    function surfaceRegistry() {
+        const output = function (payload) {
+            return stringOrEmpty(payload && payload.output);
+        };
+        const openBarPopup = function (payload, setter) {
+            closeBarPopups();
+            barPopupOutputName = output(payload) || focusedOutputName();
+            setter();
+        };
+        return {
+            "launcher": {
+                isOpen: function () { return launcherVisible; },
+                open: function (payload) { showLauncher(stringOrEmpty(payload.mode) || "apps", stringOrEmpty(payload.query)); },
+                close: function () { closeLauncher(); }
+            },
+            "keybindings": {
+                isOpen: function () { return launcherVisible && launcherMode === "keys"; },
+                open: function (payload) { showLauncher("keys", stringOrEmpty(payload.query)); },
+                close: function () { closeLauncher(); }
+            },
+            "panel": {
+                isOpen: function () { return panelVisible; },
+                open: function (payload) {
+                    const section = stringOrEmpty(payload.section);
+                    if (section) {
+                        showRuntimePanelSection(section, output(payload));
+                    } else {
+                        showRuntimePanel(output(payload));
+                    }
+                },
+                close: function () { panelVisible = false; }
+            },
+            "settings": {
+                isOpen: function () { return settingsVisible; },
+                open: function (payload) { openSettings(stringOrEmpty(payload.section) || "commands"); },
+                close: function () { closeSettings(); }
+            },
+            "expose": {
+                isOpen: function () { return exposeVisible; },
+                open: function () { if (!exposeVisible) { openExpose(); } },
+                close: function () { closeExpose(); }
+            },
+            "agent-monitor": {
+                isOpen: function () { return agentMonitorVisible; },
+                open: function (payload) { if (!agentMonitorVisible) { toggleAgentMonitor(output(payload)); } },
+                close: function () { closeAgentMonitor(); }
+            },
+            "power-menu": {
+                isOpen: function () { return powerMenuVisible; },
+                open: function (payload) { openBarPopup(payload, function () { powerMenuVisible = true; }); },
+                close: function () { powerMenuVisible = false; }
+            },
+            "notifications": {
+                isOpen: function () { return notificationCenterVisible; },
+                open: function () { if (!notificationCenterVisible) { toggleNotifications(); } },
+                close: function () { notificationCenterVisible = false; }
+            },
+            "display-selector": {
+                isOpen: function () { return displaySelectorVisible; },
+                open: function (payload) { openDisplaySelector(output(payload)); },
+                close: function () { closeDisplaySelector(); }
+            },
+            "audio": {
+                isOpen: function () { return audioPopupVisible; },
+                open: function (payload) { openBarPopup(payload, function () { audioPopupVisible = true; }); },
+                close: function () { audioPopupVisible = false; }
+            },
+            "bluetooth": {
+                isOpen: function () { return bluetoothPopupVisible; },
+                open: function (payload) { openBarPopup(payload, function () { bluetoothPopupVisible = true; }); },
+                close: function () { bluetoothPopupVisible = false; }
+            },
+            "cast": {
+                isOpen: function () { return castPopupVisible; },
+                open: function (payload) { openBarPopup(payload, function () { castPopupVisible = true; }); },
+                close: function () { castPopupVisible = false; }
+            }
+        };
+    }
+
+    function parseSurfacePayload(payloadJson) {
+        const raw = stringOrEmpty(payloadJson).trim();
+        if (!raw) {
+            return {};
+        }
+        try {
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function summonSurface(id, payloadJson) {
+        const surface = surfaceRegistry()[stringOrEmpty(id)];
+        if (!surface) {
+            return "unknown surface: " + stringOrEmpty(id);
+        }
+        const payload = parseSurfacePayload(payloadJson);
+        if (payload === null) {
+            return "invalid payload: expected a JSON object";
+        }
+        surface.open(payload);
+        return "ok";
+    }
+
+    function hideSurface(id) {
+        const surface = surfaceRegistry()[stringOrEmpty(id)];
+        if (!surface) {
+            return "unknown surface: " + stringOrEmpty(id);
+        }
+        surface.close();
+        return "ok";
+    }
+
+    function toggleSurface(id, payloadJson) {
+        const surface = surfaceRegistry()[stringOrEmpty(id)];
+        if (!surface) {
+            return "unknown surface: " + stringOrEmpty(id);
+        }
+        if (surface.isOpen()) {
+            surface.close();
+            return "ok";
+        }
+        return summonSurface(id, payloadJson);
+    }
+
+    function listSurfaces() {
+        const registry = surfaceRegistry();
+        const ids = Object.keys(registry);
+        const rows = [];
+        for (let i = 0; i < ids.length; i += 1) {
+            rows.push({ id: ids[i], open: !!registry[ids[i]].isOpen() });
+        }
+        return JSON.stringify(rows);
+    }
+
     function restartLauncherQuery() {
         if (!launcherVisible) {
             return;
@@ -7279,6 +7492,12 @@ function normalizeLauncherMode(mode) {
             launcherLoading = true;
             launcherQueryProcess.command = [shellConfig.snippetsListBin, launcherQuery, "40"];
             launcherQueryProcess.running = true;
+            return;
+        }
+
+        if (launcherMode === "keys") {
+            launcherLoading = false;
+            setLauncherEntries(keybindingEntries(launcherQuery));
             return;
         }
 
@@ -7674,6 +7893,16 @@ function normalizeLauncherMode(mode) {
 
             closeLauncher();
             runDetached([shellConfig.launcherCommandActionBin, mode, command]);
+            return;
+        }
+        if (kind === "keybinding") {
+            const command = stringOrEmpty(entry && entry.command);
+            if (!command) {
+                return;
+            }
+
+            closeLauncher();
+            runDetached(["swaymsg", command]);
             return;
         }
         if (kind === "snippet") {

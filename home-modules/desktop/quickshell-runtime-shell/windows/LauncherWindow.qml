@@ -223,6 +223,11 @@ PanelWindow {
                             event.accepted = true;
                             return;
                         }
+                        if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_6) {
+                            root.setLauncherMode("keys");
+                            event.accepted = true;
+                            return;
+                        }
                         if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_4) {
                             root.setLauncherMode("onepassword");
                             event.accepted = true;

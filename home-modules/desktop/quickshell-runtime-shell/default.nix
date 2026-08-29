@@ -24,6 +24,68 @@ let
     && lib.elem "nvidia" (lib.attrByPath [ "services" "xserver" "videoDrivers" ] [ ] osConfig);
   lidPolicyFragmentPath = "/etc/nixos/configurations/thinkpad-lid-policy.nix";
   clipboardHistoryFile = "${config.home.homeDirectory}/.cache/i3pm/clipboard-history.json";
+
+  # ---- Keybinding cheat sheet -------------------------------------------
+  # The launcher's Keys mode renders the same described list sway is built
+  # from (sway-keybindings-data.nix), plus the runtime-shell-owned bindings
+  # defined in this module and, last, whatever else is in sway's final
+  # keybinding attrset (Home Manager's stock workspace bindings) so the sheet
+  # is complete rather than merely the bindings someone remembered to describe.
+  swayModifier = lib.attrByPath [ "wayland" "windowManager" "sway" "config" "modifier" ] "Mod4" config;
+  swayKeybindings = lib.attrByPath [ "wayland" "windowManager" "sway" "config" "keybindings" ] { } config;
+  keybindingData = import ../sway-keybindings-data.nix {
+    inherit lib;
+    modifier = swayModifier;
+    hasRuntimeShell = true;
+  };
+  toggleKeys =
+    let keys = if lib.isList cfg.toggleKey then cfg.toggleKey else [ cfg.toggleKey ];
+    in lib.unique (map (key: lib.replaceStrings [ "$mod" ] [ swayModifier ] key) keys);
+  runtimeShellOwnedBindings =
+    (map (key: { inherit key; cmd = "exec toggle-runtime-panel"; desc = "Toggle the runtime panel"; group = "Shell"; hidden = false; }) toggleKeys)
+    ++ [ { key = "${swayModifier}+Shift+a"; cmd = "exec toggle-agent-monitor"; desc = "Toggle the AI-agents monitor strip"; group = "Shell"; hidden = false; } ];
+  describedBindings = keybindingData.bindings ++ runtimeShellOwnedBindings;
+  describedKeys = map (b: b.key) describedBindings;
+  describeSwayCommand = cmd:
+    let
+      switchWs = builtins.match "workspace number ([0-9]+)" cmd;
+      moveWs = builtins.match "move container to workspace number ([0-9]+)" cmd;
+      stock = {
+        "kill" = "Close window";
+        "focus parent" = "Focus parent container";
+        "fullscreen toggle" = "Toggle fullscreen";
+        "mode resize" = "Resize mode";
+        "exec i3pm launch open terminal" = "Open a terminal";
+        "exec cast toggle" = "Cast toggle — TV as wireless display / stop";
+      };
+    in
+    if switchWs != null then { desc = "Switch to workspace ${lib.head switchWs}"; group = "Workspaces"; }
+    else if moveWs != null then { desc = "Move window to workspace ${lib.head moveWs}"; group = "Workspaces"; }
+    else if stock ? ${cmd} then { desc = stock.${cmd}; group = "Windows"; }
+    else { desc = cmd; group = "Other"; };
+  undescribedBindings = lib.mapAttrsToList
+    (key: cmd: { inherit key cmd; hidden = false; } // describeSwayCommand cmd)
+    (lib.filterAttrs (key: cmd: cmd != null && !(lib.elem key describedKeys)) swayKeybindings);
+  keyNames = {
+    XF86MonBrightnessUp = "Brightness Up";
+    XF86MonBrightnessDown = "Brightness Down";
+    XF86KbdBrightnessUp = "Kbd Backlight Up";
+    XF86KbdBrightnessDown = "Kbd Backlight Down";
+    XF86AudioRaiseVolume = "Volume Up";
+    XF86AudioLowerVolume = "Volume Down";
+    XF86AudioMute = "Mute";
+    XF86AudioMicMute = "Mic Mute";
+    XF86AudioPlay = "Play/Pause";
+    XF86AudioNext = "Next Track";
+    XF86AudioPrev = "Previous Track";
+  };
+  humanKey = key: keyNames.${key} or (lib.replaceStrings
+    [ "Mod4" "Mod1" "Control" "bracketright" "bracketleft" "backslash" "grave" "slash" "minus" "space" "Return" "Escape" "+" ]
+    [ "Super" "Alt" "Ctrl" "]" "[" "\\" "`" "/" "-" "Space" "Enter" "Esc" " + " ]
+    key);
+  keybindingEntries = map
+    (b: { key = humanKey b.key; raw = b.key; command = b.cmd; description = b.desc; group = b.group; })
+    (lib.filter (b: !b.hidden) (describedBindings ++ undescribedBindings));
   quickshellPackage =
     if inputs != null
       && lib.hasAttrByPath [ "quickshell" "packages" pkgs.stdenv.hostPlatform.system "default" ] inputs
@@ -135,6 +197,7 @@ QtObject {
   readonly property string clipboardActionBin: "${clipboardActionScript}/bin/quickshell-clipboard-action"
   readonly property string onePasswordIcon: "${../../../assets/icons/1password.svg}"
   readonly property var primaryOutputs: ${builtins.toJSON cfg.primaryOutputs}
+  readonly property var keybindings: ${builtins.toJSON keybindingEntries}
   readonly property bool perMonitorBars: ${if cfg.perMonitorBars then "true" else "false"}
   readonly property string panelOutputPolicy: "${cfg.panelOutputPolicy}"
   readonly property string codexIcon: "${../../../assets/icons/codex.svg}"
@@ -2748,7 +2811,56 @@ PY
     exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell toggleDockMode
   '';
 
+  # Generic surface CLI, the shell-side twin of Omarchy's
+  # `omarchy-shell shell summon|hide|toggle <id> <json>`. Every surface the
+  # shell owns is addressable by id, so a keybinding, a herdr hook, or a script
+  # can open exactly the thing it wants without a wrapper script per function.
+  runtimeShellCliScript = pkgs.writeShellScriptBin "runtime-shell" ''
+    set -euo pipefail
+    ipc=${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc
+
+    usage() {
+      cat >&2 <<'USAGE'
+Usage: runtime-shell <command> [args]
+  summon <surface> [payload-json]   open a surface
+  hide <surface>                    close a surface
+  toggle <surface> [payload-json]   open if closed, close if open
+  list                              every surface and whether it is open
+  call <function> [args...]         call any function on the shell IPC target
+  ping                              exit 0 when the shell answers
+
+Surfaces: launcher, keybindings, panel, settings, expose, agent-monitor,
+  power-menu, notifications, display-selector, audio, bluetooth, cast
+Payloads: launcher {"mode":"files","query":"nix"}  panel {"section":"sessions"}
+  settings {"section":"devices"}
+USAGE
+    }
+
+    cmd="''${1:-}"
+    if [ $# -gt 0 ]; then shift; fi
+    case "$cmd" in
+      summon|toggle)
+        [ $# -ge 1 ] || { usage; exit 2; }
+        payload="''${2:-}"
+        [ -n "$payload" ] || payload='{}'
+        exec "$ipc" call shell "$cmd" "$1" "$payload"
+        ;;
+      hide)
+        [ $# -ge 1 ] || { usage; exit 2; }
+        exec "$ipc" call shell hide "$1"
+        ;;
+      list) exec "$ipc" call shell listSurfaces ;;
+      call)
+        [ $# -ge 1 ] || { usage; exit 2; }
+        exec "$ipc" call shell "$@"
+        ;;
+      ping) exec "$ipc" call shell ping ;;
+      *) usage; exit 2 ;;
+    esac
+  '';
+
   togglePowerMenuScript = mkIpcScript "toggle-runtime-power-menu" "togglePowerMenu" "";
+  toggleKeybindingsHelpScript = mkIpcScript "toggle-keybindings-help" "toggleKeybindings" "";
   toggleLauncherScript = mkIpcScript "toggle-app-launcher" "toggleLauncher" "";
   toggleAgentMonitorScript = mkIpcScript "toggle-agent-monitor" "toggleAgentMonitor" "";
   toggleSettingsScript = mkIpcScript "toggle-runtime-settings" "toggleSettings" "";
@@ -2989,6 +3101,8 @@ in
       togglePanelScript
       toggleDockScript
       togglePowerMenuScript
+      runtimeShellCliScript
+      toggleKeybindingsHelpScript
       toggleLauncherScript
       toggleAgentMonitorScript
       toggleSettingsScript
