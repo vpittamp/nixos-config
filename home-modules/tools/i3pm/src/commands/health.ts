@@ -525,6 +525,61 @@ async function loadHerdrRemoteTargets(): Promise<HerdrRemoteTarget[]> {
   return targets;
 }
 
+/**
+ * Issues about a herdr server's own state, from a `herdr status --json` server
+ * record. Compatibility is only a finding when a server is actually running:
+ * a stopped server reports `compatible: null`, which is "unknown", not a
+ * mismatch, and the not-running issue already covers it.
+ */
+export function herdrServerIssues(
+  server: Record<string, unknown>,
+  scope = "",
+): string[] {
+  const issues: string[] = [];
+  if (server.running !== true) {
+    issues.push(`${scope}Herdr server is not running`);
+    return issues;
+  }
+  if (server.compatible !== true) {
+    issues.push(`${scope}Herdr client/server protocol is not compatible`);
+  }
+  return issues;
+}
+
+export interface HerdrBuildIdentity {
+  version: string;
+  protocol: number;
+}
+
+/**
+ * Issues about a remote host's herdr build disagreeing with the local one.
+ * Every host builds herdr from the same flake input, so a remote that reports
+ * a different version or wire protocol is a host that has not been rebuilt
+ * (or was built from a different lock) - the cause of the remote-aggregation
+ * failures this fleet has had. Unknown remote values are skipped: they mean
+ * the remote could not be read, which is reported separately.
+ */
+export function herdrFleetIssues(
+  local: HerdrBuildIdentity | null,
+  remote: HerdrBuildIdentity,
+): string[] {
+  const issues: string[] = [];
+  if (!local) {
+    return issues;
+  }
+  if (remote.protocol > 0 && local.protocol > 0 && remote.protocol !== local.protocol) {
+    issues.push(
+      `Remote Herdr protocol ${remote.protocol} differs from local protocol ${local.protocol}`,
+    );
+  }
+  if (remote.version && local.version && remote.version !== local.version) {
+    issues.push(
+      `Remote Herdr version ${remote.version} differs from local version ${local.version}`,
+    );
+  }
+  return issues;
+}
+
 async function collectHerdrHealth(
   runHerdr: (args: string[]) => Promise<{ code: number; stdout: string; stderr: string }>,
 ): Promise<HerdrHealth> {
@@ -572,12 +627,7 @@ async function collectHerdrHealth(
 
   const serverRunning = server.running === true;
   const compatible = server.compatible === true;
-  if (!serverRunning) {
-    issues.push("Herdr server is not running");
-  }
-  if (!compatible) {
-    issues.push("Herdr client/server protocol is not compatible");
-  }
+  issues.push(...herdrServerIssues(server));
 
   let agentCount = 0;
   if (agentList.code !== 0 || !agentList.stdout) {
@@ -683,7 +733,9 @@ async function loadDaemonRemoteHerdrGenerations(
   return generations;
 }
 
-async function loadHerdrRemoteHealth(): Promise<HerdrRemoteHealth[]> {
+async function loadHerdrRemoteHealth(
+  local: HerdrBuildIdentity | null,
+): Promise<HerdrRemoteHealth[]> {
   const targets = await loadHerdrRemoteTargets();
   const tailscaleHealth = await loadTailscalePeerHealth(targets);
   const daemonRemoteGenerations = await loadDaemonRemoteHerdrGenerations(targets);
@@ -794,19 +846,19 @@ async function loadHerdrRemoteHealth(): Promise<HerdrRemoteHealth[]> {
     }
     const serverRunning = server.running === true;
     const compatible = server.compatible === true;
-    if (!serverRunning) {
-      issues.push("Remote Herdr server is not running");
-    }
-    if (!compatible) {
-      issues.push("Remote Herdr client/server protocol is not compatible");
-    }
+    issues.push(...herdrServerIssues(server, "Remote "));
+    const remoteIdentity: HerdrBuildIdentity = {
+      version: String(client.version || ""),
+      protocol: Number(client.protocol || server.protocol || 0),
+    };
+    issues.push(...herdrFleetIssues(local, remoteIdentity));
 
     const health: HerdrHealth = {
       healthy: issues.length === 0,
       issues,
-      client_version: String(client.version || ""),
+      client_version: remoteIdentity.version,
       server_version: String(server.version || ""),
-      protocol: Number(client.protocol || server.protocol || 0),
+      protocol: remoteIdentity.protocol,
       compatible,
       server_running: serverRunning,
       agent_count: asArray(snapshot.agents).length,
@@ -1147,7 +1199,11 @@ export async function collectHealthReport(): Promise<HealthReport> {
   const daemonContract = daemonSocketExists ? await loadDaemonContractHealth() : null;
   const dashboard = daemonSocketExists ? await loadDashboardHealth() : null;
   const herdr = await loadHerdrHealth();
-  const herdrRemotes = await loadHerdrRemoteHealth();
+  const herdrRemotes = await loadHerdrRemoteHealth(
+    herdr && herdr.client_version
+      ? { version: herdr.client_version, protocol: herdr.protocol }
+      : null,
+  );
   const mcpBrowserRuntime = await loadMcpBrowserHealth();
 
   const coreIssues: string[] = [];
@@ -1308,9 +1364,13 @@ function printReport(report: HealthReport): void {
       }`,
     );
     console.log(
-      `  protocol ${report.herdr.compatible ? green("compatible") : red("mismatch")} ${
-        dim(`client ${report.herdr.client_version || "unknown"}`)
-      }`,
+      `  protocol ${
+        !report.herdr.server_running
+          ? yellow("unknown (server down)")
+          : report.herdr.compatible
+          ? green("compatible")
+          : red("mismatch")
+      } ${dim(`client ${report.herdr.client_version || "unknown"}`)}`,
     );
     console.log(
       `  agents ${cyan(String(report.herdr.agent_count))} panes ${

@@ -1,5 +1,11 @@
 import { assertEquals } from "jsr:@std/assert";
-import { buildHealthReport, type HealthReport, retiredDesktopStateUnitIssues } from "./health.ts";
+import {
+  buildHealthReport,
+  type HealthReport,
+  herdrFleetIssues,
+  herdrServerIssues,
+  retiredDesktopStateUnitIssues,
+} from "./health.ts";
 
 function baseReport(overallStatus: HealthReport["overall_status"]) {
   return {
@@ -103,4 +109,42 @@ Deno.test("retiredDesktopStateUnitIssues flags installed or active retired deskt
     true,
   );
   assertEquals(issues[1].includes("QuickShell and i3pm health own desktop UI state"), true);
+});
+
+Deno.test("herdrServerIssues treats a stopped server as not running, not incompatible", () => {
+  // `herdr status --json` reports compatible: null when no server is up.
+  assertEquals(
+    herdrServerIssues({ running: false, compatible: null }, "Remote "),
+    ["Remote Herdr server is not running"],
+  );
+  assertEquals(herdrServerIssues({ running: false, compatible: null }), [
+    "Herdr server is not running",
+  ]);
+});
+
+Deno.test("herdrServerIssues flags a running but incompatible server", () => {
+  assertEquals(herdrServerIssues({ running: true, compatible: false }, "Remote "), [
+    "Remote Herdr client/server protocol is not compatible",
+  ]);
+  assertEquals(herdrServerIssues({ running: true, compatible: true }), []);
+});
+
+Deno.test("herdrFleetIssues reports remote builds that differ from the local one", () => {
+  const local = { version: "0.8.2", protocol: 21 };
+  assertEquals(herdrFleetIssues(local, { version: "0.8.2", protocol: 21 }), []);
+  assertEquals(herdrFleetIssues(local, { version: "0.8.1", protocol: 20 }), [
+    "Remote Herdr protocol 20 differs from local protocol 21",
+    "Remote Herdr version 0.8.1 differs from local version 0.8.2",
+  ]);
+  assertEquals(herdrFleetIssues(local, { version: "0.8.3", protocol: 21 }), [
+    "Remote Herdr version 0.8.3 differs from local version 0.8.2",
+  ]);
+});
+
+Deno.test("herdrFleetIssues skips unknown local or remote identities", () => {
+  assertEquals(herdrFleetIssues(null, { version: "0.8.1", protocol: 20 }), []);
+  assertEquals(
+    herdrFleetIssues({ version: "0.8.2", protocol: 21 }, { version: "", protocol: 0 }),
+    [],
+  );
 });
