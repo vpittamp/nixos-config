@@ -1266,3 +1266,27 @@ def test_sway_focus_observation_distinguishes_unknown_from_empty(server):
     assert server._sway_focus_observation(SimpleNamespace(currently_focused_window=0)) == (True, 0)
     assert server._sway_focus_observation(SimpleNamespace(currently_focused_window=699)) == (True, 699)
     assert server._sway_focus_observation(SimpleNamespace()) == (False, 0)
+
+
+def test_window_last_focus_epoch_handles_datetime_missing_and_garbage(server):
+    from datetime import datetime, timezone
+
+    stamped = SimpleNamespace(last_focus=datetime(2026, 8, 29, 15, 0, 0, tzinfo=timezone.utc))
+    assert server._window_last_focus_epoch(stamped) == datetime(2026, 8, 29, 15, 0, 0, tzinfo=timezone.utc).timestamp()
+    assert server._window_last_focus_epoch(SimpleNamespace(last_focus=None)) == 0.0
+    assert server._window_last_focus_epoch(SimpleNamespace()) == 0.0
+    assert server._window_last_focus_epoch(SimpleNamespace(last_focus="nope")) == 0.0
+    assert server._window_last_focus_epoch(SimpleNamespace(last_focus=1700000000)) == 1700000000.0
+
+
+def test_project_outputs_carry_last_focus_at_onto_workspace_windows(server):
+    outputs = [{"name": "DP-1", "active": True, "primary": True, "geometry": {}, "current_workspace": "33", "workspaces": []}]
+    tracked = [
+        {"window_id": 699, "title": "herdr:ryzen", "app_key": "herdr", "app_name": "herdr", "workspace": "33", "output": "DP-1", "last_focus_at": 1788025000.5},
+        {"window_id": 700, "title": "no stamp", "app_key": "x", "app_name": "x", "workspace": "33", "output": "DP-1"},
+    ]
+
+    projected = server._project_outputs_from_tracked_windows(outputs, tracked)
+
+    windows = projected[0]["workspaces"][0]["windows"]
+    assert {w["id"]: w["last_focus_at"] for w in windows} == {699: 1788025000.5, 700: 0.0}

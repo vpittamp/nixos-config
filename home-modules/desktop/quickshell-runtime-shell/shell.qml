@@ -34,6 +34,7 @@ ShellRoot {
     readonly property var launcherQueryDebounce: runtimeServices ? runtimeServices.launcherQueryDebounceRef : null
     readonly property var launcherSessionSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherSessionSwitcherOpenTimerRef : null
     readonly property var launcherWindowSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherWindowSwitcherOpenTimerRef : null
+    readonly property var launcherRunningSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherRunningSwitcherOpenTimerRef : null
     readonly property var windowSwitcherFocusItem: windowSwitcherWindow ? windowSwitcherWindow.focusItemRef : null
     readonly property var exposeFocusTimer: runtimeServices ? runtimeServices.exposeFocusTimerRef : null
     readonly property var exposeOpenTimer: runtimeServices ? runtimeServices.exposeOpenTimerRef : null
@@ -266,6 +267,9 @@ ShellRoot {
     property int launcherSessionSwitcherPendingDelta: 0
     property bool launcherWindowSwitcherActive: false
     property int launcherWindowSwitcherPendingDelta: 0
+    // Alt+Tab running-app ring (launcher mode "running").
+    property bool launcherRunningSwitcherActive: false
+    property int launcherRunningSwitcherPendingDelta: 0
     // Full-screen window-switcher exposé state (separate from the launcher).
     property bool exposeVisible: false
     // Timestamp of the last open, used to ignore a stray second swipe right after
@@ -283,16 +287,10 @@ ShellRoot {
     // maps on that monitor. Empty falls back to root.activeScreen.
     property string exposeOutputName: ""
     // Client-side MRU recency for windows (the daemon exposes no focus order):
-    // each focused-window change stamps an increasing seq, so the exposé can
-    // order tiles most-recently-used first within each monitor panel.
-    property var exposeRecency: ({})
-    property int exposeRecencySeq: 0
+    // Exposé tiles are ordered most-recently-used first within each monitor
+    // panel, using the daemon's `last_focus_at` (see windowLastFocusAt) rather
+    // than a shell-local sequence that reset on every restart.
     readonly property int exposeCurrentWindowId: Number((dashboardFocusState() || {}).current_window_id || 0)
-    onExposeCurrentWindowIdChanged: {
-        if (exposeCurrentWindowId > 0) {
-            exposeRecency[exposeCurrentWindowId] = ++exposeRecencySeq;
-        }
-    }
     property string launcherQuery: ""
     property string launcherError: ""
     property int launcherSelectedIndex: 0
@@ -460,6 +458,21 @@ ShellRoot {
             fallbackGlyph: "A",
             accentColorKey: "blue",
             accentBgKey: "blueBg"
+        },
+        {
+            // Alt+Tab target. Hidden from the chip row and the Tab mode cycle:
+            // it is only ever entered through the switcher keybinding, and
+            // showing a "Running" chip next to "Apps" would read as a filter.
+            id: "running",
+            label: "Running",
+            title: "Switch App",
+            placeholder: "Search running apps",
+            help: "Hold Alt, Tab steps, release to switch  •  Ctrl+W close window",
+            icon: "preferences-system-windows",
+            fallbackGlyph: "⇄",
+            accentColorKey: "blue",
+            accentBgKey: "blueBg",
+            hidden: true
         },
         {
             id: "snippets",
@@ -3867,8 +3880,12 @@ function normalizeLauncherMode(mode) {
         return modes.length ? stringOrEmpty(modes[0] && modes[0].id) : "apps";
     }
 
+    readonly property var launcherVisibleModesModel: arrayOrEmpty(launcherModesModel).filter(function (mode) {
+        return !boolOrFalse(mode && mode.hidden);
+    })
+
     function launcherModeOrder() {
-        return arrayOrEmpty(launcherModesModel).map(function (mode) {
+        return arrayOrEmpty(launcherVisibleModesModel).map(function (mode) {
             return stringOrEmpty(mode && mode.id);
         }).filter(function (mode) {
             return mode !== "";
@@ -3993,6 +4010,9 @@ function normalizeLauncherMode(mode) {
         if (launcherMode === "windows") {
             return launcherEntries.length ? launcherEntries.length + " window" + (launcherEntries.length === 1 ? "" : "s") : "No matching windows";
         }
+        if (launcherMode === "running") {
+            return launcherEntries.length ? launcherEntries.length + " running app" + (launcherEntries.length === 1 ? "" : "s") : "No other running apps";
+        }
         if (launcherMode === "onepassword") {
             return launcherEntries.length ? launcherEntries.length + " 1Password item" + (launcherEntries.length === 1 ? "" : "s") : "No matching 1Password items";
         }
@@ -4029,6 +4049,9 @@ function normalizeLauncherMode(mode) {
         }
         if (launcherMode === "windows") {
             return "No windows match the current query";
+        }
+        if (launcherMode === "running") {
+            return "No running apps match the current query";
         }
         if (launcherMode === "onepassword") {
             return "No 1Password items match the current query";
@@ -4080,6 +4103,9 @@ function normalizeLauncherMode(mode) {
         }
         if (launcherSessionSwitcherActive && (nextMode !== "sessions" || nextQuery !== "")) {
             launcherSessionSwitcherActive = false;
+        }
+        if (launcherRunningSwitcherActive && (nextMode !== "running" || nextQuery !== "")) {
+            launcherRunningSwitcherActive = false;
         }
         if (launcherField && launcherField.text !== nextQuery) {
             launcherNormalizingInput = true;
@@ -4778,6 +4804,201 @@ function normalizeLauncherMode(mode) {
             }
         }
         return entries;
+    }
+
+    // ===== Running-app switcher (Alt+Tab) + silent window actions =====
+    // Focus recency comes from the daemon (`last_focus_at`, stamped on every
+    // window::focus), so the order survives shell restarts and is the same one
+    // the exposé and "toggle last window" use.
+    function windowLastFocusAt(windowData) {
+        return Number(windowData && windowData.last_focus_at || 0);
+    }
+
+    // Every window the dashboard knows about, flattened. `includeCurrent`
+    // keeps the focused window in the list (it is the anchor for cycling
+    // within an app); the ring surfaces exclude it.
+    function allDashboardWindows(includeCurrent) {
+        const out = [];
+        const projects = arrayOrEmpty(dashboard.projects);
+        for (let p = 0; p < projects.length; p += 1) {
+            const windows = arrayOrEmpty(projects[p] && projects[p].windows);
+            for (let i = 0; i < windows.length; i += 1) {
+                const windowData = windows[i];
+                if (!windowData || windowIdValue(windowData) <= 0) {
+                    continue;
+                }
+                if (!includeCurrent && windowIsCurrentTarget(windowData)) {
+                    continue;
+                }
+                out.push(windowData);
+            }
+        }
+        return out;
+    }
+
+    function windowAppGroupKey(windowData) {
+        return stringOrEmpty(windowData && windowData.app_key)
+            || stringOrEmpty(windowData && windowData.app_name)
+            || stringOrEmpty(windowData && windowData.window_class)
+            || ("window:" + windowIdValue(windowData));
+    }
+
+    // One entry per running app, most-recently-focused app first (macOS
+    // Cmd+Tab semantics). The entry IS the app's most recent window (kind
+    // "window", so the launcher's existing icon/host/focus rendering and
+    // activation apply unchanged) plus the group metadata.
+    function runningAppEntries(query) {
+        const tokens = launcherQueryTokens(query);
+        const groups = {};
+        const order = [];
+        const windows = allDashboardWindows(false);
+        for (let i = 0; i < windows.length; i += 1) {
+            const windowData = windows[i];
+            if (tokens.length && !launcherWindowMatches(windowData, tokens)) {
+                continue;
+            }
+            const key = windowAppGroupKey(windowData);
+            if (!groups[key]) {
+                groups[key] = { key: key, windows: [], latest: windowData, latestAt: windowLastFocusAt(windowData) };
+                order.push(key);
+            }
+            const group = groups[key];
+            group.windows.push(windowData);
+            const at = windowLastFocusAt(windowData);
+            if (at > group.latestAt) {
+                group.latestAt = at;
+                group.latest = windowData;
+            }
+        }
+        order.sort(function (a, b) {
+            const d = groups[b].latestAt - groups[a].latestAt;
+            return d !== 0 ? d : (a < b ? -1 : (a > b ? 1 : 0));
+        });
+        const entries = [];
+        for (let i = 0; i < order.length; i += 1) {
+            const group = groups[order[i]];
+            const latest = group.latest;
+            const count = group.windows.length;
+            const title = displayTitle(latest);
+            entries.push(Object.assign({}, latest, {
+                kind: "window",
+                identifier: String(windowIdValue(latest)),
+                text: appLabel(latest) || title,
+                subtext: count > 1 ? (count + " windows  ·  " + title) : title,
+                host_token: windowHostToken(latest),
+                app_group_key: group.key,
+                window_count: count
+            }));
+        }
+        return entries;
+    }
+
+    function cycleLauncherRunning(direction) {
+        const delta = direction === "prev" ? -1 : 1;
+        const shouldOpenSwitcher = !launcherVisible || launcherMode !== "running" || launcherQuery !== "" || !launcherRunningSwitcherActive;
+        if (shouldOpenSwitcher) {
+            launcherRunningSwitcherActive = true;
+            launcherRunningSwitcherPendingDelta = delta;
+            showLauncher("running", "");
+            if (launcherRunningSwitcherOpenTimer) {
+                launcherRunningSwitcherOpenTimer.restart();
+            }
+            return;
+        }
+
+        launcherRunningSwitcherPendingDelta = 0;
+        moveLauncherSelection(delta);
+        launcherFocusTimer.restart();
+    }
+
+    function finalizeLauncherRunningSwitcherOpen() {
+        if (!launcherVisible || launcherMode !== "running" || launcherRunningSwitcherPendingDelta === 0) {
+            return;
+        }
+
+        const delta = launcherRunningSwitcherPendingDelta;
+        launcherRunningSwitcherPendingDelta = 0;
+        const entries = runningAppEntries("");
+        setLauncherEntries(entries);
+        if (!entries.length) {
+            return;
+        }
+
+        launcherPointerSelectionEnabled = false;
+        launcherSelectionMode = "keyboard";
+        launcherViewportPrimed = true;
+        // The focused window is excluded, so index 0 is the previous app: one
+        // tap-and-release goes back where you came from.
+        launcherSelectedIndex = delta < 0 ? entries.length - 1 : 0;
+    }
+
+    function commitLauncherRunningSwitch() {
+        if (!launcherVisible || launcherMode !== "running" || !launcherRunningSwitcherActive) {
+            return;
+        }
+
+        const entry = activeLauncherEntry();
+        launcherRunningSwitcherActive = false;
+        launcherRunningSwitcherPendingDelta = 0;
+        if (!entry) {
+            closeLauncher();
+            return;
+        }
+
+        activateLauncherEntry(entry);
+    }
+
+    // Mod+grave: step through the focused app's windows in a FIXED order
+    // (window id = creation order), not MRU — an MRU ring would just bounce
+    // between the two most recent windows on repeated presses.
+    function cycleFocusedAppWindows(direction) {
+        const delta = direction === "prev" ? -1 : 1;
+        const windows = allDashboardWindows(true);
+        let current = null;
+        for (let i = 0; i < windows.length; i += 1) {
+            if (windowIsCurrentTarget(windows[i])) {
+                current = windows[i];
+                break;
+            }
+        }
+        if (!current) {
+            return;
+        }
+        const key = windowAppGroupKey(current);
+        const siblings = windows.filter(function (windowData) {
+            return windowAppGroupKey(windowData) === key;
+        }).sort(function (a, b) {
+            return windowIdValue(a) - windowIdValue(b);
+        });
+        if (siblings.length < 2) {
+            return;
+        }
+        let index = 0;
+        for (let i = 0; i < siblings.length; i += 1) {
+            if (windowIdValue(siblings[i]) === windowIdValue(current)) {
+                index = i;
+                break;
+            }
+        }
+        focusWindow(siblings[(index + delta + siblings.length) % siblings.length]);
+    }
+
+    // Mod+Escape: the window you were in before this one (daemon recency),
+    // the window twin of toggle-last-ai-session.
+    function focusLastWindow() {
+        const windows = allDashboardWindows(false);
+        let best = null;
+        let bestAt = -1;
+        for (let i = 0; i < windows.length; i += 1) {
+            const at = windowLastFocusAt(windows[i]);
+            if (at > bestAt) {
+                bestAt = at;
+                best = windows[i];
+            }
+        }
+        if (best) {
+            focusWindow(best);
+        }
     }
 
     function launcherEntryIdentity(entry) {
@@ -7073,6 +7294,12 @@ function normalizeLauncherMode(mode) {
             return;
         }
 
+        if (launcherMode === "running") {
+            launcherLoading = false;
+            setLauncherEntries(runningAppEntries(launcherQuery));
+            return;
+        }
+
         if (launcherMode === "onepassword") {
             setLauncherEntries(onePasswordEntries(launcherQuery));
             launcherLoading = onePasswordEntriesCache.length === 0;
@@ -7785,8 +8012,8 @@ function normalizeLauncherMode(mode) {
                         return sb - sa;
                     }
                 } else {
-                    const ra = Number(exposeRecency[windowIdValue(a)] || 0);
-                    const rb = Number(exposeRecency[windowIdValue(b)] || 0);
+                    const ra = windowLastFocusAt(a);
+                    const rb = windowLastFocusAt(b);
                     if (ra !== rb) {
                         return rb - ra;
                     }
@@ -7801,11 +8028,6 @@ function normalizeLauncherMode(mode) {
             grouped[i]._gi = i;
         }
         exposeEntries = grouped;
-        // Prune recency only when showing the full set (no filter), so windows
-        // hidden by a query don't lose their recency stamp.
-        if (!hasQuery) {
-            pruneExposeRecency(grouped);
-        }
         if (exposeSelectedIndex >= grouped.length) {
             exposeSelectedIndex = Math.max(0, grouped.length - 1);
         }
@@ -7839,23 +8061,6 @@ function normalizeLauncherMode(mode) {
         return score;
     }
 
-    // Drop recency stamps for windows that no longer exist (called with the full
-    // window set so live windows aren't pruned).
-    function pruneExposeRecency(entries) {
-        const live = {};
-        for (let i = 0; i < entries.length; i += 1) {
-            const id = windowIdValue(entries[i]);
-            if (id) {
-                live[id] = true;
-            }
-        }
-        const m = exposeRecency;
-        for (const k in m) {
-            if (!live[k]) {
-                delete m[k];
-            }
-        }
-    }
 
     // "N windows · M agents" summary for the exposé header.
     function exposeSummaryText() {
@@ -8013,7 +8218,25 @@ function normalizeLauncherMode(mode) {
             return;
         }
         const focusedIdx = exposeFocusedIndex();
-        if (focusedIdx < 0) {
+        // First step lands on the globally most-recent OTHER window (least
+        // recent going backwards), wherever its monitor is. Stepping to the
+        // neighbouring tile picked the next window on the current monitor,
+        // which is never "the one I was just in" on a multi-monitor desk.
+        let target = -1;
+        let bestAt = delta > 0 ? -1 : Number.MAX_VALUE;
+        for (let i = 0; i < entries.length; i += 1) {
+            if (i === focusedIdx || stringOrEmpty(entries[i] && entries[i].kind) === "session") {
+                continue;
+            }
+            const at = windowLastFocusAt(entries[i]);
+            if ((delta > 0 && at > bestAt) || (delta < 0 && at < bestAt)) {
+                bestAt = at;
+                target = i;
+            }
+        }
+        if (target >= 0) {
+            exposeSelectedIndex = target;
+        } else if (focusedIdx < 0) {
             exposeSelectedIndex = delta < 0 ? entries.length - 1 : 0;
         } else {
             exposeSelectedIndex = (focusedIdx + delta + entries.length) % entries.length;

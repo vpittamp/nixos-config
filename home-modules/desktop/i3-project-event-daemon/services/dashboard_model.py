@@ -118,6 +118,7 @@ def build_dashboard_projects(
             "visible": derived_visible,
             "hidden": derived_hidden,
             "floating": bool(window.get("floating", False)),
+            "last_focus_at": float(window.get("last_focus_at") or 0.0),
             "scope": str(window.get("scope") or "").strip(),
             "focus_target": build_window_focus_target(
                 window_id=window_id,

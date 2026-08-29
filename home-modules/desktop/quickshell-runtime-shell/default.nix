@@ -2799,6 +2799,39 @@ PY
     esac
   '';
 
+  # Alt+Tab: MRU ring of running apps (launcher mode "running").
+  showAppSwitcherScript = pkgs.writeShellScriptBin "show-app-switcher-action" ''
+    set -euo pipefail
+    case "''${1:-next}" in
+      prev) exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell prevLauncherRunning ;;
+      *) exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell nextLauncherRunning ;;
+    esac
+  '';
+
+  # Bound to sway `--release Alt_L`: commits an open Alt-held window switcher
+  # (running-app ring or exposé). The compositor sees the modifier release
+  # even when the overlay has not grabbed the keyboard yet, which is what made
+  # a quick tap leave the switcher open waiting for Enter.
+  commitWindowSwitcherScript = pkgs.writeShellScriptBin "commit-window-switch-action" ''
+    set -euo pipefail
+    exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell commitWindowSwitch
+  '';
+
+  # Mod+grave: cycle the focused app's windows (fixed order), no UI.
+  cycleAppWindowsScript = pkgs.writeShellScriptBin "cycle-app-windows-action" ''
+    set -euo pipefail
+    case "''${1:-next}" in
+      prev) exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell prevAppWindow ;;
+      *) exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell nextAppWindow ;;
+    esac
+  '';
+
+  # Mod+Escape: back to the previously focused window, no UI.
+  focusLastWindowScript = pkgs.writeShellScriptBin "toggle-last-window-action" ''
+    set -euo pipefail
+    exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell focusLastWindow
+  '';
+
   commitAiSwitcherScript = pkgs.writeShellScriptBin "commit-ai-session-switch-action" ''
     set -euo pipefail
     exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell commitLauncherSession
@@ -2968,6 +3001,10 @@ in
       cycleSessionsScript
       showAiSwitcherScript
       showWindowSwitcherScript
+      showAppSwitcherScript
+      commitWindowSwitcherScript
+      cycleAppWindowsScript
+      focusLastWindowScript
       commitAiSwitcherScript
       focusLastSessionScript
       cycleDisplayLayoutScript

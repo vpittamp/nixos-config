@@ -24,11 +24,25 @@ in
 {
   wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault (
     {
-    # AI session switcher in launcher style
+    # AI session switcher in launcher style (hold Super, Tab steps, release commits)
     "${modifier}+Tab" = "exec show-ai-mru-switcher-action next";
     "${modifier}+Shift+Tab" = "exec show-ai-mru-switcher-action prev";
-    "Alt+Tab" = "exec show-window-switcher-action next";
-    "Alt+Shift+Tab" = "exec show-window-switcher-action prev";
+    # Running-app switcher, MRU, one entry per app (hold Alt, Tab steps, release commits)
+    "Alt+Tab" = "exec show-app-switcher-action next";
+    "Alt+Shift+Tab" = "exec show-app-switcher-action prev";
+    # Full-screen exposé grouped by monitor (also: 3-finger swipe up)
+    "Alt+Ctrl+Tab" = "exec show-window-switcher-action next";
+    "Alt+Ctrl+Shift+Tab" = "exec show-window-switcher-action prev";
+    # Commit the hold-to-switch rings on the compositor's own modifier-release
+    # event: the overlay may not hold the keyboard yet when a quick tap ends,
+    # so its own key-release handler is only a fallback. Both actions are
+    # no-ops when no switcher is open.
+    "--release Alt_L" = "exec commit-window-switch-action";
+    "--release Super_L" = "exec commit-ai-session-switch-action";
+    # Silent window actions (twins of Alt+bracket / Alt+grave for sessions)
+    "${modifier}+grave" = "exec cycle-app-windows-action next";
+    "${modifier}+Shift+grave" = "exec cycle-app-windows-action prev";
+    "${modifier}+Escape" = "exec toggle-last-window-action";
 
     # Next/previous workspace
     "${modifier}+n" = "workspace next";
