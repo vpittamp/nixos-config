@@ -203,10 +203,11 @@ controllers to hide the first causal error.
   until then, a signed replay of the delivery to the EL is the manual remedy.
 - stacks `main` is protected by ruleset "main required checks": required
   context `stacks-ci-required` (aggregates the path-gated validators), no
-  deletion/force-push; App 2970091 and repository admins bypass (the Tekton
-  pin writer still pushes with an admin PAT). Merge with
-  `PUT /pulls/<n>/merge` only after `stacks-ci-required` is green — admin
-  bypass would let you merge early; don't. `preview/gate` stays advisory.
+  deletion/force-push; only App 2970091 bypasses (Tekton pin writes and the
+  two `contents: write` workflows push with App-minted tokens as
+  `gitops-promoter-23[bot]`). Humans cannot push to `main`; merge with
+  `PUT /pulls/<n>/merge` once `stacks-ci-required` is green. `preview/gate`
+  stays advisory.
 - A PR preview is an interactive review tool: label `preview` only when a
   person wants to use the preview to judge the change. While an acceptance you
   care about is running, keep `main` still — its evidence binds to the baked
