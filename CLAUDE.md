@@ -100,6 +100,21 @@ terminals (herdr follows the terminal; press `Ctrl+Shift+,` in an open
 Ghostty to reload). Launcher "Themes" mode: `Ctrl+3` / `;t` — the highlighted theme is applied live as a preview; Enter keeps it, Esc reverts. Add a theme by
 adding an attrset to `themes.nix`; no QML changes.
 
+Each theme also carries a `style` block — `flat` (opaque cards, accent-tinted
+strong borders), `radiusScale` (0 square … 1 shadcn radii), `fontFamily`
+("" = system sans, "monospace" via fontconfig). Omarchy palettes ship
+Omarchy's chrome (flat, square, monospace); the zinc themes keep shadcn's.
+In QML never write a literal size/radius/family: use `Theme.fs(px)`,
+`Theme.rad(px)`, `Theme.fontFamily` (glyphs: `Theme.glyphFamily`), and the
+bars/OSD/overlays scale with `Theme.scale`.
+
+**Text size**: `runtime-theme text-size [8-24]` (or Devices pane → Text size)
+sets the shell's type root live (12 = built-in) and writes the matching
+Ghostty point size (9pt at 12px, ½pt steps) into `theme.conf` for new
+terminals. GTK is not scaled (no gsettings schemas installed). On the
+Surface's 1504-px panel the top bar's centre block clips at ≥14px — the
+cluster shrinks to the free span by design.
+
 **Lock + idle** are in-shell: `Mod+Ctrl+L` / power menu *Lock* /
 `lock-session` engage `windows/LockScreen.qml` (ext-session-lock + PAM
 `swaylock` service); `lock-session` falls back to swaylock if the shell is
