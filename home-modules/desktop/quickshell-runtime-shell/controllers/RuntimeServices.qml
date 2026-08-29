@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Notifications
+import Quickshell.Wayland
 
 Item {
     id: services
@@ -19,6 +20,18 @@ Item {
     property alias brightnessRestartTimerRef: brightnessRestartTimer
     property alias lidPolicyRestartTimerRef: lidPolicyRestartTimer
     property alias launcherFocusTimerRef: launcherFocusTimer
+    property alias osdHideTimerRef: osdHideTimer
+    property alias notificationStoreRef: notificationStore
+    property alias agentUsageRefreshProcessRef: agentUsageRefreshProcess
+    property alias tailscaleStatusProcessRef: tailscaleStatusProcess
+    property alias tailscaleActionProcessRef: tailscaleActionProcess
+    property alias tailscaleNoticeTimerRef: tailscaleNoticeTimer
+    property alias reminderListProcessRef: reminderListProcess
+    property alias captureStatusProcessRef: captureStatusProcess
+    property alias reminderActionProcessRef: reminderActionProcess
+    property alias nightlightStatusProcessRef: nightlightStatusProcess
+    property alias nightlightActionProcessRef: nightlightActionProcess
+    property alias notificationPersistTimerRef: notificationPersistTimer
     property alias launcherQueryDebounceRef: launcherQueryDebounce
     property alias launcherSessionSwitcherOpenTimerRef: launcherSessionSwitcherOpenTimer
     property alias launcherWindowSwitcherOpenTimerRef: launcherWindowSwitcherOpenTimer
@@ -385,6 +398,198 @@ Item {
             shellRoot.launcherField.forceActiveFocus();
             shellRoot.launcherField.selectAll();
         }
+    }
+
+    // ----- Notification persistence -----
+    FileView {
+        id: notificationStore
+        path: runtimeConfig.notificationStorePath
+        blockLoading: true
+        atomicWrites: true
+        printErrors: false
+    }
+
+    Timer {
+        id: notificationPersistTimer
+        interval: 400
+        repeat: false
+        onTriggered: shellRoot.persistNotifications()
+    }
+
+    Timer {
+        id: notificationRestoreTimer
+        interval: 250
+        repeat: false
+        running: true
+        onTriggered: shellRoot.restoreNotifications()
+    }
+
+    // ----- Theme state -----
+    // ~/.local/state/quickshell-runtime-shell/theme.json names the active
+    // theme; runtime-theme writes it and the shell restyles without restart.
+    FileView {
+        id: themeStateView
+        path: runtimeConfig.themeStatePath
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: shellRoot.applyThemeState(text())
+        onLoadFailed: shellRoot.applyThemeState("")
+    }
+
+    // ----- Agent usage records -----
+    // One watched file per known agent. A record that appears is an agent;
+    // one that fails to load (not written yet, collector failed) is absent.
+    Instantiator {
+        model: runtimeConfig.agentUsageAgents
+        delegate: FileView {
+            required property string modelData
+            path: runtimeConfig.agentUsageDir + "/" + modelData + ".json"
+            watchChanges: true
+            printErrors: false
+            onFileChanged: reload()
+            onLoaded: shellRoot.setAgentUsageRecord(modelData, text())
+            onLoadFailed: shellRoot.setAgentUsageRecord(modelData, "")
+        }
+    }
+
+    Process {
+        id: agentUsageRefreshProcess
+        command: [runtimeConfig.agentUsageUpdateBin, "--limits-only"]
+        onExited: function () {
+            shellRoot.agentUsageRefreshing = false;
+        }
+    }
+
+    // ----- Capture (recording indicator) -----
+    Process {
+        id: captureStatusProcess
+        command: [runtimeConfig.captureBin, "record", "status"]
+        stdout: StdioCollector {
+            onStreamFinished: shellRoot.parseCaptureStatus(text)
+        }
+    }
+
+    Timer {
+        interval: shellRoot.captureRecording ? 5000 : 60000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: shellRoot.refreshCapture()
+    }
+
+    // ----- Reminders / night light -----
+    Process {
+        id: reminderListProcess
+        command: [runtimeConfig.reminderBin, "show", "--json"]
+        stdout: StdioCollector {
+            onStreamFinished: shellRoot.parseReminders(text)
+        }
+    }
+
+    Process {
+        id: reminderActionProcess
+        onExited: shellRoot.refreshReminders()
+    }
+
+    Timer {
+        interval: 60000
+        running: shellRoot.clockPopupVisible
+        repeat: true
+        onTriggered: shellRoot.refreshReminders()
+    }
+
+    Process {
+        id: nightlightStatusProcess
+        command: [runtimeConfig.nightlightBin, "status"]
+        stdout: StdioCollector {
+            onStreamFinished: shellRoot.nightlightActive = text.trim() === "on"
+        }
+    }
+
+    Process {
+        id: nightlightActionProcess
+        stdout: StdioCollector {
+            onStreamFinished: shellRoot.nightlightActive = text.trim() === "on"
+        }
+    }
+
+    Timer {
+        interval: 120000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: shellRoot.refreshNightlight()
+    }
+
+    // ----- Tailscale -----
+    Process {
+        id: tailscaleStatusProcess
+        command: [runtimeConfig.tailscaleStatusBin]
+        stdout: StdioCollector {
+            onStreamFinished: shellRoot.parseTailscaleStatus(text)
+        }
+    }
+
+    Timer {
+        interval: 30000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: shellRoot.refreshTailscale()
+    }
+
+    Process {
+        id: tailscaleActionProcess
+        onExited: function () {
+            shellRoot.tailscaleBusy = false;
+            shellRoot.refreshTailscale();
+        }
+    }
+
+    Timer {
+        id: tailscaleNoticeTimer
+        interval: 1800
+        repeat: false
+        onTriggered: shellRoot.tailscaleNotice = ""
+    }
+
+    // ----- Idle -----
+    // ext-idle-notify through the compositor, honouring app idle inhibitors
+    // (video playback) and the shell's own idleInhibited (cast, lid inhibit).
+    IdleMonitor {
+        id: idleScreenOffMonitor
+        enabled: runtimeConfig.idleScreenOffSeconds > 0 && !shellRoot.idleInhibited
+        timeout: runtimeConfig.idleScreenOffSeconds
+        respectInhibitors: true
+        onIsIdleChanged: shellRoot.handleIdleScreen(isIdle)
+    }
+
+    IdleMonitor {
+        id: idleLockMonitor
+        enabled: runtimeConfig.idleLockSeconds > 0 && !shellRoot.idleInhibited && !shellRoot.sessionLocked
+        timeout: runtimeConfig.idleLockSeconds
+        respectInhibitors: true
+        onIsIdleChanged: {
+            if (isIdle) {
+                shellRoot.lockSession();
+            }
+        }
+    }
+
+    Timer {
+        id: osdHideTimer
+        interval: 1400
+        repeat: false
+        onTriggered: shellRoot.osdVisible = false
+    }
+
+    Timer {
+        id: osdArmTimer
+        interval: 3000
+        repeat: false
+        running: true
+        onTriggered: shellRoot.osdArmed = true
     }
 
     Timer {
@@ -1229,6 +1434,104 @@ Item {
 
     IpcHandler {
         target: "shell"
+
+        // ----- Generic surface verbs -----
+        // Every shell surface is addressable by id through these four calls
+        // (see shellRoot.surfaceRegistry), so keybindings, hooks, and scripts
+        // use `runtime-shell toggle <id> [json]` instead of one wrapper script
+        // per function. The bespoke functions below stay as aliases.
+        function ping(): string {
+            return "ok";
+        }
+
+        function summon(id: string, payload: string): string {
+            return shellRoot.summonSurface(id, payload);
+        }
+
+        function hide(id: string): string {
+            return shellRoot.hideSurface(id);
+        }
+
+        function toggle(id: string, payload: string): string {
+            return shellRoot.toggleSurface(id, payload);
+        }
+
+        function listSurfaces(): string {
+            return shellRoot.listSurfaces();
+        }
+
+        function showKeybindings() {
+            shellRoot.showLauncher("keys", "");
+        }
+
+        // `runtime-shell call showOsd brightness 55` / `... volume ""`.
+        function showOsd(kind: string, level: string): string {
+            return shellRoot.showOsdFromIpc(kind, level);
+        }
+
+        function lock(): string {
+            return shellRoot.lockSession();
+        }
+
+        function refreshAgentUsage(): string {
+            return shellRoot.refreshAgentUsage();
+        }
+
+        function setTheme(name: string): string {
+            return shellRoot.setTheme(name);
+        }
+
+        function currentTheme(): string {
+            return shellRoot.colors.name;
+        }
+
+        function setTextSize(px: string): string {
+            return shellRoot.setTextSize(px);
+        }
+
+        function refreshTailscale(): string {
+            shellRoot.refreshTailscale();
+            return "ok";
+        }
+
+        function toggleNightlight(): string {
+            return shellRoot.toggleNightlight();
+        }
+
+        function refreshReminders(): string {
+            shellRoot.refreshReminders();
+            return "ok";
+        }
+
+        function refreshCapture(): string {
+            shellRoot.refreshCapture();
+            return "ok";
+        }
+
+        function listReminders(): string {
+            return JSON.stringify(shellRoot.reminders);
+        }
+
+        function addReminder(spec: string): string {
+            return shellRoot.addReminder(spec);
+        }
+
+        function mediaToggle(): string {
+            return shellRoot.mprisToggle();
+        }
+
+        function nextAgentUsage(): string {
+            return shellRoot.cycleAgentUsage();
+        }
+
+        // `runtime-shell call replayNotifications 3`
+        function replayNotifications(count: string): string {
+            return shellRoot.replayNotifications(count);
+        }
+
+        function toggleKeybindings() {
+            shellRoot.toggleKeybindings();
+        }
 
         function togglePanel() {
             shellRoot.togglePanelVisibility();

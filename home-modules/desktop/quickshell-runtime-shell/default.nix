@@ -24,6 +24,68 @@ let
     && lib.elem "nvidia" (lib.attrByPath [ "services" "xserver" "videoDrivers" ] [ ] osConfig);
   lidPolicyFragmentPath = "/etc/nixos/configurations/thinkpad-lid-policy.nix";
   clipboardHistoryFile = "${config.home.homeDirectory}/.cache/i3pm/clipboard-history.json";
+
+  # ---- Keybinding cheat sheet -------------------------------------------
+  # The launcher's Keys mode renders the same described list sway is built
+  # from (sway-keybindings-data.nix), plus the runtime-shell-owned bindings
+  # defined in this module and, last, whatever else is in sway's final
+  # keybinding attrset (Home Manager's stock workspace bindings) so the sheet
+  # is complete rather than merely the bindings someone remembered to describe.
+  swayModifier = lib.attrByPath [ "wayland" "windowManager" "sway" "config" "modifier" ] "Mod4" config;
+  swayKeybindings = lib.attrByPath [ "wayland" "windowManager" "sway" "config" "keybindings" ] { } config;
+  keybindingData = import ../sway-keybindings-data.nix {
+    inherit lib;
+    modifier = swayModifier;
+    hasRuntimeShell = true;
+  };
+  toggleKeys =
+    let keys = if lib.isList cfg.toggleKey then cfg.toggleKey else [ cfg.toggleKey ];
+    in lib.unique (map (key: lib.replaceStrings [ "$mod" ] [ swayModifier ] key) keys);
+  runtimeShellOwnedBindings =
+    (map (key: { inherit key; cmd = "exec toggle-runtime-panel"; desc = "Toggle the runtime panel"; group = "Shell"; hidden = false; }) toggleKeys)
+    ++ [ { key = "${swayModifier}+Shift+a"; cmd = "exec toggle-agent-monitor"; desc = "Toggle the AI-agents monitor strip"; group = "Shell"; hidden = false; } ];
+  describedBindings = keybindingData.bindings ++ runtimeShellOwnedBindings;
+  describedKeys = map (b: b.key) describedBindings;
+  describeSwayCommand = cmd:
+    let
+      switchWs = builtins.match "workspace number ([0-9]+)" cmd;
+      moveWs = builtins.match "move container to workspace number ([0-9]+)" cmd;
+      stock = {
+        "kill" = "Close window";
+        "focus parent" = "Focus parent container";
+        "fullscreen toggle" = "Toggle fullscreen";
+        "mode resize" = "Resize mode";
+        "exec i3pm launch open terminal" = "Open a terminal";
+        "exec cast toggle" = "Cast toggle — TV as wireless display / stop";
+      };
+    in
+    if switchWs != null then { desc = "Switch to workspace ${lib.head switchWs}"; group = "Workspaces"; }
+    else if moveWs != null then { desc = "Move window to workspace ${lib.head moveWs}"; group = "Workspaces"; }
+    else if stock ? ${cmd} then { desc = stock.${cmd}; group = "Windows"; }
+    else { desc = cmd; group = "Other"; };
+  undescribedBindings = lib.mapAttrsToList
+    (key: cmd: { inherit key cmd; hidden = false; } // describeSwayCommand cmd)
+    (lib.filterAttrs (key: cmd: cmd != null && !(lib.elem key describedKeys)) swayKeybindings);
+  keyNames = {
+    XF86MonBrightnessUp = "Brightness Up";
+    XF86MonBrightnessDown = "Brightness Down";
+    XF86KbdBrightnessUp = "Kbd Backlight Up";
+    XF86KbdBrightnessDown = "Kbd Backlight Down";
+    XF86AudioRaiseVolume = "Volume Up";
+    XF86AudioLowerVolume = "Volume Down";
+    XF86AudioMute = "Mute";
+    XF86AudioMicMute = "Mic Mute";
+    XF86AudioPlay = "Play/Pause";
+    XF86AudioNext = "Next Track";
+    XF86AudioPrev = "Previous Track";
+  };
+  humanKey = key: keyNames.${key} or (lib.replaceStrings
+    [ "Mod4" "Mod1" "Control" "bracketright" "bracketleft" "backslash" "grave" "slash" "minus" "space" "Return" "Escape" "+" ]
+    [ "Super" "Alt" "Ctrl" "]" "[" "\\" "`" "/" "-" "Space" "Enter" "Esc" " + " ]
+    key);
+  keybindingEntries = map
+    (b: { key = humanKey b.key; raw = b.key; command = b.cmd; description = b.desc; group = b.group; })
+    (lib.filter (b: !b.hidden) (describedBindings ++ undescribedBindings));
   quickshellPackage =
     if inputs != null
       && lib.hasAttrByPath [ "quickshell" "packages" pkgs.stdenv.hostPlatform.system "default" ] inputs
@@ -47,27 +109,148 @@ let
   # stops matching would leave the accent* options looking configurable while
   # doing nothing, which is exactly what would have happened when the palette
   # moved out of shell.qml.
-  accentThemeQml = pkgs.runCommandLocal "quickshell-accent-theme-qml" { } ''
-    ${pkgs.gnused}/bin/sed \
-      -e 's|blue: "#60a5fa"|blue: "${cfg.accentColor}"|' \
-      -e 's|blueBg: "#111a2e"|blueBg: "${cfg.accentBg}"|' \
-      -e 's|blueMuted: "#3b5f8f"|blueMuted: "${cfg.accentMuted}"|' \
-      -e 's|blueWash: "#101725"|blueWash: "${cfg.accentWash}"|' \
-      ${./Theme.qml} > "$out"
+  # ---- Theme ------------------------------------------------------------
+  # Theme.qml is generated from themes.nix: the configured theme's 24 base
+  # tokens are baked in as fallbacks, and a runtime `overrides` map (fed from
+  # the watched theme state file) can replace any of them live. Every other
+  # token is derived inside the singleton and parametrised on `dark`, so a
+  # light theme lifts surfaces with a dark film instead of a white one.
+  themes = import ./themes.nix;
+  themeName = cfg.theme;
+  baseTheme = themes.${themeName} or (throw "programs.quickshell-runtime-shell.theme: unknown theme '${themeName}' (have: ${lib.concatStringsSep ", " (lib.attrNames themes)})");
+  # The per-host accent options replace the blue family of the *configured*
+  # theme at build time — only when a host sets them, so a themed accent
+  # (Tokyo Night's #7aa2f7, say) is not silently swapped for the zinc blue.
+  accentOverride = lib.filterAttrs (_: v: v != null) {
+    blue = cfg.accentColor;
+    blueBg = cfg.accentBg;
+    blueMuted = cfg.accentMuted;
+    blueWash = cfg.accentWash;
+  };
+  defaultTheme = baseTheme // { colors = baseTheme.colors // accentOverride; };
+  themesExport = lib.mapAttrs (id: t: {
+    inherit id;
+    label = t.label;
+    description = t.description or "";
+    dark = t.dark;
+    colors = if id == themeName then defaultTheme.colors else t.colors;
+    terminal = t.terminal;
+  }) themes;
+  themesJson = pkgs.writeText "quickshell-runtime-shell-themes.json" (builtins.toJSON themesExport);
+  themeStatePath = "${config.xdg.stateHome}/quickshell-runtime-shell/theme.json";
+  colorProp = key: ''    readonly property color ${key}: pick("${key}", "${defaultTheme.colors.${key}}")'';
+  themeQml = pkgs.writeText "Theme.qml" ''
+    pragma Singleton
 
-    for decl in 'blue: "${cfg.accentColor}"' 'blueBg: "${cfg.accentBg}"' \
-                'blueMuted: "${cfg.accentMuted}"' 'blueWash: "${cfg.accentWash}"'; do
-      grep -qF "$decl" "$out" || {
-        echo "accent substitution did not apply: $decl" >&2
-        exit 1
-      }
-    done
+    import QtQuick
+    import Quickshell
+
+    // GENERATED from themes.nix (theme "${themeName}") by quickshell-runtime-shell/default.nix.
+    // Components ask for semantic tokens ("the colour of a border", "the film
+    // that lifts a surface") and never for literals. The base tokens fall back
+    // to the built-in theme; `overrides` (set from the watched theme state
+    // file) replaces them live, and everything derived follows.
+    Singleton {
+        id: theme
+
+        property var overrides: ({})
+        readonly property string name: pick("name", "${themeName}")
+        readonly property bool dark: pickBool("dark", ${if defaultTheme.dark then "true" else "false"})
+
+        function pick(key, fallback) {
+            const value = overrides ? overrides[key] : undefined;
+            return (typeof value === "string" && value) ? value : fallback;
+        }
+        function pickBool(key, fallback) {
+            const value = overrides ? overrides[key] : undefined;
+            return typeof value === "boolean" ? value : fallback;
+        }
+        function pickNum(key, fallback) {
+            const value = overrides ? Number(overrides[key]) : NaN;
+            return isFinite(value) ? value : fallback;
+        }
+
+        // ---- style (themes.nix `style`, overridable live) ----
+        // flat: opaque cards with accent-tinted strong borders (Omarchy);
+        // radiusScale: 0 square … 1 the shadcn radii; fontFamily: "" means
+        // the system sans, "monospace" resolves through fontconfig. fontBase
+        // is the text-size root (runtime-theme text-size); every pixel size
+        // in the shell goes through fs() so the whole shell scales together.
+        readonly property bool flat: pickBool("flat", ${if (defaultTheme.style.flat or false) then "true" else "false"})
+        readonly property real radiusScale: pickNum("radiusScale", ${toString (defaultTheme.style.radiusScale or 1.0)})
+        readonly property string fontFamily: pick("fontFamily", "${defaultTheme.style.fontFamily or ""}") || Qt.application.font.family
+        readonly property string glyphFamily: "FiraCode Nerd Font"
+        readonly property string monoFamily: "JetBrainsMono Nerd Font"
+        readonly property real fontBase: Math.max(8, Math.min(24, pickNum("textSize", 12)))
+        readonly property real scale: fontBase / 12
+        function fs(px) { return Math.max(1, Math.round(px * scale)); }
+        function rad(px) { return Math.round(px * radiusScale); }
+
+        // ---- base tokens (from themes.nix) ----
+    ${lib.concatMapStringsSep "\n" colorProp [
+      "bg" "panel" "panelAlt" "card" "cardAlt"
+      "border" "lineSoft"
+      "text" "textDim" "muted" "subtle"
+      "accent" "accentBg"
+      "blue" "blueBg" "blueMuted" "blueWash"
+      "green" "red" "amber" "orange" "teal" "violet"
+    ]}
+
+        // ---- derived: flat chrome ----
+        // On a flat theme the strong border (cards, popups) is the accent, the
+        // way Omarchy draws its popups with the Hyprland active-border colour.
+        readonly property color borderStrongBase: pick("borderStrong", "${defaultTheme.colors.borderStrong}")
+        readonly property color accentBorder: Qt.rgba(theme.blue.r, theme.blue.g, theme.blue.b, dark ? 0.55 : 0.6)
+        readonly property color borderStrong: flat ? accentBorder : borderStrongBase
+
+        // ---- derived: status chip fills (the hue at low alpha) ----
+        readonly property real statusFillAlpha: 0.15
+        readonly property color greenBg: Qt.rgba(theme.green.r, theme.green.g, theme.green.b, theme.statusFillAlpha)
+        readonly property color redBg: Qt.rgba(theme.red.r, theme.red.g, theme.red.b, theme.statusFillAlpha)
+        readonly property color amberBg: Qt.rgba(theme.amber.r, theme.amber.g, theme.amber.b, theme.statusFillAlpha)
+        readonly property color orangeBg: Qt.rgba(theme.orange.r, theme.orange.g, theme.orange.b, theme.statusFillAlpha)
+        readonly property color tealBg: Qt.rgba(theme.teal.r, theme.teal.g, theme.teal.b, theme.statusFillAlpha)
+        readonly property color violetBg: Qt.rgba(theme.violet.r, theme.violet.g, theme.violet.b, theme.statusFillAlpha)
+
+        // ---- derived: elevation films (white on dark, black on light) ----
+        readonly property real film: dark ? 1 : 0
+        readonly property color elevationFaint: Qt.rgba(film, film, film, 0.02)
+        readonly property color elevationSoft: Qt.rgba(film, film, film, 0.04)
+        readonly property color elevation: Qt.rgba(film, film, film, 0.06)
+        readonly property color elevationStrong: Qt.rgba(film, film, film, 0.16)
+        readonly property color hoverWash: Qt.rgba(film, film, film, 0.012)
+        readonly property color hoverWashStrong: Qt.rgba(film, film, film, 0.018)
+
+        // ---- derived: edges and depth ----
+        readonly property color edgeHighlight: Qt.rgba(film, film, film, 0.08)
+        readonly property color edgeHighlightSoft: Qt.rgba(film, film, film, 0.05)
+        readonly property color edgeShadow: Qt.rgba(0, 0, 0, dark ? 0.4 : 0.18)
+        readonly property color shadow: Qt.rgba(0, 0, 0, dark ? 0.55 : 0.22)
+        readonly property color shadowSoft: Qt.rgba(0, 0, 0, dark ? 0.25 : 0.10)
+
+        // ---- derived: scrims, tinted toward the background ----
+        readonly property color scrim: Qt.rgba(theme.bg.r, theme.bg.g, theme.bg.b, 0.4)
+        readonly property color scrimStrong: Qt.rgba(theme.bg.r, theme.bg.g, theme.bg.b, 0.8)
+
+        // ---- derived: frosted surfaces, same hue as their opaque twin ----
+        readonly property color panelGlass: Qt.rgba(theme.panel.r, theme.panel.g, theme.panel.b, flat ? 1.0 : 0.88)
+        readonly property color cardGlass: Qt.rgba(theme.card.r, theme.card.g, theme.card.b, flat ? 1.0 : 0.86)
+        readonly property color toastGlass: Qt.rgba(theme.panel.r, theme.panel.g, theme.panel.b, flat ? 1.0 : 0.92)
+
+        // ---- derived: status washes ----
+        readonly property color redWash: Qt.rgba(theme.red.r, theme.red.g, theme.red.b, 0.08)
+        readonly property color greenWash: Qt.rgba(theme.green.r, theme.green.g, theme.green.b, 0.06)
+        readonly property color amberWash: Qt.rgba(theme.amber.r, theme.amber.g, theme.amber.b, 0.08)
+        readonly property color tealWash: Qt.rgba(theme.teal.r, theme.teal.g, theme.teal.b, 0.09)
+        readonly property color blueSelection: Qt.rgba(theme.blue.r, theme.blue.g, theme.blue.b, 0.10)
+        readonly property color subtleWash: Qt.rgba(theme.subtle.r, theme.subtle.g, theme.subtle.b, 0.08)
+    }
   '';
 
   shellConfigDir = pkgs.runCommandLocal "i3pm-quickshell-runtime-shell" { } ''
     mkdir -p "$out"
     cp ${./shell.qml} "$out/shell.qml"
-    cp ${accentThemeQml} "$out/Theme.qml"
+    cp ${themeQml} "$out/Theme.qml"
     cp -r ${./controllers} "$out/controllers"
     cp -r ${./windows} "$out/windows"
     cp ${./SessionRow.qml} "$out/SessionRow.qml"
@@ -91,6 +274,24 @@ QtObject {
   readonly property bool notificationImagesEnabled: ${if cfg.notifications.enableImages then "true" else "false"}
   readonly property bool notificationMarkupEnabled: ${if cfg.notifications.enableMarkup then "true" else "false"}
   readonly property string hostName: "${hostName}"
+  readonly property string userName: "${config.home.username}"
+  readonly property string notificationStorePath: "${config.xdg.stateHome}/quickshell-runtime-shell/notifications.json"
+  readonly property int idleScreenOffSeconds: ${toString cfg.idle.screenOffSeconds}
+  readonly property int idleLockSeconds: ${toString cfg.idle.lockSeconds}
+  readonly property string lockPamService: "${cfg.lock.pamService}"
+  readonly property string agentUsageDir: "${agentUsageDir}"
+  readonly property var themes: ${builtins.toJSON (lib.mapAttrs (_: t: removeAttrs t [ "terminal" ]) themesExport)}
+  readonly property string defaultTheme: "${themeName}"
+  readonly property string themeStatePath: "${themeStatePath}"
+  readonly property string themeSetBin: "${runtimeThemeScript}/bin/runtime-theme"
+  readonly property string hookBin: "${runtimeHookScript}/bin/runtime-hook"
+  readonly property string reminderBin: "${runtimeReminderScript}/bin/runtime-reminder"
+  readonly property string captureBin: "${captureScript}/bin/capture"
+  readonly property string nightlightBin: "${nightlightScript}/bin/quickshell-nightlight"
+  readonly property string tailscaleStatusBin: "${tailscaleStatusScript}/bin/quickshell-tailscale-status"
+  readonly property string tailscaleActionBin: "${tailscaleActionScript}/bin/quickshell-tailscale-action"
+  readonly property var agentUsageAgents: ${builtins.toJSON agentUsageAgents}
+  readonly property string agentUsageUpdateBin: "${agentUsageUpdateScript}/bin/quickshell-agent-usage-update"
   readonly property string i3pmBin: "${config.home.profileDirectory}/bin/i3pm"
   readonly property string herdrBin: "${config.home.profileDirectory}/bin/herdr"
   readonly property string i3pmWatchBin: "${quickshellI3pmWatchScript}/bin/quickshell-i3pm-watch"
@@ -135,6 +336,7 @@ QtObject {
   readonly property string clipboardActionBin: "${clipboardActionScript}/bin/quickshell-clipboard-action"
   readonly property string onePasswordIcon: "${../../../assets/icons/1password.svg}"
   readonly property var primaryOutputs: ${builtins.toJSON cfg.primaryOutputs}
+  readonly property var keybindings: ${builtins.toJSON keybindingEntries}
   readonly property bool perMonitorBars: ${if cfg.perMonitorBars then "true" else "false"}
   readonly property string panelOutputPolicy: "${cfg.panelOutputPolicy}"
   readonly property string codexIcon: "${../../../assets/icons/codex.svg}"
@@ -2748,7 +2950,621 @@ PY
     exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell toggleDockMode
   '';
 
+  # Generic surface CLI, the shell-side twin of Omarchy's
+  # `omarchy-shell shell summon|hide|toggle <id> <json>`. Every surface the
+  # shell owns is addressable by id, so a keybinding, a herdr hook, or a script
+  # can open exactly the thing it wants without a wrapper script per function.
+  runtimeShellCliScript = pkgs.writeShellScriptBin "runtime-shell" ''
+    set -euo pipefail
+    ipc=${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc
+
+    usage() {
+      cat >&2 <<'USAGE'
+Usage: runtime-shell <command> [args]
+  summon <surface> [payload-json]   open a surface
+  hide <surface>                    close a surface
+  toggle <surface> [payload-json]   open if closed, close if open
+  list                              every surface and whether it is open
+  call <function> [args...]         call any function on the shell IPC target
+  ping                              exit 0 when the shell answers
+
+Surfaces: launcher, keybindings, panel, settings, expose, agent-monitor,
+  power-menu, notifications, display-selector, audio, bluetooth, cast
+Payloads: launcher {"mode":"files","query":"nix"}  panel {"section":"sessions"}
+  settings {"section":"devices"}
+USAGE
+    }
+
+    cmd="''${1:-}"
+    if [ $# -gt 0 ]; then shift; fi
+    case "$cmd" in
+      summon|toggle)
+        [ $# -ge 1 ] || { usage; exit 2; }
+        payload="''${2:-}"
+        [ -n "$payload" ] || payload='{}'
+        exec "$ipc" call shell "$cmd" "$1" "$payload"
+        ;;
+      hide)
+        [ $# -ge 1 ] || { usage; exit 2; }
+        exec "$ipc" call shell hide "$1"
+        ;;
+      list) exec "$ipc" call shell listSurfaces ;;
+      call)
+        [ $# -ge 1 ] || { usage; exit 2; }
+        exec "$ipc" call shell "$@"
+        ;;
+      ping) exec "$ipc" call shell ping ;;
+      *) usage; exit 2 ;;
+    esac
+  '';
+
+  # Brightness keys: brightnessctl stays authoritative (works with the shell
+  # down), then the new level is handed to the OSD. The 2s brightness poll is
+  # too slow to drive key feedback on its own.
+  brightnessKeyScript = pkgs.writeShellScriptBin "quickshell-brightness-key" ''
+    set -euo pipefail
+    target="''${1:-display}"
+    direction="''${2:-up}"
+    case "$target" in
+      display) dev=() ;;
+      keyboard) dev=(-d '*kbd_backlight*' -n 5) ;;
+      *) echo "usage: quickshell-brightness-key display|keyboard up|down" >&2; exit 2 ;;
+    esac
+    case "$direction" in
+      up) delta="+5%" ;; down) delta="5%-" ;;
+      *) echo "usage: quickshell-brightness-key display|keyboard up|down" >&2; exit 2 ;;
+    esac
+    if [ "$target" = keyboard ]; then delta="''${delta/5/10}"; fi
+    out="$(${lib.getExe pkgs.brightnessctl} "''${dev[@]}" -m set "$delta")"
+    if [ "$target" = display ]; then
+      percent="$(printf '%s\n' "$out" | ${pkgs.coreutils}/bin/cut -d, -f4 | ${pkgs.coreutils}/bin/tr -d '%')"
+      ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell showOsd brightness "$percent" >/dev/null 2>&1 || true
+    fi
+  '';
+
+  # ---- Agent usage (Claude Code / Codex subscriptions) ------------------
+  # Collectors are Omarchy's (MIT, vendored under ./agent-usage with only the
+  # cache path changed). Each prints one display-ready JSON record; the update
+  # script writes them atomically to the usage dir, which the shell watches.
+  # Adding an agent is adding a collector: the panel renders whatever appears.
+  agentUsageDir = "${config.xdg.stateHome}/quickshell-runtime-shell/agents/usage";
+  agentUsageAgents = [ "claude" "codex" ];
+  agentUsageCollector = name: pkgs.writeShellScriptBin "quickshell-agent-usage-${name}" ''
+    exec ${lib.getExe pkgs.python3} ${./agent-usage + "/${name}.py"} "$@"
+  '';
+  agentUsageCollectors = map agentUsageCollector agentUsageAgents;
+  agentUsageUpdateScript = pkgs.writeShellScriptBin "quickshell-agent-usage-update" ''
+    set -uo pipefail
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils ]}:"''${PATH:-}"
+    usage_dir="${agentUsageDir}"
+    mkdir -p "$usage_dir"
+    pids=()
+    collect() {
+      local agent="$1"; shift
+      local record tmp
+      if ! record="$("${"$"}{collector}" "$@")" || [ -z "$record" ]; then
+        echo "quickshell-agent-usage-update: $agent collector failed" >&2
+        return 1
+      fi
+      if ! printf '%s' "$record" | ${pkgs.jq}/bin/jq -e . >/dev/null 2>&1; then
+        echo "quickshell-agent-usage-update: $agent collector printed no JSON" >&2
+        return 1
+      fi
+      tmp="$(mktemp "$usage_dir/.$agent.XXXXXX")"
+      printf '%s\n' "$record" >"$tmp"
+      mv "$tmp" "$usage_dir/$agent.json"
+    }
+    ${lib.concatMapStringsSep "\n" (name: ''
+      collector=${agentUsageCollector name}/bin/quickshell-agent-usage-${name}
+      collect ${name} "$@" & pids+=($!)
+    '') agentUsageAgents}
+    status=0
+    for pid in "''${pids[@]}"; do wait "$pid" || status=1; done
+    exit $status
+  '';
+
+  # ---- Capture ----------------------------------------------------------
+  # Screenshots, recordings, OCR, QR decode and a colour picker behind one
+  # CLI. Files land in ~/Pictures/Screenshots and ~/Videos/Recordings, the
+  # image also goes to the clipboard, and every result is a notification.
+  # A recording writes $XDG_RUNTIME_DIR/quickshell-capture.json, which the
+  # bar's REC chip follows (click it to stop).
+  captureScript = pkgs.writeShellScriptBin "capture" ''
+    set -uo pipefail
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.jq pkgs.procps pkgs.findutils ]}:"''${PATH:-}"
+    grim=${pkgs.grim}/bin/grim
+    slurp=${pkgs.slurp}/bin/slurp
+    wlcopy=${pkgs.wl-clipboard}/bin/wl-copy
+    swaymsg=${pkgs.sway}/bin/swaymsg
+    notify=${pkgs.libnotify}/bin/notify-send
+    state="''${XDG_RUNTIME_DIR:-/tmp}/quickshell-capture.json"
+    shots="$HOME/Pictures/Screenshots"
+    videos="$HOME/Videos/Recordings"
+    stamp="$(date +%Y-%m-%d_%H-%M-%S)"
+
+    usage() {
+      cat >&2 <<'USAGE'
+Usage: capture <command>
+  screenshot [region|output|window]   save to ~/Pictures/Screenshots and copy to the clipboard
+  record start [region|output] [--audio] | stop | toggle | status
+  ocr [region|output]                 recognise text and copy it
+  qr [region|output]                  decode a QR code and copy it
+  color                               pick a pixel, copy #rrggbb
+USAGE
+    }
+
+    focused_output() { "$swaymsg" -t get_outputs | jq -r '.[] | select(.focused) | .name'; }
+    output_geometry() {
+      "$swaymsg" -t get_outputs | jq -r '.[] | select(.focused) | "\(.rect.x),\(.rect.y) \(.rect.width)x\(.rect.height)"'
+    }
+    window_geometry() {
+      "$swaymsg" -t get_tree | jq -r '.. | select(.focused? == true) | .rect | "\(.x),\(.y) \(.width)x\(.height)"' | head -1
+    }
+    geometry_for() {
+      case "''${1:-region}" in
+        output) output_geometry ;;
+        window) window_geometry ;;
+        region|*) "$slurp" -d 2>/dev/null ;;
+      esac
+    }
+    tell() { "$notify" -a Capture -t 5000 "$@" >/dev/null 2>&1 || true; }
+    poke_shell() { ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell refreshCapture >/dev/null 2>&1 || true; }
+
+    cmd="''${1:-}"; shift || true
+    case "$cmd" in
+      screenshot)
+        mode="''${1:-region}"
+        geom="$(geometry_for "$mode")" || exit 1
+        [ -n "$geom" ] || { echo "capture: no region selected" >&2; exit 1; }
+        mkdir -p "$shots"
+        file="$shots/$stamp.png"
+        "$grim" -g "$geom" "$file" || { tell -u critical "Screenshot failed" "grim could not capture $geom"; exit 1; }
+        "$wlcopy" <"$file" || true
+        tell -i "$file" "Screenshot saved" "$(basename "$file") · copied to the clipboard"
+        echo "$file"
+        ;;
+      record)
+        sub="''${1:-toggle}"; shift || true
+        case "$sub" in
+          status)
+            if [ -r "$state" ] && pid="$(jq -r .pid "$state" 2>/dev/null)" && kill -0 "$pid" 2>/dev/null; then cat "$state"; else echo '{"recording":false}'; fi
+            ;;
+          stop)
+            if [ -r "$state" ] && pid="$(jq -r .pid "$state" 2>/dev/null)" && kill -0 "$pid" 2>/dev/null; then
+              file="$(jq -r .file "$state")"
+              kill -INT "$pid"; for _ in $(seq 1 40); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+              rm -f "$state"; poke_shell
+              tell "Recording saved" "$(basename "$file")"
+              echo "$file"
+            else
+              rm -f "$state"; poke_shell
+              echo "capture: not recording" >&2; exit 1
+            fi
+            ;;
+          start)
+            if [ -r "$state" ] && pid="$(jq -r .pid "$state" 2>/dev/null)" && kill -0 "$pid" 2>/dev/null; then echo "capture: already recording" >&2; exit 1; fi
+            mode="region"; audio=""
+            for arg in "$@"; do case "$arg" in region|output|window) mode="$arg" ;; --audio) audio="--audio" ;; esac; done
+            geom="$(geometry_for "$mode")" || exit 1
+            [ -n "$geom" ] || { echo "capture: no region selected" >&2; exit 1; }
+            mkdir -p "$videos"
+            file="$videos/$stamp.mp4"
+            ${pkgs.wf-recorder}/bin/wf-recorder $audio -g "$geom" -f "$file" >/dev/null 2>&1 &
+            pid=$!
+            jq -n --argjson pid "$pid" --arg file "$file" --arg geom "$geom" --argjson started "$(date +%s)" \
+              '{recording: true, pid: $pid, file: $file, geometry: $geom, started: $started}' >"$state"
+            poke_shell
+            tell "Recording" "$(basename "$file") · Alt+Print or the REC chip stops"
+            echo "$file"
+            ;;
+          toggle)
+            if [ -r "$state" ] && pid="$(jq -r .pid "$state" 2>/dev/null)" && kill -0 "$pid" 2>/dev/null; then exec "$0" record stop; else exec "$0" record start "$@"; fi
+            ;;
+          *) usage; exit 2 ;;
+        esac
+        ;;
+      ocr)
+        geom="$(geometry_for "''${1:-region}")" || exit 1
+        [ -n "$geom" ] || exit 1
+        text="$("$grim" -g "$geom" -t png - | ${pkgs.tesseract}/bin/tesseract stdin stdout 2>/dev/null | sed -e 's/[[:space:]]*$//' | grep -v '^$')"
+        if [ -z "$text" ]; then tell "No text found" "Nothing recognisable in the selection"; exit 1; fi
+        printf '%s' "$text" | "$wlcopy"
+        tell "Text copied" "$(printf '%s' "$text" | head -c 160)"
+        printf '%s\n' "$text"
+        ;;
+      qr)
+        geom="$(geometry_for "''${1:-region}")" || exit 1
+        [ -n "$geom" ] || exit 1
+        code="$("$grim" -g "$geom" -t png - | ${pkgs.zbar}/bin/zbarimg -q --raw - 2>/dev/null | head -1)"
+        if [ -z "$code" ]; then tell "No QR code" "Nothing decodable in the selection"; exit 1; fi
+        printf '%s' "$code" | "$wlcopy"
+        tell "QR code copied" "$(printf '%s' "$code" | head -c 160)"
+        printf '%s\n' "$code"
+        ;;
+      color)
+        point="$("$slurp" -p 2>/dev/null)" || exit 1
+        [ -n "$point" ] || exit 1
+        hex="$("$grim" -g "$point" -t ppm - | ${lib.getExe pkgs.python3} -c '
+import sys
+d = sys.stdin.buffer.read()
+parts = d.split(maxsplit=4)
+px = parts[4][:3] if len(parts) > 4 else b"\0\0\0"
+print("#%02x%02x%02x" % (px[0], px[1], px[2]))')"
+        printf '%s' "$hex" | "$wlcopy"
+        tell "Colour copied" "$hex"
+        echo "$hex"
+        ;;
+      *) usage; exit 2 ;;
+    esac
+  '';
+
+  # ---- Reminders --------------------------------------------------------
+  # Lightweight reminders as transient systemd user timers: nothing to run,
+  # nothing to persist, and `systemctl --user list-timers` is the truth.
+  runtimeReminderScript = pkgs.writeShellScriptBin "runtime-reminder" ''
+    set -uo pipefail
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils ]}:"''${PATH:-}"
+    jq=${pkgs.jq}/bin/jq
+    sc=${pkgs.systemd}/bin/systemctl
+    usage() { echo "usage: runtime-reminder <minutes> [message] | show [--json] | clear" >&2; exit 2; }
+    cmd="''${1:-}"
+    case "$cmd" in
+      show)
+        now=$(date +%s)
+        "$sc" --user list-timers --all --output=json 'runtime-reminder-*.timer' 2>/dev/null \
+          | "$jq" -r --argjson now "$now" '[.[] | select(.next != null and (.next / 1000000) > $now)
+              | {unit: .unit, due: (.next / 1000000 | floor)}]' \
+          | while IFS= read -r line; do printf '%s' "$line"; done | "$jq" -c '.' | {
+              read -r timers
+              # attach the message (the service description systemd-run stored)
+              out="[]"
+              for unit in $(printf '%s' "$timers" | "$jq" -r '.[].unit'); do
+                svc="''${unit%.timer}.service"
+                msg="$("$sc" --user show -p Description --value "$svc" 2>/dev/null)"
+                due="$(printf '%s' "$timers" | "$jq" -r --arg u "$unit" '.[] | select(.unit == $u) | .due')"
+                out="$(printf '%s' "$out" | "$jq" -c --arg u "$unit" --arg m "$msg" --argjson d "$due" --argjson now "$now" '. + [{unit: $u, message: $m, due: $d, remaining: ($d - $now)}]')"
+              done
+              if [ "''${2:-}" = "--json" ]; then printf '%s\n' "$out"; else
+                printf '%s' "$out" | "$jq" -r '.[] | "\(.remaining / 60 | floor)m  \(.message)"'
+              fi
+            }
+        ;;
+      clear)
+        "$sc" --user stop 'runtime-reminder-*.timer' 2>/dev/null || true
+        echo "reminders cleared"
+        ;;
+      ""|-h|--help) usage ;;
+      *)
+        minutes="$cmd"
+        case "$minutes" in ""|*[!0-9]*) usage ;; esac
+        [ "$minutes" -ge 1 ] || usage
+        shift
+        message="''${*:-Reminder}"
+        unit="runtime-reminder-$(date +%s%N)"
+        ${pkgs.systemd}/bin/systemd-run --user --quiet --unit="$unit" --description="$message" \
+          --on-active="''${minutes}min" --timer-property=AccuracySec=1s \
+          ${pkgs.libnotify}/bin/notify-send -a Reminder -u critical "Reminder" "$message"
+        echo "reminder in ''${minutes}m: $message"
+        ;;
+    esac
+  '';
+
+  # ---- Night light --------------------------------------------------------
+  nightlightScript = pkgs.writeShellScriptBin "quickshell-nightlight" ''
+    set -u
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils ]}:"''${PATH:-}"
+    sc=${pkgs.systemd}/bin/systemctl
+    state() { "$sc" --user is-active wlsunset.service 2>/dev/null | grep -q '^active$' && echo on || echo off; }
+    case "''${1:-status}" in
+      on) "$sc" --user start wlsunset.service ;;
+      off) "$sc" --user stop wlsunset.service ;;
+      toggle) if [ "$(state)" = on ]; then "$sc" --user stop wlsunset.service; else "$sc" --user start wlsunset.service; fi ;;
+      status) ;;
+      *) echo "usage: quickshell-nightlight on|off|toggle|status" >&2; exit 2 ;;
+    esac
+    s="$(state)"
+    echo "$s"
+    [ "''${1:-status}" = status ] || ${runtimeHookScript}/bin/runtime-hook nightlight "$s"
+  '';
+
+  # ---- Hooks ----------------------------------------------------------
+  # `runtime-hook <event> [args]` runs ~/.config/quickshell-runtime-shell/
+  # hooks/<event> and every file in hooks/<event>.d/ (skipping *.sample), so
+  # a theme switch, a text-size change, a lock, or a rebuild can fan out to
+  # things the shell does not own (Claude Code's theme, an editor, a script)
+  # without forking the module. Events fired today: theme-set <name>
+  # <dark|light>, text-size-set <px>, session-locked, session-unlocked,
+  # idle-screen <off|on>, post-activation.
+  hooksDir = "${config.xdg.configHome}/quickshell-runtime-shell/hooks";
+  runtimeHookScript = pkgs.writeShellScriptBin "runtime-hook" ''
+    set -u
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils ]}:"''${PATH:-}"
+    hooks="${hooksDir}"
+    name="''${1:-}"
+    if [ -z "$name" ]; then
+      echo "usage: runtime-hook <event> [args...]" >&2
+      exit 2
+    fi
+    shift
+    if [ -f "$hooks/$name" ]; then
+      ${pkgs.bash}/bin/bash "$hooks/$name" "$@" || echo "runtime-hook: $name failed" >&2
+    fi
+    if [ -d "$hooks/$name.d" ]; then
+      for hook in "$hooks/$name.d"/*; do
+        [ -f "$hook" ] || continue
+        case "$hook" in *.sample) continue ;; esac
+        ${pkgs.bash}/bin/bash "$hook" "$@" || echo "runtime-hook: $hook failed" >&2
+      done
+    fi
+    exit 0
+  '';
+
+  # ---- Crash → agent ---------------------------------------------------
+  # Watches the journal for systemd-coredump entries and raises a critical
+  # toast with a "Diagnose with Claude" action; the action opens a terminal
+  # running the default agent with the facts and a method. The same shape
+  # Omarchy uses (omarchy-agent-crash), without a separate skill file: the
+  # method travels in the prompt.
+  crashDiagnoseScript = pkgs.writeShellScriptBin "quickshell-crash-diagnose" ''
+    set -uo pipefail
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils ]}:"''${PATH:-}"
+    pid="''${1:?usage: quickshell-crash-diagnose <pid> [comm] [exe] [signal] [--print]}"
+    comm="''${2:-unknown}"; exe="''${3:-unknown}"; signal="''${4:-unknown}"
+    print_only=0; case "''${5:-}" in --print) print_only=1 ;; esac
+    when="$(${pkgs.systemd}/bin/coredumpctl list "$pid" --no-pager --no-legend 2>/dev/null | tail -1 | cut -d' ' -f1-4)"
+    prompt="$(cat <<PROMPT
+A process crashed on this NixOS machine ($(hostname)) and I want to know why.
+
+What systemd-coredump recorded:
+  process:  $comm
+  PID:      $pid
+  binary:   $exe
+  signal:   $signal
+  time:     ''${when:-unknown}
+
+Method:
+1. \`coredumpctl info $pid\` for the stack trace systemd captured and the
+   package the binary came from (the /nix/store path names it and its version).
+2. If a fuller backtrace is needed: \`nix shell nixpkgs#gdb -c coredumpctl debug $pid\`,
+   then \`bt full\` and \`info sharedlibrary\`.
+3. \`journalctl -b -o short-iso\` around that time for what happened around it
+   (device events, OOM, Wayland disconnects).
+4. Say whether this looks like a configuration problem in this repo
+   (~/repos/vpittamp/nixos-config), a packaging/driver problem, or an upstream
+   bug worth reporting; if it is ours, propose the change. Do not apply
+   changes without asking.
+PROMPT
+)"
+    if [ "$print_only" = 1 ]; then printf '%s\n' "$prompt"; exit 0; fi
+    export CRASH_PROMPT="$prompt"
+    exec ${pkgs.ghostty}/bin/ghostty --title="Crash: $comm" -e ${pkgs.bash}/bin/bash -lc 'cd ~ && exec claude "$CRASH_PROMPT"'
+  '';
+  crashWatchScript = pkgs.writeShellScriptBin "quickshell-crash-watch" ''
+    set -uo pipefail
+    jq=${pkgs.jq}/bin/jq
+    ${pkgs.systemd}/bin/journalctl -f -n 0 -o json -t systemd-coredump 2>/dev/null | while IFS= read -r line; do
+      pid="$(printf '%s' "$line" | "$jq" -r '.COREDUMP_PID // empty')"
+      [ -n "$pid" ] || continue
+      comm="$(printf '%s' "$line" | "$jq" -r '.COREDUMP_COMM // "unknown"')"
+      exe="$(printf '%s' "$line" | "$jq" -r '.COREDUMP_EXE // "unknown"')"
+      signal="$(printf '%s' "$line" | "$jq" -r '.COREDUMP_SIGNAL_NAME // "unknown"')"
+      uid="$(printf '%s' "$line" | "$jq" -r '.COREDUMP_UID // ""')"
+      who=""; [ "$uid" = "$(id -u)" ] || who=" (uid $uid)"
+      (
+        action="$(${pkgs.libnotify}/bin/notify-send -a "Crash" -u critical \
+          -A "diagnose=Diagnose with Claude" \
+          "Process crashed: $comm$who" "$signal · PID $pid"$'\n'"$exe" 2>/dev/null)"
+        if [ "$action" = "diagnose" ]; then
+          ${crashDiagnoseScript}/bin/quickshell-crash-diagnose "$pid" "$comm" "$exe" "$signal" >/dev/null 2>&1 &
+        fi
+      ) &
+    done
+  '';
+
+  # ---- Tailscale -------------------------------------------------------
+  tailscaleStatusScript = pkgs.writeShellScriptBin "quickshell-tailscale-status" ''
+    exec ${lib.getExe pkgs.python3} - <<'PYEOF'
+import json, subprocess
+TS = "${pkgs.tailscale}/bin/tailscale"
+def run(*args):
+    try:
+        out = subprocess.run([TS, *args], capture_output=True, text=True, timeout=8)
+    except Exception as exc:
+        return None, str(exc)
+    if out.returncode != 0:
+        return None, (out.stderr or out.stdout).strip()
+    try:
+        return json.loads(out.stdout), ""
+    except Exception as exc:
+        return None, str(exc)
+status, err = run("status", "--json")
+if status is None:
+    print(json.dumps({"available": False, "error": err}))
+    raise SystemExit(0)
+prefs, _ = run("debug", "prefs")
+prefs = prefs or {}
+self_ = status.get("Self") or {}
+def node(p):
+    ips = p.get("TailscaleIPs") or []
+    return {
+        "id": p.get("ID", ""),
+        "hostName": p.get("HostName", ""),
+        "dnsName": (p.get("DNSName") or "").rstrip("."),
+        "ip": ips[0] if ips else "",
+        "os": p.get("OS", ""),
+        "online": bool(p.get("Online")),
+        "active": bool(p.get("Active")),
+        "exitNodeOption": bool(p.get("ExitNodeOption")),
+        "exitNode": bool(p.get("ExitNode")),
+        "lastSeen": p.get("LastSeen", ""),
+    }
+peers = [node(p) for p in (status.get("Peer") or {}).values()]
+peers.sort(key=lambda n: (not n["online"], n["hostName"].lower()))
+exit_id = prefs.get("ExitNodeID") or ""
+exit_node = next((n for n in peers if n["id"] == exit_id), None) if exit_id else None
+tailnet = status.get("CurrentTailnet") or {}
+print(json.dumps({
+    "available": True,
+    "state": status.get("BackendState", ""),
+    "running": status.get("BackendState") == "Running",
+    "tailnet": tailnet.get("Name", ""),
+    "magicDnsSuffix": status.get("MagicDNSSuffix", ""),
+    "acceptDns": bool(prefs.get("CorpDNS", True)),
+    "acceptRoutes": bool(prefs.get("RouteAll", False)),
+    "operator": prefs.get("OperatorUser") or "",
+    "self": node(self_),
+    "exitNode": exit_node,
+    "exitNodes": [n for n in peers if n["exitNodeOption"]],
+    "peers": peers,
+    "onlineCount": sum(1 for n in peers if n["online"]),
+    "health": status.get("Health") or [],
+    "version": (status.get("Version") or "").split("-")[0],
+}))
+PYEOF
+  '';
+  tailscaleActionScript = pkgs.writeShellScriptBin "quickshell-tailscale-action" ''
+    set -uo pipefail
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils ]}:"''${PATH:-}"
+    ts=${pkgs.tailscale}/bin/tailscale
+    cmd="''${1:-}"; shift || true
+    case "$cmd" in
+      up) "$ts" up ;;
+      down) "$ts" down ;;
+      dns) case "''${1:-}" in on) "$ts" set --accept-dns=true ;; off) "$ts" set --accept-dns=false ;; *) echo "dns on|off" >&2; exit 2 ;; esac ;;
+      exit-node) "$ts" set --exit-node="''${1:-}" ;;
+      copy) printf '%s' "''${1:-}" | ${pkgs.wl-clipboard}/bin/wl-copy ;;
+      *) echo "usage: quickshell-tailscale-action up|down|dns on|off|exit-node <id>|copy <text>" >&2; exit 2 ;;
+    esac
+  '';
+
+  # Theme switcher. Writes the state file the shell watches (live restyle)
+  # and Ghostty's palette include; new terminals pick it up, running ones on
+  # Ctrl+Shift+, (reload_config) — Ghostty has no reload signal.
+  runtimeThemeScript = pkgs.writeShellScriptBin "runtime-theme" ''
+    set -euo pipefail
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils ]}:"''${PATH:-}"
+    themes=${themesJson}
+    state=${themeStatePath}
+    ghostty_theme="''${XDG_CONFIG_HOME:-$HOME/.config}/ghostty/theme.conf"
+    jq=${pkgs.jq}/bin/jq
+
+    usage() {
+      cat >&2 <<'USAGE'
+Usage: runtime-theme <command>
+  list             themes and which one is active
+  current          the active theme id
+  set <theme>      switch the shell (live) and the terminal palette (new terminals)
+  toggle           switch between the dark and light theme
+  text-size [px]   show or set the text size root (8-24; shell live, terminal on next open)
+USAGE
+    }
+
+    current() {
+      if [ -r "$state" ] && name="$("$jq" -r '.name // empty' "$state" 2>/dev/null)" && [ -n "$name" ] \
+         && "$jq" -e --arg n "$name" 'has($n)' "$themes" >/dev/null; then
+        printf '%s\n' "$name"
+      else
+        printf '%s\n' "${themeName}"
+      fi
+    }
+
+    text_size() {
+      if [ -r "$state" ] && n="$("$jq" -r '.textSize // empty' "$state" 2>/dev/null)" && [ -n "$n" ]; then
+        printf '%s\n' "$n"
+      else
+        printf '%s\n' 12
+      fi
+    }
+
+    term_pt() {
+      ${pkgs.gawk}/bin/awk -v s="$1" 'BEGIN { printf "%.1f", int(9 * s / 12 * 2 + 0.5) / 2 }'
+    }
+
+    # State file: {name, textSize, set_at}. Either half can be changed alone.
+    write_state() {
+      local name="$1" size="$2"
+      mkdir -p "$(dirname "$state")"
+      tmp="$(mktemp "$(dirname "$state")/.theme.XXXXXX")"
+      "$jq" -n --arg n "$name" --argjson s "$size" --arg at "$(date -Is)" '{name: $n, textSize: $s, set_at: $at}' >"$tmp"
+      mv "$tmp" "$state"
+    }
+
+    # Ghostty include: the theme's palette plus a terminal point size that
+    # follows the shell's text size (9pt at the 12px root, half-point steps).
+    write_ghostty() {
+      local name="$1" size="$2"
+      mkdir -p "$(dirname "$ghostty_theme")"
+      {
+        echo "# Managed by runtime-theme ($name, text size $size). Included by ~/.config/ghostty/config."
+        "$jq" -r --arg n "$name" '.[$n].terminal
+          | "background = \(.background)", "foreground = \(.foreground)",
+            "cursor-color = \(.cursor)",
+            "selection-background = \(.selectionBackground)", "selection-foreground = \(.selectionForeground)",
+            (.palette | to_entries[] | "palette = \(.key)=#\(.value)")' "$themes"
+        echo "font-size = $(term_pt "$size")"
+      } >"$ghostty_theme.tmp" && mv "$ghostty_theme.tmp" "$ghostty_theme"
+    }
+
+    set_theme() {
+      local name="$1"
+      if ! "$jq" -e --arg n "$name" 'has($n)' "$themes" >/dev/null; then
+        echo "runtime-theme: unknown theme '$name' (see: runtime-theme list)" >&2
+        exit 2
+      fi
+      local size; size="$(text_size)"
+      write_state "$name" "$size"
+      write_ghostty "$name" "$size"
+      label="$("$jq" -r --arg n "$name" '.[$n].label' "$themes")"
+      echo "theme: $label ($name)"
+      ${pkgs.libnotify}/bin/notify-send -a runtime-theme -t 4000 "Theme: $label" "Shell restyled. New terminals use the matching palette; press Ctrl+Shift+, in an open Ghostty to reload." >/dev/null 2>&1 || true
+      mode=light; "$jq" -e --arg n "$name" '.[$n].dark' "$themes" >/dev/null && mode=dark
+      ${runtimeHookScript}/bin/runtime-hook theme-set "$name" "$mode"
+    }
+
+    set_text_size() {
+      local size="$1"
+      case "$size" in ""|*[!0-9]*) echo "runtime-theme: text size must be 8-24 (px)" >&2; exit 2 ;; esac
+      if [ "$size" -lt 8 ] || [ "$size" -gt 24 ]; then echo "runtime-theme: text size must be 8-24 (px)" >&2; exit 2; fi
+      local name; name="$(current)"
+      write_state "$name" "$size"
+      write_ghostty "$name" "$size"
+      echo "text size: $size px (terminal $(term_pt "$size")pt)"
+      ${runtimeHookScript}/bin/runtime-hook text-size-set "$size"
+    }
+
+    cmd="''${1:-}"
+    case "$cmd" in
+      list)
+        active="$(current)"
+        "$jq" -r --arg a "$active" 'to_entries[] | "\(if .key == $a then "*" else " " end) \(.key)\t\(.value.label)\t\(.value.description)"' "$themes" | column -t -s $'\t'
+        ;;
+      current) current ;;
+      set) [ $# -ge 2 ] || { usage; exit 2; }; set_theme "$2" ;;
+      text-size)
+        if [ $# -ge 2 ]; then set_text_size "$2"; else text_size; fi
+        ;;
+      toggle)
+        active="$(current)"
+        if "$jq" -e --arg a "$active" '.[$a].dark' "$themes" >/dev/null; then want=false; else want=true; fi
+        next="$("$jq" -r --argjson d "$want" 'to_entries[] | select(.value.dark == $d) | .key' "$themes" | head -1)"
+        [ -n "$next" ] || { echo "runtime-theme: no theme to toggle to" >&2; exit 1; }
+        set_theme "$next"
+        ;;
+      *) usage; exit 2 ;;
+    esac
+  '';
+
+  # Lock through the shell when it is up (themed ext-session-lock + PAM),
+  # swaylock otherwise — a lock request must never be dropped.
+  lockSessionScript = pkgs.writeShellScriptBin "lock-session" ''
+    if out="$(${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell lock 2>/dev/null)" && [ "$out" = "ok" ]; then
+      exit 0
+    fi
+    exec ${pkgs.swaylock}/bin/swaylock -f
+  '';
+
   togglePowerMenuScript = mkIpcScript "toggle-runtime-power-menu" "togglePowerMenu" "";
+  toggleKeybindingsHelpScript = mkIpcScript "toggle-keybindings-help" "toggleKeybindings" "";
   toggleLauncherScript = mkIpcScript "toggle-app-launcher" "toggleLauncher" "";
   toggleAgentMonitorScript = mkIpcScript "toggle-agent-monitor" "toggleAgentMonitor" "";
   toggleSettingsScript = mkIpcScript "toggle-runtime-settings" "toggleSettings" "";
@@ -2903,33 +3719,67 @@ in
     };
 
     accentColor = lib.mkOption {
-      type = lib.types.str;
-      default = "#93c5fd";
-      description = "Primary accent color (replaces blue family in shell.qml).";
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Override the configured theme's accent (blue) at build time. Null keeps the theme's own.";
     };
 
     accentBg = lib.mkOption {
-      type = lib.types.str;
-      default = "#16243a";
-      description = "Accent background color.";
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Override the configured theme's accent background. Null keeps the theme's own.";
     };
 
     accentMuted = lib.mkOption {
-      type = lib.types.str;
-      default = "#5d7ba2";
-      description = "Muted accent color.";
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Override the configured theme's muted accent. Null keeps the theme's own.";
     };
 
     accentWash = lib.mkOption {
-      type = lib.types.str;
-      default = "#152231";
-      description = "Accent wash/tint color.";
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Override the configured theme's accent wash. Null keeps the theme's own.";
     };
 
     toggleKey = lib.mkOption {
       type = lib.types.either lib.types.str (lib.types.listOf lib.types.str);
       default = "$mod+m";
       description = "Keybinding(s) used to toggle the runtime shell panel.";
+    };
+
+    theme = lib.mkOption {
+      type = lib.types.str;
+      default = "zinc-dark";
+      description = "Built-in theme baked into the shell (see themes.nix). `runtime-theme set <name>` switches live at runtime.";
+    };
+
+    idle = {
+      screenOffSeconds = lib.mkOption {
+        type = lib.types.ints.unsigned;
+        default = 300;
+        description = "Seconds of inactivity before outputs are powered off (0 disables). Honours app idle inhibitors and pauses while casting.";
+      };
+      lockSeconds = lib.mkOption {
+        type = lib.types.ints.unsigned;
+        default = 600;
+        description = "Seconds of inactivity before the in-shell lock engages (0 disables).";
+      };
+    };
+
+    nightlight = {
+      lowTemp = lib.mkOption { type = lib.types.int; default = 4000; description = "wlsunset night colour temperature (K)."; };
+      highTemp = lib.mkOption { type = lib.types.int; default = 6500; description = "wlsunset day colour temperature (K)."; };
+      sunrise = lib.mkOption { type = lib.types.str; default = "07:00"; description = "wlsunset fixed sunrise (HH:MM)."; };
+      sunset = lib.mkOption { type = lib.types.str; default = "19:30"; description = "wlsunset fixed sunset (HH:MM)."; };
+    };
+
+    lock = {
+      pamService = lib.mkOption {
+        type = lib.types.str;
+        default = "swaylock";
+        description = "PAM service (in /etc/pam.d) the lock screen authenticates against. `swaylock` is the plain pam_unix stack the NixOS sway module creates on every host.";
+      };
     };
 
     notifications = {
@@ -2989,6 +3839,21 @@ in
       togglePanelScript
       toggleDockScript
       togglePowerMenuScript
+      runtimeShellCliScript
+      toggleKeybindingsHelpScript
+      brightnessKeyScript
+      lockSessionScript
+      runtimeThemeScript
+      runtimeHookScript
+      captureScript
+      runtimeReminderScript
+      nightlightScript
+      crashDiagnoseScript
+      crashWatchScript
+      tailscaleStatusScript
+      tailscaleActionScript
+      agentUsageUpdateScript
+    ] ++ agentUsageCollectors ++ [
       toggleLauncherScript
       toggleAgentMonitorScript
       toggleSettingsScript
@@ -3040,6 +3905,99 @@ in
     '';
 
     # Link individual files so the config directory stays writable for qmlls.
+    # The notification store lives in XDG state; the placeholder makes sure
+    # the directory exists before the shell's first atomic write.
+    xdg.stateFile."quickshell-runtime-shell/.keep".text = "";
+    xdg.stateFile."quickshell-runtime-shell/agents/usage/.keep".text = "";
+
+    # Regenerate the usage records every 15 minutes; the shell file-watches
+    # the directory, and its refresh button runs the same script on demand.
+    systemd.user.services.quickshell-agent-usage = {
+      Unit.Description = "Refresh AI coding agent usage records for the runtime shell";
+      Service = {
+        Type = "oneshot";
+        ExecStart = "${agentUsageUpdateScript}/bin/quickshell-agent-usage-update";
+        Environment = [
+          "PATH=${config.home.profileDirectory}/bin:/run/current-system/sw/bin:%h/.local/bin:/run/wrappers/bin"
+        ];
+        TimeoutStartSec = "180s";
+      };
+    };
+    # Night light: started/stopped by quickshell-nightlight (Displays popup),
+    # never enabled on its own.
+    systemd.user.services.wlsunset = {
+      Unit = {
+        Description = "Night light (wlsunset)";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
+      Service = {
+        ExecStart = "${pkgs.wlsunset}/bin/wlsunset -t ${toString cfg.nightlight.lowTemp} -T ${toString cfg.nightlight.highTemp} -S ${cfg.nightlight.sunrise} -s ${cfg.nightlight.sunset}";
+        Restart = "on-failure";
+      };
+    };
+
+    # Coredump watcher: critical toast with a "Diagnose with Claude" action.
+    systemd.user.services.quickshell-crash-watch = {
+      Unit = {
+        Description = "Raise a notification with an agent action when a process dumps core";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
+      Service = {
+        ExecStart = "${crashWatchScript}/bin/quickshell-crash-watch";
+        Restart = "always";
+        RestartSec = "5s";
+        Environment = [ "PATH=${config.home.profileDirectory}/bin:/run/current-system/sw/bin:/run/wrappers/bin" ];
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    };
+
+    # Hook samples (inactive until the .sample suffix is dropped).
+    xdg.configFile."quickshell-runtime-shell/hooks/README.md".text = ''
+      # Runtime shell hooks
+
+      `runtime-hook <event> [args]` runs `<event>` here and every file in
+      `<event>.d/` (files ending in `.sample` are skipped). Copy a sample
+      without the suffix to activate it, or add your own script.
+
+      Events: `theme-set <name> <dark|light>`, `text-size-set <px>`,
+      `session-locked`, `session-unlocked`, `idle-screen <off|on>`,
+      `post-activation` (after a home-manager activation, i.e. a rebuild).
+    '';
+    xdg.configFile."quickshell-runtime-shell/hooks/theme-set.d/claude-code-theme.sample".text = ''
+      #!/usr/bin/env bash
+      # Follow the shell's light/dark mode in Claude Code (~/.claude/settings.json).
+      set -eu
+      mode="''${2:-dark}"
+      settings="$HOME/.claude/settings.json"
+      [ -f "$settings" ] || echo '{}' >"$settings"
+      tmp="$(mktemp)"
+      ${pkgs.jq}/bin/jq --arg t "$mode" '.theme = $t' "$settings" >"$tmp" && mv "$tmp" "$settings"
+    '';
+    xdg.configFile."quickshell-runtime-shell/hooks/post-activation.d/restart-shell.sample".text = ''
+      #!/usr/bin/env bash
+      # Restart the shell after every rebuild so QML changes land without a
+      # manual restart. Off by default: it drops open popups mid-session.
+      export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+      systemctl --user restart quickshell-runtime-shell.service
+    '';
+
+    home.activation.runtimeShellPostActivationHook = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      ${runtimeHookScript}/bin/runtime-hook post-activation || true
+    '';
+
+    systemd.user.timers.quickshell-agent-usage = {
+      Unit.Description = "Refresh AI coding agent usage records every 15 minutes";
+      Timer = {
+        OnStartupSec = "90s";
+        OnUnitActiveSec = "15min";
+        RandomizedDelaySec = "60s";
+        AccuracySec = "1min";
+      };
+      Install.WantedBy = [ "timers.target" ];
+    };
+
     xdg.configFile."quickshell/${cfg.configName}" = {
       source = shellConfigDir;
       recursive = true;

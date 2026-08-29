@@ -89,10 +89,10 @@ PanelWindow {
         id: pill
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
-        anchors.topMargin: runtimeConfig.topBarHeight + 16
+        anchors.topMargin: Math.round(runtimeConfig.topBarHeight * Theme.scale) + 16
         height: 64
         width: contentRow.implicitWidth + 36
-        radius: 16
+        radius: Theme.rad(16)
         color: Theme.toastGlass
         border.width: 1.5
         border.color: overlay.accent
@@ -122,7 +122,7 @@ PanelWindow {
                 text: root.voxtypeIcon()
                 color: overlay.accent
                 font.family: "FiraCode Nerd Font"
-                font.pixelSize: 22
+                font.pixelSize: Theme.fs(22)
                 SequentialAnimation on opacity {
                     running: overlay.recording || overlay.streaming
                     loops: Animation.Infinite
@@ -157,19 +157,21 @@ PanelWindow {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 1
                 Text {
+                    font.family: Theme.fontFamily
                     text: overlay.streaming ? "Streaming…"
                         : (overlay.recording ? "Listening…"
                             : (overlay.stopping ? "Stopping…"
                                 : (overlay.transcribing ? "Transcribing…" : "")))
                     color: colors.text
-                    font.pixelSize: 14
+                    font.pixelSize: Theme.fs(14)
                     font.weight: Font.DemiBold
                 }
                 Text {
+                    font.family: Theme.fontFamily
                     visible: overlay.noAudio
                     text: "No audio — check mic"
                     color: colors.amber
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fs(10)
                     font.weight: Font.Medium
                 }
             }

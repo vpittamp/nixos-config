@@ -42,7 +42,7 @@ PanelWindow {
             anchors.centerIn: parent
             width: Math.min(1040, parent.width - 72)
             height: Math.min(700, parent.height - 72)
-            radius: 14
+            radius: Theme.rad(14)
             color: colors.panel
             border.color: colors.borderStrong
             border.width: 1
@@ -62,7 +62,7 @@ PanelWindow {
                 Rectangle {
                     Layout.fillHeight: true
                     Layout.preferredWidth: 180
-                    radius: 10
+                    radius: Theme.rad(10)
                     color: colors.card
                     border.color: colors.border
                     border.width: 1
@@ -73,17 +73,19 @@ PanelWindow {
                         spacing: 12
 
                         Text {
+                            font.family: Theme.fontFamily
                             text: root.settingsTitle()
                             color: colors.text
-                            font.pixelSize: 16
+                            font.pixelSize: Theme.fs(16)
                             font.weight: Font.DemiBold
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             Layout.fillWidth: true
                             text: "Manage runtime shell commands and devices without leaving QuickShell."
                             color: colors.subtle
-                            font.pixelSize: 10
+                            font.pixelSize: Theme.fs(10)
                             wrapMode: Text.WordWrap
                         }
 
@@ -96,7 +98,7 @@ PanelWindow {
                         Rectangle {
                             Layout.fillWidth: true
                             height: 42
-                            radius: 8
+                            radius: Theme.rad(8)
                             color: root.settingsSection === "commands" ? colors.tealBg : colors.cardAlt
                             border.color: root.settingsSection === "commands" ? colors.teal : colors.border
                             border.width: 1
@@ -116,10 +118,11 @@ PanelWindow {
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     visible: root.iconSource("insert-text", "") === ""
                                     text: "$"
                                     color: root.settingsSection === "commands" ? colors.teal : colors.textDim
-                                    font.pixelSize: 12
+                                    font.pixelSize: Theme.fs(12)
                                     font.weight: Font.Bold
                                 }
 
@@ -128,16 +131,18 @@ PanelWindow {
                                     spacing: 1
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Commands"
                                         color: root.settingsSection === "commands" ? colors.teal : colors.text
-                                        font.pixelSize: 11
+                                        font.pixelSize: Theme.fs(11)
                                         font.weight: Font.DemiBold
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Elephant snippets"
                                         color: colors.subtle
-                                        font.pixelSize: 9
+                                        font.pixelSize: Theme.fs(9)
                                     }
                                 }
                             }
@@ -153,7 +158,7 @@ PanelWindow {
                         Rectangle {
                             Layout.fillWidth: true
                             height: 42
-                            radius: 8
+                            radius: Theme.rad(8)
                             color: root.settingsSection === "apps" ? colors.orangeBg : colors.cardAlt
                             border.color: root.settingsSection === "apps" ? colors.orange : colors.border
                             border.width: 1
@@ -173,10 +178,11 @@ PanelWindow {
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     visible: root.iconSource("application-x-executable", "") === ""
                                     text: "◎"
                                     color: root.settingsSection === "apps" ? colors.orange : colors.textDim
-                                    font.pixelSize: 12
+                                    font.pixelSize: Theme.fs(12)
                                     font.weight: Font.Bold
                                 }
 
@@ -185,16 +191,18 @@ PanelWindow {
                                     spacing: 1
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Apps"
                                         color: root.settingsSection === "apps" ? colors.orange : colors.text
-                                        font.pixelSize: 11
+                                        font.pixelSize: Theme.fs(11)
                                         font.weight: Font.DemiBold
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Live registry + declarative sync"
                                         color: colors.subtle
-                                        font.pixelSize: 9
+                                        font.pixelSize: Theme.fs(9)
                                     }
                                 }
                             }
@@ -210,7 +218,7 @@ PanelWindow {
                         Rectangle {
                             Layout.fillWidth: true
                             height: 42
-                            radius: 8
+                            radius: Theme.rad(8)
                             color: root.settingsSection === "displays" ? colors.blueBg : colors.cardAlt
                             border.color: root.settingsSection === "displays" ? colors.blue : colors.border
                             border.width: 1
@@ -230,10 +238,11 @@ PanelWindow {
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     visible: root.iconSource("video-display", "") === ""
                                     text: "▣"
                                     color: root.settingsSection === "displays" ? colors.blue : colors.textDim
-                                    font.pixelSize: 12
+                                    font.pixelSize: Theme.fs(12)
                                     font.weight: Font.Bold
                                 }
 
@@ -242,16 +251,18 @@ PanelWindow {
                                     spacing: 1
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Displays"
                                         color: root.settingsSection === "displays" ? colors.blue : colors.text
-                                        font.pixelSize: 11
+                                        font.pixelSize: Theme.fs(11)
                                         font.weight: Font.DemiBold
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Layouts, outputs, scale"
                                         color: colors.subtle
-                                        font.pixelSize: 9
+                                        font.pixelSize: Theme.fs(9)
                                     }
                                 }
                             }
@@ -267,7 +278,7 @@ PanelWindow {
                         Rectangle {
                             Layout.fillWidth: true
                             height: 42
-                            radius: 8
+                            radius: Theme.rad(8)
                             color: root.settingsSection === "devices" ? colors.violetBg : colors.cardAlt
                             border.color: root.settingsSection === "devices" ? colors.violet : colors.border
                             border.width: 1
@@ -287,10 +298,11 @@ PanelWindow {
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     visible: root.iconSource("preferences-system", "") === ""
                                     text: "◈"
                                     color: root.settingsSection === "devices" ? colors.violet : colors.textDim
-                                    font.pixelSize: 12
+                                    font.pixelSize: Theme.fs(12)
                                     font.weight: Font.Bold
                                 }
 
@@ -299,16 +311,18 @@ PanelWindow {
                                     spacing: 1
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Devices"
                                         color: root.settingsSection === "devices" ? colors.violet : colors.text
-                                        font.pixelSize: 11
+                                        font.pixelSize: Theme.fs(11)
                                         font.weight: Font.DemiBold
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Audio, brightness, power"
                                         color: colors.subtle
-                                        font.pixelSize: 9
+                                        font.pixelSize: Theme.fs(9)
                                     }
                                 }
                             }
@@ -326,10 +340,11 @@ PanelWindow {
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             Layout.fillWidth: true
                             text: "Open with `toggle-runtime-settings`."
                             color: colors.subtle
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fs(9)
                             wrapMode: Text.WordWrap
                         }
                     }
@@ -338,7 +353,7 @@ PanelWindow {
                 Rectangle {
                     Layout.fillHeight: true
                     Layout.fillWidth: true
-                    radius: 10
+                    radius: Theme.rad(10)
                     color: colors.card
                     border.color: colors.border
                     border.width: 1
@@ -378,16 +393,18 @@ PanelWindow {
                                     spacing: 2
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Commands"
                                         color: colors.text
-                                        font.pixelSize: 15
+                                        font.pixelSize: Theme.fs(15)
                                         font.weight: Font.DemiBold
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Browse and edit curated commands stored in `~/.config/elephant/snippets.toml`."
                                         color: colors.subtle
-                                        font.pixelSize: 10
+                                        font.pixelSize: Theme.fs(10)
                                     }
                                 }
 
@@ -402,16 +419,18 @@ PanelWindow {
                                 spacing: 8
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     Layout.fillWidth: true
                                     text: root.settingsCommandStatusText()
                                     color: root.settingsCommandError ? colors.red : colors.subtle
-                                    font.pixelSize: 10
+                                    font.pixelSize: Theme.fs(10)
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     text: root.snippetEditorStatus()
                                     color: root.snippetEditorError ? colors.red : (root.snippetEditorDirty ? colors.orange : colors.subtle)
-                                    font.pixelSize: 10
+                                    font.pixelSize: Theme.fs(10)
                                 }
                             }
 
@@ -453,7 +472,7 @@ PanelWindow {
                                 Rectangle {
                                     Layout.fillHeight: true
                                     Layout.preferredWidth: 330
-                                    radius: 8
+                                    radius: Theme.rad(8)
                                     color: colors.cardAlt
                                     border.color: colors.lineSoft
                                     border.width: 1
@@ -468,6 +487,7 @@ PanelWindow {
                                         spacing: 8
 
                                         TextField {
+                                            font.family: Theme.fontFamily
                                             id: settingsCommandQueryField
                                             Layout.fillWidth: true
                                             text: ""
@@ -483,7 +503,7 @@ PanelWindow {
                                                 onTapped: root.oskFieldTouched()
                                             }
                                             background: Rectangle {
-                                                radius: 8
+                                                radius: Theme.rad(8)
                                                 color: colors.panel
                                                 border.color: settingsCommandQueryField.activeFocus ? colors.teal : colors.border
                                                 border.width: 1
@@ -550,7 +570,7 @@ PanelWindow {
 
                                             width: settingsCommandsList.width
                                             height: 70
-                                            radius: 8
+                                            radius: Theme.rad(8)
                                             color: selected ? colors.blueBg : (settingsCommandMouse.containsMouse ? colors.panelAlt : "transparent")
                                             border.color: selected ? colors.blue : (settingsCommandMouse.containsMouse ? colors.borderStrong : "transparent")
                                             border.width: 1
@@ -564,28 +584,31 @@ PanelWindow {
                                                 spacing: 4
 
                                                 Text {
+                                                    font.family: Theme.fontFamily
                                                     Layout.fillWidth: true
                                                     text: root.stringOrEmpty(entry && entry.text)
                                                     color: colors.text
-                                                    font.pixelSize: 11
+                                                    font.pixelSize: Theme.fs(11)
                                                     font.weight: Font.DemiBold
                                                     elide: Text.ElideRight
                                                 }
 
                                                 Text {
+                                                    font.family: Theme.fontFamily
                                                     Layout.fillWidth: true
                                                     text: root.stringOrEmpty(entry && entry.description)
                                                     visible: text.length > 0
                                                     color: colors.subtle
-                                                    font.pixelSize: 9
+                                                    font.pixelSize: Theme.fs(9)
                                                     elide: Text.ElideRight
                                                 }
 
                                                 Text {
+                                                    font.family: Theme.fontFamily
                                                     Layout.fillWidth: true
                                                     text: root.stringOrEmpty(entry && entry.command)
                                                     color: selected ? colors.blue : colors.textDim
-                                                    font.pixelSize: 9
+                                                    font.pixelSize: Theme.fs(9)
                                                     elide: Text.ElideRight
                                                 }
                                             }
@@ -605,16 +628,17 @@ PanelWindow {
                                             visible: !root.settingsCommandLoading && root.settingsCommandEntries.length === 0
                                             width: parent.width - 12
                                             height: 72
-                                            radius: 8
+                                            radius: Theme.rad(8)
                                             color: colors.panel
                                             border.color: colors.border
                                             border.width: 1
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 anchors.centerIn: parent
                                                 text: root.settingsCommandEmptyText()
                                                 color: root.settingsCommandError ? colors.red : colors.subtle
-                                                font.pixelSize: 10
+                                                font.pixelSize: Theme.fs(10)
                                             }
                                         }
                                     }
@@ -624,7 +648,7 @@ PanelWindow {
                                 Rectangle {
                                     Layout.fillHeight: true
                                     Layout.fillWidth: true
-                                    radius: 8
+                                    radius: Theme.rad(8)
                                     color: colors.cardAlt
                                     border.color: colors.lineSoft
                                     border.width: 1
@@ -642,49 +666,54 @@ PanelWindow {
                                         spacing: 8
 
                                         Text {
+                                            font.family: Theme.fontFamily
                                             Layout.fillWidth: true
                                             text: root.snippetEditorTitle()
                                             color: colors.text
-                                            font.pixelSize: 13
+                                            font.pixelSize: Theme.fs(13)
                                             font.weight: Font.DemiBold
                                             elide: Text.ElideRight
                                         }
 
                                         Rectangle {
                                             height: 20
-                                            radius: 6
+                                            radius: Theme.rad(6)
                                             color: root.snippetEditorNewDraft ? colors.orangeBg : colors.tealBg
                                             border.color: root.snippetEditorNewDraft ? colors.orange : colors.teal
                                             border.width: 1
                                             Layout.preferredWidth: settingsEditorModeText.implicitWidth + 12
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 id: settingsEditorModeText
                                                 anchors.centerIn: parent
                                                 text: root.snippetEditorNewDraft ? "New" : "Saved"
                                                 color: root.snippetEditorNewDraft ? colors.orange : colors.teal
-                                                font.pixelSize: 8
+                                                font.pixelSize: Theme.fs(8)
                                                 font.weight: Font.DemiBold
                                             }
                                         }
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         Layout.fillWidth: true
                                         text: root.snippetEditorStatus()
                                         color: root.snippetEditorError ? colors.red : (root.snippetEditorDirty ? colors.orange : colors.subtle)
-                                        font.pixelSize: 10
+                                        font.pixelSize: Theme.fs(10)
                                         wrapMode: Text.WordWrap
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Name"
                                         color: colors.textDim
-                                        font.pixelSize: 10
+                                        font.pixelSize: Theme.fs(10)
                                         font.weight: Font.DemiBold
                                     }
 
                                     TextField {
+                                        font.family: Theme.fontFamily
                                         id: settingsSnippetNameField
                                         Layout.fillWidth: true
                                         text: root.snippetEditorName
@@ -693,7 +722,7 @@ PanelWindow {
                                         selectByMouse: true
                                         enabled: !root.snippetEditorBusy
                                         background: Rectangle {
-                                            radius: 8
+                                            radius: Theme.rad(8)
                                             color: colors.panel
                                             border.color: settingsSnippetNameField.activeFocus ? colors.teal : colors.border
                                             border.width: 1
@@ -710,16 +739,17 @@ PanelWindow {
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Command"
                                         color: colors.textDim
-                                        font.pixelSize: 10
+                                        font.pixelSize: Theme.fs(10)
                                         font.weight: Font.DemiBold
                                     }
 
                                     Rectangle {
                                         Layout.fillWidth: true
                                         Layout.preferredHeight: 180
-                                        radius: 8
+                                        radius: Theme.rad(8)
                                         color: colors.panel
                                         border.color: colors.border
                                         border.width: 1
@@ -751,13 +781,15 @@ PanelWindow {
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Description"
                                         color: colors.textDim
-                                        font.pixelSize: 10
+                                        font.pixelSize: Theme.fs(10)
                                         font.weight: Font.DemiBold
                                     }
 
                                     TextField {
+                                        font.family: Theme.fontFamily
                                         id: settingsSnippetDescriptionField
                                         Layout.fillWidth: true
                                         text: root.snippetEditorDescription
@@ -766,7 +798,7 @@ PanelWindow {
                                         selectByMouse: true
                                         enabled: !root.snippetEditorBusy
                                         background: Rectangle {
-                                            radius: 8
+                                            radius: Theme.rad(8)
                                             color: colors.panel
                                             border.color: settingsSnippetDescriptionField.activeFocus ? colors.blue : colors.border
                                             border.width: 1
@@ -838,16 +870,18 @@ PanelWindow {
                                     spacing: 2
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Displays"
                                         color: colors.text
-                                        font.pixelSize: 15
+                                        font.pixelSize: Theme.fs(15)
                                         font.weight: Font.DemiBold
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Monitor layouts, per-output controls, and scale settings."
                                         color: colors.subtle
-                                        font.pixelSize: 10
+                                        font.pixelSize: Theme.fs(10)
                                         wrapMode: Text.WordWrap
                                     }
                                 }
@@ -855,15 +889,16 @@ PanelWindow {
                                 Button {
                                     onClicked: root.closeSettings()
                                     contentItem: Text {
+                                        font.family: Theme.fontFamily
                                         text: "Close"
                                         color: colors.text
-                                        font.pixelSize: 9
+                                        font.pixelSize: Theme.fs(9)
                                         font.weight: Font.Medium
                                         horizontalAlignment: Text.AlignHCenter
                                         verticalAlignment: Text.AlignVCenter
                                     }
                                     background: Rectangle {
-                                        radius: 6
+                                        radius: Theme.rad(6)
                                         color: colors.cardAlt
                                         border.color: colors.border
                                         border.width: 1
@@ -883,7 +918,7 @@ PanelWindow {
 
                                     Rectangle {
                                         Layout.fillWidth: true
-                                        radius: 10
+                                        radius: Theme.rad(10)
                                         color: colors.cardAlt
                                         border.color: colors.lineSoft
                                         border.width: 1
@@ -904,16 +939,18 @@ PanelWindow {
                                                     spacing: 2
 
                                                     Text {
+                                                        font.family: Theme.fontFamily
                                                         text: "Displays"
                                                         color: colors.text
-                                                        font.pixelSize: 12
+                                                        font.pixelSize: Theme.fs(12)
                                                         font.weight: Font.DemiBold
                                                     }
 
                                                     Text {
+                                                        font.family: Theme.fontFamily
                                                         text: root.displayApplyStatusText()
                                                         color: root.displayApplyError ? colors.red : colors.subtle
-                                                        font.pixelSize: 10
+                                                        font.pixelSize: Theme.fs(10)
                                                         wrapMode: Text.WordWrap
                                                     }
                                                 }
@@ -921,15 +958,16 @@ PanelWindow {
                                                 Button {
                                                     onClicked: root.openDisplaySelector()
                                                     contentItem: Text {
+                                                        font.family: Theme.fontFamily
                                                         text: "Picker"
                                                         color: colors.blue
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: Theme.fs(9)
                                                         font.weight: Font.Medium
                                                         horizontalAlignment: Text.AlignHCenter
                                                         verticalAlignment: Text.AlignVCenter
                                                     }
                                                     background: Rectangle {
-                                                        radius: 6
+                                                        radius: Theme.rad(6)
                                                         color: colors.blueBg
                                                         border.color: colors.blue
                                                         border.width: 1
@@ -940,10 +978,11 @@ PanelWindow {
                                             }
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 Layout.fillWidth: true
                                                 text: "Current: " + root.currentLayoutLabel() + "  •  " + root.activeDisplaySummary()
                                                 color: colors.subtle
-                                                font.pixelSize: 10
+                                                font.pixelSize: Theme.fs(10)
                                                 wrapMode: Text.WordWrap
                                             }
 
@@ -959,7 +998,7 @@ PanelWindow {
                                                     readonly property var profileOutputs: root.arrayOrEmpty(modelData && modelData.outputs)
                                                     Layout.fillWidth: true
                                                     implicitHeight: settingsDisplayOptionColumn.implicitHeight + 20
-                                                    radius: 8
+                                                    radius: Theme.rad(8)
                                                     color: current ? colors.blueBg : colors.panel
                                                     border.color: current ? colors.blue : colors.border
                                                     border.width: 1
@@ -979,16 +1018,18 @@ PanelWindow {
                                                                 spacing: 2
 
                                                                 Text {
+                                                                    font.family: Theme.fontFamily
                                                                     text: root.displayOptionLabel(modelData)
                                                                     color: current ? colors.blue : colors.text
-                                                                    font.pixelSize: 10
+                                                                    font.pixelSize: Theme.fs(10)
                                                                     font.weight: Font.DemiBold
                                                                 }
 
                                                                 Text {
+                                                                    font.family: Theme.fontFamily
                                                                     text: root.displayOptionDescription(modelData)
                                                                     color: colors.subtle
-                                                                    font.pixelSize: 9
+                                                                    font.pixelSize: Theme.fs(9)
                                                                     wrapMode: Text.WordWrap
                                                                 }
                                                             }
@@ -997,15 +1038,16 @@ PanelWindow {
                                                                 enabled: !pending && !current && !(root.displayApplyProcess && root.displayApplyProcess.running)
                                                                 onClicked: root.applyDisplayLayout(layoutName)
                                                                 contentItem: Text {
+                                                                    font.family: Theme.fontFamily
                                                                     text: pending ? "Applying" : (current ? "Active" : "Apply")
                                                                     color: !enabled ? colors.subtle : current ? colors.teal : colors.blue
-                                                                    font.pixelSize: 9
+                                                                    font.pixelSize: Theme.fs(9)
                                                                     font.weight: current ? Font.Bold : Font.Medium
                                                                     horizontalAlignment: Text.AlignHCenter
                                                                     verticalAlignment: Text.AlignVCenter
                                                                 }
                                                                 background: Rectangle {
-                                                                    radius: 6
+                                                                    radius: Theme.rad(6)
                                                                     color: current ? colors.tealBg : colors.blueBg
                                                                     border.color: current ? colors.teal : colors.blue
                                                                     border.width: 1
@@ -1072,6 +1114,7 @@ PanelWindow {
                                                                     border.width: 1
 
                                                                     Text {
+                                                                        font.family: Theme.fontFamily
                                                                         anchors.centerIn: parent
                                                                         text: modelData.name
                                                                         color: modelData.enabled ? (current ? colors.blue : colors.text) : colors.subtle
@@ -1087,11 +1130,12 @@ PanelWindow {
                                             }
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 Layout.fillWidth: true
                                                 visible: root.displayLayoutOptions().length === 0
                                                 text: "Use the per-monitor controls below to enable, disable, or scale each display. On the lid being closed, disabled externals stay off."
                                                 color: colors.subtle
-                                                font.pixelSize: 9
+                                                font.pixelSize: Theme.fs(9)
                                                 wrapMode: Text.WordWrap
                                             }
                                         }
@@ -1099,7 +1143,7 @@ PanelWindow {
 
                                     Rectangle {
                                         Layout.fillWidth: true
-                                        radius: 10
+                                        radius: Theme.rad(10)
                                         color: colors.cardAlt
                                         border.color: colors.lineSoft
                                         border.width: 1
@@ -1113,9 +1157,10 @@ PanelWindow {
                                             spacing: 10
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 text: "Per-Output Controls"
                                                 color: colors.text
-                                                font.pixelSize: 12
+                                                font.pixelSize: Theme.fs(12)
                                                 font.weight: Font.DemiBold
                                             }
 
@@ -1130,7 +1175,7 @@ PanelWindow {
                                                     readonly property bool pending: root.displayTogglePending(outputName)
                                                     Layout.fillWidth: true
                                                     implicitHeight: perOutputRow.implicitHeight + 16
-                                                    radius: 8
+                                                    radius: Theme.rad(8)
                                                     color: outputEnabled ? colors.panel : colors.cardAlt
                                                     border.color: outputEnabled ? colors.border : colors.lineSoft
                                                     border.width: 1
@@ -1150,23 +1195,26 @@ PanelWindow {
                                                                 spacing: 6
 
                                                                 Text {
+                                                                    font.family: Theme.fontFamily
                                                                     text: outputName
                                                                     color: colors.text
-                                                                    font.pixelSize: 11
+                                                                    font.pixelSize: Theme.fs(11)
                                                                     font.weight: Font.DemiBold
                                                                     font.strikeout: !outputEnabled
                                                                 }
 
                                                                 Text {
+                                                                    font.family: Theme.fontFamily
                                                                     visible: !!(output && output.primary)
                                                                     text: "primary"
                                                                     color: colors.blue
-                                                                    font.pixelSize: 9
+                                                                    font.pixelSize: Theme.fs(9)
                                                                     font.weight: Font.Bold
                                                                 }
                                                             }
 
                                                             Text {
+                                                                font.family: Theme.fontFamily
                                                                 visible: !!(output && output.rect)
                                                                 text: {
                                                                     const r = output && output.rect;
@@ -1174,7 +1222,7 @@ PanelWindow {
                                                                     return (r.width || 0) + "x" + (r.height || 0);
                                                                 }
                                                                 color: colors.subtle
-                                                                font.pixelSize: 9
+                                                                font.pixelSize: Theme.fs(9)
                                                             }
 
                                                             RowLayout {
@@ -1183,9 +1231,10 @@ PanelWindow {
                                                                 readonly property bool scalePending: root.displayScalePending(outputName)
 
                                                                 Text {
+                                                                    font.family: Theme.fontFamily
                                                                     text: "Scale:"
                                                                     color: colors.subtle
-                                                                    font.pixelSize: 9
+                                                                    font.pixelSize: Theme.fs(9)
                                                                 }
 
                                                                 Repeater {
@@ -1196,9 +1245,10 @@ PanelWindow {
                                                                         enabled: !parent.scalePending && !isActive && !(root.displayScaleProcess && root.displayScaleProcess.running)
                                                                         onClicked: root.setDisplayScale(outputName, scaleValue)
                                                                         contentItem: Text {
+                                                                            font.family: Theme.fontFamily
                                                                             text: scaleValue + "x"
                                                                             color: !enabled ? colors.subtle : isActive ? colors.teal : colors.text
-                                                                            font.pixelSize: 9
+                                                                            font.pixelSize: Theme.fs(9)
                                                                             font.weight: isActive ? Font.Bold : Font.Normal
                                                                             horizontalAlignment: Text.AlignHCenter
                                                                             verticalAlignment: Text.AlignVCenter
@@ -1220,15 +1270,16 @@ PanelWindow {
                                                             enabled: !pending && !(root.displayToggleOutputProcess && root.displayToggleOutputProcess.running)
                                                             onClicked: root.toggleDisplayOutput(outputName)
                                                             contentItem: Text {
+                                                                font.family: Theme.fontFamily
                                                                 text: pending ? "..." : (outputEnabled ? "Disable" : "Enable")
                                                                 color: !enabled ? colors.subtle : outputEnabled ? colors.red : colors.green
-                                                                font.pixelSize: 9
+                                                                font.pixelSize: Theme.fs(9)
                                                                 font.weight: Font.Medium
                                                                 horizontalAlignment: Text.AlignHCenter
                                                                 verticalAlignment: Text.AlignVCenter
                                                             }
                                                             background: Rectangle {
-                                                                radius: 6
+                                                                radius: Theme.rad(6)
                                                                 color: outputEnabled ? colors.redBg : colors.greenBg
                                                                 border.color: outputEnabled ? colors.red : colors.green
                                                                 border.width: 1
@@ -1265,16 +1316,18 @@ PanelWindow {
                                     spacing: 2
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Devices"
                                         color: colors.text
-                                        font.pixelSize: 15
+                                        font.pixelSize: Theme.fs(15)
                                         font.weight: Font.DemiBold
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         text: "Brightness, power, audio, Bluetooth, and system resources."
                                         color: colors.subtle
-                                        font.pixelSize: 10
+                                        font.pixelSize: Theme.fs(10)
                                         wrapMode: Text.WordWrap
                                     }
                                 }
@@ -1282,15 +1335,16 @@ PanelWindow {
                                 Button {
                                     onClicked: root.closeSettings()
                                     contentItem: Text {
+                                        font.family: Theme.fontFamily
                                         text: "Close"
                                         color: colors.text
-                                        font.pixelSize: 9
+                                        font.pixelSize: Theme.fs(9)
                                         font.weight: Font.Medium
                                         horizontalAlignment: Text.AlignHCenter
                                         verticalAlignment: Text.AlignVCenter
                                     }
                                     background: Rectangle {
-                                        radius: 6
+                                        radius: Theme.rad(6)
                                         color: colors.cardAlt
                                         border.color: colors.border
                                         border.width: 1
@@ -1310,7 +1364,7 @@ PanelWindow {
 
                                     Rectangle {
                                         Layout.fillWidth: true
-                                        radius: 10
+                                        radius: Theme.rad(10)
                                         color: colors.cardAlt
                                         border.color: colors.lineSoft
                                         border.width: 1
@@ -1323,18 +1377,111 @@ PanelWindow {
                                             spacing: 10
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 text: "Brightness & Power"
                                                 color: colors.text
-                                                font.pixelSize: 12
+                                                font.pixelSize: Theme.fs(12)
                                                 font.weight: Font.DemiBold
                                             }
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 Layout.fillWidth: true
                                                 text: root.brightnessActionError ? root.brightnessActionError : (root.brightnessPowerSummaryText() || "Expose local backlight and battery controls when the host supports them.")
                                                 color: root.brightnessActionError ? colors.red : colors.subtle
-                                                font.pixelSize: 10
+                                                font.pixelSize: Theme.fs(10)
                                                 wrapMode: Text.WordWrap
+                                            }
+
+                                            // Text size: the shell's type root; new terminals follow
+                                            // (runtime-theme text-size).
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 6
+
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 8
+
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 2
+
+                                                        Text {
+                                                            font.family: Theme.fontFamily
+                                                            text: "Text size"
+                                                            color: colors.text
+                                                            font.pixelSize: Theme.fs(10)
+                                                            font.weight: Font.DemiBold
+                                                        }
+
+                                                        Text {
+                                                            font.family: Theme.fontFamily
+                                                            text: "Shell live · new terminals at " + (Math.round(9 * colors.fontBase / 12 * 2) / 2) + "pt"
+                                                            color: colors.subtle
+                                                            font.pixelSize: Theme.fs(9)
+                                                        }
+                                                    }
+
+                                                    Button {
+                                                        onClicked: root.setTextSize(colors.fontBase - 1)
+                                                        contentItem: Text {
+                                                            font.family: Theme.fontFamily
+                                                            text: "-"
+                                                            color: colors.text
+                                                            font.pixelSize: Theme.fs(11)
+                                                            font.weight: Font.Bold
+                                                            horizontalAlignment: Text.AlignHCenter
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+                                                        background: Rectangle {
+                                                            radius: 4
+                                                            color: colors.cardAlt
+                                                            border.color: colors.border
+                                                            border.width: 1
+                                                            implicitWidth: 24
+                                                            implicitHeight: 22
+                                                        }
+                                                    }
+
+                                                    Text {
+                                                        font.family: Theme.fontFamily
+                                                        text: String(Math.round(colors.fontBase)) + "px"
+                                                        color: colors.text
+                                                        font.pixelSize: Theme.fs(10)
+                                                        font.weight: Font.DemiBold
+                                                    }
+
+                                                    Button {
+                                                        onClicked: root.setTextSize(colors.fontBase + 1)
+                                                        contentItem: Text {
+                                                            font.family: Theme.fontFamily
+                                                            text: "+"
+                                                            color: colors.text
+                                                            font.pixelSize: Theme.fs(11)
+                                                            font.weight: Font.Bold
+                                                            horizontalAlignment: Text.AlignHCenter
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+                                                        background: Rectangle {
+                                                            radius: 4
+                                                            color: colors.cardAlt
+                                                            border.color: colors.border
+                                                            border.width: 1
+                                                            implicitWidth: 24
+                                                            implicitHeight: 22
+                                                        }
+                                                    }
+                                                }
+
+                                                Slider {
+                                                    Layout.fillWidth: true
+                                                    from: 8
+                                                    to: 24
+                                                    stepSize: 1
+                                                    value: colors.fontBase
+                                                    onMoved: root.setTextSize(Math.round(value))
+                                                }
                                             }
 
                                             ColumnLayout {
@@ -1351,25 +1498,28 @@ PanelWindow {
                                                         spacing: 2
 
                                                         Text {
+                                                            font.family: Theme.fontFamily
                                                             text: root.brightnessLabel("display")
                                                             color: colors.text
-                                                            font.pixelSize: 10
+                                                            font.pixelSize: Theme.fs(10)
                                                             font.weight: Font.DemiBold
                                                         }
 
                                                         Text {
+                                                            font.family: Theme.fontFamily
                                                             text: root.brightnessDetail("display")
                                                             color: colors.subtle
-                                                            font.pixelSize: 9
+                                                            font.pixelSize: Theme.fs(9)
                                                         }
                                                     }
 
                                                     Button {
                                                         onClicked: root.setBrightness("display", root.brightnessPercent("display") - 5)
                                                         contentItem: Text {
+                                                            font.family: Theme.fontFamily
                                                             text: "-"
                                                             color: colors.text
-                                                            font.pixelSize: 11
+                                                            font.pixelSize: Theme.fs(11)
                                                             font.weight: Font.Bold
                                                             horizontalAlignment: Text.AlignHCenter
                                                             verticalAlignment: Text.AlignVCenter
@@ -1385,18 +1535,20 @@ PanelWindow {
                                                     }
 
                                                     Text {
+                                                        font.family: Theme.fontFamily
                                                         text: String(root.brightnessPercent("display")) + "%"
                                                         color: colors.text
-                                                        font.pixelSize: 10
+                                                        font.pixelSize: Theme.fs(10)
                                                         font.weight: Font.DemiBold
                                                     }
 
                                                     Button {
                                                         onClicked: root.setBrightness("display", root.brightnessPercent("display") + 5)
                                                         contentItem: Text {
+                                                            font.family: Theme.fontFamily
                                                             text: "+"
                                                             color: colors.text
-                                                            font.pixelSize: 11
+                                                            font.pixelSize: Theme.fs(11)
                                                             font.weight: Font.Bold
                                                             horizontalAlignment: Text.AlignHCenter
                                                             verticalAlignment: Text.AlignVCenter
@@ -1436,25 +1588,28 @@ PanelWindow {
                                                         spacing: 2
 
                                                         Text {
+                                                            font.family: Theme.fontFamily
                                                             text: root.brightnessLabel("keyboard")
                                                             color: colors.text
-                                                            font.pixelSize: 10
+                                                            font.pixelSize: Theme.fs(10)
                                                             font.weight: Font.DemiBold
                                                         }
 
                                                         Text {
+                                                            font.family: Theme.fontFamily
                                                             text: root.brightnessDetail("keyboard")
                                                             color: colors.subtle
-                                                            font.pixelSize: 9
+                                                            font.pixelSize: Theme.fs(9)
                                                         }
                                                     }
 
                                                     Button {
                                                         onClicked: root.setBrightness("keyboard", root.brightnessPercent("keyboard") - 10)
                                                         contentItem: Text {
+                                                            font.family: Theme.fontFamily
                                                             text: "-"
                                                             color: colors.text
-                                                            font.pixelSize: 11
+                                                            font.pixelSize: Theme.fs(11)
                                                             font.weight: Font.Bold
                                                             horizontalAlignment: Text.AlignHCenter
                                                             verticalAlignment: Text.AlignVCenter
@@ -1470,18 +1625,20 @@ PanelWindow {
                                                     }
 
                                                     Text {
+                                                        font.family: Theme.fontFamily
                                                         text: String(root.brightnessPercent("keyboard")) + "%"
                                                         color: colors.text
-                                                        font.pixelSize: 10
+                                                        font.pixelSize: Theme.fs(10)
                                                         font.weight: Font.DemiBold
                                                     }
 
                                                     Button {
                                                         onClicked: root.setBrightness("keyboard", root.brightnessPercent("keyboard") + 10)
                                                         contentItem: Text {
+                                                            font.family: Theme.fontFamily
                                                             text: "+"
                                                             color: colors.text
-                                                            font.pixelSize: 11
+                                                            font.pixelSize: Theme.fs(11)
                                                             font.weight: Font.Bold
                                                             horizontalAlignment: Text.AlignHCenter
                                                             verticalAlignment: Text.AlignVCenter
@@ -1510,7 +1667,7 @@ PanelWindow {
                                             Rectangle {
                                                 Layout.fillWidth: true
                                                 visible: root.batteryReady()
-                                                radius: 8
+                                                radius: Theme.rad(8)
                                                 color: colors.panel
                                                 border.color: colors.border
                                                 border.width: 1
@@ -1523,43 +1680,48 @@ PanelWindow {
                                                     spacing: 6
 
                                                     Text {
+                                                        font.family: Theme.fontFamily
                                                         text: "Battery"
                                                         color: colors.text
-                                                        font.pixelSize: 10
+                                                        font.pixelSize: Theme.fs(10)
                                                         font.weight: Font.DemiBold
                                                     }
 
                                                     Text {
+                                                        font.family: Theme.fontFamily
                                                         Layout.fillWidth: true
                                                         text: root.batteryLabel()
                                                         color: colors.text
-                                                        font.pixelSize: 10
+                                                        font.pixelSize: Theme.fs(10)
                                                         wrapMode: Text.WordWrap
                                                     }
 
                                                     Text {
+                                                        font.family: Theme.fontFamily
                                                         Layout.fillWidth: true
                                                         text: root.batteryStateText() + (root.batteryDurationLabel() ? "  •  " + root.batteryDurationLabel() : "")
                                                         color: colors.subtle
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: Theme.fs(9)
                                                         wrapMode: Text.WordWrap
                                                     }
 
                                                     Text {
+                                                        font.family: Theme.fontFamily
                                                         visible: root.batteryHealthLabel() !== "" || root.batteryRateLabel() !== "" || root.batteryEnergyLabel() !== ""
                                                         Layout.fillWidth: true
                                                         text: [root.batteryHealthLabel(), root.batteryRateLabel(), root.batteryEnergyLabel()].filter(function(part) { return part !== ""; }).join("  •  ")
                                                         color: colors.subtle
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: Theme.fs(9)
                                                         wrapMode: Text.WordWrap
                                                     }
 
                                                     Text {
+                                                        font.family: Theme.fontFamily
                                                         visible: root.batteryMetadataLabel() !== ""
                                                         Layout.fillWidth: true
                                                         text: root.batteryMetadataLabel()
                                                         color: colors.subtle
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: Theme.fs(9)
                                                         wrapMode: Text.WordWrap
                                                     }
                                                 }
@@ -1571,9 +1733,10 @@ PanelWindow {
                                                 spacing: 6
 
                                                 Text {
+                                                    font.family: Theme.fontFamily
                                                     text: "Power Profile"
                                                     color: colors.text
-                                                    font.pixelSize: 10
+                                                    font.pixelSize: Theme.fs(10)
                                                     font.weight: Font.DemiBold
                                                 }
 
@@ -1590,16 +1753,17 @@ PanelWindow {
                                                             readonly property bool activeChoice: root.powerProfileIsActive(choice.value)
                                                             Layout.fillWidth: true
                                                             implicitHeight: 34
-                                                            radius: 8
+                                                            radius: Theme.rad(8)
                                                             color: activeChoice ? colors.amberBg : colors.panel
                                                             border.color: activeChoice ? colors.amber : colors.border
                                                             border.width: 1
 
                                                             Text {
+                                                                font.family: Theme.fontFamily
                                                                 anchors.centerIn: parent
                                                                 text: choice.label
                                                                 color: activeChoice ? colors.amber : colors.text
-                                                                font.pixelSize: 9
+                                                                font.pixelSize: Theme.fs(9)
                                                                 font.weight: Font.DemiBold
                                                             }
 
@@ -1614,30 +1778,33 @@ PanelWindow {
                                                 }
 
                                                 Text {
+                                                    font.family: Theme.fontFamily
                                                     visible: root.powerProfileDegradationText() !== ""
                                                     Layout.fillWidth: true
                                                     text: root.powerProfileDegradationText()
                                                     color: colors.amber
-                                                    font.pixelSize: 9
+                                                    font.pixelSize: Theme.fs(9)
                                                     wrapMode: Text.WordWrap
                                                 }
 
                                                 Text {
+                                                    font.family: Theme.fontFamily
                                                     visible: root.powerProfileHoldText() !== ""
                                                     Layout.fillWidth: true
                                                     text: root.powerProfileHoldText()
                                                     color: colors.subtle
-                                                    font.pixelSize: 9
+                                                    font.pixelSize: Theme.fs(9)
                                                     wrapMode: Text.WordWrap
                                                 }
                                             }
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 visible: !root.hasBrightnessOrPowerControls()
                                                 Layout.fillWidth: true
                                                 text: "No display backlight, keyboard backlight, battery, or native power-profile controls are exposed on this host."
                                                 color: colors.subtle
-                                                font.pixelSize: 9
+                                                font.pixelSize: Theme.fs(9)
                                                 wrapMode: Text.WordWrap
                                             }
                                         }
@@ -1645,7 +1812,7 @@ PanelWindow {
 
                                     Rectangle {
                                         Layout.fillWidth: true
-                                        radius: 10
+                                        radius: Theme.rad(10)
                                         color: colors.cardAlt
                                         border.color: colors.lineSoft
                                         border.width: 1
@@ -1662,25 +1829,27 @@ PanelWindow {
                                                 spacing: 8
 
                                                 Text {
+                                                    font.family: Theme.fontFamily
                                                     Layout.fillWidth: true
                                                     text: "Audio"
                                                     color: colors.text
-                                                    font.pixelSize: 12
+                                                    font.pixelSize: Theme.fs(12)
                                                     font.weight: Font.DemiBold
                                                 }
 
                                                 Button {
                                                     onClicked: root.toggleMute()
                                                     contentItem: Text {
+                                                        font.family: Theme.fontFamily
                                                         text: root.audioMuted() ? "Unmute Out" : "Mute Out"
                                                         color: root.audioMuted() ? colors.amber : colors.text
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: Theme.fs(9)
                                                         font.weight: Font.Medium
                                                         horizontalAlignment: Text.AlignHCenter
                                                         verticalAlignment: Text.AlignVCenter
                                                     }
                                                     background: Rectangle {
-                                                        radius: 6
+                                                        radius: Theme.rad(6)
                                                         color: root.audioMuted() ? colors.amberBg : colors.cardAlt
                                                         border.color: root.audioMuted() ? colors.amber : colors.border
                                                         border.width: 1
@@ -1691,15 +1860,16 @@ PanelWindow {
                                                 Button {
                                                     onClicked: root.runDetached(["pavucontrol"])
                                                     contentItem: Text {
+                                                        font.family: Theme.fontFamily
                                                         text: "Mixer"
                                                         color: colors.text
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: Theme.fs(9)
                                                         font.weight: Font.Medium
                                                         horizontalAlignment: Text.AlignHCenter
                                                         verticalAlignment: Text.AlignVCenter
                                                     }
                                                     background: Rectangle {
-                                                        radius: 6
+                                                        radius: Theme.rad(6)
                                                         color: colors.cardAlt
                                                         border.color: colors.border
                                                         border.width: 1
@@ -1709,16 +1879,18 @@ PanelWindow {
                                             }
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 text: "Output"
                                                 color: colors.text
-                                                font.pixelSize: 10
+                                                font.pixelSize: Theme.fs(10)
                                                 font.weight: Font.DemiBold
                                             }
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 text: root.audioDetail()
                                                 color: colors.subtle
-                                                font.pixelSize: 10
+                                                font.pixelSize: Theme.fs(10)
                                             }
 
                                             Slider {
@@ -1743,7 +1915,7 @@ PanelWindow {
                                                     readonly property bool activeSink: root.audioSinkIsActive(sink)
                                                     Layout.fillWidth: true
                                                     implicitHeight: 34
-                                                    radius: 8
+                                                    radius: Theme.rad(8)
                                                     color: activeSink ? colors.blueBg : colors.panel
                                                     border.color: activeSink ? colors.blue : colors.border
                                                     border.width: 1
@@ -1754,10 +1926,11 @@ PanelWindow {
                                                         anchors.rightMargin: 10
 
                                                         Text {
+                                                            font.family: Theme.fontFamily
                                                             Layout.fillWidth: true
                                                             text: root.audioSinkLabel(sink)
                                                             color: activeSink ? colors.blue : colors.text
-                                                            font.pixelSize: 9
+                                                            font.pixelSize: Theme.fs(9)
                                                             font.weight: Font.Medium
                                                             elide: Text.ElideRight
                                                         }
@@ -1783,10 +1956,11 @@ PanelWindow {
                                                 spacing: 8
 
                                                 Text {
+                                                    font.family: Theme.fontFamily
                                                     Layout.fillWidth: true
                                                     text: "Input"
                                                     color: colors.text
-                                                    font.pixelSize: 10
+                                                    font.pixelSize: Theme.fs(10)
                                                     font.weight: Font.DemiBold
                                                 }
 
@@ -1794,15 +1968,16 @@ PanelWindow {
                                                     enabled: root.audioInputReady()
                                                     onClicked: root.toggleInputMute()
                                                     contentItem: Text {
+                                                        font.family: Theme.fontFamily
                                                         text: root.audioInputMuted() ? "Unmute In" : "Mute In"
                                                         color: !enabled ? colors.subtle : root.audioInputMuted() ? colors.amber : colors.text
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: Theme.fs(9)
                                                         font.weight: Font.Medium
                                                         horizontalAlignment: Text.AlignHCenter
                                                         verticalAlignment: Text.AlignVCenter
                                                     }
                                                     background: Rectangle {
-                                                        radius: 6
+                                                        radius: Theme.rad(6)
                                                         color: root.audioInputMuted() ? colors.amberBg : colors.cardAlt
                                                         border.color: root.audioInputMuted() ? colors.amber : colors.border
                                                         border.width: 1
@@ -1813,9 +1988,10 @@ PanelWindow {
                                             }
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 text: root.audioInputDetail()
                                                 color: colors.subtle
-                                                font.pixelSize: 10
+                                                font.pixelSize: Theme.fs(10)
                                             }
 
                                             Slider {
@@ -1836,7 +2012,7 @@ PanelWindow {
                                                     readonly property bool activeSource: root.audioSourceIsActive(source)
                                                     Layout.fillWidth: true
                                                     implicitHeight: 34
-                                                    radius: 8
+                                                    radius: Theme.rad(8)
                                                     color: activeSource ? colors.tealBg : colors.panel
                                                     border.color: activeSource ? colors.teal : colors.border
                                                     border.width: 1
@@ -1847,10 +2023,11 @@ PanelWindow {
                                                         anchors.rightMargin: 10
 
                                                         Text {
+                                                            font.family: Theme.fontFamily
                                                             Layout.fillWidth: true
                                                             text: root.audioSourceLabel(source)
                                                             color: activeSource ? colors.teal : colors.text
-                                                            font.pixelSize: 9
+                                                            font.pixelSize: Theme.fs(9)
                                                             font.weight: Font.Medium
                                                             elide: Text.ElideRight
                                                         }
@@ -1866,10 +2043,11 @@ PanelWindow {
                                             }
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 visible: root.audioSourceNodes().length === 0
                                                 text: "No input sources reported by PipeWire."
                                                 color: colors.subtle
-                                                font.pixelSize: 9
+                                                font.pixelSize: Theme.fs(9)
                                             }
                                         }
                                     }
@@ -1877,7 +2055,7 @@ PanelWindow {
                                     Rectangle {
                                         Layout.fillWidth: true
                                         visible: root.lidPolicySupported()
-                                        radius: 10
+                                        radius: Theme.rad(10)
                                         color: colors.cardAlt
                                         border.color: colors.lineSoft
                                         border.width: 1
@@ -1898,23 +2076,25 @@ PanelWindow {
                                                     spacing: 2
 
                                                     Text {
+                                                        font.family: Theme.fontFamily
                                                         text: "Lid & Sleep"
                                                         color: colors.text
-                                                        font.pixelSize: 12
+                                                        font.pixelSize: Theme.fs(12)
                                                         font.weight: Font.DemiBold
                                                     }
 
                                                     Text {
+                                                        font.family: Theme.fontFamily
                                                         Layout.fillWidth: true
                                                         text: root.lidPolicyStatusText()
                                                         color: (root.lidPolicyApplyError || root.lidInhibitActionError) ? colors.red : colors.subtle
-                                                        font.pixelSize: 10
+                                                        font.pixelSize: Theme.fs(10)
                                                         wrapMode: Text.WordWrap
                                                     }
                                                 }
 
                                                 Rectangle {
-                                                    radius: 7
+                                                    radius: Theme.rad(7)
                                                     color: root.lidInhibitActive() ? colors.greenBg : colors.panel
                                                     border.color: root.lidInhibitActive() ? colors.green : colors.border
                                                     border.width: 1
@@ -1922,11 +2102,12 @@ PanelWindow {
                                                     implicitHeight: 26
 
                                                     Text {
+                                                        font.family: Theme.fontFamily
                                                         id: lidOverrideBadge
                                                         anchors.centerIn: parent
                                                         text: root.lidInhibitActive() ? "Temporary Override On" : root.lidPolicyEnvironmentText()
                                                         color: root.lidInhibitActive() ? colors.green : colors.text
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: Theme.fs(9)
                                                         font.weight: Font.DemiBold
                                                     }
                                                 }
@@ -1934,7 +2115,7 @@ PanelWindow {
 
                                             Rectangle {
                                                 Layout.fillWidth: true
-                                                radius: 8
+                                                radius: Theme.rad(8)
                                                 color: root.lidPolicyPresetKeepAwakeActive() ? colors.greenBg : colors.panel
                                                 border.color: root.lidPolicyPresetKeepAwakeActive() ? colors.green : colors.border
                                                 border.width: 1
@@ -1951,17 +2132,19 @@ PanelWindow {
                                                         spacing: 2
 
                                                         Text {
+                                                            font.family: Theme.fontFamily
                                                             text: "Keep Awake On Lid Close"
                                                             color: root.lidPolicyPresetKeepAwakeActive() ? colors.green : colors.text
-                                                            font.pixelSize: 10
+                                                            font.pixelSize: Theme.fs(10)
                                                             font.weight: Font.DemiBold
                                                         }
 
                                                         Text {
+                                                            font.family: Theme.fontFamily
                                                             Layout.fillWidth: true
                                                             text: "Sets battery, AC, and docked lid-close actions to Ignore so the ThinkPad stays active when the lid closes."
                                                             color: colors.subtle
-                                                            font.pixelSize: 9
+                                                            font.pixelSize: Theme.fs(9)
                                                             wrapMode: Text.WordWrap
                                                         }
                                                     }
@@ -1970,15 +2153,16 @@ PanelWindow {
                                                         enabled: !root.lidPolicyControlsBusy()
                                                         onClicked: root.applyKeepAwakePreset()
                                                         contentItem: Text {
+                                                            font.family: Theme.fontFamily
                                                             text: root.lidPolicyPresetKeepAwakeActive() ? "Preset Active" : "Use Preset"
                                                             color: parent.enabled ? colors.text : colors.textDim
-                                                            font.pixelSize: 9
+                                                            font.pixelSize: Theme.fs(9)
                                                             font.weight: Font.DemiBold
                                                             horizontalAlignment: Text.AlignHCenter
                                                             verticalAlignment: Text.AlignVCenter
                                                         }
                                                         background: Rectangle {
-                                                            radius: 6
+                                                            radius: Theme.rad(6)
                                                             color: root.lidPolicyPresetKeepAwakeActive() ? colors.greenBg : colors.cardAlt
                                                             border.color: root.lidPolicyPresetKeepAwakeActive() ? colors.green : colors.border
                                                             border.width: 1
@@ -2013,7 +2197,7 @@ PanelWindow {
                                                     required property var modelData
                                                     readonly property var row: modelData
                                                     Layout.fillWidth: true
-                                                    radius: 8
+                                                    radius: Theme.rad(8)
                                                     color: colors.panel
                                                     border.color: colors.border
                                                     border.width: 1
@@ -2026,17 +2210,19 @@ PanelWindow {
                                                         spacing: 8
 
                                                         Text {
+                                                            font.family: Theme.fontFamily
                                                             text: row.label
                                                             color: colors.text
-                                                            font.pixelSize: 10
+                                                            font.pixelSize: Theme.fs(10)
                                                             font.weight: Font.DemiBold
                                                         }
 
                                                         Text {
+                                                            font.family: Theme.fontFamily
                                                             Layout.fillWidth: true
                                                             text: row.detail
                                                             color: colors.subtle
-                                                            font.pixelSize: 9
+                                                            font.pixelSize: Theme.fs(9)
                                                             wrapMode: Text.WordWrap
                                                         }
 
@@ -2051,7 +2237,7 @@ PanelWindow {
                                                                     required property var modelData
                                                                     readonly property var choice: modelData
                                                                     readonly property bool activeChoice: root.lidPolicyDraftValue(row.key) === choice.value
-                                                                    radius: 8
+                                                                    radius: Theme.rad(8)
                                                                     color: activeChoice ? colors.greenBg : colors.cardAlt
                                                                     border.color: activeChoice ? colors.green : colors.border
                                                                     border.width: 1
@@ -2060,11 +2246,12 @@ PanelWindow {
                                                                     opacity: root.lidPolicyControlsBusy() ? 0.6 : 1
 
                                                                     Text {
+                                                                        font.family: Theme.fontFamily
                                                                         id: lidChoiceLabel
                                                                         anchors.centerIn: parent
                                                                         text: choice.label
                                                                         color: activeChoice ? colors.green : colors.text
-                                                                        font.pixelSize: 9
+                                                                        font.pixelSize: Theme.fs(9)
                                                                         font.weight: Font.DemiBold
                                                                     }
 
@@ -2090,15 +2277,16 @@ PanelWindow {
                                                     enabled: !root.lidPolicyControlsBusy()
                                                     onClicked: root.toggleTemporaryLidInhibit()
                                                     contentItem: Text {
+                                                        font.family: Theme.fontFamily
                                                         text: root.lidInhibitActive() ? "Disable Temporary Keep Awake" : "Enable Temporary Keep Awake"
                                                         color: parent.enabled ? colors.text : colors.textDim
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: Theme.fs(9)
                                                         font.weight: Font.DemiBold
                                                         horizontalAlignment: Text.AlignHCenter
                                                         verticalAlignment: Text.AlignVCenter
                                                     }
                                                     background: Rectangle {
-                                                        radius: 6
+                                                        radius: Theme.rad(6)
                                                         color: root.lidInhibitActive() ? colors.greenBg : colors.cardAlt
                                                         border.color: root.lidInhibitActive() ? colors.green : colors.border
                                                         border.width: 1
@@ -2116,15 +2304,16 @@ PanelWindow {
                                                     enabled: root.lidPolicyDraftDirty && !root.lidPolicyControlsBusy()
                                                     onClicked: root.resetLidPolicyDraft()
                                                     contentItem: Text {
+                                                        font.family: Theme.fontFamily
                                                         text: "Reset"
                                                         color: parent.enabled ? colors.text : colors.textDim
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: Theme.fs(9)
                                                         font.weight: Font.DemiBold
                                                         horizontalAlignment: Text.AlignHCenter
                                                         verticalAlignment: Text.AlignVCenter
                                                     }
                                                     background: Rectangle {
-                                                        radius: 6
+                                                        radius: Theme.rad(6)
                                                         color: colors.cardAlt
                                                         border.color: colors.border
                                                         border.width: 1
@@ -2138,15 +2327,16 @@ PanelWindow {
                                                     enabled: root.lidPolicyDraftDirty && !root.lidPolicyControlsBusy()
                                                     onClicked: root.applyLidPolicyDraft()
                                                     contentItem: Text {
+                                                        font.family: Theme.fontFamily
                                                         text: root.lidPolicyApplyPending() ? "Applying..." : "Apply"
                                                         color: parent.enabled ? colors.text : colors.textDim
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: Theme.fs(9)
                                                         font.weight: Font.DemiBold
                                                         horizontalAlignment: Text.AlignHCenter
                                                         verticalAlignment: Text.AlignVCenter
                                                     }
                                                     background: Rectangle {
-                                                        radius: 6
+                                                        radius: Theme.rad(6)
                                                         color: colors.greenBg
                                                         border.color: colors.green
                                                         border.width: 1
@@ -2161,7 +2351,7 @@ PanelWindow {
 
                                     Rectangle {
                                         Layout.fillWidth: true
-                                        radius: 10
+                                        radius: Theme.rad(10)
                                         color: colors.cardAlt
                                         border.color: colors.lineSoft
                                         border.width: 1
@@ -2178,10 +2368,11 @@ PanelWindow {
                                                 spacing: 8
 
                                                 Text {
+                                                    font.family: Theme.fontFamily
                                                     Layout.fillWidth: true
                                                     text: "Bluetooth"
                                                     color: colors.text
-                                                    font.pixelSize: 12
+                                                    font.pixelSize: Theme.fs(12)
                                                     font.weight: Font.DemiBold
                                                 }
 
@@ -2189,15 +2380,16 @@ PanelWindow {
                                                     enabled: root.bluetoothAvailable()
                                                     onClicked: root.toggleBluetoothEnabled()
                                                     contentItem: Text {
+                                                        font.family: Theme.fontFamily
                                                         text: root.bluetoothEnabled() ? "BT Off" : "BT On"
                                                         color: !enabled ? colors.subtle : root.bluetoothEnabled() ? colors.amber : colors.teal
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: Theme.fs(9)
                                                         font.weight: Font.Medium
                                                         horizontalAlignment: Text.AlignHCenter
                                                         verticalAlignment: Text.AlignVCenter
                                                     }
                                                     background: Rectangle {
-                                                        radius: 6
+                                                        radius: Theme.rad(6)
                                                         color: root.bluetoothEnabled() ? colors.amberBg : colors.tealBg
                                                         border.color: root.bluetoothEnabled() ? colors.amber : colors.teal
                                                         border.width: 1
@@ -2209,15 +2401,16 @@ PanelWindow {
                                                 Button {
                                                     onClicked: root.runDetached(["blueman-manager"])
                                                     contentItem: Text {
+                                                        font.family: Theme.fontFamily
                                                         text: "Manager"
                                                         color: colors.text
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: Theme.fs(9)
                                                         font.weight: Font.Medium
                                                         horizontalAlignment: Text.AlignHCenter
                                                         verticalAlignment: Text.AlignVCenter
                                                     }
                                                     background: Rectangle {
-                                                        radius: 6
+                                                        radius: Theme.rad(6)
                                                         color: colors.cardAlt
                                                         border.color: colors.border
                                                         border.width: 1
@@ -2227,9 +2420,10 @@ PanelWindow {
                                             }
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 text: root.bluetoothDetail()
                                                 color: colors.subtle
-                                                font.pixelSize: 10
+                                                font.pixelSize: Theme.fs(10)
                                             }
 
                                             Repeater {
@@ -2241,7 +2435,7 @@ PanelWindow {
                                                     readonly property bool connected: !!(device && device.connected)
                                                     Layout.fillWidth: true
                                                     implicitHeight: 36
-                                                    radius: 8
+                                                    radius: Theme.rad(8)
                                                     color: connected ? colors.tealBg : colors.panel
                                                     border.color: connected ? colors.teal : colors.border
                                                     border.width: 1
@@ -2253,18 +2447,20 @@ PanelWindow {
                                                         spacing: 8
 
                                                         Text {
+                                                            font.family: Theme.fontFamily
                                                             Layout.fillWidth: true
                                                             text: root.stringOrEmpty(device && device.name) || "Bluetooth device"
                                                             color: connected ? colors.teal : colors.text
-                                                            font.pixelSize: 9
+                                                            font.pixelSize: Theme.fs(9)
                                                             font.weight: Font.Medium
                                                             elide: Text.ElideRight
                                                         }
 
                                                         Text {
+                                                            font.family: Theme.fontFamily
                                                             text: connected ? "Disconnect" : "Connect"
                                                             color: connected ? colors.teal : colors.subtle
-                                                            font.pixelSize: 8
+                                                            font.pixelSize: Theme.fs(8)
                                                             font.weight: Font.DemiBold
                                                         }
                                                     }
@@ -2280,24 +2476,26 @@ PanelWindow {
                                             }
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 visible: root.bluetoothAvailable() && root.bluetoothDevices().length === 0
                                                 text: "Bluetooth is available, but no paired devices are currently reported."
                                                 color: colors.subtle
-                                                font.pixelSize: 9
+                                                font.pixelSize: Theme.fs(9)
                                             }
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 visible: !root.bluetoothAvailable()
                                                 text: "No Bluetooth adapter detected on this host."
                                                 color: colors.subtle
-                                                font.pixelSize: 9
+                                                font.pixelSize: Theme.fs(9)
                                             }
                                         }
                                     }
 
                                     Rectangle {
                                         Layout.fillWidth: true
-                                        radius: 10
+                                        radius: Theme.rad(10)
                                         color: colors.cardAlt
                                         border.color: colors.lineSoft
                                         border.width: 1
@@ -2310,16 +2508,18 @@ PanelWindow {
                                             spacing: 8
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 text: "System Resources"
                                                 color: colors.text
-                                                font.pixelSize: 12
+                                                font.pixelSize: Theme.fs(12)
                                                 font.weight: Font.DemiBold
                                             }
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 text: root.systemStatsSummaryLabel()
                                                 color: colors.subtle
-                                                font.pixelSize: 10
+                                                font.pixelSize: Theme.fs(10)
                                             }
 
                                             RowLayout {
@@ -2329,16 +2529,17 @@ PanelWindow {
                                                 Rectangle {
                                                     Layout.fillWidth: true
                                                     implicitHeight: 34
-                                                    radius: 8
+                                                    radius: Theme.rad(8)
                                                     color: colors.panel
                                                     border.color: colors.border
                                                     border.width: 1
 
                                                     Text {
+                                                        font.family: Theme.fontFamily
                                                         anchors.centerIn: parent
                                                         text: root.systemStatsMemoryLabel()
                                                         color: colors.text
-                                                        font.pixelSize: 10
+                                                        font.pixelSize: Theme.fs(10)
                                                         font.weight: Font.DemiBold
                                                     }
                                                 }
@@ -2346,16 +2547,17 @@ PanelWindow {
                                                 Rectangle {
                                                     Layout.fillWidth: true
                                                     implicitHeight: 34
-                                                    radius: 8
+                                                    radius: Theme.rad(8)
                                                     color: colors.panel
                                                     border.color: colors.border
                                                     border.width: 1
 
                                                     Text {
+                                                        font.family: Theme.fontFamily
                                                         anchors.centerIn: parent
                                                         text: "Load " + Number(root.systemStatsState.load1 || 0).toFixed(2)
                                                         color: colors.text
-                                                        font.pixelSize: 10
+                                                        font.pixelSize: Theme.fs(10)
                                                         font.weight: Font.DemiBold
                                                     }
                                                 }
@@ -2363,16 +2565,17 @@ PanelWindow {
                                                 Rectangle {
                                                     Layout.fillWidth: true
                                                     implicitHeight: 34
-                                                    radius: 8
+                                                    radius: Theme.rad(8)
                                                     color: colors.panel
                                                     border.color: colors.border
                                                     border.width: 1
 
                                                     Text {
+                                                        font.family: Theme.fontFamily
                                                         anchors.centerIn: parent
                                                         text: root.systemStatsState.temperature_c !== null && root.systemStatsState.temperature_c !== undefined ? String(root.systemStatsState.temperature_c) + "°C" : "Temp --"
                                                         color: colors.text
-                                                        font.pixelSize: 10
+                                                        font.pixelSize: Theme.fs(10)
                                                         font.weight: Font.DemiBold
                                                     }
                                                 }

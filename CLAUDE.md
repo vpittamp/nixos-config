@@ -38,6 +38,133 @@ home-modules/       # User environment
 | `Alt+Ctrl+Tab` / 3-finger swipe ↑ | Window exposé grouped by monitor |
 | `Mod+grave` / `Mod+Escape` | Cycle focused app's windows / toggle last window (no UI) |
 | `Mod+Shift+D` | Cast toggle — TV as wireless display / stop |
+| `Mod+Ctrl+K` | Keybinding cheat sheet (launcher "Keys" mode; also `Ctrl+6` / `;k` inside the launcher) |
+
+Bindings are declared once in `home-modules/desktop/sway-keybindings-data.nix`
+(key, command, description, group). `sway-keybindings.nix` flattens that into
+sway's `bindsym` set and the runtime shell bakes the same list into its Keys
+sheet, so the sheet cannot drift from what sway runs — add bindings there, not
+as bare attrset lines. Volume keys use `wpctl` (no host has `pactl`);
+brightness keys go through `quickshell-brightness-key`, which steps
+`brightnessctl` and then shows the OSD.
+
+## Runtime Shell IPC (`runtime-shell`)
+
+Every shell surface is addressable by id, so a keybinding, hook, or script can
+open exactly the thing it wants without a wrapper script per function:
+
+```bash
+runtime-shell list                                  # surfaces + open state
+runtime-shell toggle keybindings                    # open if closed, close if open
+runtime-shell summon launcher '{"mode":"files","query":"nix"}'
+runtime-shell summon panel '{"section":"sessions"}'
+runtime-shell hide notifications
+runtime-shell call showOsd brightness 55            # any function on the shell target
+```
+
+Surfaces: `launcher` `keybindings` `panel` `settings` `expose` `agent-monitor`
+`power-menu` `notifications` `display-selector` `audio` `bluetooth` `cast`
+`lock` (summon only — it cannot be hidden over IPC).
+The OSD (volume / mic / brightness / touch-mode scale) is reactive for
+PipeWire changes from any source and driven by IPC for brightness.
+
+**Notifications persist** across shell restarts
+(`~/.local/state/quickshell-runtime-shell/notifications.json`): live toasts
+come back with their remaining lifetime, critical ones never expire, history
+is kept to `notifications.historyLimit`. Identical open notifications are
+coalesced; right-click dismisses a toast. `runtime-shell call
+replayNotifications 3` re-shows the last closed ones.
+
+**Agent usage chip** (after "Agents N" in the top bar; hidden until a record
+exists): Claude Code / Codex plan, 5-hour and weekly limits with reset times,
+today's tokens/prompts/sessions, tokens by day and by model. Left-click opens
+the panel, right-click refreshes, middle-click switches subscription;
+`runtime-shell summon agents`. Records come from Omarchy's MIT collectors
+(`quickshell-runtime-shell/agent-usage/*.py`) run by the
+`quickshell-agent-usage.timer` every 15 min into
+`~/.local/state/quickshell-runtime-shell/agents/usage/<agent>.json`; the shell
+file-watches them. "Sign-in expired" in the panel means `claude auth login`
+on that host; local token stats still show without it.
+
+**Themes** live in `quickshell-runtime-shell/themes.nix` (24 semantic base
+tokens + a terminal palette per theme): two hand-written zinc themes plus all
+22 Omarchy palettes (`themes/omarchy/*.toml`, converted with
+`builtins.fromTOML` — tokyo-night, catppuccin, gruvbox, nord, everforest,
+kanagawa, rose-pine, matte-black, …). surface runs `tokyo-night`. `Theme.qml`
+is generated from the configured theme (`programs.quickshell-runtime-shell.theme`)
+— never edit it — and every other token is derived inside it, parametrised
+on `dark`. `runtime-theme set <name>|toggle|list|current` restyles the shell
+live (it writes `~/.local/state/quickshell-runtime-shell/theme.json`, which
+the shell watches) and writes `~/.config/ghostty/theme.conf` for new
+terminals (herdr follows the terminal; press `Ctrl+Shift+,` in an open
+Ghostty to reload). Launcher "Themes" mode: `Ctrl+3` / `;t` — the highlighted theme is applied live as a preview; Enter keeps it, Esc reverts. Add a theme by
+adding an attrset to `themes.nix`; no QML changes.
+
+Each theme also carries a `style` block — `flat` (opaque cards, accent-tinted
+strong borders), `radiusScale` (0 square … 1 shadcn radii), `fontFamily`
+("" = system sans, "monospace" via fontconfig). Omarchy palettes ship
+Omarchy's chrome (flat, square, monospace); the zinc themes keep shadcn's.
+In QML never write a literal size/radius/family: use `Theme.fs(px)`,
+`Theme.rad(px)`, `Theme.fontFamily` (glyphs: `Theme.glyphFamily`), and the
+bars/OSD/overlays scale with `Theme.scale`.
+
+**Text size**: `runtime-theme text-size [8-24]` (or Devices pane → Text size)
+sets the shell's type root live (12 = built-in) and writes the matching
+Ghostty point size (9pt at 12px, ½pt steps) into `theme.conf` for new
+terminals. GTK is not scaled (no gsettings schemas installed). On the
+Surface's 1504-px panel the top bar's centre block clips at ≥14px — the
+cluster shrinks to the free span by design.
+
+**Hooks**: `runtime-hook <event> [args]` runs
+`~/.config/quickshell-runtime-shell/hooks/<event>` and `<event>.d/*`
+(`*.sample` skipped). Events: `theme-set <name> <dark|light>`,
+`text-size-set <px>`, `session-locked`, `session-unlocked`,
+`idle-screen <off|on>`, `post-activation`. Samples shipped: Claude Code
+light/dark sync, restart-shell-after-rebuild.
+
+**Crash → agent**: `quickshell-crash-watch.service` follows the journal for
+systemd-coredump entries and raises a critical toast with a *Diagnose with
+Claude* action; it opens a Ghostty running `claude` with the facts and a
+method (`quickshell-crash-diagnose <pid> … --print` shows the prompt).
+
+**Tailscale chip/panel** (after Wi-Fi): connect/disconnect, MagicDNS
+toggle (off→on is the fix for the empty-upstream SERVFAIL), exit node when a
+peer offers one, machine list (click copies IP, right-click DNS); right-click
+the chip copies this host's IP. `tailscale set` runs without sudo because
+`services.tailscale.extraSetFlags` carries `--operator=vpittamp`.
+`runtime-shell summon tailscale`.
+
+**Capture**: `capture screenshot [region|output|window]` (saves to
+`~/Pictures/Screenshots`, copies to the clipboard, notifies), `capture record
+start|stop|toggle|status` (wf-recorder → `~/Videos/Recordings`; a red REC chip
+with elapsed time appears first in the right cluster and stops on click),
+`capture ocr|qr [region|output]` (tesseract / zbar → clipboard), `capture
+color` (#rrggbb → clipboard). Keys: `Print` output, `Shift+Print` region,
+`Ctrl+Print` window, `Alt+Print` record toggle, `Super+Print` colour,
+`Super+Ctrl+Print` OCR, `Super+Shift+Print` QR.
+
+**Clock popup** (click the clock; `runtime-shell summon calendar`): month
+grid and reminders. `runtime-reminder <minutes> [message] | show | clear` —
+transient `systemd-run --user` timers that post a critical toast; the panel
+takes "30 check the oven" and lists what's pending.
+
+**Night light**: `quickshell-nightlight on|off|toggle|status` starts/stops a
+`wlsunset` user service (fixed schedule, `programs.quickshell-runtime-shell.nightlight.*`);
+toggle in the Displays popup. **Media chip** (left cluster, MPRIS): shows
+when something is playing or has a title; click play/pause, scroll tracks.
+**Tight bar**: right-cluster chips shed in priority order (disk, mem, gen,
+displays, health, moonlight, tailscale) until the centre block fits.
+Scripts the shell spawns get no PATH from the service — every runtime
+script exports its own coreutils PATH; do the same for new ones.
+
+**Lock + idle** are in-shell: `Mod+Ctrl+L` / power menu *Lock* /
+`lock-session` engage `windows/LockScreen.qml` (ext-session-lock + PAM
+`swaylock` service); `lock-session` falls back to swaylock if the shell is
+down. Idle is `programs.quickshell-runtime-shell.idle.{screenOffSeconds,lockSeconds}`
+(defaults 300 / 600, 0 disables), honours app idle inhibitors and pauses
+while casting or lid-inhibited. If the lock ever misbehaves: Ctrl+Alt+F2,
+`systemctl --user restart quickshell-runtime-shell` (sway keeps the session
+locked), then `XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 swaylock -f`.
 
 ## Walker/Elephant Launcher
 

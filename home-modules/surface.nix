@@ -78,6 +78,9 @@
   # Declarative PWA Installation
 
   programs.quickshell-runtime-shell = {
+    # Evaluating the Omarchy palettes here first (see themes.nix); the other
+    # hosts stay on zinc-dark until this is rolled out.
+    theme = "tokyo-night";
     enable = true;
     # Overlay toasts re-enabled 2026-08: the redesigned toast stack (hover-pause,
     # swipe-dismiss, animated, per-id stable) replaced the old static cards whose

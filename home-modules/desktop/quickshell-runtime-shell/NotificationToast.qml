@@ -57,7 +57,10 @@ Rectangle {
     }
 
     function syncCountdown() {
-        const ts = Number(itemData && itemData.timestamp) || 0;
+        // replayed_at is set when a toast is restored after a shell restart or
+        // replayed from history, so the countdown restarts without the
+        // history timestamp (and the "N min ago" label) being rewritten.
+        const ts = Number(itemData && (itemData.replayed_at || itemData.timestamp)) || 0;
         if (ts !== seenTimestamp) {
             seenTimestamp = ts;
             resetCountdown();
@@ -98,7 +101,7 @@ Rectangle {
     width: preferredWidth
     implicitWidth: preferredWidth
     implicitHeight: toastColumn.implicitHeight + 28
-    radius: 16
+    radius: Theme.rad(16)
     color: Theme.toastGlass
     border.color: critical ? Qt.tint(colorsObject.red, Theme.shadowSoft) : (cardHover.hovered ? Theme.borderStrong : Theme.border)
     border.width: 1
@@ -145,8 +148,16 @@ Rectangle {
         drag.minimumX: 0
         drag.maximumX: toast.slideOutX
         drag.threshold: 12
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
         onPressed: settleAnim.stop()
-        onClicked: toast.defaultInvoked(toast.notificationId)
+        // Right-click dismisses without invoking the sender's default action.
+        onClicked: function (mouse) {
+            if (mouse.button === Qt.RightButton) {
+                toast.dismissRequested(toast.notificationId);
+                return;
+            }
+            toast.defaultInvoked(toast.notificationId);
+        }
         onReleased: {
             if (toast.x > toast.width * 0.3) {
                 toast.dismissRequested(toast.notificationId);
@@ -223,7 +234,7 @@ Rectangle {
             Rectangle {
                 Layout.preferredWidth: 20
                 Layout.preferredHeight: 20
-                radius: 6
+                radius: Theme.rad(6)
                 color: toast.iconSource !== "" ? "transparent" : rootObject.notificationAvatarFill(itemData)
                 border.color: toast.iconSource !== "" ? "transparent" : Theme.edgeHighlightSoft
                 border.width: 1
@@ -237,19 +248,21 @@ Rectangle {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     visible: toast.iconSource === ""
                     anchors.centerIn: parent
                     text: rootObject.notificationAvatarText(itemData)
                     color: colorsObject.textDim
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fs(10)
                     font.weight: Font.DemiBold
                 }
             }
 
             Text {
+                font.family: Theme.fontFamily
                 text: rootObject.notificationAppLabel(itemData).toUpperCase()
                 color: toast.critical ? colorsObject.red : colorsObject.subtle
-                font.pixelSize: 9
+                font.pixelSize: Theme.fs(9)
                 font.letterSpacing: 0.8
                 font.weight: Font.DemiBold
                 elide: Text.ElideRight
@@ -257,9 +270,10 @@ Rectangle {
             }
 
             Text {
+                font.family: Theme.fontFamily
                 text: rootObject.notificationRelativeTime(itemData)
                 color: colorsObject.subtle
-                font.pixelSize: 9
+                font.pixelSize: Theme.fs(9)
                 font.weight: Font.Medium
             }
 
@@ -270,7 +284,7 @@ Rectangle {
             Rectangle {
                 Layout.preferredWidth: 24
                 Layout.preferredHeight: 24
-                radius: 8
+                radius: Theme.rad(8)
                 color: closeMouse.containsMouse ? colorsObject.redBg : Theme.elevationFaint
                 border.color: closeMouse.containsMouse ? colorsObject.red : Theme.elevation
                 border.width: 1
@@ -283,10 +297,11 @@ Rectangle {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     anchors.centerIn: parent
                     text: "×"
                     color: closeMouse.containsMouse ? colorsObject.red : colorsObject.subtle
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fs(12)
                     font.weight: Font.Bold
                 }
 
@@ -310,10 +325,11 @@ Rectangle {
                 spacing: 3
 
                 Text {
+                    font.family: Theme.fontFamily
                     Layout.fillWidth: true
                     text: rootObject.notificationHeadline(itemData)
                     color: colorsObject.text
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.fs(13)
                     lineHeight: 1.15
                     font.weight: Font.DemiBold
                     wrapMode: Text.Wrap
@@ -322,11 +338,12 @@ Rectangle {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     Layout.fillWidth: true
                     visible: rootObject.notificationBody(itemData).length > 0
                     text: rootObject.notificationBody(itemData)
                     color: colorsObject.textDim
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fs(11)
                     lineHeight: 1.2
                     wrapMode: Text.Wrap
                     maximumLineCount: toast.imageSource !== "" ? 3 : 4
@@ -342,7 +359,7 @@ Rectangle {
                 Layout.preferredWidth: 54
                 Layout.preferredHeight: 54
                 Layout.alignment: Qt.AlignTop
-                radius: 10
+                radius: Theme.rad(10)
                 color: Theme.elevationFaint
                 border.color: Theme.elevation
                 border.width: 1
@@ -368,12 +385,13 @@ Rectangle {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 30
-                radius: 10
+                radius: Theme.rad(10)
                 color: Theme.elevationFaint
                 border.color: replyField.activeFocus ? colorsObject.blueMuted : Theme.elevation
                 border.width: 1
 
                 TextField {
+                    font.family: Theme.fontFamily
                     id: replyField
                     anchors.fill: parent
                     anchors.leftMargin: 10
@@ -382,7 +400,7 @@ Rectangle {
                     color: colorsObject.text
                     placeholderText: rootObject.stringOrEmpty(itemData && itemData.inline_reply_placeholder) || "Reply…"
                     placeholderTextColor: colorsObject.subtle
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fs(11)
                     background: null
                     padding: 0
                     onAccepted: toast.submitReply()
@@ -393,7 +411,7 @@ Rectangle {
             Rectangle {
                 Layout.preferredWidth: sendLabel.implicitWidth + 20
                 Layout.preferredHeight: 30
-                radius: 10
+                radius: Theme.rad(10)
                 color: sendMouse.containsMouse ? colorsObject.blueBg : Theme.elevationFaint
                 border.color: sendMouse.containsMouse ? colorsObject.blue : Theme.elevation
                 border.width: 1
@@ -407,11 +425,12 @@ Rectangle {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     id: sendLabel
                     anchors.centerIn: parent
                     text: "Send"
                     color: sendMouse.containsMouse ? colorsObject.blue : colorsObject.text
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fs(10)
                     font.weight: Font.DemiBold
                 }
 
@@ -438,7 +457,7 @@ Rectangle {
                     required property var modelData
                     Layout.preferredHeight: 26
                     Layout.preferredWidth: pillLabel.implicitWidth + 22
-                    radius: 9
+                    radius: Theme.rad(9)
                     color: pillMouse.containsMouse ? Qt.tint(toast.accentColor, Theme.elevationStrong) : Theme.elevationSoft
                     border.color: pillMouse.containsMouse ? Qt.tint(toast.accentColor, Theme.elevationStrong) : Theme.elevation
                     border.width: 1
@@ -452,11 +471,12 @@ Rectangle {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: pillLabel
                         anchors.centerIn: parent
                         text: rootObject.notificationActionText(modelData)
                         color: colorsObject.text
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fs(10)
                         font.weight: Font.DemiBold
                     }
 
@@ -474,7 +494,7 @@ Rectangle {
                 visible: toast.canReply && !toast.replyOpen
                 Layout.preferredHeight: 26
                 Layout.preferredWidth: replyPillLabel.implicitWidth + 22
-                radius: 9
+                radius: Theme.rad(9)
                 color: replyPillMouse.containsMouse ? colorsObject.blueBg : Theme.elevationSoft
                 border.color: replyPillMouse.containsMouse ? colorsObject.blue : Theme.elevation
                 border.width: 1
@@ -488,11 +508,12 @@ Rectangle {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     id: replyPillLabel
                     anchors.centerIn: parent
                     text: "Reply"
                     color: replyPillMouse.containsMouse ? colorsObject.blue : colorsObject.text
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fs(10)
                     font.weight: Font.DemiBold
                 }
 

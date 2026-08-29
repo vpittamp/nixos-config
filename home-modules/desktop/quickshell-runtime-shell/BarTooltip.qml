@@ -65,7 +65,7 @@ PopupWindow {
         y: 1
         implicitWidth: Math.min(380, tipText.implicitWidth + 16)
         implicitHeight: tipText.implicitHeight + 10
-        radius: 8
+        radius: Theme.rad(8)
         gradient: Gradient {
             GradientStop {
                 position: 0.0
@@ -125,12 +125,13 @@ PopupWindow {
         }
 
         Text {
+            font.family: Theme.fontFamily
             id: tipText
             anchors.fill: parent
             anchors.margins: 8
             text: barTooltip.text
             color: barTooltip.colors.text
-            font.pixelSize: 10
+            font.pixelSize: Theme.fs(10)
             wrapMode: Text.WordWrap
         }
     }

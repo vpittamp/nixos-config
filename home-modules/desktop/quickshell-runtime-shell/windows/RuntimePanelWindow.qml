@@ -464,6 +464,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         anchors.centerIn: parent
                         text: "Runtime"
                         color: root.panelSection === "runtime" ? colors.text : colors.muted
@@ -492,6 +493,7 @@ PanelWindow {
                     Layout.preferredWidth: stalePillText.implicitWidth + 14
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: stalePillText
                         anchors.centerIn: parent
                         text: "reconnecting…"
@@ -518,6 +520,7 @@ PanelWindow {
                 visible: root.notificationsBackendNative() || root.notificationFeed.length > 0
 
                 Text {
+                    font.family: Theme.fontFamily
                     text: "Notifications"
                     color: colors.text
                     font.pixelSize: root.fontTitle
@@ -533,6 +536,7 @@ PanelWindow {
                     border.width: 1
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: notificationSectionCount
                         anchors.centerIn: parent
                         text: root.notificationDisplayCount(root.notificationUnreadCount())
@@ -555,6 +559,7 @@ PanelWindow {
                     Layout.preferredWidth: notificationDndText.implicitWidth + 12
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: notificationDndText
                         anchors.centerIn: parent
                         text: "DND"
@@ -598,6 +603,7 @@ PanelWindow {
                     Layout.preferredWidth: notificationToggleText.implicitWidth + 16
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: notificationToggleText
                         anchors.centerIn: parent
                         text: root.notificationCenterVisible ? "Hide" : "Show"
@@ -633,6 +639,7 @@ PanelWindow {
                     Layout.preferredWidth: notificationClearText.implicitWidth + 16
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: notificationClearText
                         anchors.centerIn: parent
                         text: "Clear"
@@ -712,15 +719,17 @@ PanelWindow {
                                 spacing: 6
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     text: modelData.expanded ? "▾" : "▸"
                                     color: colors.subtle
-                                    font.pixelSize: 9
+                                    font.pixelSize: Theme.fs(9)
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     text: modelData.label
                                     color: colors.textDim
-                                    font.pixelSize: 10
+                                    font.pixelSize: Theme.fs(10)
                                     font.weight: Font.DemiBold
                                     elide: Text.ElideRight
                                     Layout.maximumWidth: notificationRailList.width * 0.5
@@ -730,17 +739,18 @@ PanelWindow {
                                     visible: modelData.count > 1
                                     Layout.preferredHeight: 15
                                     Layout.preferredWidth: groupCountText.implicitWidth + 10
-                                    radius: 7
+                                    radius: Theme.rad(7)
                                     color: modelData.unread > 0 ? colors.blueBg : Theme.elevationFaint
                                     border.color: modelData.unread > 0 ? colors.blueMuted : Theme.elevation
                                     border.width: 1
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         id: groupCountText
                                         anchors.centerIn: parent
                                         text: modelData.count
                                         color: modelData.unread > 0 ? colors.blue : colors.subtle
-                                        font.pixelSize: 8
+                                        font.pixelSize: Theme.fs(8)
                                         font.weight: Font.DemiBold
                                     }
                                 }
@@ -750,10 +760,11 @@ PanelWindow {
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     visible: groupHeaderMouse.containsMouse || groupClearMouse.containsMouse
                                     text: "clear"
                                     color: groupClearMouse.containsMouse ? colors.red : colors.subtle
-                                    font.pixelSize: 9
+                                    font.pixelSize: Theme.fs(9)
                                     font.weight: Font.DemiBold
 
                                     MouseArea {
@@ -810,10 +821,11 @@ PanelWindow {
                         text: root.notificationDnd ? "󰂛" : "󰂚"
                         color: colors.subtle
                         font.family: "JetBrainsMono Nerd Font"
-                        font.pixelSize: 16
+                        font.pixelSize: Theme.fs(16)
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         Layout.alignment: Qt.AlignHCenter
                         text: root.notificationDnd ? "Do not disturb" : "No notifications"
                         color: colors.subtle
@@ -861,6 +873,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         Layout.fillWidth: true
                         visible: panelWindow.runtimePanelLocalCollapsed("sessions")
                         text: "spaces and agents"
@@ -902,6 +915,7 @@ PanelWindow {
                                 spacing: 8
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     Layout.preferredWidth: 12
                                     horizontalAlignment: Text.AlignHCenter
                                     text: panelWindow.herdrSpacesExpanded ? "▾" : "▸"
@@ -911,6 +925,7 @@ PanelWindow {
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     text: "spaces"
                                     color: colors.text
                                     font.pixelSize: root.fontBody
@@ -926,6 +941,7 @@ PanelWindow {
                                     border.width: 0
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         id: spacesCountText
                                         anchors.centerIn: parent
                                         text: String(panelWindow.spaceEntries.length)
@@ -1038,6 +1054,7 @@ PanelWindow {
                                     spacing: 8
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         Layout.preferredWidth: 12
                                         horizontalAlignment: Text.AlignHCenter
                                         text: root.herdrSpaceChevron(space)
@@ -1058,11 +1075,12 @@ PanelWindow {
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         Layout.preferredWidth: 12
                                         horizontalAlignment: Text.AlignHCenter
                                         text: root.herdrSpaceStatusDot(space)
                                         color: root.herdrSpaceStatusColor(space)
-                                        font.pixelSize: 12
+                                        font.pixelSize: Theme.fs(12)
                                         font.weight: Font.DemiBold
                                     }
 
@@ -1082,6 +1100,7 @@ PanelWindow {
                                         opacity: herdrSpaceRow.spaceFocused ? 1.0 : 0.85
 
                                         Text {
+                                            font.family: Theme.fontFamily
                                             anchors.centerIn: parent
                                             text: spaceHostChip.hostTok.monogram
                                             color: spaceHostChip.hostTok.foreground
@@ -1105,6 +1124,7 @@ PanelWindow {
                                         spacing: 1
 
                                         Text {
+                                            font.family: Theme.fontFamily
                                             Layout.fillWidth: true
                                             text: root.herdrSpaceTitle(space)
                                             color: herdrSpaceRow.spaceFocused ? colors.text : colors.textDim
@@ -1119,6 +1139,7 @@ PanelWindow {
                                             spacing: 5
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 Layout.fillWidth: true
                                                 text: herdrSpaceRow.metaLabel
                                                 visible: text.length > 0
@@ -1137,6 +1158,7 @@ PanelWindow {
                                                 Layout.preferredWidth: herdrSpaceGitText.implicitWidth + 10
 
                                                 Text {
+                                                    font.family: Theme.fontFamily
                                                     id: herdrSpaceGitText
                                                     anchors.centerIn: parent
                                                     text: herdrSpaceRow.gitChipText
@@ -1186,6 +1208,7 @@ PanelWindow {
                             spacing: 8
 
                             Text {
+                                font.family: Theme.fontFamily
                                 text: "agents"
                                 color: colors.text
                                 font.pixelSize: root.fontBody
@@ -1201,6 +1224,7 @@ PanelWindow {
                                 border.width: 0
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     id: agentsCountText
                                     anchors.centerIn: parent
                                     text: String(panelWindow.sessionEntries.length)
@@ -1321,6 +1345,7 @@ PanelWindow {
                                         }
 
                                         Text {
+                                            font.family: Theme.fontFamily
                                             text: root.stringOrEmpty(headerData && headerData.label)
                                             color: colors.textDim
                                             font.pixelSize: root.fontLabel
@@ -1336,6 +1361,7 @@ PanelWindow {
                                             border.width: 1
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 id: headerCountText
                                                 anchors.centerIn: parent
                                                 text: String(Number(headerData && headerData.count || 0))

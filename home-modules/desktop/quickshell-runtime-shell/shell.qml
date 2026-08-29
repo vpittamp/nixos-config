@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Bluetooth
 import Quickshell.I3
 import Quickshell.Io
+import Quickshell.Services.Mpris
 import Quickshell.Services.Notifications
 import Quickshell.Services.Pipewire
 import Quickshell.Services.SystemTray
@@ -31,6 +32,18 @@ ShellRoot {
     readonly property var settingsCommandsList: settingsWindow ? settingsWindow.settingsCommandsListRef : null
     readonly property var clock: runtimeServices ? runtimeServices.clockRef : null
     readonly property var launcherFocusTimer: runtimeServices ? runtimeServices.launcherFocusTimerRef : null
+    readonly property var osdHideTimer: runtimeServices ? runtimeServices.osdHideTimerRef : null
+    readonly property var notificationStore: runtimeServices ? runtimeServices.notificationStoreRef : null
+    readonly property var agentUsageRefreshProcess: runtimeServices ? runtimeServices.agentUsageRefreshProcessRef : null
+    readonly property var tailscaleStatusProcess: runtimeServices ? runtimeServices.tailscaleStatusProcessRef : null
+    readonly property var tailscaleActionProcess: runtimeServices ? runtimeServices.tailscaleActionProcessRef : null
+    readonly property var tailscaleNoticeTimer: runtimeServices ? runtimeServices.tailscaleNoticeTimerRef : null
+    readonly property var reminderListProcess: runtimeServices ? runtimeServices.reminderListProcessRef : null
+    readonly property var captureStatusProcess: runtimeServices ? runtimeServices.captureStatusProcessRef : null
+    readonly property var reminderActionProcess: runtimeServices ? runtimeServices.reminderActionProcessRef : null
+    readonly property var nightlightStatusProcess: runtimeServices ? runtimeServices.nightlightStatusProcessRef : null
+    readonly property var nightlightActionProcess: runtimeServices ? runtimeServices.nightlightActionProcessRef : null
+    readonly property var notificationPersistTimer: runtimeServices ? runtimeServices.notificationPersistTimerRef : null
     readonly property var launcherQueryDebounce: runtimeServices ? runtimeServices.launcherQueryDebounceRef : null
     readonly property var launcherSessionSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherSessionSwitcherOpenTimerRef : null
     readonly property var launcherWindowSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherWindowSwitcherOpenTimerRef : null
@@ -94,6 +107,66 @@ ShellRoot {
             error: false
         })
     property var notificationFeed: []
+    // Persisted to notificationStore (see persistNotifications) so toasts and
+    // history survive a shell restart. Restored items have no runtime
+    // Notification object: dismiss/expire update the feed directly and
+    // sender actions are inert, but shell-side actions (Herdr focus) still work.
+    property bool notificationsRestored: false
+    onNotificationFeedChanged: {
+        if (notificationsRestored && notificationPersistTimer) {
+            notificationPersistTimer.restart();
+        }
+    }
+
+    // ----- Session lock + idle -----
+    // sessionLocked drives windows/LockScreen.qml (ext-session-lock + PAM);
+    // only PAM success clears it. Idle timers live in RuntimeServices and are
+    // gated by idleInhibited so a live cast or an explicit lid inhibit never
+    // gets locked or blanked from under the user.
+    property bool sessionLocked: false
+    property bool idleScreenOff: false
+    readonly property bool idleInhibited: boolOrFalse(castState && castState.active)
+        || boolOrFalse(lidPolicyState && lidPolicyState.inhibitActive)
+    readonly property string clockTime: clock && clock.date ? Qt.formatDateTime(clock.date, "h:mm") : ""
+    readonly property string clockDate: clock && clock.date ? Qt.formatDateTime(clock.date, "dddd, MMMM d") : ""
+
+    function lockSession() {
+        if (sessionLocked) {
+            return "ok";
+        }
+        closeBarPopups();
+        launcherVisible = false;
+        sessionLocked = true;
+        return "ok";
+    }
+
+    function handleIdleScreen(idle) {
+        idleScreenOff = !!idle;
+        runDetached(["swaymsg", idle ? "output * power off" : "output * power on"]);
+        runDetached([shellConfig.hookBin, "idle-screen", idle ? "off" : "on"]);
+    }
+
+    // One line for the lock screen: how the AI sessions are doing while the
+    // desk is unattended, so a blocked agent is visible without unlocking.
+    function lockAgentSummary() {
+        const sessions = arrayOrEmpty(activeSessions());
+        if (!sessions.length) {
+            return "";
+        }
+        let working = 0, blocked = 0, done = 0;
+        for (let i = 0; i < sessions.length; i += 1) {
+            const phase = sessionPhase(sessions[i]);
+            if (phase === "working") working += 1;
+            else if (phase === "blocked") blocked += 1;
+            else if (phase === "done") done += 1;
+        }
+        const parts = [];
+        if (working) parts.push(working + " working");
+        if (blocked) parts.push(blocked + " blocked");
+        if (done) parts.push(done + " done");
+        return sessions.length + " AI session" + (sessions.length === 1 ? "" : "s") + (parts.length ? " · " + parts.join(", ") : "");
+    }
+
     property var notificationRuntimeMap: ({})
     property var notificationLifecycleConnected: ({})
     property bool notificationCenterVisible: false
@@ -192,7 +265,592 @@ ShellRoot {
     property bool dockedMode: true
     property bool powerMenuVisible: false
     property bool castPopupVisible: false
+    property bool agentsPopupVisible: false
+    property bool tailscalePopupVisible: false
+    property bool clockPopupVisible: false
+
+    // ----- Calendar / reminders (clock popup) -----
+    property var calendarMonth: new Date()
+    property var reminders: []
+
+    function calendarShift(months) {
+        const next = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + months, 1);
+        calendarMonth = next;
+    }
+
+    function calendarToday() {
+        calendarMonth = new Date();
+    }
+
+    function calendarTitle() {
+        return Qt.formatDate(calendarMonth, "MMMM yyyy");
+    }
+
+    function openClockPopup(outputName) {
+        closeBarPopups();
+        barPopupOutputName = stringOrEmpty(outputName) || focusedOutputName();
+        calendarToday();
+        refreshReminders();
+        clockPopupVisible = true;
+    }
+
+    function parseReminders(text) {
+        try {
+            const parsed = JSON.parse(stringOrEmpty(text).trim() || "[]");
+            reminders = Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            reminders = [];
+        }
+    }
+
+    function refreshReminders() {
+        if (reminderListProcess && !reminderListProcess.running) {
+            reminderListProcess.running = true;
+        }
+    }
+
+    // "30 Check the oven" / "in 30m check the oven" / "45" → minutes + message.
+    function addReminder(text) {
+        const raw = stringOrEmpty(text).trim().replace(/^in\s+/i, "");
+        const match = raw.match(/^(\d+)\s*(m|min|mins|minutes|h|hr|hours)?\s*(.*)$/i);
+        if (!match) {
+            return "say e.g. \"30 check the oven\"";
+        }
+        let minutes = Number(match[1]);
+        if (/^h/i.test(stringOrEmpty(match[2]))) {
+            minutes *= 60;
+        }
+        if (!(minutes >= 1)) {
+            return "minutes must be at least 1";
+        }
+        const message = stringOrEmpty(match[3]) || "Reminder";
+        if (!reminderActionProcess || reminderActionProcess.running) {
+            return "busy";
+        }
+        reminderActionProcess.command = [shellConfig.reminderBin, String(minutes), message];
+        reminderActionProcess.running = true;
+        return "ok";
+    }
+
+    function clearReminders() {
+        if (!reminderActionProcess || reminderActionProcess.running) {
+            return;
+        }
+        reminderActionProcess.command = [shellConfig.reminderBin, "clear"];
+        reminderActionProcess.running = true;
+    }
+
+    function reminderDueText(item) {
+        const remaining = Number(item && item.remaining) || 0;
+        if (remaining < 60) return "under a minute";
+        const minutes = Math.round(remaining / 60);
+        if (minutes < 60) return "in " + minutes + "m";
+        return "in " + Math.floor(minutes / 60) + "h " + (minutes % 60) + "m";
+    }
+
+    // ----- Capture (recording indicator) -----
+    property bool captureRecording: false
+    property var captureState: ({})
+
+    function parseCaptureStatus(text) {
+        try {
+            const parsed = JSON.parse(stringOrEmpty(text).trim() || "{}");
+            captureState = parsed && typeof parsed === "object" ? parsed : {};
+        } catch (error) {
+            captureState = {};
+        }
+        captureRecording = boolOrFalse(captureState.recording);
+    }
+
+    function refreshCapture() {
+        if (captureStatusProcess && !captureStatusProcess.running) {
+            captureStatusProcess.running = true;
+        }
+    }
+
+    function captureElapsedText() {
+        const started = Number(captureState && captureState.started) || 0;
+        if (!started) return "REC";
+        const now = clock && clock.date ? Math.floor(clock.date.getTime() / 1000) : Math.floor(Date.now() / 1000);
+        const seconds = Math.max(0, now - started);
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return "REC " + m + ":" + (s < 10 ? "0" : "") + s;
+    }
+
+    function stopCapture() {
+        runDetached([shellConfig.captureBin, "record", "stop"]);
+    }
+
+    // ----- Night light -----
+    property bool nightlightActive: false
+
+    function refreshNightlight() {
+        if (nightlightStatusProcess && !nightlightStatusProcess.running) {
+            nightlightStatusProcess.running = true;
+        }
+    }
+
+    function toggleNightlight() {
+        if (!nightlightActionProcess || nightlightActionProcess.running) {
+            return "busy";
+        }
+        nightlightActionProcess.command = [shellConfig.nightlightBin, "toggle"];
+        nightlightActionProcess.running = true;
+        showOsd("scale", nightlightActive ? 0 : 100, false, nightlightActive ? "Night light off" : "Night light on");
+        return "ok";
+    }
+
+    // ----- Media (MPRIS) -----
+    // The chip follows the playing player, else the first one; hidden when
+    // nothing publishes MPRIS.
+    readonly property var mprisPlayers: Mpris.players ? Mpris.players.values : []
+
+    function mprisPlayer() {
+        const players = arrayOrEmpty(mprisPlayers);
+        for (let i = 0; i < players.length; i += 1) {
+            if (players[i] && players[i].playbackState === MprisPlaybackState.Playing) {
+                return players[i];
+            }
+        }
+        return players.length ? players[0] : null;
+    }
+
+    // A player with nothing loaded (a Chrome tab that once played) is noise.
+    function mprisAvailable() {
+        const player = mprisPlayer();
+        return !!(player && (player.playbackState === MprisPlaybackState.Playing || stringOrEmpty(player.trackTitle)));
+    }
+
+    function mprisPlaying() {
+        const player = mprisPlayer();
+        return !!(player && player.playbackState === MprisPlaybackState.Playing);
+    }
+
+    function mprisTitle() {
+        const player = mprisPlayer();
+        if (!player) return "";
+        const title = stringOrEmpty(player.trackTitle);
+        const artist = stringOrEmpty(player.trackArtist);
+        const text = title ? (artist ? artist + " — " + title : title) : stringOrEmpty(player.identity);
+        return text.length > 34 ? text.slice(0, 33) + "…" : text;
+    }
+
+    function mprisToggle() {
+        const player = mprisPlayer();
+        if (!player || !player.canTogglePlaying) return "no player";
+        player.togglePlaying();
+        return "ok";
+    }
+
+    function mprisNext() {
+        const player = mprisPlayer();
+        if (player && player.canGoNext) player.next();
+    }
+
+    function mprisPrevious() {
+        const player = mprisPlayer();
+        if (player && player.canGoPrevious) player.previous();
+    }
+
+    // ----- Tailscale -----
+    // Fed by quickshell-tailscale-status every 30s (and after every action);
+    // actions run through quickshell-tailscale-action, which needs tailscaled's
+    // --operator to be this user (services.tailscale.extraSetFlags).
+    property var tailscaleState: ({ available: false, running: false, peers: [], exitNodes: [], self: {} })
+    property bool tailscaleBusy: false
+    property string tailscaleNotice: ""
+
+    function parseTailscaleStatus(text) {
+        const raw = stringOrEmpty(text).trim();
+        if (!raw) {
+            return;
+        }
+        try {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === "object") {
+                tailscaleState = parsed;
+            }
+        } catch (error) {
+            console.warn("tailscale.status:", error);
+        }
+    }
+
+    function refreshTailscale() {
+        if (tailscaleStatusProcess && !tailscaleStatusProcess.running) {
+            tailscaleStatusProcess.running = true;
+        }
+    }
+
+    function tailscaleAvailable() {
+        return boolOrFalse(tailscaleState && tailscaleState.available);
+    }
+
+    function tailscaleRunning() {
+        return boolOrFalse(tailscaleState && tailscaleState.running);
+    }
+
+    function tailscaleAction(args) {
+        if (!tailscaleActionProcess || tailscaleActionProcess.running) {
+            return "busy";
+        }
+        tailscaleBusy = true;
+        tailscaleActionProcess.command = [shellConfig.tailscaleActionBin].concat(arrayOrEmpty(args));
+        tailscaleActionProcess.running = true;
+        return "ok";
+    }
+
+    function tailscaleCopy(text, what) {
+        const value = stringOrEmpty(text);
+        if (!value) {
+            return;
+        }
+        runDetached([shellConfig.tailscaleActionBin, "copy", value]);
+        tailscaleNotice = "Copied " + (what || value);
+        if (tailscaleNoticeTimer) {
+            tailscaleNoticeTimer.restart();
+        }
+    }
+
+    function tailscaleChipLabel() {
+        if (!tailscaleRunning()) {
+            return "Off";
+        }
+        const exitNode = tailscaleState.exitNode;
+        if (exitNode && exitNode.hostName) {
+            return "via " + exitNode.hostName;
+        }
+        return String(Number(tailscaleState.onlineCount) || 0);
+    }
+
+    // Hooks: let scripts outside the shell react to lock and idle.
+    onSessionLockedChanged: runDetached([shellConfig.hookBin, sessionLocked ? "session-locked" : "session-unlocked"])
+
+    // ----- Agent usage (Claude Code / Codex subscriptions) -----
+    // Records are whatever quickshell-agent-usage-update wrote to
+    // agentUsageDir; RuntimeServices file-watches one FileView per agent and
+    // hands the JSON here. Nothing below knows how the numbers were made.
+    property var agentUsageRecords: ({})
+    property string agentUsageSelected: ""
+    property bool agentUsageRefreshing: false
+
+    function setAgentUsageRecord(agentId, text) {
+        const id = stringOrEmpty(agentId);
+        if (!id) {
+            return;
+        }
+        let record = null;
+        try {
+            const raw = stringOrEmpty(text).trim();
+            record = raw ? JSON.parse(raw) : null;
+        } catch (error) {
+            console.warn("agents.record:", id, error);
+            record = null;
+        }
+        const next = Object.assign({}, agentUsageRecords);
+        if (record && typeof record === "object") {
+            next[id] = record;
+        } else {
+            delete next[id];
+        }
+        agentUsageRecords = next;
+        if (!agentUsageSelected || !agentUsageRecords[agentUsageSelected]) {
+            const list = agentUsageList();
+            agentUsageSelected = list.length ? stringOrEmpty(list[0].id) : "";
+        }
+    }
+
+    function agentUsageList() {
+        const order = arrayOrEmpty(shellConfig.agentUsageAgents);
+        const out = [];
+        for (let i = 0; i < order.length; i += 1) {
+            const record = agentUsageRecords[order[i]];
+            if (record && boolOrFalse(record.ready)) {
+                out.push(record);
+            }
+        }
+        return out;
+    }
+
+    function agentUsageAvailable() {
+        return agentUsageList().length > 0;
+    }
+
+    function agentUsageCurrent() {
+        const selected = agentUsageRecords[agentUsageSelected];
+        if (selected && boolOrFalse(selected.ready)) {
+            return selected;
+        }
+        const list = agentUsageList();
+        return list.length ? list[0] : null;
+    }
+
+    function selectAgentUsage(agentId) {
+        if (agentUsageRecords[stringOrEmpty(agentId)]) {
+            agentUsageSelected = stringOrEmpty(agentId);
+        }
+    }
+
+    function cycleAgentUsage() {
+        const list = agentUsageList();
+        if (!list.length) {
+            return "no agent usage records";
+        }
+        let index = -1;
+        for (let i = 0; i < list.length; i += 1) {
+            if (stringOrEmpty(list[i].id) === agentUsageSelected) {
+                index = i;
+            }
+        }
+        agentUsageSelected = stringOrEmpty(list[(index + 1) % list.length].id);
+        return "ok";
+    }
+
+    function refreshAgentUsage() {
+        if (!agentUsageRefreshProcess) {
+            return "refresh unavailable";
+        }
+        if (agentUsageRefreshProcess.running) {
+            return "already refreshing";
+        }
+        agentUsageRefreshing = true;
+        agentUsageRefreshProcess.running = true;
+        return "ok";
+    }
+
+    function agentUsageShortName(agentId) {
+        const id = stringOrEmpty(agentId);
+        if (id === "claude") return "Claude";
+        if (id === "codex") return "Codex";
+        return id ? id.charAt(0).toUpperCase() + id.slice(1) : "Agent";
+    }
+
+    function agentUsageIcon(agentId) {
+        const id = stringOrEmpty(agentId);
+        if (id === "claude") return "file://" + shellConfig.claudeIcon;
+        if (id === "codex") return "file://" + shellConfig.codexIcon;
+        return "file://" + shellConfig.aiFallbackIcon;
+    }
+
+    function formatTokenCount(n) {
+        const value = Number(n || 0);
+        if (!isFinite(value) || value <= 0) return "0";
+        if (value >= 1e9) return (value / 1e9).toFixed(1) + "B";
+        if (value >= 1e6) return (value / 1e6).toFixed(1) + "M";
+        if (value >= 1e3) return (value / 1e3).toFixed(1) + "K";
+        return String(Math.round(value));
+    }
+
+    // Model ids arrive hyphenated with the version split across segments
+    // (claude-fable-5, gpt-5.6-sol): rejoin the numeric run and title-case.
+    function friendlyModelName(modelId) {
+        const name = stringOrEmpty(modelId).replace(/^claude-/, "").replace(/-\d{8}$/, "");
+        if (!name) return "Unknown";
+        const parts = name.split("-");
+        const words = [];
+        let version = [];
+        for (let i = 0; i < parts.length; i += 1) {
+            const part = parts[i];
+            if (!part) continue;
+            if (/^\d/.test(part)) {
+                version.push(part);
+                continue;
+            }
+            if (version.length) {
+                words.push(version.join("."));
+                version = [];
+            }
+            words.push(part === "gpt" ? "GPT" : part === "glm" ? "GLM" : part.charAt(0).toUpperCase() + part.slice(1));
+        }
+        if (version.length) words.push(version.join("."));
+        return words.length ? words.join(" ") : "Unknown";
+    }
+
+    function agentUsagePercent(value) {
+        const n = Number(value);
+        if (!isFinite(n) || n < 0) return -1;
+        return Math.round(n <= 1 ? n * 100 : n);
+    }
+
+    function agentUsageResetText(iso) {
+        const at = Date.parse(stringOrEmpty(iso));
+        if (isNaN(at)) return "";
+        const now = clock && clock.date ? clock.date.getTime() : Date.now();
+        const ms = at - now;
+        if (ms <= 0) return "resets now";
+        const hours = Math.floor(ms / 3600000);
+        const minutes = Math.floor((ms % 3600000) / 60000);
+        if (hours >= 48) return "resets in " + Math.round(hours / 24) + "d";
+        return "resets in " + (hours ? hours + "h " : "") + minutes + "m";
+    }
+
+    function agentUsageLimits(record) {
+        const out = [];
+        const limits = arrayOrEmpty(record && record.limits);
+        for (let i = 0; i < limits.length; i += 1) {
+            const limit = limits[i];
+            const percent = agentUsagePercent(limit && limit.percent);
+            if (percent < 0) continue;
+            out.push({
+                label: stringOrEmpty(limit.title || limit.label) || "Limit",
+                percent: percent,
+                resetText: agentUsageResetText(limit.resetsAt)
+            });
+        }
+        return out;
+    }
+
+    function agentUsageMeterColor(percent) {
+        if (percent >= 90) return colors.red;
+        if (percent >= 70) return colors.amber;
+        return colors.blue;
+    }
+
+    function agentUsageDays(record) {
+        const days = arrayOrEmpty(record && record.recentDays);
+        let max = 0;
+        for (let i = 0; i < days.length; i += 1) {
+            max = Math.max(max, Number(days[i] && days[i].messageCount) || 0);
+        }
+        const today = Qt.formatDate(clock && clock.date ? clock.date : new Date(), "yyyy-MM-dd");
+        return days.map(function (day) {
+            const date = stringOrEmpty(day && day.date);
+            const tokens = Number(day && day.messageCount) || 0;
+            const parsed = new Date(date + "T12:00:00");
+            return {
+                date: date,
+                label: isNaN(parsed.getTime()) ? date.slice(5) : Qt.formatDate(parsed, "ddd"),
+                tokens: tokens,
+                ratio: max > 0 ? tokens / max : 0,
+                today: date === today
+            };
+        });
+    }
+
+    function agentUsageModels(record) {
+        const usage = record && record.modelUsage && typeof record.modelUsage === "object" ? record.modelUsage : {};
+        const rows = [];
+        const keys = Object.keys(usage);
+        for (let i = 0; i < keys.length; i += 1) {
+            const entry = usage[keys[i]] || {};
+            const input = Number(entry.inputTokens) || 0;
+            const output = Number(entry.outputTokens) || 0;
+            const cache = (Number(entry.cacheReadInputTokens) || 0) + (Number(entry.cacheCreationInputTokens) || 0);
+            rows.push({ model: keys[i], name: friendlyModelName(keys[i]), input: input, output: output, cache: cache, total: input + output + cache });
+        }
+        rows.sort(function (a, b) { return b.total - a.total; });
+        const max = rows.length ? rows[0].total : 0;
+        return rows.slice(0, 6).map(function (row) {
+            return Object.assign({}, row, { ratio: max > 0 ? row.total / max : 0 });
+        });
+    }
+
+    function agentUsageUpdatedText(record) {
+        const at = Date.parse(stringOrEmpty(record && record.updatedAt));
+        if (isNaN(at)) return "";
+        const now = clock && clock.date ? clock.date.getTime() : Date.now();
+        const minutes = Math.max(0, Math.round((now - at) / 60000));
+        if (minutes < 1) return "updated just now";
+        if (minutes < 60) return "updated " + minutes + "m ago";
+        const hours = Math.round(minutes / 60);
+        return "updated " + hours + "h ago";
+    }
+
+    function agentUsageChipLabel() {
+        const record = agentUsageCurrent();
+        if (!record) return "";
+        const limits = agentUsageLimits(record);
+        let session = null;
+        for (let i = 0; i < limits.length; i += 1) {
+            if (/session/i.test(limits[i].label)) { session = limits[i]; break; }
+        }
+        if (!session && limits.length) session = limits[0];
+        // Compact on purpose: the agent's mark is the chip's icon, so the
+        // label is just the session window used (or today's tokens when the
+        // account has no live limits) — the bar is tight on a 1504px panel.
+        return session ? session.percent + "%" : formatTokenCount(record.todayTotalTokens);
+    }
+
+    function agentUsageChipPercent() {
+        const record = agentUsageCurrent();
+        const limits = record ? agentUsageLimits(record) : [];
+        let worst = -1;
+        for (let i = 0; i < limits.length; i += 1) worst = Math.max(worst, limits[i].percent);
+        return worst;
+    }
     property bool audioPopupVisible: false
+
+    // ----- OSD (volume / mic / brightness / scale) -----
+    // showOsd() fills these; OsdWindow renders them on osdScreen for the
+    // duration of osdHideTimer. Volume and mic changes are picked up
+    // reactively from PipeWire (any source: keys, popup slider, pactl), so
+    // nothing needs to call the shell for those. Brightness is polled at 2s,
+    // too slow for key feedback, so the brightness keybindings report the new
+    // level through the showOsd IPC instead (quickshell-brightness-key).
+    property bool osdVisible: false
+    property string osdKind: "volume"
+    property real osdLevel: 0
+    property bool osdMuted: false
+    property string osdText: ""
+    property string osdOutputName: ""
+    readonly property var osdScreen: findScreenByOutputName(osdOutputName) || activeScreen
+    // Suppress the OSD while the shell settles: PipeWire nodes report their
+    // initial volume as a change, which would flash the OSD on every restart.
+    property bool osdArmed: false
+    readonly property int osdSinkVolume: volumePercent()
+    readonly property bool osdSinkMuted: audioReady() && boolOrFalse(audioNode().audio.muted)
+    readonly property int osdSourceVolume: inputVolumePercent()
+    readonly property bool osdSourceMuted: {
+        const node = audioSourceNode();
+        return !!(node && node.ready && node.audio) && boolOrFalse(node.audio.muted);
+    }
+    onOsdSinkVolumeChanged: if (osdArmed && !audioPopupVisible) showOsd("volume", osdSinkVolume, osdSinkMuted, "")
+    onOsdSinkMutedChanged: if (osdArmed && !audioPopupVisible) showOsd("volume", osdSinkVolume, osdSinkMuted, "")
+    onOsdSourceVolumeChanged: if (osdArmed && !audioPopupVisible) showOsd("mic", osdSourceVolume, osdSourceMuted, "")
+    onOsdSourceMutedChanged: if (osdArmed && !audioPopupVisible) showOsd("mic", osdSourceVolume, osdSourceMuted, "")
+    onTouchModeStateChanged: if (osdArmed && touchModeAvailable) showOsd("scale", touchModeActive ? 100 : 0, false, touchModeActive ? "Touch mode on — outputs scaled up" : "Touch mode off — scale restored")
+
+    function showOsd(kind, level, muted, text) {
+        osdKind = stringOrEmpty(kind) || "volume";
+        osdLevel = Math.max(0, Math.min(100, Number(level) || 0));
+        osdMuted = boolOrFalse(muted);
+        osdText = stringOrEmpty(text);
+        osdOutputName = focusedOutputName();
+        osdVisible = true;
+        if (osdHideTimer) {
+            osdHideTimer.restart();
+        }
+    }
+
+    // IPC entry: `runtime-shell call showOsd brightness 55`. Brightness also
+    // updates the bar chip's state optimistically so it agrees with the OSD
+    // before the 2s poll catches up.
+    function showOsdFromIpc(kind, levelText) {
+        const normalizedKind = stringOrEmpty(kind).toLowerCase();
+        if (["volume", "mic", "brightness", "scale"].indexOf(normalizedKind) === -1) {
+            return "unknown osd kind: " + normalizedKind;
+        }
+        if (normalizedKind === "volume") {
+            showOsd("volume", osdSinkVolume, osdSinkMuted, "");
+            return "ok";
+        }
+        if (normalizedKind === "mic") {
+            showOsd("mic", osdSourceVolume, osdSourceMuted, "");
+            return "ok";
+        }
+        const level = Number(stringOrEmpty(levelText).replace("%", ""));
+        if (isNaN(level)) {
+            return "invalid level: " + stringOrEmpty(levelText);
+        }
+        if (normalizedKind === "brightness" && brightnessState && brightnessState.display) {
+            brightnessState = Object.assign({}, brightnessState, {
+                display: Object.assign({}, brightnessState.display, { percent: Math.round(level) })
+            });
+        }
+        showOsd(normalizedKind, level, false, "");
+        return "ok";
+    }
+
     // PipeWire: bind default sink/source so their properties (ready, audio) become available
     readonly property PwNode pipewireSink: Pipewire.defaultAudioSink
     readonly property PwNode pipewireSource: Pipewire.defaultAudioSource
@@ -486,6 +1144,32 @@ ShellRoot {
             accentBgKey: "tealBg"
         },
         {
+            // Keybinding cheat sheet, generated from sway-keybindings-data.nix
+            // at build time (ShellConfig.keybindings), so it cannot drift from
+            // what sway actually runs. Enter dispatches the binding's command.
+            id: "keys",
+            label: "Keys",
+            title: "Keybindings",
+            placeholder: "Search keybindings by key, action, or group",
+            help: "Enter run  •  Tab modes  •  Ctrl+6 Keys  •  Super+Ctrl+K toggles",
+            icon: "preferences-desktop-keyboard-shortcuts",
+            fallbackGlyph: "⌨",
+            accentColorKey: "violet",
+            accentBgKey: "violetBg"
+        },
+        {
+            // Theme picker: the shell restyles live, terminals on next open.
+            id: "themes",
+            label: "Themes",
+            title: "Theme",
+            placeholder: "Search themes",
+            help: "Move to preview  •  Enter keep  •  Esc revert  •  Ctrl+3 Themes",
+            icon: "preferences-desktop-theme",
+            fallbackGlyph: "◐",
+            accentColorKey: "amber",
+            accentBgKey: "amberBg"
+        },
+        {
             id: "files",
             label: "Files",
             title: "Find File",
@@ -592,17 +1276,125 @@ ShellRoot {
     // exactly one file to edit to restyle the shell. New code can reference
     // Theme directly and skip the prop-drilling entirely.
     readonly property var colors: Theme
+
+    // ----- Theme switching -----
+    // The state file names a theme from shellConfig.themes; its base tokens
+    // become Theme.overrides and every derived token follows. An unknown or
+    // missing name means the built-in default (empty overrides).
+    // Last content of the theme state file, kept so a preview can be undone
+    // without re-reading the file.
+    property string themeStateText: ""
+    property bool themePreviewActive: false
+    // Text-size root from the state file (0 = the built-in 12px). Kept apart
+    // from the theme so previewing a theme never resets the size.
+    property real themeTextSize: 0
+
+    function applyThemeById(name) {
+        const id = stringOrEmpty(name);
+        const themes = shellConfig.themes || {};
+        const theme = id ? themes[id] : null;
+        const sizeOverride = themeTextSize > 0 ? { textSize: themeTextSize } : {};
+        if (!theme || id === shellConfig.defaultTheme) {
+            Theme.overrides = sizeOverride;
+            return !!theme || !id;
+        }
+        Theme.overrides = Object.assign({ name: id, dark: !!theme.dark }, theme.colors || {}, theme.style || {}, sizeOverride);
+        return true;
+    }
+
+    function applyThemeState(text) {
+        themeStateText = stringOrEmpty(text);
+        let name = "";
+        let size = 0;
+        try {
+            const raw = themeStateText.trim();
+            const parsed = raw ? JSON.parse(raw) : null;
+            name = stringOrEmpty(parsed && parsed.name);
+            size = Number(parsed && parsed.textSize) || 0;
+        } catch (error) {
+            console.warn("theme.state:", error);
+        }
+        themeTextSize = size;
+        applyThemeById(name);
+    }
+
+    // `runtime-theme text-size N` persists it and the state watcher applies
+    // it; applying here first keeps the slider responsive.
+    function setTextSize(px) {
+        const size = Math.max(8, Math.min(24, Math.round(Number(px) || 12)));
+        themeTextSize = size;
+        applyThemeById(colors.name);
+        runDetached([shellConfig.themeSetBin, "text-size", String(size)]);
+        return "ok";
+    }
+
+    // ----- Live preview from the picker -----
+    // The highlighted row of the Themes launcher mode is applied as you move
+    // through the list (keys or hover). Enter commits it through the CLI;
+    // closing the launcher any other way puts the persisted theme back.
+    readonly property var themePreviewEntry: (launcherVisible && launcherMode === "themes" && launcherEntries.length)
+        ? launcherEntries[Math.max(0, Math.min(launcherSelectedIndex, launcherEntries.length - 1))]
+        : null
+    onThemePreviewEntryChanged: {
+        if (themePreviewEntry) {
+            const id = stringOrEmpty(themePreviewEntry.theme_id || themePreviewEntry.identifier);
+            if (id && applyThemeById(id)) {
+                themePreviewActive = true;
+            }
+            return;
+        }
+        if (themePreviewActive) {
+            themePreviewActive = false;
+            applyThemeState(themeStateText);
+        }
+    }
+
+    function themeEntries(query) {
+        const tokens = launcherQueryTokens(query);
+        const themes = shellConfig.themes || {};
+        const ids = Object.keys(themes).sort();
+        const entries = [];
+        for (let i = 0; i < ids.length; i += 1) {
+            const theme = themes[ids[i]] || {};
+            const label = stringOrEmpty(theme.label) || ids[i];
+            const description = stringOrEmpty(theme.description);
+            if (!launcherTokensMatch(tokens, [ids[i], label, description, theme.dark ? "dark" : "light"])) {
+                continue;
+            }
+            const current = ids[i] === colors.name;
+            entries.push({
+                kind: "theme",
+                identifier: ids[i],
+                text: label + (current ? "  ✓" : ""),
+                subtext: (theme.dark ? "Dark" : "Light") + (description ? "  •  " + description : ""),
+                icon: theme.dark ? "weather-clear-night" : "weather-clear",
+                theme_id: ids[i]
+            });
+        }
+        return entries;
+    }
+
+    // Everything goes through the CLI so the terminal palette and the state
+    // file stay in step whichever entry point asked.
+    function setTheme(name) {
+        const id = stringOrEmpty(name);
+        if (!id || !(shellConfig.themes || {})[id]) {
+            return "unknown theme: " + id;
+        }
+        runDetached([shellConfig.themeSetBin, "set", id]);
+        return "ok";
+    }
     readonly property int fastColorMs: 90
 
     // Type scale for the herd surfaces (SessionRow, runtime panel, agent
     // monitor, bar chips). fontMicro is reserved for ALL-CAPS text with
     // font.letterSpacing >= 0.5 — lowercase reading text must never drop
     // below fontCaption.
-    readonly property int fontTitle: 13
-    readonly property int fontBody: 11
-    readonly property int fontLabel: 10
-    readonly property int fontCaption: 9
-    readonly property int fontMicro: 8
+    readonly property int fontTitle: Theme.fs(13)
+    readonly property int fontBody: Theme.fs(11)
+    readonly property int fontLabel: Theme.fs(10)
+    readonly property int fontCaption: Theme.fs(9)
+    readonly property int fontMicro: Theme.fs(8)
 
     // Radius scale: floating surfaces > cards/sections > controls/rows/chips
     // > count pills/mini badges. Nested corners follow inner = outer - padding.
@@ -1869,6 +2661,9 @@ ShellRoot {
         bluetoothPopupVisible = false;
         powerMenuVisible = false;
         castPopupVisible = false;
+        agentsPopupVisible = false;
+        tailscalePopupVisible = false;
+        clockPopupVisible = false;
         displaySelectorVisible = false;
         displaySelectorOutputName = "";
     }
@@ -1878,7 +2673,7 @@ ShellRoot {
     // use barPopupOutputName; the display selector tracks its own output.
     function anyBarPopupOpenOnOutput(outputName) {
         const o = stringOrEmpty(outputName);
-        if ((audioPopupVisible || bluetoothPopupVisible || powerMenuVisible || castPopupVisible)
+        if ((audioPopupVisible || bluetoothPopupVisible || powerMenuVisible || castPopupVisible || agentsPopupVisible || tailscalePopupVisible || clockPopupVisible)
             && stringOrEmpty(barPopupOutputName) === o) {
             return true;
         }
@@ -2334,7 +3129,143 @@ ShellRoot {
         const notification = notificationRuntimeMap[String(targetId)];
         if (notification) {
             notification.expire();
+            return;
         }
+        for (let i = 0; i < notificationFeed.length; i += 1) {
+            const item = notificationFeed[i];
+            if (Number(item && item.id) !== targetId) {
+                continue;
+            }
+            replaceNotificationItem(Object.assign({}, item, {
+                closed: true,
+                closed_reason: "Expired",
+                toast_visible: false
+            }));
+            break;
+        }
+    }
+
+    // ----- Persistence -----
+    readonly property var notificationPersistedFields: [
+        "id", "app_name", "app_icon", "desktop_entry", "summary", "body", "urgency",
+        "output_name", "image", "unread", "closed", "closed_reason", "toast_visible",
+        "timeout_ms", "timestamp", "toast_started", "replayed_at", "has_inline_reply",
+        "inline_reply_placeholder", "herdr_session", "herdr_pane", "herdr_host",
+        "actions", "restored"
+    ]
+
+    function persistNotifications() {
+        if (!notificationStore || !notificationsRestored) {
+            return;
+        }
+        const items = [];
+        const limit = Math.max(1, Number(shellConfig.notificationHistoryLimit || 80));
+        for (let i = 0; i < notificationFeed.length && items.length < limit; i += 1) {
+            const item = notificationFeed[i];
+            if (!item || boolOrFalse(item.transient)) {
+                continue;
+            }
+            const out = {};
+            for (let f = 0; f < notificationPersistedFields.length; f += 1) {
+                const key = notificationPersistedFields[f];
+                if (item[key] !== undefined) {
+                    out[key] = item[key];
+                }
+            }
+            items.push(out);
+        }
+        try {
+            notificationStore.setText(JSON.stringify({ version: 1, saved_at: Date.now(), items: items }));
+        } catch (error) {
+            console.warn("notifications.persist:", error);
+        }
+    }
+
+    // Read the store back on start. Live toasts resume with whatever lifetime
+    // they had left (a toast that would have expired while the shell was down
+    // lands in history as Expired); critical ones never expire. Restored ids
+    // are moved to a high range because the new server hands out ids from 1
+    // again and the feed is keyed by id.
+    function restoreNotifications() {
+        if (notificationsRestored) {
+            return;
+        }
+        let parsed = null;
+        try {
+            const raw = notificationStore ? stringOrEmpty(notificationStore.text()).trim() : "";
+            parsed = raw ? JSON.parse(raw) : null;
+        } catch (error) {
+            console.warn("notifications.restore:", error);
+        }
+        const stored = parsed && Array.isArray(parsed.items) ? parsed.items : [];
+        const now = Date.now();
+        const restored = [];
+        for (let i = 0; i < stored.length; i += 1) {
+            const item = stored[i];
+            if (!item || typeof item !== "object" || !stringOrEmpty(item.summary) && !stringOrEmpty(item.body)) {
+                continue;
+            }
+            const next = Object.assign({}, item, {
+                id: 10000000 + i,
+                restored: true,
+                transient: false
+            });
+            if (!boolOrFalse(next.closed) && boolOrFalse(next.toast_visible)) {
+                const timeout = notificationTimeoutFor(next);
+                const started = Number(next.replayed_at || next.toast_started || next.timestamp) || now;
+                const elapsed = Math.max(0, now - started);
+                if (timeout > 0 && elapsed >= timeout) {
+                    next.closed = true;
+                    next.closed_reason = "Expired";
+                    next.toast_visible = false;
+                } else if (timeout > 0) {
+                    next.timeout_ms = Math.max(1000, timeout - elapsed);
+                    next.replayed_at = now;
+                }
+            }
+            restored.push(next);
+        }
+        const liveIds = {};
+        for (let i = 0; i < notificationFeed.length; i += 1) {
+            liveIds[String(Number(notificationFeed[i] && notificationFeed[i].id))] = true;
+        }
+        const merged = notificationFeed.concat(restored.filter(item => !liveIds[String(item.id)]));
+        notificationsRestored = true;
+        notificationFeed = merged.slice(0, Math.max(1, Number(shellConfig.notificationHistoryLimit || 80)));
+        refreshNotificationState();
+    }
+
+    // Re-show the most recent closed notifications as toasts with a fresh
+    // standard lifetime (Omarchy's history replay). `count` defaults to 3.
+    function replayNotifications(countText) {
+        let count = Number(stringOrEmpty(countText)) || 3;
+        count = Math.max(1, Math.min(10, Math.round(count)));
+        const targetOutput = notificationTargetOutputName();
+        const now = Date.now();
+        let replayed = 0;
+        const next = [];
+        for (let i = 0; i < notificationFeed.length; i += 1) {
+            const item = notificationFeed[i];
+            if (replayed < count && item && boolOrFalse(item.closed) && !boolOrFalse(item.transient)) {
+                next.push(Object.assign({}, item, {
+                    closed: false,
+                    closed_reason: "",
+                    toast_visible: true,
+                    output_name: targetOutput,
+                    timeout_ms: notificationIsCritical(item) ? 0 : Number(shellConfig.notificationDefaultTimeoutMs || 8000),
+                    replayed_at: now
+                }));
+                replayed += 1;
+            } else {
+                next.push(item);
+            }
+        }
+        if (!replayed) {
+            return "nothing to replay";
+        }
+        notificationFeed = next;
+        refreshNotificationState();
+        return "ok: replayed " + replayed;
     }
 
     // Switch to the Herdr pane a notification came from. Prefers the live
@@ -2540,6 +3471,7 @@ ShellRoot {
             toast_visible: !notificationDnd || stringOrEmpty(NotificationUrgency.toString(notification.urgency)).toLowerCase() === "critical",
             timeout_ms: notification.expireTimeout,
             timestamp: Date.now(),
+            toast_started: Date.now(),
             transient: boolOrFalse(notification.transient),
             has_inline_reply: boolOrFalse(notification.hasInlineReply),
             inline_reply_placeholder: stringOrEmpty(notification.inlineReplyPlaceholder),
@@ -2562,6 +3494,18 @@ ShellRoot {
                 identifier: herdrFocusActionId,
                 text: "Switch to pane"
             }].concat(snapshot.actions);
+        }
+
+        // Dedupe: a sender re-posting the same app/summary/body while the
+        // previous copy is still open gets one toast, not a stack of them.
+        const duplicates = notificationFeed.filter(item => item
+            && Number(item.id) !== targetId
+            && !notificationClosed(item)
+            && stringOrEmpty(item.app_name) === snapshot.app_name
+            && stringOrEmpty(item.summary) === snapshot.summary
+            && stringOrEmpty(item.body) === snapshot.body);
+        for (let i = 0; i < duplicates.length; i += 1) {
+            dismissNotification(duplicates[i].id);
         }
 
         replaceNotificationItem(snapshot);
@@ -3911,6 +4855,14 @@ function normalizeLauncherMode(mode) {
         if (launcherQuery !== nextQuery) {
             launcherQuery = nextQuery;
         }
+        // A query summoned over IPC must land in the field too; the field only
+        // ever pushed text outward before, so it would show empty while the
+        // results were already filtered.
+        if (launcherField && launcherField.text !== nextQuery) {
+            launcherNormalizingInput = true;
+            launcherField.text = nextQuery;
+            launcherNormalizingInput = false;
+        }
 
         launcherQueryDebounce.stop();
         restartLauncherQuery();
@@ -4004,6 +4956,12 @@ function normalizeLauncherMode(mode) {
         if (launcherMode === "snippets") {
             return launcherEntries.length ? launcherEntries.length + " curated command" + (launcherEntries.length === 1 ? "" : "s") : "No matching curated commands";
         }
+        if (launcherMode === "keys") {
+            return launcherEntries.length ? launcherEntries.length + " keybinding" + (launcherEntries.length === 1 ? "" : "s") : "No matching keybindings";
+        }
+        if (launcherMode === "themes") {
+            return launcherEntries.length ? launcherEntries.length + " theme" + (launcherEntries.length === 1 ? "" : "s") + "  •  active: " + colors.name : "No matching themes";
+        }
         if (launcherMode === "sessions") {
             return launcherEntries.length ? launcherEntries.length + " AI session" + (launcherEntries.length === 1 ? "" : "s") : "No matching AI sessions";
         }
@@ -4043,6 +5001,12 @@ function normalizeLauncherMode(mode) {
         }
         if (launcherMode === "snippets") {
             return "No curated commands match the current query";
+        }
+        if (launcherMode === "keys") {
+            return "No keybindings match the current query";
+        }
+        if (launcherMode === "themes") {
+            return "No themes match the current query";
         }
         if (launcherMode === "sessions") {
             return "No AI sessions match the current query";
@@ -4092,6 +5056,12 @@ function normalizeLauncherMode(mode) {
             nextQuery = nextQuery.slice(1).replace(/^\s+/, "");
         } else if (nextQuery.indexOf(";a") === 0) {
             nextMode = "apps";
+            nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
+        } else if (nextQuery.indexOf(";k") === 0) {
+            nextMode = "keys";
+            nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
+        } else if (nextQuery.indexOf(";t") === 0) {
+            nextMode = "themes";
             nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
         }
 
@@ -7131,6 +8101,12 @@ function normalizeLauncherMode(mode) {
         if (kind === "snippet") {
             return colors.teal;
         }
+        if (kind === "keybinding") {
+            return colors.violet;
+        }
+        if (kind === "theme") {
+            return colors.amber;
+        }
         return "transparent";
     }
 
@@ -7243,6 +8219,210 @@ function normalizeLauncherMode(mode) {
         return colors.blueBg;
     }
 
+    function keybindingEntries(query) {
+        const tokens = launcherQueryTokens(query);
+        const bindings = arrayOrEmpty(shellConfig.keybindings);
+        const entries = [];
+        for (let i = 0; i < bindings.length; i += 1) {
+            const binding = bindings[i];
+            if (!binding) {
+                continue;
+            }
+            const key = stringOrEmpty(binding.key);
+            const description = stringOrEmpty(binding.description);
+            const group = stringOrEmpty(binding.group);
+            const command = stringOrEmpty(binding.command);
+            if (!launcherTokensMatch(tokens, [key, description, group, command])) {
+                continue;
+            }
+            entries.push({
+                kind: "keybinding",
+                identifier: stringOrEmpty(binding.raw) || key,
+                text: key,
+                subtext: group ? description + "  •  " + group : description,
+                command: command,
+                group: group,
+                icon: "preferences-desktop-keyboard-shortcuts"
+            });
+        }
+        return entries;
+    }
+
+    function toggleKeybindings() {
+        if (launcherVisible && launcherMode === "keys") {
+            closeLauncher();
+            return;
+        }
+        showLauncher("keys", "");
+    }
+
+    // ----- Generic surface IPC -----
+    // One registry of everything the shell can show, keyed by a stable id, so
+    // `runtime-shell summon|hide|toggle <id> [json]` reaches any surface. Each
+    // entry knows whether it is open and how to open/close itself; the payload
+    // is the surface's own options (launcher mode/query, panel section, ...).
+    function surfaceRegistry() {
+        const output = function (payload) {
+            return stringOrEmpty(payload && payload.output);
+        };
+        const openBarPopup = function (payload, setter) {
+            closeBarPopups();
+            barPopupOutputName = output(payload) || focusedOutputName();
+            setter();
+        };
+        return {
+            "launcher": {
+                isOpen: function () { return launcherVisible; },
+                open: function (payload) { showLauncher(stringOrEmpty(payload.mode) || "apps", stringOrEmpty(payload.query)); },
+                close: function () { closeLauncher(); }
+            },
+            "keybindings": {
+                isOpen: function () { return launcherVisible && launcherMode === "keys"; },
+                open: function (payload) { showLauncher("keys", stringOrEmpty(payload.query)); },
+                close: function () { closeLauncher(); }
+            },
+            "themes": {
+                isOpen: function () { return launcherVisible && launcherMode === "themes"; },
+                open: function (payload) { showLauncher("themes", stringOrEmpty(payload.query)); },
+                close: function () { closeLauncher(); }
+            },
+            "panel": {
+                isOpen: function () { return panelVisible; },
+                open: function (payload) {
+                    const section = stringOrEmpty(payload.section);
+                    if (section) {
+                        showRuntimePanelSection(section, output(payload));
+                    } else {
+                        showRuntimePanel(output(payload));
+                    }
+                },
+                close: function () { panelVisible = false; }
+            },
+            "settings": {
+                isOpen: function () { return settingsVisible; },
+                open: function (payload) { openSettings(stringOrEmpty(payload.section) || "commands"); },
+                close: function () { closeSettings(); }
+            },
+            "expose": {
+                isOpen: function () { return exposeVisible; },
+                open: function () { if (!exposeVisible) { openExpose(); } },
+                close: function () { closeExpose(); }
+            },
+            "agent-monitor": {
+                isOpen: function () { return agentMonitorVisible; },
+                open: function (payload) { if (!agentMonitorVisible) { toggleAgentMonitor(output(payload)); } },
+                close: function () { closeAgentMonitor(); }
+            },
+            "power-menu": {
+                isOpen: function () { return powerMenuVisible; },
+                open: function (payload) { openBarPopup(payload, function () { powerMenuVisible = true; }); },
+                close: function () { powerMenuVisible = false; }
+            },
+            "notifications": {
+                isOpen: function () { return notificationCenterVisible; },
+                open: function () { if (!notificationCenterVisible) { toggleNotifications(); } },
+                close: function () { notificationCenterVisible = false; }
+            },
+            "display-selector": {
+                isOpen: function () { return displaySelectorVisible; },
+                open: function (payload) { openDisplaySelector(output(payload)); },
+                close: function () { closeDisplaySelector(); }
+            },
+            "audio": {
+                isOpen: function () { return audioPopupVisible; },
+                open: function (payload) { openBarPopup(payload, function () { audioPopupVisible = true; }); },
+                close: function () { audioPopupVisible = false; }
+            },
+            "bluetooth": {
+                isOpen: function () { return bluetoothPopupVisible; },
+                open: function (payload) { openBarPopup(payload, function () { bluetoothPopupVisible = true; }); },
+                close: function () { bluetoothPopupVisible = false; }
+            },
+            "cast": {
+                isOpen: function () { return castPopupVisible; },
+                open: function (payload) { openBarPopup(payload, function () { castPopupVisible = true; }); },
+                close: function () { castPopupVisible = false; }
+            },
+            "calendar": {
+                isOpen: function () { return clockPopupVisible; },
+                open: function (payload) { openClockPopup(output(payload)); },
+                close: function () { clockPopupVisible = false; }
+            },
+            "tailscale": {
+                isOpen: function () { return tailscalePopupVisible; },
+                open: function (payload) { refreshTailscale(); openBarPopup(payload, function () { tailscalePopupVisible = true; }); },
+                close: function () { tailscalePopupVisible = false; }
+            },
+            "agents": {
+                isOpen: function () { return agentsPopupVisible; },
+                open: function (payload) { openBarPopup(payload, function () { agentsPopupVisible = true; }); },
+                close: function () { agentsPopupVisible = false; }
+            },
+            "lock": {
+                isOpen: function () { return sessionLocked; },
+                open: function () { lockSession(); },
+                close: function () { return "refusing to unlock over IPC; the lock screen takes a password"; }
+            }
+        };
+    }
+
+    function parseSurfacePayload(payloadJson) {
+        const raw = stringOrEmpty(payloadJson).trim();
+        if (!raw) {
+            return {};
+        }
+        try {
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function summonSurface(id, payloadJson) {
+        const surface = surfaceRegistry()[stringOrEmpty(id)];
+        if (!surface) {
+            return "unknown surface: " + stringOrEmpty(id);
+        }
+        const payload = parseSurfacePayload(payloadJson);
+        if (payload === null) {
+            return "invalid payload: expected a JSON object";
+        }
+        surface.open(payload);
+        return "ok";
+    }
+
+    function hideSurface(id) {
+        const surface = surfaceRegistry()[stringOrEmpty(id)];
+        if (!surface) {
+            return "unknown surface: " + stringOrEmpty(id);
+        }
+        const refused = surface.close();
+        return typeof refused === "string" ? refused : "ok";
+    }
+
+    function toggleSurface(id, payloadJson) {
+        const surface = surfaceRegistry()[stringOrEmpty(id)];
+        if (!surface) {
+            return "unknown surface: " + stringOrEmpty(id);
+        }
+        if (surface.isOpen()) {
+            const refused = surface.close();
+            return typeof refused === "string" ? refused : "ok";
+        }
+        return summonSurface(id, payloadJson);
+    }
+
+    function listSurfaces() {
+        const registry = surfaceRegistry();
+        const ids = Object.keys(registry);
+        const rows = [];
+        for (let i = 0; i < ids.length; i += 1) {
+            rows.push({ id: ids[i], open: !!registry[ids[i]].isOpen() });
+        }
+        return JSON.stringify(rows);
+    }
+
     function restartLauncherQuery() {
         if (!launcherVisible) {
             return;
@@ -7279,6 +8459,18 @@ function normalizeLauncherMode(mode) {
             launcherLoading = true;
             launcherQueryProcess.command = [shellConfig.snippetsListBin, launcherQuery, "40"];
             launcherQueryProcess.running = true;
+            return;
+        }
+
+        if (launcherMode === "keys") {
+            launcherLoading = false;
+            setLauncherEntries(keybindingEntries(launcherQuery));
+            return;
+        }
+
+        if (launcherMode === "themes") {
+            launcherLoading = false;
+            setLauncherEntries(themeEntries(launcherQuery));
             return;
         }
 
@@ -7674,6 +8866,28 @@ function normalizeLauncherMode(mode) {
 
             closeLauncher();
             runDetached([shellConfig.launcherCommandActionBin, mode, command]);
+            return;
+        }
+        if (kind === "theme") {
+            const themeId = stringOrEmpty(entry && (entry.theme_id || entry.identifier));
+            // Keep what is on screen: mark the preview committed before the
+            // launcher closes so the close does not flash the old theme back,
+            // then let the CLI persist it (the state watcher re-applies the
+            // same theme, a no-op).
+            themePreviewActive = false;
+            applyThemeById(themeId);
+            closeLauncher();
+            setTheme(themeId);
+            return;
+        }
+        if (kind === "keybinding") {
+            const command = stringOrEmpty(entry && entry.command);
+            if (!command) {
+                return;
+            }
+
+            closeLauncher();
+            runDetached(["swaymsg", command]);
             return;
         }
         if (kind === "snippet") {
@@ -9595,7 +10809,7 @@ function normalizeLauncherMode(mode) {
             anchors.left: true
             anchors.right: true
             anchors.bottom: true
-            implicitHeight: Math.max(0, (modelData ? modelData.height : 1080) - shellConfig.barHeight)
+            implicitHeight: Math.max(0, (modelData ? modelData.height : 1080) - Math.round(shellConfig.barHeight * Theme.scale))
             exclusiveZone: 0
             focusable: false
             aboveWindows: true
@@ -9689,6 +10903,18 @@ function normalizeLauncherMode(mode) {
     }
 
     Windows.DictationOverlay {
+        shellRoot: shellRootRef
+        runtimeConfig: shellConfig
+        colors: shellRootRef.colors
+    }
+
+    Windows.OsdWindow {
+        shellRoot: shellRootRef
+        runtimeConfig: shellConfig
+        colors: shellRootRef.colors
+    }
+
+    Windows.LockScreen {
         shellRoot: shellRootRef
         runtimeConfig: shellConfig
         colors: shellRootRef.colors

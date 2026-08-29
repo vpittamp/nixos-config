@@ -19,7 +19,9 @@
     # Tailscale SSH is deliberately not enabled: these hosts are administered over
     # plain OpenSSH on the tailnet (see the openssh block below). The tailnet policy
     # has an `ssh` section, but no host advertises SSH, so those rules stay inert.
-    extraSetFlags = [ "--accept-routes" ];
+    # --operator lets the desktop user drive `tailscale set` (exit node,
+    # --accept-dns) from the runtime shell's Tailscale panel without sudo.
+    extraSetFlags = [ "--accept-routes" "--operator=vpittamp" ];
   };
 
   # DNS resilience floor.

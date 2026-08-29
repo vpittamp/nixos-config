@@ -75,9 +75,9 @@ PanelWindow {
     // out — 8.4mm on the Verbatim, under the ~9mm a fingertip needs, and the
     // remaining margin sits between the chips and the screen edge, which is
     // exactly where a finger reaching for the bottom of the screen lands.
-    implicitHeight: root.touchModeActive
-        ? Math.round(runtimeConfig.barHeight * 1.4)
-        : runtimeConfig.barHeight
+    implicitHeight: Math.round((root.touchModeActive
+        ? runtimeConfig.barHeight * 1.4
+        : runtimeConfig.barHeight) * Theme.scale)
     exclusiveZone: implicitHeight
     focusable: false
     aboveWindows: true
@@ -171,6 +171,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         text: "Launch"
                         color: root.launcherVisible ? colors.bg : colors.text
                         font.pixelSize: root.fontTitle
@@ -184,6 +185,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: launcherContextTitle
                         Layout.fillWidth: true
                         text: root.currentContextTitle()
@@ -204,6 +206,7 @@ PanelWindow {
                         border.width: 0
 
                         Text {
+                            font.family: Theme.fontFamily
                             id: contextGitText
                             anchors.centerIn: parent
                             text: root.currentContextGitChipText()
@@ -214,6 +217,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: contextOutputText
                         text: barOutputName || root.modeLabel((dashboard.active_context || {}).execution_mode)
                         color: root.launcherVisible ? colors.bg : colors.muted
@@ -371,7 +375,7 @@ PanelWindow {
                                                     anchors.topMargin: -5
                                                     width: 11
                                                     height: 11
-                                                    radius: 6
+                                                    radius: Theme.rad(6)
                                                     color: colors.bg
                                                     border.color: (agentChip && root.stringOrEmpty(agentChip.host_color)) || colors.borderStrong
                                                     border.width: 1.5
@@ -397,6 +401,7 @@ PanelWindow {
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         id: workspaceText
                                         // Fallback only. A workspace with no
                                         // window — or one whose app supplies no
@@ -420,6 +425,7 @@ PanelWindow {
                                         border.width: 1
 
                                         Text {
+                                            font.family: Theme.fontFamily
                                             anchors.centerIn: parent
                                             text: String(workspaceCount)
                                             color: workspaceFocused ? colors.blue : colors.muted
@@ -493,7 +499,7 @@ PanelWindow {
                     text: "\u{F11C}"
                     color: root.neutralChipText(keyboardMouse.containsMouse)
                     font.family: "FiraCode Nerd Font"
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.fs(13)
                 }
 
                 MouseArea {
@@ -540,7 +546,7 @@ PanelWindow {
                     text: "\u{F25A}"
                     color: root.stateChipText(root.touchModeActive, touchModeMouse.containsMouse, colors.teal)
                     font.family: "FiraCode Nerd Font"
-                    font.pixelSize: 14
+                    font.pixelSize: Theme.fs(14)
                 }
 
                 MouseArea {
@@ -601,7 +607,7 @@ PanelWindow {
                         text: root.voxtypeIcon()
                         color: root.voxtypeActive() ? root.voxtypeIconColor() : colors.muted
                         font.family: "FiraCode Nerd Font"
-                        font.pixelSize: 15
+                        font.pixelSize: Theme.fs(15)
 
                         // Pulse while listening. alwaysRunToEnd leaves opacity at
                         // 1.0 when it stops, so the icon never gets stuck dimmed.
@@ -615,6 +621,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         text: root.voxtypeClass() === "streaming" ? "Streaming…"
                             : (root.voxtypeClass() === "recording" ? "Recording…"
                                 : (root.voxtypeClass() === "stopping" ? "Stopping…"
@@ -649,6 +656,7 @@ PanelWindow {
                     spacing: 6
 
                     Text {
+                        font.family: Theme.fontFamily
                         text: root.currentLayoutLabel()
                         color: colors.muted
                         font.pixelSize: root.fontLabel
@@ -665,6 +673,7 @@ PanelWindow {
                         border.width: 1
 
                         Text {
+                            font.family: Theme.fontFamily
                             anchors.centerIn: parent
                             text: "Next"
                             color: colors.text
@@ -682,6 +691,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         text: String(root.activeSessions().length) + " AI"
                         color: colors.text
                         font.pixelSize: root.fontBody
@@ -708,6 +718,7 @@ PanelWindow {
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             anchors.centerIn: parent
                             text: root.panelVisible ? "Hide" : "Open"
                             color: root.panelVisible ? colors.bg : colors.text
