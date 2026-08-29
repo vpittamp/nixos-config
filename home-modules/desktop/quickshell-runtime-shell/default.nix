@@ -3141,7 +3141,7 @@ PROMPT
       uid="$(printf '%s' "$line" | "$jq" -r '.COREDUMP_UID // ""')"
       who=""; [ "$uid" = "$(id -u)" ] || who=" (uid $uid)"
       (
-        action="$(${pkgs.libnotify}/bin/notify-send -a "Crash" -u critical -i dialog-warning \
+        action="$(${pkgs.libnotify}/bin/notify-send -a "Crash" -u critical \
           -A "diagnose=Diagnose with Claude" \
           "Process crashed: $comm$who" "$signal · PID $pid"$'\n'"$exe" 2>/dev/null)"
         if [ "$action" = "diagnose" ]; then
