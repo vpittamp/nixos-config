@@ -416,6 +416,19 @@ Item {
         onTriggered: shellRoot.restoreNotifications()
     }
 
+    // ----- Theme state -----
+    // ~/.local/state/quickshell-runtime-shell/theme.json names the active
+    // theme; runtime-theme writes it and the shell restyles without restart.
+    FileView {
+        id: themeStateView
+        path: runtimeConfig.themeStatePath
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: shellRoot.applyThemeState(text())
+        onLoadFailed: shellRoot.applyThemeState("")
+    }
+
     // ----- Agent usage records -----
     // One watched file per known agent. A record that appears is an agent;
     // one that fails to load (not written yet, collector failed) is absent.
@@ -1361,6 +1374,14 @@ Item {
 
         function refreshAgentUsage(): string {
             return shellRoot.refreshAgentUsage();
+        }
+
+        function setTheme(name: string): string {
+            return shellRoot.setTheme(name);
+        }
+
+        function currentTheme(): string {
+            return shellRoot.colors.name;
         }
 
         function nextAgentUsage(): string {

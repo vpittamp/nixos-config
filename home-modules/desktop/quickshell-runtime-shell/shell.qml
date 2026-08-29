@@ -889,6 +889,18 @@ ShellRoot {
             accentBgKey: "violetBg"
         },
         {
+            // Theme picker: the shell restyles live, terminals on next open.
+            id: "themes",
+            label: "Themes",
+            title: "Theme",
+            placeholder: "Search themes",
+            help: "Enter apply  •  Tab modes  •  Ctrl+3 Themes  •  runtime-theme toggle",
+            icon: "preferences-desktop-theme",
+            fallbackGlyph: "◐",
+            accentColorKey: "amber",
+            accentBgKey: "amberBg"
+        },
+        {
             id: "files",
             label: "Files",
             title: "Find File",
@@ -995,6 +1007,66 @@ ShellRoot {
     // exactly one file to edit to restyle the shell. New code can reference
     // Theme directly and skip the prop-drilling entirely.
     readonly property var colors: Theme
+
+    // ----- Theme switching -----
+    // The state file names a theme from shellConfig.themes; its base tokens
+    // become Theme.overrides and every derived token follows. An unknown or
+    // missing name means the built-in default (empty overrides).
+    function applyThemeState(text) {
+        let name = "";
+        try {
+            const raw = stringOrEmpty(text).trim();
+            const parsed = raw ? JSON.parse(raw) : null;
+            name = stringOrEmpty(parsed && parsed.name);
+        } catch (error) {
+            console.warn("theme.state:", error);
+        }
+        const themes = shellConfig.themes || {};
+        const theme = name ? themes[name] : null;
+        if (!theme || name === shellConfig.defaultTheme) {
+            if (Object.keys(Theme.overrides || {}).length) {
+                Theme.overrides = ({});
+            }
+            return;
+        }
+        Theme.overrides = Object.assign({ name: name, dark: !!theme.dark }, theme.colors || {});
+    }
+
+    function themeEntries(query) {
+        const tokens = launcherQueryTokens(query);
+        const themes = shellConfig.themes || {};
+        const ids = Object.keys(themes).sort();
+        const entries = [];
+        for (let i = 0; i < ids.length; i += 1) {
+            const theme = themes[ids[i]] || {};
+            const label = stringOrEmpty(theme.label) || ids[i];
+            const description = stringOrEmpty(theme.description);
+            if (!launcherTokensMatch(tokens, [ids[i], label, description, theme.dark ? "dark" : "light"])) {
+                continue;
+            }
+            const current = ids[i] === colors.name;
+            entries.push({
+                kind: "theme",
+                identifier: ids[i],
+                text: label + (current ? "  ✓" : ""),
+                subtext: (theme.dark ? "Dark" : "Light") + (description ? "  •  " + description : ""),
+                icon: theme.dark ? "weather-clear-night" : "weather-clear",
+                theme_id: ids[i]
+            });
+        }
+        return entries;
+    }
+
+    // Everything goes through the CLI so the terminal palette and the state
+    // file stay in step whichever entry point asked.
+    function setTheme(name) {
+        const id = stringOrEmpty(name);
+        if (!id || !(shellConfig.themes || {})[id]) {
+            return "unknown theme: " + id;
+        }
+        runDetached([shellConfig.themeSetBin, "set", id]);
+        return "ok";
+    }
     readonly property int fastColorMs: 90
 
     // Type scale for the herd surfaces (SessionRow, runtime panel, agent
@@ -4568,6 +4640,9 @@ function normalizeLauncherMode(mode) {
         if (launcherMode === "keys") {
             return launcherEntries.length ? launcherEntries.length + " keybinding" + (launcherEntries.length === 1 ? "" : "s") : "No matching keybindings";
         }
+        if (launcherMode === "themes") {
+            return launcherEntries.length ? launcherEntries.length + " theme" + (launcherEntries.length === 1 ? "" : "s") + "  •  active: " + colors.name : "No matching themes";
+        }
         if (launcherMode === "sessions") {
             return launcherEntries.length ? launcherEntries.length + " AI session" + (launcherEntries.length === 1 ? "" : "s") : "No matching AI sessions";
         }
@@ -4610,6 +4685,9 @@ function normalizeLauncherMode(mode) {
         }
         if (launcherMode === "keys") {
             return "No keybindings match the current query";
+        }
+        if (launcherMode === "themes") {
+            return "No themes match the current query";
         }
         if (launcherMode === "sessions") {
             return "No AI sessions match the current query";
@@ -4662,6 +4740,9 @@ function normalizeLauncherMode(mode) {
             nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
         } else if (nextQuery.indexOf(";k") === 0) {
             nextMode = "keys";
+            nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
+        } else if (nextQuery.indexOf(";t") === 0) {
+            nextMode = "themes";
             nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
         }
 
@@ -7704,6 +7785,9 @@ function normalizeLauncherMode(mode) {
         if (kind === "keybinding") {
             return colors.violet;
         }
+        if (kind === "theme") {
+            return colors.amber;
+        }
         return "transparent";
     }
 
@@ -7878,6 +7962,11 @@ function normalizeLauncherMode(mode) {
                 open: function (payload) { showLauncher("keys", stringOrEmpty(payload.query)); },
                 close: function () { closeLauncher(); }
             },
+            "themes": {
+                isOpen: function () { return launcherVisible && launcherMode === "themes"; },
+                open: function (payload) { showLauncher("themes", stringOrEmpty(payload.query)); },
+                close: function () { closeLauncher(); }
+            },
             "panel": {
                 isOpen: function () { return panelVisible; },
                 open: function (payload) {
@@ -8047,6 +8136,12 @@ function normalizeLauncherMode(mode) {
         if (launcherMode === "keys") {
             launcherLoading = false;
             setLauncherEntries(keybindingEntries(launcherQuery));
+            return;
+        }
+
+        if (launcherMode === "themes") {
+            launcherLoading = false;
+            setLauncherEntries(themeEntries(launcherQuery));
             return;
         }
 
@@ -8442,6 +8537,12 @@ function normalizeLauncherMode(mode) {
 
             closeLauncher();
             runDetached([shellConfig.launcherCommandActionBin, mode, command]);
+            return;
+        }
+        if (kind === "theme") {
+            const themeId = stringOrEmpty(entry && (entry.theme_id || entry.identifier));
+            closeLauncher();
+            setTheme(themeId);
             return;
         }
         if (kind === "keybinding") {

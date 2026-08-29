@@ -109,27 +109,117 @@ let
   # stops matching would leave the accent* options looking configurable while
   # doing nothing, which is exactly what would have happened when the palette
   # moved out of shell.qml.
-  accentThemeQml = pkgs.runCommandLocal "quickshell-accent-theme-qml" { } ''
-    ${pkgs.gnused}/bin/sed \
-      -e 's|blue: "#60a5fa"|blue: "${cfg.accentColor}"|' \
-      -e 's|blueBg: "#111a2e"|blueBg: "${cfg.accentBg}"|' \
-      -e 's|blueMuted: "#3b5f8f"|blueMuted: "${cfg.accentMuted}"|' \
-      -e 's|blueWash: "#101725"|blueWash: "${cfg.accentWash}"|' \
-      ${./Theme.qml} > "$out"
+  # ---- Theme ------------------------------------------------------------
+  # Theme.qml is generated from themes.nix: the configured theme's 24 base
+  # tokens are baked in as fallbacks, and a runtime `overrides` map (fed from
+  # the watched theme state file) can replace any of them live. Every other
+  # token is derived inside the singleton and parametrised on `dark`, so a
+  # light theme lifts surfaces with a dark film instead of a white one.
+  themes = import ./themes.nix;
+  themeName = cfg.theme;
+  baseTheme = themes.${themeName} or (throw "programs.quickshell-runtime-shell.theme: unknown theme '${themeName}' (have: ${lib.concatStringsSep ", " (lib.attrNames themes)})");
+  # The per-host accent options keep their old meaning: they replace the blue
+  # family of the *configured* theme at build time.
+  defaultTheme = baseTheme // {
+    colors = baseTheme.colors // {
+      blue = cfg.accentColor;
+      blueBg = cfg.accentBg;
+      blueMuted = cfg.accentMuted;
+      blueWash = cfg.accentWash;
+    };
+  };
+  themesExport = lib.mapAttrs (id: t: {
+    inherit id;
+    label = t.label;
+    description = t.description or "";
+    dark = t.dark;
+    colors = if id == themeName then defaultTheme.colors else t.colors;
+    terminal = t.terminal;
+  }) themes;
+  themesJson = pkgs.writeText "quickshell-runtime-shell-themes.json" (builtins.toJSON themesExport);
+  themeStatePath = "${config.xdg.stateHome}/quickshell-runtime-shell/theme.json";
+  colorProp = key: ''    readonly property color ${key}: pick("${key}", "${defaultTheme.colors.${key}}")'';
+  themeQml = pkgs.writeText "Theme.qml" ''
+    pragma Singleton
 
-    for decl in 'blue: "${cfg.accentColor}"' 'blueBg: "${cfg.accentBg}"' \
-                'blueMuted: "${cfg.accentMuted}"' 'blueWash: "${cfg.accentWash}"'; do
-      grep -qF "$decl" "$out" || {
-        echo "accent substitution did not apply: $decl" >&2
-        exit 1
-      }
-    done
+    import QtQuick
+    import Quickshell
+
+    // GENERATED from themes.nix (theme "${themeName}") by quickshell-runtime-shell/default.nix.
+    // Components ask for semantic tokens ("the colour of a border", "the film
+    // that lifts a surface") and never for literals. The base tokens fall back
+    // to the built-in theme; `overrides` (set from the watched theme state
+    // file) replaces them live, and everything derived follows.
+    Singleton {
+        id: theme
+
+        property var overrides: ({})
+        readonly property string name: (overrides && typeof overrides.name === "string" && overrides.name) ? overrides.name : "${themeName}"
+        readonly property bool dark: (overrides && typeof overrides.dark === "boolean") ? overrides.dark : ${if defaultTheme.dark then "true" else "false"}
+
+        function pick(key, fallback) {
+            const value = overrides ? overrides[key] : undefined;
+            return (typeof value === "string" && value) ? value : fallback;
+        }
+
+        // ---- base tokens (from themes.nix) ----
+    ${lib.concatMapStringsSep "\n" colorProp [
+      "bg" "panel" "panelAlt" "card" "cardAlt"
+      "border" "borderStrong" "lineSoft"
+      "text" "textDim" "muted" "subtle"
+      "accent" "accentBg"
+      "blue" "blueBg" "blueMuted" "blueWash"
+      "green" "red" "amber" "orange" "teal" "violet"
+    ]}
+
+        // ---- derived: status chip fills (the hue at low alpha) ----
+        readonly property real statusFillAlpha: 0.15
+        readonly property color greenBg: Qt.rgba(theme.green.r, theme.green.g, theme.green.b, theme.statusFillAlpha)
+        readonly property color redBg: Qt.rgba(theme.red.r, theme.red.g, theme.red.b, theme.statusFillAlpha)
+        readonly property color amberBg: Qt.rgba(theme.amber.r, theme.amber.g, theme.amber.b, theme.statusFillAlpha)
+        readonly property color orangeBg: Qt.rgba(theme.orange.r, theme.orange.g, theme.orange.b, theme.statusFillAlpha)
+        readonly property color tealBg: Qt.rgba(theme.teal.r, theme.teal.g, theme.teal.b, theme.statusFillAlpha)
+        readonly property color violetBg: Qt.rgba(theme.violet.r, theme.violet.g, theme.violet.b, theme.statusFillAlpha)
+
+        // ---- derived: elevation films (white on dark, black on light) ----
+        readonly property real film: dark ? 1 : 0
+        readonly property color elevationFaint: Qt.rgba(film, film, film, 0.02)
+        readonly property color elevationSoft: Qt.rgba(film, film, film, 0.04)
+        readonly property color elevation: Qt.rgba(film, film, film, 0.06)
+        readonly property color elevationStrong: Qt.rgba(film, film, film, 0.16)
+        readonly property color hoverWash: Qt.rgba(film, film, film, 0.012)
+        readonly property color hoverWashStrong: Qt.rgba(film, film, film, 0.018)
+
+        // ---- derived: edges and depth ----
+        readonly property color edgeHighlight: Qt.rgba(film, film, film, 0.08)
+        readonly property color edgeHighlightSoft: Qt.rgba(film, film, film, 0.05)
+        readonly property color edgeShadow: Qt.rgba(0, 0, 0, dark ? 0.4 : 0.18)
+        readonly property color shadow: Qt.rgba(0, 0, 0, dark ? 0.55 : 0.22)
+        readonly property color shadowSoft: Qt.rgba(0, 0, 0, dark ? 0.25 : 0.10)
+
+        // ---- derived: scrims, tinted toward the background ----
+        readonly property color scrim: Qt.rgba(theme.bg.r, theme.bg.g, theme.bg.b, 0.4)
+        readonly property color scrimStrong: Qt.rgba(theme.bg.r, theme.bg.g, theme.bg.b, 0.8)
+
+        // ---- derived: frosted surfaces, same hue as their opaque twin ----
+        readonly property color panelGlass: Qt.rgba(theme.panel.r, theme.panel.g, theme.panel.b, 0.88)
+        readonly property color cardGlass: Qt.rgba(theme.card.r, theme.card.g, theme.card.b, 0.86)
+        readonly property color toastGlass: Qt.rgba(theme.panel.r, theme.panel.g, theme.panel.b, 0.92)
+
+        // ---- derived: status washes ----
+        readonly property color redWash: Qt.rgba(theme.red.r, theme.red.g, theme.red.b, 0.08)
+        readonly property color greenWash: Qt.rgba(theme.green.r, theme.green.g, theme.green.b, 0.06)
+        readonly property color amberWash: Qt.rgba(theme.amber.r, theme.amber.g, theme.amber.b, 0.08)
+        readonly property color tealWash: Qt.rgba(theme.teal.r, theme.teal.g, theme.teal.b, 0.09)
+        readonly property color blueSelection: Qt.rgba(theme.blue.r, theme.blue.g, theme.blue.b, 0.10)
+        readonly property color subtleWash: Qt.rgba(theme.subtle.r, theme.subtle.g, theme.subtle.b, 0.08)
+    }
   '';
 
   shellConfigDir = pkgs.runCommandLocal "i3pm-quickshell-runtime-shell" { } ''
     mkdir -p "$out"
     cp ${./shell.qml} "$out/shell.qml"
-    cp ${accentThemeQml} "$out/Theme.qml"
+    cp ${themeQml} "$out/Theme.qml"
     cp -r ${./controllers} "$out/controllers"
     cp -r ${./windows} "$out/windows"
     cp ${./SessionRow.qml} "$out/SessionRow.qml"
@@ -159,6 +249,10 @@ QtObject {
   readonly property int idleLockSeconds: ${toString cfg.idle.lockSeconds}
   readonly property string lockPamService: "${cfg.lock.pamService}"
   readonly property string agentUsageDir: "${agentUsageDir}"
+  readonly property var themes: ${builtins.toJSON (lib.mapAttrs (_: t: removeAttrs t [ "terminal" ]) themesExport)}
+  readonly property string defaultTheme: "${themeName}"
+  readonly property string themeStatePath: "${themeStatePath}"
+  readonly property string themeSetBin: "${runtimeThemeScript}/bin/runtime-theme"
   readonly property var agentUsageAgents: ${builtins.toJSON agentUsageAgents}
   readonly property string agentUsageUpdateBin: "${agentUsageUpdateScript}/bin/quickshell-agent-usage-update"
   readonly property string i3pmBin: "${config.home.profileDirectory}/bin/i3pm"
@@ -2931,6 +3025,77 @@ USAGE
     exit $status
   '';
 
+  # Theme switcher. Writes the state file the shell watches (live restyle)
+  # and Ghostty's palette include; new terminals pick it up, running ones on
+  # Ctrl+Shift+, (reload_config) — Ghostty has no reload signal.
+  runtimeThemeScript = pkgs.writeShellScriptBin "runtime-theme" ''
+    set -euo pipefail
+    themes=${themesJson}
+    state=${themeStatePath}
+    ghostty_theme="''${XDG_CONFIG_HOME:-$HOME/.config}/ghostty/theme.conf"
+    jq=${pkgs.jq}/bin/jq
+
+    usage() {
+      cat >&2 <<'USAGE'
+Usage: runtime-theme <command>
+  list             themes and which one is active
+  current          the active theme id
+  set <theme>      switch the shell (live) and the terminal palette (new terminals)
+  toggle           switch between the dark and light theme
+USAGE
+    }
+
+    current() {
+      if [ -r "$state" ] && name="$("$jq" -r '.name // empty' "$state" 2>/dev/null)" && [ -n "$name" ] \
+         && "$jq" -e --arg n "$name" 'has($n)' "$themes" >/dev/null; then
+        printf '%s\n' "$name"
+      else
+        printf '%s\n' "${themeName}"
+      fi
+    }
+
+    set_theme() {
+      local name="$1"
+      if ! "$jq" -e --arg n "$name" 'has($n)' "$themes" >/dev/null; then
+        echo "runtime-theme: unknown theme '$name' (see: runtime-theme list)" >&2
+        exit 2
+      fi
+      mkdir -p "$(dirname "$state")" "$(dirname "$ghostty_theme")"
+      tmp="$(mktemp "$(dirname "$state")/.theme.XXXXXX")"
+      "$jq" -n --arg n "$name" --arg at "$(date -Is)" '{name: $n, set_at: $at}' >"$tmp"
+      mv "$tmp" "$state"
+      {
+        echo "# Managed by runtime-theme ($name). Included by ~/.config/ghostty/config."
+        "$jq" -r --arg n "$name" '.[$n].terminal
+          | "background = \(.background)", "foreground = \(.foreground)",
+            "cursor-color = \(.cursor)",
+            "selection-background = \(.selectionBackground)", "selection-foreground = \(.selectionForeground)",
+            (.palette | to_entries[] | "palette = \(.key)=#\(.value)")' "$themes"
+      } >"$ghostty_theme.tmp" && mv "$ghostty_theme.tmp" "$ghostty_theme"
+      label="$("$jq" -r --arg n "$name" '.[$n].label' "$themes")"
+      echo "theme: $label ($name)"
+      ${pkgs.libnotify}/bin/notify-send -a runtime-theme -t 4000 "Theme: $label" "Shell restyled. New terminals use the matching palette; press Ctrl+Shift+, in an open Ghostty to reload." >/dev/null 2>&1 || true
+    }
+
+    cmd="''${1:-}"
+    case "$cmd" in
+      list)
+        active="$(current)"
+        "$jq" -r --arg a "$active" 'to_entries[] | "\(if .key == $a then "*" else " " end) \(.key)\t\(.value.label)\t\(.value.description)"' "$themes" | column -t -s $'\t'
+        ;;
+      current) current ;;
+      set) [ $# -ge 2 ] || { usage; exit 2; }; set_theme "$2" ;;
+      toggle)
+        active="$(current)"
+        if "$jq" -e --arg a "$active" '.[$a].dark' "$themes" >/dev/null; then want=false; else want=true; fi
+        next="$("$jq" -r --argjson d "$want" 'to_entries[] | select(.value.dark == $d) | .key' "$themes" | head -1)"
+        [ -n "$next" ] || { echo "runtime-theme: no theme to toggle to" >&2; exit 1; }
+        set_theme "$next"
+        ;;
+      *) usage; exit 2 ;;
+    esac
+  '';
+
   # Lock through the shell when it is up (themed ext-session-lock + PAM),
   # swaylock otherwise — a lock request must never be dropped.
   lockSessionScript = pkgs.writeShellScriptBin "lock-session" ''
@@ -3125,6 +3290,12 @@ in
       description = "Keybinding(s) used to toggle the runtime shell panel.";
     };
 
+    theme = lib.mkOption {
+      type = lib.types.str;
+      default = "zinc-dark";
+      description = "Built-in theme baked into the shell (see themes.nix). `runtime-theme set <name>` switches live at runtime.";
+    };
+
     idle = {
       screenOffSeconds = lib.mkOption {
         type = lib.types.ints.unsigned;
@@ -3207,6 +3378,7 @@ in
       toggleKeybindingsHelpScript
       brightnessKeyScript
       lockSessionScript
+      runtimeThemeScript
       agentUsageUpdateScript
     ] ++ agentUsageCollectors ++ [
       toggleLauncherScript

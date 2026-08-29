@@ -218,6 +218,10 @@ in
       # Theme - Catppuccin Mocha colors (using centralized defaults)
       background = config.terminal.defaults.colors.background;
       foreground = config.terminal.defaults.colors.foreground;
+      # The runtime shell's theme switcher (runtime-theme set) writes a
+      # palette include next to this file; optional so a fresh host without
+      # one still starts. Loaded after this file, so its keys win.
+      config-file = "?theme.conf";
 
       # Window configuration - using centralized defaults
       window-padding-x = config.terminal.defaults.padding.x;

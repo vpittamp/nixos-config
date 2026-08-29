@@ -86,6 +86,17 @@ the panel, right-click refreshes, middle-click switches subscription;
 file-watches them. "Sign-in expired" in the panel means `claude auth login`
 on that host; local token stats still show without it.
 
+**Themes** live in `quickshell-runtime-shell/themes.nix` (24 semantic base
+tokens + a terminal palette per theme; `zinc-dark`, `zinc-light`). `Theme.qml`
+is generated from the configured theme (`programs.quickshell-runtime-shell.theme`)
+— never edit it — and every other token is derived inside it, parametrised
+on `dark`. `runtime-theme set <name>|toggle|list|current` restyles the shell
+live (it writes `~/.local/state/quickshell-runtime-shell/theme.json`, which
+the shell watches) and writes `~/.config/ghostty/theme.conf` for new
+terminals (herdr follows the terminal; press `Ctrl+Shift+,` in an open
+Ghostty to reload). Launcher "Themes" mode: `Ctrl+3` / `;t`. Add a theme by
+adding an attrset to `themes.nix`; no QML changes.
+
 **Lock + idle** are in-shell: `Mod+Ctrl+L` / power menu *Lock* /
 `lock-session` engage `windows/LockScreen.qml` (ext-session-lock + PAM
 `swaylock` service); `lock-session` falls back to swaylock if the shell is
