@@ -399,6 +399,11 @@ class DaemonState:
 
     # Feature 102 T048: Window blur event tracking - track currently focused window globally
     currently_focused_window: Optional[int] = None  # Currently focused window ID (for blur event generation)
+    # Name of the workspace that holds sway focus, synced on workspace::focus and
+    # window::focus. Sway does not emit window::focus when focus lands on an EMPTY
+    # workspace, so `currently_focused_window` is also reset to 0 from the
+    # workspace event's own subtree (None = never observed, 0 = observed empty).
+    currently_focused_workspace: Optional[str] = None
 
     def __post_init__(self) -> None:
         """Initialize daemon state."""

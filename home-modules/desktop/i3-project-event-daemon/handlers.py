@@ -128,7 +128,13 @@ async def _record_trace_event_by_id(
 # Feature 123: Window Tree Cache Invalidation Helper
 # ============================================================================
 
-async def _invalidate_cache_and_notify(ipc_server, event_type: str, *, invalidate_tree: bool = True) -> None:
+async def _invalidate_cache_and_notify(
+    ipc_server,
+    event_type: str,
+    *,
+    invalidate_tree: bool = True,
+    refresh_focus: bool = False,
+) -> None:
     """Invalidate window tree cache and notify state change subscribers.
 
     Feature 123: Called by event handlers to trigger monitoring panel updates
@@ -145,11 +151,25 @@ async def _invalidate_cache_and_notify(ipc_server, event_type: str, *, invalidat
             False for focus events: the snapshot stamps `focused` from the
             authoritative state.currently_focused_window, so a warm cache cannot
             make the focus flag stale.
+        refresh_focus: Re-derive the daemon's focus answer (focused window →
+            herdr instance → active pane → session key) from the synchronously
+            tracked state BEFORE the notification is scheduled. Focus events
+            ship a focus-only delta that is built from that cached answer, so
+            without this step the delta re-emitted the previous answer and the
+            panel highlight only caught up on the next unrelated full rebuild.
     """
     if ipc_server is None:
         return
 
     try:
+        if refresh_focus:
+            refresh = getattr(ipc_server, "refresh_focus_from_sway", None)
+            if callable(refresh):
+                try:
+                    await refresh()
+                except Exception as exc:
+                    logger.debug(f"[focus] refresh_focus_from_sway failed: {exc}")
+
         # Invalidate the window tree cache so next query gets fresh data
         # (skipped for pure-focus events that don't alter tree structure).
         if invalidate_tree:
@@ -1865,6 +1885,8 @@ async def on_window_focus(
 
     # Update currently focused window tracking
     state_manager.state.currently_focused_window = window_id
+    if current_ws is not None and getattr(current_ws, "name", None):
+        state_manager.state.currently_focused_workspace = str(current_ws.name)
 
     # Feature 101: Record trace event for window focus
     await _record_trace_event(
@@ -1907,7 +1929,12 @@ async def on_window_focus(
             # Note: event_buffer.add_event() broadcasts via broadcast_event_entry()
 
         # Feature 123: Invalidate window tree cache and notify subscribers
-        await _invalidate_cache_and_notify(ipc_server, "window::focus", invalidate_tree=False)
+        await _invalidate_cache_and_notify(
+            ipc_server,
+            "window::focus",
+            invalidate_tree=False,
+            refresh_focus=True,
+        )
 
 
 async def on_window_move(
@@ -2234,6 +2261,7 @@ async def on_workspace_focus(
     try:
         current = event.current
         workspace_num = current.num
+        sync_focused_window_from_workspace_event(state_manager, current)
 
         # Feature 053 Phase 6: Comprehensive workspace event logging
         log_event_entry(
@@ -2264,7 +2292,52 @@ async def on_workspace_focus(
         logger.error(f"Error handling workspace::focus event: {e}")
         await state_manager.increment_error_count()
     finally:
-        await _invalidate_cache_and_notify(ipc_server, "workspace::focus", invalidate_tree=False)
+        await _invalidate_cache_and_notify(
+            ipc_server,
+            "workspace::focus",
+            invalidate_tree=False,
+            refresh_focus=True,
+        )
+
+
+def sync_focused_window_from_workspace_event(state_manager: StateManager, workspace: Any) -> Optional[int]:
+    """Sync tracked sway focus from a workspace::focus event's own subtree.
+
+    Sway emits window::focus only when focus lands on a WINDOW. Focusing an
+    empty workspace — after the only window on it closed, or after a plain
+    workspace switch to a bare one — emits workspace::focus alone, so
+    `currently_focused_window` kept naming the previously focused window and
+    everything derived from it (the focused flag in snapshots, the current
+    herdr session, the panel's "has the keyboard" highlight) stayed pointed at
+    a window that no longer had focus. The event carries the workspace
+    container with its full subtree, and sway marks the focused leaf in it, so
+    the answer is right here: the focused leaf's id, or 0 when there is none.
+
+    Returns the con id recorded (0 for "no window focused"), or None when the
+    event carried no usable container.
+    """
+    state = getattr(state_manager, "state", None)
+    if state is None or workspace is None:
+        return None
+    workspace_name = getattr(workspace, "name", None)
+    if workspace_name:
+        state.currently_focused_workspace = str(workspace_name)
+    focused = None
+    try:
+        find_focused = getattr(workspace, "find_focused", None)
+        if callable(find_focused):
+            focused = find_focused()
+    except Exception as exc:
+        logger.debug(f"[focus] could not inspect workspace::focus subtree: {exc}")
+        return None
+    focused_id = 0
+    if focused is not None:
+        try:
+            focused_id = int(getattr(focused, "id", 0) or 0)
+        except (TypeError, ValueError):
+            focused_id = 0
+    state.currently_focused_window = focused_id
+    return focused_id
 
 
 # ============================================================================

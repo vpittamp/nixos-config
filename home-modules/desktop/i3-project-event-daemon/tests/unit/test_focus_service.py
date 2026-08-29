@@ -1261,3 +1261,95 @@ def test_fail_focus_intent_for_exception_marks_active_intent_failed() -> None:
     assert result["state"] == "failed"
     assert result["reason"] == "boom"
     assert service.pending_intent_id == ""
+
+
+def test_select_current_session_key_reads_flattened_herdr_focused_flag() -> None:
+    # Rows from a dashboard snapshot have `focused`/`pane_active` rewritten to
+    # the previous sway answer; Herdr's own flag survives only as herdr_focused.
+    service = make_service()
+    sessions = [
+        {
+            "source": "herdr",
+            "session_key": "herdr:pane:w1:p1",
+            "is_current_host": True,
+            "focused": False,
+            "pane_active": False,
+            "herdr_focused": False,
+        },
+        {
+            "source": "herdr",
+            "session_key": "herdr:pane:w1:p2",
+            "is_current_host": True,
+            "focused": False,
+            "pane_active": False,
+            "herdr_focused": True,
+        },
+    ]
+
+    assert service.select_current_session_key(sessions, focused_herdr_host="__local__") == "herdr:pane:w1:p2"
+
+
+def test_lightweight_focus_state_reports_no_focus_instead_of_stale_base() -> None:
+    service = make_service()
+    stale_base = {
+        "current_session_key": "herdr:pane:w1:p1",
+        "current_window_id": 699,
+        "current_workspace_name": "33",
+        "current_herdr_pane_id": "w1:p1",
+        "current_herdr_host": "ryzen",
+        "active_context": {"connection_key": "local@ryzen"},
+        "active_session": {"session_key": "herdr:pane:w1:p1", "pane_id": "w1:p1"},
+    }
+    # Focus moved to an empty workspace: window 0, no session — a real answer.
+    service.note_sway_focus(window_id=0, session_key="", workspace_name="22", sessions=[])
+
+    result = service.build_lightweight_focus_state_payload(generation=3, base_focus_state=stale_base)
+
+    assert result["current_session_key"] == ""
+    assert result["current_window_id"] == 0
+    assert result["current_workspace_name"] == "22"
+    assert result["current_herdr_pane_id"] == ""
+    assert result["current_herdr_host"] == ""
+    assert result["active_session"]["session_key"] == ""
+    assert result["active_context"] == {"connection_key": "local@ryzen"}
+
+
+def test_note_sway_focus_resolves_pane_and_host_for_lightweight_payload() -> None:
+    service = make_service()
+    sessions = [
+        {
+            "session_key": "herdr:pane:wB:p5",
+            "pane_id": "wB:p5",
+            "host_name": "ryzen",
+            "agent": "claude",
+            "workspace_id": "wB",
+        }
+    ]
+
+    service.note_sway_focus(window_id=699, session_key="herdr:pane:wB:p5", workspace_name="33", sessions=sessions)
+    result = service.build_lightweight_focus_state_payload(generation=4, base_focus_state={})
+
+    assert result["current_session_key"] == "herdr:pane:wB:p5"
+    assert result["current_window_id"] == 699
+    assert result["current_herdr_pane_id"] == "wB:p5"
+    assert result["current_herdr_host"] == "ryzen"
+    assert result["active_session"]["agent"] == "claude"
+    assert result["active_session"]["workspace_id"] == "wB"
+
+
+def test_lightweight_focus_state_never_describes_a_different_session() -> None:
+    service = make_service()
+    service.note_sway_focus(window_id=699, session_key="herdr:pane:wB:p5", workspace_name="33", sessions=[
+        {"session_key": "herdr:pane:wB:p5", "pane_id": "wB:p5", "host_name": "ryzen"},
+    ])
+    # An override moved the key without a row lookup (e.g. set_focus_overrides).
+    service.current_session_key = "herdr:pane:wB:pG"
+
+    result = service.build_lightweight_focus_state_payload(
+        generation=5,
+        base_focus_state={"active_session": {"session_key": "herdr:pane:wB:p5", "pane_id": "wB:p5"}},
+    )
+
+    assert result["current_session_key"] == "herdr:pane:wB:pG"
+    assert result["current_herdr_pane_id"] == ""
+    assert result["active_session"]["session_key"] == ""

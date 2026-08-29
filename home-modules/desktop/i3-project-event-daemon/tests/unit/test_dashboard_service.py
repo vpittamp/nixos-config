@@ -644,3 +644,48 @@ async def test_lightweight_focus_payload_retains_git_fields_on_session_rows() ->
     assert row["git_snapshot"]["dirty_count"] == 2
 
 
+
+
+@pytest.mark.asyncio
+async def test_focus_event_payload_clears_pane_fields_when_nothing_is_focused() -> None:
+    service = DashboardService(
+        runtime_loader=lambda params: _async_value((_runtime_snapshot(), [], {})),
+        display_snapshot=lambda: _async_value({"outputs": []}),
+        build_projects=lambda runtime, sessions: [],
+        build_focus_state=lambda runtime, sessions, *, generation: {},
+        build_lightweight_focus_state=lambda *, generation, base_focus_state=None: {
+            "schema_version": "i3pm.focus_state.v2",
+            "generation": generation,
+            "current_session_key": "",
+            "current_window_id": 0,
+            "current_workspace_name": "22",
+            # A builder that (wrongly) carried the old pane forward must still be
+            # overridden: no key means no pane.
+            "current_herdr_pane_id": "wB:p5",
+            "current_herdr_host": "ryzen",
+            "pending_intent_id": "",
+            "active_session": {"session_key": ""},
+        },
+        build_herdr_spaces=lambda herdr_snapshot, sessions: [],
+        list_launches=lambda **kwargs: [],
+        invalidate_worktree_cache=lambda: None,
+        timestamp=lambda: 42.0,
+    )
+    service._last_snapshot = {
+        "status": "ok",
+        "schema_version": "i3pm.dashboard.v2",
+        "focus_state": {"current_session_key": "herdr:pane:wB:p5"},
+        "active_ai_sessions": [
+            {"source": "herdr", "session_key": "herdr:pane:wB:p5", "pane_id": "wB:p5", "focused": True, "pane_active": True, "window_active": True, "is_current_window": True, "herdr_focused": True},
+        ],
+    }
+
+    payload = await service.event_payload(["focus_state"])
+
+    assert payload["focus_state"]["current_session_key"] == ""
+    assert payload["focus_state"]["current_herdr_pane_id"] == ""
+    assert payload["focus_state"]["current_herdr_host"] == ""
+    row = payload["active_ai_sessions"][0]
+    assert row["is_current_window"] is False
+    assert row["focused"] is False and row["pane_active"] is False and row["window_active"] is False
+    assert row["herdr_focused"] is True  # herdr's own flag survives the flatten

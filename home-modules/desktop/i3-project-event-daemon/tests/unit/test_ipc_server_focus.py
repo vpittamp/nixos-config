@@ -1139,3 +1139,130 @@ def test_dashboard_invariants_warn_on_remote_herdr_focus_mismatch(server):
     # Remote-focused-remotely while focused-locally is legitimate: warn, don't fail.
     assert result["ok"] is True
     assert "remote_herdr_focus_mismatch" in result["warnings"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_focus_from_sway_clears_session_when_no_window_has_focus(server):
+    server.state_manager.state.currently_focused_window = 0
+    server.state_manager.state.currently_focused_workspace = "22"
+    server.dashboard_service._last_snapshot = {
+        "active_ai_sessions": [
+            {
+                "source": "herdr",
+                "session_key": "herdr:pane:wB:p5",
+                "pane_id": "wB:p5",
+                "is_current_host": True,
+                "herdr_focused": True,
+                "focused": True,
+                "pane_active": True,
+            }
+        ]
+    }
+    server.focus_service.note_sway_focus(
+        window_id=699,
+        session_key="herdr:pane:wB:p5",
+        workspace_name="33",
+        sessions=server.dashboard_service.last_snapshot_sessions(),
+    )
+
+    result = await server.refresh_focus_from_sway()
+
+    assert result["refreshed"] is True
+    assert result["current_session_key"] == ""
+    payload = server.focus_service.build_lightweight_focus_state_payload(generation=1, base_focus_state={})
+    assert payload["current_session_key"] == ""
+    assert payload["current_window_id"] == 0
+    assert payload["current_workspace_name"] == "22"
+    assert payload["current_herdr_pane_id"] == ""
+
+
+@pytest.mark.asyncio
+async def test_refresh_focus_from_sway_selects_active_pane_of_focused_herdr_window(server):
+    server.state_manager.state.window_map[699] = SimpleNamespace(app_identifier="herdr", window_id=699)
+    server.state_manager.state.currently_focused_window = 699
+    server.state_manager.state.currently_focused_workspace = "33"
+    server.dashboard_service._last_snapshot = {
+        "active_ai_sessions": [
+            {
+                "source": "herdr",
+                "session_key": "herdr:pane:wB:p5",
+                "pane_id": "wB:p5",
+                "host_name": "ryzen",
+                "is_current_host": True,
+                "herdr_focused": False,
+                "focused": True,  # stale sway answer from the previous flatten
+                "pane_active": True,
+            },
+            {
+                "source": "herdr",
+                "session_key": "herdr:pane:wB:pG",
+                "pane_id": "wB:pG",
+                "host_name": "ryzen",
+                "is_current_host": True,
+                "herdr_focused": True,  # herdr's own current pane
+                "focused": False,
+                "pane_active": False,
+            },
+        ]
+    }
+
+    result = await server.refresh_focus_from_sway()
+
+    assert result["focused_herdr_host"] == "__local__"
+    # Herdr's own flag wins over the stale sway-derived flags on the first row.
+    assert result["current_session_key"] == "herdr:pane:wB:pG"
+    payload = server.focus_service.build_lightweight_focus_state_payload(generation=1, base_focus_state={})
+    assert payload["current_session_key"] == "herdr:pane:wB:pG"
+    assert payload["current_window_id"] == 699
+    assert payload["current_workspace_name"] == "33"
+    assert payload["current_herdr_pane_id"] == "wB:pG"
+    assert payload["current_herdr_host"] == "ryzen"
+    assert payload["active_session"]["session_key"] == "herdr:pane:wB:pG"
+
+
+@pytest.mark.asyncio
+async def test_refresh_focus_from_sway_is_noop_before_first_focus_event(server):
+    server.state_manager.state.currently_focused_window = None
+    result = await server.refresh_focus_from_sway()
+    assert result == {"refreshed": False, "reason": "focus_not_observed"}
+
+
+def test_stamp_focused_workspace_rewrites_cached_flags_on_the_holding_output(server):
+    outputs = [
+        {
+            "name": "DP-1",
+            "current_workspace": "33",
+            "workspaces": [{"name": "33", "focused": True, "visible": True}],
+        },
+        {
+            "name": "DP-2",
+            "current_workspace": "15",
+            "workspaces": [
+                {"name": "15", "focused": False, "visible": True},
+                {"name": "22", "focused": False, "visible": False},
+            ],
+        },
+    ]
+
+    server._stamp_focused_workspace(outputs, "22")
+
+    assert outputs[0]["workspaces"][0]["focused"] is False
+    assert outputs[0]["workspaces"][0]["visible"] is True  # other output untouched
+    assert outputs[0]["current_workspace"] == "33"
+    assert outputs[1]["current_workspace"] == "22"
+    assert [w["focused"] for w in outputs[1]["workspaces"]] == [False, True]
+    assert [w["visible"] for w in outputs[1]["workspaces"]] == [False, True]
+
+
+def test_stamp_focused_workspace_ignores_unknown_workspace(server):
+    outputs = [{"name": "DP-1", "current_workspace": "33", "workspaces": [{"name": "33", "focused": True, "visible": True}]}]
+    server._stamp_focused_workspace(outputs, "99")
+    assert outputs[0]["workspaces"][0]["focused"] is True
+    assert outputs[0]["current_workspace"] == "33"
+
+
+def test_sway_focus_observation_distinguishes_unknown_from_empty(server):
+    assert server._sway_focus_observation(SimpleNamespace(currently_focused_window=None)) == (False, 0)
+    assert server._sway_focus_observation(SimpleNamespace(currently_focused_window=0)) == (True, 0)
+    assert server._sway_focus_observation(SimpleNamespace(currently_focused_window=699)) == (True, 699)
+    assert server._sway_focus_observation(SimpleNamespace()) == (False, 0)

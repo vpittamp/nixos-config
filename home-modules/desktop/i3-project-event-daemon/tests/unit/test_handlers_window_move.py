@@ -164,5 +164,7 @@ async def test_workspace_focus_notifies_dashboard_consumers():
     )
 
     focus_tracker.track_workspace_focus.assert_awaited_once_with("vpittamp/nixos-config:main", 158)
-    ipc_server.invalidate_window_tree_cache.assert_called_once()
+    # Pure focus events keep the window-tree cache warm on purpose (they change
+    # no tree structure); the focused flags are stamped from tracked state.
+    ipc_server.invalidate_window_tree_cache.assert_not_called()
     ipc_server.notify_state_change.assert_awaited_once_with("workspace::focus")

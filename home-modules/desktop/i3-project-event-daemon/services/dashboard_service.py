@@ -73,6 +73,20 @@ class DashboardService:
         """Remove a client from dashboard event subscribers."""
         self.subscribers.discard(writer)
 
+    def last_snapshot_sessions(self) -> List[Dict[str, Any]]:
+        """Session rows from the last full snapshot (copies), or [] before one exists.
+
+        Cheap source of rows for re-answering "which pane has focus" on a sway
+        focus event: the rows still carry Herdr's raw `herdr_focused` flag, so
+        no Herdr socket / SSH round trip is needed to re-select.
+        """
+        snapshot = self._last_snapshot if isinstance(self._last_snapshot, dict) else {}
+        return [
+            dict(row)
+            for row in (snapshot.get("active_ai_sessions", []) or [])
+            if isinstance(row, dict)
+        ]
+
     async def snapshot(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return the daemon-owned dashboard payload consumed by QuickShell."""
         params = params or {}
@@ -249,6 +263,13 @@ class DashboardService:
                 if is_current:
                     active_session = dict(session)
                 active_ai_sessions.append(session)
+            if not current_session_key:
+                # "Nothing has focus" is a complete answer: the pane/host of the
+                # previously current session must not survive into a payload
+                # whose key says there is no current session.
+                focus_state = dict(focus_state)
+                focus_state["current_herdr_pane_id"] = ""
+                focus_state["current_herdr_host"] = ""
             if active_session:
                 focus_state = dict(focus_state)
                 focus_state["current_herdr_pane_id"] = str(active_session.get("pane_id") or "").strip()

@@ -5080,6 +5080,139 @@ class IPCServer:
         sessions = self.herdr_service.sanitize_session_rows(sessions_raw)
         return runtime_snapshot, sessions, {}
 
+    @staticmethod
+    def _focused_herdr_host_for_app(app_name: Any) -> Optional[str]:
+        """Map a focused window's registry app name to a herdr instance token.
+
+        ``"__local__"`` for the local herdr window, ``"<host>"`` for a remote
+        ``herdr-<host>`` window, ``None`` when the window is not a herdr window
+        at all (see FocusService.select_current_session_key).
+        """
+        focused_app = str(app_name or "").strip()
+        if focused_app == "herdr":
+            return "__local__"
+        if focused_app.startswith("herdr-"):
+            return focused_app[len("herdr-"):]
+        return None
+
+    @staticmethod
+    def _sway_focus_observation(state: Any) -> Tuple[bool, int]:
+        """(focus_known, focused_con_id) from the daemon's synchronous focus tracking.
+
+        `currently_focused_window` is None until the first focus event has been
+        observed; after that it is a con id, or 0 when a workspace::focus event
+        showed that sway focus rests on an EMPTY workspace (sway emits no
+        window::focus in that case). 0 is therefore a real answer — "no window
+        has focus" — and must not be conflated with "unknown".
+        """
+        raw = getattr(state, "currently_focused_window", None)
+        if raw is None:
+            return False, 0
+        try:
+            return True, int(raw or 0)
+        except (TypeError, ValueError):
+            return False, 0
+
+    @staticmethod
+    def _stamp_focused_workspace(outputs: List[Dict[str, Any]], focused_workspace: Optional[str]) -> None:
+        """Overwrite cached workspace focus flags with the synchronously tracked one.
+
+        Focus events keep the window-tree cache warm on purpose (they change no
+        structure), so the cached `focused`/`visible` flags describe the
+        workspace that WAS focused when the tree was fetched. The focus_state's
+        `current_workspace_name` is read from these flags, so without this a
+        workspace switch reported the previous workspace for up to the cache
+        TTL. Only the output holding the focused workspace has its visibility
+        rewritten: a switch cannot change what the other outputs show.
+        """
+        name = str(focused_workspace or "").strip()
+        if not name:
+            return
+        holder: Optional[Dict[str, Any]] = None
+        for output in outputs:
+            if not isinstance(output, dict):
+                continue
+            for workspace in output.get("workspaces", []) or []:
+                if isinstance(workspace, dict) and str(workspace.get("name") or "").strip() == name:
+                    holder = output
+                    break
+            if holder is not None:
+                break
+        if holder is None:
+            # The tracked workspace is not in the cached tree (a workspace that
+            # was just created); leave the cached flags alone rather than
+            # clearing every focus flag and reporting no focused workspace.
+            return
+        for output in outputs:
+            if not isinstance(output, dict):
+                continue
+            for workspace in output.get("workspaces", []) or []:
+                if not isinstance(workspace, dict):
+                    continue
+                is_focused = output is holder and str(workspace.get("name") or "").strip() == name
+                workspace["focused"] = is_focused
+                if output is holder:
+                    workspace["visible"] = is_focused
+        holder["current_workspace"] = name
+
+    async def refresh_focus_from_sway(self) -> Dict[str, Any]:
+        """Re-answer "which session has the keyboard" from tracked sway focus.
+
+        Runs from the window::focus / workspace::focus handlers, BEFORE the
+        focus-only dashboard event is scheduled, so that event carries the new
+        answer instead of re-emitting the last full snapshot's. It costs no
+        Sway IPC and no Herdr round trip: the focused con id and workspace are
+        tracked synchronously by the handlers, the app name comes from the
+        window map, and the session rows come from the last snapshot (whose
+        `herdr_focused` flag still says which pane of that instance is active).
+        """
+        state = getattr(self.state_manager, "state", None)
+        focus_known, focused_window_id = self._sway_focus_observation(state)
+        if not focus_known:
+            return {"refreshed": False, "reason": "focus_not_observed"}
+        focused_app = ""
+        if focused_window_id > 0:
+            window_info = None
+            get_window = getattr(self.state_manager, "get_window", None)
+            if callable(get_window):
+                try:
+                    window_info = await get_window(focused_window_id)
+                except Exception:
+                    window_info = None
+            if window_info is None:
+                window_map = getattr(state, "window_map", None)
+                if isinstance(window_map, dict):
+                    window_info = window_map.get(focused_window_id)
+            focused_app = str(getattr(window_info, "app_identifier", "") or "")
+        focused_herdr_host = self._focused_herdr_host_for_app(focused_app)
+        sessions = self.dashboard_service.last_snapshot_sessions()
+        for row in sessions:
+            # Snapshot rows carry `focused`/`pane_active` rewritten to the
+            # PREVIOUS sway answer; Herdr's own per-pane flag is `herdr_focused`.
+            # Re-selecting must read Herdr's flag, or the row that was current
+            # last time would shadow the pane Herdr has since moved to.
+            herdr_focused = row.get("herdr_focused")
+            if isinstance(herdr_focused, bool):
+                row["focused"] = herdr_focused
+                row["pane_active"] = herdr_focused
+        current_session_key = self.focus_service.select_current_session_key(
+            sessions,
+            focused_herdr_host=focused_herdr_host,
+        )
+        workspace_name = getattr(state, "currently_focused_workspace", None)
+        self.focus_service.note_sway_focus(
+            window_id=focused_window_id,
+            session_key=current_session_key,
+            workspace_name=str(workspace_name) if workspace_name is not None else None,
+            sessions=sessions,
+        )
+        return {
+            "refreshed": True,
+            "current_window_id": focused_window_id,
+            "current_session_key": current_session_key,
+            "focused_herdr_host": focused_herdr_host or "",
+        }
+
     async def _focus_state(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Return canonical focus state for acceptance checks and UI confirmation."""
         runtime_snapshot, sessions, _cleanup = await self._load_reconciled_session_runtime(
@@ -5523,7 +5656,13 @@ class IPCServer:
         # even when the tree cache is intentionally NOT invalidated on focus
         # events (Phase 2: focus changes no tree STRUCTURE, so keeping the cache
         # warm is safe — but the per-window focused flag must not go stale).
-        focused_con_id = int(getattr(self.state_manager.state, "currently_focused_window", 0) or 0)
+        # `focus_known` separates "no focus event observed yet" (fall back to the
+        # tree's own flag) from "observed: no window has focus" (an empty
+        # workspace is focused; every window is unfocused, whatever the cache
+        # says). Collapsing the two made the last-focused window keep its flag —
+        # and its herdr pane the highlight — after focus left for a bare
+        # workspace, until some unrelated window::focus finally overwrote it.
+        focus_known, focused_con_id = self._sway_focus_observation(self.state_manager.state)
         for window_info in tracked_windows.values():
             app_key = str(getattr(window_info, "app_identifier", "") or "")
             window_class = str(getattr(window_info, "window_class", "") or "")
@@ -5620,7 +5759,7 @@ class IPCServer:
                         or getattr(window_info, "context_key", "")
                         or ""
                     ),
-                    "focused": (window_id == focused_con_id) if focused_con_id else bool(visible_window.get("focused", False)),
+                    "focused": (window_id == focused_con_id) if focus_known else bool(visible_window.get("focused", False)),
                     "visible": visible,
                     "hidden": hidden,
                     "binding_state": binding_state,
@@ -5661,6 +5800,10 @@ class IPCServer:
             )
 
         outputs = self._project_outputs_from_tracked_windows(outputs, tracked_window_list)
+        self._stamp_focused_workspace(
+            outputs,
+            getattr(self.state_manager.state, "currently_focused_workspace", None),
+        )
 
         active_context_key = str(active_context.get("context_key") or "").strip()
         active_project_name = str(active_context.get("qualified_name") or active_context.get("project_name") or "").strip()
@@ -5750,13 +5893,9 @@ class IPCServer:
         # focused=True, so the per-instance flag alone is ambiguous across windows.
         focused_herdr_host: Optional[str] = None
         if focused_window is not None:
-            focused_app = str(
+            focused_herdr_host = self._focused_herdr_host_for_app(
                 focused_window.get("app_name") or focused_window.get("app_key") or ""
-            ).strip()
-            if focused_app == "herdr":
-                focused_herdr_host = "__local__"
-            elif focused_app.startswith("herdr-"):
-                focused_herdr_host = focused_app[len("herdr-"):]
+            )
         current_session_key = self.focus_service.select_current_session_key(
             sessions,
             focused_herdr_host=focused_herdr_host,
