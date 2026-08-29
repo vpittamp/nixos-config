@@ -85,9 +85,7 @@ in
     #   The only two dropped pieces that run always-on daemons. Kept off because
     #   this machine has 3.7 GiB of RAM, not because of their ~115 MiB on disk.
     #
-    # ../modules/services/cachix-deploy.nix
-    #   Needs its own agent token provisioned in 1Password + registered at
-    #   app.cachix.org. Add once this host is worth auto-deploying to.
+    ../modules/services/cachix-deploy.nix
   ];
 
   # Kept byte-identical to configurations/surface.nix on purpose: these overlays
@@ -334,4 +332,17 @@ in
     grim
     slurp
   ];
+
+  # Cachix Deploy agent, so a push to main updates this host together with
+  # ryzen/thinkpad/surface instead of leaving it a commit behind until someone
+  # ssh-deploys it (that lag is how the fleet ends up on mismatched herdr
+  # builds). Token item: "Cachix Deploy Agent Surface-Pro3" in the CLI vault,
+  # provisioned by cachix-token-provision on first boot with 1Password signed in.
+  services.cachix-deploy = {
+    enable = true;
+    onePassword = {
+      enable = true;
+      tokenReference = "op://CLI/Cachix Deploy Agent Surface-Pro3/token";
+    };
+  };
 }
