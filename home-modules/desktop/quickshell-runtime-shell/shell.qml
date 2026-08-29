@@ -31,6 +31,7 @@ ShellRoot {
     readonly property var settingsCommandsList: settingsWindow ? settingsWindow.settingsCommandsListRef : null
     readonly property var clock: runtimeServices ? runtimeServices.clockRef : null
     readonly property var launcherFocusTimer: runtimeServices ? runtimeServices.launcherFocusTimerRef : null
+    readonly property var osdHideTimer: runtimeServices ? runtimeServices.osdHideTimerRef : null
     readonly property var launcherQueryDebounce: runtimeServices ? runtimeServices.launcherQueryDebounceRef : null
     readonly property var launcherSessionSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherSessionSwitcherOpenTimerRef : null
     readonly property var launcherWindowSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherWindowSwitcherOpenTimerRef : null
@@ -193,6 +194,78 @@ ShellRoot {
     property bool powerMenuVisible: false
     property bool castPopupVisible: false
     property bool audioPopupVisible: false
+
+    // ----- OSD (volume / mic / brightness / scale) -----
+    // showOsd() fills these; OsdWindow renders them on osdScreen for the
+    // duration of osdHideTimer. Volume and mic changes are picked up
+    // reactively from PipeWire (any source: keys, popup slider, pactl), so
+    // nothing needs to call the shell for those. Brightness is polled at 2s,
+    // too slow for key feedback, so the brightness keybindings report the new
+    // level through the showOsd IPC instead (quickshell-brightness-key).
+    property bool osdVisible: false
+    property string osdKind: "volume"
+    property real osdLevel: 0
+    property bool osdMuted: false
+    property string osdText: ""
+    property string osdOutputName: ""
+    readonly property var osdScreen: findScreenByOutputName(osdOutputName) || activeScreen
+    // Suppress the OSD while the shell settles: PipeWire nodes report their
+    // initial volume as a change, which would flash the OSD on every restart.
+    property bool osdArmed: false
+    readonly property int osdSinkVolume: volumePercent()
+    readonly property bool osdSinkMuted: audioReady() && boolOrFalse(audioNode().audio.muted)
+    readonly property int osdSourceVolume: inputVolumePercent()
+    readonly property bool osdSourceMuted: {
+        const node = audioSourceNode();
+        return !!(node && node.ready && node.audio) && boolOrFalse(node.audio.muted);
+    }
+    onOsdSinkVolumeChanged: if (osdArmed && !audioPopupVisible) showOsd("volume", osdSinkVolume, osdSinkMuted, "")
+    onOsdSinkMutedChanged: if (osdArmed && !audioPopupVisible) showOsd("volume", osdSinkVolume, osdSinkMuted, "")
+    onOsdSourceVolumeChanged: if (osdArmed && !audioPopupVisible) showOsd("mic", osdSourceVolume, osdSourceMuted, "")
+    onOsdSourceMutedChanged: if (osdArmed && !audioPopupVisible) showOsd("mic", osdSourceVolume, osdSourceMuted, "")
+    onTouchModeStateChanged: if (osdArmed && touchModeAvailable) showOsd("scale", touchModeActive ? 100 : 0, false, touchModeActive ? "Touch mode on — outputs scaled up" : "Touch mode off — scale restored")
+
+    function showOsd(kind, level, muted, text) {
+        osdKind = stringOrEmpty(kind) || "volume";
+        osdLevel = Math.max(0, Math.min(100, Number(level) || 0));
+        osdMuted = boolOrFalse(muted);
+        osdText = stringOrEmpty(text);
+        osdOutputName = focusedOutputName();
+        osdVisible = true;
+        if (osdHideTimer) {
+            osdHideTimer.restart();
+        }
+    }
+
+    // IPC entry: `runtime-shell call showOsd brightness 55`. Brightness also
+    // updates the bar chip's state optimistically so it agrees with the OSD
+    // before the 2s poll catches up.
+    function showOsdFromIpc(kind, levelText) {
+        const normalizedKind = stringOrEmpty(kind).toLowerCase();
+        if (["volume", "mic", "brightness", "scale"].indexOf(normalizedKind) === -1) {
+            return "unknown osd kind: " + normalizedKind;
+        }
+        if (normalizedKind === "volume") {
+            showOsd("volume", osdSinkVolume, osdSinkMuted, "");
+            return "ok";
+        }
+        if (normalizedKind === "mic") {
+            showOsd("mic", osdSourceVolume, osdSourceMuted, "");
+            return "ok";
+        }
+        const level = Number(stringOrEmpty(levelText).replace("%", ""));
+        if (isNaN(level)) {
+            return "invalid level: " + stringOrEmpty(levelText);
+        }
+        if (normalizedKind === "brightness" && brightnessState && brightnessState.display) {
+            brightnessState = Object.assign({}, brightnessState, {
+                display: Object.assign({}, brightnessState.display, { percent: Math.round(level) })
+            });
+        }
+        showOsd(normalizedKind, level, false, "");
+        return "ok";
+    }
+
     // PipeWire: bind default sink/source so their properties (ready, audio) become available
     readonly property PwNode pipewireSink: Pipewire.defaultAudioSink
     readonly property PwNode pipewireSource: Pipewire.defaultAudioSource
@@ -9918,6 +9991,12 @@ function normalizeLauncherMode(mode) {
     }
 
     Windows.DictationOverlay {
+        shellRoot: shellRootRef
+        runtimeConfig: shellConfig
+        colors: shellRootRef.colors
+    }
+
+    Windows.OsdWindow {
         shellRoot: shellRootRef
         runtimeConfig: shellConfig
         colors: shellRootRef.colors

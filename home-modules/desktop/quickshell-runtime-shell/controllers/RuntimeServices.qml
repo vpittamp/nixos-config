@@ -19,6 +19,7 @@ Item {
     property alias brightnessRestartTimerRef: brightnessRestartTimer
     property alias lidPolicyRestartTimerRef: lidPolicyRestartTimer
     property alias launcherFocusTimerRef: launcherFocusTimer
+    property alias osdHideTimerRef: osdHideTimer
     property alias launcherQueryDebounceRef: launcherQueryDebounce
     property alias launcherSessionSwitcherOpenTimerRef: launcherSessionSwitcherOpenTimer
     property alias launcherWindowSwitcherOpenTimerRef: launcherWindowSwitcherOpenTimer
@@ -385,6 +386,21 @@ Item {
             shellRoot.launcherField.forceActiveFocus();
             shellRoot.launcherField.selectAll();
         }
+    }
+
+    Timer {
+        id: osdHideTimer
+        interval: 1400
+        repeat: false
+        onTriggered: shellRoot.osdVisible = false
+    }
+
+    Timer {
+        id: osdArmTimer
+        interval: 3000
+        repeat: false
+        running: true
+        onTriggered: shellRoot.osdArmed = true
     }
 
     Timer {
@@ -1257,6 +1273,11 @@ Item {
 
         function showKeybindings() {
             shellRoot.showLauncher("keys", "");
+        }
+
+        // `runtime-shell call showOsd brightness 55` / `... volume ""`.
+        function showOsd(kind: string, level: string): string {
+            return shellRoot.showOsdFromIpc(kind, level);
         }
 
         function toggleKeybindings() {

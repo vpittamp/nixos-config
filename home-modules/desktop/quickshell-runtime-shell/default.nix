@@ -2859,6 +2859,30 @@ USAGE
     esac
   '';
 
+  # Brightness keys: brightnessctl stays authoritative (works with the shell
+  # down), then the new level is handed to the OSD. The 2s brightness poll is
+  # too slow to drive key feedback on its own.
+  brightnessKeyScript = pkgs.writeShellScriptBin "quickshell-brightness-key" ''
+    set -euo pipefail
+    target="''${1:-display}"
+    direction="''${2:-up}"
+    case "$target" in
+      display) dev=() ;;
+      keyboard) dev=(-d '*kbd_backlight*' -n 5) ;;
+      *) echo "usage: quickshell-brightness-key display|keyboard up|down" >&2; exit 2 ;;
+    esac
+    case "$direction" in
+      up) delta="+5%" ;; down) delta="5%-" ;;
+      *) echo "usage: quickshell-brightness-key display|keyboard up|down" >&2; exit 2 ;;
+    esac
+    if [ "$target" = keyboard ]; then delta="''${delta/5/10}"; fi
+    out="$(${lib.getExe pkgs.brightnessctl} "''${dev[@]}" -m set "$delta")"
+    if [ "$target" = display ]; then
+      percent="$(printf '%s\n' "$out" | ${pkgs.coreutils}/bin/cut -d, -f4 | ${pkgs.coreutils}/bin/tr -d '%')"
+      ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell showOsd brightness "$percent" >/dev/null 2>&1 || true
+    fi
+  '';
+
   togglePowerMenuScript = mkIpcScript "toggle-runtime-power-menu" "togglePowerMenu" "";
   toggleKeybindingsHelpScript = mkIpcScript "toggle-keybindings-help" "toggleKeybindings" "";
   toggleLauncherScript = mkIpcScript "toggle-app-launcher" "toggleLauncher" "";
@@ -3103,6 +3127,7 @@ in
       togglePowerMenuScript
       runtimeShellCliScript
       toggleKeybindingsHelpScript
+      brightnessKeyScript
       toggleLauncherScript
       toggleAgentMonitorScript
       toggleSettingsScript

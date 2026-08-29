@@ -170,15 +170,26 @@ let
     {
       name = "Hardware";
       bindings = [
-        (bind "XF86MonBrightnessUp" "exec brightnessctl set +5%" "Screen brightness up")
-        (bind "XF86MonBrightnessDown" "exec brightnessctl set 5%-" "Screen brightness down")
+        # With the runtime shell the keys go through quickshell-brightness-key,
+        # which runs the same brightnessctl step and then shows the OSD.
+        (bind "XF86MonBrightnessUp"
+          (if hasRuntimeShell then "exec quickshell-brightness-key display up" else "exec brightnessctl set +5%")
+          "Screen brightness up")
+        (bind "XF86MonBrightnessDown"
+          (if hasRuntimeShell then "exec quickshell-brightness-key display down" else "exec brightnessctl set 5%-")
+          "Screen brightness down")
         # ThinkPad: tpacpi::kbd_backlight, Apple Silicon: kbd_backlight
-        (bind "XF86KbdBrightnessUp" "exec brightnessctl -d '*kbd_backlight*' -n 5 set +10%" "Keyboard backlight up")
-        (bind "XF86KbdBrightnessDown" "exec brightnessctl -d '*kbd_backlight*' -n 5 set 10%-" "Keyboard backlight down")
-        (bind "XF86AudioRaiseVolume" "exec pactl set-sink-volume @DEFAULT_SINK@ +5%" "Volume up")
-        (bind "XF86AudioLowerVolume" "exec pactl set-sink-volume @DEFAULT_SINK@ -5%" "Volume down")
-        (bind "XF86AudioMute" "exec pactl set-sink-mute @DEFAULT_SINK@ toggle" "Mute / unmute")
-        (bind "XF86AudioMicMute" "exec pactl set-source-mute @DEFAULT_SOURCE@ toggle" "Mute / unmute microphone")
+        (bind "XF86KbdBrightnessUp"
+          (if hasRuntimeShell then "exec quickshell-brightness-key keyboard up" else "exec brightnessctl -d '*kbd_backlight*' -n 5 set +10%")
+          "Keyboard backlight up")
+        (bind "XF86KbdBrightnessDown"
+          (if hasRuntimeShell then "exec quickshell-brightness-key keyboard down" else "exec brightnessctl -d '*kbd_backlight*' -n 5 set 10%-")
+          "Keyboard backlight down")
+        # wpctl, not pactl: PipeWire ships wpctl on every host; pactl was never installed.
+        (bind "XF86AudioRaiseVolume" "exec wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+" "Volume up")
+        (bind "XF86AudioLowerVolume" "exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-" "Volume down")
+        (bind "XF86AudioMute" "exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle" "Mute / unmute")
+        (bind "XF86AudioMicMute" "exec wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle" "Mute / unmute microphone")
         (bind "XF86AudioPlay" "exec playerctl play-pause" "Play / pause")
         (bind "XF86AudioNext" "exec playerctl next" "Next track")
         (bind "XF86AudioPrev" "exec playerctl previous" "Previous track")

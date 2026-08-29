@@ -38,6 +38,34 @@ home-modules/       # User environment
 | `Alt+Ctrl+Tab` / 3-finger swipe ↑ | Window exposé grouped by monitor |
 | `Mod+grave` / `Mod+Escape` | Cycle focused app's windows / toggle last window (no UI) |
 | `Mod+Shift+D` | Cast toggle — TV as wireless display / stop |
+| `Mod+Ctrl+K` | Keybinding cheat sheet (launcher "Keys" mode; also `Ctrl+6` / `;k` inside the launcher) |
+
+Bindings are declared once in `home-modules/desktop/sway-keybindings-data.nix`
+(key, command, description, group). `sway-keybindings.nix` flattens that into
+sway's `bindsym` set and the runtime shell bakes the same list into its Keys
+sheet, so the sheet cannot drift from what sway runs — add bindings there, not
+as bare attrset lines. Volume keys use `wpctl` (no host has `pactl`);
+brightness keys go through `quickshell-brightness-key`, which steps
+`brightnessctl` and then shows the OSD.
+
+## Runtime Shell IPC (`runtime-shell`)
+
+Every shell surface is addressable by id, so a keybinding, hook, or script can
+open exactly the thing it wants without a wrapper script per function:
+
+```bash
+runtime-shell list                                  # surfaces + open state
+runtime-shell toggle keybindings                    # open if closed, close if open
+runtime-shell summon launcher '{"mode":"files","query":"nix"}'
+runtime-shell summon panel '{"section":"sessions"}'
+runtime-shell hide notifications
+runtime-shell call showOsd brightness 55            # any function on the shell target
+```
+
+Surfaces: `launcher` `keybindings` `panel` `settings` `expose` `agent-monitor`
+`power-menu` `notifications` `display-selector` `audio` `bluetooth` `cast`.
+The OSD (volume / mic / brightness / touch-mode scale) is reactive for
+PipeWire changes from any source and driven by IPC for brightness.
 
 ## Walker/Elephant Launcher
 
