@@ -201,8 +201,12 @@ controllers to hide the first causal error.
   notifications from the same events. If a main push shows a 502 in the repo
   webhook deliveries (Funnel edge loss), the hub catch-up lane replays it;
   until then, a signed replay of the delivery to the EL is the manual remedy.
-- stacks `main` has no branch protection: merge on green check runs
-  (`PUT /pulls/<n>/merge`), ignoring the advisory `preview/gate` status.
+- stacks `main` is protected by ruleset "main required checks": required
+  context `stacks-ci-required` (aggregates the path-gated validators), no
+  deletion/force-push; App 2970091 and repository admins bypass (the Tekton
+  pin writer still pushes with an admin PAT). Merge with
+  `PUT /pulls/<n>/merge` only after `stacks-ci-required` is green — admin
+  bypass would let you merge early; don't. `preview/gate` stays advisory.
 - A PR preview is an interactive review tool: label `preview` only when a
   person wants to use the preview to judge the change. While an acceptance you
   care about is running, keep `main` still — its evidence binds to the baked
