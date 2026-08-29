@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Session Recovery"
+  short_description: "Recover and inspect durable agent sessions after loss."
+  default_prompt: "Use $agent-session-recovery to diagnose a stuck or divergent durable agent run after a harness replica, orchestrator, executor sandbox, or completion-event loss: read the session timeline, journal, durable state, and host status first, judge outcome by the terminal envelope, and recover only through the sanctioned lifecycle tools."

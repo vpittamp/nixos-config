@@ -1,6 +1,6 @@
 ---
 name: workflow-builder
-description: "Author, save, run, inspect, or debug Workflow Builder dynamic-script workflows and durable agent sessions. Use for Workflow MCP workspace auth, consolidated host and preview runs, live traces, sealed execution evidence, script primitives, saved agents, runtime-registry routing, structured output, action catalog calls, MCP connections, goals, artifacts, lifecycle stop/purge, Sandbox/Kueue startup, Dapr sidecars, and failed executions. Use preview-environments for PreviewEnvironment lifecycle and dapr-agents-workflow for standalone upstream Python apps."
+description: "Author, save, run, inspect, or debug Workflow Builder dynamic-script workflows and durable agent sessions. Use for Workflow MCP workspace auth, host and preview runs, live traces, sealed evidence, script primitives, saved agents, runtime-registry routing and host modes (per-session-pod, shared-pool, harness), event-log context strategy, runtime admission (conformanceVerified, 409 override), structured output, action catalog, MCP connections, goals, artifacts, lifecycle stop/purge, and failed executions. Use runtime-conformance to verify a runtime, agent-session-recovery for run recovery, preview-environments for previews."
 ---
 
 # Workflow Builder
@@ -14,9 +14,11 @@ migrate them when required, but do not use them for new work.
 A saved dynamic workflow contains script source plus metadata. The durable
 script pump evaluates deterministic primitives, journals dispatched work, and
 replays from recorded results. Agent calls resolve through the runtime registry
-and normally launch Kueue-admitted per-session Sandbox pods. This is different
-from writing a standalone Python `dapr-agents` application; use
-`dapr-agents-workflow` for that framework.
+to a host mode, not always a per-session pod: `hostMode` decides whether the
+LLM loop runs in a Kueue-admitted per-session Sandbox pod, on a shared pool
+Deployment, or on the replicated harness with the per-session pod reduced to a
+credential-free tool executor. Standalone Python `dapr-agents` applications are
+a different thing; use `dapr-agents-workflow` for those.
 
 ## Start From Source
 
@@ -149,6 +151,73 @@ and asserts terminal-attachability, which the workflow bridge requires of every
   adapter. Do not introduce a second lifecycle, scheduling, or durable-state
   authority beside Dapr, Kueue, the BFF, and JuiceFS.
 
+## Host Modes and Where Tools Run
+
+`hostMode` in `services/shared/runtime-registry.json` fixes where the loop and
+the tools run (`docs/harness-host.md`):
+
+| hostMode | Loop runs on | Tools run in | Transport | Credentials |
+| --- | --- | --- | --- | --- |
+| `per-session-pod` (default; CLI runtimes, `cua-*`) | the `agent-host-<gen>` Sandbox pod | the same pod | dedicated `agent-session-*` app-id reached by pod IP on port 8002 | loop and tools share the pod's secrets |
+| `shared-pool` (`dapr-agent-py`) | `agent-runtime-pool-<class>` Deployment | the OpenShell shared workspace | Dapr invoke | held on the loop side (pool) |
+| `harness` (`dapr-agent-py-local`) | static-app-id `dapr-agent-harness` Deployment (2 replicas, PDB) | the per-session pod as a sandbox executor via `POST /executor/exec` | Dapr invoke to the harness; harness -> executor with the executor token | executor pod: no daprd, no provider keys, no `DATABASE_URL`, no `INTERNAL_API_TOKEN`; only its per-session `SANDBOX_EXECUTOR_TOKEN` from Secret `agent-host-cred-<gen>` |
+
+- Transport rule (`src/lib/server/application/session-host-transport.ts`): only
+  a dedicated `agent-session-*` app-id is reached by pod IP; pool and harness
+  hosts go through Dapr invoke. SEA takes `hostRole: agent-loop |
+  sandbox-executor`.
+- The harness resolves the executor token from SEA
+  `GET /api/v1/agent-workflow-hosts/{gen}/executor-credential`;
+  `childInput.sandboxHost` carries the non-secret executor descriptor only.
+- `call_llm` spans attribute to the harness, tool spans to the executor sandbox.
+  `/executor/healthz` reports `workspaceRoot`/`workspaceReady`; the BFF
+  readiness probe gates on `ok`.
+- Proven live: executor pod deleted mid-turn -> tool error, same execution
+  finishes; harness replica deleted mid-turn -> same instance resumes on the
+  other replica, no duplicate `call_llm`.
+
+## Context Strategy
+
+- `capabilities.contextStrategy` (`docs/context-strategy.md`) defaults to
+  `event_log` for the dapr-agent-py family (env mirror
+  `DAPR_AGENT_PY_DEFAULT_CONTEXT_STRATEGY`); CLI runtimes keep vendor
+  autocompaction.
+- Compaction is a read-time PROJECTION: the checkpoint lives under Dapr state
+  key `{prefix}_compaction:{instance}`, `entry.messages` is never mutated, and
+  deleting the checkpoint restores the verbatim transcript. Projection byte
+  ceiling `DAPR_AGENT_PY_PROJECTION_MAX_BYTES` defaults to 12 MiB, clamped
+  under the 16 MiB Dapr limit.
+- `ReadSessionEvents` is visible by default and exempt from `tools` /
+  `builtinTools` narrowing under `event_log`; it is hidden only when a call opts
+  into `contextStrategy: compaction`. After compaction the summary hint says
+  "call read_session_events(after_sequence=<cursor>)".
+- Trap: a per-agent `compaction.autoCompactWindow` below summary_reserve
+  (20000) + `bufferTokens` clamps the threshold to 0: compaction every iteration.
+
+## Runtime Admission
+
+- Contract-as-code: `services/shared/runtime_conformance/`. Static lane in CI
+  (`runtime-conformance-gate` prints every runtime id PASS/FAIL/SKIPPED); live
+  lane `scripts/runtime-conformance/live.py` on dev; results in
+  `services/shared/runtime-conformance-results.json`.
+- Registry `conformanceVerified` (distinct from `capabilitiesVerified`) may be
+  true only when static=PASS and live=PASS; the gate fails otherwise. The
+  `## Current runtimes` table in `docs/durable-session-runtime-contract.md` is
+  GENERATED by `gate.py --write-doc`, never hand-edited.
+- Dispatching an unverified runtime is swap-safety severity `error`: the
+  durable/run bridge and direct spawn return HTTP 409 `Runtime "<id>" is not
+  conformance-verified (...); set AGENT_RUNTIME_ALLOW_UNVERIFIED_RUNTIME=true or
+  agentConfig.allowUnverifiedRuntime=true to override`. The override degrades
+  the check to `warn` and emits `runtime.swap_degraded`.
+- As of 2026-08-28 (results file is the authority) verified: `dapr-agent-py`,
+  `dapr-agent-py-testing`, `dapr-agent-py-local`, `claude-code-cli`,
+  `codex-cli`, `kimi-code-cli`, `agy-cli`. Refused without override:
+  `claude-code-cli-glm` (expired zai credential), `cua-agent-py` and
+  `cua-browser-agent-py` (no CUA image on dev), `browser-use-agent` (not
+  auto-turn dispatchable; violates §2/§5).
+- Run the lanes with the `runtime-conformance` skill; recovery and forensics
+  belong to `agent-session-recovery`.
+
 ## Task Map
 
 | Task                             | Read or inspect                                                                        |
@@ -158,6 +227,8 @@ and asserts terminal-attachability, which the workflow bridge requires of every
 | Connect an external MCP client   | `docs/workflow-mcp-server.md`                                                          |
 | Attach tools to spawned agents   | `docs/mcp-agent-workflows.md`, MCP resolution code, and piece-runtime manifests        |
 | Select or swap an agent runtime  | `docs/durable-session-runtime-contract.md` and `services/shared/runtime-registry.json` |
+| Verify or admit a runtime        | Use `runtime-conformance`; `conformanceVerified` needs static=PASS and live=PASS |
+| Recover a run after a pod/orchestrator loss or do run forensics | Use `agent-session-recovery` |
 | Stop, terminate, purge, or reset | `docs/workflow-lifecycle-termination.md` and `src/lib/server/lifecycle/`               |
 | Set or debug a persistent goal   | `docs/goal-loop.md` and goal application adapters                                      |
 | Produce typed run artifacts      | `docs/workflow-artifacts.md`                                                           |
@@ -184,6 +255,11 @@ and asserts terminal-attachability, which the workflow bridge requires of every
   metadata is not image input.
 - Runtime identity and capabilities come from the runtime registry and resolved
   saved-agent configuration, not a pod label or sandbox template name.
+- Credential boundary: executor pods never hold provider keys, `DATABASE_URL`,
+  or `INTERNAL_API_TOKEN`; the executor token reaches the harness only through
+  SEA `executor-credential`, and `childInput` never carries it.
+- Compaction never rewrites the durable log: it is a projection checkpoint over
+  an immutable `entry.messages`; deleting the checkpoint restores the transcript.
 - `/workspaces/<slug>/runs` is the canonical run entry point. A host-owned
   DevelopmentRun uses the ordinary run detail and its Live tab. Legacy
   preview-local activity and sealed evidence enter only through federated,
@@ -317,6 +393,16 @@ happened.
 Normal replay messages are not proof of a hang. Prove lack of progress with
 durable state, timestamps, queue admission, and runtime logs before intervening.
 
+For a fan-out that stalls after an orchestrator roll, read
+`customStatus.repolled` / `repollProbes`: the `probe_outstanding_children`
+activity polls each child host's
+`GET /api/v2/agent-runs/{id}/status?summary=true&includeOutput=true` every
+`DYNAMIC_SCRIPT_CHILD_REPOLL_SECONDS` (default 120) and resolves calls whose
+cross-app completion event was lost, so `repolled > 0` means a lost completion,
+not a hang. For a dapr-agent-py session the harness turn-start line
+`[context] instance=… strategy=event_log readSessionEvents=visible roster=[…]`
+evidences the effective context strategy and tool roster.
+
 To see what code a run actually changed, call `list_code_checkpoints` for the
 programmatic equivalent of the run's Changes tab (one durable checkpoint per
 code-mutating tool call), then `get_checkpoint_diff` for a checkpoint's patch.
@@ -377,8 +463,10 @@ A workflow change is complete when:
 - Never write workflow definitions or lifecycle state directly to Postgres.
 - Never direct-patch action routing, runtime registry, Dapr Components, or MCP
   services on the cluster; deliver durable changes through source and GitOps.
-- Do not deploy or restart the orchestrator while durable workflows are active;
-  replay order can become incompatible with persisted history.
+- Orchestrator rolls are safe mid fan-out: any replica resumes from durable
+  state alone and the in-band repoll lane recovers lost child completions.
+  Verify with `scripts/probes/orchestrator-roll-proof.sh` (saved workflow
+  `orchestrator-roll-proof`); a lost completion shows as `repolled > 0`.
 - Do not create per-agent or per-session actor state stores.
 - Do not expose workspace keys, session assertions, OAuth tokens, or decrypted
   connection data.
@@ -396,7 +484,12 @@ A workflow change is complete when:
 - `docs/workflow-artifacts.md`
 - `docs/execution-evidence.md`
 - `docs/session-resource-metrics-and-kueue-admission.md`
+- `docs/harness-host.md`
+- `docs/context-strategy.md`
 - `services/shared/runtime-registry.json`
+- `services/shared/runtime_conformance/`
+- `scripts/runtime-conformance/`
+- `scripts/probes/orchestrator-roll-proof.sh`
 - `services/workflow-orchestrator/`
 - `services/workflow-mcp-server/`
 - `src/lib/server/application/`

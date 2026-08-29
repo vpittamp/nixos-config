@@ -36,6 +36,7 @@ Crossplane claims and compositions are retired and are not a control surface.
 | Resize worker capacity             | Modify the imperative provisioner inputs and regenerate; do not patch a retired claim                    |
 | Upgrade Kubernetes only            | Use a Talos-supported in-place Kubernetes upgrade after health and etcd backup checks                     |
 | Upgrade Talos                      | Use an in-place Talos image upgrade; verify compatibility before Kubernetes changes                       |
+| Add a system extension (gVisor)    | In-place `talosctl upgrade` to an Image Factory schematic; see "In-place system extension upgrade"        |
 | Validate benchmark capacity        | Use `kubernetes-capacity` for exact shapes, Kueue, observer, PSI, and dynamic concurrency                 |
 
 ## Change Workflow
@@ -68,6 +69,29 @@ stop and report the blocker rather than reprovisioning.
 After each bounded upgrade, verify Kueue controllers/webhooks, capacity-observer
 freshness, eligible-node PSI coverage, queue admission, and one representative
 workload in addition to ordinary node/CNI/storage health.
+
+### In-place system extension upgrade (gVisor)
+
+Dev workers run the `siderolabs/gvisor` Talos extension from Image Factory
+schematic `d9ff89777e246792e7642abd3220a616afb4e49822382e4213a2e528ab826fe5`.
+It was installed by an in-place `talosctl upgrade` to that schematic's installer
+image, one worker at a time — no Hetzner reprovision, resize, or replace, which
+would reprice the servers. The desired state is codified in stacks
+`deployment/scripts/talos-hetzner/provision-spoke.sh` (`WORKER_EXT_SCHEMATIC`,
+`WORKER_GVISOR_EXT`) and `RuntimeClass-secure-gvisor.yaml`; edit those, never
+only the live nodes.
+
+| Step | Recipe |
+| --- | --- |
+| Address nodes | Use the talosctl endpoint from the talosconfig with `-n <node>`; do not pass `-e 10.0.1.1` |
+| Sysctl | Set `user.max_user_namespaces=15000` in the machine config; the Talos default of 0 makes the runsc gofer fail with ENOSPC |
+| Drain | PDB-protected pods block the built-in drain: `kubectl drain --disable-eviction <node>`, then `talosctl upgrade --drain=false -n <node>` |
+| CNPG primary | Before draining the primary's node, move it with `kubectl patch cluster <name> --subresource=status` on `targetPrimary`; do not wait for the drain to trigger a failover |
+| Label and RuntimeClass | Nodes carry `stacks.io/gvisor=true`; RuntimeClass `secure-gvisor` uses that nodeSelector |
+| Prove | Interactive CLI profiles on execution class `interactive-cli-gvisor`: claude and kimi PASS the PTY + JuiceFS + headless-print matrix; codex is blocked only by an expired user credential; agy and glm are NOT tested (agy needs `Unconfined` seccomp, which runsc cannot provide) — see workflow-builder `docs/interactive-cli-sessions.md`. Production `dapr-agent-py` stays on runc. |
+
+Repeat the drain/upgrade/uncordon cycle per worker and confirm the node reports
+the extension and the `stacks.io/gvisor=true` label before moving on.
 
 ## Capacity Checks
 

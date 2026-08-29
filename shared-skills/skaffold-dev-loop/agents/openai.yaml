@@ -1,4 +1,0 @@
-interface:
-  display_name: "Skaffold Dev Loop"
-  short_description: "Run the ryzen-only Skaffold HMR and pin loop."
-  default_prompt: "Use $skaffold-dev-loop to run or repair the explicit ryzen Skaffold development loop."

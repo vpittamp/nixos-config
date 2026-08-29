@@ -102,6 +102,25 @@ For a refusal, report:
 - the next safe action, such as sleeping an idle preview or choosing a smaller
   service set.
 
+## Agent Host Shapes
+
+Session capacity depends on the registry `hostMode`, not on one pod shape:
+
+- `harness` (`dapr-agent-py-local`): the LLM loop runs on the
+  `dapr-agent-harness` Deployment (2 replicas, PDB); the per-session executor
+  pod carries no daprd sidecar, so it is lighter than an agent-loop pod.
+- `shared-pool` (`dapr-agent-py`): `agent-runtime-pool-coding` runs the loop;
+  `AGENT_RUNTIME_POOL_APP_IDS_JSON` sets `slotsPerReplica` 12 and
+  `maxReplicas` 16.
+- `per-session-pod`: loop and tools share one Kueue-admitted Sandbox pod.
+
+One image pin, `dapr-agent-py-sandbox`, feeds the harness, the pool, and the
+executor image (`AGENT_RUNTIME_DEFAULT_IMAGE` on the BFF), so a single
+outer-loop bump rolls all three. Before a live capacity proof, wait for
+`rollout status` on `dapr-agent-harness`, `agent-runtime-pool-coding`,
+`workflow-orchestrator`, and `workflow-builder`. Read the current values from
+source and the live Deployments; do not carry these numbers forward as fixed.
+
 ## Pressure And Elastic Return
 
 Pressure may be asserted by pending queues, blocked Workloads, exhausted
