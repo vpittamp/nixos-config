@@ -34,6 +34,9 @@ ShellRoot {
     readonly property var osdHideTimer: runtimeServices ? runtimeServices.osdHideTimerRef : null
     readonly property var notificationStore: runtimeServices ? runtimeServices.notificationStoreRef : null
     readonly property var agentUsageRefreshProcess: runtimeServices ? runtimeServices.agentUsageRefreshProcessRef : null
+    readonly property var tailscaleStatusProcess: runtimeServices ? runtimeServices.tailscaleStatusProcessRef : null
+    readonly property var tailscaleActionProcess: runtimeServices ? runtimeServices.tailscaleActionProcessRef : null
+    readonly property var tailscaleNoticeTimer: runtimeServices ? runtimeServices.tailscaleNoticeTimerRef : null
     readonly property var notificationPersistTimer: runtimeServices ? runtimeServices.notificationPersistTimerRef : null
     readonly property var launcherQueryDebounce: runtimeServices ? runtimeServices.launcherQueryDebounceRef : null
     readonly property var launcherSessionSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherSessionSwitcherOpenTimerRef : null
@@ -134,6 +137,7 @@ ShellRoot {
     function handleIdleScreen(idle) {
         idleScreenOff = !!idle;
         runDetached(["swaymsg", idle ? "output * power off" : "output * power on"]);
+        runDetached([shellConfig.hookBin, "idle-screen", idle ? "off" : "on"]);
     }
 
     // One line for the lock screen: how the AI sessions are doing while the
@@ -256,6 +260,80 @@ ShellRoot {
     property bool powerMenuVisible: false
     property bool castPopupVisible: false
     property bool agentsPopupVisible: false
+    property bool tailscalePopupVisible: false
+
+    // ----- Tailscale -----
+    // Fed by quickshell-tailscale-status every 30s (and after every action);
+    // actions run through quickshell-tailscale-action, which needs tailscaled's
+    // --operator to be this user (services.tailscale.extraSetFlags).
+    property var tailscaleState: ({ available: false, running: false, peers: [], exitNodes: [], self: {} })
+    property bool tailscaleBusy: false
+    property string tailscaleNotice: ""
+
+    function parseTailscaleStatus(text) {
+        const raw = stringOrEmpty(text).trim();
+        if (!raw) {
+            return;
+        }
+        try {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === "object") {
+                tailscaleState = parsed;
+            }
+        } catch (error) {
+            console.warn("tailscale.status:", error);
+        }
+    }
+
+    function refreshTailscale() {
+        if (tailscaleStatusProcess && !tailscaleStatusProcess.running) {
+            tailscaleStatusProcess.running = true;
+        }
+    }
+
+    function tailscaleAvailable() {
+        return boolOrFalse(tailscaleState && tailscaleState.available);
+    }
+
+    function tailscaleRunning() {
+        return boolOrFalse(tailscaleState && tailscaleState.running);
+    }
+
+    function tailscaleAction(args) {
+        if (!tailscaleActionProcess || tailscaleActionProcess.running) {
+            return "busy";
+        }
+        tailscaleBusy = true;
+        tailscaleActionProcess.command = [shellConfig.tailscaleActionBin].concat(arrayOrEmpty(args));
+        tailscaleActionProcess.running = true;
+        return "ok";
+    }
+
+    function tailscaleCopy(text, what) {
+        const value = stringOrEmpty(text);
+        if (!value) {
+            return;
+        }
+        runDetached([shellConfig.tailscaleActionBin, "copy", value]);
+        tailscaleNotice = "Copied " + (what || value);
+        if (tailscaleNoticeTimer) {
+            tailscaleNoticeTimer.restart();
+        }
+    }
+
+    function tailscaleChipLabel() {
+        if (!tailscaleRunning()) {
+            return "Off";
+        }
+        const exitNode = tailscaleState.exitNode;
+        if (exitNode && exitNode.hostName) {
+            return "via " + exitNode.hostName;
+        }
+        return String(Number(tailscaleState.onlineCount) || 0);
+    }
+
+    // Hooks: let scripts outside the shell react to lock and idle.
+    onSessionLockedChanged: runDetached([shellConfig.hookBin, sessionLocked ? "session-locked" : "session-unlocked"])
 
     // ----- Agent usage (Claude Code / Codex subscriptions) -----
     // Records are whatever quickshell-agent-usage-update wrote to
@@ -2393,6 +2471,7 @@ ShellRoot {
         powerMenuVisible = false;
         castPopupVisible = false;
         agentsPopupVisible = false;
+        tailscalePopupVisible = false;
         displaySelectorVisible = false;
         displaySelectorOutputName = "";
     }
@@ -2402,7 +2481,7 @@ ShellRoot {
     // use barPopupOutputName; the display selector tracks its own output.
     function anyBarPopupOpenOnOutput(outputName) {
         const o = stringOrEmpty(outputName);
-        if ((audioPopupVisible || bluetoothPopupVisible || powerMenuVisible || castPopupVisible || agentsPopupVisible)
+        if ((audioPopupVisible || bluetoothPopupVisible || powerMenuVisible || castPopupVisible || agentsPopupVisible || tailscalePopupVisible)
             && stringOrEmpty(barPopupOutputName) === o) {
             return true;
         }
@@ -8071,6 +8150,11 @@ function normalizeLauncherMode(mode) {
                 isOpen: function () { return castPopupVisible; },
                 open: function (payload) { openBarPopup(payload, function () { castPopupVisible = true; }); },
                 close: function () { castPopupVisible = false; }
+            },
+            "tailscale": {
+                isOpen: function () { return tailscalePopupVisible; },
+                open: function (payload) { refreshTailscale(); openBarPopup(payload, function () { tailscalePopupVisible = true; }); },
+                close: function () { tailscalePopupVisible = false; }
             },
             "agents": {
                 isOpen: function () { return agentsPopupVisible; },

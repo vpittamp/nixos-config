@@ -749,6 +749,73 @@ PanelWindow {
                     }
                 }
 
+                // Tailscale: state + online peers (or the exit node in use);
+                // the panel has connect, MagicDNS, exit node, and the machine
+                // list with copy-IP / copy-DNS. Hidden when tailscale is absent.
+                Rectangle {
+                    id: tailscaleChip
+                    visible: root.tailscaleAvailable()
+                    radius: root.radiusControl
+                    color: root.tailscalePopupVisible ? colors.blueBg : root.neutralChipFill(tailscaleMouse.containsMouse)
+                    border.color: root.tailscalePopupVisible ? colors.blue : root.neutralChipBorder(tailscaleMouse.containsMouse)
+                    border.width: 1
+                    implicitWidth: tailscaleRow.implicitWidth + 18
+                    Layout.fillHeight: true
+
+                    Behavior on color {
+                        ColorAnimation {
+                            duration: root.fastColorMs
+                        }
+                    }
+
+                    RowLayout {
+                        id: tailscaleRow
+                        anchors.centerIn: parent
+                        spacing: 5
+
+                        Image {
+                            Layout.alignment: Qt.AlignVCenter
+                            source: "file://" + runtimeConfig.tailscaleIcon
+                            sourceSize.width: Theme.fs(12)
+                            sourceSize.height: Theme.fs(12)
+                            width: Theme.fs(12)
+                            height: Theme.fs(12)
+                            smooth: true
+                            opacity: root.tailscaleRunning() ? 1 : 0.45
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignVCenter
+                            font.family: Theme.fontFamily
+                            text: root.tailscaleChipLabel() + " ▾"
+                            color: root.tailscalePopupVisible ? colors.blue : (root.tailscaleRunning() ? root.neutralChipText(tailscaleMouse.containsMouse) : colors.subtle)
+                            font.pixelSize: root.fontLabel
+                            font.weight: Font.Medium
+                        }
+                    }
+
+                    MouseArea {
+                        id: tailscaleMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        onClicked: function (mouse) {
+                            if (mouse.button === Qt.RightButton) {
+                                root.tailscaleCopy(root.tailscaleState.self ? root.tailscaleState.self.ip : "", "Tailscale IP");
+                                return;
+                            }
+                            const open = !root.tailscalePopupVisible;
+                            root.closeBarPopups();
+                            root.barPopupOutputName = topBarWindow.topOutputName;
+                            if (open) {
+                                root.refreshTailscale();
+                            }
+                            root.tailscalePopupVisible = open;
+                        }
+                    }
+                }
+
                 Rectangle {
                     id: notificationChip
                     radius: root.radiusControl
@@ -1945,6 +2012,372 @@ PanelWindow {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: root.triggerPowerAction(modelData.command)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ----- Tailscale panel -----
+    PopupWindow {
+        visible: root.tailscalePopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName
+        color: "transparent"
+        implicitWidth: 360
+        implicitHeight: tailscaleCard.implicitHeight + 16
+        anchor.window: topBarWindow
+        anchor.item: tailscaleChip
+        anchor.edges: Edges.Bottom | Edges.Right
+        anchor.gravity: Edges.Bottom | Edges.Left
+        anchor.margins.top: 6
+
+        Rectangle {
+            id: tailscaleCard
+            readonly property var ts: root.tailscaleState
+            readonly property var self: ts && ts.self ? ts.self : ({})
+            readonly property var peers: root.arrayOrEmpty(ts && ts.peers)
+            readonly property var exitNodes: root.arrayOrEmpty(ts && ts.exitNodes)
+            readonly property bool running: root.tailscaleRunning()
+            readonly property bool canSet: root.stringOrEmpty(ts && ts.operator).length > 0
+            implicitWidth: 360
+            implicitHeight: tailscaleColumn.implicitHeight + 24
+            radius: Theme.rad(12)
+            color: colors.panel
+            border.color: colors.borderStrong
+            border.width: 1
+
+            ColumnLayout {
+                id: tailscaleColumn
+                anchors.fill: parent
+                anchors.margins: 12
+                spacing: 10
+
+                // Header: tailnet, state, refresh.
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Image {
+                        source: "file://" + runtimeConfig.tailscaleIcon
+                        sourceSize.width: Theme.fs(20)
+                        sourceSize.height: Theme.fs(20)
+                        width: Theme.fs(20)
+                        height: Theme.fs(20)
+                        smooth: true
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 1
+
+                        Text {
+                            font.family: Theme.fontFamily
+                            text: "Tailscale" + (root.stringOrEmpty(tailscaleCard.ts.tailnet) ? "  ·  " + tailscaleCard.ts.tailnet : "")
+                            color: colors.text
+                            font.pixelSize: Theme.fs(12)
+                            font.weight: Font.DemiBold
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            font.family: Theme.fontFamily
+                            text: root.tailscaleNotice ? root.tailscaleNotice
+                                : root.tailscaleBusy ? "working…"
+                                : (tailscaleCard.running ? String(Number(tailscaleCard.ts.onlineCount) || 0) + " of " + tailscaleCard.peers.length + " machines online" : root.stringOrEmpty(tailscaleCard.ts.state) || "stopped")
+                                  + (tailscaleCard.canSet ? "" : "  ·  read-only (no operator)")
+                            color: root.tailscaleNotice ? colors.green : colors.subtle
+                            font.pixelSize: Theme.fs(9)
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    Rectangle {
+                        width: Theme.fs(24)
+                        height: Theme.fs(24)
+                        radius: Theme.rad(7)
+                        color: tailscaleRefreshMouse.containsMouse ? colors.cardAlt : "transparent"
+                        border.color: colors.border
+                        border.width: 1
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "\uf021"
+                            color: colors.muted
+                            font.family: Theme.glyphFamily
+                            font.pixelSize: Theme.fs(10)
+                        }
+
+                        MouseArea {
+                            id: tailscaleRefreshMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.refreshTailscale()
+                        }
+                    }
+                }
+
+                // This machine: name, IP, DNS name — click to copy.
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: selfColumn.implicitHeight + 16
+                    radius: Theme.rad(8)
+                    color: colors.cardAlt
+                    border.color: colors.border
+                    border.width: 1
+
+                    ColumnLayout {
+                        id: selfColumn
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 4
+
+                        Text {
+                            font.family: Theme.fontFamily
+                            text: root.stringOrEmpty(tailscaleCard.self.hostName) || "this machine"
+                            color: colors.text
+                            font.pixelSize: Theme.fs(10)
+                            font.weight: Font.DemiBold
+                        }
+
+                        Repeater {
+                            model: [
+                                { label: "IP", value: root.stringOrEmpty(tailscaleCard.self.ip) },
+                                { label: "DNS", value: root.stringOrEmpty(tailscaleCard.self.dnsName) }
+                            ]
+
+                            delegate: RowLayout {
+                                required property var modelData
+                                Layout.fillWidth: true
+                                spacing: 8
+                                visible: modelData.value.length > 0
+
+                                Text {
+                                    font.family: Theme.fontFamily
+                                    text: modelData.label
+                                    color: colors.subtle
+                                    font.pixelSize: Theme.fs(9)
+                                    Layout.preferredWidth: Theme.fs(28)
+                                }
+
+                                Text {
+                                    font.family: Theme.monoFamily
+                                    text: modelData.value
+                                    color: colors.textDim
+                                    font.pixelSize: Theme.fs(9)
+                                    elide: Text.ElideMiddle
+                                    Layout.fillWidth: true
+                                }
+
+                                Text {
+                                    font.family: Theme.fontFamily
+                                    text: "copy"
+                                    color: copyMouse.containsMouse ? colors.blue : colors.subtle
+                                    font.pixelSize: Theme.fs(9)
+
+                                    MouseArea {
+                                        id: copyMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.tailscaleCopy(modelData.value, modelData.label)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Toggles: connected, MagicDNS. The DNS toggle is also the fix
+                // for a resolver that captured no upstreams (SERVFAIL): off, on.
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Repeater {
+                        model: [
+                            { label: tailscaleCard.running ? "Connected" : "Disconnected", on: tailscaleCard.running, args: [tailscaleCard.running ? "down" : "up"] },
+                            { label: "MagicDNS", on: root.boolOrFalse(tailscaleCard.ts.acceptDns), args: ["dns", root.boolOrFalse(tailscaleCard.ts.acceptDns) ? "off" : "on"] }
+                        ]
+
+                        delegate: Rectangle {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            implicitHeight: Theme.fs(28)
+                            radius: Theme.rad(8)
+                            color: modelData.on ? colors.blueBg : colors.cardAlt
+                            border.color: modelData.on ? colors.blue : colors.border
+                            border.width: 1
+                            opacity: tailscaleCard.canSet && !root.tailscaleBusy ? 1 : 0.55
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 10
+                                spacing: 6
+
+                                Rectangle {
+                                    width: Theme.fs(8)
+                                    height: Theme.fs(8)
+                                    radius: width / 2
+                                    color: modelData.on ? colors.green : colors.subtle
+                                }
+
+                                Text {
+                                    font.family: Theme.fontFamily
+                                    text: modelData.label
+                                    color: modelData.on ? colors.blue : colors.textDim
+                                    font.pixelSize: Theme.fs(10)
+                                    font.weight: Font.DemiBold
+                                    Layout.fillWidth: true
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                enabled: tailscaleCard.canSet && !root.tailscaleBusy
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.tailscaleAction(modelData.args)
+                            }
+                        }
+                    }
+                }
+
+                // Exit node, only when a peer offers one.
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    visible: tailscaleCard.exitNodes.length > 0
+                    spacing: 4
+
+                    Text {
+                        font.family: Theme.fontFamily
+                        text: "Exit node"
+                        color: colors.subtle
+                        font.pixelSize: Theme.fs(9)
+                        font.weight: Font.DemiBold
+                    }
+
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 6
+
+                        Repeater {
+                            model: [{ id: "", hostName: "None" }].concat(tailscaleCard.exitNodes)
+
+                            delegate: Rectangle {
+                                required property var modelData
+                                readonly property bool current: (tailscaleCard.ts.exitNode ? tailscaleCard.ts.exitNode.id : "") === root.stringOrEmpty(modelData.id)
+                                radius: Theme.rad(7)
+                                color: current ? colors.blueBg : colors.cardAlt
+                                border.color: current ? colors.blue : colors.border
+                                border.width: 1
+                                implicitWidth: exitLabel.implicitWidth + 16
+                                implicitHeight: exitLabel.implicitHeight + 10
+
+                                Text {
+                                    id: exitLabel
+                                    font.family: Theme.fontFamily
+                                    anchors.centerIn: parent
+                                    text: modelData.hostName
+                                    color: parent.current ? colors.blue : colors.text
+                                    font.pixelSize: Theme.fs(9)
+                                    font.weight: Font.DemiBold
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    enabled: tailscaleCard.canSet && !root.tailscaleBusy
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.tailscaleAction(["exit-node", root.stringOrEmpty(modelData.id)])
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Machines: click copies the IP, right-click the DNS name.
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    visible: tailscaleCard.peers.length > 0
+                    spacing: 4
+
+                    Text {
+                        font.family: Theme.fontFamily
+                        text: "Machines  ·  click copies IP, right-click DNS"
+                        color: colors.subtle
+                        font.pixelSize: Theme.fs(9)
+                        font.weight: Font.DemiBold
+                    }
+
+                    ListView {
+                        id: peerList
+                        Layout.fillWidth: true
+                        implicitHeight: Math.min(contentHeight, Theme.fs(200))
+                        clip: true
+                        spacing: 2
+                        model: tailscaleCard.peers
+                        boundsBehavior: Flickable.StopAtBounds
+
+                        delegate: Rectangle {
+                            required property var modelData
+                            width: peerList.width
+                            height: Theme.fs(22)
+                            radius: Theme.rad(6)
+                            color: peerMouse.containsMouse ? colors.cardAlt : "transparent"
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                spacing: 8
+
+                                Rectangle {
+                                    width: Theme.fs(7)
+                                    height: Theme.fs(7)
+                                    radius: width / 2
+                                    color: modelData.online ? colors.green : colors.subtle
+                                }
+
+                                Text {
+                                    font.family: Theme.fontFamily
+                                    text: modelData.hostName
+                                    color: modelData.online ? colors.text : colors.muted
+                                    font.pixelSize: Theme.fs(10)
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+
+                                Text {
+                                    font.family: Theme.fontFamily
+                                    text: modelData.os
+                                    color: colors.subtle
+                                    font.pixelSize: Theme.fs(9)
+                                }
+
+                                Text {
+                                    font.family: Theme.monoFamily
+                                    text: modelData.ip
+                                    color: colors.muted
+                                    font.pixelSize: Theme.fs(9)
+                                }
+                            }
+
+                            MouseArea {
+                                id: peerMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                onClicked: function (mouse) {
+                                    if (mouse.button === Qt.RightButton) {
+                                        root.tailscaleCopy(modelData.dnsName, modelData.hostName + " DNS");
+                                    } else {
+                                        root.tailscaleCopy(modelData.ip, modelData.hostName + " IP");
+                                    }
+                                }
+                            }
                         }
                     }
                 }

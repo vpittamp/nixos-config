@@ -284,6 +284,9 @@ QtObject {
   readonly property string defaultTheme: "${themeName}"
   readonly property string themeStatePath: "${themeStatePath}"
   readonly property string themeSetBin: "${runtimeThemeScript}/bin/runtime-theme"
+  readonly property string hookBin: "${runtimeHookScript}/bin/runtime-hook"
+  readonly property string tailscaleStatusBin: "${tailscaleStatusScript}/bin/quickshell-tailscale-status"
+  readonly property string tailscaleActionBin: "${tailscaleActionScript}/bin/quickshell-tailscale-action"
   readonly property var agentUsageAgents: ${builtins.toJSON agentUsageAgents}
   readonly property string agentUsageUpdateBin: "${agentUsageUpdateScript}/bin/quickshell-agent-usage-update"
   readonly property string i3pmBin: "${config.home.profileDirectory}/bin/i3pm"
@@ -3056,6 +3059,173 @@ USAGE
     exit $status
   '';
 
+  # ---- Hooks ----------------------------------------------------------
+  # `runtime-hook <event> [args]` runs ~/.config/quickshell-runtime-shell/
+  # hooks/<event> and every file in hooks/<event>.d/ (skipping *.sample), so
+  # a theme switch, a text-size change, a lock, or a rebuild can fan out to
+  # things the shell does not own (Claude Code's theme, an editor, a script)
+  # without forking the module. Events fired today: theme-set <name>
+  # <dark|light>, text-size-set <px>, session-locked, session-unlocked,
+  # idle-screen <off|on>, post-activation.
+  hooksDir = "${config.xdg.configHome}/quickshell-runtime-shell/hooks";
+  runtimeHookScript = pkgs.writeShellScriptBin "runtime-hook" ''
+    set -u
+    hooks="${hooksDir}"
+    name="''${1:-}"
+    if [ -z "$name" ]; then
+      echo "usage: runtime-hook <event> [args...]" >&2
+      exit 2
+    fi
+    shift
+    if [ -f "$hooks/$name" ]; then
+      ${pkgs.bash}/bin/bash "$hooks/$name" "$@" || echo "runtime-hook: $name failed" >&2
+    fi
+    if [ -d "$hooks/$name.d" ]; then
+      for hook in "$hooks/$name.d"/*; do
+        [ -f "$hook" ] || continue
+        case "$hook" in *.sample) continue ;; esac
+        ${pkgs.bash}/bin/bash "$hook" "$@" || echo "runtime-hook: $hook failed" >&2
+      done
+    fi
+    exit 0
+  '';
+
+  # ---- Crash → agent ---------------------------------------------------
+  # Watches the journal for systemd-coredump entries and raises a critical
+  # toast with a "Diagnose with Claude" action; the action opens a terminal
+  # running the default agent with the facts and a method. The same shape
+  # Omarchy uses (omarchy-agent-crash), without a separate skill file: the
+  # method travels in the prompt.
+  crashDiagnoseScript = pkgs.writeShellScriptBin "quickshell-crash-diagnose" ''
+    set -uo pipefail
+    pid="''${1:?usage: quickshell-crash-diagnose <pid> [comm] [exe] [signal] [--print]}"
+    comm="''${2:-unknown}"; exe="''${3:-unknown}"; signal="''${4:-unknown}"
+    print_only=0; case "''${5:-}" in --print) print_only=1 ;; esac
+    when="$(${pkgs.systemd}/bin/coredumpctl list "$pid" --no-pager --no-legend 2>/dev/null | tail -1 | cut -d' ' -f1-4)"
+    prompt="$(cat <<PROMPT
+A process crashed on this NixOS machine ($(hostname)) and I want to know why.
+
+What systemd-coredump recorded:
+  process:  $comm
+  PID:      $pid
+  binary:   $exe
+  signal:   $signal
+  time:     ''${when:-unknown}
+
+Method:
+1. \`coredumpctl info $pid\` for the stack trace systemd captured and the
+   package the binary came from (the /nix/store path names it and its version).
+2. If a fuller backtrace is needed: \`nix shell nixpkgs#gdb -c coredumpctl debug $pid\`,
+   then \`bt full\` and \`info sharedlibrary\`.
+3. \`journalctl -b -o short-iso\` around that time for what happened around it
+   (device events, OOM, Wayland disconnects).
+4. Say whether this looks like a configuration problem in this repo
+   (~/repos/vpittamp/nixos-config), a packaging/driver problem, or an upstream
+   bug worth reporting; if it is ours, propose the change. Do not apply
+   changes without asking.
+PROMPT
+)"
+    if [ "$print_only" = 1 ]; then printf '%s\n' "$prompt"; exit 0; fi
+    export CRASH_PROMPT="$prompt"
+    exec ${pkgs.ghostty}/bin/ghostty --title="Crash: $comm" -e ${pkgs.bash}/bin/bash -lc 'cd ~ && exec claude "$CRASH_PROMPT"'
+  '';
+  crashWatchScript = pkgs.writeShellScriptBin "quickshell-crash-watch" ''
+    set -uo pipefail
+    jq=${pkgs.jq}/bin/jq
+    ${pkgs.systemd}/bin/journalctl -f -n 0 -o json -t systemd-coredump 2>/dev/null | while IFS= read -r line; do
+      pid="$(printf '%s' "$line" | "$jq" -r '.COREDUMP_PID // empty')"
+      [ -n "$pid" ] || continue
+      comm="$(printf '%s' "$line" | "$jq" -r '.COREDUMP_COMM // "unknown"')"
+      exe="$(printf '%s' "$line" | "$jq" -r '.COREDUMP_EXE // "unknown"')"
+      signal="$(printf '%s' "$line" | "$jq" -r '.COREDUMP_SIGNAL_NAME // "unknown"')"
+      uid="$(printf '%s' "$line" | "$jq" -r '.COREDUMP_UID // ""')"
+      who=""; [ "$uid" = "$(id -u)" ] || who=" (uid $uid)"
+      (
+        action="$(${pkgs.libnotify}/bin/notify-send -a "Crash" -u critical -i dialog-warning \
+          -A "diagnose=Diagnose with Claude" \
+          "Process crashed: $comm$who" "$signal · PID $pid"$'\n'"$exe" 2>/dev/null)"
+        if [ "$action" = "diagnose" ]; then
+          ${crashDiagnoseScript}/bin/quickshell-crash-diagnose "$pid" "$comm" "$exe" "$signal" >/dev/null 2>&1 &
+        fi
+      ) &
+    done
+  '';
+
+  # ---- Tailscale -------------------------------------------------------
+  tailscaleStatusScript = pkgs.writeShellScriptBin "quickshell-tailscale-status" ''
+    exec ${lib.getExe pkgs.python3} - <<'PYEOF'
+import json, subprocess
+TS = "${pkgs.tailscale}/bin/tailscale"
+def run(*args):
+    try:
+        out = subprocess.run([TS, *args], capture_output=True, text=True, timeout=8)
+    except Exception as exc:
+        return None, str(exc)
+    if out.returncode != 0:
+        return None, (out.stderr or out.stdout).strip()
+    try:
+        return json.loads(out.stdout), ""
+    except Exception as exc:
+        return None, str(exc)
+status, err = run("status", "--json")
+if status is None:
+    print(json.dumps({"available": False, "error": err}))
+    raise SystemExit(0)
+prefs, _ = run("debug", "prefs")
+prefs = prefs or {}
+self_ = status.get("Self") or {}
+def node(p):
+    ips = p.get("TailscaleIPs") or []
+    return {
+        "id": p.get("ID", ""),
+        "hostName": p.get("HostName", ""),
+        "dnsName": (p.get("DNSName") or "").rstrip("."),
+        "ip": ips[0] if ips else "",
+        "os": p.get("OS", ""),
+        "online": bool(p.get("Online")),
+        "active": bool(p.get("Active")),
+        "exitNodeOption": bool(p.get("ExitNodeOption")),
+        "exitNode": bool(p.get("ExitNode")),
+        "lastSeen": p.get("LastSeen", ""),
+    }
+peers = [node(p) for p in (status.get("Peer") or {}).values()]
+peers.sort(key=lambda n: (not n["online"], n["hostName"].lower()))
+exit_id = prefs.get("ExitNodeID") or ""
+exit_node = next((n for n in peers if n["id"] == exit_id), None) if exit_id else None
+tailnet = status.get("CurrentTailnet") or {}
+print(json.dumps({
+    "available": True,
+    "state": status.get("BackendState", ""),
+    "running": status.get("BackendState") == "Running",
+    "tailnet": tailnet.get("Name", ""),
+    "magicDnsSuffix": status.get("MagicDNSSuffix", ""),
+    "acceptDns": bool(prefs.get("CorpDNS", True)),
+    "acceptRoutes": bool(prefs.get("RouteAll", False)),
+    "operator": prefs.get("OperatorUser") or "",
+    "self": node(self_),
+    "exitNode": exit_node,
+    "exitNodes": [n for n in peers if n["exitNodeOption"]],
+    "peers": peers,
+    "onlineCount": sum(1 for n in peers if n["online"]),
+    "health": status.get("Health") or [],
+    "version": (status.get("Version") or "").split("-")[0],
+}))
+PYEOF
+  '';
+  tailscaleActionScript = pkgs.writeShellScriptBin "quickshell-tailscale-action" ''
+    set -uo pipefail
+    ts=${pkgs.tailscale}/bin/tailscale
+    cmd="''${1:-}"; shift || true
+    case "$cmd" in
+      up) "$ts" up ;;
+      down) "$ts" down ;;
+      dns) case "''${1:-}" in on) "$ts" set --accept-dns=true ;; off) "$ts" set --accept-dns=false ;; *) echo "dns on|off" >&2; exit 2 ;; esac ;;
+      exit-node) "$ts" set --exit-node="''${1:-}" ;;
+      copy) printf '%s' "''${1:-}" | ${pkgs.wl-clipboard}/bin/wl-copy ;;
+      *) echo "usage: quickshell-tailscale-action up|down|dns on|off|exit-node <id>|copy <text>" >&2; exit 2 ;;
+    esac
+  '';
+
   # Theme switcher. Writes the state file the shell watches (live restyle)
   # and Ghostty's palette include; new terminals pick it up, running ones on
   # Ctrl+Shift+, (reload_config) — Ghostty has no reload signal.
@@ -3135,6 +3305,8 @@ USAGE
       label="$("$jq" -r --arg n "$name" '.[$n].label' "$themes")"
       echo "theme: $label ($name)"
       ${pkgs.libnotify}/bin/notify-send -a runtime-theme -t 4000 "Theme: $label" "Shell restyled. New terminals use the matching palette; press Ctrl+Shift+, in an open Ghostty to reload." >/dev/null 2>&1 || true
+      mode=light; "$jq" -e --arg n "$name" '.[$n].dark' "$themes" >/dev/null && mode=dark
+      ${runtimeHookScript}/bin/runtime-hook theme-set "$name" "$mode"
     }
 
     set_text_size() {
@@ -3145,6 +3317,7 @@ USAGE
       write_state "$name" "$size"
       write_ghostty "$name" "$size"
       echo "text size: $size px (terminal $(term_pt "$size")pt)"
+      ${runtimeHookScript}/bin/runtime-hook text-size-set "$size"
     }
 
     cmd="''${1:-}"
@@ -3452,6 +3625,11 @@ in
       brightnessKeyScript
       lockSessionScript
       runtimeThemeScript
+      runtimeHookScript
+      crashDiagnoseScript
+      crashWatchScript
+      tailscaleStatusScript
+      tailscaleActionScript
       agentUsageUpdateScript
     ] ++ agentUsageCollectors ++ [
       toggleLauncherScript
@@ -3523,6 +3701,56 @@ in
         TimeoutStartSec = "180s";
       };
     };
+    # Coredump watcher: critical toast with a "Diagnose with Claude" action.
+    systemd.user.services.quickshell-crash-watch = {
+      Unit = {
+        Description = "Raise a notification with an agent action when a process dumps core";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
+      Service = {
+        ExecStart = "${crashWatchScript}/bin/quickshell-crash-watch";
+        Restart = "always";
+        RestartSec = "5s";
+        Environment = [ "PATH=${config.home.profileDirectory}/bin:/run/current-system/sw/bin:/run/wrappers/bin" ];
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    };
+
+    # Hook samples (inactive until the .sample suffix is dropped).
+    xdg.configFile."quickshell-runtime-shell/hooks/README.md".text = ''
+      # Runtime shell hooks
+
+      `runtime-hook <event> [args]` runs `<event>` here and every file in
+      `<event>.d/` (files ending in `.sample` are skipped). Copy a sample
+      without the suffix to activate it, or add your own script.
+
+      Events: `theme-set <name> <dark|light>`, `text-size-set <px>`,
+      `session-locked`, `session-unlocked`, `idle-screen <off|on>`,
+      `post-activation` (after a home-manager activation, i.e. a rebuild).
+    '';
+    xdg.configFile."quickshell-runtime-shell/hooks/theme-set.d/claude-code-theme.sample".text = ''
+      #!/usr/bin/env bash
+      # Follow the shell's light/dark mode in Claude Code (~/.claude/settings.json).
+      set -eu
+      mode="''${2:-dark}"
+      settings="$HOME/.claude/settings.json"
+      [ -f "$settings" ] || echo '{}' >"$settings"
+      tmp="$(mktemp)"
+      ${pkgs.jq}/bin/jq --arg t "$mode" '.theme = $t' "$settings" >"$tmp" && mv "$tmp" "$settings"
+    '';
+    xdg.configFile."quickshell-runtime-shell/hooks/post-activation.d/restart-shell.sample".text = ''
+      #!/usr/bin/env bash
+      # Restart the shell after every rebuild so QML changes land without a
+      # manual restart. Off by default: it drops open popups mid-session.
+      export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+      systemctl --user restart quickshell-runtime-shell.service
+    '';
+
+    home.activation.runtimeShellPostActivationHook = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      ${runtimeHookScript}/bin/runtime-hook post-activation || true
+    '';
+
     systemd.user.timers.quickshell-agent-usage = {
       Unit.Description = "Refresh AI coding agent usage records every 15 minutes";
       Timer = {

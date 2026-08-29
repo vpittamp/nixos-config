@@ -115,6 +115,25 @@ terminals. GTK is not scaled (no gsettings schemas installed). On the
 Surface's 1504-px panel the top bar's centre block clips at ≥14px — the
 cluster shrinks to the free span by design.
 
+**Hooks**: `runtime-hook <event> [args]` runs
+`~/.config/quickshell-runtime-shell/hooks/<event>` and `<event>.d/*`
+(`*.sample` skipped). Events: `theme-set <name> <dark|light>`,
+`text-size-set <px>`, `session-locked`, `session-unlocked`,
+`idle-screen <off|on>`, `post-activation`. Samples shipped: Claude Code
+light/dark sync, restart-shell-after-rebuild.
+
+**Crash → agent**: `quickshell-crash-watch.service` follows the journal for
+systemd-coredump entries and raises a critical toast with a *Diagnose with
+Claude* action; it opens a Ghostty running `claude` with the facts and a
+method (`quickshell-crash-diagnose <pid> … --print` shows the prompt).
+
+**Tailscale chip/panel** (after Wi-Fi): connect/disconnect, MagicDNS
+toggle (off→on is the fix for the empty-upstream SERVFAIL), exit node when a
+peer offers one, machine list (click copies IP, right-click DNS); right-click
+the chip copies this host's IP. `tailscale set` runs without sudo because
+`services.tailscale.extraSetFlags` carries `--operator=vpittamp`.
+`runtime-shell summon tailscale`.
+
 **Lock + idle** are in-shell: `Mod+Ctrl+L` / power menu *Lock* /
 `lock-session` engage `windows/LockScreen.qml` (ext-session-lock + PAM
 `swaylock` service); `lock-session` falls back to swaylock if the shell is

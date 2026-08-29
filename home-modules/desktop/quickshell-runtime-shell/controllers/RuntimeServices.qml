@@ -23,6 +23,9 @@ Item {
     property alias osdHideTimerRef: osdHideTimer
     property alias notificationStoreRef: notificationStore
     property alias agentUsageRefreshProcessRef: agentUsageRefreshProcess
+    property alias tailscaleStatusProcessRef: tailscaleStatusProcess
+    property alias tailscaleActionProcessRef: tailscaleActionProcess
+    property alias tailscaleNoticeTimerRef: tailscaleNoticeTimer
     property alias notificationPersistTimerRef: notificationPersistTimer
     property alias launcherQueryDebounceRef: launcherQueryDebounce
     property alias launcherSessionSwitcherOpenTimerRef: launcherSessionSwitcherOpenTimer
@@ -451,6 +454,38 @@ Item {
         onExited: function () {
             shellRoot.agentUsageRefreshing = false;
         }
+    }
+
+    // ----- Tailscale -----
+    Process {
+        id: tailscaleStatusProcess
+        command: [runtimeConfig.tailscaleStatusBin]
+        stdout: StdioCollector {
+            onStreamFinished: shellRoot.parseTailscaleStatus(text)
+        }
+    }
+
+    Timer {
+        interval: 30000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: shellRoot.refreshTailscale()
+    }
+
+    Process {
+        id: tailscaleActionProcess
+        onExited: function () {
+            shellRoot.tailscaleBusy = false;
+            shellRoot.refreshTailscale();
+        }
+    }
+
+    Timer {
+        id: tailscaleNoticeTimer
+        interval: 1800
+        repeat: false
+        onTriggered: shellRoot.tailscaleNotice = ""
     }
 
     // ----- Idle -----
@@ -1386,6 +1421,11 @@ Item {
 
         function setTextSize(px: string): string {
             return shellRoot.setTextSize(px);
+        }
+
+        function refreshTailscale(): string {
+            shellRoot.refreshTailscale();
+            return "ok";
         }
 
         function nextAgentUsage(): string {
