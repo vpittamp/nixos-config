@@ -429,6 +429,7 @@ Rectangle {
             spacing: compact ? 1 : 2
 
             Text {
+                font.family: Theme.fontFamily
                 Layout.fillWidth: true
                 text: primaryLabel
                 // Same reason as border.color: no blue on a return row, even
@@ -443,6 +444,7 @@ Rectangle {
             }
 
             Text {
+                font.family: Theme.fontFamily
                 Layout.fillWidth: true
                 text: secondaryLabel
                 color: isCurrent ? colorsObject.textDim : (selected ? colorsObject.textDim : colorsObject.subtle)
@@ -487,6 +489,7 @@ Rectangle {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         visible: !hostTokenData || rootObject.stringOrEmpty(hostTokenData.icon).length === 0
                         anchors.centerIn: parent
                         text: hostTokenData ? rootObject.stringOrEmpty(hostTokenData.monogram) : ""
@@ -499,6 +502,7 @@ Rectangle {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     Layout.fillWidth: true
                     text: hostTokenData ? rootObject.stringOrEmpty(hostTokenData.label) : ""
                     color: hostTokenData ? hostTokenData.foreground : colorsObject.textDim
@@ -525,6 +529,7 @@ Rectangle {
             Layout.preferredWidth: currentChipText.implicitWidth + 12
 
             Text {
+                font.family: Theme.fontFamily
                 id: currentChipText
                 anchors.centerIn: parent
                 text: isReturnTarget ? "Return" : "Current"
@@ -547,6 +552,7 @@ Rectangle {
             Layout.preferredWidth: gitText.implicitWidth + 12
 
             Text {
+                font.family: Theme.fontFamily
                 id: gitText
                 anchors.centerIn: parent
                 text: gitChipText
@@ -613,6 +619,7 @@ Rectangle {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     id: activitySpinner
                     Layout.preferredWidth: statusIconSize
                     visible: !stoppedNotification && hasMotion
@@ -625,6 +632,7 @@ Rectangle {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     id: activitySymbolText
                     visible: !stoppedNotification && !hasMotion && activitySymbol.length > 0
                     text: activitySymbol
@@ -634,6 +642,7 @@ Rectangle {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     id: activityText
                     text: activityLabel
                     color: rootObject.sessionBadgeColor(session)
@@ -670,6 +679,7 @@ Rectangle {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     visible: !closePending
                     anchors.centerIn: parent
                     text: "×"
@@ -679,11 +689,12 @@ Rectangle {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     visible: closePending
                     anchors.centerIn: parent
                     text: "..."
                     color: colorsObject.red
-                    font.pixelSize: 8
+                    font.pixelSize: Theme.fs(8)
                     font.weight: Font.Bold
                     opacity: closePending ? 0.75 : 0
 

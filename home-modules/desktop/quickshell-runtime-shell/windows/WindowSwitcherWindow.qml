@@ -94,7 +94,7 @@ PanelWindow {
             Rectangle {
                 anchors.fill: tile
                 anchors.margins: -3
-                radius: 18
+                radius: Theme.rad(18)
                 color: cell.accentColor
                 opacity: cell.selected ? 0.30 : (tileMouse.containsMouse ? 0.15 : 0)
                 Behavior on opacity { NumberAnimation { duration: root.fastColorMs } }
@@ -104,7 +104,7 @@ PanelWindow {
                 id: tile
                 anchors.fill: parent
                 anchors.margins: 7
-                radius: 16
+                radius: Theme.rad(16)
                 color: cell.selected ? colors.cardAlt : (tileMouse.containsMouse ? colors.panelAlt : colors.card)
                 border.width: (cell.focusedWindow || cell.selected) ? 2 : 1
                 border.color: cell.focusedWindow ? colors.green
@@ -145,12 +145,13 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignHCenter
                         horizontalAlignment: Text.AlignHCenter
                         text: root.displayTitle(cell.entry)
                         color: colors.text
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fs(12)
                         font.weight: Font.DemiBold
                         elide: Text.ElideRight
                         maximumLineCount: 2
@@ -165,36 +166,38 @@ PanelWindow {
 
                         Rectangle {
                             visible: metaText.text.length > 0
-                            radius: 6
+                            radius: Theme.rad(6)
                             color: colors.blueWash
                             border.color: colors.blueMuted
                             border.width: 1
                             Layout.preferredHeight: 19
                             Layout.preferredWidth: metaText.implicitWidth + 12
                             Text {
+                                font.family: Theme.fontFamily
                                 id: metaText
                                 anchors.centerIn: parent
                                 text: root.displayMeta(cell.entry)
                                 color: colors.textDim
-                                font.pixelSize: 9
+                                font.pixelSize: Theme.fs(9)
                                 font.weight: Font.DemiBold
                             }
                         }
 
                         Rectangle {
                             visible: projText.text.length > 0
-                            radius: 6
+                            radius: Theme.rad(6)
                             color: Theme.shadowSoft
                             border.color: cell.accentColor
                             border.width: 1
                             Layout.preferredHeight: 19
                             Layout.preferredWidth: projText.implicitWidth + 12
                             Text {
+                                font.family: Theme.fontFamily
                                 id: projText
                                 anchors.centerIn: parent
                                 text: root.shortProject(cell.entry && cell.entry.project)
                                 color: cell.accentColor
-                                font.pixelSize: 9
+                                font.pixelSize: Theme.fs(9)
                                 font.weight: Font.DemiBold
                             }
                         }
@@ -206,18 +209,19 @@ PanelWindow {
                     anchors.top: parent.top
                     anchors.right: parent.right
                     anchors.margins: 8
-                    radius: 6
+                    radius: Theme.rad(6)
                     height: 18
                     width: focusedText.implicitWidth + 12
                     color: colors.greenBg
                     border.color: colors.green
                     border.width: 1
                     Text {
+                        font.family: Theme.fontFamily
                         id: focusedText
                         anchors.centerIn: parent
                         text: "current"
                         color: colors.green
-                        font.pixelSize: 8
+                        font.pixelSize: Theme.fs(8)
                         font.weight: Font.Bold
                     }
                 }
@@ -261,6 +265,7 @@ PanelWindow {
                     Behavior on opacity { NumberAnimation { duration: root.fastColorMs } }
                     Behavior on color { ColorAnimation { duration: root.fastColorMs } }
                     Text {
+                        font.family: Theme.fontFamily
                         anchors.centerIn: parent
                         text: "✕"
                         font.pixelSize: root.touchModeActive ? 15 : 11
@@ -294,7 +299,7 @@ PanelWindow {
                             readonly property string outName: modelData
                             height: 28
                             width: moveRow.implicitWidth + 18
-                            radius: 8
+                            radius: Theme.rad(8)
                             color: moveMouse.containsMouse ? colors.blueBg : Theme.edgeShadow
                             border.width: 1
                             border.color: moveMouse.containsMouse ? colors.blue : colors.border
@@ -308,13 +313,14 @@ PanelWindow {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: ""        // arrow-right-circle
                                     font.family: "FiraCode Nerd Font"
-                                    font.pixelSize: 11
+                                    font.pixelSize: Theme.fs(11)
                                     color: moveMouse.containsMouse ? colors.blue : colors.muted
                                 }
                                 Text {
+                                    font.family: Theme.fontFamily
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: root.exposeOutputLabel(outName)
-                                    font.pixelSize: 10
+                                    font.pixelSize: Theme.fs(10)
                                     font.weight: Font.DemiBold
                                     color: moveMouse.containsMouse ? colors.blue : colors.textDim
                                 }
@@ -360,13 +366,14 @@ PanelWindow {
             Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
 
             TextField {
+                font.family: Theme.fontFamily
                 id: exposeField
                 Layout.alignment: Qt.AlignHCenter
                 Layout.preferredWidth: Math.min(520, parent.width - 40)
                 focus: root.exposeVisible
                 placeholderText: "Type to filter windows…"
                 color: colors.text
-                font.pixelSize: 15
+                font.pixelSize: Theme.fs(15)
                 leftPadding: 16
                 rightPadding: exposeField.text.length > 0 ? 40 : 16
                 topPadding: 10
@@ -374,7 +381,7 @@ PanelWindow {
                 horizontalAlignment: TextInput.AlignHCenter
 
                 background: Rectangle {
-                    radius: 12
+                    radius: Theme.rad(12)
                     color: colors.card
                     border.color: exposeField.activeFocus ? colors.blue : colors.border
                     border.width: 1
@@ -388,13 +395,14 @@ PanelWindow {
                     anchors.rightMargin: 8
                     width: 24
                     height: 24
-                    radius: 12
+                    radius: Theme.rad(12)
                     color: clearMouse.containsMouse ? colors.cardAlt : "transparent"
                     Behavior on color { ColorAnimation { duration: root.fastColorMs } }
                     Text {
+                        font.family: Theme.fontFamily
                         anchors.centerIn: parent
                         text: "✕"
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fs(12)
                         color: clearMouse.containsMouse ? colors.text : colors.textDim
                     }
                     MouseArea {
@@ -487,19 +495,21 @@ PanelWindow {
             }
 
             Text {
+                font.family: Theme.fontFamily
                 Layout.alignment: Qt.AlignHCenter
                 visible: root.exposeEntries.length > 0
                 text: root.exposeSummaryText()
                 color: colors.subtle
-                font.pixelSize: 11
+                font.pixelSize: Theme.fs(11)
             }
 
             // Teach every dismiss path (gesture is touchpad-only; Done covers touch).
             Text {
+                font.family: Theme.fontFamily
                 Layout.alignment: Qt.AlignHCenter
                 text: "Swipe up, tap Done, or Esc to close"
                 color: colors.subtle
-                font.pixelSize: 11
+                font.pixelSize: Theme.fs(11)
                 opacity: 0.7
             }
 
@@ -512,21 +522,23 @@ PanelWindow {
                 Item { Layout.fillHeight: true }
 
                 Text {
+                    font.family: Theme.fontFamily
                     Layout.alignment: Qt.AlignHCenter
                     text: root.stringOrEmpty(root.exposeQuery)
                         ? "No windows match “" + root.exposeQuery + "”"
                         : "No open windows"
                     color: colors.muted
-                    font.pixelSize: 17
+                    font.pixelSize: Theme.fs(17)
                     font.weight: Font.DemiBold
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     Layout.alignment: Qt.AlignHCenter
                     visible: root.stringOrEmpty(root.exposeQuery).length > 0
                     text: "Press Esc or ✕ to clear the filter"
                     color: colors.subtle
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fs(12)
                 }
 
                 Item { Layout.fillHeight: true }
@@ -553,7 +565,7 @@ PanelWindow {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         Layout.preferredWidth: 1     // equal share among panels
-                        radius: 18
+                        radius: Theme.rad(18)
                         color: activePanel ? Theme.blueSelection : Theme.elevationFaint
                         border.color: activePanel ? colors.blue : colors.border
                         border.width: activePanel ? 2 : 1
@@ -573,29 +585,31 @@ PanelWindow {
                                 Text {
                                     text: root.exposeOutputGlyph(panelOut)
                                     font.family: "FiraCode Nerd Font"
-                                    font.pixelSize: 18
+                                    font.pixelSize: Theme.fs(18)
                                     color: colors.blue
                                 }
                                 Text {
+                                    font.family: Theme.fontFamily
                                     text: root.exposeOutputLabel(panelOut)
                                     color: colors.text
-                                    font.pixelSize: 15
+                                    font.pixelSize: Theme.fs(15)
                                     font.weight: Font.DemiBold
                                 }
                                 Item { Layout.fillWidth: true }
                                 Rectangle {
-                                    radius: 9
+                                    radius: Theme.rad(9)
                                     color: colors.panelAlt
                                     border.color: colors.border
                                     border.width: 1
                                     Layout.preferredHeight: 22
                                     Layout.preferredWidth: countText.implicitWidth + 16
                                     Text {
+                                        font.family: Theme.fontFamily
                                         id: countText
                                         anchors.centerIn: parent
                                         text: panelWindows.length
                                         color: colors.muted
-                                        font.pixelSize: 11
+                                        font.pixelSize: Theme.fs(11)
                                         font.weight: Font.DemiBold
                                     }
                                 }
@@ -673,7 +687,7 @@ PanelWindow {
             anchors.margins: 28
             height: 40
             implicitWidth: exposeDictateRow.implicitWidth + 24
-            radius: 12
+            radius: Theme.rad(12)
             color: root.voxtypeListening() ? colors.redBg
                 : (root.voxtypeClass() === "stopping" ? colors.amberBg
                 : (exposeDictateMouse.containsMouse ? colors.card : colors.cardAlt)
@@ -694,7 +708,7 @@ PanelWindow {
                     text: root.voxtypeIcon()
                     color: root.voxtypeActive() ? root.voxtypeIconColor() : colors.muted
                     font.family: "FiraCode Nerd Font"
-                    font.pixelSize: 15
+                    font.pixelSize: Theme.fs(15)
 
                     SequentialAnimation on opacity {
                         running: root.voxtypeListening()
@@ -706,12 +720,13 @@ PanelWindow {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     text: root.voxtypeClass() === "streaming" ? "Streaming…"
                         : (root.voxtypeClass() === "recording" ? "Recording…"
                             : (root.voxtypeClass() === "stopping" ? "Stopping…"
                                 : (root.voxtypeClass() === "transcribing" ? "Transcribing…" : "Dictate")))
                     color: root.voxtypeActive() ? root.voxtypeIconColor() : colors.text
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fs(11)
                     font.weight: Font.DemiBold
                 }
             }
@@ -738,7 +753,7 @@ PanelWindow {
             anchors.margins: 28
             height: 40
             implicitWidth: exposeDoneRow.implicitWidth + 24
-            radius: 12
+            radius: Theme.rad(12)
             color: exposeDoneMouse.containsMouse ? colors.card : colors.cardAlt
             border.width: 1
             border.color: exposeDoneMouse.containsMouse ? colors.borderStrong : colors.border
@@ -750,15 +765,17 @@ PanelWindow {
                 anchors.centerIn: parent
                 spacing: 7
                 Text {
+                    font.family: Theme.fontFamily
                     text: "✕"
                     color: exposeDoneMouse.containsMouse ? colors.text : colors.muted
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.fs(13)
                     font.weight: Font.Bold
                 }
                 Text {
+                    font.family: Theme.fontFamily
                     text: "Done"
                     color: colors.text
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.fs(11)
                     font.weight: Font.DemiBold
                 }
             }

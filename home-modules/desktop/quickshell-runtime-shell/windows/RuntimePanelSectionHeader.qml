@@ -1,4 +1,5 @@
 import QtQuick
+import "root:/"
 import QtQuick.Layouts
 
 Rectangle {
@@ -47,6 +48,7 @@ Rectangle {
         spacing: 8
 
         Text {
+            font.family: Theme.fontFamily
             text: sectionHeader.expanded ? "▾" : "▸"
             color: sectionHeader.expanded ? sectionHeader.expandedAccent : sectionHeader.collapsedAccent
             font.pixelSize: sectionHeader.rootObject.fontBody
@@ -54,6 +56,7 @@ Rectangle {
         }
 
         Text {
+            font.family: Theme.fontFamily
             text: sectionHeader.title
             color: sectionHeader.colorsObject.text
             font.pixelSize: sectionHeader.rootObject.fontTitle
@@ -61,6 +64,7 @@ Rectangle {
         }
 
         Text {
+            font.family: Theme.fontFamily
             Layout.fillWidth: true
             text: sectionHeader.summary
             color: sectionHeader.colorsObject.subtle
@@ -80,6 +84,7 @@ Rectangle {
             border.width: 1
 
             Text {
+                font.family: Theme.fontFamily
                 id: sectionCount
                 anchors.centerIn: parent
                 text: String(sectionHeader.count)

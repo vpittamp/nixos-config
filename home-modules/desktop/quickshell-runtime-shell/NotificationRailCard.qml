@@ -44,7 +44,7 @@ Item {
         anchors.topMargin: -cardBody.height + 10
         width: parent.width * 0.88
         height: cardBody.height
-        radius: 16
+        radius: Theme.rad(16)
         color: colorsObject.cardAlt
         border.color: colorsObject.lineSoft
         border.width: 1
@@ -58,7 +58,7 @@ Item {
         anchors.topMargin: -cardBody.height + 5
         width: parent.width * 0.94
         height: cardBody.height
-        radius: 16
+        radius: Theme.rad(16)
         color: colorsObject.cardAlt
         border.color: colorsObject.border
         border.width: 1
@@ -72,7 +72,7 @@ Item {
         anchors.top: parent.top
         implicitHeight: cardColumn.implicitHeight + 24
         height: implicitHeight
-        radius: 16
+        radius: Theme.rad(16)
         color: rootObject.notificationCardFill(itemData)
         border.color: cardHover.hovered ? colorsObject.borderStrong : rootObject.notificationCardBorder(itemData)
         border.width: 1
@@ -128,7 +128,7 @@ Item {
                 Rectangle {
                     Layout.preferredWidth: 20
                     Layout.preferredHeight: 20
-                    radius: 6
+                    radius: Theme.rad(6)
                     color: card.iconSource !== "" ? "transparent" : rootObject.notificationAvatarFill(itemData)
                     border.color: card.iconSource !== "" ? "transparent" : Theme.edgeHighlightSoft
                     border.width: 1
@@ -142,19 +142,21 @@ Item {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         visible: card.iconSource === ""
                         anchors.centerIn: parent
                         text: rootObject.notificationAvatarText(itemData)
                         color: colorsObject.textDim
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fs(10)
                         font.weight: Font.DemiBold
                     }
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     text: rootObject.notificationAppLabel(itemData).toUpperCase()
                     color: card.critical ? colorsObject.red : colorsObject.subtle
-                    font.pixelSize: 9
+                    font.pixelSize: Theme.fs(9)
                     font.letterSpacing: 0.8
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight
@@ -162,9 +164,10 @@ Item {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     text: rootObject.notificationRelativeTime(itemData)
                     color: colorsObject.subtle
-                    font.pixelSize: 9
+                    font.pixelSize: Theme.fs(9)
                     font.weight: Font.Medium
                 }
 
@@ -173,10 +176,11 @@ Item {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     visible: card.stackCount > 0
                     text: "+" + card.stackCount
                     color: colorsObject.subtle
-                    font.pixelSize: 9
+                    font.pixelSize: Theme.fs(9)
                     font.weight: Font.DemiBold
                 }
 
@@ -191,7 +195,7 @@ Item {
                 Rectangle {
                     Layout.preferredWidth: 22
                     Layout.preferredHeight: 22
-                    radius: 8
+                    radius: Theme.rad(8)
                     color: railDismissMouse.containsMouse ? colorsObject.redBg : Theme.elevationFaint
                     border.color: railDismissMouse.containsMouse ? colorsObject.red : Theme.elevation
                     border.width: 1
@@ -204,10 +208,11 @@ Item {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         anchors.centerIn: parent
                         text: "×"
                         color: railDismissMouse.containsMouse ? colorsObject.red : colorsObject.subtle
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.fs(11)
                         font.weight: Font.Bold
                     }
 
@@ -231,10 +236,11 @@ Item {
                     spacing: 3
 
                     Text {
+                        font.family: Theme.fontFamily
                         Layout.fillWidth: true
                         text: rootObject.notificationHeadline(itemData)
                         color: colorsObject.text
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fs(12)
                         lineHeight: 1.15
                         font.weight: Font.DemiBold
                         wrapMode: Text.Wrap
@@ -243,11 +249,12 @@ Item {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         Layout.fillWidth: true
                         visible: rootObject.notificationBody(itemData).length > 0
                         text: rootObject.notificationBody(itemData)
                         color: colorsObject.textDim
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fs(10)
                         lineHeight: 1.2
                         wrapMode: Text.Wrap
                         maximumLineCount: 3
@@ -261,7 +268,7 @@ Item {
                     Layout.preferredWidth: 48
                     Layout.preferredHeight: 48
                     Layout.alignment: Qt.AlignTop
-                    radius: 10
+                    radius: Theme.rad(10)
                     color: Theme.elevationFaint
                     border.color: Theme.elevation
                     border.width: 1
@@ -291,7 +298,7 @@ Item {
                         required property var modelData
                         Layout.preferredHeight: 24
                         Layout.preferredWidth: railActionText.implicitWidth + 20
-                        radius: 9
+                        radius: Theme.rad(9)
                         opacity: card.actionable ? 1 : 0.4
                         color: railActionMouse.containsMouse ? Qt.tint(card.accentColor, Theme.elevationStrong) : Theme.elevationSoft
                         border.color: railActionMouse.containsMouse ? Qt.tint(card.accentColor, Theme.elevationStrong) : Theme.elevation
@@ -306,11 +313,12 @@ Item {
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             id: railActionText
                             anchors.centerIn: parent
                             text: rootObject.notificationActionText(modelData)
                             color: colorsObject.text
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fs(9)
                             font.weight: Font.DemiBold
                         }
 
@@ -330,9 +338,10 @@ Item {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     text: rootObject.notificationMetaLabel(itemData)
                     color: card.critical ? colorsObject.red : colorsObject.subtle
-                    font.pixelSize: 9
+                    font.pixelSize: Theme.fs(9)
                     elide: Text.ElideRight
                     Layout.maximumWidth: card.width * 0.4
                 }

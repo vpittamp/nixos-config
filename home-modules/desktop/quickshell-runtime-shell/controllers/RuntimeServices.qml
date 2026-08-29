@@ -1384,6 +1384,10 @@ Item {
             return shellRoot.colors.name;
         }
 
+        function setTextSize(px: string): string {
+            return shellRoot.setTextSize(px);
+        }
+
         function nextAgentUsage(): string {
             return shellRoot.cycleAgentUsage();
         }

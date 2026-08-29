@@ -137,18 +137,20 @@ Scope {
                 width: Math.min(420, parent.width - 80)
 
                 Text {
+                    font.family: Theme.fontFamily
                     Layout.alignment: Qt.AlignHCenter
                     text: lock.root.clockTime
                     color: lock.colors.text
-                    font.pixelSize: 84
+                    font.pixelSize: Theme.fs(84)
                     font.weight: Font.Light
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     Layout.alignment: Qt.AlignHCenter
                     text: lock.root.clockDate
                     color: lock.colors.muted
-                    font.pixelSize: 16
+                    font.pixelSize: Theme.fs(16)
                 }
 
                 Item { Layout.preferredHeight: 22 }
@@ -156,7 +158,7 @@ Scope {
                 Rectangle {
                     Layout.fillWidth: true
                     height: 46
-                    radius: 12
+                    radius: Theme.rad(12)
                     color: lock.colors.cardGlass
                     border.color: field.activeFocus ? lock.colors.blue : lock.colors.border
                     border.width: 1
@@ -171,16 +173,17 @@ Scope {
                             text: "󰌾"
                             color: lock.authenticating ? lock.colors.amber : lock.colors.muted
                             font.family: "FiraCode Nerd Font"
-                            font.pixelSize: 18
+                            font.pixelSize: Theme.fs(18)
                         }
 
                         TextInput {
+                            font.family: Theme.fontFamily
                             id: field
                             Layout.fillWidth: true
                             echoMode: TextInput.Password
                             passwordCharacter: "•"
                             color: lock.colors.text
-                            font.pixelSize: 16
+                            font.pixelSize: Theme.fs(16)
                             focus: surface.primary
                             enabled: !lock.authenticating
                             clip: true
@@ -191,40 +194,44 @@ Scope {
                             Keys.onEscapePressed: text = ""
 
                             Text {
+                                font.family: Theme.fontFamily
                                 anchors.verticalCenter: parent.verticalCenter
                                 visible: !field.text.length
                                 text: lock.runtimeConfig.userName + " — password"
                                 color: lock.colors.subtle
-                                font.pixelSize: 15
+                                font.pixelSize: Theme.fs(15)
                             }
                         }
                     }
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     Layout.alignment: Qt.AlignHCenter
                     text: lock.status || (lock.failedAttempts > 0 ? lock.failedAttempts + " failed" : " ")
                     color: lock.status === "Checking…" ? lock.colors.muted : lock.colors.red
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.fs(13)
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     Layout.alignment: Qt.AlignHCenter
                     Layout.topMargin: 6
                     text: lock.root.lockAgentSummary()
                     visible: text.length > 0
                     color: lock.colors.subtle
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fs(12)
                 }
             }
 
             Text {
+                font.family: Theme.fontFamily
                 anchors.bottom: parent.bottom
                 anchors.right: parent.right
                 anchors.margins: 22
                 text: lock.runtimeConfig.hostName + " · " + lock.root.screenOutputName(screen)
                 color: lock.colors.subtle
-                font.pixelSize: 11
+                font.pixelSize: Theme.fs(11)
             }
 
             // The surface appears with the lock; grab keyboard focus on the

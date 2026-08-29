@@ -59,7 +59,7 @@ PanelWindow {
     visible: root.osdVisible
     color: "transparent"
     anchors.bottom: true
-    margins.bottom: runtimeConfig.barHeight + 28
+    margins.bottom: Math.round(runtimeConfig.barHeight * Theme.scale) + 28
     implicitWidth: 340
     implicitHeight: 64
     exclusiveZone: 0
@@ -73,7 +73,7 @@ PanelWindow {
     Rectangle {
         id: pill
         anchors.fill: parent
-        radius: 16
+        radius: Theme.rad(16)
         color: colors.toastGlass
         border.color: colors.border
         border.width: 1
@@ -90,7 +90,7 @@ PanelWindow {
                 text: osd.glyph()
                 color: osd.accent
                 font.family: "FiraCode Nerd Font"
-                font.pixelSize: 24
+                font.pixelSize: Theme.fs(24)
                 Layout.preferredWidth: 28
                 horizontalAlignment: Text.AlignHCenter
             }
@@ -100,9 +100,10 @@ PanelWindow {
                 spacing: 7
 
                 Text {
+                    font.family: Theme.fontFamily
                     text: osd.label()
                     color: colors.text
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.fs(13)
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight
                     Layout.fillWidth: true
@@ -127,7 +128,7 @@ PanelWindow {
             Text {
                 text: osd.muted ? "--" : String(osd.level)
                 color: colors.muted
-                font.pixelSize: 12
+                font.pixelSize: Theme.fs(12)
                 font.family: "FiraCode Nerd Font"
                 Layout.preferredWidth: 26
                 horizontalAlignment: Text.AlignRight

@@ -1,4 +1,5 @@
 import QtQuick
+import "root:/"
 import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
@@ -27,7 +28,7 @@ PanelWindow {
     anchors.left: true
     anchors.right: true
     anchors.top: true
-    implicitHeight: runtimeConfig.topBarHeight
+    implicitHeight: Math.round(runtimeConfig.topBarHeight * Theme.scale)
     exclusiveZone: implicitHeight
     focusable: false
     aboveWindows: true
@@ -88,6 +89,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: panelToggleLabel
                         anchors.centerIn: parent
                         text: "AI Panel"
@@ -218,6 +220,7 @@ PanelWindow {
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             id: agentMonitorLabel
                             text: agentMonitorChip.agentSessionsCount > 0
                                 ? ("Agents " + agentMonitorChip.agentSessionsCount)
@@ -285,6 +288,7 @@ PanelWindow {
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             Layout.alignment: Qt.AlignVCenter
                             text: root.agentUsageChipLabel() + " ▾"
                             color: root.agentsPopupVisible ? colors.blue : root.neutralChipText(agentUsageMouse.containsMouse)
@@ -365,10 +369,11 @@ PanelWindow {
                             : "\uf108"
                         color: topBarWindow.isFocusedBar ? colors.blue : colors.muted
                         font.family: "FiraCode Nerd Font"
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fs(12)
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         Layout.alignment: Qt.AlignVCenter
                         id: outputLabel
                         text: runtimeConfig.hostName + (topBarWindow.topOutputName ? " · " + topBarWindow.topOutputName : "")
@@ -378,6 +383,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         Layout.alignment: Qt.AlignVCenter
                         text: "│"
                         color: colors.subtle
@@ -385,6 +391,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         Layout.alignment: Qt.AlignVCenter
                         id: clockLabel
                         text: root.topBarTimeText()
@@ -441,6 +448,7 @@ PanelWindow {
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             text: root.daemonHealthLabel()
                             color: root.daemonHealthTextColor(daemonHealthMouse.containsMouse)
                             font.pixelSize: root.fontLabel
@@ -485,6 +493,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: generationLabel
                         anchors.centerIn: parent
                         text: root.systemGenerationLabel()
@@ -533,6 +542,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: memoryLabel
                         anchors.centerIn: parent
                         text: root.systemStatsMemoryLabel()
@@ -576,6 +586,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: diskLabel
                         anchors.centerIn: parent
                         text: root.systemStatsDiskLabel()
@@ -622,6 +633,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: layoutLabel
                         anchors.centerIn: parent
                         text: "Displays ▾"
@@ -666,6 +678,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: moonlightLabel
                         anchors.centerIn: parent
                         text: root.moonlightChipLabel()
@@ -711,6 +724,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: networkLabel
                         anchors.centerIn: parent
                         text: root.networkLabel()
@@ -757,6 +771,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: notificationLabel
                         anchors.centerIn: parent
                         text: root.notificationLabel()
@@ -820,10 +835,11 @@ PanelWindow {
                             text: "\uf028"
                             color: root.audioChipText(audioMouse.containsMouse)
                             font.family: "FiraCode Nerd Font"
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.fs(11)
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             id: audioLabel
                             Layout.alignment: Qt.AlignVCenter
                             text: root.audioLabel() + " ▾"
@@ -886,10 +902,11 @@ PanelWindow {
                             text: "\uf294"
                             color: root.neutralChipText(bluetoothMouse.containsMouse)
                             font.family: "FiraCode Nerd Font"
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.fs(11)
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             id: bluetoothLabel
                             Layout.alignment: Qt.AlignVCenter
                             text: root.bluetoothLabel() + " ▾"
@@ -955,6 +972,7 @@ PanelWindow {
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             text: root.batteryLabel()
                             color: root.batteryChipText(batteryMouse.containsMouse)
                             font.pixelSize: root.fontLabel
@@ -1081,7 +1099,7 @@ PanelWindow {
                         text: "\u{F0118}"
                         color: root.castChipText(castMouse.containsMouse)
                         font.family: "FiraCode Nerd Font"
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.fs(11)
                     }
 
                     MouseArea {
@@ -1128,6 +1146,7 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         id: powerLabel
                         anchors.centerIn: parent
                         text: "Power ▾"
@@ -1167,7 +1186,7 @@ PanelWindow {
             id: displaySelectorCard
             implicitWidth: 320
             implicitHeight: displaySelectorColumn.implicitHeight + 20
-            radius: 12
+            radius: Theme.rad(12)
             color: colors.panel
             border.color: colors.borderStrong
             border.width: 1
@@ -1187,16 +1206,18 @@ PanelWindow {
                         spacing: 2
 
                         Text {
+                            font.family: Theme.fontFamily
                             text: "Displays"
                             color: colors.text
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.fs(12)
                             font.weight: Font.DemiBold
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             text: root.displayApplyStatusText()
                             color: root.displayApplyError ? colors.red : colors.subtle
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fs(9)
                             wrapMode: Text.WordWrap
                         }
                     }
@@ -1222,7 +1243,7 @@ PanelWindow {
                             readonly property bool available: root.displayPresetAvailable(presetId)
                             readonly property bool pending: root.displayPresetPending(presetId)
                             visible: available
-                            radius: 7
+                            radius: Theme.rad(7)
                             color: current ? colors.blueBg : colors.cardAlt
                             border.color: current ? colors.blue : colors.border
                             border.width: 1
@@ -1230,11 +1251,12 @@ PanelWindow {
                             implicitHeight: presetLabel.implicitHeight + 10
 
                             Text {
+                                font.family: Theme.fontFamily
                                 id: presetLabel
                                 anchors.centerIn: parent
                                 text: pending ? "..." : root.stringOrEmpty(modelData && modelData.label)
                                 color: current ? colors.blue : colors.text
-                                font.pixelSize: 9
+                                font.pixelSize: Theme.fs(9)
                                 font.weight: Font.DemiBold
                             }
 
@@ -1253,7 +1275,7 @@ PanelWindow {
                     id: displayMapArea
                     Layout.fillWidth: true
                     implicitHeight: 124
-                    radius: 8
+                    radius: Theme.rad(8)
                     color: colors.bg
                     border.color: colors.lineSoft
                     border.width: 1
@@ -1280,27 +1302,30 @@ PanelWindow {
                                 spacing: 1
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     text: root.stringOrEmpty(modelData.label)
                                     color: modelData.primary ? colors.blue : colors.teal
-                                    font.pixelSize: 9
+                                    font.pixelSize: Theme.fs(9)
                                     font.weight: Font.DemiBold
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     visible: modelData.h > 30
                                     text: root.stringOrEmpty(modelData.resolution)
                                     color: colors.subtle
-                                    font.pixelSize: 8
+                                    font.pixelSize: Theme.fs(8)
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     visible: modelData.h > 44
                                     text: modelData.primary ? "● primary" : "● on"
                                     color: modelData.primary ? colors.blue : colors.teal
-                                    font.pixelSize: 7
+                                    font.pixelSize: Theme.fs(7)
                                     font.weight: Font.DemiBold
                                 }
                             }
@@ -1315,11 +1340,12 @@ PanelWindow {
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         anchors.centerIn: parent
                         visible: root.displayMapOutputs().length === 0
                         text: "No active displays"
                         color: colors.subtle
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fs(10)
                     }
                 }
 
@@ -1336,7 +1362,7 @@ PanelWindow {
                             required property var modelData
                             readonly property string outName: root.stringOrEmpty(modelData && modelData.name)
                             readonly property bool pending: root.displayTogglePending(outName)
-                            radius: 7
+                            radius: Theme.rad(7)
                             color: colors.panel
                             border.color: colors.lineSoft
                             border.width: 1
@@ -1350,19 +1376,21 @@ PanelWindow {
                                 spacing: 4
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: root.displayFriendlyName(modelData)
                                     color: colors.subtle
-                                    font.pixelSize: 9
+                                    font.pixelSize: Theme.fs(9)
                                     font.weight: Font.DemiBold
                                     font.strikeout: true
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: pending ? "..." : "OFF"
                                     color: pending ? colors.subtle : colors.red
-                                    font.pixelSize: 8
+                                    font.pixelSize: Theme.fs(8)
                                     font.weight: Font.Bold
                                 }
                             }
@@ -1377,10 +1405,11 @@ PanelWindow {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     Layout.fillWidth: true
                     text: "Tap a screen to turn it off; tap an off chip to turn it on. Presets pick which externals are active."
                     color: colors.subtle
-                    font.pixelSize: 9
+                    font.pixelSize: Theme.fs(9)
                     wrapMode: Text.WordWrap
                 }
             }
@@ -1402,7 +1431,7 @@ PanelWindow {
             id: audioPopupCard
             implicitWidth: 340
             implicitHeight: audioPopupColumn.implicitHeight + 20
-            radius: 12
+            radius: Theme.rad(12)
             color: colors.panel
             border.color: colors.borderStrong
             border.width: 1
@@ -1423,16 +1452,18 @@ PanelWindow {
                         spacing: 2
 
                         Text {
+                            font.family: Theme.fontFamily
                             text: "Audio"
                             color: colors.text
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.fs(12)
                             font.weight: Font.DemiBold
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             text: root.audioDetail()
                             color: colors.subtle
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fs(9)
                             elide: Text.ElideRight
                         }
                     }
@@ -1487,9 +1518,10 @@ PanelWindow {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     text: "Outputs"
                     color: colors.text
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fs(10)
                     font.weight: Font.DemiBold
                 }
 
@@ -1503,7 +1535,7 @@ PanelWindow {
                         readonly property string sinkKind: root.audioSinkKind(sink)
                         Layout.fillWidth: true
                         implicitHeight: 48
-                        radius: 8
+                        radius: Theme.rad(8)
                         color: activeSink ? colors.blueBg : (rowHover.containsMouse ? colors.cardAlt : colors.card)
                         border.color: activeSink ? colors.blue : colors.border
                         border.width: 1
@@ -1530,30 +1562,33 @@ PanelWindow {
                                 spacing: 1
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     Layout.fillWidth: true
                                     text: root.audioSinkLabel(sink)
                                     color: activeSink ? colors.blue : colors.text
-                                    font.pixelSize: 11
+                                    font.pixelSize: Theme.fs(11)
                                     font.weight: Font.DemiBold
                                     elide: Text.ElideRight
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     Layout.fillWidth: true
                                     visible: sinkKind !== ""
                                     text: sinkKind
                                     color: colors.subtle
-                                    font.pixelSize: 8
+                                    font.pixelSize: Theme.fs(8)
                                     elide: Text.ElideRight
                                 }
                             }
 
                             Text {
+                                font.family: Theme.fontFamily
                                 Layout.alignment: Qt.AlignVCenter
                                 visible: activeSink
                                 text: "Active"
                                 color: colors.blue
-                                font.pixelSize: 8
+                                font.pixelSize: Theme.fs(8)
                                 font.weight: Font.DemiBold
                             }
                         }
@@ -1582,16 +1617,18 @@ PanelWindow {
                         spacing: 2
 
                         Text {
+                            font.family: Theme.fontFamily
                             text: "Input"
                             color: colors.text
-                            font.pixelSize: 10
+                            font.pixelSize: Theme.fs(10)
                             font.weight: Font.DemiBold
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             text: root.audioInputDetail()
                             color: colors.subtle
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fs(9)
                             elide: Text.ElideRight
                         }
                     }
@@ -1619,7 +1656,7 @@ PanelWindow {
                         readonly property bool activeSource: root.audioSourceIsActive(source)
                         Layout.fillWidth: true
                         implicitHeight: 34
-                        radius: 8
+                        radius: Theme.rad(8)
                         color: activeSource ? colors.blueBg : colors.cardAlt
                         border.color: activeSource ? colors.blue : colors.border
                         border.width: 1
@@ -1631,19 +1668,21 @@ PanelWindow {
                             spacing: 8
 
                             Text {
+                                font.family: Theme.fontFamily
                                 Layout.fillWidth: true
                                 text: root.audioSourceLabel(source)
                                 color: activeSource ? colors.blue : colors.text
-                                font.pixelSize: 9
+                                font.pixelSize: Theme.fs(9)
                                 font.weight: Font.Medium
                                 elide: Text.ElideRight
                             }
 
                             Text {
+                                font.family: Theme.fontFamily
                                 visible: activeSource
                                 text: "Live"
                                 color: colors.blue
-                                font.pixelSize: 8
+                                font.pixelSize: Theme.fs(8)
                                 font.weight: Font.DemiBold
                             }
                         }
@@ -1675,7 +1714,7 @@ PanelWindow {
             id: bluetoothPopupCard
             implicitWidth: 300
             implicitHeight: bluetoothPopupColumn.implicitHeight + 20
-            radius: 12
+            radius: Theme.rad(12)
             color: colors.panel
             border.color: colors.borderStrong
             border.width: 1
@@ -1696,16 +1735,18 @@ PanelWindow {
                         spacing: 2
 
                         Text {
+                            font.family: Theme.fontFamily
                             text: "Bluetooth"
                             color: colors.text
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.fs(12)
                             font.weight: Font.DemiBold
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             text: root.bluetoothDetail()
                             color: colors.subtle
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fs(9)
                             elide: Text.ElideRight
                         }
                     }
@@ -1722,10 +1763,11 @@ PanelWindow {
                     spacing: 8
 
                     Text {
+                        font.family: Theme.fontFamily
                         Layout.fillWidth: true
                         text: root.networkDetail()
                         color: colors.subtle
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fs(9)
                         elide: Text.ElideRight
                     }
 
@@ -1746,10 +1788,11 @@ PanelWindow {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     visible: root.bluetoothAvailable() && root.bluetoothDevices().length > 0
                     text: "Devices"
                     color: colors.text
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fs(10)
                     font.weight: Font.DemiBold
                 }
 
@@ -1762,7 +1805,7 @@ PanelWindow {
                         readonly property bool connected: !!(device && device.connected)
                         Layout.fillWidth: true
                         implicitHeight: 38
-                        radius: 8
+                        radius: Theme.rad(8)
                         color: connected ? colors.tealBg : colors.cardAlt
                         border.color: connected ? colors.teal : colors.border
                         border.width: 1
@@ -1775,18 +1818,20 @@ PanelWindow {
                             spacing: 8
 
                             Text {
+                                font.family: Theme.fontFamily
                                 Layout.fillWidth: true
                                 text: root.stringOrEmpty(device && device.name) || "Bluetooth device"
                                 color: connected ? colors.teal : colors.text
-                                font.pixelSize: 9
+                                font.pixelSize: Theme.fs(9)
                                 font.weight: Font.Medium
                                 elide: Text.ElideRight
                             }
 
                             Text {
+                                font.family: Theme.fontFamily
                                 text: connected ? "Disconnect" : "Connect"
                                 color: connected ? colors.teal : colors.subtle
-                                font.pixelSize: 8
+                                font.pixelSize: Theme.fs(8)
                                 font.weight: Font.DemiBold
                             }
                         }
@@ -1802,10 +1847,11 @@ PanelWindow {
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     visible: !root.bluetoothAvailable()
                     text: "No Bluetooth adapter detected on this host."
                     color: colors.subtle
-                    font.pixelSize: 9
+                    font.pixelSize: Theme.fs(9)
                     wrapMode: Text.WordWrap
                 }
             }
@@ -1825,7 +1871,7 @@ PanelWindow {
 
         Rectangle {
             anchors.fill: parent
-            radius: 12
+            radius: Theme.rad(12)
             color: colors.panel
             border.color: colors.borderStrong
             border.width: 1
@@ -1867,7 +1913,7 @@ PanelWindow {
                         required property var modelData
                         Layout.fillWidth: true
                         implicitHeight: 30
-                        radius: 8
+                        radius: Theme.rad(8)
                         color: root.neutralChipFill(powerActionMouse.containsMouse)
                         border.color: root.neutralChipBorder(powerActionMouse.containsMouse)
                         border.width: 1
@@ -1885,10 +1931,11 @@ PanelWindow {
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             anchors.centerIn: parent
                             text: modelData.label
                             color: root.neutralChipText(powerActionMouse.containsMouse)
-                            font.pixelSize: 10
+                            font.pixelSize: Theme.fs(10)
                             font.weight: Font.DemiBold
                         }
 
@@ -1926,7 +1973,7 @@ PanelWindow {
             readonly property var agents: root.agentUsageList()
             implicitWidth: 380
             implicitHeight: agentUsageColumn.implicitHeight + 24
-            radius: 12
+            radius: Theme.rad(12)
             color: colors.panel
             border.color: colors.borderStrong
             border.width: 1
@@ -1956,26 +2003,28 @@ PanelWindow {
                         spacing: 1
 
                         Text {
+                            font.family: Theme.fontFamily
                             text: (agentUsageCard.record ? root.stringOrEmpty(agentUsageCard.record.name) : "Agents")
                                 + (agentUsageCard.record && root.stringOrEmpty(agentUsageCard.record.tierLabel) ? "  ·  " + agentUsageCard.record.tierLabel : "")
                             color: colors.text
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.fs(12)
                             font.weight: Font.DemiBold
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             text: root.agentUsageRefreshing ? "refreshing…" : root.agentUsageUpdatedText(agentUsageCard.record)
                             color: colors.subtle
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fs(9)
                         }
                     }
 
                     Rectangle {
                         width: 24
                         height: 24
-                        radius: 7
+                        radius: Theme.rad(7)
                         color: agentRefreshMouse.containsMouse ? colors.cardAlt : "transparent"
                         border.color: colors.border
                         border.width: 1
@@ -1985,7 +2034,7 @@ PanelWindow {
                             text: "\uf021"
                             color: root.agentUsageRefreshing ? colors.amber : colors.muted
                             font.family: "FiraCode Nerd Font"
-                            font.pixelSize: 10
+                            font.pixelSize: Theme.fs(10)
                         }
 
                         MouseArea {
@@ -2010,7 +2059,7 @@ PanelWindow {
                         delegate: Rectangle {
                             required property var modelData
                             readonly property bool current: agentUsageCard.record && root.stringOrEmpty(modelData.id) === root.stringOrEmpty(agentUsageCard.record.id)
-                            radius: 7
+                            radius: Theme.rad(7)
                             color: current ? colors.blueBg : colors.cardAlt
                             border.color: current ? colors.blue : colors.border
                             border.width: 1
@@ -2018,11 +2067,12 @@ PanelWindow {
                             implicitHeight: agentSwitchLabel.implicitHeight + 10
 
                             Text {
+                                font.family: Theme.fontFamily
                                 id: agentSwitchLabel
                                 anchors.centerIn: parent
                                 text: root.agentUsageShortName(modelData.id)
                                 color: parent.current ? colors.blue : colors.text
-                                font.pixelSize: 9
+                                font.pixelSize: Theme.fs(9)
                                 font.weight: Font.DemiBold
                             }
 
@@ -2037,20 +2087,22 @@ PanelWindow {
 
                 // Auth / endpoint problems replace the meters.
                 Text {
+                    font.family: Theme.fontFamily
                     Layout.fillWidth: true
                     visible: agentUsageCard.record && (root.stringOrEmpty(agentUsageCard.record.usageStatusText).length > 0)
                     text: agentUsageCard.record ? root.stringOrEmpty(agentUsageCard.record.usageStatusText) : ""
                     color: colors.amber
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fs(10)
                     wrapMode: Text.WordWrap
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     Layout.fillWidth: true
                     visible: agentUsageCard.limits.length === 0 && agentUsageCard.record && root.stringOrEmpty(agentUsageCard.record.authHelpText).length > 0
                     text: agentUsageCard.record ? root.stringOrEmpty(agentUsageCard.record.authHelpText) : ""
                     color: colors.subtle
-                    font.pixelSize: 9
+                    font.pixelSize: Theme.fs(9)
                     wrapMode: Text.WordWrap
                 }
 
@@ -2072,23 +2124,26 @@ PanelWindow {
                                 Layout.fillWidth: true
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     text: modelData.label
                                     color: colors.textDim
-                                    font.pixelSize: 10
+                                    font.pixelSize: Theme.fs(10)
                                     Layout.fillWidth: true
                                     elide: Text.ElideRight
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     text: modelData.resetText
                                     color: colors.subtle
-                                    font.pixelSize: 9
+                                    font.pixelSize: Theme.fs(9)
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     text: modelData.percent + "%"
                                     color: root.agentUsageMeterColor(modelData.percent)
-                                    font.pixelSize: 10
+                                    font.pixelSize: Theme.fs(10)
                                     font.weight: Font.DemiBold
                                     Layout.preferredWidth: 34
                                     horizontalAlignment: Text.AlignRight
@@ -2116,6 +2171,7 @@ PanelWindow {
 
                 // Today.
                 Text {
+                    font.family: Theme.fontFamily
                     Layout.fillWidth: true
                     visible: !!agentUsageCard.record
                     text: agentUsageCard.record
@@ -2124,7 +2180,7 @@ PanelWindow {
                           + "  ·  " + (Number(agentUsageCard.record.todaySessions) || 0) + " session" + (Number(agentUsageCard.record.todaySessions) === 1 ? "" : "s")
                         : ""
                     color: colors.textDim
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fs(10)
                     elide: Text.ElideRight
                 }
 
@@ -2135,9 +2191,10 @@ PanelWindow {
                     spacing: 3
 
                     Text {
+                        font.family: Theme.fontFamily
                         text: "Tokens by day"
                         color: colors.subtle
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fs(9)
                         font.weight: Font.DemiBold
                     }
 
@@ -2150,9 +2207,10 @@ PanelWindow {
                             spacing: 8
 
                             Text {
+                                font.family: Theme.fontFamily
                                 text: modelData.label
                                 color: modelData.today ? colors.text : colors.muted
-                                font.pixelSize: 9
+                                font.pixelSize: Theme.fs(9)
                                 font.weight: modelData.today ? Font.DemiBold : Font.Normal
                                 Layout.preferredWidth: 26
                             }
@@ -2172,9 +2230,10 @@ PanelWindow {
                             }
 
                             Text {
+                                font.family: Theme.fontFamily
                                 text: root.formatTokenCount(modelData.tokens)
                                 color: modelData.today ? colors.text : colors.muted
-                                font.pixelSize: 9
+                                font.pixelSize: Theme.fs(9)
                                 font.weight: modelData.today ? Font.DemiBold : Font.Normal
                                 Layout.preferredWidth: 44
                                 horizontalAlignment: Text.AlignRight
@@ -2190,9 +2249,10 @@ PanelWindow {
                     spacing: 3
 
                     Text {
+                        font.family: Theme.fontFamily
                         text: "Tokens by model"
                         color: colors.subtle
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fs(9)
                         font.weight: Font.DemiBold
                     }
 
@@ -2205,9 +2265,10 @@ PanelWindow {
                             spacing: 8
 
                             Text {
+                                font.family: Theme.fontFamily
                                 text: modelData.name
                                 color: colors.textDim
-                                font.pixelSize: 9
+                                font.pixelSize: Theme.fs(9)
                                 elide: Text.ElideRight
                                 Layout.preferredWidth: 110
                             }
@@ -2227,9 +2288,10 @@ PanelWindow {
                             }
 
                             Text {
+                                font.family: Theme.fontFamily
                                 text: root.formatTokenCount(modelData.total)
                                 color: colors.muted
-                                font.pixelSize: 9
+                                font.pixelSize: Theme.fs(9)
                                 Layout.preferredWidth: 44
                                 horizontalAlignment: Text.AlignRight
                             }
@@ -2255,7 +2317,7 @@ PanelWindow {
             id: castPopupCard
             implicitWidth: 260
             implicitHeight: castPopupColumn.implicitHeight + 20
-            radius: 12
+            radius: Theme.rad(12)
             color: colors.panel
             border.color: colors.borderStrong
             border.width: 1
@@ -2273,25 +2335,28 @@ PanelWindow {
                     spacing: 2
 
                     Text {
+                        font.family: Theme.fontFamily
                         text: "Cast (Chromecast)"
                         color: colors.text
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fs(12)
                         font.weight: Font.DemiBold
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         Layout.fillWidth: true
                         text: root.stringOrEmpty(root.castState.detail)
                         color: colors.subtle
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fs(9)
                         wrapMode: Text.WordWrap
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         Layout.fillWidth: true
                         text: "Extend: the TV becomes its own display — the TV output is picked automatically; move windows with cast-extend send.\nMirror: cast start — casts the focused screen.\nMenu: ;c in the launcher."
                         color: colors.subtle
-                        font.pixelSize: 9
+                        font.pixelSize: Theme.fs(9)
                         wrapMode: Text.WordWrap
                     }
                 }

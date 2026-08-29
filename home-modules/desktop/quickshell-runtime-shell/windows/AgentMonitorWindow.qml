@@ -217,6 +217,7 @@ PanelWindow {
                 spacing: 8
 
                 Text {
+                    font.family: Theme.fontFamily
                     text: "AI Agents"
                     color: colors.text
                     font.pixelSize: root.fontTitle
@@ -224,6 +225,7 @@ PanelWindow {
                 }
                 Item { Layout.fillWidth: true }
                 Text {
+                    font.family: Theme.fontFamily
                     text: monitorWindow.sessionEntries.length
                     color: colors.muted
                     font.pixelSize: root.fontBody
@@ -232,9 +234,10 @@ PanelWindow {
                 Rectangle {
                     width: 22
                     height: 22
-                    radius: 11
+                    radius: Theme.rad(11)
                     color: closeMouse.containsMouse ? colors.cardAlt : "transparent"
                     Text {
+                        font.family: Theme.fontFamily
                         anchors.centerIn: parent
                         text: "✕"
                         color: colors.muted
@@ -334,6 +337,7 @@ PanelWindow {
                 visible: monitorWindow.sessionEntries.length === 0
 
                 Text {
+                    font.family: Theme.fontFamily
                     anchors.centerIn: parent
                     text: "No active agents"
                     color: colors.subtle

@@ -66,7 +66,7 @@ PanelWindow {
                     easing.type: Easing.OutQuad
                 }
             }
-            radius: 12
+            radius: Theme.rad(12)
             color: colors.panel
             border.color: colors.borderStrong
             border.width: 1
@@ -87,9 +87,10 @@ PanelWindow {
                 spacing: 12
 
                 Text {
+                    font.family: Theme.fontFamily
                     text: root.launcherTitle()
                     color: colors.text
-                    font.pixelSize: 16
+                    font.pixelSize: Theme.fs(16)
                     font.weight: Font.DemiBold
                 }
 
@@ -114,7 +115,7 @@ PanelWindow {
                             // to take a fingertip.
                             width: modePillRow.implicitWidth + (root.touchModeActive ? 24 : 18)
                             height: root.touchModeActive ? 34 : 26
-                            radius: 6
+                            radius: Theme.rad(6)
                             color: selected ? root.themeColor(root.stringOrEmpty(meta && meta.accentBgKey), colors.cardAlt) : (hovered ? colors.cardAlt : colors.card)
                             border.color: selected ? root.themeColor(root.stringOrEmpty(meta && meta.accentColorKey), colors.borderStrong) : (hovered ? colors.borderStrong : colors.border)
                             border.width: 1
@@ -133,17 +134,19 @@ PanelWindow {
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     visible: iconSrc === ""
                                     text: root.stringOrEmpty(meta && meta.fallbackGlyph)
                                     color: selected ? root.themeColor(root.stringOrEmpty(meta && meta.accentColorKey), colors.text) : colors.textDim
-                                    font.pixelSize: 10
+                                    font.pixelSize: Theme.fs(10)
                                     font.weight: Font.Bold
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     text: root.stringOrEmpty(meta && meta.label)
                                     color: selected ? root.themeColor(root.stringOrEmpty(meta && meta.accentColorKey), colors.text) : colors.text
-                                    font.pixelSize: 10
+                                    font.pixelSize: Theme.fs(10)
                                     font.weight: Font.DemiBold
                                 }
                             }
@@ -161,12 +164,13 @@ PanelWindow {
                 }
 
                 TextField {
+                    font.family: Theme.fontFamily
                     id: launcherField
                     Layout.fillWidth: true
                     focus: root.launcherVisible
                     placeholderText: root.launcherPlaceholderText()
                     color: colors.text
-                    font.pixelSize: 18
+                    font.pixelSize: Theme.fs(18)
 
                     // A finger tapping the text bar is the request for a
                     // keyboard — the tablet convention. Touch-only, so Meta+D
@@ -180,7 +184,7 @@ PanelWindow {
                     }
 
                     background: Rectangle {
-                        radius: 8
+                        radius: Theme.rad(8)
                         color: colors.cardAlt
                         border.color: launcherField.activeFocus ? colors.blue : colors.border
                         border.width: 1
@@ -364,7 +368,7 @@ PanelWindow {
                             readonly property string iconSrc: root.iconSource(root.stringOrEmpty(filterMeta && filterMeta.icon), "")
 
                             height: root.touchModeActive ? 32 : 24
-                            radius: 6
+                            radius: Theme.rad(6)
                             color: selected ? colors.blueBg : (hovered ? colors.cardAlt : colors.card)
                             border.color: selected ? colors.blue : (hovered ? colors.borderStrong : colors.border)
                             border.width: 1
@@ -383,17 +387,19 @@ PanelWindow {
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     visible: iconSrc === ""
                                     text: root.stringOrEmpty(filterMeta && filterMeta.fallbackGlyph)
                                     color: selected ? colors.blue : colors.textDim
-                                    font.pixelSize: 9
+                                    font.pixelSize: Theme.fs(9)
                                     font.weight: Font.Bold
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     text: root.stringOrEmpty(filterMeta && filterMeta.label)
                                     color: selected ? colors.blue : colors.text
-                                    font.pixelSize: 9
+                                    font.pixelSize: Theme.fs(9)
                                     font.weight: Font.DemiBold
                                 }
                             }
@@ -415,23 +421,25 @@ PanelWindow {
                     spacing: 8
 
                     Text {
+                        font.family: Theme.fontFamily
                         Layout.fillWidth: true
                         text: root.launcherStatusText()
                         color: root.launcherError ? colors.red : colors.subtle
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fs(10)
                     }
 
                     Text {
+                        font.family: Theme.fontFamily
                         text: root.launcherHelpText()
                         color: colors.muted
-                        font.pixelSize: 10
+                        font.pixelSize: Theme.fs(10)
                     }
                 }
 
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    radius: 10
+                    radius: Theme.rad(10)
                     color: colors.card
                     border.color: colors.border
                     border.width: 1
@@ -452,7 +460,7 @@ PanelWindow {
                             Layout.fillWidth: true
                             Layout.minimumWidth: ((root.launcherMode === "clipboard") || (root.launcherMode === "sessions" && root.activeLauncherSessionEntry() !== null)) && root.launcherEntries.length > 0 ? 280 : 0
                             Layout.preferredWidth: root.launcherMode === "clipboard" && root.launcherEntries.length > 0 ? 340 : (root.launcherMode === "sessions" && root.activeLauncherSessionEntry() !== null ? 360 : -1)
-                            radius: 8
+                            radius: Theme.rad(8)
                             color: "transparent"
                             border.width: 0
 
@@ -503,7 +511,7 @@ PanelWindow {
 
                                     width: launcherList.width
                                     height: sessionEntry || windowEntry || clipboardImageEntry || snippetEntry || urlEntry || fileEntry ? 62 : 56
-                                    radius: 8
+                                    radius: Theme.rad(8)
                                     clip: true
                                     color: sessionEntry ? "transparent" : (selected ? colors.blueBg : (entryMouse.containsMouse ? colors.cardAlt : "transparent"))
                                     border.color: sessionEntry ? "transparent" : (selected ? colors.blue : (entryMouse.containsMouse ? colors.borderStrong : "transparent"))
@@ -549,7 +557,7 @@ PanelWindow {
                                         Rectangle {
                                             width: 34
                                             height: 34
-                                            radius: 8
+                                            radius: Theme.rad(8)
                                             color: sessionEntry ? "transparent" : (selected ? colors.bg : colors.panelAlt)
                                             border.color: (sessionEntry || windowEntry) ? (selected ? colors.blueMuted : "transparent") : (selected ? colors.blueMuted : colors.lineSoft)
                                             border.width: 1
@@ -602,11 +610,12 @@ PanelWindow {
                                             }
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 visible: windowEntry && root.iconSourceFor(entry) === ""
                                                 anchors.centerIn: parent
                                                 text: root.appLabel(entry).slice(0, 1).toUpperCase()
                                                 color: selected ? colors.blue : colors.textDim
-                                                font.pixelSize: 11
+                                                font.pixelSize: Theme.fs(11)
                                                 font.weight: Font.DemiBold
                                             }
 
@@ -629,19 +638,21 @@ PanelWindow {
                                             spacing: 2
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 Layout.fillWidth: true
                                                 text: clipboardEntry ? root.clipboardEntryTitle(entry) : root.stringOrEmpty(entry && entry.text)
                                                 color: selected ? colors.blue : colors.text
-                                                font.pixelSize: 13
+                                                font.pixelSize: Theme.fs(13)
                                                 font.weight: Font.DemiBold
                                                 elide: Text.ElideRight
                                             }
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 Layout.fillWidth: true
                                                 text: clipboardEntry ? root.clipboardEntrySubtitle(entry) : (root.stringOrEmpty(entry && entry.subtext) || root.stringOrEmpty(entry && entry.identifier))
                                                 color: selected ? colors.textDim : colors.subtle
-                                                font.pixelSize: 10
+                                                font.pixelSize: Theme.fs(10)
                                                 elide: Text.ElideRight
                                             }
                                         }
@@ -649,18 +660,19 @@ PanelWindow {
                                         Rectangle {
                                             visible: urlEntry
                                             height: 20
-                                            radius: 6
+                                            radius: Theme.rad(6)
                                             color: colors.blueBg
                                             border.color: colors.blue
                                             border.width: 1
                                             Layout.preferredWidth: urlSourceChipText.implicitWidth + 12
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 id: urlSourceChipText
                                                 anchors.centerIn: parent
                                                 text: root.stringOrEmpty(entry && entry.source).toUpperCase()
                                                 color: colors.blue
-                                                font.pixelSize: 8
+                                                font.pixelSize: Theme.fs(8)
                                                 font.weight: Font.DemiBold
                                             }
                                         }
@@ -668,18 +680,19 @@ PanelWindow {
                                         Rectangle {
                                             visible: urlEntry && root.stringOrEmpty(entry && entry.matched_pwa_name).length > 0
                                             height: 20
-                                            radius: 6
+                                            radius: Theme.rad(6)
                                             color: colors.tealBg
                                             border.color: colors.teal
                                             border.width: 1
                                             Layout.preferredWidth: urlPwaChipText.implicitWidth + 12
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 id: urlPwaChipText
                                                 anchors.centerIn: parent
                                                 text: root.stringOrEmpty(entry && entry.matched_pwa_name)
                                                 color: colors.teal
-                                                font.pixelSize: 8
+                                                font.pixelSize: Theme.fs(8)
                                                 font.weight: Font.DemiBold
                                                 elide: Text.ElideRight
                                             }
@@ -688,18 +701,19 @@ PanelWindow {
                                         Rectangle {
                                             visible: snippetEntry
                                             height: 20
-                                            radius: 6
+                                            radius: Theme.rad(6)
                                             color: colors.tealBg
                                             border.color: colors.teal
                                             border.width: 1
                                             Layout.preferredWidth: snippetCommandChipText.implicitWidth + 12
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 id: snippetCommandChipText
                                                 anchors.centerIn: parent
                                                 text: "Command"
                                                 color: colors.teal
-                                                font.pixelSize: 8
+                                                font.pixelSize: Theme.fs(8)
                                                 font.weight: Font.DemiBold
                                             }
                                         }
@@ -707,18 +721,19 @@ PanelWindow {
                                         Rectangle {
                                             visible: snippetEntry && selected
                                             height: 20
-                                            radius: 6
+                                            radius: Theme.rad(6)
                                             color: colors.blueBg
                                             border.color: colors.blue
                                             border.width: 1
                                             Layout.preferredWidth: snippetSelectedChipText.implicitWidth + 12
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 id: snippetSelectedChipText
                                                 anchors.centerIn: parent
                                                 text: "Editing"
                                                 color: colors.blue
-                                                font.pixelSize: 8
+                                                font.pixelSize: Theme.fs(8)
                                                 font.weight: Font.DemiBold
                                             }
                                         }
@@ -726,18 +741,19 @@ PanelWindow {
                                         Rectangle {
                                             visible: windowEntry && root.stringOrEmpty(entry && entry.project).length > 0
                                             height: 20
-                                            radius: 6
+                                            radius: Theme.rad(6)
                                             color: selected ? colors.bg : colors.panelAlt
                                             border.color: selected ? colors.blue : colors.lineSoft
                                             border.width: 1
                                             Layout.preferredWidth: launcherWindowProjectChipText.implicitWidth + 12
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 id: launcherWindowProjectChipText
                                                 anchors.centerIn: parent
                                                 text: root.shortProject(root.stringOrEmpty(entry && entry.project))
                                                 color: selected ? colors.blue : colors.textDim
-                                                font.pixelSize: 8
+                                                font.pixelSize: Theme.fs(8)
                                                 font.weight: Font.DemiBold
                                             }
                                         }
@@ -745,18 +761,19 @@ PanelWindow {
                                         Rectangle {
                                             visible: windowEntry && !!entry.focused
                                             height: 20
-                                            radius: 6
+                                            radius: Theme.rad(6)
                                             color: colors.accentBg
                                             border.color: colors.accent
                                             border.width: 1
                                             Layout.preferredWidth: launcherWindowFocusedText.implicitWidth + 12
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 id: launcherWindowFocusedText
                                                 anchors.centerIn: parent
                                                 text: "Focused"
                                                 color: colors.accent
-                                                font.pixelSize: 8
+                                                font.pixelSize: Theme.fs(8)
                                                 font.weight: Font.DemiBold
                                             }
                                         }
@@ -764,18 +781,19 @@ PanelWindow {
                                         Rectangle {
                                             visible: sessionEntry && root.stringOrEmpty(entry && entry.project_label).length > 0
                                             height: 20
-                                            radius: 6
+                                            radius: Theme.rad(6)
                                             color: selected ? colors.bg : colors.panelAlt
                                             border.color: selected ? colors.blue : colors.lineSoft
                                             border.width: 1
                                             Layout.preferredWidth: launcherSessionProjectText.implicitWidth + 12
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 id: launcherSessionProjectText
                                                 anchors.centerIn: parent
                                                 text: root.stringOrEmpty(entry && entry.project_label)
                                                 color: selected ? colors.blue : colors.textDim
-                                                font.pixelSize: 8
+                                                font.pixelSize: Theme.fs(8)
                                                 font.weight: Font.DemiBold
                                             }
                                         }
@@ -783,18 +801,19 @@ PanelWindow {
                                         Rectangle {
                                             visible: sessionEntry && !!root.sessionIsCurrent(entry)
                                             height: 20
-                                            radius: 6
+                                            radius: Theme.rad(6)
                                             color: colors.accentBg
                                             border.color: colors.accent
                                             border.width: 1
                                             Layout.preferredWidth: launcherSessionCurrentText.implicitWidth + 12
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 id: launcherSessionCurrentText
                                                 anchors.centerIn: parent
                                                 text: "Current"
                                                 color: colors.accent
-                                                font.pixelSize: 8
+                                                font.pixelSize: Theme.fs(8)
                                                 font.weight: Font.DemiBold
                                             }
                                         }
@@ -802,18 +821,19 @@ PanelWindow {
                                         Rectangle {
                                             visible: onePasswordEntry
                                             height: 20
-                                            radius: 6
+                                            radius: Theme.rad(6)
                                             color: selected ? colors.bg : colors.panelAlt
                                             border.color: selected ? colors.accent : colors.lineSoft
                                             border.width: 1
                                             Layout.preferredWidth: onePasswordCategoryText.implicitWidth + 12
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 id: onePasswordCategoryText
                                                 anchors.centerIn: parent
                                                 text: root.onePasswordCategoryLabel(root.stringOrEmpty(entry && entry.category))
                                                 color: selected ? colors.accent : colors.textDim
-                                                font.pixelSize: 8
+                                                font.pixelSize: Theme.fs(8)
                                                 font.weight: Font.DemiBold
                                             }
                                         }
@@ -822,16 +842,17 @@ PanelWindow {
                                             visible: sessionEntry
                                             width: 24
                                             height: 24
-                                            radius: 8
+                                            radius: Theme.rad(8)
                                             color: root.sessionBadgeBackground(entry)
                                             border.color: "transparent"
                                             border.width: 0
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 anchors.centerIn: parent
                                                 text: root.sessionBadgeSymbol(entry)
                                                 color: root.sessionBadgeColor(entry)
-                                                font.pixelSize: 14
+                                                font.pixelSize: Theme.fs(14)
                                                 font.weight: Font.DemiBold
                                             }
                                         }
@@ -839,7 +860,7 @@ PanelWindow {
                                         Rectangle {
                                             visible: sessionEntry && activityLabel.length > 0
                                             height: 18
-                                            radius: 6
+                                            radius: Theme.rad(6)
                                             color: root.sessionBadgeBackground(entry)
                                             border.color: "transparent"
                                             border.width: 0
@@ -859,10 +880,11 @@ PanelWindow {
                                                 }
 
                                                 Text {
+                                                    font.family: Theme.fontFamily
                                                     id: launcherSessionActivityText
                                                     text: activityLabel
                                                     color: root.sessionBadgeColor(entry)
-                                                    font.pixelSize: 7
+                                                    font.pixelSize: Theme.fs(7)
                                                     font.weight: Font.DemiBold
                                                 }
                                             }
@@ -871,18 +893,19 @@ PanelWindow {
                                         Rectangle {
                                             visible: clipboardEntry && root.launcherEntryHasState(entry, "pinned")
                                             height: 20
-                                            radius: 6
+                                            radius: Theme.rad(6)
                                             color: selected ? colors.bg : colors.panelAlt
                                             border.color: selected ? colors.amber : colors.lineSoft
                                             border.width: 1
                                             Layout.preferredWidth: clipboardPinnedText.implicitWidth + 12
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 id: clipboardPinnedText
                                                 anchors.centerIn: parent
                                                 text: "Pinned"
                                                 color: selected ? colors.amber : colors.textDim
-                                                font.pixelSize: 8
+                                                font.pixelSize: Theme.fs(8)
                                                 font.weight: Font.DemiBold
                                             }
                                         }
@@ -891,16 +914,17 @@ PanelWindow {
                                             visible: windowEntry
                                             width: 18
                                             height: 18
-                                            radius: 6
+                                            radius: Theme.rad(6)
                                             color: launcherWindowCloseMouse.containsMouse ? colors.redBg : colors.bg
                                             border.color: "transparent"
                                             border.width: 0
 
                                             Text {
+                                                font.family: Theme.fontFamily
                                                 anchors.centerIn: parent
                                                 text: "×"
                                                 color: launcherWindowCloseMouse.containsMouse ? colors.red : (entry.focused ? colors.muted : colors.subtle)
-                                                font.pixelSize: 10
+                                                font.pixelSize: Theme.fs(10)
                                                 font.weight: Font.DemiBold
                                             }
 
@@ -985,7 +1009,7 @@ PanelWindow {
                             Layout.fillHeight: true
                             Layout.fillWidth: true
                             Layout.minimumWidth: 320
-                            radius: 8
+                            radius: Theme.rad(8)
                             color: colors.cardAlt
                             border.color: colors.lineSoft
                             border.width: 1
@@ -1003,17 +1027,18 @@ PanelWindow {
                                     spacing: 6
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         Layout.fillWidth: true
                                         text: root.sessionPreviewTitle()
                                         color: colors.text
-                                        font.pixelSize: 13
+                                        font.pixelSize: Theme.fs(13)
                                         font.weight: Font.DemiBold
                                         elide: Text.ElideRight
                                     }
 
                                     Rectangle {
                                         height: 20
-                                        radius: 6
+                                        radius: Theme.rad(6)
                                         // A live preview colours the badge by the AGENT's state
                                         // (same canonical map as the panel chips), so "Working"
                                         // here is the same amber as a working row. Non-live keeps
@@ -1024,21 +1049,23 @@ PanelWindow {
                                         Layout.preferredWidth: previewSessionBadgeText.implicitWidth + 12
 
                                         Text {
+                                            font.family: Theme.fontFamily
                                             id: previewSessionBadgeText
                                             anchors.centerIn: parent
                                             text: root.sessionPreviewBadgeText()
                                             color: boolOrFalse(root.sessionPreview.is_live) ? root.sessionPreviewBadgeAccent() : (boolOrFalse(root.sessionPreview.is_remote) ? colors.orange : (root.stringOrEmpty(root.sessionPreview.status) === "error" ? colors.red : colors.textDim))
-                                            font.pixelSize: 8
+                                            font.pixelSize: Theme.fs(8)
                                             font.weight: Font.DemiBold
                                         }
                                     }
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     Layout.fillWidth: true
                                     text: root.sessionPreviewSubtitle()
                                     color: colors.subtle
-                                    font.pixelSize: 10
+                                    font.pixelSize: Theme.fs(10)
                                     elide: Text.ElideRight
                                 }
 
@@ -1049,18 +1076,19 @@ PanelWindow {
                                     Rectangle {
                                         visible: root.sessionPreviewStatusText().length > 0
                                         height: 20
-                                        radius: 6
+                                        radius: Theme.rad(6)
                                         color: colors.panelAlt
                                         border.color: colors.border
                                         border.width: 1
                                         Layout.preferredWidth: previewPhaseText.implicitWidth + 12
 
                                         Text {
+                                            font.family: Theme.fontFamily
                                             id: previewPhaseText
                                             anchors.centerIn: parent
                                             text: root.sessionPreviewStatusText()
                                             color: colors.textDim
-                                            font.pixelSize: 8
+                                            font.pixelSize: Theme.fs(8)
                                             font.weight: Font.DemiBold
                                         }
                                     }
@@ -1074,7 +1102,7 @@ PanelWindow {
                                 Rectangle {
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
-                                    radius: 8
+                                    radius: Theme.rad(8)
                                     color: colors.panel
                                     border.color: colors.border
                                     border.width: 1
@@ -1119,7 +1147,7 @@ PanelWindow {
                                             selectionColor: colors.blueWash
                                             selectedTextColor: colors.text
                                             font.family: "JetBrainsMono Nerd Font"
-                                            font.pixelSize: 11
+                                            font.pixelSize: Theme.fs(11)
                                         }
                                     }
                                 }
@@ -1136,7 +1164,7 @@ PanelWindow {
                             Layout.fillHeight: true
                             Layout.fillWidth: true
                             Layout.minimumWidth: 260
-                            radius: 8
+                            radius: Theme.rad(8)
                             color: colors.cardAlt
                             border.color: colors.lineSoft
                             border.width: 1
@@ -1154,10 +1182,11 @@ PanelWindow {
                                     spacing: 8
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         Layout.fillWidth: true
                                         text: root.clipboardPreviewTitle(launcherClipboardPreviewPane.previewEntry)
                                         color: colors.text
-                                        font.pixelSize: 13
+                                        font.pixelSize: Theme.fs(13)
                                         font.weight: Font.DemiBold
                                         elide: Text.ElideRight
                                     }
@@ -1165,35 +1194,37 @@ PanelWindow {
                                     Rectangle {
                                         visible: root.launcherEntryHasState(launcherClipboardPreviewPane.previewEntry, "pinned")
                                         height: 20
-                                        radius: 6
+                                        radius: Theme.rad(6)
                                         color: colors.panelAlt
                                         border.color: colors.amber
                                         border.width: 1
                                         Layout.preferredWidth: previewPinnedText.implicitWidth + 12
 
                                         Text {
+                                            font.family: Theme.fontFamily
                                             id: previewPinnedText
                                             anchors.centerIn: parent
                                             text: "Pinned"
                                             color: colors.amber
-                                            font.pixelSize: 8
+                                            font.pixelSize: Theme.fs(8)
                                             font.weight: Font.DemiBold
                                         }
                                     }
                                 }
 
                                 Text {
+                                    font.family: Theme.fontFamily
                                     Layout.fillWidth: true
                                     text: root.clipboardEntrySubtitle(launcherClipboardPreviewPane.previewEntry)
                                     color: colors.subtle
-                                    font.pixelSize: 10
+                                    font.pixelSize: Theme.fs(10)
                                     elide: Text.ElideRight
                                 }
 
                                 Rectangle {
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
-                                    radius: 8
+                                    radius: Theme.rad(8)
                                     color: colors.panel
                                     border.color: colors.border
                                     border.width: 1
@@ -1226,17 +1257,18 @@ PanelWindow {
                                                 selectionColor: colors.blueWash
                                                 selectedTextColor: colors.text
                                                 font.family: "JetBrainsMono Nerd Font"
-                                                font.pixelSize: 11
+                                                font.pixelSize: Theme.fs(11)
                                                 background: null
                                             }
                                         }
 
                                         Text {
+                                            font.family: Theme.fontFamily
                                             visible: launcherClipboardPreviewPane.previewImageSource === "" && launcherClipboardPreviewPane.previewBody === ""
                                             anchors.centerIn: parent
                                             text: "No preview available"
                                             color: colors.subtle
-                                            font.pixelSize: 11
+                                            font.pixelSize: Theme.fs(11)
                                         }
                                     }
                                 }
@@ -1249,16 +1281,17 @@ PanelWindow {
                         visible: !root.launcherLoading && root.launcherEntries.length === 0
                         width: parent.width - 40
                         height: 72
-                        radius: 12
+                        radius: Theme.rad(12)
                         color: colors.cardAlt
                         border.color: colors.lineSoft
                         border.width: 1
 
                         Text {
+                            font.family: Theme.fontFamily
                             anchors.centerIn: parent
                             text: root.launcherEmptyText()
                             color: root.launcherError ? colors.red : colors.subtle
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.fs(11)
                         }
                     }
                 }

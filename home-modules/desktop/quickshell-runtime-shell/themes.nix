@@ -1,6 +1,9 @@
 # The palette set for the runtime shell and the apps that follow it.
 #
-# One attrset per theme. `colors` are the 24 semantic base tokens Theme.qml
+# One attrset per theme. `style` is the chrome: `flat` (opaque cards with
+# accent borders instead of frosted zinc), `radiusScale` (0 = square … 1 =
+# the shadcn radii), `fontFamily` ("" = system sans; "monospace" resolves
+# through fontconfig). `colors` are the 24 semantic base tokens Theme.qml
 # is generated from — every other token in the shell (status chip fills,
 # elevation films, glass, scrims, washes) is derived from these inside
 # Theme.qml, parametrised on `dark`, so a theme is exactly this list and
@@ -41,6 +44,9 @@ let
       label = titleCase name;
       description = "Omarchy ${if dark then "dark" else "light"} theme";
       inherit dark;
+      # Omarchy's chrome: opaque cards with accent-tinted borders, square
+      # corners (Hyprland rounding 0), the system monospace for all shell text.
+      style = { flat = true; radiusScale = 0.0; fontFamily = "monospace"; };
       colors = {
         bg = darker;
         panel = t.background;
@@ -90,6 +96,8 @@ in
 omarchyThemes // {
   zinc-dark = {
     label = "Zinc Dark";
+    # shadcn chrome: frosted cards, zinc borders, rounded corners, system sans.
+    style = { flat = false; radiusScale = 1.0; fontFamily = ""; };
     description = "shadcn zinc on near-black, Tailwind 400 status hues, Catppuccin Mocha terminal";
     dark = true;
     colors = {
@@ -141,6 +149,8 @@ omarchyThemes // {
 
   zinc-light = {
     label = "Zinc Light";
+    # shadcn chrome: frosted cards, zinc borders, rounded corners, system sans.
+    style = { flat = false; radiusScale = 1.0; fontFamily = ""; };
     description = "shadcn zinc on white, Tailwind 600 status hues, Catppuccin Latte terminal";
     dark = false;
     colors = {

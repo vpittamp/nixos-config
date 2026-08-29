@@ -1016,32 +1016,47 @@ ShellRoot {
     // without re-reading the file.
     property string themeStateText: ""
     property bool themePreviewActive: false
+    // Text-size root from the state file (0 = the built-in 12px). Kept apart
+    // from the theme so previewing a theme never resets the size.
+    property real themeTextSize: 0
 
     function applyThemeById(name) {
         const id = stringOrEmpty(name);
         const themes = shellConfig.themes || {};
         const theme = id ? themes[id] : null;
+        const sizeOverride = themeTextSize > 0 ? { textSize: themeTextSize } : {};
         if (!theme || id === shellConfig.defaultTheme) {
-            if (Object.keys(Theme.overrides || {}).length) {
-                Theme.overrides = ({});
-            }
+            Theme.overrides = sizeOverride;
             return !!theme || !id;
         }
-        Theme.overrides = Object.assign({ name: id, dark: !!theme.dark }, theme.colors || {});
+        Theme.overrides = Object.assign({ name: id, dark: !!theme.dark }, theme.colors || {}, theme.style || {}, sizeOverride);
         return true;
     }
 
     function applyThemeState(text) {
         themeStateText = stringOrEmpty(text);
         let name = "";
+        let size = 0;
         try {
             const raw = themeStateText.trim();
             const parsed = raw ? JSON.parse(raw) : null;
             name = stringOrEmpty(parsed && parsed.name);
+            size = Number(parsed && parsed.textSize) || 0;
         } catch (error) {
             console.warn("theme.state:", error);
         }
+        themeTextSize = size;
         applyThemeById(name);
+    }
+
+    // `runtime-theme text-size N` persists it and the state watcher applies
+    // it; applying here first keeps the slider responsive.
+    function setTextSize(px) {
+        const size = Math.max(8, Math.min(24, Math.round(Number(px) || 12)));
+        themeTextSize = size;
+        applyThemeById(colors.name);
+        runDetached([shellConfig.themeSetBin, "text-size", String(size)]);
+        return "ok";
     }
 
     // ----- Live preview from the picker -----
@@ -1106,11 +1121,11 @@ ShellRoot {
     // monitor, bar chips). fontMicro is reserved for ALL-CAPS text with
     // font.letterSpacing >= 0.5 — lowercase reading text must never drop
     // below fontCaption.
-    readonly property int fontTitle: 13
-    readonly property int fontBody: 11
-    readonly property int fontLabel: 10
-    readonly property int fontCaption: 9
-    readonly property int fontMicro: 8
+    readonly property int fontTitle: Theme.fs(13)
+    readonly property int fontBody: Theme.fs(11)
+    readonly property int fontLabel: Theme.fs(10)
+    readonly property int fontCaption: Theme.fs(9)
+    readonly property int fontMicro: Theme.fs(8)
 
     // Radius scale: floating surfaces > cards/sections > controls/rows/chips
     // > count pills/mini badges. Nested corners follow inner = outer - padding.
@@ -10513,7 +10528,7 @@ function normalizeLauncherMode(mode) {
             anchors.left: true
             anchors.right: true
             anchors.bottom: true
-            implicitHeight: Math.max(0, (modelData ? modelData.height : 1080) - shellConfig.barHeight)
+            implicitHeight: Math.max(0, (modelData ? modelData.height : 1080) - Math.round(shellConfig.barHeight * Theme.scale))
             exclusiveZone: 0
             focusable: false
             aboveWindows: true

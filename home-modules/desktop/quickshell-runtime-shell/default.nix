@@ -154,23 +154,54 @@ let
         id: theme
 
         property var overrides: ({})
-        readonly property string name: (overrides && typeof overrides.name === "string" && overrides.name) ? overrides.name : "${themeName}"
-        readonly property bool dark: (overrides && typeof overrides.dark === "boolean") ? overrides.dark : ${if defaultTheme.dark then "true" else "false"}
+        readonly property string name: pick("name", "${themeName}")
+        readonly property bool dark: pickBool("dark", ${if defaultTheme.dark then "true" else "false"})
 
         function pick(key, fallback) {
             const value = overrides ? overrides[key] : undefined;
             return (typeof value === "string" && value) ? value : fallback;
         }
+        function pickBool(key, fallback) {
+            const value = overrides ? overrides[key] : undefined;
+            return typeof value === "boolean" ? value : fallback;
+        }
+        function pickNum(key, fallback) {
+            const value = overrides ? Number(overrides[key]) : NaN;
+            return isFinite(value) ? value : fallback;
+        }
+
+        // ---- style (themes.nix `style`, overridable live) ----
+        // flat: opaque cards with accent-tinted strong borders (Omarchy);
+        // radiusScale: 0 square … 1 the shadcn radii; fontFamily: "" means
+        // the system sans, "monospace" resolves through fontconfig. fontBase
+        // is the text-size root (runtime-theme text-size); every pixel size
+        // in the shell goes through fs() so the whole shell scales together.
+        readonly property bool flat: pickBool("flat", ${if (defaultTheme.style.flat or false) then "true" else "false"})
+        readonly property real radiusScale: pickNum("radiusScale", ${toString (defaultTheme.style.radiusScale or 1.0)})
+        readonly property string fontFamily: pick("fontFamily", "${defaultTheme.style.fontFamily or ""}") || Qt.application.font.family
+        readonly property string glyphFamily: "FiraCode Nerd Font"
+        readonly property string monoFamily: "JetBrainsMono Nerd Font"
+        readonly property real fontBase: Math.max(8, Math.min(24, pickNum("textSize", 12)))
+        readonly property real scale: fontBase / 12
+        function fs(px) { return Math.max(1, Math.round(px * scale)); }
+        function rad(px) { return Math.round(px * radiusScale); }
 
         // ---- base tokens (from themes.nix) ----
     ${lib.concatMapStringsSep "\n" colorProp [
       "bg" "panel" "panelAlt" "card" "cardAlt"
-      "border" "borderStrong" "lineSoft"
+      "border" "lineSoft"
       "text" "textDim" "muted" "subtle"
       "accent" "accentBg"
       "blue" "blueBg" "blueMuted" "blueWash"
       "green" "red" "amber" "orange" "teal" "violet"
     ]}
+
+        // ---- derived: flat chrome ----
+        // On a flat theme the strong border (cards, popups) is the accent, the
+        // way Omarchy draws its popups with the Hyprland active-border colour.
+        readonly property color borderStrongBase: pick("borderStrong", "${defaultTheme.colors.borderStrong}")
+        readonly property color accentBorder: Qt.rgba(theme.blue.r, theme.blue.g, theme.blue.b, dark ? 0.55 : 0.6)
+        readonly property color borderStrong: flat ? accentBorder : borderStrongBase
 
         // ---- derived: status chip fills (the hue at low alpha) ----
         readonly property real statusFillAlpha: 0.15
@@ -202,9 +233,9 @@ let
         readonly property color scrimStrong: Qt.rgba(theme.bg.r, theme.bg.g, theme.bg.b, 0.8)
 
         // ---- derived: frosted surfaces, same hue as their opaque twin ----
-        readonly property color panelGlass: Qt.rgba(theme.panel.r, theme.panel.g, theme.panel.b, 0.88)
-        readonly property color cardGlass: Qt.rgba(theme.card.r, theme.card.g, theme.card.b, 0.86)
-        readonly property color toastGlass: Qt.rgba(theme.panel.r, theme.panel.g, theme.panel.b, 0.92)
+        readonly property color panelGlass: Qt.rgba(theme.panel.r, theme.panel.g, theme.panel.b, flat ? 1.0 : 0.88)
+        readonly property color cardGlass: Qt.rgba(theme.card.r, theme.card.g, theme.card.b, flat ? 1.0 : 0.86)
+        readonly property color toastGlass: Qt.rgba(theme.panel.r, theme.panel.g, theme.panel.b, flat ? 1.0 : 0.92)
 
         // ---- derived: status washes ----
         readonly property color redWash: Qt.rgba(theme.red.r, theme.red.g, theme.red.b, 0.08)
@@ -3042,6 +3073,7 @@ Usage: runtime-theme <command>
   current          the active theme id
   set <theme>      switch the shell (live) and the terminal palette (new terminals)
   toggle           switch between the dark and light theme
+  text-size [px]   show or set the text size root (8-24; shell live, terminal on next open)
 USAGE
     }
 
@@ -3054,27 +3086,65 @@ USAGE
       fi
     }
 
+    text_size() {
+      if [ -r "$state" ] && n="$("$jq" -r '.textSize // empty' "$state" 2>/dev/null)" && [ -n "$n" ]; then
+        printf '%s\n' "$n"
+      else
+        printf '%s\n' 12
+      fi
+    }
+
+    term_pt() {
+      ${pkgs.gawk}/bin/awk -v s="$1" 'BEGIN { printf "%.1f", int(9 * s / 12 * 2 + 0.5) / 2 }'
+    }
+
+    # State file: {name, textSize, set_at}. Either half can be changed alone.
+    write_state() {
+      local name="$1" size="$2"
+      mkdir -p "$(dirname "$state")"
+      tmp="$(mktemp "$(dirname "$state")/.theme.XXXXXX")"
+      "$jq" -n --arg n "$name" --argjson s "$size" --arg at "$(date -Is)" '{name: $n, textSize: $s, set_at: $at}' >"$tmp"
+      mv "$tmp" "$state"
+    }
+
+    # Ghostty include: the theme's palette plus a terminal point size that
+    # follows the shell's text size (9pt at the 12px root, half-point steps).
+    write_ghostty() {
+      local name="$1" size="$2"
+      mkdir -p "$(dirname "$ghostty_theme")"
+      {
+        echo "# Managed by runtime-theme ($name, text size $size). Included by ~/.config/ghostty/config."
+        "$jq" -r --arg n "$name" '.[$n].terminal
+          | "background = \(.background)", "foreground = \(.foreground)",
+            "cursor-color = \(.cursor)",
+            "selection-background = \(.selectionBackground)", "selection-foreground = \(.selectionForeground)",
+            (.palette | to_entries[] | "palette = \(.key)=#\(.value)")' "$themes"
+        echo "font-size = $(term_pt "$size")"
+      } >"$ghostty_theme.tmp" && mv "$ghostty_theme.tmp" "$ghostty_theme"
+    }
+
     set_theme() {
       local name="$1"
       if ! "$jq" -e --arg n "$name" 'has($n)' "$themes" >/dev/null; then
         echo "runtime-theme: unknown theme '$name' (see: runtime-theme list)" >&2
         exit 2
       fi
-      mkdir -p "$(dirname "$state")" "$(dirname "$ghostty_theme")"
-      tmp="$(mktemp "$(dirname "$state")/.theme.XXXXXX")"
-      "$jq" -n --arg n "$name" --arg at "$(date -Is)" '{name: $n, set_at: $at}' >"$tmp"
-      mv "$tmp" "$state"
-      {
-        echo "# Managed by runtime-theme ($name). Included by ~/.config/ghostty/config."
-        "$jq" -r --arg n "$name" '.[$n].terminal
-          | "background = \(.background)", "foreground = \(.foreground)",
-            "cursor-color = \(.cursor)",
-            "selection-background = \(.selectionBackground)", "selection-foreground = \(.selectionForeground)",
-            (.palette | to_entries[] | "palette = \(.key)=#\(.value)")' "$themes"
-      } >"$ghostty_theme.tmp" && mv "$ghostty_theme.tmp" "$ghostty_theme"
+      local size; size="$(text_size)"
+      write_state "$name" "$size"
+      write_ghostty "$name" "$size"
       label="$("$jq" -r --arg n "$name" '.[$n].label' "$themes")"
       echo "theme: $label ($name)"
       ${pkgs.libnotify}/bin/notify-send -a runtime-theme -t 4000 "Theme: $label" "Shell restyled. New terminals use the matching palette; press Ctrl+Shift+, in an open Ghostty to reload." >/dev/null 2>&1 || true
+    }
+
+    set_text_size() {
+      local size="$1"
+      case "$size" in ""|*[!0-9]*) echo "runtime-theme: text size must be 8-24 (px)" >&2; exit 2 ;; esac
+      if [ "$size" -lt 8 ] || [ "$size" -gt 24 ]; then echo "runtime-theme: text size must be 8-24 (px)" >&2; exit 2; fi
+      local name; name="$(current)"
+      write_state "$name" "$size"
+      write_ghostty "$name" "$size"
+      echo "text size: $size px (terminal $(term_pt "$size")pt)"
     }
 
     cmd="''${1:-}"
@@ -3085,6 +3155,9 @@ USAGE
         ;;
       current) current ;;
       set) [ $# -ge 2 ] || { usage; exit 2; }; set_theme "$2" ;;
+      text-size)
+        if [ $# -ge 2 ]; then set_text_size "$2"; else text_size; fi
+        ;;
       toggle)
         active="$(current)"
         if "$jq" -e --arg a "$active" '.[$a].dark' "$themes" >/dev/null; then want=false; else want=true; fi

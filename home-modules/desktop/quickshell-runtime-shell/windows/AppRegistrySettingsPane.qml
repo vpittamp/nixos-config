@@ -1,4 +1,5 @@
 import QtQuick
+import "root:/"
 import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
@@ -338,16 +339,18 @@ Item {
                 spacing: 2
 
                 Text {
+                    font.family: Theme.fontFamily
                     text: "App Registry"
                     color: colors.text
-                    font.pixelSize: 15
+                    font.pixelSize: Theme.fs(15)
                     font.weight: Font.DemiBold
                 }
 
                 Text {
+                    font.family: Theme.fontFamily
                     text: "Edit the live app-registry working copy, then apply those changes back into declarative JSON."
                     color: colors.subtle
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fs(10)
                     wrapMode: Text.WordWrap
                 }
             }
@@ -363,16 +366,18 @@ Item {
             spacing: 8
 
             Text {
+                font.family: Theme.fontFamily
                 Layout.fillWidth: true
                 text: errorText.length > 0 ? errorText : (loading ? "Loading apps" : statusText)
                 color: errorText.length > 0 ? colors.red : colors.subtle
-                font.pixelSize: 10
+                font.pixelSize: Theme.fs(10)
             }
 
             Text {
+                font.family: Theme.fontFamily
                 text: editorError.length > 0 ? editorError : editorMessage
                 color: editorError.length > 0 ? colors.red : colors.subtle
-                font.pixelSize: 10
+                font.pixelSize: Theme.fs(10)
             }
         }
 
@@ -396,7 +401,7 @@ Item {
 
                     Layout.preferredWidth: metricsRow.implicitWidth + 16
                     height: 28
-                    radius: 7
+                    radius: Theme.rad(7)
                     color: selected ? colors.blueBg : colors.cardAlt
                     border.color: selected ? colors.blue : colors.lineSoft
                     border.width: 1
@@ -407,9 +412,10 @@ Item {
                         spacing: 6
 
                         Text {
+                            font.family: Theme.fontFamily
                             text: pane.stringOrEmpty(chip && chip.label)
                             color: selected ? colors.blue : colors.text
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.fs(9)
                             font.weight: Font.DemiBold
                         }
 
@@ -420,11 +426,12 @@ Item {
                             implicitHeight: countText.implicitHeight + 3
 
                             Text {
+                                font.family: Theme.fontFamily
                                 id: countText
                                 anchors.centerIn: parent
                                 text: String(Number(chip && chip.value || 0))
                                 color: selected ? colors.blue : colors.textDim
-                                font.pixelSize: 8
+                                font.pixelSize: Theme.fs(8)
                                 font.weight: Font.DemiBold
                             }
                         }
@@ -452,7 +459,7 @@ Item {
             Rectangle {
                 Layout.fillHeight: true
                 Layout.preferredWidth: 340
-                radius: 8
+                radius: Theme.rad(8)
                 color: colors.cardAlt
                 border.color: colors.lineSoft
                 border.width: 1
@@ -467,6 +474,7 @@ Item {
                         spacing: 8
 
                         TextField {
+                            font.family: Theme.fontFamily
                             id: queryField
                             Layout.fillWidth: true
                             text: pane.query
@@ -474,7 +482,7 @@ Item {
                             color: colors.text
                             selectByMouse: true
                             background: Rectangle {
-                                radius: 8
+                                radius: Theme.rad(8)
                                 color: colors.panel
                                 border.color: queryField.activeFocus ? colors.teal : colors.border
                                 border.width: 1
@@ -542,7 +550,7 @@ Item {
 
                             width: appList.width - 4
                             height: 88
-                            radius: 10
+                            radius: Theme.rad(10)
                             color: selected ? colors.blueBg : (mouseArea.containsMouse ? colors.panelAlt : "transparent")
                             border.color: selected ? colors.blue : (mouseArea.containsMouse ? colors.borderStrong : colors.lineSoft)
                             border.width: 1
@@ -558,7 +566,7 @@ Item {
                                 Rectangle {
                                     width: 38
                                     height: 38
-                                    radius: 10
+                                    radius: Theme.rad(10)
                                     color: selected ? colors.bg : colors.card
                                     border.color: selected ? colors.blueMuted : colors.lineSoft
                                     border.width: 1
@@ -572,11 +580,12 @@ Item {
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         visible: pane.iconSource(entry) === ""
                                         anchors.centerIn: parent
                                         text: pane.stringOrEmpty(entry && entry.text).slice(0, 1).toUpperCase()
                                         color: selected ? colors.blue : colors.textDim
-                                        font.pixelSize: 12
+                                        font.pixelSize: Theme.fs(12)
                                         font.weight: Font.DemiBold
                                     }
                                 }
@@ -590,27 +599,30 @@ Item {
                                         spacing: 4
 
                                         Text {
+                                            font.family: Theme.fontFamily
                                             Layout.fillWidth: true
                                             text: pane.stringOrEmpty(entry && entry.text)
                                             color: colors.text
-                                            font.pixelSize: 11
+                                            font.pixelSize: Theme.fs(11)
                                             font.weight: Font.DemiBold
                                             elide: Text.ElideRight
                                         }
 
                                         Text {
+                                            font.family: Theme.fontFamily
                                             Layout.fillWidth: true
                                             text: pane.stringOrEmpty(entry && entry.name)
                                             color: selected ? colors.blue : colors.textDim
-                                            font.pixelSize: 9
+                                            font.pixelSize: Theme.fs(9)
                                             elide: Text.ElideRight
                                         }
 
                                         Text {
+                                            font.family: Theme.fontFamily
                                             Layout.fillWidth: true
                                             text: pane.stringOrEmpty(entry && entry.subtext)
                                             color: colors.subtle
-                                            font.pixelSize: 9
+                                            font.pixelSize: Theme.fs(9)
                                             elide: Text.ElideRight
                                         }
 
@@ -627,18 +639,19 @@ Item {
                                                     readonly property string tone: pane.stringOrEmpty(badge && badge.tone)
 
                                                     height: 18
-                                                    radius: 6
+                                                    radius: Theme.rad(6)
                                                     color: pane.badgeBackground(tone)
                                                     border.color: pane.badgeColor(tone)
                                                     border.width: 1
                                                     Layout.preferredWidth: badgeText.implicitWidth + 10
 
                                                     Text {
+                                                        font.family: Theme.fontFamily
                                                         id: badgeText
                                                         anchors.centerIn: parent
                                                         text: pane.stringOrEmpty(badge && badge.label)
                                                         color: pane.badgeColor(tone)
-                                                        font.pixelSize: 8
+                                                        font.pixelSize: Theme.fs(8)
                                                         font.weight: Font.DemiBold
                                                     }
                                                 }
@@ -671,7 +684,7 @@ Item {
             Rectangle {
                 Layout.fillHeight: true
                 Layout.fillWidth: true
-                radius: 8
+                radius: Theme.rad(8)
                 color: colors.cardAlt
                 border.color: colors.lineSoft
                 border.width: 1
@@ -687,7 +700,7 @@ Item {
 
                         Rectangle {
                             Layout.fillWidth: true
-                            radius: 10
+                            radius: Theme.rad(10)
                             color: colors.panel
                             border.color: colors.lineSoft
                             border.width: 1
@@ -700,7 +713,7 @@ Item {
                                 Rectangle {
                                     width: 46
                                     height: 46
-                                    radius: 12
+                                    radius: Theme.rad(12)
                                     color: colors.cardAlt
                                     border.color: colors.lineSoft
                                     border.width: 1
@@ -714,11 +727,12 @@ Item {
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         visible: pane.iconSource(pane.activeEntry()) === ""
                                         anchors.centerIn: parent
                                         text: currentAppName.length > 0 ? currentAppName.slice(0, 1).toUpperCase() : "?"
                                         color: colors.textDim
-                                        font.pixelSize: 14
+                                        font.pixelSize: Theme.fs(14)
                                         font.weight: Font.DemiBold
                                     }
                                 }
@@ -728,28 +742,31 @@ Item {
                                     spacing: 4
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         Layout.fillWidth: true
                                         text: currentAppName.length > 0 ? currentAppName : "Select an app"
                                         color: colors.text
-                                        font.pixelSize: 13
+                                        font.pixelSize: Theme.fs(13)
                                         font.weight: Font.DemiBold
                                         elide: Text.ElideRight
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         Layout.fillWidth: true
                                         text: currentScope.length > 0 ? "Scope: " + currentScope + "  •  WM_CLASS: " + currentExpectedClass : "Editable fields are stored in the working copy only."
                                         color: colors.subtle
-                                        font.pixelSize: 10
+                                        font.pixelSize: Theme.fs(10)
                                         wrapMode: Text.WordWrap
                                     }
 
                                     Text {
+                                        font.family: Theme.fontFamily
                                         Layout.fillWidth: true
                                         text: currentCommand.length > 0 ? "Command: " + currentCommand : ""
                                         visible: currentCommand.length > 0
                                         color: colors.subtle
-                                        font.pixelSize: 10
+                                        font.pixelSize: Theme.fs(10)
                                         wrapMode: Text.WordWrap
                                     }
 
@@ -766,18 +783,19 @@ Item {
                                                 readonly property string tone: pane.stringOrEmpty(badge && badge.tone)
 
                                                 height: 18
-                                                radius: 6
+                                                radius: Theme.rad(6)
                                                 color: pane.badgeBackground(tone)
                                                 border.color: pane.badgeColor(tone)
                                                 border.width: 1
                                                 Layout.preferredWidth: headerBadgeText.implicitWidth + 10
 
                                                 Text {
+                                                    font.family: Theme.fontFamily
                                                     id: headerBadgeText
                                                     anchors.centerIn: parent
                                                     text: pane.stringOrEmpty(badge && badge.label)
                                                     color: pane.badgeColor(tone)
-                                                    font.pixelSize: 8
+                                                    font.pixelSize: Theme.fs(8)
                                                     font.weight: Font.DemiBold
                                                 }
                                             }
@@ -798,19 +816,21 @@ Item {
                             rowSpacing: 8
 
                             Text {
+                                font.family: Theme.fontFamily
                                 text: "Display Name"
                                 color: colors.textDim
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.fs(10)
                             }
 
                             TextField {
+                                font.family: Theme.fontFamily
                                 id: displayNameField
                                 Layout.fillWidth: true
                                 text: pane.editorDisplayName
                                 color: colors.text
                                 enabled: !pane.editorBusy && pane.currentAppName.length > 0
                                 background: Rectangle {
-                                    radius: 8
+                                    radius: Theme.rad(8)
                                     color: colors.panel
                                     border.color: displayNameField.activeFocus ? colors.teal : colors.border
                                     border.width: 1
@@ -823,19 +843,21 @@ Item {
                             }
 
                             Text {
+                                font.family: Theme.fontFamily
                                 text: "Description"
                                 color: colors.textDim
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.fs(10)
                             }
 
                             TextField {
+                                font.family: Theme.fontFamily
                                 id: descriptionField
                                 Layout.fillWidth: true
                                 text: pane.editorDescription
                                 color: colors.text
                                 enabled: !pane.editorBusy && pane.currentAppName.length > 0
                                 background: Rectangle {
-                                    radius: 8
+                                    radius: Theme.rad(8)
                                     color: colors.panel
                                     border.color: descriptionField.activeFocus ? colors.blue : colors.border
                                     border.width: 1
@@ -848,12 +870,14 @@ Item {
                             }
 
                             Text {
+                                font.family: Theme.fontFamily
                                 text: "Workspace"
                                 color: colors.textDim
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.fs(10)
                             }
 
                             TextField {
+                                font.family: Theme.fontFamily
                                 id: workspaceField
                                 Layout.fillWidth: true
                                 text: pane.editorWorkspace
@@ -861,7 +885,7 @@ Item {
                                 color: colors.text
                                 enabled: !pane.editorBusy && pane.currentAppName.length > 0
                                 background: Rectangle {
-                                    radius: 8
+                                    radius: Theme.rad(8)
                                     color: colors.panel
                                     border.color: workspaceField.activeFocus ? colors.blue : colors.border
                                     border.width: 1
@@ -874,9 +898,10 @@ Item {
                             }
 
                             Text {
+                                font.family: Theme.fontFamily
                                 text: "Monitor Role"
                                 color: colors.textDim
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.fs(10)
                             }
 
                             ComboBox {
@@ -888,9 +913,10 @@ Item {
                             }
 
                             Text {
+                                font.family: Theme.fontFamily
                                 text: "Floating Size"
                                 color: colors.textDim
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.fs(10)
                             }
 
                             ComboBox {
@@ -902,9 +928,10 @@ Item {
                             }
 
                             Text {
+                                font.family: Theme.fontFamily
                                 text: "Fallback"
                                 color: colors.textDim
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.fs(10)
                             }
 
                             ComboBox {
@@ -916,19 +943,21 @@ Item {
                             }
 
                             Text {
+                                font.family: Theme.fontFamily
                                 text: "Icon"
                                 color: colors.textDim
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.fs(10)
                             }
 
                             TextField {
+                                font.family: Theme.fontFamily
                                 id: iconField
                                 Layout.fillWidth: true
                                 text: pane.editorIcon
                                 color: colors.text
                                 enabled: !pane.editorBusy && pane.currentAppName.length > 0
                                 background: Rectangle {
-                                    radius: 8
+                                    radius: Theme.rad(8)
                                     color: colors.panel
                                     border.color: iconField.activeFocus ? colors.blue : colors.border
                                     border.width: 1
@@ -941,12 +970,14 @@ Item {
                             }
 
                             Text {
+                                font.family: Theme.fontFamily
                                 text: "Aliases"
                                 color: colors.textDim
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.fs(10)
                             }
 
                             TextField {
+                                font.family: Theme.fontFamily
                                 id: aliasesField
                                 Layout.fillWidth: true
                                 text: pane.editorAliases
@@ -954,7 +985,7 @@ Item {
                                 color: colors.text
                                 enabled: !pane.editorBusy && pane.currentAppName.length > 0
                                 background: Rectangle {
-                                    radius: 8
+                                    radius: Theme.rad(8)
                                     color: colors.panel
                                     border.color: aliasesField.activeFocus ? colors.blue : colors.border
                                     border.width: 1

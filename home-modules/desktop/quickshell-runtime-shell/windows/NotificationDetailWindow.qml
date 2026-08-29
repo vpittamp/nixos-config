@@ -143,7 +143,7 @@ PanelWindow {
                     Rectangle {
                         Layout.preferredWidth: 36
                         Layout.preferredHeight: 36
-                        radius: 12
+                        radius: Theme.rad(12)
                         color: root.notificationDetailItem ? root.notificationAvatarFill(root.notificationDetailItem) : colors.card
                         border.color: Theme.edgeHighlight
                         border.width: 1
@@ -160,11 +160,12 @@ PanelWindow {
                             }
 
                             Text {
+                                font.family: Theme.fontFamily
                                 visible: !parent.children[0].visible
                                 anchors.centerIn: parent
                                 text: root.notificationDetailItem ? root.notificationAvatarText(root.notificationDetailItem) : ""
                                 color: colors.text
-                                font.pixelSize: 12
+                                font.pixelSize: Theme.fs(12)
                                 font.weight: Font.DemiBold
                             }
                         }
@@ -175,6 +176,7 @@ PanelWindow {
                         spacing: 2
 
                         Text {
+                            font.family: Theme.fontFamily
                             Layout.fillWidth: true
                             text: {
                                 const item = root.notificationDetailItem;
@@ -185,16 +187,17 @@ PanelWindow {
                                 return root.notificationAppLabel(item) + (relative ? " · " + relative : "");
                             }
                             color: colors.textDim
-                            font.pixelSize: 10
+                            font.pixelSize: Theme.fs(10)
                             font.weight: Font.DemiBold
                             elide: Text.ElideRight
                         }
 
                         Text {
+                            font.family: Theme.fontFamily
                             Layout.fillWidth: true
                             text: root.notificationDetailItem ? root.notificationHeadline(root.notificationDetailItem) : ""
                             color: colors.text
-                            font.pixelSize: 14
+                            font.pixelSize: Theme.fs(14)
                             font.weight: Font.DemiBold
                             wrapMode: Text.Wrap
                             maximumLineCount: 3
@@ -205,16 +208,17 @@ PanelWindow {
                     Rectangle {
                         Layout.preferredWidth: 28
                         Layout.preferredHeight: 28
-                        radius: 10
+                        radius: Theme.rad(10)
                         color: detailCloseMouse.containsMouse ? colors.redBg : Theme.elevationFaint
                         border.color: Theme.elevation
                         border.width: 1
 
                         Text {
+                            font.family: Theme.fontFamily
                             anchors.centerIn: parent
                             text: "×"
                             color: detailCloseMouse.containsMouse ? colors.red : colors.subtle
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.fs(12)
                             font.weight: Font.Bold
                         }
 
@@ -249,7 +253,7 @@ PanelWindow {
                         text: root.notificationDetailItem ? root.notificationBody(root.notificationDetailItem) : ""
                         color: colors.textDim
                         font.family: "JetBrainsMono Nerd Font"
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fs(12)
                         background: null
                         leftPadding: 0
                         rightPadding: 0
@@ -265,17 +269,18 @@ PanelWindow {
                     Rectangle {
                         Layout.preferredHeight: 30
                         Layout.preferredWidth: copyLabel.implicitWidth + 24
-                        radius: 10
+                        radius: Theme.rad(10)
                         color: copyMouse.containsMouse ? colors.blueBg : colors.card
                         border.color: copyMouse.containsMouse ? colors.blue : colors.border
                         border.width: 1
 
                         Text {
+                            font.family: Theme.fontFamily
                             id: copyLabel
                             anchors.centerIn: parent
                             text: "Copy"
                             color: copyMouse.containsMouse ? colors.blue : colors.text
-                            font.pixelSize: 10
+                            font.pixelSize: Theme.fs(10)
                             font.weight: Font.DemiBold
                         }
 
@@ -306,18 +311,19 @@ PanelWindow {
                             required property int index
                             Layout.preferredHeight: 30
                             Layout.preferredWidth: detailActionLabel.implicitWidth + 24
-                            radius: 10
+                            radius: Theme.rad(10)
                             opacity: notificationDetailWindow.detailActionable ? 1 : 0.4
                             color: detailActionMouse.containsMouse ? colors.tealBg : colors.card
                             border.color: detailActionMouse.containsMouse ? colors.teal : colors.border
                             border.width: 1
 
                             Text {
+                                font.family: Theme.fontFamily
                                 id: detailActionLabel
                                 anchors.centerIn: parent
                                 text: root.notificationActionText(modelData)
                                 color: detailActionMouse.containsMouse ? colors.teal : colors.text
-                                font.pixelSize: 10
+                                font.pixelSize: Theme.fs(10)
                                 font.weight: Font.DemiBold
                             }
 

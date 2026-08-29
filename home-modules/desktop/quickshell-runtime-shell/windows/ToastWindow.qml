@@ -1,4 +1,5 @@
 import QtQuick
+import "root:/"
 import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
