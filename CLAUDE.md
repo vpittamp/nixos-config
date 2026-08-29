@@ -87,7 +87,10 @@ file-watches them. "Sign-in expired" in the panel means `claude auth login`
 on that host; local token stats still show without it.
 
 **Themes** live in `quickshell-runtime-shell/themes.nix` (24 semantic base
-tokens + a terminal palette per theme; `zinc-dark`, `zinc-light`). `Theme.qml`
+tokens + a terminal palette per theme): two hand-written zinc themes plus all
+22 Omarchy palettes (`themes/omarchy/*.toml`, converted with
+`builtins.fromTOML` — tokyo-night, catppuccin, gruvbox, nord, everforest,
+kanagawa, rose-pine, matte-black, …). surface runs `tokyo-night`. `Theme.qml`
 is generated from the configured theme (`programs.quickshell-runtime-shell.theme`)
 — never edit it — and every other token is derived inside it, parametrised
 on `dark`. `runtime-theme set <name>|toggle|list|current` restyles the shell

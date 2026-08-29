@@ -118,16 +118,16 @@ let
   themes = import ./themes.nix;
   themeName = cfg.theme;
   baseTheme = themes.${themeName} or (throw "programs.quickshell-runtime-shell.theme: unknown theme '${themeName}' (have: ${lib.concatStringsSep ", " (lib.attrNames themes)})");
-  # The per-host accent options keep their old meaning: they replace the blue
-  # family of the *configured* theme at build time.
-  defaultTheme = baseTheme // {
-    colors = baseTheme.colors // {
-      blue = cfg.accentColor;
-      blueBg = cfg.accentBg;
-      blueMuted = cfg.accentMuted;
-      blueWash = cfg.accentWash;
-    };
+  # The per-host accent options replace the blue family of the *configured*
+  # theme at build time — only when a host sets them, so a themed accent
+  # (Tokyo Night's #7aa2f7, say) is not silently swapped for the zinc blue.
+  accentOverride = lib.filterAttrs (_: v: v != null) {
+    blue = cfg.accentColor;
+    blueBg = cfg.accentBg;
+    blueMuted = cfg.accentMuted;
+    blueWash = cfg.accentWash;
   };
+  defaultTheme = baseTheme // { colors = baseTheme.colors // accentOverride; };
   themesExport = lib.mapAttrs (id: t: {
     inherit id;
     label = t.label;
@@ -3261,27 +3261,27 @@ in
     };
 
     accentColor = lib.mkOption {
-      type = lib.types.str;
-      default = "#93c5fd";
-      description = "Primary accent color (replaces blue family in shell.qml).";
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Override the configured theme's accent (blue) at build time. Null keeps the theme's own.";
     };
 
     accentBg = lib.mkOption {
-      type = lib.types.str;
-      default = "#16243a";
-      description = "Accent background color.";
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Override the configured theme's accent background. Null keeps the theme's own.";
     };
 
     accentMuted = lib.mkOption {
-      type = lib.types.str;
-      default = "#5d7ba2";
-      description = "Muted accent color.";
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Override the configured theme's muted accent. Null keeps the theme's own.";
     };
 
     accentWash = lib.mkOption {
-      type = lib.types.str;
-      default = "#152231";
-      description = "Accent wash/tint color.";
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Override the configured theme's accent wash. Null keeps the theme's own.";
     };
 
     toggleKey = lib.mkOption {

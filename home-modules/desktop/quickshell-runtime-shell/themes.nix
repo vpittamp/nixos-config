@@ -13,7 +13,81 @@
 # and applies as overrides on the generated Theme.qml singleton — no restart.
 # The default theme is baked in at build time (programs.quickshell-runtime-
 # shell.theme) so a machine with no state file still has a complete palette.
-{
+#
+# Besides the two hand-written zinc themes below, every Omarchy palette under
+# themes/omarchy/*.toml is converted by `fromOmarchy`: their four backgrounds
+# become our elevation ladder, their four foregrounds our text ramp, their
+# accent our blue family, and the ANSI hues our status hues (yellow→amber,
+# cyan→teal, magenta→violet). The terminal palette is theirs verbatim, so
+# `runtime-theme set tokyo-night` restyles the shell and the terminal alike.
+let
+  strip = c: builtins.substring 1 6 c;
+  titleCase = name: builtins.concatStringsSep " " (map
+    (w: (builtins.substring 0 1 (builtins.replaceStrings [ "a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z" ] [ "A" "B" "C" "D" "E" "F" "G" "H" "I" "J" "K" "L" "M" "N" "O" "P" "Q" "R" "S" "T" "U" "V" "W" "X" "Y" "Z" ] w)) + builtins.substring 1 (-1) w)
+    (builtins.filter builtins.isString (builtins.split "-" name)));
+  fromOmarchy = name: t:
+    let
+      dark = (t.mode or "dark") == "dark";
+      darker = t.darker_background or (t.dark_background or t.background);
+      darkBg = t.dark_background or t.background;
+      lighter = t.lighter_background or t.selection;
+      lightFg = t.light_foreground or t.foreground;
+      brightFg = t.bright_foreground or lightFg;
+      darkFg = t.dark_foreground or t.muted;
+      orange = t.orange or t.yellow;
+      bright = key: t.${"bright_" + key} or t.${key};
+    in
+    {
+      label = titleCase name;
+      description = "Omarchy ${if dark then "dark" else "light"} theme";
+      inherit dark;
+      colors = {
+        bg = darker;
+        panel = t.background;
+        panelAlt = lighter;
+        card = lighter;
+        cardAlt = t.background;
+        border = t.selection;
+        borderStrong = t.muted;
+        lineSoft = darkBg;
+        text = brightFg;
+        textDim = t.foreground;
+        muted = darkFg;
+        subtle = t.muted;
+        accent = lightFg;
+        accentBg = t.selection;
+        blue = t.accent;
+        blueBg = t.selection;
+        blueMuted = t.blue or t.accent;
+        blueWash = darkBg;
+        green = t.green;
+        red = t.red;
+        amber = t.yellow;
+        inherit orange;
+        teal = t.cyan;
+        violet = t.magenta;
+      };
+      terminal = {
+        background = strip t.background;
+        foreground = strip t.foreground;
+        cursor = strip t.accent;
+        selectionBackground = strip t.selection;
+        selectionForeground = strip t.foreground;
+        palette = map strip [
+          t.selection t.red t.green t.yellow t.blue t.magenta t.cyan lightFg
+          t.muted (bright "red") (bright "green") (bright "yellow") (bright "blue") (bright "magenta") (bright "cyan") t.foreground
+        ];
+      };
+    };
+  omarchyDir = ./themes/omarchy;
+  omarchyThemes = builtins.listToAttrs (map
+    (file: let name = builtins.substring 0 (builtins.stringLength file - 5) file; in {
+      inherit name;
+      value = fromOmarchy name (builtins.fromTOML (builtins.readFile (omarchyDir + "/${file}")));
+    })
+    (builtins.filter (f: builtins.match ".*\\.toml" f != null) (builtins.attrNames (builtins.readDir omarchyDir))));
+in
+omarchyThemes // {
   zinc-dark = {
     label = "Zinc Dark";
     description = "shadcn zinc on near-black, Tailwind 400 status hues, Catppuccin Mocha terminal";
