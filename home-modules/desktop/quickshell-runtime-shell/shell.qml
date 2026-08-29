@@ -894,7 +894,7 @@ ShellRoot {
             label: "Themes",
             title: "Theme",
             placeholder: "Search themes",
-            help: "Enter apply  •  Tab modes  •  Ctrl+3 Themes  •  runtime-theme toggle",
+            help: "Move to preview  •  Enter keep  •  Esc revert  •  Ctrl+3 Themes",
             icon: "preferences-desktop-theme",
             fallbackGlyph: "◐",
             accentColorKey: "amber",
@@ -1012,24 +1012,57 @@ ShellRoot {
     // The state file names a theme from shellConfig.themes; its base tokens
     // become Theme.overrides and every derived token follows. An unknown or
     // missing name means the built-in default (empty overrides).
+    // Last content of the theme state file, kept so a preview can be undone
+    // without re-reading the file.
+    property string themeStateText: ""
+    property bool themePreviewActive: false
+
+    function applyThemeById(name) {
+        const id = stringOrEmpty(name);
+        const themes = shellConfig.themes || {};
+        const theme = id ? themes[id] : null;
+        if (!theme || id === shellConfig.defaultTheme) {
+            if (Object.keys(Theme.overrides || {}).length) {
+                Theme.overrides = ({});
+            }
+            return !!theme || !id;
+        }
+        Theme.overrides = Object.assign({ name: id, dark: !!theme.dark }, theme.colors || {});
+        return true;
+    }
+
     function applyThemeState(text) {
+        themeStateText = stringOrEmpty(text);
         let name = "";
         try {
-            const raw = stringOrEmpty(text).trim();
+            const raw = themeStateText.trim();
             const parsed = raw ? JSON.parse(raw) : null;
             name = stringOrEmpty(parsed && parsed.name);
         } catch (error) {
             console.warn("theme.state:", error);
         }
-        const themes = shellConfig.themes || {};
-        const theme = name ? themes[name] : null;
-        if (!theme || name === shellConfig.defaultTheme) {
-            if (Object.keys(Theme.overrides || {}).length) {
-                Theme.overrides = ({});
+        applyThemeById(name);
+    }
+
+    // ----- Live preview from the picker -----
+    // The highlighted row of the Themes launcher mode is applied as you move
+    // through the list (keys or hover). Enter commits it through the CLI;
+    // closing the launcher any other way puts the persisted theme back.
+    readonly property var themePreviewEntry: (launcherVisible && launcherMode === "themes" && launcherEntries.length)
+        ? launcherEntries[Math.max(0, Math.min(launcherSelectedIndex, launcherEntries.length - 1))]
+        : null
+    onThemePreviewEntryChanged: {
+        if (themePreviewEntry) {
+            const id = stringOrEmpty(themePreviewEntry.theme_id || themePreviewEntry.identifier);
+            if (id && applyThemeById(id)) {
+                themePreviewActive = true;
             }
             return;
         }
-        Theme.overrides = Object.assign({ name: name, dark: !!theme.dark }, theme.colors || {});
+        if (themePreviewActive) {
+            themePreviewActive = false;
+            applyThemeState(themeStateText);
+        }
     }
 
     function themeEntries(query) {
@@ -8541,6 +8574,12 @@ function normalizeLauncherMode(mode) {
         }
         if (kind === "theme") {
             const themeId = stringOrEmpty(entry && (entry.theme_id || entry.identifier));
+            // Keep what is on screen: mark the preview committed before the
+            // launcher closes so the close does not flash the old theme back,
+            // then let the CLI persist it (the state watcher re-applies the
+            // same theme, a no-op).
+            themePreviewActive = false;
+            applyThemeById(themeId);
             closeLauncher();
             setTheme(themeId);
             return;

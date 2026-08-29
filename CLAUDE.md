@@ -97,7 +97,7 @@ on `dark`. `runtime-theme set <name>|toggle|list|current` restyles the shell
 live (it writes `~/.local/state/quickshell-runtime-shell/theme.json`, which
 the shell watches) and writes `~/.config/ghostty/theme.conf` for new
 terminals (herdr follows the terminal; press `Ctrl+Shift+,` in an open
-Ghostty to reload). Launcher "Themes" mode: `Ctrl+3` / `;t`. Add a theme by
+Ghostty to reload). Launcher "Themes" mode: `Ctrl+3` / `;t` — the highlighted theme is applied live as a preview; Enter keeps it, Esc reverts. Add a theme by
 adding an attrset to `themes.nix`; no QML changes.
 
 **Lock + idle** are in-shell: `Mod+Ctrl+L` / power menu *Lock* /
