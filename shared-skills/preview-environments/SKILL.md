@@ -108,6 +108,27 @@ routes 500 on missing imports and browser evidence can never be captured. The
 fix is to rebuild and repin `workflow-builder-dev` for the wanted revision, not
 to relaunch.
 
+### PR-head previews and the warm pool
+
+The one sanctioned way to run un-merged code in a preview without the
+acceptance replay is `sourceRef: "pr/<n>"` (same-repo open PR, no `preview`
+label): the broker boots the cold app-live parent at the baked baseline and
+then full-tree seeds the PR head through the same step the labeled lane uses.
+The preview is Ready only when its projected `seed.state` is `seeded`
+(`seeding` and `seed-failed` are not Ready); no immutable images, replay,
+receipt, or `preview/*` status are produced. Plain branch/SHA refs stay
+clamped; `pr/<n>` plus `sourceRevision`, or system-live plus a PR ref, is
+refused before any generation exists.
+
+A small warm pool (owner `automation/preview-warm-pool`, headless, at the
+current baked baseline) makes a matching interactive app-live launch adopt a
+Ready member in seconds instead of a 5–12 min cold boot. Adoption is a single
+owner-transfer PATCH fenced on the member's `resourceVersion`, admitted by the
+CRD only warm-pool→user and only once; an adopted preview KEEPS the member's
+name, TTL, and headless exposure — read `adoption.member` from the launch
+response and poll that name. Members at a stale baseline or catalog digest are
+torn down, never reused; replenish happens only with capacity headroom.
+
 ## Canonical Flow
 
 1. Discover services and targets with `list_preview_services`, then inspect
