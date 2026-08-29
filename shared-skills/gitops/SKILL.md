@@ -177,17 +177,40 @@ controllers to hide the first causal error.
 
 ## Merging Pull Requests
 
-- Merge on branch protection plus green PR check runs: workflow-builder requires
-  `checks` and `orchestrator-tests`; read `GET /repos/<r>/commits/<sha>/check-runs`,
-  not commit statuses. `preview/gate`, `preview/immutable-acceptance`,
-  `preview/activation-images`, and `pr-preview` are advisory statuses — never
-  wait on them and never add the `preview` label to turn them green.
+- workflow-builder `main` is behind a GitHub merge queue (ruleset "main merge
+  queue", squash, ALLGREEN). Required contexts on both the PR head and the
+  queue commit: `ci-required` (the aggregator job in `pr-checks.yml`, green
+  only when every CI job succeeded, including the unconditional production
+  `pnpm build`) and `hub/image-build` (on the PR head a "deferred" success
+  posted by CI; on the queue commit the real status from the hub Tekton
+  merge-group lane, which builds `ghcr.io/pittampalliorg/workflow-builder:git-<queue sha>`).
+  The queue fast-forwards `main` to the queue commit, so the push lane finds
+  that image by exact SHA (`disposition=reuse-exact`) and skips its ~5 min
+  build.
+- Enqueue with `gh pr merge <n> --squash --auto` (auto-merge is enabled) or the
+  GraphQL `enqueuePullRequest` mutation; `PUT /pulls/<n>/merge` no longer works
+  on workflow-builder. A queue entry is dropped when a queue-commit check fails
+  (flaky suites included) — re-enqueue after checking the failure is not real.
+- Read outcomes from `GET /repos/<r>/commits/<sha>/check-runs` plus the
+  `hub/*` commit statuses. `preview/gate`, `preview/immutable-acceptance`,
+  `preview/activation-images`, and `pr-preview` are advisory — never wait on
+  them and never add the `preview` label to turn them green.
+- After a merge, the hub posts `hub/build-<image>` and `hub/build-dev-images`
+  commit statuses on the main SHA (failure = build broke on main; failed runs
+  are kept 7 days). The BFF raises `build_failed` and `pin_drift`
+  notifications from the same events. If a main push shows a 502 in the repo
+  webhook deliveries (Funnel edge loss), the hub catch-up lane replays it;
+  until then, a signed replay of the delivery to the EL is the manual remedy.
+- stacks `main` has no branch protection: merge on green check runs
+  (`PUT /pulls/<n>/merge`), ignoring the advisory `preview/gate` status.
 - A PR preview is an interactive review tool: label `preview` only when a
   person wants to use the preview to judge the change. While an acceptance you
   care about is running, keep `main` still — its evidence binds to the baked
   `workflow-builder-dev` image, and any merge invalidates it.
 - Watchers: one at a time, REST only, poll every ≥3 minutes (the GraphQL
   budget is 5000/h and shared with subagents); stop on any failing check run.
+  Never `pkill -f` a watcher from inside another background command whose own
+  command line contains the pattern.
 
 ## Safety Rules
 
