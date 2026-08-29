@@ -391,6 +391,8 @@ fresh generation, user-path proof, evidence proof, and teardown proof.
 - Use `kubernetes-capacity` for shared quota, cohorts, PSI, physical headroom,
   exact-plan tuning, pressure policy, and dynamic concurrency.
 - The ryzen Skaffold loop is retired; dev is the only test and deploy target.
+- PR previews (`preview` label) are for interactive review of a change, not a
+  merge gate; the `preview/*` commit statuses are advisory (see `gitops`).
 - Use `dapr-agents-workflow` for standalone upstream Dapr Agents Python apps.
 - Do not create another DevelopmentRun skill; it would duplicate this authority.
 

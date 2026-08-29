@@ -122,7 +122,7 @@
     # QuickShell runtime shell. Pin upstream for reliability fixes ahead of the
     # nixpkgs channel package used by the persistent desktop panel.
     quickshell = {
-      url = "github:quickshell-mirror/quickshell/v0.3.0";
+      url = "github:quickshell-mirror/quickshell/v0.3.1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 

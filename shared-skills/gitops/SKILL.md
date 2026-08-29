@@ -175,6 +175,20 @@ controllers to hide the first causal error.
   origins, and lifecycle limits are separate controls. Use the current capacity
   profiles and `docs/capacity-management.md`; do not tune from one live number.
 
+## Merging Pull Requests
+
+- Merge on branch protection plus green PR check runs: workflow-builder requires
+  `checks` and `orchestrator-tests`; read `GET /repos/<r>/commits/<sha>/check-runs`,
+  not commit statuses. `preview/gate`, `preview/immutable-acceptance`,
+  `preview/activation-images`, and `pr-preview` are advisory statuses — never
+  wait on them and never add the `preview` label to turn them green.
+- A PR preview is an interactive review tool: label `preview` only when a
+  person wants to use the preview to judge the change. While an acceptance you
+  care about is running, keep `main` still — its evidence binds to the baked
+  `workflow-builder-dev` image, and any merge invalidates it.
+- Watchers: one at a time, REST only, poll every ≥3 minutes (the GraphQL
+  budget is 5000/h and shared with subagents); stop on any failing check run.
+
 ## Safety Rules
 
 - Do not trigger ArgoCD syncs or roll workflow-builder control-plane pods while

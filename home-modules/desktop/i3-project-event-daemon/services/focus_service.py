@@ -90,6 +90,12 @@ class FocusService:
         self.current_workspace_name: str = ""
         self.current_window_id: int = 0
         self.current_session_key: str = ""
+        # Resolved view of `current_session_key` (pane id / host / summary), kept
+        # beside the key so the lightweight focus payload never has to fall back
+        # to a previous snapshot's active_session to describe the current one.
+        self.current_herdr_pane_id: str = ""
+        self.current_herdr_host: str = ""
+        self.current_active_session: Dict[str, Any] = {}
 
     def _workspace_focus_ready(self) -> bool:
         return bool(
@@ -1417,6 +1423,11 @@ class FocusService:
                 for session in candidates
                 if bool(session.get("pane_active", False))
                 or bool(session.get("focused", False))
+                # Rows that already went through the dashboard flatteners carry
+                # Herdr's raw per-pane flag only as `herdr_focused` (`focused` /
+                # `pane_active` were rewritten to the previous sway answer), so
+                # re-selecting from a cached row set must read it too.
+                or bool(session.get("herdr_focused", False))
             ),
             "",
         )
@@ -1526,6 +1537,10 @@ class FocusService:
         self.current_workspace_name = current_workspace_name
         self.current_window_id = focused_window_id
         self.current_session_key = current_session_key
+        active_summary = self.active_session_summary(active_session)
+        self.current_active_session = active_summary
+        self.current_herdr_pane_id = active_summary.get("pane_id", "")
+        self.current_herdr_host = self.active_session_host(active_session)
         return {
             "success": True,
             "schema_version": self.schema_version,
@@ -1533,34 +1548,107 @@ class FocusService:
             "current_session_key": current_session_key,
             "current_window_id": focused_window_id,
             "current_workspace_name": current_workspace_name,
-            "current_herdr_pane_id": str(active_session.get("pane_id") or "").strip(),
-            "current_herdr_host": str(
-                active_session.get("host_name")
-                or active_session.get("herdr_host")
-                or ""
-            ).strip(),
+            "current_herdr_pane_id": self.current_herdr_pane_id,
+            "current_herdr_host": self.current_herdr_host,
             "pending_intent_id": str(self.pending_intent_id or "").strip(),
             "focus_intent": self.focus_intent_payload(),
             "active_context": active_context if isinstance(active_context, dict) else {},
-            "active_session": {
-                "session_key": str(active_session.get("session_key") or "").strip(),
-                "herdr_session": str(active_session.get("herdr_session") or "").strip(),
-                "workspace_id": str(active_session.get("workspace_id") or "").strip(),
-                "tab_id": str(active_session.get("tab_id") or "").strip(),
-                "pane_id": str(active_session.get("pane_id") or "").strip(),
-                "terminal_id": str(active_session.get("terminal_id") or "").strip(),
-                "agent": str(active_session.get("agent") or "").strip(),
-                "agent_status": str(active_session.get("agent_status") or "").strip(),
-                "agent_status_state": str(active_session.get("agent_status_state") or "").strip(),
-                "focused": bool(active_session.get("focused", False)),
-                "window_id": int(active_session.get("window_id") or 0),
-                "project_name": str(active_session.get("project_name") or active_session.get("project") or "").strip(),
-                "execution_mode": str(active_session.get("execution_mode") or "").strip(),
-                "connection_key": str(active_session.get("connection_key") or "").strip(),
-                "focus_connection_key": str(active_session.get("focus_connection_key") or "").strip(),
-                "host_name": str(active_session.get("host_name") or "").strip(),
-            },
+            "active_session": active_summary,
         }
+
+    @staticmethod
+    def active_session_host(session: Dict[str, Any]) -> str:
+        """Host token shipped as `current_herdr_host` for an active session row."""
+        if not isinstance(session, dict):
+            return ""
+        return str(session.get("host_name") or session.get("herdr_host") or "").strip()
+
+    @staticmethod
+    def active_session_summary(session: Dict[str, Any]) -> Dict[str, Any]:
+        """The `active_session` block of a focus payload for one session row.
+
+        Always the full key set: consumers (and the focus_state contract) read
+        `active_session.session_key` unconditionally, so "no active session" is
+        the shape with empty values, never a missing block.
+        """
+        if not isinstance(session, dict):
+            session = {}
+        return {
+            "session_key": str(session.get("session_key") or "").strip(),
+            "herdr_session": str(session.get("herdr_session") or "").strip(),
+            "workspace_id": str(session.get("workspace_id") or "").strip(),
+            "tab_id": str(session.get("tab_id") or "").strip(),
+            "pane_id": str(session.get("pane_id") or "").strip(),
+            "terminal_id": str(session.get("terminal_id") or "").strip(),
+            "agent": str(session.get("agent") or "").strip(),
+            "agent_status": str(session.get("agent_status") or "").strip(),
+            "agent_status_state": str(session.get("agent_status_state") or "").strip(),
+            "focused": bool(session.get("focused", False)),
+            "window_id": int(session.get("window_id") or 0),
+            "project_name": str(session.get("project_name") or session.get("project") or "").strip(),
+            "execution_mode": str(session.get("execution_mode") or "").strip(),
+            "connection_key": str(session.get("connection_key") or "").strip(),
+            "focus_connection_key": str(session.get("focus_connection_key") or "").strip(),
+            "host_name": str(session.get("host_name") or "").strip(),
+        }
+
+    def note_sway_focus(
+        self,
+        *,
+        window_id: int,
+        session_key: str,
+        workspace_name: Optional[str] = None,
+        sessions: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        """Record the sway-derived focus answer without a full runtime rebuild.
+
+        Called from the window::focus / workspace::focus handlers so the
+        focus-only dashboard event that follows carries the NEW answer. Before
+        this existed the lightweight payload re-emitted whatever the last full
+        snapshot had computed, so a focus change was only reflected on the panel
+        once some unrelated event (a herdr status tick, a window title change)
+        forced a full rebuild — which is why the highlight tracked focus only
+        "sometimes".
+
+        `window_id` 0 is a real answer ("no window has focus", e.g. an empty
+        workspace) and must win over any previous value.
+        """
+        key = str(session_key or "").strip()
+        self.current_window_id = int(window_id or 0)
+        self.current_session_key = key
+        if workspace_name is not None and str(workspace_name).strip():
+            self.current_workspace_name = str(workspace_name).strip()
+        active_session: Dict[str, Any] = {}
+        if key:
+            active_session = next(
+                (
+                    row for row in (sessions or [])
+                    if isinstance(row, dict)
+                    and str(row.get("session_key") or "").strip() == key
+                ),
+                {},
+            )
+        self.current_active_session = self.active_session_summary(active_session)
+        self.current_herdr_pane_id = self.current_active_session.get("pane_id", "")
+        self.current_herdr_host = self.active_session_host(active_session)
+
+    def _lightweight_active_session(self, base: Dict[str, Any]) -> Dict[str, Any]:
+        """Active-session summary that actually describes `current_session_key`.
+
+        A summary is only reused when its session_key matches the current key:
+        the daemon-side copy first, then the previous snapshot's. Anything else
+        would describe a pane the user has already left.
+        """
+        key = str(self.current_session_key or "").strip()
+        if not key:
+            return self.active_session_summary({})
+        own = self.current_active_session if isinstance(self.current_active_session, dict) else {}
+        if str(own.get("session_key") or "").strip() == key:
+            return own
+        base_active = base.get("active_session") if isinstance(base.get("active_session"), dict) else {}
+        if str(base_active.get("session_key") or "").strip() == key:
+            return base_active
+        return self.active_session_summary({})
 
     def build_lightweight_focus_state_payload(
         self,
@@ -1568,11 +1656,25 @@ class FocusService:
         generation: int,
         base_focus_state: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Build a focus-only delta without touching runtime/session/dashboard loaders."""
+        """Build a focus-only delta without touching runtime/session/dashboard loaders.
+
+        The daemon-side fields are authoritative here, including when they are
+        empty: an empty session key or a zero window id after a focus event is
+        the answer "nothing has focus", not a gap to paper over with the previous
+        snapshot's values. Only `active_context` (which focus events never
+        change) is carried over from the base.
+        """
         base = dict(base_focus_state or {}) if isinstance(base_focus_state, dict) else {}
         current_workspace_name = str(self.current_workspace_name or base.get("current_workspace_name") or "").strip()
-        current_window_id = int(self.current_window_id or base.get("current_window_id") or 0)
-        current_session_key = str(self.current_session_key or base.get("current_session_key") or "").strip()
+        current_window_id = int(self.current_window_id or 0)
+        current_session_key = str(self.current_session_key or "").strip()
+        active_session = self._lightweight_active_session(base)
+        if str(active_session.get("session_key") or "").strip():
+            pane_id = str(active_session.get("pane_id") or self.current_herdr_pane_id or "").strip()
+            host = str(active_session.get("host_name") or self.current_herdr_host or "").strip()
+        else:
+            pane_id = ""
+            host = ""
         payload = {
             "success": True,
             "schema_version": self.schema_version,
@@ -1580,11 +1682,11 @@ class FocusService:
             "current_session_key": current_session_key,
             "current_window_id": current_window_id,
             "current_workspace_name": current_workspace_name,
-            "current_herdr_pane_id": str(base.get("current_herdr_pane_id") or "").strip(),
-            "current_herdr_host": str(base.get("current_herdr_host") or "").strip(),
+            "current_herdr_pane_id": pane_id,
+            "current_herdr_host": host,
             "pending_intent_id": str(self.pending_intent_id or "").strip(),
             "focus_intent": self.focus_intent_payload(),
             "active_context": base.get("active_context") if isinstance(base.get("active_context"), dict) else {},
-            "active_session": base.get("active_session") if isinstance(base.get("active_session"), dict) else {},
+            "active_session": active_session,
         }
         return payload
