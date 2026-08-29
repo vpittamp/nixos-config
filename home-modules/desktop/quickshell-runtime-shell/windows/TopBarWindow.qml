@@ -22,6 +22,49 @@ PanelWindow {
     readonly property bool isPrimaryBar: root.isPrimaryOutput(topOutputName)
     readonly property bool isFocusedBar: root.isFocusedOutput(topOutputName)
 
+    // ----- Tight-bar chip shedding -----
+    // When the three clusters cannot fit the output (a 1504px panel at a
+    // larger text size, or just many chips), right-cluster chips hide in
+    // shedOrder until the centre block has room again. The overflow is
+    // computed from implicitWidths and each chip's own `wanted` condition —
+    // never from what is currently visible — so shedding cannot oscillate.
+    readonly property var shedOrder: [diskChip, memoryChip, generationChip, layoutChip, daemonHealthChip, moonlightChip, tailscaleChip]
+    readonly property int shedLevel: shedCount()
+
+    function shedCount() {
+        const spacing = rightCluster.spacing;
+        const kids = rightCluster.children;
+        let full = 0;
+        for (let i = 0; i < kids.length; i += 1) {
+            const chip = kids[i];
+            if (!chip || chip.implicitWidth === undefined) {
+                continue;
+            }
+            const wanted = chip.wanted !== undefined ? chip.wanted : chip.visible;
+            if (wanted) {
+                full += chip.implicitWidth + spacing;
+            }
+        }
+        let overflow = leftCluster.implicitWidth + centerCluster.implicitWidth + full + 36 - width;
+        let count = 0;
+        for (let i = 0; i < shedOrder.length; i += 1) {
+            if (overflow <= 0) {
+                break;
+            }
+            const chip = shedOrder[i];
+            if (chip && chip.wanted) {
+                overflow -= chip.implicitWidth + spacing;
+            }
+            count += 1;
+        }
+        return count;
+    }
+
+    function shed(chip) {
+        const index = shedOrder.indexOf(chip);
+        return index >= 0 && index < shedLevel;
+    }
+
     screen: topBarScreen
     visible: fallbackMode || topBarScreen !== null
     color: "transparent"
@@ -411,13 +454,14 @@ PanelWindow {
 
                 Rectangle {
                     id: daemonHealthChip
+                    readonly property bool wanted: root.daemonHealthState.status === "degraded"
+                    visible: wanted && !topBarWindow.shed(daemonHealthChip)
                     radius: root.radiusControl
                     color: root.daemonHealthColor(daemonHealthMouse.containsMouse)
                     border.color: root.daemonHealthBorderColor(daemonHealthMouse.containsMouse)
                     border.width: 1
                     implicitWidth: daemonHealthRow.implicitWidth + 18
                     Layout.fillHeight: true
-                    visible: root.daemonHealthState.status === "degraded"
                         || root.daemonHealthState.status === "unhealthy"
                         || root.daemonHealthState.status === "critical"
                         || root.daemonHealthState.status === "dead"
@@ -473,6 +517,8 @@ PanelWindow {
 
                 Rectangle {
                     id: generationChip
+                    readonly property bool wanted: true
+                    visible: wanted && !topBarWindow.shed(generationChip)
                     radius: root.radiusControl
                     color: root.neutralChipFill(generationMouse.containsMouse)
                     border.color: root.neutralChipBorder(generationMouse.containsMouse)
@@ -511,6 +557,8 @@ PanelWindow {
 
                 Rectangle {
                     id: memoryChip
+                    readonly property bool wanted: true
+                    visible: wanted && !topBarWindow.shed(memoryChip)
                     radius: root.radiusControl
                     color: root.neutralChipFill(memoryMouse.containsMouse)
                     border.color: root.neutralChipBorder(memoryMouse.containsMouse)
@@ -560,6 +608,8 @@ PanelWindow {
 
                 Rectangle {
                     id: diskChip
+                    readonly property bool wanted: true
+                    visible: wanted && !topBarWindow.shed(diskChip)
                     radius: root.radiusControl
                     color: root.diskChipFill(diskMouse.containsMouse)
                     border.color: root.diskChipBorder(diskMouse.containsMouse)
@@ -612,6 +662,8 @@ PanelWindow {
 
                 Rectangle {
                     id: layoutChip
+                    readonly property bool wanted: true
+                    visible: wanted && !topBarWindow.shed(layoutChip)
                     radius: root.radiusControl
                     readonly property bool displaySettingsActive: root.settingsVisible && root.stringOrEmpty(root.settingsSection) === "displays"
                     color: root.stateChipFill(displaySettingsActive, layoutMouse.containsMouse, colors.blueBg)
@@ -657,13 +709,14 @@ PanelWindow {
 
                 Rectangle {
                     id: moonlightChip
+                    readonly property bool wanted: root.boolOrFalse(root.moonlightStatus() && root.moonlightStatus().present)
+                    visible: wanted && !topBarWindow.shed(moonlightChip)
                     radius: root.radiusControl
                     color: root.moonlightChipFill(false)
                     border.color: root.moonlightChipBorder(false)
                     border.width: 1
                     implicitWidth: moonlightLabel.implicitWidth + 18
                     Layout.fillHeight: true
-                    visible: root.boolOrFalse(root.moonlightStatus() && root.moonlightStatus().present)
 
                     Behavior on color {
                         ColorAnimation {
@@ -754,7 +807,8 @@ PanelWindow {
                 // list with copy-IP / copy-DNS. Hidden when tailscale is absent.
                 Rectangle {
                     id: tailscaleChip
-                    visible: root.tailscaleAvailable()
+                    readonly property bool wanted: root.tailscaleAvailable()
+                    visible: wanted && !topBarWindow.shed(tailscaleChip)
                     radius: root.radiusControl
                     color: root.tailscalePopupVisible ? colors.blueBg : root.neutralChipFill(tailscaleMouse.containsMouse)
                     border.color: root.tailscalePopupVisible ? colors.blue : root.neutralChipBorder(tailscaleMouse.containsMouse)
