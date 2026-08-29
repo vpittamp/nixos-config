@@ -1772,7 +1772,7 @@ PanelWindow {
                     model: [
                         {
                             label: "Lock",
-                            command: ["swaylock", "-f"]
+                            command: ["lock-session"]
                         },
                         {
                             label: "Suspend",

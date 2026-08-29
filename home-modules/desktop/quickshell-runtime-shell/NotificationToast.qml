@@ -57,7 +57,10 @@ Rectangle {
     }
 
     function syncCountdown() {
-        const ts = Number(itemData && itemData.timestamp) || 0;
+        // replayed_at is set when a toast is restored after a shell restart or
+        // replayed from history, so the countdown restarts without the
+        // history timestamp (and the "N min ago" label) being rewritten.
+        const ts = Number(itemData && (itemData.replayed_at || itemData.timestamp)) || 0;
         if (ts !== seenTimestamp) {
             seenTimestamp = ts;
             resetCountdown();
@@ -145,8 +148,16 @@ Rectangle {
         drag.minimumX: 0
         drag.maximumX: toast.slideOutX
         drag.threshold: 12
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
         onPressed: settleAnim.stop()
-        onClicked: toast.defaultInvoked(toast.notificationId)
+        // Right-click dismisses without invoking the sender's default action.
+        onClicked: function (mouse) {
+            if (mouse.button === Qt.RightButton) {
+                toast.dismissRequested(toast.notificationId);
+                return;
+            }
+            toast.defaultInvoked(toast.notificationId);
+        }
         onReleased: {
             if (toast.x > toast.width * 0.3) {
                 toast.dismissRequested(toast.notificationId);

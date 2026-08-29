@@ -63,9 +63,26 @@ runtime-shell call showOsd brightness 55            # any function on the shell 
 ```
 
 Surfaces: `launcher` `keybindings` `panel` `settings` `expose` `agent-monitor`
-`power-menu` `notifications` `display-selector` `audio` `bluetooth` `cast`.
+`power-menu` `notifications` `display-selector` `audio` `bluetooth` `cast`
+`lock` (summon only — it cannot be hidden over IPC).
 The OSD (volume / mic / brightness / touch-mode scale) is reactive for
 PipeWire changes from any source and driven by IPC for brightness.
+
+**Notifications persist** across shell restarts
+(`~/.local/state/quickshell-runtime-shell/notifications.json`): live toasts
+come back with their remaining lifetime, critical ones never expire, history
+is kept to `notifications.historyLimit`. Identical open notifications are
+coalesced; right-click dismisses a toast. `runtime-shell call
+replayNotifications 3` re-shows the last closed ones.
+
+**Lock + idle** are in-shell: `Mod+Ctrl+L` / power menu *Lock* /
+`lock-session` engage `windows/LockScreen.qml` (ext-session-lock + PAM
+`swaylock` service); `lock-session` falls back to swaylock if the shell is
+down. Idle is `programs.quickshell-runtime-shell.idle.{screenOffSeconds,lockSeconds}`
+(defaults 300 / 600, 0 disables), honours app idle inhibitors and pauses
+while casting or lid-inhibited. If the lock ever misbehaves: Ctrl+Alt+F2,
+`systemctl --user restart quickshell-runtime-shell` (sway keeps the session
+locked), then `XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 swaylock -f`.
 
 ## Walker/Elephant Launcher
 

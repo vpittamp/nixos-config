@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Notifications
+import Quickshell.Wayland
 
 Item {
     id: services
@@ -20,6 +21,8 @@ Item {
     property alias lidPolicyRestartTimerRef: lidPolicyRestartTimer
     property alias launcherFocusTimerRef: launcherFocusTimer
     property alias osdHideTimerRef: osdHideTimer
+    property alias notificationStoreRef: notificationStore
+    property alias notificationPersistTimerRef: notificationPersistTimer
     property alias launcherQueryDebounceRef: launcherQueryDebounce
     property alias launcherSessionSwitcherOpenTimerRef: launcherSessionSwitcherOpenTimer
     property alias launcherWindowSwitcherOpenTimerRef: launcherWindowSwitcherOpenTimer
@@ -385,6 +388,53 @@ Item {
             }
             shellRoot.launcherField.forceActiveFocus();
             shellRoot.launcherField.selectAll();
+        }
+    }
+
+    // ----- Notification persistence -----
+    FileView {
+        id: notificationStore
+        path: runtimeConfig.notificationStorePath
+        blockLoading: true
+        atomicWrites: true
+        printErrors: false
+    }
+
+    Timer {
+        id: notificationPersistTimer
+        interval: 400
+        repeat: false
+        onTriggered: shellRoot.persistNotifications()
+    }
+
+    Timer {
+        id: notificationRestoreTimer
+        interval: 250
+        repeat: false
+        running: true
+        onTriggered: shellRoot.restoreNotifications()
+    }
+
+    // ----- Idle -----
+    // ext-idle-notify through the compositor, honouring app idle inhibitors
+    // (video playback) and the shell's own idleInhibited (cast, lid inhibit).
+    IdleMonitor {
+        id: idleScreenOffMonitor
+        enabled: runtimeConfig.idleScreenOffSeconds > 0 && !shellRoot.idleInhibited
+        timeout: runtimeConfig.idleScreenOffSeconds
+        respectInhibitors: true
+        onIsIdleChanged: shellRoot.handleIdleScreen(isIdle)
+    }
+
+    IdleMonitor {
+        id: idleLockMonitor
+        enabled: runtimeConfig.idleLockSeconds > 0 && !shellRoot.idleInhibited && !shellRoot.sessionLocked
+        timeout: runtimeConfig.idleLockSeconds
+        respectInhibitors: true
+        onIsIdleChanged: {
+            if (isIdle) {
+                shellRoot.lockSession();
+            }
         }
     }
 
@@ -1278,6 +1328,15 @@ Item {
         // `runtime-shell call showOsd brightness 55` / `... volume ""`.
         function showOsd(kind: string, level: string): string {
             return shellRoot.showOsdFromIpc(kind, level);
+        }
+
+        function lock(): string {
+            return shellRoot.lockSession();
+        }
+
+        // `runtime-shell call replayNotifications 3`
+        function replayNotifications(count: string): string {
+            return shellRoot.replayNotifications(count);
         }
 
         function toggleKeybindings() {

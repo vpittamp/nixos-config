@@ -32,6 +32,8 @@ ShellRoot {
     readonly property var clock: runtimeServices ? runtimeServices.clockRef : null
     readonly property var launcherFocusTimer: runtimeServices ? runtimeServices.launcherFocusTimerRef : null
     readonly property var osdHideTimer: runtimeServices ? runtimeServices.osdHideTimerRef : null
+    readonly property var notificationStore: runtimeServices ? runtimeServices.notificationStoreRef : null
+    readonly property var notificationPersistTimer: runtimeServices ? runtimeServices.notificationPersistTimerRef : null
     readonly property var launcherQueryDebounce: runtimeServices ? runtimeServices.launcherQueryDebounceRef : null
     readonly property var launcherSessionSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherSessionSwitcherOpenTimerRef : null
     readonly property var launcherWindowSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherWindowSwitcherOpenTimerRef : null
@@ -95,6 +97,65 @@ ShellRoot {
             error: false
         })
     property var notificationFeed: []
+    // Persisted to notificationStore (see persistNotifications) so toasts and
+    // history survive a shell restart. Restored items have no runtime
+    // Notification object: dismiss/expire update the feed directly and
+    // sender actions are inert, but shell-side actions (Herdr focus) still work.
+    property bool notificationsRestored: false
+    onNotificationFeedChanged: {
+        if (notificationsRestored && notificationPersistTimer) {
+            notificationPersistTimer.restart();
+        }
+    }
+
+    // ----- Session lock + idle -----
+    // sessionLocked drives windows/LockScreen.qml (ext-session-lock + PAM);
+    // only PAM success clears it. Idle timers live in RuntimeServices and are
+    // gated by idleInhibited so a live cast or an explicit lid inhibit never
+    // gets locked or blanked from under the user.
+    property bool sessionLocked: false
+    property bool idleScreenOff: false
+    readonly property bool idleInhibited: boolOrFalse(castState && castState.active)
+        || boolOrFalse(lidPolicyState && lidPolicyState.inhibitActive)
+    readonly property string clockTime: clock && clock.date ? Qt.formatDateTime(clock.date, "h:mm") : ""
+    readonly property string clockDate: clock && clock.date ? Qt.formatDateTime(clock.date, "dddd, MMMM d") : ""
+
+    function lockSession() {
+        if (sessionLocked) {
+            return "ok";
+        }
+        closeBarPopups();
+        launcherVisible = false;
+        sessionLocked = true;
+        return "ok";
+    }
+
+    function handleIdleScreen(idle) {
+        idleScreenOff = !!idle;
+        runDetached(["swaymsg", idle ? "output * power off" : "output * power on"]);
+    }
+
+    // One line for the lock screen: how the AI sessions are doing while the
+    // desk is unattended, so a blocked agent is visible without unlocking.
+    function lockAgentSummary() {
+        const sessions = arrayOrEmpty(activeSessions());
+        if (!sessions.length) {
+            return "";
+        }
+        let working = 0, blocked = 0, done = 0;
+        for (let i = 0; i < sessions.length; i += 1) {
+            const phase = sessionPhase(sessions[i]);
+            if (phase === "working") working += 1;
+            else if (phase === "blocked") blocked += 1;
+            else if (phase === "done") done += 1;
+        }
+        const parts = [];
+        if (working) parts.push(working + " working");
+        if (blocked) parts.push(blocked + " blocked");
+        if (done) parts.push(done + " done");
+        return sessions.length + " AI session" + (sessions.length === 1 ? "" : "s") + (parts.length ? " · " + parts.join(", ") : "");
+    }
+
     property var notificationRuntimeMap: ({})
     property var notificationLifecycleConnected: ({})
     property bool notificationCenterVisible: false
@@ -2421,7 +2482,143 @@ ShellRoot {
         const notification = notificationRuntimeMap[String(targetId)];
         if (notification) {
             notification.expire();
+            return;
         }
+        for (let i = 0; i < notificationFeed.length; i += 1) {
+            const item = notificationFeed[i];
+            if (Number(item && item.id) !== targetId) {
+                continue;
+            }
+            replaceNotificationItem(Object.assign({}, item, {
+                closed: true,
+                closed_reason: "Expired",
+                toast_visible: false
+            }));
+            break;
+        }
+    }
+
+    // ----- Persistence -----
+    readonly property var notificationPersistedFields: [
+        "id", "app_name", "app_icon", "desktop_entry", "summary", "body", "urgency",
+        "output_name", "image", "unread", "closed", "closed_reason", "toast_visible",
+        "timeout_ms", "timestamp", "toast_started", "replayed_at", "has_inline_reply",
+        "inline_reply_placeholder", "herdr_session", "herdr_pane", "herdr_host",
+        "actions", "restored"
+    ]
+
+    function persistNotifications() {
+        if (!notificationStore || !notificationsRestored) {
+            return;
+        }
+        const items = [];
+        const limit = Math.max(1, Number(shellConfig.notificationHistoryLimit || 80));
+        for (let i = 0; i < notificationFeed.length && items.length < limit; i += 1) {
+            const item = notificationFeed[i];
+            if (!item || boolOrFalse(item.transient)) {
+                continue;
+            }
+            const out = {};
+            for (let f = 0; f < notificationPersistedFields.length; f += 1) {
+                const key = notificationPersistedFields[f];
+                if (item[key] !== undefined) {
+                    out[key] = item[key];
+                }
+            }
+            items.push(out);
+        }
+        try {
+            notificationStore.setText(JSON.stringify({ version: 1, saved_at: Date.now(), items: items }));
+        } catch (error) {
+            console.warn("notifications.persist:", error);
+        }
+    }
+
+    // Read the store back on start. Live toasts resume with whatever lifetime
+    // they had left (a toast that would have expired while the shell was down
+    // lands in history as Expired); critical ones never expire. Restored ids
+    // are moved to a high range because the new server hands out ids from 1
+    // again and the feed is keyed by id.
+    function restoreNotifications() {
+        if (notificationsRestored) {
+            return;
+        }
+        let parsed = null;
+        try {
+            const raw = notificationStore ? stringOrEmpty(notificationStore.text()).trim() : "";
+            parsed = raw ? JSON.parse(raw) : null;
+        } catch (error) {
+            console.warn("notifications.restore:", error);
+        }
+        const stored = parsed && Array.isArray(parsed.items) ? parsed.items : [];
+        const now = Date.now();
+        const restored = [];
+        for (let i = 0; i < stored.length; i += 1) {
+            const item = stored[i];
+            if (!item || typeof item !== "object" || !stringOrEmpty(item.summary) && !stringOrEmpty(item.body)) {
+                continue;
+            }
+            const next = Object.assign({}, item, {
+                id: 10000000 + i,
+                restored: true,
+                transient: false
+            });
+            if (!boolOrFalse(next.closed) && boolOrFalse(next.toast_visible)) {
+                const timeout = notificationTimeoutFor(next);
+                const started = Number(next.replayed_at || next.toast_started || next.timestamp) || now;
+                const elapsed = Math.max(0, now - started);
+                if (timeout > 0 && elapsed >= timeout) {
+                    next.closed = true;
+                    next.closed_reason = "Expired";
+                    next.toast_visible = false;
+                } else if (timeout > 0) {
+                    next.timeout_ms = Math.max(1000, timeout - elapsed);
+                    next.replayed_at = now;
+                }
+            }
+            restored.push(next);
+        }
+        const liveIds = {};
+        for (let i = 0; i < notificationFeed.length; i += 1) {
+            liveIds[String(Number(notificationFeed[i] && notificationFeed[i].id))] = true;
+        }
+        const merged = notificationFeed.concat(restored.filter(item => !liveIds[String(item.id)]));
+        notificationsRestored = true;
+        notificationFeed = merged.slice(0, Math.max(1, Number(shellConfig.notificationHistoryLimit || 80)));
+        refreshNotificationState();
+    }
+
+    // Re-show the most recent closed notifications as toasts with a fresh
+    // standard lifetime (Omarchy's history replay). `count` defaults to 3.
+    function replayNotifications(countText) {
+        let count = Number(stringOrEmpty(countText)) || 3;
+        count = Math.max(1, Math.min(10, Math.round(count)));
+        const targetOutput = notificationTargetOutputName();
+        const now = Date.now();
+        let replayed = 0;
+        const next = [];
+        for (let i = 0; i < notificationFeed.length; i += 1) {
+            const item = notificationFeed[i];
+            if (replayed < count && item && boolOrFalse(item.closed) && !boolOrFalse(item.transient)) {
+                next.push(Object.assign({}, item, {
+                    closed: false,
+                    closed_reason: "",
+                    toast_visible: true,
+                    output_name: targetOutput,
+                    timeout_ms: notificationIsCritical(item) ? 0 : Number(shellConfig.notificationDefaultTimeoutMs || 8000),
+                    replayed_at: now
+                }));
+                replayed += 1;
+            } else {
+                next.push(item);
+            }
+        }
+        if (!replayed) {
+            return "nothing to replay";
+        }
+        notificationFeed = next;
+        refreshNotificationState();
+        return "ok: replayed " + replayed;
     }
 
     // Switch to the Herdr pane a notification came from. Prefers the live
@@ -2627,6 +2824,7 @@ ShellRoot {
             toast_visible: !notificationDnd || stringOrEmpty(NotificationUrgency.toString(notification.urgency)).toLowerCase() === "critical",
             timeout_ms: notification.expireTimeout,
             timestamp: Date.now(),
+            toast_started: Date.now(),
             transient: boolOrFalse(notification.transient),
             has_inline_reply: boolOrFalse(notification.hasInlineReply),
             inline_reply_placeholder: stringOrEmpty(notification.inlineReplyPlaceholder),
@@ -2649,6 +2847,18 @@ ShellRoot {
                 identifier: herdrFocusActionId,
                 text: "Switch to pane"
             }].concat(snapshot.actions);
+        }
+
+        // Dedupe: a sender re-posting the same app/summary/body while the
+        // previous copy is still open gets one toast, not a stack of them.
+        const duplicates = notificationFeed.filter(item => item
+            && Number(item.id) !== targetId
+            && !notificationClosed(item)
+            && stringOrEmpty(item.app_name) === snapshot.app_name
+            && stringOrEmpty(item.summary) === snapshot.summary
+            && stringOrEmpty(item.body) === snapshot.body);
+        for (let i = 0; i < duplicates.length; i += 1) {
+            dismissNotification(duplicates[i].id);
         }
 
         replaceNotificationItem(snapshot);
@@ -7468,6 +7678,11 @@ function normalizeLauncherMode(mode) {
                 isOpen: function () { return castPopupVisible; },
                 open: function (payload) { openBarPopup(payload, function () { castPopupVisible = true; }); },
                 close: function () { castPopupVisible = false; }
+            },
+            "lock": {
+                isOpen: function () { return sessionLocked; },
+                open: function () { lockSession(); },
+                close: function () { return "refusing to unlock over IPC; the lock screen takes a password"; }
             }
         };
     }
@@ -7503,8 +7718,8 @@ function normalizeLauncherMode(mode) {
         if (!surface) {
             return "unknown surface: " + stringOrEmpty(id);
         }
-        surface.close();
-        return "ok";
+        const refused = surface.close();
+        return typeof refused === "string" ? refused : "ok";
     }
 
     function toggleSurface(id, payloadJson) {
@@ -7513,8 +7728,8 @@ function normalizeLauncherMode(mode) {
             return "unknown surface: " + stringOrEmpty(id);
         }
         if (surface.isOpen()) {
-            surface.close();
-            return "ok";
+            const refused = surface.close();
+            return typeof refused === "string" ? refused : "ok";
         }
         return summonSurface(id, payloadJson);
     }
@@ -9997,6 +10212,12 @@ function normalizeLauncherMode(mode) {
     }
 
     Windows.OsdWindow {
+        shellRoot: shellRootRef
+        runtimeConfig: shellConfig
+        colors: shellRootRef.colors
+    }
+
+    Windows.LockScreen {
         shellRoot: shellRootRef
         runtimeConfig: shellConfig
         colors: shellRootRef.colors

@@ -143,6 +143,14 @@ let
       ];
     }
     {
+      name = "Session";
+      bindings = [
+        (bind "${mod}+Ctrl+l"
+          (if hasRuntimeShell then "exec lock-session" else "exec swaylock -f")
+          "Lock the session")
+      ];
+    }
+    {
       name = "System";
       bindings = [
         (bind "${mod}+Shift+c" "reload" "Reload sway config")

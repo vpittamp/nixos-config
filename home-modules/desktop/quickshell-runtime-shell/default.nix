@@ -153,6 +153,11 @@ QtObject {
   readonly property bool notificationImagesEnabled: ${if cfg.notifications.enableImages then "true" else "false"}
   readonly property bool notificationMarkupEnabled: ${if cfg.notifications.enableMarkup then "true" else "false"}
   readonly property string hostName: "${hostName}"
+  readonly property string userName: "${config.home.username}"
+  readonly property string notificationStorePath: "${config.xdg.stateHome}/quickshell-runtime-shell/notifications.json"
+  readonly property int idleScreenOffSeconds: ${toString cfg.idle.screenOffSeconds}
+  readonly property int idleLockSeconds: ${toString cfg.idle.lockSeconds}
+  readonly property string lockPamService: "${cfg.lock.pamService}"
   readonly property string i3pmBin: "${config.home.profileDirectory}/bin/i3pm"
   readonly property string herdrBin: "${config.home.profileDirectory}/bin/herdr"
   readonly property string i3pmWatchBin: "${quickshellI3pmWatchScript}/bin/quickshell-i3pm-watch"
@@ -2883,6 +2888,15 @@ USAGE
     fi
   '';
 
+  # Lock through the shell when it is up (themed ext-session-lock + PAM),
+  # swaylock otherwise — a lock request must never be dropped.
+  lockSessionScript = pkgs.writeShellScriptBin "lock-session" ''
+    if out="$(${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell lock 2>/dev/null)" && [ "$out" = "ok" ]; then
+      exit 0
+    fi
+    exec ${pkgs.swaylock}/bin/swaylock -f
+  '';
+
   togglePowerMenuScript = mkIpcScript "toggle-runtime-power-menu" "togglePowerMenu" "";
   toggleKeybindingsHelpScript = mkIpcScript "toggle-keybindings-help" "toggleKeybindings" "";
   toggleLauncherScript = mkIpcScript "toggle-app-launcher" "toggleLauncher" "";
@@ -3068,6 +3082,27 @@ in
       description = "Keybinding(s) used to toggle the runtime shell panel.";
     };
 
+    idle = {
+      screenOffSeconds = lib.mkOption {
+        type = lib.types.ints.unsigned;
+        default = 300;
+        description = "Seconds of inactivity before outputs are powered off (0 disables). Honours app idle inhibitors and pauses while casting.";
+      };
+      lockSeconds = lib.mkOption {
+        type = lib.types.ints.unsigned;
+        default = 600;
+        description = "Seconds of inactivity before the in-shell lock engages (0 disables).";
+      };
+    };
+
+    lock = {
+      pamService = lib.mkOption {
+        type = lib.types.str;
+        default = "swaylock";
+        description = "PAM service (in /etc/pam.d) the lock screen authenticates against. `swaylock` is the plain pam_unix stack the NixOS sway module creates on every host.";
+      };
+    };
+
     notifications = {
       backend = lib.mkOption {
         # SwayNC was retired 2026-07: QuickShell owns org.freedesktop.Notifications
@@ -3128,6 +3163,7 @@ in
       runtimeShellCliScript
       toggleKeybindingsHelpScript
       brightnessKeyScript
+      lockSessionScript
       toggleLauncherScript
       toggleAgentMonitorScript
       toggleSettingsScript
@@ -3179,6 +3215,10 @@ in
     '';
 
     # Link individual files so the config directory stays writable for qmlls.
+    # The notification store lives in XDG state; the placeholder makes sure
+    # the directory exists before the shell's first atomic write.
+    xdg.stateFile."quickshell-runtime-shell/.keep".text = "";
+
     xdg.configFile."quickshell/${cfg.configName}" = {
       source = shellConfigDir;
       recursive = true;
