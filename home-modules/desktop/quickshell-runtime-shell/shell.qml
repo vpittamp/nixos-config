@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Bluetooth
 import Quickshell.I3
 import Quickshell.Io
+import Quickshell.Services.Mpris
 import Quickshell.Services.Notifications
 import Quickshell.Services.Pipewire
 import Quickshell.Services.SystemTray
@@ -37,6 +38,10 @@ ShellRoot {
     readonly property var tailscaleStatusProcess: runtimeServices ? runtimeServices.tailscaleStatusProcessRef : null
     readonly property var tailscaleActionProcess: runtimeServices ? runtimeServices.tailscaleActionProcessRef : null
     readonly property var tailscaleNoticeTimer: runtimeServices ? runtimeServices.tailscaleNoticeTimerRef : null
+    readonly property var reminderListProcess: runtimeServices ? runtimeServices.reminderListProcessRef : null
+    readonly property var reminderActionProcess: runtimeServices ? runtimeServices.reminderActionProcessRef : null
+    readonly property var nightlightStatusProcess: runtimeServices ? runtimeServices.nightlightStatusProcessRef : null
+    readonly property var nightlightActionProcess: runtimeServices ? runtimeServices.nightlightActionProcessRef : null
     readonly property var notificationPersistTimer: runtimeServices ? runtimeServices.notificationPersistTimerRef : null
     readonly property var launcherQueryDebounce: runtimeServices ? runtimeServices.launcherQueryDebounceRef : null
     readonly property var launcherSessionSwitcherOpenTimer: runtimeServices ? runtimeServices.launcherSessionSwitcherOpenTimerRef : null
@@ -261,6 +266,157 @@ ShellRoot {
     property bool castPopupVisible: false
     property bool agentsPopupVisible: false
     property bool tailscalePopupVisible: false
+    property bool clockPopupVisible: false
+
+    // ----- Calendar / reminders (clock popup) -----
+    property var calendarMonth: new Date()
+    property var reminders: []
+
+    function calendarShift(months) {
+        const next = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + months, 1);
+        calendarMonth = next;
+    }
+
+    function calendarToday() {
+        calendarMonth = new Date();
+    }
+
+    function calendarTitle() {
+        return Qt.formatDate(calendarMonth, "MMMM yyyy");
+    }
+
+    function openClockPopup(outputName) {
+        closeBarPopups();
+        barPopupOutputName = stringOrEmpty(outputName) || focusedOutputName();
+        calendarToday();
+        refreshReminders();
+        clockPopupVisible = true;
+    }
+
+    function parseReminders(text) {
+        try {
+            const parsed = JSON.parse(stringOrEmpty(text).trim() || "[]");
+            reminders = Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            reminders = [];
+        }
+    }
+
+    function refreshReminders() {
+        if (reminderListProcess && !reminderListProcess.running) {
+            reminderListProcess.running = true;
+        }
+    }
+
+    // "30 Check the oven" / "in 30m check the oven" / "45" → minutes + message.
+    function addReminder(text) {
+        const raw = stringOrEmpty(text).trim().replace(/^in\s+/i, "");
+        const match = raw.match(/^(\d+)\s*(m|min|mins|minutes|h|hr|hours)?\s*(.*)$/i);
+        if (!match) {
+            return "say e.g. \"30 check the oven\"";
+        }
+        let minutes = Number(match[1]);
+        if (/^h/i.test(stringOrEmpty(match[2]))) {
+            minutes *= 60;
+        }
+        if (!(minutes >= 1)) {
+            return "minutes must be at least 1";
+        }
+        const message = stringOrEmpty(match[3]) || "Reminder";
+        if (!reminderActionProcess || reminderActionProcess.running) {
+            return "busy";
+        }
+        reminderActionProcess.command = [shellConfig.reminderBin, String(minutes), message];
+        reminderActionProcess.running = true;
+        return "ok";
+    }
+
+    function clearReminders() {
+        if (!reminderActionProcess || reminderActionProcess.running) {
+            return;
+        }
+        reminderActionProcess.command = [shellConfig.reminderBin, "clear"];
+        reminderActionProcess.running = true;
+    }
+
+    function reminderDueText(item) {
+        const remaining = Number(item && item.remaining) || 0;
+        if (remaining < 60) return "under a minute";
+        const minutes = Math.round(remaining / 60);
+        if (minutes < 60) return "in " + minutes + "m";
+        return "in " + Math.floor(minutes / 60) + "h " + (minutes % 60) + "m";
+    }
+
+    // ----- Night light -----
+    property bool nightlightActive: false
+
+    function refreshNightlight() {
+        if (nightlightStatusProcess && !nightlightStatusProcess.running) {
+            nightlightStatusProcess.running = true;
+        }
+    }
+
+    function toggleNightlight() {
+        if (!nightlightActionProcess || nightlightActionProcess.running) {
+            return "busy";
+        }
+        nightlightActionProcess.command = [shellConfig.nightlightBin, "toggle"];
+        nightlightActionProcess.running = true;
+        showOsd("scale", nightlightActive ? 0 : 100, false, nightlightActive ? "Night light off" : "Night light on");
+        return "ok";
+    }
+
+    // ----- Media (MPRIS) -----
+    // The chip follows the playing player, else the first one; hidden when
+    // nothing publishes MPRIS.
+    readonly property var mprisPlayers: Mpris.players ? Mpris.players.values : []
+
+    function mprisPlayer() {
+        const players = arrayOrEmpty(mprisPlayers);
+        for (let i = 0; i < players.length; i += 1) {
+            if (players[i] && players[i].playbackState === MprisPlaybackState.Playing) {
+                return players[i];
+            }
+        }
+        return players.length ? players[0] : null;
+    }
+
+    // A player with nothing loaded (a Chrome tab that once played) is noise.
+    function mprisAvailable() {
+        const player = mprisPlayer();
+        return !!(player && (player.playbackState === MprisPlaybackState.Playing || stringOrEmpty(player.trackTitle)));
+    }
+
+    function mprisPlaying() {
+        const player = mprisPlayer();
+        return !!(player && player.playbackState === MprisPlaybackState.Playing);
+    }
+
+    function mprisTitle() {
+        const player = mprisPlayer();
+        if (!player) return "";
+        const title = stringOrEmpty(player.trackTitle);
+        const artist = stringOrEmpty(player.trackArtist);
+        const text = title ? (artist ? artist + " — " + title : title) : stringOrEmpty(player.identity);
+        return text.length > 34 ? text.slice(0, 33) + "…" : text;
+    }
+
+    function mprisToggle() {
+        const player = mprisPlayer();
+        if (!player || !player.canTogglePlaying) return "no player";
+        player.togglePlaying();
+        return "ok";
+    }
+
+    function mprisNext() {
+        const player = mprisPlayer();
+        if (player && player.canGoNext) player.next();
+    }
+
+    function mprisPrevious() {
+        const player = mprisPlayer();
+        if (player && player.canGoPrevious) player.previous();
+    }
 
     // ----- Tailscale -----
     // Fed by quickshell-tailscale-status every 30s (and after every action);
@@ -2472,6 +2628,7 @@ ShellRoot {
         castPopupVisible = false;
         agentsPopupVisible = false;
         tailscalePopupVisible = false;
+        clockPopupVisible = false;
         displaySelectorVisible = false;
         displaySelectorOutputName = "";
     }
@@ -2481,7 +2638,7 @@ ShellRoot {
     // use barPopupOutputName; the display selector tracks its own output.
     function anyBarPopupOpenOnOutput(outputName) {
         const o = stringOrEmpty(outputName);
-        if ((audioPopupVisible || bluetoothPopupVisible || powerMenuVisible || castPopupVisible || agentsPopupVisible || tailscalePopupVisible)
+        if ((audioPopupVisible || bluetoothPopupVisible || powerMenuVisible || castPopupVisible || agentsPopupVisible || tailscalePopupVisible || clockPopupVisible)
             && stringOrEmpty(barPopupOutputName) === o) {
             return true;
         }
@@ -8150,6 +8307,11 @@ function normalizeLauncherMode(mode) {
                 isOpen: function () { return castPopupVisible; },
                 open: function (payload) { openBarPopup(payload, function () { castPopupVisible = true; }); },
                 close: function () { castPopupVisible = false; }
+            },
+            "calendar": {
+                isOpen: function () { return clockPopupVisible; },
+                open: function (payload) { openClockPopup(output(payload)); },
+                close: function () { clockPopupVisible = false; }
             },
             "tailscale": {
                 isOpen: function () { return tailscalePopupVisible; },

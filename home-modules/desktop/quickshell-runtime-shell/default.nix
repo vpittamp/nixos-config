@@ -285,6 +285,8 @@ QtObject {
   readonly property string themeStatePath: "${themeStatePath}"
   readonly property string themeSetBin: "${runtimeThemeScript}/bin/runtime-theme"
   readonly property string hookBin: "${runtimeHookScript}/bin/runtime-hook"
+  readonly property string reminderBin: "${runtimeReminderScript}/bin/runtime-reminder"
+  readonly property string nightlightBin: "${nightlightScript}/bin/quickshell-nightlight"
   readonly property string tailscaleStatusBin: "${tailscaleStatusScript}/bin/quickshell-tailscale-status"
   readonly property string tailscaleActionBin: "${tailscaleActionScript}/bin/quickshell-tailscale-action"
   readonly property var agentUsageAgents: ${builtins.toJSON agentUsageAgents}
@@ -3032,6 +3034,7 @@ USAGE
   agentUsageCollectors = map agentUsageCollector agentUsageAgents;
   agentUsageUpdateScript = pkgs.writeShellScriptBin "quickshell-agent-usage-update" ''
     set -uo pipefail
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils ]}:"''${PATH:-}"
     usage_dir="${agentUsageDir}"
     mkdir -p "$usage_dir"
     pids=()
@@ -3059,6 +3062,75 @@ USAGE
     exit $status
   '';
 
+  # ---- Reminders --------------------------------------------------------
+  # Lightweight reminders as transient systemd user timers: nothing to run,
+  # nothing to persist, and `systemctl --user list-timers` is the truth.
+  runtimeReminderScript = pkgs.writeShellScriptBin "runtime-reminder" ''
+    set -uo pipefail
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils ]}:"''${PATH:-}"
+    jq=${pkgs.jq}/bin/jq
+    sc=${pkgs.systemd}/bin/systemctl
+    usage() { echo "usage: runtime-reminder <minutes> [message] | show [--json] | clear" >&2; exit 2; }
+    cmd="''${1:-}"
+    case "$cmd" in
+      show)
+        now=$(date +%s)
+        "$sc" --user list-timers --all --output=json 'runtime-reminder-*.timer' 2>/dev/null \
+          | "$jq" -r --argjson now "$now" '[.[] | select(.next != null and (.next / 1000000) > $now)
+              | {unit: .unit, due: (.next / 1000000 | floor)}]' \
+          | while IFS= read -r line; do printf '%s' "$line"; done | "$jq" -c '.' | {
+              read -r timers
+              # attach the message (the service description systemd-run stored)
+              out="[]"
+              for unit in $(printf '%s' "$timers" | "$jq" -r '.[].unit'); do
+                svc="''${unit%.timer}.service"
+                msg="$("$sc" --user show -p Description --value "$svc" 2>/dev/null)"
+                due="$(printf '%s' "$timers" | "$jq" -r --arg u "$unit" '.[] | select(.unit == $u) | .due')"
+                out="$(printf '%s' "$out" | "$jq" -c --arg u "$unit" --arg m "$msg" --argjson d "$due" --argjson now "$now" '. + [{unit: $u, message: $m, due: $d, remaining: ($d - $now)}]')"
+              done
+              if [ "''${2:-}" = "--json" ]; then printf '%s\n' "$out"; else
+                printf '%s' "$out" | "$jq" -r '.[] | "\(.remaining / 60 | floor)m  \(.message)"'
+              fi
+            }
+        ;;
+      clear)
+        "$sc" --user stop 'runtime-reminder-*.timer' 2>/dev/null || true
+        echo "reminders cleared"
+        ;;
+      ""|-h|--help) usage ;;
+      *)
+        minutes="$cmd"
+        case "$minutes" in ""|*[!0-9]*) usage ;; esac
+        [ "$minutes" -ge 1 ] || usage
+        shift
+        message="''${*:-Reminder}"
+        unit="runtime-reminder-$(date +%s%N)"
+        ${pkgs.systemd}/bin/systemd-run --user --quiet --unit="$unit" --description="$message" \
+          --on-active="''${minutes}min" --timer-property=AccuracySec=1s \
+          ${pkgs.libnotify}/bin/notify-send -a Reminder -u critical "Reminder" "$message"
+        echo "reminder in ''${minutes}m: $message"
+        ;;
+    esac
+  '';
+
+  # ---- Night light --------------------------------------------------------
+  nightlightScript = pkgs.writeShellScriptBin "quickshell-nightlight" ''
+    set -u
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils ]}:"''${PATH:-}"
+    sc=${pkgs.systemd}/bin/systemctl
+    state() { "$sc" --user is-active wlsunset.service 2>/dev/null | grep -q '^active$' && echo on || echo off; }
+    case "''${1:-status}" in
+      on) "$sc" --user start wlsunset.service ;;
+      off) "$sc" --user stop wlsunset.service ;;
+      toggle) if [ "$(state)" = on ]; then "$sc" --user stop wlsunset.service; else "$sc" --user start wlsunset.service; fi ;;
+      status) ;;
+      *) echo "usage: quickshell-nightlight on|off|toggle|status" >&2; exit 2 ;;
+    esac
+    s="$(state)"
+    echo "$s"
+    [ "''${1:-status}" = status ] || ${runtimeHookScript}/bin/runtime-hook nightlight "$s"
+  '';
+
   # ---- Hooks ----------------------------------------------------------
   # `runtime-hook <event> [args]` runs ~/.config/quickshell-runtime-shell/
   # hooks/<event> and every file in hooks/<event>.d/ (skipping *.sample), so
@@ -3070,6 +3142,7 @@ USAGE
   hooksDir = "${config.xdg.configHome}/quickshell-runtime-shell/hooks";
   runtimeHookScript = pkgs.writeShellScriptBin "runtime-hook" ''
     set -u
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils ]}:"''${PATH:-}"
     hooks="${hooksDir}"
     name="''${1:-}"
     if [ -z "$name" ]; then
@@ -3098,6 +3171,7 @@ USAGE
   # method travels in the prompt.
   crashDiagnoseScript = pkgs.writeShellScriptBin "quickshell-crash-diagnose" ''
     set -uo pipefail
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils ]}:"''${PATH:-}"
     pid="''${1:?usage: quickshell-crash-diagnose <pid> [comm] [exe] [signal] [--print]}"
     comm="''${2:-unknown}"; exe="''${3:-unknown}"; signal="''${4:-unknown}"
     print_only=0; case "''${5:-}" in --print) print_only=1 ;; esac
@@ -3214,6 +3288,7 @@ PYEOF
   '';
   tailscaleActionScript = pkgs.writeShellScriptBin "quickshell-tailscale-action" ''
     set -uo pipefail
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils ]}:"''${PATH:-}"
     ts=${pkgs.tailscale}/bin/tailscale
     cmd="''${1:-}"; shift || true
     case "$cmd" in
@@ -3231,6 +3306,7 @@ PYEOF
   # Ctrl+Shift+, (reload_config) — Ghostty has no reload signal.
   runtimeThemeScript = pkgs.writeShellScriptBin "runtime-theme" ''
     set -euo pipefail
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils ]}:"''${PATH:-}"
     themes=${themesJson}
     state=${themeStatePath}
     ghostty_theme="''${XDG_CONFIG_HOME:-$HOME/.config}/ghostty/theme.conf"
@@ -3555,6 +3631,13 @@ in
       };
     };
 
+    nightlight = {
+      lowTemp = lib.mkOption { type = lib.types.int; default = 4000; description = "wlsunset night colour temperature (K)."; };
+      highTemp = lib.mkOption { type = lib.types.int; default = 6500; description = "wlsunset day colour temperature (K)."; };
+      sunrise = lib.mkOption { type = lib.types.str; default = "07:00"; description = "wlsunset fixed sunrise (HH:MM)."; };
+      sunset = lib.mkOption { type = lib.types.str; default = "19:30"; description = "wlsunset fixed sunset (HH:MM)."; };
+    };
+
     lock = {
       pamService = lib.mkOption {
         type = lib.types.str;
@@ -3626,6 +3709,8 @@ in
       lockSessionScript
       runtimeThemeScript
       runtimeHookScript
+      runtimeReminderScript
+      nightlightScript
       crashDiagnoseScript
       crashWatchScript
       tailscaleStatusScript
@@ -3701,6 +3786,20 @@ in
         TimeoutStartSec = "180s";
       };
     };
+    # Night light: started/stopped by quickshell-nightlight (Displays popup),
+    # never enabled on its own.
+    systemd.user.services.wlsunset = {
+      Unit = {
+        Description = "Night light (wlsunset)";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
+      Service = {
+        ExecStart = "${pkgs.wlsunset}/bin/wlsunset -t ${toString cfg.nightlight.lowTemp} -T ${toString cfg.nightlight.highTemp} -S ${cfg.nightlight.sunrise} -s ${cfg.nightlight.sunset}";
+        Restart = "on-failure";
+      };
+    };
+
     # Coredump watcher: critical toast with a "Diagnose with Claude" action.
     systemd.user.services.quickshell-crash-watch = {
       Unit = {

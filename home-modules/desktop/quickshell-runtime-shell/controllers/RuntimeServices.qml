@@ -26,6 +26,10 @@ Item {
     property alias tailscaleStatusProcessRef: tailscaleStatusProcess
     property alias tailscaleActionProcessRef: tailscaleActionProcess
     property alias tailscaleNoticeTimerRef: tailscaleNoticeTimer
+    property alias reminderListProcessRef: reminderListProcess
+    property alias reminderActionProcessRef: reminderActionProcess
+    property alias nightlightStatusProcessRef: nightlightStatusProcess
+    property alias nightlightActionProcessRef: nightlightActionProcess
     property alias notificationPersistTimerRef: notificationPersistTimer
     property alias launcherQueryDebounceRef: launcherQueryDebounce
     property alias launcherSessionSwitcherOpenTimerRef: launcherSessionSwitcherOpenTimer
@@ -454,6 +458,50 @@ Item {
         onExited: function () {
             shellRoot.agentUsageRefreshing = false;
         }
+    }
+
+    // ----- Reminders / night light -----
+    Process {
+        id: reminderListProcess
+        command: [runtimeConfig.reminderBin, "show", "--json"]
+        stdout: StdioCollector {
+            onStreamFinished: shellRoot.parseReminders(text)
+        }
+    }
+
+    Process {
+        id: reminderActionProcess
+        onExited: shellRoot.refreshReminders()
+    }
+
+    Timer {
+        interval: 60000
+        running: shellRoot.clockPopupVisible
+        repeat: true
+        onTriggered: shellRoot.refreshReminders()
+    }
+
+    Process {
+        id: nightlightStatusProcess
+        command: [runtimeConfig.nightlightBin, "status"]
+        stdout: StdioCollector {
+            onStreamFinished: shellRoot.nightlightActive = text.trim() === "on"
+        }
+    }
+
+    Process {
+        id: nightlightActionProcess
+        stdout: StdioCollector {
+            onStreamFinished: shellRoot.nightlightActive = text.trim() === "on"
+        }
+    }
+
+    Timer {
+        interval: 120000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: shellRoot.refreshNightlight()
     }
 
     // ----- Tailscale -----
@@ -1426,6 +1474,27 @@ Item {
         function refreshTailscale(): string {
             shellRoot.refreshTailscale();
             return "ok";
+        }
+
+        function toggleNightlight(): string {
+            return shellRoot.toggleNightlight();
+        }
+
+        function refreshReminders(): string {
+            shellRoot.refreshReminders();
+            return "ok";
+        }
+
+        function listReminders(): string {
+            return JSON.stringify(shellRoot.reminders);
+        }
+
+        function addReminder(spec: string): string {
+            return shellRoot.addReminder(spec);
+        }
+
+        function mediaToggle(): string {
+            return shellRoot.mprisToggle();
         }
 
         function nextAgentUsage(): string {

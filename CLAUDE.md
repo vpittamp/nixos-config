@@ -134,6 +134,20 @@ the chip copies this host's IP. `tailscale set` runs without sudo because
 `services.tailscale.extraSetFlags` carries `--operator=vpittamp`.
 `runtime-shell summon tailscale`.
 
+**Clock popup** (click the clock; `runtime-shell summon calendar`): month
+grid and reminders. `runtime-reminder <minutes> [message] | show | clear` —
+transient `systemd-run --user` timers that post a critical toast; the panel
+takes "30 check the oven" and lists what's pending.
+
+**Night light**: `quickshell-nightlight on|off|toggle|status` starts/stops a
+`wlsunset` user service (fixed schedule, `programs.quickshell-runtime-shell.nightlight.*`);
+toggle in the Displays popup. **Media chip** (left cluster, MPRIS): shows
+when something is playing or has a title; click play/pause, scroll tracks.
+**Tight bar**: right-cluster chips shed in priority order (disk, mem, gen,
+displays, health, moonlight, tailscale) until the centre block fits.
+Scripts the shell spawns get no PATH from the service — every runtime
+script exports its own coreutils PATH; do the same for new ones.
+
 **Lock + idle** are in-shell: `Mod+Ctrl+L` / power menu *Lock* /
 `lock-session` engage `windows/LockScreen.qml` (ext-session-lock + PAM
 `swaylock` service); `lock-session` falls back to swaylock if the shell is

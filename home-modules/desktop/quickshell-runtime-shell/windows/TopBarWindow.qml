@@ -362,6 +362,54 @@ PanelWindow {
                         }
                     }
                 }
+
+                // Now playing (MPRIS): click play/pause, scroll next/previous.
+                Rectangle {
+                    id: mediaChip
+                    visible: root.mprisAvailable()
+                    radius: root.radiusControl
+                    color: root.neutralChipFill(mediaMouse.containsMouse)
+                    border.color: root.mprisPlaying() ? colors.tealBg : root.neutralChipBorder(mediaMouse.containsMouse)
+                    border.width: 1
+                    implicitWidth: Math.min(mediaRow.implicitWidth + 18, Theme.fs(220))
+                    Layout.fillHeight: true
+                    clip: true
+
+                    RowLayout {
+                        id: mediaRow
+                        anchors.centerIn: parent
+                        spacing: 6
+
+                        Text {
+                            Layout.alignment: Qt.AlignVCenter
+                            text: root.mprisPlaying() ? "󰏤" : "󰐊"
+                            color: root.mprisPlaying() ? colors.teal : root.neutralChipText(mediaMouse.containsMouse)
+                            font.family: Theme.glyphFamily
+                            font.pixelSize: Theme.fs(12)
+                        }
+
+                        Text {
+                            font.family: Theme.fontFamily
+                            Layout.alignment: Qt.AlignVCenter
+                            text: root.mprisTitle()
+                            color: root.neutralChipText(mediaMouse.containsMouse)
+                            font.pixelSize: root.fontLabel
+                            elide: Text.ElideRight
+                            Layout.maximumWidth: Theme.fs(180)
+                        }
+                    }
+
+                    MouseArea {
+                        id: mediaMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.mprisToggle()
+                        onWheel: function (wheel) {
+                            if (wheel.angleDelta.y < 0) root.mprisNext(); else root.mprisPrevious();
+                        }
+                    }
+                }
             }
 
             Rectangle {
@@ -438,9 +486,22 @@ PanelWindow {
                         Layout.alignment: Qt.AlignVCenter
                         id: clockLabel
                         text: root.topBarTimeText()
-                        color: colors.text
+                        color: root.clockPopupVisible ? colors.blue : colors.text
                         font.pixelSize: root.fontLabel
                         font.weight: Font.DemiBold
+
+                        MouseArea {
+                            anchors.fill: parent
+                            anchors.margins: -4
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (root.clockPopupVisible) {
+                                    root.clockPopupVisible = false;
+                                    return;
+                                }
+                                root.openClockPopup(topBarWindow.topOutputName);
+                            }
+                        }
                     }
                 }
             }
@@ -1349,6 +1410,49 @@ PanelWindow {
                     }
                 }
 
+                // Night light (wlsunset): warm at night on a fixed schedule.
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: Theme.fs(26)
+                        radius: Theme.rad(8)
+                        color: root.nightlightActive ? colors.amberBg : colors.cardAlt
+                        border.color: root.nightlightActive ? colors.amber : colors.border
+                        border.width: 1
+
+                        RowLayout {
+                            anchors.centerIn: parent
+                            spacing: 5
+
+                            Text {
+                                text: "󰖔"
+                                color: root.nightlightActive ? colors.amber : colors.muted
+                                font.family: Theme.glyphFamily
+                                font.pixelSize: Theme.fs(11)
+                            }
+
+                            Text {
+                                id: nightlightLabel
+                                font.family: Theme.fontFamily
+                                text: "Night light"
+                                color: root.nightlightActive ? colors.amber : colors.textDim
+                                font.pixelSize: Theme.fs(9)
+                                font.weight: Font.DemiBold
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.toggleNightlight()
+                        }
+                    }
+
+                }
+
                 // Quick configuration presets (role-based, resolved by EDID).
                 Flow {
                     Layout.fillWidth: true
@@ -2066,6 +2170,272 @@ PanelWindow {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: root.triggerPowerAction(modelData.command)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ----- Calendar / reminders panel (clock) -----
+    PopupWindow {
+        visible: root.clockPopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName
+        color: "transparent"
+        implicitWidth: 340
+        implicitHeight: calendarCard.implicitHeight + 16
+        anchor.window: topBarWindow
+        anchor.item: centerCluster
+        anchor.edges: Edges.Bottom
+        anchor.gravity: Edges.Bottom
+        anchor.margins.top: 6
+
+        Rectangle {
+            id: calendarCard
+            implicitWidth: 340
+            implicitHeight: calendarColumn.implicitHeight + 24
+            radius: Theme.rad(12)
+            color: colors.panel
+            border.color: colors.borderStrong
+            border.width: 1
+
+            ColumnLayout {
+                id: calendarColumn
+                anchors.fill: parent
+                anchors.margins: 12
+                spacing: 10
+
+                // Today, large.
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 0
+
+                    Text {
+                        font.family: Theme.fontFamily
+                        text: root.clock && root.clock.date ? Qt.formatDateTime(root.clock.date, "h:mm AP") : ""
+                        color: colors.text
+                        font.pixelSize: Theme.fs(26)
+                        font.weight: Font.Light
+                    }
+
+                    Text {
+                        font.family: Theme.fontFamily
+                        text: root.clock && root.clock.date ? Qt.formatDate(root.clock.date, "dddd, MMMM d, yyyy") : ""
+                        color: colors.muted
+                        font.pixelSize: Theme.fs(10)
+                    }
+                }
+
+                // Month navigation.
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    Text {
+                        font.family: Theme.fontFamily
+                        text: root.calendarTitle()
+                        color: colors.text
+                        font.pixelSize: Theme.fs(11)
+                        font.weight: Font.DemiBold
+                        Layout.fillWidth: true
+                    }
+
+                    Repeater {
+                        model: [
+                            { label: "‹", action: function () { root.calendarShift(-1); } },
+                            { label: "Today", action: function () { root.calendarToday(); } },
+                            { label: "›", action: function () { root.calendarShift(1); } }
+                        ]
+
+                        delegate: Rectangle {
+                            required property var modelData
+                            radius: Theme.rad(6)
+                            color: navMouse.containsMouse ? colors.cardAlt : "transparent"
+                            border.color: colors.border
+                            border.width: 1
+                            implicitWidth: navLabel.implicitWidth + 14
+                            implicitHeight: Theme.fs(20)
+
+                            Text {
+                                id: navLabel
+                                font.family: Theme.fontFamily
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                color: colors.textDim
+                                font.pixelSize: Theme.fs(9)
+                                font.weight: Font.DemiBold
+                            }
+
+                            MouseArea {
+                                id: navMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: modelData.action()
+                            }
+                        }
+                    }
+                }
+
+                DayOfWeekRow {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Theme.fs(16)
+                    locale: Qt.locale()
+                    delegate: Text {
+                        required property var model
+                        font.family: Theme.fontFamily
+                        text: model.shortName
+                        color: colors.subtle
+                        font.pixelSize: Theme.fs(9)
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                }
+
+                MonthGrid {
+                    id: monthGrid
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Theme.fs(22) * 6
+                    month: root.calendarMonth.getMonth()
+                    year: root.calendarMonth.getFullYear()
+                    locale: Qt.locale()
+                    spacing: 0
+
+                    delegate: Item {
+                        required property var model
+                        implicitHeight: Theme.fs(22)
+
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: Theme.fs(20)
+                            height: Theme.fs(20)
+                            radius: width / 2
+                            color: model.today ? colors.blue : "transparent"
+                        }
+
+                        Text {
+                            font.family: Theme.fontFamily
+                            anchors.centerIn: parent
+                            text: model.day
+                            color: model.today ? colors.bg : (model.month === monthGrid.month ? colors.text : colors.subtle)
+                            opacity: model.month === monthGrid.month ? 1 : 0.5
+                            font.pixelSize: Theme.fs(10)
+                            font.weight: model.today ? Font.Bold : Font.Normal
+                        }
+                    }
+                }
+
+                Rectangle { Layout.fillWidth: true; height: 1; color: colors.lineSoft }
+
+                // Reminders: transient systemd timers that post a critical toast.
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        Text {
+                            font.family: Theme.fontFamily
+                            text: "Reminders"
+                            color: colors.subtle
+                            font.pixelSize: Theme.fs(9)
+                            font.weight: Font.DemiBold
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            font.family: Theme.fontFamily
+                            visible: root.reminders.length > 0
+                            text: "clear all"
+                            color: clearMouse.containsMouse ? colors.red : colors.subtle
+                            font.pixelSize: Theme.fs(9)
+
+                            MouseArea {
+                                id: clearMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.clearReminders()
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: Theme.fs(28)
+                        radius: Theme.rad(8)
+                        color: colors.cardAlt
+                        border.color: reminderField.activeFocus ? colors.blue : colors.border
+                        border.width: 1
+
+                        TextInput {
+                            id: reminderField
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 10
+                            verticalAlignment: TextInput.AlignVCenter
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fs(10)
+                            color: colors.text
+                            clip: true
+                            onAccepted: {
+                                const result = root.addReminder(text);
+                                if (result === "ok") {
+                                    text = "";
+                                    reminderHint.text = "";
+                                } else {
+                                    reminderHint.text = result;
+                                }
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: !reminderField.text.length
+                                font.family: Theme.fontFamily
+                                text: "30 check the oven  ·  Enter"
+                                color: colors.subtle
+                                font.pixelSize: Theme.fs(10)
+                            }
+                        }
+                    }
+
+                    Text {
+                        id: reminderHint
+                        font.family: Theme.fontFamily
+                        visible: text.length > 0
+                        color: colors.amber
+                        font.pixelSize: Theme.fs(9)
+                    }
+
+                    Repeater {
+                        model: root.reminders
+
+                        delegate: RowLayout {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Text {
+                                text: "󰢌"
+                                color: colors.amber
+                                font.family: Theme.glyphFamily
+                                font.pixelSize: Theme.fs(11)
+                            }
+
+                            Text {
+                                font.family: Theme.fontFamily
+                                text: modelData.message
+                                color: colors.textDim
+                                font.pixelSize: Theme.fs(10)
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+
+                            Text {
+                                font.family: Theme.fontFamily
+                                text: root.reminderDueText(modelData)
+                                color: colors.subtle
+                                font.pixelSize: Theme.fs(9)
+                            }
                         }
                     }
                 }
