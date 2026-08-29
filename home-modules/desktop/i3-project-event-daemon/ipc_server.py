@@ -3574,6 +3574,7 @@ class IPCServer:
                 "hidden": binding_state == "scratchpad_hidden",
                 "visible": binding_state != "scratchpad_hidden",
                 "floating": bool(tracked_window.get("floating", False)),
+                "last_focus_at": float(tracked_window.get("last_focus_at") or 0.0),
                 "execution_mode": str(tracked_window.get("execution_mode") or "").strip(),
                 "connection_key": str(tracked_window.get("connection_key") or "").strip(),
                 "context_key": str(tracked_window.get("context_key") or "").strip(),
@@ -5081,6 +5082,29 @@ class IPCServer:
         return runtime_snapshot, sessions, {}
 
     @staticmethod
+    def _window_last_focus_epoch(window_info: Any) -> float:
+        """Epoch seconds of a tracked window's last window::focus, or 0.0.
+
+        Exported as `last_focus_at` so every surface shares one persistent
+        focus-recency order (the app switcher's MRU ring, the exposé's
+        per-monitor ordering, "toggle last window") instead of each keeping a
+        volatile in-memory sequence that resets whenever the shell restarts.
+        """
+        raw = getattr(window_info, "last_focus", None)
+        if raw is None:
+            return 0.0
+        timestamp = getattr(raw, "timestamp", None)
+        if callable(timestamp):
+            try:
+                return float(timestamp())
+            except (TypeError, ValueError, OverflowError, OSError):
+                return 0.0
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
     def _focused_herdr_host_for_app(app_name: Any) -> Optional[str]:
         """Map a focused window's registry app name to a herdr instance token.
 
@@ -5708,6 +5732,7 @@ class IPCServer:
                 {
                     "window_id": window_id,
                     "con_id": int(getattr(window_info, "con_id", 0) or 0),
+                    "last_focus_at": self._window_last_focus_epoch(window_info),
                     "project": str(visible_window.get("project") or getattr(window_info, "project", "") or ""),
                     "scope": scope,
                     "workspace": str(

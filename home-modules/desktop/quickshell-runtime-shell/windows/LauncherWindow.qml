@@ -100,7 +100,7 @@ PanelWindow {
                     spacing: 8
 
                     Repeater {
-                        model: root.launcherModesModel
+                        model: root.launcherVisibleModesModel
 
                         delegate: Rectangle {
                             required property var modelData
@@ -300,7 +300,7 @@ PanelWindow {
                             }
                             break;
                         case Qt.Key_W:
-                            if (root.launcherMode === "windows" && (event.modifiers & Qt.ControlModifier)) {
+                            if ((root.launcherMode === "windows" || root.launcherMode === "running") && (event.modifiers & Qt.ControlModifier)) {
                                 root.activateSelectedLauncherEntry("close");
                                 event.accepted = true;
                             }
@@ -324,6 +324,9 @@ PanelWindow {
                         case Qt.Key_AltGr:
                             if (root.launcherMode === "windows" && root.launcherWindowSwitcherActive) {
                                 root.commitLauncherWindowSwitch();
+                                event.accepted = true;
+                            } else if (root.launcherMode === "running" && root.launcherRunningSwitcherActive) {
+                                root.commitLauncherRunningSwitch();
                                 event.accepted = true;
                             }
                             break;

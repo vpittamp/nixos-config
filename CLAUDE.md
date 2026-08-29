@@ -33,7 +33,10 @@ home-modules/       # User environment
 | `Mod+Shift+M` | Toggle dock mode (overlay ↔ docked) |
 | `Win+C/G/Y` | VS Code / Lazygit / Yazi (global, open in $HOME) |
 | `CapsLock` (M1) / `Ctrl+0` | Workspace mode |
-| `Mod+Tab` | Workspace overview |
+| `Mod+Tab` | AI session switcher (hold Super, Tab steps, release commits) |
+| `Alt+Tab` | Running-app switcher, MRU, one entry per app (hold Alt, release commits) |
+| `Alt+Ctrl+Tab` / 3-finger swipe ↑ | Window exposé grouped by monitor |
+| `Mod+grave` / `Mod+Escape` | Cycle focused app's windows / toggle last window (no UI) |
 | `Mod+Shift+D` | Cast toggle — TV as wireless display / stop |
 
 ## Walker/Elephant Launcher

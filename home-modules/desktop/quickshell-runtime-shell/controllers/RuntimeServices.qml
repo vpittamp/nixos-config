@@ -22,6 +22,7 @@ Item {
     property alias launcherQueryDebounceRef: launcherQueryDebounce
     property alias launcherSessionSwitcherOpenTimerRef: launcherSessionSwitcherOpenTimer
     property alias launcherWindowSwitcherOpenTimerRef: launcherWindowSwitcherOpenTimer
+    property alias launcherRunningSwitcherOpenTimerRef: launcherRunningSwitcherOpenTimer
     property alias exposeFocusTimerRef: exposeFocusTimer
     property alias exposeOpenTimerRef: exposeOpenTimer
     property alias exposeRefreshTimerRef: exposeRefreshTimer
@@ -412,6 +413,13 @@ Item {
         interval: 0
         repeat: false
         onTriggered: shellRoot.finalizeLauncherWindowSwitcherOpen()
+    }
+
+    Timer {
+        id: launcherRunningSwitcherOpenTimer
+        interval: 0
+        repeat: false
+        onTriggered: shellRoot.finalizeLauncherRunningSwitcherOpen()
     }
 
     Timer {
@@ -1272,6 +1280,42 @@ Item {
 
         function commitLauncherWindow() {
             shellRoot.commitExposeSwitch();
+        }
+
+        // Alt+Tab: MRU ring of RUNNING APPS (one entry per app), launcher-style.
+        function nextLauncherRunning() {
+            shellRoot.cycleLauncherRunning("next");
+        }
+
+        function prevLauncherRunning() {
+            shellRoot.cycleLauncherRunning("prev");
+        }
+
+        function commitLauncherRunning() {
+            shellRoot.commitLauncherRunningSwitch();
+        }
+
+        // Bound to sway's `--release Alt_L`: commits whichever Alt-held window
+        // switcher is open (running-app ring or exposé). A no-op otherwise, so
+        // firing on every Alt release is harmless.
+        function commitWindowSwitch() {
+            shellRoot.commitLauncherRunningSwitch();
+            shellRoot.commitLauncherWindowSwitch();
+            shellRoot.commitExposeSwitch();
+        }
+
+        // Silent (no UI) window actions, the window twins of nextSession /
+        // focusLastSession.
+        function nextAppWindow() {
+            shellRoot.cycleFocusedAppWindows("next");
+        }
+
+        function prevAppWindow() {
+            shellRoot.cycleFocusedAppWindows("prev");
+        }
+
+        function focusLastWindow() {
+            shellRoot.focusLastWindow();
         }
 
         function openWindowSwitcher() {
