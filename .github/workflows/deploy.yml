@@ -1,8 +1,12 @@
 # Cachix Deploy - Automated NixOS Deployments
 #
 # This workflow builds NixOS configurations for thinkpad, ryzen, surface, and
-# surface-pro3, pushes them to Cachix, and triggers deployment to agents.
-# surface-pro3 is build+cache only (no cachix-deploy agent on that host).
+# surface-pro3, pushes them to Cachix, and triggers deployment to all four
+# agents. Cachix Deploy is THE deployer for the fleet: every host that runs an
+# agent is switched on every push to main, so an ssh `nixos-rebuild
+# --target-host` of anything other than main is overwritten by the next merge.
+# Keeping all hosts on agents is what keeps their builds (and herdr protocol
+# versions) identical.
 #
 # Required secrets:
 #   - CACHIX_AUTH_TOKEN: Write access to pittampalli cache
