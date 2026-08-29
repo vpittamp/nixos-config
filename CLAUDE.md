@@ -134,6 +134,15 @@ the chip copies this host's IP. `tailscale set` runs without sudo because
 `services.tailscale.extraSetFlags` carries `--operator=vpittamp`.
 `runtime-shell summon tailscale`.
 
+**Capture**: `capture screenshot [region|output|window]` (saves to
+`~/Pictures/Screenshots`, copies to the clipboard, notifies), `capture record
+start|stop|toggle|status` (wf-recorder → `~/Videos/Recordings`; a red REC chip
+with elapsed time appears first in the right cluster and stops on click),
+`capture ocr|qr [region|output]` (tesseract / zbar → clipboard), `capture
+color` (#rrggbb → clipboard). Keys: `Print` output, `Shift+Print` region,
+`Ctrl+Print` window, `Alt+Print` record toggle, `Super+Print` colour,
+`Super+Ctrl+Print` OCR, `Super+Shift+Print` QR.
+
 **Clock popup** (click the clock; `runtime-shell summon calendar`): month
 grid and reminders. `runtime-reminder <minutes> [message] | show | clear` —
 transient `systemd-run --user` timers that post a critical toast; the panel

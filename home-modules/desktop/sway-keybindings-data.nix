@@ -164,12 +164,24 @@ let
     {
       name = "Capture & clipboard";
       bindings = [
+        # With the runtime shell the `capture` CLI saves to ~/Pictures/Screenshots,
+        # copies to the clipboard and notifies; recordings show a REC chip.
         (bind "Print"
-          "exec grim -o $(swaymsg -t get_outputs | jq -r '.[] | select(.focused) | .name') - | wl-copy"
-          "Screenshot the focused output to the clipboard")
-        (bind "Shift+Print" "exec grim -g \"$(slurp)\" - | wl-copy" "Screenshot a region to the clipboard")
-        (bind "Control+Print" "exec grim ~/Pictures/screenshot-$(date +%Y%m%d_%H%M%S).png"
-          "Screenshot to ~/Pictures")
+          (if hasRuntimeShell then "exec capture screenshot output"
+           else "exec grim -o $(swaymsg -t get_outputs | jq -r '.[] | select(.focused) | .name') - | wl-copy")
+          "Screenshot the focused output")
+        (bind "Shift+Print"
+          (if hasRuntimeShell then "exec capture screenshot region" else "exec grim -g \"$(slurp)\" - | wl-copy")
+          "Screenshot a region")
+        (bind "Control+Print"
+          (if hasRuntimeShell then "exec capture screenshot window" else "exec grim ~/Pictures/screenshot-$(date +%Y%m%d_%H%M%S).png")
+          "Screenshot the focused window")
+      ] ++ lib.optionals hasRuntimeShell [
+        (bind "Alt+Print" "exec capture record toggle" "Start / stop a screen recording of a region")
+        (bind "${mod}+Print" "exec capture color" "Pick a colour from the screen (copies #rrggbb)")
+        (bind "${mod}+Ctrl+Print" "exec capture ocr" "Recognise text in a region and copy it")
+        (bind "${mod}+Shift+Print" "exec capture qr" "Decode a QR code on screen and copy it")
+      ] ++ [
         (bind "${mod}+c" "exec clipman pick -t wofi" "Clipboard history")
         (bind "${mod}+o" "exec ghostty-smart-open" "Open selected text / path / URL")
         (bind "${mod}+u" "exec urlscan" "Extract URLs and paths from the terminal")

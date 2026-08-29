@@ -286,6 +286,7 @@ QtObject {
   readonly property string themeSetBin: "${runtimeThemeScript}/bin/runtime-theme"
   readonly property string hookBin: "${runtimeHookScript}/bin/runtime-hook"
   readonly property string reminderBin: "${runtimeReminderScript}/bin/runtime-reminder"
+  readonly property string captureBin: "${captureScript}/bin/capture"
   readonly property string nightlightBin: "${nightlightScript}/bin/quickshell-nightlight"
   readonly property string tailscaleStatusBin: "${tailscaleStatusScript}/bin/quickshell-tailscale-status"
   readonly property string tailscaleActionBin: "${tailscaleActionScript}/bin/quickshell-tailscale-action"
@@ -3062,6 +3063,141 @@ USAGE
     exit $status
   '';
 
+  # ---- Capture ----------------------------------------------------------
+  # Screenshots, recordings, OCR, QR decode and a colour picker behind one
+  # CLI. Files land in ~/Pictures/Screenshots and ~/Videos/Recordings, the
+  # image also goes to the clipboard, and every result is a notification.
+  # A recording writes $XDG_RUNTIME_DIR/quickshell-capture.json, which the
+  # bar's REC chip follows (click it to stop).
+  captureScript = pkgs.writeShellScriptBin "capture" ''
+    set -uo pipefail
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.jq pkgs.procps pkgs.findutils ]}:"''${PATH:-}"
+    grim=${pkgs.grim}/bin/grim
+    slurp=${pkgs.slurp}/bin/slurp
+    wlcopy=${pkgs.wl-clipboard}/bin/wl-copy
+    swaymsg=${pkgs.sway}/bin/swaymsg
+    notify=${pkgs.libnotify}/bin/notify-send
+    state="''${XDG_RUNTIME_DIR:-/tmp}/quickshell-capture.json"
+    shots="$HOME/Pictures/Screenshots"
+    videos="$HOME/Videos/Recordings"
+    stamp="$(date +%Y-%m-%d_%H-%M-%S)"
+
+    usage() {
+      cat >&2 <<'USAGE'
+Usage: capture <command>
+  screenshot [region|output|window]   save to ~/Pictures/Screenshots and copy to the clipboard
+  record start [region|output] [--audio] | stop | toggle | status
+  ocr [region|output]                 recognise text and copy it
+  qr [region|output]                  decode a QR code and copy it
+  color                               pick a pixel, copy #rrggbb
+USAGE
+    }
+
+    focused_output() { "$swaymsg" -t get_outputs | jq -r '.[] | select(.focused) | .name'; }
+    output_geometry() {
+      "$swaymsg" -t get_outputs | jq -r '.[] | select(.focused) | "\(.rect.x),\(.rect.y) \(.rect.width)x\(.rect.height)"'
+    }
+    window_geometry() {
+      "$swaymsg" -t get_tree | jq -r '.. | select(.focused? == true) | .rect | "\(.x),\(.y) \(.width)x\(.height)"' | head -1
+    }
+    geometry_for() {
+      case "''${1:-region}" in
+        output) output_geometry ;;
+        window) window_geometry ;;
+        region|*) "$slurp" -d 2>/dev/null ;;
+      esac
+    }
+    tell() { "$notify" -a Capture -t 5000 "$@" >/dev/null 2>&1 || true; }
+    poke_shell() { ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell refreshCapture >/dev/null 2>&1 || true; }
+
+    cmd="''${1:-}"; shift || true
+    case "$cmd" in
+      screenshot)
+        mode="''${1:-region}"
+        geom="$(geometry_for "$mode")" || exit 1
+        [ -n "$geom" ] || { echo "capture: no region selected" >&2; exit 1; }
+        mkdir -p "$shots"
+        file="$shots/$stamp.png"
+        "$grim" -g "$geom" "$file" || { tell -u critical "Screenshot failed" "grim could not capture $geom"; exit 1; }
+        "$wlcopy" <"$file" || true
+        tell -i "$file" "Screenshot saved" "$(basename "$file") · copied to the clipboard"
+        echo "$file"
+        ;;
+      record)
+        sub="''${1:-toggle}"; shift || true
+        case "$sub" in
+          status)
+            if [ -r "$state" ] && pid="$(jq -r .pid "$state" 2>/dev/null)" && kill -0 "$pid" 2>/dev/null; then cat "$state"; else echo '{"recording":false}'; fi
+            ;;
+          stop)
+            if [ -r "$state" ] && pid="$(jq -r .pid "$state" 2>/dev/null)" && kill -0 "$pid" 2>/dev/null; then
+              file="$(jq -r .file "$state")"
+              kill -INT "$pid"; for _ in $(seq 1 40); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+              rm -f "$state"; poke_shell
+              tell "Recording saved" "$(basename "$file")"
+              echo "$file"
+            else
+              rm -f "$state"; poke_shell
+              echo "capture: not recording" >&2; exit 1
+            fi
+            ;;
+          start)
+            if [ -r "$state" ] && pid="$(jq -r .pid "$state" 2>/dev/null)" && kill -0 "$pid" 2>/dev/null; then echo "capture: already recording" >&2; exit 1; fi
+            mode="region"; audio=""
+            for arg in "$@"; do case "$arg" in region|output|window) mode="$arg" ;; --audio) audio="--audio" ;; esac; done
+            geom="$(geometry_for "$mode")" || exit 1
+            [ -n "$geom" ] || { echo "capture: no region selected" >&2; exit 1; }
+            mkdir -p "$videos"
+            file="$videos/$stamp.mp4"
+            ${pkgs.wf-recorder}/bin/wf-recorder $audio -g "$geom" -f "$file" >/dev/null 2>&1 &
+            pid=$!
+            jq -n --argjson pid "$pid" --arg file "$file" --arg geom "$geom" --argjson started "$(date +%s)" \
+              '{recording: true, pid: $pid, file: $file, geometry: $geom, started: $started}' >"$state"
+            poke_shell
+            tell "Recording" "$(basename "$file") · Alt+Print or the REC chip stops"
+            echo "$file"
+            ;;
+          toggle)
+            if [ -r "$state" ] && pid="$(jq -r .pid "$state" 2>/dev/null)" && kill -0 "$pid" 2>/dev/null; then exec "$0" record stop; else exec "$0" record start "$@"; fi
+            ;;
+          *) usage; exit 2 ;;
+        esac
+        ;;
+      ocr)
+        geom="$(geometry_for "''${1:-region}")" || exit 1
+        [ -n "$geom" ] || exit 1
+        text="$("$grim" -g "$geom" -t png - | ${pkgs.tesseract}/bin/tesseract stdin stdout 2>/dev/null | sed -e 's/[[:space:]]*$//' | grep -v '^$')"
+        if [ -z "$text" ]; then tell "No text found" "Nothing recognisable in the selection"; exit 1; fi
+        printf '%s' "$text" | "$wlcopy"
+        tell "Text copied" "$(printf '%s' "$text" | head -c 160)"
+        printf '%s\n' "$text"
+        ;;
+      qr)
+        geom="$(geometry_for "''${1:-region}")" || exit 1
+        [ -n "$geom" ] || exit 1
+        code="$("$grim" -g "$geom" -t png - | ${pkgs.zbar}/bin/zbarimg -q --raw - 2>/dev/null | head -1)"
+        if [ -z "$code" ]; then tell "No QR code" "Nothing decodable in the selection"; exit 1; fi
+        printf '%s' "$code" | "$wlcopy"
+        tell "QR code copied" "$(printf '%s' "$code" | head -c 160)"
+        printf '%s\n' "$code"
+        ;;
+      color)
+        point="$("$slurp" -p 2>/dev/null)" || exit 1
+        [ -n "$point" ] || exit 1
+        hex="$("$grim" -g "$point" -t ppm - | ${lib.getExe pkgs.python3} -c '
+import sys
+d = sys.stdin.buffer.read()
+parts = d.split(maxsplit=4)
+px = parts[4][:3] if len(parts) > 4 else b"\0\0\0"
+print("#%02x%02x%02x" % (px[0], px[1], px[2]))')"
+        printf '%s' "$hex" | "$wlcopy"
+        tell "Colour copied" "$hex"
+        echo "$hex"
+        ;;
+      *) usage; exit 2 ;;
+    esac
+  '';
+
   # ---- Reminders --------------------------------------------------------
   # Lightweight reminders as transient systemd user timers: nothing to run,
   # nothing to persist, and `systemctl --user list-timers` is the truth.
@@ -3709,6 +3845,7 @@ in
       lockSessionScript
       runtimeThemeScript
       runtimeHookScript
+      captureScript
       runtimeReminderScript
       nightlightScript
       crashDiagnoseScript

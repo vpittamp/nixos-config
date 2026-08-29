@@ -27,6 +27,7 @@ Item {
     property alias tailscaleActionProcessRef: tailscaleActionProcess
     property alias tailscaleNoticeTimerRef: tailscaleNoticeTimer
     property alias reminderListProcessRef: reminderListProcess
+    property alias captureStatusProcessRef: captureStatusProcess
     property alias reminderActionProcessRef: reminderActionProcess
     property alias nightlightStatusProcessRef: nightlightStatusProcess
     property alias nightlightActionProcessRef: nightlightActionProcess
@@ -458,6 +459,23 @@ Item {
         onExited: function () {
             shellRoot.agentUsageRefreshing = false;
         }
+    }
+
+    // ----- Capture (recording indicator) -----
+    Process {
+        id: captureStatusProcess
+        command: [runtimeConfig.captureBin, "record", "status"]
+        stdout: StdioCollector {
+            onStreamFinished: shellRoot.parseCaptureStatus(text)
+        }
+    }
+
+    Timer {
+        interval: shellRoot.captureRecording ? 5000 : 60000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: shellRoot.refreshCapture()
     }
 
     // ----- Reminders / night light -----
@@ -1482,6 +1500,11 @@ Item {
 
         function refreshReminders(): string {
             shellRoot.refreshReminders();
+            return "ok";
+        }
+
+        function refreshCapture(): string {
+            shellRoot.refreshCapture();
             return "ok";
         }
 

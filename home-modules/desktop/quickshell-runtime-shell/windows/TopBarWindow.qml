@@ -513,6 +513,55 @@ PanelWindow {
                 anchors.bottom: parent.bottom
                 spacing: 6
 
+                // Screen recording in progress: click to stop.
+                Rectangle {
+                    id: recordingChip
+                    visible: root.captureRecording
+                    radius: root.radiusControl
+                    color: colors.redBg
+                    border.color: colors.red
+                    border.width: 1
+                    implicitWidth: recordingRow.implicitWidth + 18
+                    Layout.fillHeight: true
+
+                    RowLayout {
+                        id: recordingRow
+                        anchors.centerIn: parent
+                        spacing: 6
+
+                        Rectangle {
+                            width: Theme.fs(8)
+                            height: Theme.fs(8)
+                            radius: width / 2
+                            color: colors.red
+                            opacity: recordingBlink.running ? 1 : 0.4
+
+                            SequentialAnimation on opacity {
+                                id: recordingBlink
+                                running: root.captureRecording
+                                loops: Animation.Infinite
+                                NumberAnimation { to: 0.25; duration: 700 }
+                                NumberAnimation { to: 1.0; duration: 700 }
+                            }
+                        }
+
+                        Text {
+                            font.family: Theme.fontFamily
+                            text: root.captureElapsedText()
+                            color: colors.red
+                            font.pixelSize: root.fontLabel
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.stopCapture()
+                    }
+                }
+
                 Rectangle {
                     id: daemonHealthChip
                     readonly property bool wanted: root.daemonHealthState.status === "degraded"

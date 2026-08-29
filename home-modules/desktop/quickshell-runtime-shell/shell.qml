@@ -39,6 +39,7 @@ ShellRoot {
     readonly property var tailscaleActionProcess: runtimeServices ? runtimeServices.tailscaleActionProcessRef : null
     readonly property var tailscaleNoticeTimer: runtimeServices ? runtimeServices.tailscaleNoticeTimerRef : null
     readonly property var reminderListProcess: runtimeServices ? runtimeServices.reminderListProcessRef : null
+    readonly property var captureStatusProcess: runtimeServices ? runtimeServices.captureStatusProcessRef : null
     readonly property var reminderActionProcess: runtimeServices ? runtimeServices.reminderActionProcessRef : null
     readonly property var nightlightStatusProcess: runtimeServices ? runtimeServices.nightlightStatusProcessRef : null
     readonly property var nightlightActionProcess: runtimeServices ? runtimeServices.nightlightActionProcessRef : null
@@ -345,6 +346,40 @@ ShellRoot {
         const minutes = Math.round(remaining / 60);
         if (minutes < 60) return "in " + minutes + "m";
         return "in " + Math.floor(minutes / 60) + "h " + (minutes % 60) + "m";
+    }
+
+    // ----- Capture (recording indicator) -----
+    property bool captureRecording: false
+    property var captureState: ({})
+
+    function parseCaptureStatus(text) {
+        try {
+            const parsed = JSON.parse(stringOrEmpty(text).trim() || "{}");
+            captureState = parsed && typeof parsed === "object" ? parsed : {};
+        } catch (error) {
+            captureState = {};
+        }
+        captureRecording = boolOrFalse(captureState.recording);
+    }
+
+    function refreshCapture() {
+        if (captureStatusProcess && !captureStatusProcess.running) {
+            captureStatusProcess.running = true;
+        }
+    }
+
+    function captureElapsedText() {
+        const started = Number(captureState && captureState.started) || 0;
+        if (!started) return "REC";
+        const now = clock && clock.date ? Math.floor(clock.date.getTime() / 1000) : Math.floor(Date.now() / 1000);
+        const seconds = Math.max(0, now - started);
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return "REC " + m + ":" + (s < 10 ? "0" : "") + s;
+    }
+
+    function stopCapture() {
+        runDetached([shellConfig.captureBin, "record", "stop"]);
     }
 
     // ----- Night light -----
