@@ -1,6 +1,6 @@
 ---
 name: preview-environments
-description: "Operate and prove Workflow Builder PreviewEnvironment lifecycles and canonical DevelopmentRuns on the dev cluster. Use for Previews inventory, system-live/app-live/candidate profiles, target selection, Dapr Agents or CLI builders, HMR, DevelopmentOutput, MCP development_run tools, checkpoint/fork/handoff/reproduce, delivery receipts, sleep/wake, durable evidence, and signed 12-check teardown. Use workflow-builder for ordinary workflows, gitops for persistent delivery, and skaffold-dev-loop only for ryzen."
+description: "Operate and prove Workflow Builder PreviewEnvironment lifecycles and canonical DevelopmentRuns on the dev cluster. Use for Previews inventory, system-live/app-live/candidate profiles, target selection, Dapr Agents or CLI builders, HMR, DevelopmentOutput, MCP development_run tools, checkpoint/fork/handoff/reproduce, delivery receipts, sleep/wake, durable evidence, and signed 12-check teardown. Use workflow-builder for ordinary workflows, and gitops for persistent delivery."
 ---
 
 # Preview Environments
@@ -390,7 +390,7 @@ fresh generation, user-path proof, evidence proof, and teardown proof.
   and live deployment proof.
 - Use `kubernetes-capacity` for shared quota, cohorts, PSI, physical headroom,
   exact-plan tuning, pressure policy, and dynamic concurrency.
-- Use `skaffold-dev-loop` only for the trusted ryzen operator loop.
+- The ryzen Skaffold loop is retired; dev is the only test and deploy target.
 - Use `dapr-agents-workflow` for standalone upstream Dapr Agents Python apps.
 - Do not create another DevelopmentRun skill; it would duplicate this authority.
 

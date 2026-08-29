@@ -57,6 +57,7 @@ matters.
 | Diagnose a `1/2` Dapr workload                           | Check app container, `daprd` health/logs, placement/scheduler/control plane, Components, then recycle only the affected pod after proving control-plane health  |
 | Diagnose Workflow MCP auth                               | Use the `workflow-builder` skill and `docs/workflow-mcp-server.md`; separate workspace keys, optional session context, and internal assertions                  |
 | Deliver or recover durable execution evidence            | Inspect `docs/execution-evidence.md`, object-store config, archive reconciler env, ClickHouse evidence tables, release pins, and the live query surface          |
+| Roll the `dapr-agent-py-sandbox` pin                     | One pin feeds the harness (`dapr-agent-harness`), the pool (`agent-runtime-pool-coding`), and the executor image (`AGENT_RUNTIME_DEFAULT_IMAGE` on the BFF); wait for `rollout status` on `dapr-agent-harness`, `agent-runtime-pool-coding`, `workflow-orchestrator`, and `workflow-builder` before a live proof |
 | Triage a run start refused `409 instance_conflict_live`  | Compare the durable instance against its execution row: the instance is live while the row reads terminal. Find the divergence; `WORKFLOW_ALLOW_DESTRUCTIVE_ID_REUSE=true` is a rollback lever, not a fix |
 | Diagnose Tailscale exposure                              | Read the owning Ingress/LoadBalancer/ProxyGroup manifests, `docs/tailscale-naming.md`, and `policy.hujson`; identify device versus service-host ownership first |
 | Rotate or repair secrets                                 | Trace ExternalSecret -> ClusterSecretStore -> remote key -> consuming pod; verify sync before restart and never print values                                    |
@@ -177,7 +178,11 @@ controllers to hide the first causal error.
 ## Safety Rules
 
 - Do not trigger ArgoCD syncs or roll workflow-builder control-plane pods while
-  a preview, benchmark, or durable workflow proof is executing.
+  a preview, benchmark, or durable workflow proof is executing. The orchestrator
+  itself is exempt: rolling `workflow-orchestrator` mid fan-out is proven safe
+  (any replica resumes from durable state; the in-band repoll lane recovers lost
+  child completions as `customStatus.repolled > 0`) and is verified with
+  workflow-builder `scripts/probes/orchestrator-roll-proof.sh`.
 - Read every required PR check and generated-drift check before merging a
   stacks change.
 - Never hand-edit generated image-pin ConfigMaps or generated kustomizations.

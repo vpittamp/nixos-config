@@ -1,0 +1,4 @@
+interface:
+  display_name: "Runtime Conformance"
+  short_description: "Verify, admit, and swap durable agent runtimes."
+  default_prompt: "Use $runtime-conformance to run the DurableSessionRuntime static and live conformance lanes, read the gate table, flip conformanceVerified only on gate-checked PASS in both lanes, explain a 409 unverified-runtime refusal, or add a new runtime to the registry."

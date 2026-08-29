@@ -1,0 +1,23 @@
+{
+  "skill_name": "agent-session-recovery",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "We rolled workflow-orchestrator on dev while an 8-agent fan-out was mid-turn. The run's custom status has been frozen at outstanding=5 for a few minutes. Should I terminate and relaunch?",
+      "expected_output": "Says no. Explains that the execution id is unchanged and the children keep running on their own hosts, that the in-band repoll lane (probe_outstanding_children on the DYNAMIC_SCRIPT_CHILD_REPOLL_SECONDS timer, default 120s) resolves lost completion events, and that the proof is customStatus.repolled increasing and every workflow_script_calls row ending done with none skipped. Judges the outcome only by customStatus.terminal / terminalOutcome. Offers stop terminate + resume_workflow_execution only for a history recorded before the dynamic-script-child-repoll-v1 marker, and never a relaunch. Mentions scripts/probes/orchestrator-roll-proof.sh as the reproducible proof.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "A dapr-agent-py-local session emitted compaction_error and then went quiet for a second, then kept going. Was anything lost?",
+      "expected_output": "Reads the session_events timeline and shows the source_event_id prefix moving from one dapr-agent-harness pod to another (class a), checks that the agent.iteration count equals the agent.llm_usage count so no call_llm was duplicated, and inspects agent_py_state for the lowercased _workflow_compaction: checkpoint key and the append-only durable entry (convert_from(value,'UTF8')). Concludes the compaction_error from the dying replica is fenced and harmless, notes the agent can call read_session_events under event_log to recover pre-compaction context, and does not delete pods or edit rows.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "An execution row on dev still says running but the child instance is gone and I need the agent's final answer for an audit. Get it without touching state.",
+      "expected_output": "Finds the session with the sessions table query (dsw-%exec-<execId>%), probes the host from the BFF pod's daprd for pool/harness hosts or pod IP :8002 for agent-session-* pods and treats a 404 after terminal as normal, then reads the child's raw return dict from the parent's wfstate_state history rows (key workflow-orchestrator||...||<parentInstance>||history-N, encode(value,'escape') then unescape) and the track_agent_run_completed result. Uses trace_get_tool_calls rather than the capped session_events output for verbatim tool evidence. Explains the running row is a projection the reconciler execution-liveness lane will repair, and never hand-edits the row or restarts anything.",
+      "files": []
+    }
+  ]
+}

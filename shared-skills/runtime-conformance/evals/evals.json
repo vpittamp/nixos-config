@@ -1,0 +1,23 @@
+{
+  "skill_name": "runtime-conformance",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "A durable/run on dev returns 409 'Runtime \"claude-code-cli-glm\" is not conformance-verified'. Make the run go through without weakening anything.",
+      "expected_output": "Explains that claude-code-cli-glm is unverified because its live lane is SKIPPED (zai credential expired), not because the contract is wrong. Offers the two sanctioned overrides (AGENT_RUNTIME_ALLOW_UNVERIFIED_RUNTIME=true operator-wide, or agentConfig.allowUnverifiedRuntime set to the literal boolean true per dispatch), notes the override degrades the verdict to warn and emits runtime.swap_degraded while the error-severity drop stays recorded, and that AGENT_RUNTIME_REJECT_LOSSY_SWAP does not affect it. Does not hand-flip conformanceVerified, hand-edit the results file, or patch the registry on the cluster; the durable fix is restoring the credential, re-running the live lane, merging, gating with --write-doc, and committing registry + results + doc together.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "pnpm conformance:gate fails locally with a static-verdict drift for cli-agent-py (dispatch.workflow_registered SKIPPED vs committed PASS). What happened and how do I fix it?",
+      "expected_output": "Identifies the NixOS loader-path trap: without LD_LIBRARY_PATH=/nix/store/0iv8glcslgfcgn371lbjr5jjw5a6cqir-gcc-15.3.0-lib/lib the dapr/grpc wheels fail to import, cli-agent-py falls back to its dapr stub and records SKIPPED, which gate rule (i) reports as drift. Re-runs pnpm conformance:static with the export, confirms the fresh static verdicts match the committed section, and does not edit runtime-conformance-results.json or the generated doc table by hand. Treats SKIPPED as not-exercised rather than a contract failure.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Add a new durable-session runtime 'my-agent-py' served by services/dapr-agent-py and get it to verified.",
+      "expected_output": "Follows the checklist in order: registry entry with conformanceVerified:false and both dispatchWorkflowName session_workflow and bridgeGateToken agent_workflow; node scripts/sync-runtime-registry.mjs; extend the dapr-agent-py tests/conformance adapter; pnpm conformance:static and commit results plus regenerated doc showing static PASS and verified no; CI green on checks, orchestrator-tests and runtime-conformance-gate; on dev launch the saved workflow runtime-conformance-live with a proof agent for the runtime and run one live.py process per exercised runtime into its own scratch results file, then merge only that runtime's live entries via the ResultsFile API; flip conformanceVerified only on static PASS and live PASS, sync, gate --write-doc, commit together. Never changes runtime behavior to make a check pass unless the contract already requires it.",
+      "files": []
+    }
+  ]
+}
