@@ -732,7 +732,11 @@ EOF
               to = { }; # any transition, gated by the condition below
               conditions = [{
                 condition = "template";
-                value_template = "{{ trigger.from_state.state in ['none', 'unavailable', 'unknown'] }}";
+                # Only on a genuine "no order -> live stage" transition. The
+                # trigger-based template sensors briefly render 'unknown' on HA
+                # startup before the first coordinator poll; without the
+                # to_state guard that restore fires a spurious "Order placed".
+                value_template = "{{ trigger.from_state.state in ['none', 'unavailable', 'unknown'] and trigger.to_state.state not in ['none', 'unavailable', 'unknown'] }}";
               }];
               message = "{{ states('sensor.uber_eats_restaurant') }} is preparing your order.";
             };
