@@ -1051,14 +1051,21 @@ ShellRoot {
         })
     readonly property var primaryScreen: resolvePrimaryScreen()
     readonly property string primaryOutputName: screenOutputName(primaryScreen)
-    // Screen the floating side panel and launcher should appear on. Normally the
-    // configured primary, but when no configured primary output is currently
-    // active (e.g. clamshell mode, where eDP-1 is disabled), follow the focused
-    // monitor so they show on the active screen instead of the dead one.
-    readonly property var activeScreen: configuredPrimaryActive()
-        ? primaryScreen
-        : (findScreenByOutputName(focusedOutputName())
-            || (arrayOrEmpty(Quickshell.screens)[0] || primaryScreen))
+    // Screen the launcher, dictation overlay, notification detail and the
+    // keyboard-summoned panel appear on: the FOCUSED monitor, so they open
+    // where the user is looking. The configured primary is only a fallback.
+    //
+    // Preferring the primary broke multi-monitor laptops: primaryOutputs lists
+    // the built-in panel first (thinkpad: eDP-1 before HDMI-A-1), so with the
+    // lid open the launcher drew on the laptop screen while the user worked on
+    // the external one — it looked like the launcher was dead. The old
+    // clamshell fallback never helped, because it only applied when NO
+    // configured output was active, and the external monitor is on that list.
+    // A bar chip that passes an explicit output still pins its popup there.
+    readonly property var activeScreen: findScreenByOutputName(focusedOutputName())
+        || (configuredPrimaryActive()
+            ? primaryScreen
+            : (arrayOrEmpty(Quickshell.screens)[0] || primaryScreen))
     readonly property bool hasQuickshellScreens: arrayOrEmpty(Quickshell.screens).length > 0
     readonly property bool useFallbackScreenWindows: !hasQuickshellScreens
     readonly property string fallbackOutputName:
