@@ -3,7 +3,8 @@
 # One attrset per theme. `style` is the chrome: `flat` (opaque cards with
 # accent borders instead of frosted zinc), `radiusScale` (0 = square … 1 =
 # the shadcn radii), `fontFamily` ("" = system sans; "monospace" resolves
-# through fontconfig). `colors` are the 24 semantic base tokens Theme.qml
+# through fontconfig), `chipStyle` ("chip" = bordered pills, "text" =
+# Omarchy's box-less glyph + label widgets that carry state by colour). `colors` are the 24 semantic base tokens Theme.qml
 # is generated from — every other token in the shell (status chip fills,
 # elevation films, glass, scrims, washes) is derived from these inside
 # Theme.qml, parametrised on `dark`, so a theme is exactly this list and
@@ -46,7 +47,7 @@ let
       inherit dark;
       # Omarchy's chrome: opaque cards with accent-tinted borders, square
       # corners (Hyprland rounding 0), the system monospace for all shell text.
-      style = { flat = true; radiusScale = 0.0; fontFamily = "monospace"; };
+      style = { flat = true; radiusScale = 0.0; fontFamily = "monospace"; chipStyle = "text"; };
       colors = {
         bg = darker;
         panel = t.background;
@@ -97,7 +98,7 @@ omarchyThemes // {
   zinc-dark = {
     label = "Zinc Dark";
     # shadcn chrome: frosted cards, zinc borders, rounded corners, system sans.
-    style = { flat = false; radiusScale = 1.0; fontFamily = ""; };
+    style = { flat = false; radiusScale = 1.0; fontFamily = ""; chipStyle = "chip"; };
     description = "shadcn zinc on near-black, Tailwind 400 status hues, Catppuccin Mocha terminal";
     dark = true;
     colors = {
@@ -150,7 +151,7 @@ omarchyThemes // {
   zinc-light = {
     label = "Zinc Light";
     # shadcn chrome: frosted cards, zinc borders, rounded corners, system sans.
-    style = { flat = false; radiusScale = 1.0; fontFamily = ""; };
+    style = { flat = false; radiusScale = 1.0; fontFamily = ""; chipStyle = "chip"; };
     description = "shadcn zinc on white, Tailwind 600 status hues, Catppuccin Latte terminal";
     dark = false;
     colors = {

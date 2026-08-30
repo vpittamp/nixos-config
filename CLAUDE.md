@@ -102,11 +102,21 @@ adding an attrset to `themes.nix`; no QML changes.
 
 Each theme also carries a `style` block — `flat` (opaque cards, accent-tinted
 strong borders), `radiusScale` (0 square … 1 shadcn radii), `fontFamily`
-("" = system sans, "monospace" via fontconfig). Omarchy palettes ship
+("" = system sans, "monospace" via fontconfig), `chipStyle` ("chip" = shadcn
+pills; "text" = Omarchy's box-less glyph + label bar widgets, state by
+colour — all chip chrome goes through `neutralChip*`/`stateChip*` in
+`shell.qml`, and labels use `chipCompact()`/`chipCaret()`). Omarchy palettes ship
 Omarchy's chrome (flat, square, monospace); the zinc themes keep shadcn's.
 In QML never write a literal size/radius/family: use `Theme.fs(px)`,
 `Theme.rad(px)`, `Theme.fontFamily` (glyphs: `Theme.glyphFamily`), and the
 bars/OSD/overlays scale with `Theme.scale`.
+
+Bar panels open with `PanelHero` (glyph/icon, bold title, dim meta, one
+trailing control) and use `PanelSlider` (thin track, handle only on chip
+themes) and `PanelSectionHeader` — root-level components, referenced as
+`RootComponents.*` from windows. Direct panel keys: `Super+Ctrl+A/B/W/D/P`
+(audio, bluetooth, tailscale, displays, power) and `Super+Ctrl+1–9` for the
+n-th bar panel.
 
 **Text size**: `runtime-theme text-size [8-24]` (or Devices pane → Text size)
 sets the shell's type root live (12 = built-in) and writes the matching

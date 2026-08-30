@@ -3627,11 +3627,19 @@ ShellRoot {
         };
     }
 
+    // Bar chip chrome. With Theme.textChips (Omarchy palettes) chips draw no
+    // fill or border — a hover wash only — and state lives in the text
+    // colour; the shadcn themes keep the bordered pills.
+    function textChipFill(hovered) {
+        return hovered ? colors.chipHover : "transparent";
+    }
+
     function neutralChipFill(hovered) {
-        return colors.cardAlt;
+        return Theme.textChips ? textChipFill(hovered) : colors.cardAlt;
     }
 
     function neutralChipBorder(hovered) {
+        if (Theme.textChips) return "transparent";
         return hovered ? colors.blueMuted : colors.border;
     }
 
@@ -3640,15 +3648,26 @@ ShellRoot {
     }
 
     function stateChipFill(active, hovered, activeFill) {
+        if (Theme.textChips) return textChipFill(hovered);
         return active ? activeFill : colors.cardAlt;
     }
 
     function stateChipBorder(active, hovered, activeBorder) {
+        if (Theme.textChips) return "transparent";
         return active ? activeBorder : neutralChipBorder(hovered);
     }
 
     function stateChipText(active, hovered, activeText) {
         return active ? activeText : neutralChipText(hovered);
+    }
+
+    // Text-mode chips drop the dropdown caret and use a compact label.
+    function chipCaret() {
+        return Theme.textChips ? "" : " ▾";
+    }
+
+    function chipCompact(full, compact) {
+        return Theme.textChips ? compact : full;
     }
 
     function workspaceNameValue(workspace) {
@@ -3838,9 +3857,9 @@ ShellRoot {
         }
         const node = audioNode();
         if (boolOrFalse(node.audio.muted) || volumePercent() === 0) {
-            return "Muted";
+            return chipCompact("Muted", "");
         }
-        return "Vol " + String(volumePercent()) + "%";
+        return chipCompact("Vol " + String(volumePercent()) + "%", String(volumePercent()));
     }
 
     function audioDetail() {
@@ -4057,13 +4076,13 @@ ShellRoot {
             return "BT --";
         }
         if (!bluetoothEnabled()) {
-            return "BT Off";
+            return chipCompact("BT Off", "");
         }
         const connected = bluetoothConnectedCount();
         if (connected > 0) {
-            return "BT " + String(connected);
+            return chipCompact("BT " + String(connected), String(connected));
         }
-        return "BT On";
+        return chipCompact("BT On", "");
     }
 
     function bluetoothDetail() {
@@ -4197,6 +4216,9 @@ ShellRoot {
 
         const percentage = batteryPercentNumber();
         const duration = batteryDurationLabel();
+        if (Theme.textChips) {
+            return String(percentage) + "%" + (device.state === UPowerDeviceState.Charging ? "+" : "");
+        }
         if (device.state === UPowerDeviceState.Charging) {
             return duration ? "Charging " + String(percentage) + "% · " + duration : "Charging " + String(percentage) + "%";
         }
@@ -4624,7 +4646,7 @@ ShellRoot {
             return "Offline";
         }
         if (stringOrEmpty(networkState.kind) === "wifi" && networkState.signal !== null && networkState.signal !== undefined) {
-            return "Wi-Fi " + String(networkState.signal) + "%";
+            return chipCompact("Wi-Fi " + String(networkState.signal) + "%", "Wi-Fi " + String(networkState.signal));
         }
         if (stringOrEmpty(networkState.kind) === "ethernet") {
             return "Ethernet";
@@ -4667,6 +4689,7 @@ ShellRoot {
     }
 
     function diskChipFill(hovered) {
+        if (Theme.textChips) return textChipFill(hovered);
         var pct = systemStatsDiskPercentValue();
         if (pct >= 90) return hovered ? Qt.lighter(colors.red, 1.15) : Qt.rgba(colors.red.r, colors.red.g, colors.red.b, 0.15);
         if (pct >= 75) return hovered ? Qt.lighter(colors.amber, 1.15) : Qt.rgba(colors.amber.r, colors.amber.g, colors.amber.b, 0.15);
@@ -4674,6 +4697,7 @@ ShellRoot {
     }
 
     function diskChipBorder(hovered) {
+        if (Theme.textChips) return "transparent";
         var pct = systemStatsDiskPercentValue();
         if (pct >= 90) return colors.red;
         if (pct >= 75) return colors.amber;
@@ -4722,7 +4746,7 @@ ShellRoot {
         if (visible) {
             return stateChipBorder(true, hovered, colors.blue);
         }
-        if (unread) {
+        if (unread && !Theme.textChips) {
             return colors.blue;
         }
         return neutralChipBorder(hovered);
@@ -4745,6 +4769,7 @@ ShellRoot {
     }
 
     function audioChipBorder(hovered) {
+        if (Theme.textChips) return "transparent";
         if (audioMuted()) {
             return colors.red;
         }
@@ -4759,6 +4784,7 @@ ShellRoot {
     }
 
     function batteryChipBorder(hovered) {
+        if (Theme.textChips) return "transparent";
         if (batteryCritical()) {
             return colors.red;
         }
@@ -4779,11 +4805,11 @@ ShellRoot {
     }
 
     function powerChipFill(hovered) {
-        return root.powerMenuVisible ? colors.redBg : neutralChipFill(hovered);
+        return stateChipFill(root.powerMenuVisible, hovered, colors.redBg);
     }
 
     function powerChipBorder(hovered) {
-        return root.powerMenuVisible ? colors.red : neutralChipBorder(hovered);
+        return stateChipBorder(root.powerMenuVisible, hovered, colors.red);
     }
 
     function powerChipText(hovered) {
@@ -4791,11 +4817,11 @@ ShellRoot {
     }
 
     function castChipFill(hovered) {
-        return (root.castPopupVisible || boolOrFalse(root.castState.active)) ? colors.blueBg : neutralChipFill(hovered);
+        return stateChipFill(root.castPopupVisible || boolOrFalse(root.castState.active), hovered, colors.blueBg);
     }
 
     function castChipBorder(hovered) {
-        return (root.castPopupVisible || boolOrFalse(root.castState.active)) ? colors.blue : neutralChipBorder(hovered);
+        return stateChipBorder(root.castPopupVisible || boolOrFalse(root.castState.active), hovered, colors.blue);
     }
 
     function castChipText(hovered) {
@@ -8411,6 +8437,18 @@ function normalizeLauncherMode(mode) {
             return typeof refused === "string" ? refused : "ok";
         }
         return summonSurface(id, payloadJson);
+    }
+
+    // Super+Ctrl+1..9: the n-th bar panel, in bar order (Omarchy's
+    // togglePanelAt). Left-cluster panels follow the right-cluster ones.
+    readonly property var barPanelOrder: ["display-selector", "tailscale", "notifications", "audio", "bluetooth", "cast", "power-menu", "agents", "calendar"]
+
+    function togglePanelAt(indexText) {
+        const index = Math.round(Number(indexText)) - 1;
+        if (!(index >= 0) || index >= barPanelOrder.length) {
+            return "no panel at " + stringOrEmpty(indexText);
+        }
+        return toggleSurface(barPanelOrder[index], "{}");
     }
 
     function listSurfaces() {
