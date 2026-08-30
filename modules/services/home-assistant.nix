@@ -696,6 +696,58 @@ EOF
               mode = "single";
             };
 
+            # Presence notifications from the iPhone's companion-app location
+            # (device_tracker.iphone_2 -> person.vinod). The from/to guards
+            # skip 'unavailable'/'unknown' transitions so an HA restart or a
+            # brief tracker dropout doesn't fire a false arrive/leave.
+            vinodArrivesHome = {
+              id = "vinod-arrives-home";
+              alias = "Presence — Vinod arrives home";
+              description = "Desktop notification when Vinod's iPhone enters the Home zone";
+              triggers = [{
+                platform = "state";
+                entity_id = "person.vinod";
+                to = "home";
+              }];
+              conditions = [{
+                condition = "template";
+                value_template = "{{ trigger.from_state.state not in ['unavailable', 'unknown'] }}";
+              }];
+              actions = [{
+                action = "shell_command.broadcast_desktop_notification";
+                data = {
+                  title = "🏠 Vinod arrived home";
+                  message = "Detected by iPhone location at {{ now().strftime('%I:%M %p') }}.";
+                  app_name = "Home Assistant";
+                };
+              }];
+              mode = "single";
+            };
+
+            vinodLeavesHome = {
+              id = "vinod-leaves-home";
+              alias = "Presence — Vinod leaves home";
+              description = "Desktop notification when Vinod's iPhone exits the Home zone";
+              triggers = [{
+                platform = "state";
+                entity_id = "person.vinod";
+                from = "home";
+              }];
+              conditions = [{
+                condition = "template";
+                value_template = "{{ trigger.to_state.state not in ['unavailable', 'unknown'] }}";
+              }];
+              actions = [{
+                action = "shell_command.broadcast_desktop_notification";
+                data = {
+                  title = "🚗 Vinod left home";
+                  message = "Detected by iPhone location at {{ now().strftime('%I:%M %p') }}.";
+                  app_name = "Home Assistant";
+                };
+              }];
+              mode = "single";
+            };
+
             # Uber Eats desktop notifications. Deliberately sparse — four per
             # order max: placed, picked up, arriving, complete. "en route",
             # status-text churn, ETA drift, and the per-minute countdown are
@@ -827,6 +879,8 @@ EOF
             (motion "kitchen" "Kitchen")
             (motion "hallway" "Hallway")
             iosSmsNotification
+            vinodArrivesHome
+            vinodLeavesHome
             uberOrderPlaced
             uberOrderPickedUp
             uberOrderArriving
