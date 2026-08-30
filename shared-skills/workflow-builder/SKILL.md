@@ -1,6 +1,6 @@
 ---
 name: workflow-builder
-description: "Author, save, run, inspect, or debug Workflow Builder dynamic-script workflows and durable agent sessions. Use for Workflow MCP workspace auth, host and preview runs, live traces, sealed evidence, script primitives, saved agents, runtime-registry routing and host modes (per-session-pod, shared-pool, harness), event-log context strategy, runtime admission (conformanceVerified, 409 override), structured output, action catalog, MCP connections, goals, artifacts, lifecycle stop/purge, and failed executions. Use runtime-conformance to verify a runtime, agent-session-recovery for run recovery, preview-environments for previews."
+description: "Author, save, run, inspect, or debug Workflow Builder dynamic-script workflows and durable agent sessions. Use for Workflow MCP workspace auth, host and preview runs, live traces, sealed evidence, script primitives, saved agents, runtime-registry routing and host modes (per-session-pod, harness), event-log context strategy, runtime admission (conformanceVerified, 409 override), structured output, action catalog, MCP connections, goals, artifacts, lifecycle stop/purge, and failed executions. Use runtime-conformance to verify a runtime, agent-session-recovery for run recovery, preview-environments for previews."
 ---
 
 # Workflow Builder
@@ -13,12 +13,13 @@ migrate them when required, but do not use them for new work.
 
 A saved dynamic workflow contains script source plus metadata. The durable
 script pump evaluates deterministic primitives, journals dispatched work, and
-replays from recorded results. Agent calls resolve through the runtime registry
-to a host mode, not always a per-session pod: `hostMode` decides whether the
-LLM loop runs in a Kueue-admitted per-session Sandbox pod, on a shared pool
-Deployment, or on the replicated harness with the per-session pod reduced to a
-credential-free tool executor. Standalone Python `dapr-agents` applications are
-a different thing; use `dapr-agents-workflow` for those.
+replays from recorded results. Agent calls cross the runtime-registry port;
+every runtime declares an explicit `hostMode`. Dapr agents run their LLM loop
+on the replicated harness while a Kueue-admitted per-session pod supplies a
+credential-free tool executor. CLI and browser adapters that cannot separate
+their loop from their tools use `per-session-pod`. Standalone Python
+`dapr-agents` applications are a different thing; use `dapr-agents-workflow`
+for those.
 
 ## Start From Source
 
@@ -158,13 +159,12 @@ the tools run (`docs/harness-host.md`):
 
 | hostMode | Loop runs on | Tools run in | Transport | Credentials |
 | --- | --- | --- | --- | --- |
-| `per-session-pod` (default; CLI runtimes, `cua-*`) | the `agent-host-<gen>` Sandbox pod | the same pod | dedicated `agent-session-*` app-id reached by pod IP on port 8002 | loop and tools share the pod's secrets |
-| `shared-pool` (`dapr-agent-py`) | `agent-runtime-pool-<class>` Deployment | the OpenShell shared workspace | Dapr invoke | held on the loop side (pool) |
-| `harness` (`dapr-agent-py-local`) | static-app-id `dapr-agent-harness` Deployment (2 replicas, PDB) | the per-session pod as a sandbox executor via `POST /executor/exec` | Dapr invoke to the harness; harness -> executor with the executor token | executor pod: no daprd, no provider keys, no `DATABASE_URL`, no `INTERNAL_API_TOKEN`; only its per-session `SANDBOX_EXECUTOR_TOKEN` from Secret `agent-host-cred-<gen>` |
+| `per-session-pod` (CLI, browser, and `cua-*` adapters) | the `agent-host-<gen>` Sandbox pod | the same pod | dedicated `agent-session-*` app-id reached by pod IP on port 8002 | loop and tools share the pod's secrets |
+| `harness` (`dapr-agent-py`, `dapr-agent-py-local`) | static-app-id `dapr-agent-harness` Deployment (2 replicas, PDB) | the per-session pod as a sandbox executor via `POST /executor/exec` | Dapr invoke to the harness; harness -> executor with the executor token | executor pod: no daprd, no provider keys, no `DATABASE_URL`, no `INTERNAL_API_TOKEN`; only its per-session `SANDBOX_EXECUTOR_TOKEN` from Secret `agent-host-cred-<gen>` |
 
 - Transport rule (`src/lib/server/application/session-host-transport.ts`): only
-  a dedicated `agent-session-*` app-id is reached by pod IP; pool and harness
-  hosts go through Dapr invoke. SEA takes `hostRole: agent-loop |
+  a dedicated `agent-session-*` app-id is reached by pod IP; harness hosts go
+  through Dapr invoke. SEA takes `hostRole: agent-loop |
   sandbox-executor`.
 - The harness resolves the executor token from SEA
   `GET /api/v1/agent-workflow-hosts/{gen}/executor-credential`;
@@ -209,8 +209,8 @@ the tools run (`docs/harness-host.md`):
   conformance-verified (...); set AGENT_RUNTIME_ALLOW_UNVERIFIED_RUNTIME=true or
   agentConfig.allowUnverifiedRuntime=true to override`. The override degrades
   the check to `warn` and emits `runtime.swap_degraded`.
-- As of 2026-08-28 (results file is the authority) verified: `dapr-agent-py`,
-  `dapr-agent-py-testing`, `dapr-agent-py-local`, `claude-code-cli`,
+- As of 2026-08-30 (results file is the authority) verified: `dapr-agent-py`,
+  `dapr-agent-py-local`, `claude-code-cli`,
   `codex-cli`, `kimi-code-cli`, `agy-cli`. Refused without override:
   `claude-code-cli-glm` (expired zai credential), `cua-agent-py` and
   `cua-browser-agent-py` (no CUA image on dev), `browser-use-agent` (not

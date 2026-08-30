@@ -55,7 +55,7 @@ only the Dapr sidecar stubbed:
 
 | Host service                 | Runtimes served                                                               |
 | ---------------------------- | ----------------------------------------------------------------------------- |
-| `services/dapr-agent-py`     | `dapr-agent-py`, `dapr-agent-py-testing`, `dapr-agent-py-local`, `cua-agent-py`, `cua-browser-agent-py` |
+| `services/dapr-agent-py`     | `dapr-agent-py`, `dapr-agent-py-local`, `cua-agent-py`, `cua-browser-agent-py` |
 | `services/cli-agent-py`      | `claude-code-cli`, `claude-code-cli-glm`, `codex-cli`, `kimi-code-cli`, `agy-cli` |
 | `services/browser-use-agent` | `browser-use-agent`                                                           |
 
@@ -117,11 +117,10 @@ for vocabulary and childInput acceptance).
 
 1. Launch one run per runtime with Workflow MCP `run_workflow_script` on the
    saved workflow `runtime-conformance-live` (args `{agent, label,
-   holdSeconds}`). Proof agents on dev: `harness-proof-agent-pool`
-   (dapr-agent-py), `harness-proof-agent` (dapr-agent-py-local),
-   `conformance-live-testing` (dapr-agent-py-testing),
-   `gvisor-cli-proof-{claude,codex,kimi,agy}`. `holdSeconds` keeps the pod
-   open while the runner probes it.
+   holdSeconds}`). Resolve current saved proof agents by their immutable
+   runtime id; both `dapr-agent-py` variants must resolve to `harness`, while
+   `gvisor-cli-proof-{claude,codex,kimi,agy}` resolve to `per-session-pod`.
+   `holdSeconds` keeps the pod open while the runner probes it.
 2. Run ONE PROCESS PER EXERCISED RUNTIME, IN PARALLEL, each into its own
    scratch results file. Per-session hosts are reaped at terminal, so a serial
    runner arrives after the pod is gone.
@@ -143,8 +142,8 @@ for vocabulary and childInput acceptance).
 
 Transport used by the runner (the `session-host-transport.ts` rule): from the
 BFF pod's daprd, `http://localhost:3500/v1.0/invoke/<app-id>/method/...` for
-shared-pool, harness and testing hosts; pod IP `:8002` (direct-host) only for
-dedicated `agent-session-*` per-session pods. After a host is reaped the
+harness hosts; pod IP `:8002` (direct-host) only for dedicated
+`agent-session-*` per-session pods. After a host is reaped the
 child's return dict is read from the parent's orchestrator history rows in
 `wfstate_state` (`encode(value,'escape')`, then unescape). A transport loss
 mid-probe records SKIPPED, never a verdict.
@@ -184,7 +183,7 @@ Runtime "<id>" is not conformance-verified (services/shared/runtime-conformance-
 
 ## Current State
 
-Verified: `dapr-agent-py`, `dapr-agent-py-testing`, `dapr-agent-py-local`,
+Verified: `dapr-agent-py`, `dapr-agent-py-local`,
 `claude-code-cli`, `codex-cli`, `kimi-code-cli`, `agy-cli`.
 
 Unverified, with cause:
