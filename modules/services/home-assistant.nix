@@ -44,6 +44,18 @@
     #   ibeacon          - iBeacon trackers (ibeacon_ble)
     #   google_translate - default_config's built-in TTS entry (gtts)
     #   ecobee           - Ecobee thermostat, per docs/HOMEKIT_DEVICES.md (pyecobee)
+    #                      ONE ecobee account holds both homes' thermostats and the
+    #                      integration has no per-thermostat filter, so every host
+    #                      running this module imports both devices:
+    #                        "Home"     = ecobee4 (home 215, this LAN's thermostat)
+    #                        "My ecobee"= Smart Premium (home 114)
+    #                      Scoped per home via the HA device registry (2026-08-30):
+    #                      the non-local device has disabled_by=user on each host
+    #                      (surface-pro3 disables "My ecobee", ryzen disables
+    #                      "Home"). That state lives in /var/lib/hass/.storage/
+    #                      core.device_registry, NOT here — do not "fix" the
+    #                      duplicate by deleting the device; it would be recreated
+    #                      on the next start. Re-enable in the HA UI if needed.
     #   cast             - Google/Chromecast devices (pychromecast)
     #   vizio            - Vizio SmartCast TVs (pyvizio)
     #   hunterdouglas_powerview - Kirsch Automation Hub (rebadged Hunter Douglas
