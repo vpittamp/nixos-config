@@ -1,0 +1,4 @@
+interface:
+  display_name: "Platform Monitoring"
+  short_description: "Prove and repair the dev platform's own signals."
+  default_prompt: "Use $platform-monitoring to determine whether the platform actually signalled this failure, which hop dropped it, and how to repair that hop."
