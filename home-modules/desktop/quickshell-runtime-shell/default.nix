@@ -265,6 +265,9 @@ let
     cp -r ${./windows} "$out/windows"
     cp ${./SessionRow.qml} "$out/SessionRow.qml"
     cp ${./BarTooltip.qml} "$out/BarTooltip.qml"
+    cp ${./PanelHero.qml} "$out/PanelHero.qml"
+    cp ${./PanelSlider.qml} "$out/PanelSlider.qml"
+    cp ${./PanelSectionHeader.qml} "$out/PanelSectionHeader.qml"
     cp ${./NotificationToast.qml} "$out/NotificationToast.qml"
     cp ${./NotificationRailCard.qml} "$out/NotificationRailCard.qml"
     cat >"$out/ShellConfig.qml" <<'EOF'

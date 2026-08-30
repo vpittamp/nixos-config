@@ -1429,33 +1429,14 @@ PanelWindow {
                 anchors.margins: 10
                 spacing: 10
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-
-                        Text {
-                            font.family: Theme.fontFamily
-                            text: "Displays"
-                            color: colors.text
-                            font.pixelSize: Theme.fs(12)
-                            font.weight: Font.DemiBold
-                        }
-
-                        Text {
-                            font.family: Theme.fontFamily
-                            text: root.displayApplyStatusText()
-                            color: root.displayApplyError ? colors.red : colors.subtle
-                            font.pixelSize: Theme.fs(9)
-                            wrapMode: Text.WordWrap
-                        }
-                    }
+                RootComponents.PanelHero {
+                    glyph: "󰍹"
+                    title: "Displays"
+                    meta: root.displayApplyStatusText()
+                    metaColor: root.displayApplyError ? colors.red : colors.subtle
 
                     Button {
-                        text: "Displays"
+                        text: "Settings"
                         onClicked: root.openSettings("displays")
                     }
                 }
@@ -1719,29 +1700,11 @@ PanelWindow {
                 anchors.margins: 10
                 spacing: 10
 
-                RowLayout {
-                    Layout.fillWidth: true
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-
-                        Text {
-                            font.family: Theme.fontFamily
-                            text: "Audio"
-                            color: colors.text
-                            font.pixelSize: Theme.fs(12)
-                            font.weight: Font.DemiBold
-                        }
-
-                        Text {
-                            font.family: Theme.fontFamily
-                            text: root.audioDetail()
-                            color: colors.subtle
-                            font.pixelSize: Theme.fs(9)
-                            elide: Text.ElideRight
-                        }
-                    }
+                RootComponents.PanelHero {
+                    glyph: root.audioMuted() ? "󰖁" : "󰕾"
+                    glyphColor: root.audioMuted() ? colors.red : colors.text
+                    title: "Audio"
+                    meta: root.audioDetail()
 
                     Button {
                         text: root.audioMuted() ? "Unmute" : "Mute"
@@ -1749,7 +1712,7 @@ PanelWindow {
                     }
                 }
 
-                Slider {
+                RootComponents.PanelSlider {
                     Layout.fillWidth: true
                     from: 0
                     to: 150
@@ -1914,7 +1877,7 @@ PanelWindow {
                     }
                 }
 
-                Slider {
+                RootComponents.PanelSlider {
                     Layout.fillWidth: true
                     from: 0
                     to: 150
@@ -2002,29 +1965,11 @@ PanelWindow {
                 anchors.margins: 10
                 spacing: 10
 
-                RowLayout {
-                    Layout.fillWidth: true
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-
-                        Text {
-                            font.family: Theme.fontFamily
-                            text: "Bluetooth"
-                            color: colors.text
-                            font.pixelSize: Theme.fs(12)
-                            font.weight: Font.DemiBold
-                        }
-
-                        Text {
-                            font.family: Theme.fontFamily
-                            text: root.bluetoothDetail()
-                            color: colors.subtle
-                            font.pixelSize: Theme.fs(9)
-                            elide: Text.ElideRight
-                        }
-                    }
+                RootComponents.PanelHero {
+                    glyph: root.bluetoothEnabled() ? "󰂯" : "󰂲"
+                    glyphColor: root.bluetoothEnabled() ? colors.blue : colors.subtle
+                    title: "Bluetooth"
+                    meta: root.bluetoothDetail()
 
                     Button {
                         text: root.bluetoothEnabled() ? "Turn Off" : "Turn On"
@@ -3241,21 +3186,11 @@ PanelWindow {
                     Layout.fillWidth: true
                     spacing: 2
 
-                    Text {
-                        font.family: Theme.fontFamily
-                        text: "Cast (Chromecast)"
-                        color: colors.text
-                        font.pixelSize: Theme.fs(12)
-                        font.weight: Font.DemiBold
-                    }
-
-                    Text {
-                        font.family: Theme.fontFamily
-                        Layout.fillWidth: true
-                        text: root.stringOrEmpty(root.castState.detail)
-                        color: colors.subtle
-                        font.pixelSize: Theme.fs(9)
-                        wrapMode: Text.WordWrap
+                    RootComponents.PanelHero {
+                        glyph: "󰄘"
+                        glyphColor: root.boolOrFalse(root.castState.active) ? colors.blue : colors.text
+                        title: "Cast"
+                        meta: root.stringOrEmpty(root.castState.detail)
                     }
 
                     Text {
