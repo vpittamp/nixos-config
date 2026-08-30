@@ -696,6 +696,85 @@ EOF
               mode = "single";
             };
 
+            # Uber Eats desktop notifications. Deliberately sparse — four per
+            # order max: placed, picked up, arriving, complete. "en route",
+            # status-text churn, ETA drift, and the per-minute countdown are
+            # intentionally not notified. All trigger on the template sensors
+            # (see the `template` block above), so trigger.to_state is always
+            # the freshly rendered value.
+            uberNotify = { suffix, alias, description, to, message, conditions ? [ ] }:
+              let
+                baseTrigger = {
+                  platform = "state";
+                  entity_id = "sensor.uber_eats_order_stage";
+                };
+              in
+              {
+                id = "uber-eats-${suffix}";
+                alias = "Uber Eats — ${alias}";
+                inherit description conditions;
+                triggers = [ (baseTrigger // to) ];
+                actions = [{
+                  action = "shell_command.broadcast_desktop_notification";
+                  data = {
+                    title = "🛵 ${alias}";
+                    inherit message;
+                    app_name = "Uber Eats";
+                  };
+                }];
+                mode = "single";
+              };
+
+            uberOrderPlaced = uberNotify {
+              suffix = "order-placed";
+              alias = "Order placed";
+              description = "Desktop notification when a new Uber Eats order is detected";
+              to = { }; # any transition, gated by the condition below
+              conditions = [{
+                condition = "template";
+                value_template = "{{ trigger.from_state.state in ['none', 'unavailable', 'unknown'] }}";
+              }];
+              message = "{{ states('sensor.uber_eats_restaurant') }} is preparing your order.";
+            };
+
+            uberOrderPickedUp = uberNotify {
+              suffix = "order-picked-up";
+              alias = "On the way";
+              description = "Desktop notification when the driver picks up the order";
+              to = { to = "picked up"; };
+              message = "{% set eta = states('sensor.uber_eats_eta') %}{{ states('sensor.uber_eats_restaurant') }} order picked up{% if eta not in ['none', 'unavailable', 'unknown', 'No ETT Available'] %} — ETA {{ eta }}{% endif %}.";
+            };
+
+            uberOrderArriving = uberNotify {
+              suffix = "order-arriving";
+              alias = "Arriving now";
+              description = "Desktop notification when the driver is at the door";
+              to = { to = "arriving"; };
+              message = "{% set mins = states('sensor.uber_eats_minutes_remaining') %}Your order is arriving{% if mins | float(none) is not none %} — about {{ mins }} min out{% endif %}. Head to the door.";
+            };
+
+            uberOrderComplete = {
+              id = "uber-eats-order-complete";
+              alias = "Uber Eats — Order complete";
+              description = "Desktop notification when the active order clears (delivered or canceled)";
+              triggers = [{
+                platform = "state";
+                entity_id = "binary_sensor.vinod_pittampalli_uber_eats_active_order";
+                to = "off";
+                from = "on";
+              }];
+              conditions = [ ];
+              actions = [{
+                action = "shell_command.broadcast_desktop_notification";
+                data = {
+                  title = "✅ Uber Eats — order complete";
+                  message = "Delivered or canceled — if you did not get your food, check the Uber Eats app.";
+                  app_name = "Uber Eats";
+                };
+              }];
+              mode = "single";
+            };
+
             iosSmsNotification = {
               id = "ios-sms-received-notification";
               alias = "iOS SMS Received — Desktop Notification";
@@ -744,6 +823,10 @@ EOF
             (motion "kitchen" "Kitchen")
             (motion "hallway" "Hallway")
             iosSmsNotification
+            uberOrderPlaced
+            uberOrderPickedUp
+            uberOrderArriving
+            uberOrderComplete
           ];
 
       # Core settings. Location/units are left for the onboarding UI to ask.
