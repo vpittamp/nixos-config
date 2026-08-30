@@ -393,6 +393,20 @@ and health are good, request one fresh sync operation so a `Succeeded` lands.
 A preview whose up-Job succeeded and whose origin serves traffic is healthy —
 the stall is projection, not provisioning.
 
+## Broker Surface
+
+The preview-control broker serves a deliberately minimal HTTP surface: in
+broker mode `src/hooks.server.ts` answers any `/api/internal/preview-control/*`
+path that is **not** listed in `PREVIEW_CONTROL_BROKER_ROUTES` with a plain
+404 "Not found". A route that exists in the build but is missing from that list
+therefore looks exactly like a routing typo, and its caller — usually a
+reconciler sidecar on the broker Deployment — fails silently on every tick.
+
+When a broker-driven lane reports 404 forever while the code is obviously
+deployed, check the allowlist before anything else, and remember that shipping
+a new broker route means shipping the allowlist entry and its test in the same
+change.
+
 ## Validation
 
 Run focused Workflow Builder domain, adapter, route, fixture, catalog, and MCP
