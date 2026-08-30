@@ -21,6 +21,7 @@ Read current source before using remembered versions or limits:
 - Workflow Builder `docs/session-resource-metrics-and-kueue-admission.md`
 - stacks and Workflow Builder `docs/evaluation-control-plane.md`
 - Workflow Builder preview capacity compiler, pressure policy, API, and page
+- Workflow Builder `src/lib/server/application/preview-warm-pool.ts`
 
 Inspect the rendered target and live cluster after source. Distinguish desired,
 rendered, and live versions explicitly; do not copy version or capacity values
@@ -62,7 +63,9 @@ Report both the binding dimension and the arithmetic.
    substitute a fixed per-preview reservation for the immutable plan.
 7. Separate queue quota, physical headroom, lifecycle limits, provider or
    evaluator concurrency, and origin availability in the conclusion.
-8. Use historical request and observed-usage metrics to propose right-sizing;
+8. Attribute every preview to its owner before reasoning about free capacity:
+   warm-pool members are platform-owned but occupy real quota.
+9. Use historical request and observed-usage metrics to propose right-sizing;
    do not make observed usage the admission contract without a bounded margin.
 
 Useful read-only checks include:
@@ -102,21 +105,72 @@ For a refusal, report:
 - the next safe action, such as sleeping an idle preview or choosing a smaller
   service set.
 
+## Preview Warm Pool
+
+A warm pool of ready-to-adopt previews exists, so reusable preview capacity is
+real. Treat its members as ordinary previews that happen to be platform-owned.
+
+- Members are PreviewEnvironments owned by `automation/preview-warm-pool`, at
+  the current baked baseline and catalog digest, headless, with no host project
+  and no public origin. Being headless, a member consumes no origin, but it
+  consumes the same CPU, memory, and lifecycle slots as any other preview.
+- Replenishment launches through the ordinary admitted path. A member counts
+  against the `preview-environments` Kueue queue exactly like a user's preview,
+  and the full exact-shape Kueue and observer admission still runs inside the
+  launch. There is no reserved pool quota and no bypass.
+- Before launching, the lane checks a coarse headroom pre-condition and skips
+  replenishment whenever it fails: `PREVIEW_WARM_POOL_HEADROOM_RESERVE`
+  (default 1) leaves that many slots of the lifecycle cap free for real
+  launches, against both the awake cap and the total-object cap. The pool can
+  therefore lag real demand but must never starve it.
+- Every non-deleting warm-owned CR occupies a pool slot whatever its phase, so
+  counting only Ready members over-launches. Adoption transfers ownership to
+  the user, which removes the member from pool capacity and triggers a
+  replacement. The steady state to expect is one warm member plus whatever
+  previews users actually hold — not one preview total.
+- Default size is one (`PREVIEW_WARM_POOL_SIZE`). Sizing, TTL, headroom
+  reserve, and launch cooldown are delivered as `PREVIEW_WARM_POOL_*` env on
+  the preview-control broker; read the live values rather than assuming.
+- Stale-baseline, near-TTL, and failed members are retired through the signed
+  teardown contract, never reused. A pin roll makes every older member stale.
+
+A capacity refusal during replenishment creates nothing: the lane records a
+`launch-capacity-refused` outcome with the refusal detail and logs it. That is
+the design working, and it is the cheapest possible refusal because no object
+was created.
+
+Never raise `PREVIEW_WARM_POOL_SIZE` to work around a capacity refusal. A
+refusal means the cluster had no headroom for one more preview; a larger pool
+asks for the same capacity more often and competes with the user launches the
+reserve exists to protect. If warm previews are missing when users want them,
+fix the binding dimension — right-size preview plans, return idle previews, or
+adjust quota within physical limits — and only then revisit the size.
+
 ## Agent Host Shapes
 
-Session capacity depends on the registry `hostMode`, not on one pod shape:
+Session capacity depends on the registry `hostMode` and workspace backend, not
+on one pod shape. Read `services/shared/runtime-registry.json` for the live set:
 
-- `harness` (`dapr-agent-py`, `dapr-agent-py-local`): the LLM loop runs on the
-  `dapr-agent-harness` Deployment (2 replicas, PDB); the per-session executor
-  pod carries no daprd sidecar, so it is lighter than an agent-loop pod.
-- `per-session-pod`: loop and tools share one Kueue-admitted Sandbox pod.
+- `hostMode: harness` with workspace `openshell-shared` (`dapr-agent-py`): the
+  LLM loop runs on the replicated `dapr-agent-harness` Deployment and tools run
+  in a shared OpenShell workspace. There is no per-session executor pod, so the
+  per-session Kubernetes cost is the workspace, not an agent-loop pod.
+- `hostMode: harness` with workspace `sandbox-executor` (`dapr-agent-py-local`):
+  loop on the harness, tools in a per-session executor pod. That pod carries no
+  daprd sidecar, so it is lighter than an agent-loop pod.
+- `hostMode: per-session-pod` (CLI, CUA, and browser descriptors): loop and
+  tools share one Kueue-admitted Sandbox pod. This is a declared capability
+  exception, not a fallback, so harness pressure never reroutes work here.
+
+The retired `shared-pool` host mode and `agent-runtime-pool-*` workloads must
+not reappear in a capacity plan or a rendered manifest.
 
 One image pin, `dapr-agent-py-sandbox`, feeds the harness and the executor image
 (`AGENT_RUNTIME_DEFAULT_IMAGE` on the BFF), so a single outer-loop bump rolls
 both. Before a live capacity proof, wait for `rollout status` on
 `dapr-agent-harness`, `workflow-orchestrator`, and `workflow-builder`. Read the
-current values from source and the live Deployments; do not carry these numbers
-forward as fixed.
+current replica counts and requests from source and the live Deployments; do
+not carry these numbers forward as fixed.
 
 ## Pressure And Elastic Return
 
@@ -134,11 +188,18 @@ pools. It must not terminate active or protected work, bypass lifecycle owners,
 or treat a missing observer as authorization to mutate. Preserve operator
 cordons; a node guard may recover only nodes it owns under its current policy.
 
+Warm-pool members are the correct first thing to give back under pressure,
+because retiring one returns real quota and interrupts nobody. Retire them
+through the pool lane's signed teardown, never by deleting the CR or its
+Workload directly.
+
 Evaluation concurrency follows the same live authority. Each Dapr campaign
 shard asks the capacity port for an exact trial-shape decision. A stale observer
 parks the campaign; it never fails the campaign or authorizes new work. The
 materialized Tekton TaskRun or Sandbox remains Kueue-owned, while campaign
-state and cancellation remain evaluation-owned.
+state and cancellation remain evaluation-owned. Evaluation compatibility-
+validation TaskRuns are garbage-collected an hour after completion, so a
+disappearing TaskRun is cleanup, not capacity loss.
 
 ## Changing Capacity Policy
 
@@ -176,6 +237,8 @@ Then prove the live path:
 - ClusterQueues and LocalQueues are active with expected cohorts and checks;
 - one representative exact preview plan admits and materializes correctly;
 - the capacity debug page explains both an allowed and a refused decision;
+- the warm pool holds its configured size across several ticks, and an adoption
+  removes the member from pool capacity and is replaced;
 - sleeping or teardown returns the synthetic Workload and quota;
 - session/evaluation cleanup returns their Workloads and leases; and
 - no active or protected work was reclaimed under pressure.
