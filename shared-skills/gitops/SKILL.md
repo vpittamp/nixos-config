@@ -1,6 +1,6 @@
 ---
 name: gitops
-description: "Operate PittampalliOrg/stacks delivery and recovery, with dev as the default shared target. Use for ArgoCD or argocd-agent health, Source Hydrator and GitOps Promoter, hub Tekton builds, release and runtime image pins, generated overlays, deployment inventory, secrets, Tailscale exposure, Dapr workload readiness, Workflow MCP deployment/auth wiring, and live rollout proof. Use kubernetes-capacity for shared capacity policy, preview-environments for PreviewEnvironment lifecycles, and cluster-desired-state for full cluster recreation."
+description: "Operate PittampalliOrg/stacks delivery and recovery, with dev as the default shared target. Use for ArgoCD or argocd-agent health, Source Hydrator and GitOps Promoter, hub Tekton builds, release and runtime image pins, generated overlays, deployment inventory, secrets, Tailscale exposure, Dapr workload readiness, Workflow MCP deployment/auth wiring, and live rollout proof. Use kubernetes-capacity for shared capacity policy, preview-environments for PreviewEnvironment lifecycles, platform-monitoring for the signal pipeline, notification kinds, and Drasi/CDC health, and cluster-desired-state for full cluster recreation."
 ---
 
 # GitOps
@@ -138,6 +138,13 @@ lane resolves an existing image before it builds.
   the agent pushes spoke health into them and child health does not propagate to
   a root. Triggers: `on-health-degraded`, `on-sync-failed`,
   `on-sync-status-unknown`, `on-out-of-sync`, `on-deployed`.
+
+The pipeline carrying those signals — `gitops_activity_events` ingest, the five
+notification kinds, ArgoCD subscription-by-label and delivery, retention and the
+conditional ArgoCD purge, Drasi continuous queries and the CDC replication-slot
+failure mode, and the `/admin/gitops` and `/admin/drasi` surfaces — belongs to
+**`platform-monitoring`**. Go there when a signal never arrived at all; what
+follows is the delivery view.
 
 **"My change is not on dev" — diagnose in this order:**
 
