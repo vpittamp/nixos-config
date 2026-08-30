@@ -14,10 +14,12 @@ migrate them when required, but do not use them for new work.
 A saved dynamic workflow contains script source plus metadata. The durable
 script pump evaluates deterministic primitives, journals dispatched work, and
 replays from recorded results. Agent calls cross the runtime-registry port;
-every runtime declares an explicit `hostMode`. Dapr agents run their LLM loop
-on the replicated harness while a Kueue-admitted per-session pod supplies a
-credential-free tool executor. CLI and browser adapters that cannot separate
-their loop from their tools use `per-session-pod`. Standalone Python
+every runtime declares an explicit `hostMode`. The architecture is harness-first
+brains-from-hands (`docs/agent-runtime-comparison.md`): `dapr-agent-harness` is
+the only standing brain for the Dapr family, and its hands are replaceable — an
+OpenShell shared workspace, or a credential-free SEA sandbox executor. CLI, CUA,
+and browser adapters that cannot separate their loop from their tools are
+`per-session-pod` capability exceptions, never a fallback. Standalone Python
 `dapr-agents` applications are a different thing; use `dapr-agents-workflow`
 for those.
 
@@ -160,8 +162,12 @@ the tools run (`docs/harness-host.md`):
 | hostMode | Loop runs on | Tools run in | Transport | Credentials |
 | --- | --- | --- | --- | --- |
 | `per-session-pod` (CLI, browser, and `cua-*` adapters) | the `agent-host-<gen>` Sandbox pod | the same pod | dedicated `agent-session-*` app-id reached by pod IP on port 8002 | loop and tools share the pod's secrets |
-| `harness` (`dapr-agent-py`, `dapr-agent-py-local`) | static-app-id `dapr-agent-harness` Deployment (2 replicas, PDB) | the per-session pod as a sandbox executor via `POST /executor/exec` | Dapr invoke to the harness; harness -> executor with the executor token | executor pod: no daprd, no provider keys, no `DATABASE_URL`, no `INTERNAL_API_TOKEN`; only its per-session `SANDBOX_EXECUTOR_TOKEN` from Secret `agent-host-cred-<gen>` |
+| `harness` + `openshell-shared` (`dapr-agent-py`, the canonical default) | static-app-id `dapr-agent-harness` Deployment (2 replicas, PDB) | the per-run OpenShell workspace named by `childInput.sandboxName`; NO per-session host is built (`runtimeSandboxName` null, `runtimeHostOwned` false) | Dapr invoke to the harness | OpenShell receives no platform credentials at all |
+| `harness` + `sandbox-executor` (`dapr-agent-py-local`) | the same harness Deployment | the per-session pod as a sandbox executor via `POST /executor/exec` | Dapr invoke to the harness; harness -> executor with the executor token | executor pod: no daprd, no provider keys, no `DATABASE_URL`, no `INTERNAL_API_TOKEN`; only its per-session `SANDBOX_EXECUTOR_TOKEN` from Secret `agent-host-cred-<gen>` |
 
+- The `shared-pool` host mode, `agent-runtime-pool-*` workloads, the standing
+  `dapr-agent-py` Deployment, and the `dapr-agent-py-harness` alias are RETIRED
+  (wfb #1970): state naming them is rejected, never adapted.
 - Transport rule (`src/lib/server/application/session-host-transport.ts`): only
   a dedicated `agent-session-*` app-id is reached by pod IP; harness hosts go
   through Dapr invoke. SEA takes `hostRole: agent-loop |
@@ -172,9 +178,8 @@ the tools run (`docs/harness-host.md`):
 - `call_llm` spans attribute to the harness, tool spans to the executor sandbox.
   `/executor/healthz` reports `workspaceRoot`/`workspaceReady`; the BFF
   readiness probe gates on `ok`.
-- Proven live: executor pod deleted mid-turn -> tool error, same execution
-  finishes; harness replica deleted mid-turn -> same instance resumes on the
-  other replica, no duplicate `call_llm`.
+- Resilience proven live (executor pod and harness replica each deleted
+  mid-turn; same execution finishes): `agent-session-recovery`.
 
 ## Context Strategy
 
@@ -205,12 +210,13 @@ the tools run (`docs/harness-host.md`):
 - `agentConfig.runtimeImageRef` exists for testing an UNRELEASED runtime image
   on dev: a digest-pinned `ghcr.io/pittampalliorg/<repo>@sha256:<64 hex>` in the
   runtime's own registry `imageRepository` family, replacing the image of THIS
-  agent's per-session sandbox/executor pod only — never a shared Deployment.
-  Two invariants an author must not violate: it is honoured only when the same
-  agent also carries `allowUnverifiedRuntime` (otherwise the launch is refused
-  409), and it is never valid on a published evaluation subject (422
-  `subject_runtime_image_override` at publish, refused again at campaign
-  launch). Shape, per-runtime support, and the proof recipe: `runtime-conformance`.
+  agent's per-session sandbox/executor pod only — never a shared Deployment, and
+  refused outright by runtimes that build no per-session host (the canonical
+  `dapr-agent-py` among them, `imageRepository: null`). Two invariants an author
+  must not violate: it is honoured only with `allowUnverifiedRuntime` on the same
+  agent (else 409), and it is never valid on a published evaluation subject (422
+  `subject_runtime_image_override` at publish, refused again at campaign launch).
+  Shape, per-runtime support, and the proof recipe: `runtime-conformance`.
 - Both conformance lanes, the results file (the authority for which runtimes are
   verified), and the GENERATED `## Current runtimes` table in
   `docs/durable-session-runtime-contract.md` are owned by `runtime-conformance`;

@@ -202,8 +202,9 @@ every other agent runs on — pin it on one agent
   and is a 400.
 - Scope: the honoured ref becomes the `agentImage` of THAT ONE per-session host
   request (SEA: `image = request.agentImage or class_config.agentHostImage`) and
-  nothing else. It never replaces a shared Deployment — not `dapr-agent-harness`,
-  not a runtime pool.
+  nothing else. It never replaces a shared Deployment: `dapr-agent-harness`, the
+  only standing brain, is untouched. (The `runtime-image-ref.ts` header still
+  says "the runtime pools" — stale since wfb #1970 retired them.)
 - Switch: the SAME one as the unverified-runtime refusal, not a second flag.
   Without `agentConfig.allowUnverifiedRuntime: true` (literal boolean) or
   `AGENT_RUNTIME_ALLOW_UNVERIFIED_RUNTIME=true` on the same agent, swap-safety
