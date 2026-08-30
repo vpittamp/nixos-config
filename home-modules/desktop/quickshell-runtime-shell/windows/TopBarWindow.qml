@@ -115,8 +115,8 @@ PanelWindow {
                     radius: root.radiusControl
                     color: root.stateChipFill(root.panelVisible, panelToggleMouse.containsMouse, colors.blueBg)
                     border.color: root.stateChipBorder(root.panelVisible, panelToggleMouse.containsMouse, colors.blue)
-                    border.width: 1
-                    implicitWidth: panelToggleLabel.implicitWidth + 20
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: panelToggleLabel.implicitWidth + (Theme.textChips ? 10 : 20)
                     Layout.fillHeight: true
 
                     Behavior on color {
@@ -179,8 +179,8 @@ PanelWindow {
                     border.color: agentMonitorChip.anyBlocked && !root.dashboardStale
                         ? colors.red
                         : root.stateChipBorder(root.agentMonitorVisible, agentMonitorMouse.containsMouse, colors.blue)
-                    border.width: 1
-                    implicitWidth: agentMonitorRow.implicitWidth + 20
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: agentMonitorRow.implicitWidth + (Theme.textChips ? 10 : 20)
                     Layout.fillHeight: true
 
                     Behavior on color {
@@ -300,13 +300,14 @@ PanelWindow {
                     readonly property int worstPercent: root.agentUsageChipPercent()
                     visible: root.agentUsageAvailable()
                     radius: root.radiusControl
-                    color: root.agentsPopupVisible ? colors.blueBg : root.neutralChipFill(agentUsageMouse.containsMouse)
-                    border.color: root.agentsPopupVisible ? colors.blue
+                    color: root.stateChipFill(root.agentsPopupVisible, agentUsageMouse.containsMouse, colors.blueBg)
+                    border.color: Theme.textChips ? "transparent"
+                        : root.agentsPopupVisible ? colors.blue
                         : worstPercent >= 90 ? colors.red
                         : worstPercent >= 70 ? colors.amber
                         : root.neutralChipBorder(agentUsageMouse.containsMouse)
-                    border.width: 1
-                    implicitWidth: agentUsageRow.implicitWidth + 18
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: agentUsageRow.implicitWidth + (Theme.textChips ? 10 : 18)
                     Layout.fillHeight: true
 
                     Behavior on color {
@@ -333,7 +334,7 @@ PanelWindow {
                         Text {
                             font.family: Theme.fontFamily
                             Layout.alignment: Qt.AlignVCenter
-                            text: root.agentUsageChipLabel() + " ▾"
+                            text: root.agentUsageChipLabel() + root.chipCaret()
                             color: root.agentsPopupVisible ? colors.blue : root.neutralChipText(agentUsageMouse.containsMouse)
                             font.pixelSize: root.fontLabel
                             font.weight: Font.Medium
@@ -370,8 +371,8 @@ PanelWindow {
                     radius: root.radiusControl
                     color: root.neutralChipFill(mediaMouse.containsMouse)
                     border.color: root.mprisPlaying() ? colors.tealBg : root.neutralChipBorder(mediaMouse.containsMouse)
-                    border.width: 1
-                    implicitWidth: Math.min(mediaRow.implicitWidth + 18, Theme.fs(220))
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: Math.min(mediaRow.implicitWidth + (Theme.textChips ? 10 : 18), Theme.fs(220))
                     Layout.fillHeight: true
                     clip: true
 
@@ -417,9 +418,9 @@ PanelWindow {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 radius: root.radiusControl
-                color: colors.card
-                border.color: colors.border
-                border.width: 1
+                color: Theme.textChips ? "transparent" : colors.card
+                border.color: Theme.textChips ? "transparent" : colors.border
+                border.width: Theme.textChips ? 0 : 1
                 implicitWidth: centerRow.implicitWidth + 20
 
                 // The span actually free between the two side clusters. Both
@@ -518,10 +519,10 @@ PanelWindow {
                     id: recordingChip
                     visible: root.captureRecording
                     radius: root.radiusControl
-                    color: colors.redBg
+                    color: Theme.textChips ? "transparent" : colors.redBg
                     border.color: colors.red
-                    border.width: 1
-                    implicitWidth: recordingRow.implicitWidth + 18
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: recordingRow.implicitWidth + (Theme.textChips ? 10 : 18)
                     Layout.fillHeight: true
 
                     RowLayout {
@@ -569,8 +570,8 @@ PanelWindow {
                     radius: root.radiusControl
                     color: root.daemonHealthColor(daemonHealthMouse.containsMouse)
                     border.color: root.daemonHealthBorderColor(daemonHealthMouse.containsMouse)
-                    border.width: 1
-                    implicitWidth: daemonHealthRow.implicitWidth + 18
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: daemonHealthRow.implicitWidth + (Theme.textChips ? 10 : 18)
                     Layout.fillHeight: true
                         || root.daemonHealthState.status === "unhealthy"
                         || root.daemonHealthState.status === "critical"
@@ -632,8 +633,8 @@ PanelWindow {
                     radius: root.radiusControl
                     color: root.neutralChipFill(generationMouse.containsMouse)
                     border.color: root.neutralChipBorder(generationMouse.containsMouse)
-                    border.width: 1
-                    implicitWidth: generationLabel.implicitWidth + 18
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: generationLabel.implicitWidth + (Theme.textChips ? 10 : 18)
                     Layout.fillHeight: true
 
                     Behavior on color {
@@ -672,13 +673,13 @@ PanelWindow {
                     radius: root.radiusControl
                     color: root.neutralChipFill(memoryMouse.containsMouse)
                     border.color: root.neutralChipBorder(memoryMouse.containsMouse)
-                    border.width: 1
+                    border.width: Theme.textChips ? 0 : 1
                     // Sized for the widest reading it can ever hold, not for the
                     // current one. The percentage moves on every stats poll and
                     // proportional digits are not the same width, so binding to
                     // the live label shuffled every chip to its left a pixel or
                     // two, several times a minute.
-                    implicitWidth: Math.ceil(memoryMetrics.width) + 18
+                    implicitWidth: Math.ceil(memoryMetrics.width) + (Theme.textChips ? 10 : 18)
 
                     TextMetrics {
                         id: memoryMetrics
@@ -723,8 +724,8 @@ PanelWindow {
                     radius: root.radiusControl
                     color: root.diskChipFill(diskMouse.containsMouse)
                     border.color: root.diskChipBorder(diskMouse.containsMouse)
-                    border.width: 1
-                    implicitWidth: Math.ceil(diskMetrics.width) + 18
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: Math.ceil(diskMetrics.width) + (Theme.textChips ? 10 : 18)
 
                     TextMetrics {
                         id: diskMetrics
@@ -778,8 +779,8 @@ PanelWindow {
                     readonly property bool displaySettingsActive: root.settingsVisible && root.stringOrEmpty(root.settingsSection) === "displays"
                     color: root.stateChipFill(displaySettingsActive, layoutMouse.containsMouse, colors.blueBg)
                     border.color: root.stateChipBorder(displaySettingsActive, layoutMouse.containsMouse, colors.blue)
-                    border.width: 1
-                    implicitWidth: layoutLabel.implicitWidth + 18
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: layoutLabel.implicitWidth + (Theme.textChips ? 10 : 18)
                     Layout.fillHeight: true
 
                     Behavior on color {
@@ -798,7 +799,7 @@ PanelWindow {
                         font.family: Theme.fontFamily
                         id: layoutLabel
                         anchors.centerIn: parent
-                        text: "Displays ▾"
+                        text: "Displays" + root.chipCaret()
                         color: root.stateChipText(layoutChip.displaySettingsActive, layoutMouse.containsMouse, colors.blue)
                         font.pixelSize: root.fontLabel
                         font.weight: Font.Medium
@@ -824,8 +825,8 @@ PanelWindow {
                     radius: root.radiusControl
                     color: root.moonlightChipFill(false)
                     border.color: root.moonlightChipBorder(false)
-                    border.width: 1
-                    implicitWidth: moonlightLabel.implicitWidth + 18
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: moonlightLabel.implicitWidth + (Theme.textChips ? 10 : 18)
                     Layout.fillHeight: true
 
                     Behavior on color {
@@ -870,8 +871,8 @@ PanelWindow {
                     radius: root.radiusControl
                     color: root.neutralChipFill(networkMouse.containsMouse)
                     border.color: root.neutralChipBorder(networkMouse.containsMouse)
-                    border.width: 1
-                    implicitWidth: networkLabel.implicitWidth + 18
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: networkLabel.implicitWidth + (Theme.textChips ? 10 : 18)
                     Layout.fillHeight: true
 
                     Behavior on color {
@@ -920,10 +921,10 @@ PanelWindow {
                     readonly property bool wanted: root.tailscaleAvailable()
                     visible: wanted && !topBarWindow.shed(tailscaleChip)
                     radius: root.radiusControl
-                    color: root.tailscalePopupVisible ? colors.blueBg : root.neutralChipFill(tailscaleMouse.containsMouse)
-                    border.color: root.tailscalePopupVisible ? colors.blue : root.neutralChipBorder(tailscaleMouse.containsMouse)
-                    border.width: 1
-                    implicitWidth: tailscaleRow.implicitWidth + 18
+                    color: root.stateChipFill(root.tailscalePopupVisible, tailscaleMouse.containsMouse, colors.blueBg)
+                    border.color: root.stateChipBorder(root.tailscalePopupVisible, tailscaleMouse.containsMouse, colors.blue)
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: tailscaleRow.implicitWidth + (Theme.textChips ? 10 : 18)
                     Layout.fillHeight: true
 
                     Behavior on color {
@@ -951,7 +952,7 @@ PanelWindow {
                         Text {
                             Layout.alignment: Qt.AlignVCenter
                             font.family: Theme.fontFamily
-                            text: root.tailscaleChipLabel() + " ▾"
+                            text: root.tailscaleChipLabel() + root.chipCaret()
                             color: root.tailscalePopupVisible ? colors.blue : (root.tailscaleRunning() ? root.neutralChipText(tailscaleMouse.containsMouse) : colors.subtle)
                             font.pixelSize: root.fontLabel
                             font.weight: Font.Medium
@@ -985,8 +986,8 @@ PanelWindow {
                     radius: root.radiusControl
                     color: root.notificationChipFill(notificationMouse.containsMouse)
                     border.color: root.notificationChipBorder(notificationMouse.containsMouse)
-                    border.width: 1
-                    implicitWidth: notificationLabel.implicitWidth + 18
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: notificationLabel.implicitWidth + (Theme.textChips ? 10 : 18)
                     Layout.fillHeight: true
 
                     Behavior on color {
@@ -1040,8 +1041,8 @@ PanelWindow {
                     radius: root.radiusControl
                     color: root.neutralChipFill(audioMouse.containsMouse)
                     border.color: root.audioChipBorder(audioMouse.containsMouse)
-                    border.width: 1
-                    implicitWidth: audioRow.implicitWidth + 18
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: audioRow.implicitWidth + (Theme.textChips ? 10 : 18)
                     Layout.fillHeight: true
 
                     Behavior on color {
@@ -1063,7 +1064,7 @@ PanelWindow {
 
                         Text {
                             Layout.alignment: Qt.AlignVCenter
-                            text: "\uf028"
+                            text: root.audioMuted() ? "\uf026" : "\uf028"
                             color: root.audioChipText(audioMouse.containsMouse)
                             font.family: "FiraCode Nerd Font"
                             font.pixelSize: Theme.fs(11)
@@ -1073,7 +1074,7 @@ PanelWindow {
                             font.family: Theme.fontFamily
                             id: audioLabel
                             Layout.alignment: Qt.AlignVCenter
-                            text: root.audioLabel() + " ▾"
+                            text: root.audioLabel() + root.chipCaret()
                             color: root.audioChipText(audioMouse.containsMouse)
                             font.pixelSize: root.fontLabel
                             font.weight: Font.Medium
@@ -1107,8 +1108,8 @@ PanelWindow {
                     radius: root.radiusControl
                     color: root.neutralChipFill(bluetoothMouse.containsMouse)
                     border.color: root.neutralChipBorder(bluetoothMouse.containsMouse)
-                    border.width: 1
-                    implicitWidth: bluetoothRow.implicitWidth + 18
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: bluetoothRow.implicitWidth + (Theme.textChips ? 10 : 18)
                     Layout.fillHeight: true
 
                     Behavior on color {
@@ -1140,7 +1141,7 @@ PanelWindow {
                             font.family: Theme.fontFamily
                             id: bluetoothLabel
                             Layout.alignment: Qt.AlignVCenter
-                            text: root.bluetoothLabel() + " ▾"
+                            text: root.bluetoothLabel() + root.chipCaret()
                             color: root.neutralChipText(bluetoothMouse.containsMouse)
                             font.pixelSize: root.fontLabel
                             font.weight: Font.Medium
@@ -1174,8 +1175,8 @@ PanelWindow {
                     radius: root.radiusControl
                     color: root.neutralChipFill(batteryMouse.containsMouse)
                     border.color: root.batteryChipBorder(batteryMouse.containsMouse)
-                    border.width: 1
-                    implicitWidth: batteryRow.implicitWidth + 16
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: batteryRow.implicitWidth + (Theme.textChips ? 10 : 16)
                     Layout.fillHeight: true
 
                     Behavior on color {
@@ -1308,8 +1309,8 @@ PanelWindow {
                     radius: root.radiusControl
                     color: root.castChipFill(castMouse.containsMouse)
                     border.color: root.castChipBorder(castMouse.containsMouse)
-                    border.width: 1
-                    implicitWidth: castGlyph.implicitWidth + 18
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: castGlyph.implicitWidth + (Theme.textChips ? 10 : 18)
                     Layout.fillHeight: true
 
                     Behavior on color {
@@ -1360,8 +1361,8 @@ PanelWindow {
                     radius: root.radiusControl
                     color: root.powerChipFill(powerMouse.containsMouse)
                     border.color: root.powerChipBorder(powerMouse.containsMouse)
-                    border.width: 1
-                    implicitWidth: powerLabel.implicitWidth + 18
+                    border.width: Theme.textChips ? 0 : 1
+                    implicitWidth: powerLabel.implicitWidth + (Theme.textChips ? 10 : 18)
                     Layout.fillHeight: true
 
                     Behavior on color {
@@ -1380,7 +1381,7 @@ PanelWindow {
                         font.family: Theme.fontFamily
                         id: powerLabel
                         anchors.centerIn: parent
-                        text: "Power ▾"
+                        text: "Power" + root.chipCaret()
                         color: root.powerChipText(powerMouse.containsMouse)
                         font.pixelSize: root.fontLabel
                         font.weight: Font.DemiBold

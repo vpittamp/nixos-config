@@ -134,6 +134,7 @@ let
     description = t.description or "";
     dark = t.dark;
     colors = if id == themeName then defaultTheme.colors else t.colors;
+    style = t.style or { };
     terminal = t.terminal;
   }) themes;
   themesJson = pkgs.writeText "quickshell-runtime-shell-themes.json" (builtins.toJSON themesExport);
@@ -178,7 +179,16 @@ let
         // in the shell goes through fs() so the whole shell scales together.
         readonly property bool flat: pickBool("flat", ${if (defaultTheme.style.flat or false) then "true" else "false"})
         readonly property real radiusScale: pickNum("radiusScale", ${toString (defaultTheme.style.radiusScale or 1.0)})
-        readonly property string fontFamily: pick("fontFamily", "${defaultTheme.style.fontFamily or ""}") || Qt.application.font.family
+        // An explicit "" means the system sans, so the key's presence is what
+        // counts here — plain pick() would read "" as unset.
+        readonly property string fontFamily: (overrides && typeof overrides.fontFamily === "string")
+            ? (overrides.fontFamily || Qt.application.font.family)
+            : ("${defaultTheme.style.fontFamily or ""}" || Qt.application.font.family)
+        // "chip": bordered pills (shadcn). "text": box-less glyph + label
+        // widgets, state carried by colour and opacity (Omarchy's bar).
+        readonly property string chipStyle: pick("chipStyle", "${defaultTheme.style.chipStyle or "chip"}")
+        readonly property bool textChips: chipStyle === "text"
+        readonly property color chipHover: Qt.rgba(theme.text.r, theme.text.g, theme.text.b, 0.08)
         readonly property string glyphFamily: "FiraCode Nerd Font"
         readonly property string monoFamily: "JetBrainsMono Nerd Font"
         readonly property real fontBase: Math.max(8, Math.min(24, pickNum("textSize", 12)))

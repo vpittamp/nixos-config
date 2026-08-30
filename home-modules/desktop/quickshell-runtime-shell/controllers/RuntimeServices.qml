@@ -1460,6 +1460,10 @@ Item {
             return shellRoot.listSurfaces();
         }
 
+        function togglePanelAt(index: string): string {
+            return shellRoot.togglePanelAt(index);
+        }
+
         function showKeybindings() {
             shellRoot.showLauncher("keys", "");
         }

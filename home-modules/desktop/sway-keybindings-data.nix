@@ -140,7 +140,15 @@ let
         (bind "Alt+grave" "exec toggle-last-ai-session-action" "Toggle to the last AI session (no UI)")
       ] ++ lib.optionals hasRuntimeShell [
         (bind "${mod}+Ctrl+k" "exec toggle-keybindings-help" "This keybinding cheat sheet")
-      ];
+        # Direct bar panels, Omarchy's SUPER+CTRL+letter set (W = network → Tailscale).
+        (bind "${mod}+Ctrl+a" "exec runtime-shell toggle audio" "Audio panel")
+        (bind "${mod}+Ctrl+b" "exec runtime-shell toggle bluetooth" "Bluetooth panel")
+        (bind "${mod}+Ctrl+w" "exec runtime-shell toggle tailscale" "Tailscale (network) panel")
+        (bind "${mod}+Ctrl+d" "exec runtime-shell toggle display-selector" "Displays panel")
+        (bind "${mod}+Ctrl+p" "exec runtime-shell toggle power-menu" "Power menu")
+      ] ++ lib.optionals hasRuntimeShell (map (n:
+        bind "${mod}+Ctrl+${toString n}" "exec runtime-shell call togglePanelAt ${toString n}" "Bar panel ${toString n} (displays, tailscale, notifications, audio, bluetooth, cast, power, agents, calendar)")
+        (lib.range 1 9));
     }
     {
       name = "Session";
