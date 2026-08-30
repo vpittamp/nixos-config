@@ -1,6 +1,6 @@
 ---
 name: runtime-conformance
-description: "Verify, admit, and swap DurableSessionRuntime agent runtimes in Workflow Builder. Use for the runtime conformance suite (static pytest lane, live dev-cluster lane, gate.py, results file, generated contract table), flipping conformanceVerified in the runtime registry, the swap-safety `conformance` error and its AGENT_RUNTIME_ALLOW_UNVERIFIED_RUNTIME override, the runtime-conformance-gate CI job, and adding a new runtime to the registry. Use workflow-builder for ordinary runs and agent-session-recovery for post-loss forensics."
+description: "Verify, admit, and swap DurableSessionRuntime agent runtimes in Workflow Builder. Use for the runtime conformance suite (static pytest lane, live dev-cluster lane, gate.py, results file, generated contract table), flipping conformanceVerified in the runtime registry, the swap-safety `conformance` error and its AGENT_RUNTIME_ALLOW_UNVERIFIED_RUNTIME override, running an unreleased/branch runtime image on host dev through the scoped `agentConfig.runtimeImageRef` per-session override, the runtime-conformance-gate CI job, and adding a new runtime to the registry. Use workflow-builder for ordinary runs and agent-session-recovery for post-loss forensics."
 ---
 
 # Runtime Conformance
@@ -102,10 +102,11 @@ static/live verdict), then fails on:
 
 CI: `.github/workflows/pr-checks.yml` job `runtime-conformance-gate`
 (`needs: agent-runtime-tests`) downloads the `runtime-conformance-<service>`
-artifacts and runs the gate. Required PR checks are `checks` and
-`orchestrator-tests`; the `preview/gate` context is red by design on
-trust-root paths (`.github/workflows`, unmatched paths) and is not a gate
-failure.
+artifacts and runs the gate. It is a HARD gate: `ci-required` — the aggregator
+job the `main` merge queue requires alongside `hub/image-build` — fails unless
+every job it needs, this one included, succeeded. The `preview/gate` context is
+red by design on trust-root paths (`.github/workflows`, unmatched paths) and is
+advisory, not a gate failure.
 
 ## Live Lane (dev)
 
@@ -181,6 +182,100 @@ Runtime "<id>" is not conformance-verified (services/shared/runtime-conformance-
 - `AGENT_RUNTIME_REJECT_LOSSY_SWAP` does not gate `error`; a `reject` (lossy
   swap with rejection enabled) still outranks it.
 
+## Unreleased Runtime Image On Host Dev (`agentConfig.runtimeImageRef`)
+
+The suite verifies the RELEASE-PINNED image. To exercise an UNRELEASED runtime
+image on the shared dev cluster — without a preview and without moving the pins
+every other agent runs on — pin it on one agent
+(`docs/durable-session-runtime-contract.md` "Runtime image override";
+`docs/runtime-conformance.md` "Branch image on host dev"):
+
+- Shape (`src/lib/agents/runtime-image-ref.ts`): exactly
+  `ghcr.io/pittampalliorg/<repo>@sha256:<64 hex>`. Tags, other registries/orgs
+  and un-digested refs are a 400 — campaign and lineage digests must be
+  immutable. Validated at save time too (agent-definition compiler, MCP
+  `create_agent`), so a bad ref is a definition error, not a launch surprise.
+- Family: `<repo>` MUST equal the runtime's registry `imageRepository` — the
+  field naming that runtime's DEFAULT per-session image family. The RESOLVED
+  default (pin file first, then `AGENT_RUNTIME_*_DEFAULT_IMAGE`) is cross-checked
+  at launch as well. A foreign repository is a runtime swap, not an image pin,
+  and is a 400.
+- Scope: the honoured ref becomes the `agentImage` of THAT ONE per-session host
+  request (SEA: `image = request.agentImage or class_config.agentHostImage`) and
+  nothing else. It never replaces a shared Deployment: `dapr-agent-harness`, the
+  only standing brain, is untouched. (The `runtime-image-ref.ts` header still
+  says "the runtime pools" — stale since wfb #1970 retired them.)
+- Switch: the SAME one as the unverified-runtime refusal, not a second flag.
+  Without `agentConfig.allowUnverifiedRuntime: true` (literal boolean) or
+  `AGENT_RUNTIME_ALLOW_UNVERIFIED_RUNTIME=true` on the same agent, swap-safety
+  records an `error`-class drop `{capability: "runtimeImage"}` and the dispatch
+  is refused **409**:
+
+  ```
+  Runtime "<id>" per-session image override refused: <detail>; set AGENT_RUNTIME_ALLOW_UNVERIFIED_RUNTIME=true or agentConfig.allowUnverifiedRuntime=true to honour agentConfig.runtimeImageRef
+  ```
+
+  With the switch the drop degrades to `warn` naming the ref. An unverified
+  TARGET runtime keeps its own 409 text — conformance outranks the image drop.
+- Evaluation subjects: publishing a definition for an agent version that sets
+  `runtimeImageRef` fails **422** `subject_runtime_image_override`, and campaign
+  launch refuses it again defensively (same code, same 422), so campaign digests
+  never depend on an unverified pin. Use a canary agent no subject references.
+
+### Which runtimes accept it
+
+| Runtime | Override |
+| --- | --- |
+| `dapr-agent-py-local` | yes — lands on the sandbox-executor pod; the harness image is untouched |
+| `claude-code-cli`, `claude-code-cli-glm`, `codex-cli`, `kimi-code-cli`, `agy-cli` | yes — `cli-agent-py-sandbox` |
+| `cua-agent-py`, `cua-browser-agent-py` | yes — `cua-agent-py-sandbox` (unexercised on dev) |
+| `dapr-agent-py` | NO — `imageRepository: null`: the loop is on the shared harness and the tools in the OpenShell shared workspace |
+| `browser-use-agent` | NO — warm-pool lane, not a per-session Kueue host |
+
+A runtime with no per-session image refuses LOUDLY rather than silently running
+the default — `maybeProvisionAgentWorkflowHost` throws 400:
+
+```
+Runtime "<id>" provisions no per-session runtime image for this session (<why>), so agentConfig.runtimeImageRef cannot apply; the override never changes a shared Deployment
+```
+
+`<why>` is one of "the runtime takes the warm-pool lane, not a per-session Kueue
+host", "the loop runs on the shared harness Deployment and the tools in the
+OpenShell shared workspace", or "AGENT_WORKFLOW_HOST_BACKEND is not kueue, so no
+per-session host is built".
+
+### Recipe
+
+1. Get a digest for that image family. The `*-sandbox` families are built by the
+   hub outer-loop lane on pushes to `main` as
+   `ghcr.io/pittampalliorg/<repo>:git-<sha>` (path-gated per image);
+   `cli-agent-py-sandbox` additionally has an any-commit hub Pipeline
+   `build-cli-agent-py-sandbox-activation` (param `source_revision`, results
+   `image_ref`/`image_digest`, no pin or Git write). The PR-head lane
+   (`pr-build-workflow-builder`) currently builds only the root
+   `workflow-builder` image, which is NOT an override family. Build lanes and
+   their statuses: `gitops`.
+
+   ```bash
+   docker buildx imagetools inspect \
+     ghcr.io/pittampalliorg/cli-agent-py-sandbox:git-<sha>   # read `Digest:`
+   ```
+
+2. Put BOTH on ONE canary agent — never one an evaluation subject references.
+   MCP `create_agent` takes `allowUnverifiedRuntime: true` and
+   `runtimeImageRef: "<digest ref>"` as flat inputs.
+3. Exercise it: the live lane against that agent (`live.py --execution
+   <runtimeId>=<workflowExecutionId>`) or a canary workflow.
+4. Prove which image the run's hands used — never infer it from the pin:
+   the `runtime.image_override` session event (deduped by digest, landing beside
+   `runtime.swap_degraded`), the session's `runtimeHostLaunchSpec.runtimeImage`
+   `{ref, repository, digest, defaultImage}` (`defaultImage` names the pin it
+   replaced), and `runtimeImage`/`runtimeImageRef` in the bridge response,
+   `childInput`, and the run/session status beside `agentRuntime`. The
+   swap-safety report carries the drop at severity `warn`.
+5. Remove `runtimeImageRef` (or the canary) when done. Promotion still goes
+   through the release pins — this is a test lane, never a delivery path.
+
 ## Current State
 
 Verified: `dapr-agent-py`, `dapr-agent-py-local`,
@@ -195,7 +290,7 @@ Unverified, with cause:
 | `browser-use-agent`                    | static FAIL: not auto-turn; violates §2 top-level `maxIterations` (`input.child_input_accepted`) and §5 `includeOutput` (`lifecycle.include_output_terminal_only`) |
 
 Re-read the generated table in the contract doc for the live value; the list
-above is the state as of 2026-08-29.
+above is the state as of 2026-08-30.
 
 ## Add A New Runtime
 
@@ -210,7 +305,7 @@ above is the state as of 2026-08-29.
    `runtime-conformance-<service>` artifact exists).
 4. `pnpm conformance:static`; commit the results file and regenerated doc.
    The new row must show `static=PASS`, `live=MISSING/SKIPPED`, verified `no`.
-5. CI green on `checks`, `orchestrator-tests`, `runtime-conformance-gate`.
+5. CI green: `ci-required` covers `runtime-conformance-gate` and the rest.
 6. Live lane on dev: a proof agent for the runtime, one `runtime-conformance-live`
    run, one `live.py` process, merge, gate.
 7. Flip `conformanceVerified` per the section above.
@@ -230,6 +325,8 @@ above is the state as of 2026-08-29.
 - Never hand-edit `runtime-conformance-results.json` or the generated table.
 - Never direct-patch the registry on the cluster; registry changes ship
   through source and GitOps.
+- `runtimeImageRef` is a scoped test lane: never on a shared Deployment, never
+  on an evaluation subject, never a substitute for advancing the release pins.
 
 ## Canonical Sources
 
@@ -240,5 +337,11 @@ above is the state as of 2026-08-29.
 - `scripts/runtime-conformance/{run-static.sh,merge.py,gate.py,live.py}`
 - `services/{dapr-agent-py,cli-agent-py,browser-use-agent}/tests/conformance/`
 - `src/lib/server/agents/swap-safety.ts`
+- `src/lib/agents/runtime-image-ref.ts`,
+  `src/lib/server/agents/runtime-image-override.ts`,
+  `src/lib/server/sessions/agent-workflow-host.ts`
+  (`maybeProvisionAgentWorkflowHost`)
+- `src/lib/server/application/domain/evaluations/subject-immutability.ts`
+- `docs/runtime-conformance.md` ("Branch image on host dev")
 - `.github/workflows/pr-checks.yml` (`agent-runtime-tests`,
-  `runtime-conformance-gate`)
+  `runtime-conformance-gate`, `ci-required`)
