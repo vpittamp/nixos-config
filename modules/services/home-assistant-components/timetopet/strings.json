@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Time To Pet",
+        "description": "Enter your Time To Pet client portal credentials.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid email or password.",
+      "cannot_connect": "Failed to connect to Time To Pet."
+    },
+    "abort": {
+      "already_configured": "This Time To Pet account is already configured."
+    }
+  }
+}

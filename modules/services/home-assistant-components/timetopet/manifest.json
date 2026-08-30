@@ -1,0 +1,11 @@
+{
+  "domain": "timetopet",
+  "name": "Time To Pet",
+  "codeowners": ["@vpittamp"],
+  "config_flow": true,
+  "documentation": "https://www.timetopet.com/portal",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "requirements": [],
+  "version": "0.1.0"
+}

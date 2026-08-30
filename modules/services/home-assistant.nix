@@ -110,6 +110,38 @@
           ];
         };
 
+        # BuildingLink mail-room package sensor (sensor.buildinglink_packages).
+        # Config-flow only: username/password are entered once in the UI (or via
+        # the config-flow API) and stored in the config entry; the integration
+        # exchanges them for an OAuth token against BuildingLink's resident
+        # portal. No YAML, no extraComponents entry — config_flow integrations
+        # are picked up from customComponents alone.
+        buildinglink-component = pkgs.buildHomeAssistantComponent rec {
+          owner = "yakattack77";
+          domain = "buildinglink";
+          version = "0.1.1";
+          src = pkgs.fetchFromGitHub {
+            owner = "yakattack77";
+            repo = "ha-buildinglink";
+            rev = "v${version}";
+            hash = "sha256-yOk1gUYhaAIP94eR6qCA78/7SEVsR8FhA9Zw2lbrGi0=";
+          };
+        };
+
+        # Time To Pet client portal (pet-sitting schedule for 215). Source is
+        # vendored in ./home-assistant-components/timetopet because Time To Pet
+        # has no client-side API: its Zapier/API integrations are business-
+        # account only, and there is no client calendar feed. The component
+        # logs into the client portal with email/password (config flow, stored
+        # in the config entry) and polls the portal's JSON event feed for
+        # scheduled/completed visits.
+        timetopet-component = pkgs.buildHomeAssistantComponent {
+          owner = "pittampalli";
+          domain = "timetopet";
+          version = "0.1.0";
+          src = ./home-assistant-components/timetopet;
+        };
+
         uber-eats-component = pkgs.buildHomeAssistantComponent rec {
           owner = "zodyking";
           domain = "uber_eats";
@@ -142,16 +174,23 @@
       in
       [
         ember-mug-component
+        buildinglink-component
+        timetopet-component
         uber-eats-component
         samsungtv-smart-component
       ];
 
     config =
       let
+        # Args are base64-encoded by the caller (shell_command templates use
+        # |base64_encode) so message text containing quotes, apostrophes, or
+        # newlines survives both the local shell and the remote ssh shell
+        # verbatim — plain single-quoted args used to truncate any SMS with an
+        # apostrophe (e.g. "Mom's place").
         broadcastNotification = pkgs.writeShellScriptBin "broadcast-desktop-notification" ''
-          TITLE="''${1:-Text Message}"
-          MESSAGE="''${2:-New message received}"
-          APP="''${3:-Messages}"
+          TITLE_B64="''${1:-}"
+          MESSAGE_B64="''${2:-}"
+          APP_B64="''${3:-}"
           SSH_KEY="/var/lib/hass/.ssh/id_ed25519"
 
           HOSTS=("ryzen" "surface" "thinkpad")
@@ -160,7 +199,7 @@
             ${pkgs.openssh}/bin/ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=2 -i "$SSH_KEY" "vpittamp@$host" "
               DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus \
               PATH=/run/current-system/sw/bin:/etc/profiles/per-user/vpittamp/bin:\$PATH \
-              notify-send -a '$APP' -u normal '$TITLE' '$MESSAGE'
+              notify-send -a \"\$(printf %s '$APP_B64' | base64 -d)\" -u normal \"\$(printf %s '$TITLE_B64' | base64 -d)\" \"\$(printf %s '$MESSAGE_B64' | base64 -d)\"
             " >/dev/null 2>&1 &
           done
         '';
@@ -304,9 +343,89 @@ EOF
           };
         };
 
+        # The uber_eats custom integration keeps all per-order detail in
+        # *attributes* (its sensor states are just the order count), which means
+        # no state transitions in History and no clean automation triggers.
+        # These template entities promote the live order's attributes into real
+        # states. They are TRIGGER-based on purpose: state-based template
+        # entities do not reliably re-render on attribute-only writes from this
+        # integration's coordinator (verified 2026-08-30 — the entities stayed
+        # 'unknown' until homeassistant.update_entity). A bare state trigger
+        # fires on every write, attribute-only included.
+        # Entity IDs of the source sensors derive from the config-entry
+        # title ("Vinod Pittampalli") — update them here if the entry is ever
+        # re-added under a different name.
+        template =
+          let
+            src = suffix: "sensor.vinod_pittampalli_uber_eats_${suffix}";
+          in
+          [{
+            trigger = [
+              {
+                platform = "homeassistant";
+                event = "start";
+              }
+              {
+                platform = "state";
+                entity_id = [
+                  (src "order_stage")
+                  (src "order_status")
+                  (src "restaurant_name")
+                  (src "driver_name")
+                  (src "driver_eta")
+                  (src "driver_ett")
+                ];
+              }
+            ];
+            sensor = [
+              {
+                name = "Uber Eats Order Stage";
+                unique_id = "uber_eats_order_stage";
+                icon = "mdi:food";
+                state = "{{ state_attr('${src "order_stage"}', 'order1_order_stage') or 'none' }}";
+              }
+              {
+                name = "Uber Eats Order Status";
+                unique_id = "uber_eats_order_status";
+                icon = "mdi:text-long";
+                state = "{{ state_attr('${src "order_status"}', 'order1_order_status') or 'none' }}";
+              }
+              {
+                name = "Uber Eats Restaurant";
+                unique_id = "uber_eats_restaurant";
+                icon = "mdi:storefront";
+                state = "{{ state_attr('${src "restaurant_name"}', 'order1_restaurant_name') or 'none' }}";
+              }
+              {
+                name = "Uber Eats Driver";
+                unique_id = "uber_eats_driver";
+                icon = "mdi:account";
+                state = "{{ state_attr('${src "driver_name"}', 'order1_driver_name') or 'none' }}";
+              }
+              {
+                name = "Uber Eats ETA";
+                unique_id = "uber_eats_eta";
+                icon = "mdi:clock-outline";
+                state = "{{ state_attr('${src "driver_eta"}', 'order1_eta') or 'none' }}";
+              }
+              {
+                name = "Uber Eats Minutes Remaining";
+                unique_id = "uber_eats_minutes_remaining";
+                icon = "mdi:timer-outline";
+                unit_of_measurement = "min";
+                device_class = "duration";
+                state_class = "measurement";
+                state = "{{ state_attr('${src "driver_ett"}', 'order1_minutes_remaining') }}";
+                availability = "{{ state_attr('${src "driver_ett"}', 'order1_minutes_remaining') | float(none) is not none }}";
+              }
+            ];
+          }];
+
         shell_command = {
+          # base64_encode every field: the rendered command line must not break
+          # on quotes/apostrophes/newlines in message text.
           broadcast_desktop_notification = ''
-            ${broadcastNotification}/bin/broadcast-desktop-notification "{{ title }}" "{{ message }}" "{{ app_name }}"
+            ${broadcastNotification}/bin/broadcast-desktop-notification "{{ title | base64_encode }}" "{{ message | base64_encode }}" "{{ app_name | default('Messages') | base64_encode }}"
           '';
           vizio_send_key = ''
             ${vizioRemote}/bin/vizio-remote key "{{ command }}"
@@ -604,8 +723,15 @@ EOF
               actions = [{
                 action = "shell_command.broadcast_desktop_notification";
                 data = {
-                  title = "{% set s = trigger.json.sender if (trigger.platform == 'webhook' and trigger.json is defined and trigger.json.sender is defined) else (trigger.event.data.sender if (trigger.event is defined and trigger.event.data is defined and trigger.event.data.sender is defined) else 'Text Message') %}{% set p = trigger.json.phone_number if (trigger.platform == 'webhook' and trigger.json is defined and trigger.json.phone_number is defined) else (trigger.event.data.phone_number if (trigger.event is defined and trigger.event.data is defined and trigger.event.data.phone_number is defined) else '') %}💬 {{ s }}{% if p and p != s %} ({{ p }}){% endif %}";
-                  message = "{% set m = trigger.json.message if (trigger.platform == 'webhook' and trigger.json is defined and trigger.json.message is defined) else (trigger.event.data.message if (trigger.event is defined and trigger.event.data is defined and trigger.event.data.message is defined) else (trigger.event.data.actionData if (trigger.event is defined and trigger.event.data is defined and trigger.event.data.actionData is defined) else 'New message received')) %}{% set d = trigger.json.date if (trigger.platform == 'webhook' and trigger.json is defined and trigger.json.date is defined) else (trigger.event.data.date if (trigger.event is defined and trigger.event.data is defined and trigger.event.data.date is defined) else now().strftime('%I:%M %p')) %}{% set g = trigger.json.group if (trigger.platform == 'webhook' and trigger.json is defined and trigger.json.group is defined) else (trigger.event.data.group if (trigger.event is defined and trigger.event.data is defined and trigger.event.data.group is defined) else '') %}{% set sub = trigger.json.subject if (trigger.platform == 'webhook' and trigger.json is defined and trigger.json.subject is defined) else (trigger.event.data.subject if (trigger.event is defined and trigger.event.data is defined and trigger.event.data.subject is defined) else '') %}{% if sub %}📌 {{ sub }}\n{% endif %}{{ m }}{% if g %}\n👥 {{ g }}{% endif %}\n🕒 {{ d }} · 📱 iPhone";
+                  # Normalize the payload first: Shortcuts can deliver this as a
+                  # webhook JSON body (trigger.json), a webhook FORM post
+                  # (trigger.data — Get Contents of URL with a Form body, which
+                  # is what silently dropped the message text before), query
+                  # params (trigger.query), or an event (trigger.event.data,
+                  # with actionData for ios.action_fired). Field names are read
+                  # with case/spelling fallbacks.
+                  title = "{% set p = trigger.json if (trigger.platform == 'webhook' and trigger.json is mapping and trigger.json) else (trigger.data if (trigger.platform == 'webhook' and trigger.data) else (trigger.query if (trigger.platform == 'webhook' and trigger.query) else (trigger.event.data if (trigger.platform == 'event' and trigger.event.data is defined) else {}))) %}{% set s = p.sender | default(p.Sender) | default('Text Message') %}{% set ph = p.phone_number | default(p.phone) | default('') %}💬 {{ s }}{% if ph and ph != s %} ({{ ph }}){% endif %}";
+                  message = "{% set p = trigger.json if (trigger.platform == 'webhook' and trigger.json is mapping and trigger.json) else (trigger.data if (trigger.platform == 'webhook' and trigger.data) else (trigger.query if (trigger.platform == 'webhook' and trigger.query) else (trigger.event.data if (trigger.platform == 'event' and trigger.event.data is defined) else {}))) %}{% set m = p.message | default(p.Message) | default(p.text) | default(p.body) | default(p.actionData) | default('New message received', true) | string %}{% set d = p.date | default(now().strftime('%I:%M %p')) %}{% set g = p.group | default('') %}{% set sub = p.subject | default('') %}{% if sub %}📌 {{ sub }}\n{% endif %}{{ m }}{% if g %}\n👥 {{ g }}{% endif %}\n🕒 {{ d }} · 📱 iPhone";
                   app_name = "Messages";
                 };
               }];
