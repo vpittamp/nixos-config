@@ -128,6 +128,11 @@ CRD only warm-pool→user and only once; an adopted preview KEEPS the member's
 name, TTL, and headless exposure — read `adoption.member` from the launch
 response and poll that name. Members at a stale baseline or catalog digest are
 torn down, never reused; replenish happens only with capacity headroom.
+The pool ships DISABLED (`PREVIEW_WARM_POOL_SIZE=0` in stacks) until the
+reconciler counts Provisioning members and adoption falls back to a cold
+boot on failure — the first live run over-launched one member per tick and
+leaked ownership on a failed adoption. Do not raise the size before those fixes
+are live and proven.
 
 ## Canonical Flow
 
