@@ -128,11 +128,13 @@ CRD only warm-pool→user and only once; an adopted preview KEEPS the member's
 name, TTL, and headless exposure — read `adoption.member` from the launch
 response and poll that name. Members at a stale baseline or catalog digest are
 torn down, never reused; replenish happens only with capacity headroom.
-The pool ships DISABLED (`PREVIEW_WARM_POOL_SIZE=0` in stacks) until the
-reconciler counts Provisioning members and adoption falls back to a cold
-boot on failure — the first live run over-launched one member per tick and
-leaked ownership on a failed adoption. Do not raise the size before those fixes
-are live and proven.
+The pool runs at `PREVIEW_WARM_POOL_SIZE=1` on dev. Its lane is single-flight
+(Postgres advisory lock, one launch per tick, 5 min cooldown, surplus retired
+through the signed teardown) and adoption is proven before the owner-transfer
+PATCH with a cold-boot fallback; the host launch proof honours
+`adoption.{requestedName, member}`. If more than one warm member ever appears
+or a launch returns `preview_service_unavailable`, set the size to 0 in stacks
+first and investigate — do not delete members by hand.
 
 ## Canonical Flow
 
