@@ -140,6 +140,22 @@ ShellRoot {
         return "ok";
     }
 
+    // Restart requests from outside (post-activation hook, CLI) are decided
+    // here, inside the process that owns the ext-session-lock client: killing
+    // the shell while sessionLocked leaves sway locked with no way to unlock,
+    // so the check-and-act must be atomic with the lock state. Locked means
+    // defer; the restart fires from onSessionLockedChanged on unlock.
+    property bool restartPending: false
+
+    function requestShellRestart() {
+        if (sessionLocked) {
+            restartPending = true;
+            return "deferred";
+        }
+        runDetached([shellConfig.restartBin]);
+        return "restarting";
+    }
+
     function handleIdleScreen(idle) {
         idleScreenOff = !!idle;
         runDetached(["swaymsg", idle ? "output * power off" : "output * power on"]);
@@ -523,8 +539,15 @@ ShellRoot {
         return String(Number(tailscaleState.onlineCount) || 0);
     }
 
-    // Hooks: let scripts outside the shell react to lock and idle.
-    onSessionLockedChanged: runDetached([shellConfig.hookBin, sessionLocked ? "session-locked" : "session-unlocked"])
+    // Hooks: let scripts outside the shell react to lock and idle. A restart
+    // deferred while locked (requestShellRestart) fires on unlock.
+    onSessionLockedChanged: {
+        runDetached([shellConfig.hookBin, sessionLocked ? "session-locked" : "session-unlocked"]);
+        if (!sessionLocked && restartPending) {
+            restartPending = false;
+            runDetached([shellConfig.restartBin]);
+        }
+    }
 
     // ----- Agent usage (Claude Code / Codex subscriptions) -----
     // Records are whatever quickshell-agent-usage-update wrote to

@@ -374,6 +374,8 @@ Corrective action:
 - ensure the machine lands on the new system generation
 - ensure `home-manager-vpittamp.service` is restarted by the switch
 - then restart `quickshell-runtime-shell` once so it reads the new linked config
+  (use `quickshell-runtime-shell-restart` — plain `systemctl --user restart`
+  on the unit is refused via RefuseManualStop to protect the session lock)
 
 Operational lesson:
 - if QuickShell behavior on one host does not match source, verify generation convergence before debugging QML
@@ -431,7 +433,7 @@ i3pm display snapshot | jq
 
 ```bash
 systemctl --user restart i3-project-daemon.service
-systemctl --user restart quickshell-runtime-shell.service
+quickshell-runtime-shell-restart  # lock-aware (plain systemctl restart on the unit is refused)
 ```
 
 ### QuickShell development mode with live reload
@@ -461,7 +463,7 @@ REPO_DIR="$HOME/repos/vpittamp/nixos-config/main/home-modules/desktop/quickshell
 rm -f "$CONFIG_DIR/shell.qml"
 ln -s "$REPO_DIR/shell.qml" "$CONFIG_DIR/shell.qml"
 
-systemctl --user restart quickshell-runtime-shell.service
+quickshell-runtime-shell-restart  # lock-aware (plain systemctl restart on the unit is refused)
 ```
 
 At that point:

@@ -178,6 +178,15 @@ EOF
     # Overlay toasts re-enabled 2026-08: the redesigned toast stack (hover-pause,
     # swipe-dismiss, animated, per-id stable) replaced the old static cards whose
     # timers reset on every feed change. Default limit is 4 per output.
+
+    # 2026-08-30: never power off outputs on idle. The shell's IdleMonitor
+    # (default 300s) blanked the external monitor mid-use in clamshell mode;
+    # the 600s idle lock still applies.
+    idle.screenOffSeconds = 0;
+    # 2026-08-30: no automatic lock on idle either — manual lock only
+    # (Mod+Ctrl+L / power menu). The 10-minute auto-lock kept engaging while
+    # the user was away and read as "logged out".
+    idle.lockSeconds = 0;
   };
 
   wayland.windowManager.sway.config.window.commands = lib.mkAfter [

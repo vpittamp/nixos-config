@@ -602,6 +602,17 @@ in
     # greetd.fprintAuth = true;
   };
 
+  # pam_fprintd is tried first and its default verify timeout is 30s, so a
+  # password unlock/sudo without a finger on the sensor hangs for 30s before
+  # the password prompt is even consulted (seen in the lock-screen PAM log:
+  # "Place your right index finger..." → "Verification timed out" 30s later).
+  # Cap the fingerprint wait at 2s: a successful scan completes in ~1s, and
+  # the password path (the lock screen's "Checking…" state) then takes ~2s
+  # worst case instead of 30s.
+  security.pam.services.swaylock.rules.auth.fprintd.settings.timeout = 2;
+  security.pam.services.sudo.rules.auth.fprintd.settings.timeout = 2;
+  security.pam.services.polkit-1.rules.auth.fprintd.settings.timeout = 2;
+
   # Polkit rules for fingerprint and 1Password integration
   security.polkit.extraConfig = lib.mkAfter ''
     // Allow wheel users to enroll fingerprints without password
@@ -710,6 +721,11 @@ in
 
       # USB autosuspend
       USB_AUTOSUSPEND = 1;
+      # Never autosuspend the portable external monitor's USB chain: its
+      # touch controller (SiS 0457:0819) and onboard hub (1a40:0101) brown
+      # out on autosuspend, power-cycling the panel every ~6 minutes and
+      # blanking HDMI-A-1.
+      USB_DENYLIST = "0457:0819 1a40:0101";
 
       # Runtime PM for PCIe
       RUNTIME_PM_ON_AC = "on";

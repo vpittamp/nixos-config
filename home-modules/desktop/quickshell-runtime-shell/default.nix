@@ -298,6 +298,7 @@ QtObject {
   readonly property string themeStatePath: "${themeStatePath}"
   readonly property string themeSetBin: "${runtimeThemeScript}/bin/runtime-theme"
   readonly property string hookBin: "${runtimeHookScript}/bin/runtime-hook"
+  readonly property string restartBin: "${restartShellScript}/bin/quickshell-runtime-shell-restart"
   readonly property string reminderBin: "${runtimeReminderScript}/bin/runtime-reminder"
   readonly property string captureBin: "${captureScript}/bin/capture"
   readonly property string nightlightBin: "${nightlightScript}/bin/quickshell-nightlight"
@@ -3312,6 +3313,37 @@ print("#%02x%02x%02x" % (px[0], px[1], px[2]))')"
     exit 0
   '';
 
+  # Lock-aware shell restart. Plain `systemctl --user restart` on the shell
+  # unit is refused (RefuseManualStop — see the service definition), so this
+  # kills and starts the unit instead. Callers include the shell itself
+  # (requestShellRestart), so the real work always re-executes in an
+  # independent transient unit: a kill issued from inside the shell's own
+  # cgroup would otherwise take the restarter down with the shell, leaving
+  # the unit dead. No-op when the unit is not active: a shell that is down
+  # picks up the new config at next login anyway.
+  restartShellScript = pkgs.writeShellScriptBin "quickshell-runtime-shell-restart" ''
+    set -euo pipefail
+    export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}"
+    export DBUS_SESSION_BUS_ADDRESS="''${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+    systemctl=${pkgs.systemd}/bin/systemctl
+
+    if [ "''${1:-}" != "--detached" ]; then
+      exec ${pkgs.systemd}/bin/systemd-run --user --no-block --quiet \
+        --collect --description="Restart quickshell-runtime-shell" \
+        "$0" --detached
+    fi
+
+    "$systemctl" --user is-active --quiet quickshell-runtime-shell.service || exit 0
+    "$systemctl" --user kill quickshell-runtime-shell.service
+    # Wait for the old process to fully exit; starting while the unit is
+    # still deactivating can lose the race and leave the shell down.
+    for _ in $(${pkgs.coreutils}/bin/seq 1 100); do
+      "$systemctl" --user is-active --quiet quickshell-runtime-shell.service || break
+      ${pkgs.coreutils}/bin/sleep 0.1
+    done
+    "$systemctl" --user start quickshell-runtime-shell.service
+  '';
+
   # ---- Crash → agent ---------------------------------------------------
   # Watches the journal for systemd-coredump entries and raises a critical
   # toast with a "Diagnose with Claude" action; the action opens a terminal
@@ -3858,6 +3890,7 @@ in
       lockSessionScript
       runtimeThemeScript
       runtimeHookScript
+      restartShellScript
       captureScript
       runtimeReminderScript
       nightlightScript
@@ -3977,6 +4010,15 @@ in
       Events: `theme-set <name> <dark|light>`, `text-size-set <px>`,
       `session-locked`, `session-unlocked`, `idle-screen <off|on>`,
       `post-activation` (after a home-manager activation, i.e. a rebuild).
+
+      Shipped active hooks:
+      - `post-activation.d/restart-shell` — ask the running shell (over IPC)
+        to restart itself after a rebuild so QML changes land. The shell
+        decides: locked (it owns the ext-session-lock client, and killing it
+        mid-lock bricks the sway session) means defer to unlock. Never kill
+        the shell from a hook directly. Manual equivalent:
+        `quickshell-runtime-shell-restart` (plain `systemctl --user restart`
+        on the unit is refused via RefuseManualStop).
     '';
     xdg.configFile."quickshell-runtime-shell/hooks/theme-set.d/claude-code-theme.sample".text = ''
       #!/usr/bin/env bash
@@ -3988,12 +4030,17 @@ in
       tmp="$(mktemp)"
       ${pkgs.jq}/bin/jq --arg t "$mode" '.theme = $t' "$settings" >"$tmp" && mv "$tmp" "$settings"
     '';
-    xdg.configFile."quickshell-runtime-shell/hooks/post-activation.d/restart-shell.sample".text = ''
+    xdg.configFile."quickshell-runtime-shell/hooks/post-activation.d/restart-shell".text = ''
       #!/usr/bin/env bash
-      # Restart the shell after every rebuild so QML changes land without a
-      # manual restart. Off by default: it drops open popups mid-session.
+      # Ask the running shell to restart itself after a rebuild. The lock
+      # check must happen inside the shell process (it owns the
+      # ext-session-lock client; killing it mid-lock leaves sway locked
+      # forever), so this only relays the request over IPC — the shell
+      # restarts immediately when unlocked or defers to unlock when locked.
+      # No flag files: they race with the lock engaging mid-activation.
+      set -u
       export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-      systemctl --user restart quickshell-runtime-shell.service
+      ${runtimeShellCliScript}/bin/runtime-shell call requestRestart >/dev/null 2>&1 || true
     '';
 
     home.activation.runtimeShellPostActivationHook = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
@@ -4041,6 +4088,16 @@ in
         PartOf = [ "sway-session.target" ];
         BindsTo = [ "sway-session.target" ];
         X-Restart-Triggers = [ shellConfigDir ];
+        # Never let an activation (or a careless manual `systemctl restart`)
+        # stop this unit: the shell owns the ext-session-lock client, and
+        # killing it while the screen is locked leaves sway permanently
+        # locked (red fallback screen, no way to unlock). home-manager's
+        # systemd-activate.sh skips units with RefuseManualStop=yes; restarts
+        # go through the lock-aware post-activation hook
+        # (hooks/post-activation.d/restart-shell) or the packaged
+        # quickshell-runtime-shell-restart helper. Dependency-driven stops
+        # (session teardown via BindsTo/PartOf) are unaffected.
+        RefuseManualStop = true;
         StartLimitIntervalSec = "30s";
         StartLimitBurst = 5;
       };

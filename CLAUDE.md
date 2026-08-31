@@ -172,9 +172,13 @@ script exports its own coreutils PATH; do the same for new ones.
 `swaylock` service); `lock-session` falls back to swaylock if the shell is
 down. Idle is `programs.quickshell-runtime-shell.idle.{screenOffSeconds,lockSeconds}`
 (defaults 300 / 600, 0 disables), honours app idle inhibitors and pauses
-while casting or lid-inhibited. If the lock ever misbehaves: Ctrl+Alt+F2,
-`systemctl --user restart quickshell-runtime-shell` (sway keeps the session
-locked), then `XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 swaylock -f`.
+while casting or lid-inhibited. Never kill/restart the shell while the
+screen is locked: the lock client dies with it and sway keeps the session
+locked with no way to unlock (red fallback screen) — the unit has
+`RefuseManualStop` to block exactly that, and activations defer the shell
+restart to unlock via the lock-flag hooks. If the lock ever misbehaves:
+Ctrl+Alt+F2, unlock by ending the session (`loginctl terminate-session
+<id>`), log back in.
 
 ## Walker/Elephant Launcher
 
@@ -206,7 +210,7 @@ locked), then `XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 swaylock
 **Status**: ● teal=active | ● red=dirty | ↑↓ sync | 💤 stale | ✓ merged | ⚠ conflicts
 
 ```bash
-systemctl --user restart quickshell-runtime-shell  # Restart
+quickshell-runtime-shell-restart                     # Restart (lock-aware; plain systemctl restart is refused)
 journalctl --user -u quickshell-runtime-shell -f   # Logs
 ```
 
@@ -295,7 +299,7 @@ swayconfig rollback <hash>  # Rollback
 Bars, panels, and on-screen widgets are driven by Quickshell (`home-modules/desktop/quickshell-runtime-shell/`).
 
 ```bash
-systemctl --user restart quickshell-runtime-shell  # Bar + panel + notifications
+quickshell-runtime-shell-restart  # Bar + panel + notifications (lock-aware)
 ```
 
 Notifications are served natively by Quickshell; there is no separate swaync
@@ -479,7 +483,7 @@ herdr status --json                                # Server/protocol health
 herdr agent list                                   # Agent sessions
 herdr pane list                                    # Herdr panes
 herdr integration status                           # Claude/Codex hooks
-systemctl --user restart quickshell-runtime-shell  # Panel
+quickshell-runtime-shell-restart  # Panel (lock-aware)
 i3pm health                                        # Runtime health, including Herdr
 ```
 

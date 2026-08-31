@@ -1444,6 +1444,11 @@ Item {
             return "ok";
         }
 
+        // Lock-safe restart: the shell decides (see shellRoot.requestShellRestart).
+        function requestRestart(): string {
+            return shellRoot.requestShellRestart();
+        }
+
         function summon(id: string, payload: string): string {
             return shellRoot.summonSurface(id, payload);
         }
