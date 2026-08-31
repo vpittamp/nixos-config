@@ -929,6 +929,50 @@ EOF
               mode = "queued";
             };
 
+            timeToPetVisitStarted = {
+              id = "time-to-pet-visit-started";
+              alias = "Time To Pet — Visit started";
+              description = "Publish activity when a Time To Pet visit starts";
+              triggers = [{
+                platform = "state";
+                entity_id = "binary_sensor.time_to_pet_visit_in_progress";
+                from = "off";
+                to = "on";
+              }];
+              conditions = [ ];
+              actions = [
+                (homeActivity {
+                  kind = "pet_visit_started";
+                  entity_id = "binary_sensor.time_to_pet_visit_in_progress";
+                  provider = "time_to_pet";
+                  state = "in_progress";
+                })
+              ];
+              mode = "single";
+            };
+
+            timeToPetVisitCompleted = {
+              id = "time-to-pet-visit-completed";
+              alias = "Time To Pet — Visit completed";
+              description = "Publish activity when a Time To Pet visit completes";
+              triggers = [{
+                platform = "state";
+                entity_id = "binary_sensor.time_to_pet_visit_in_progress";
+                from = "on";
+                to = "off";
+              }];
+              conditions = [ ];
+              actions = [
+                (homeActivity {
+                  kind = "pet_visit_completed";
+                  entity_id = "binary_sensor.time_to_pet_visit_in_progress";
+                  provider = "time_to_pet";
+                  state = "complete";
+                })
+              ];
+              mode = "single";
+            };
+
             iosSmsNotification = {
               id = "ios-sms-received-notification";
               alias = "iOS SMS Received — Desktop Notification";
@@ -984,6 +1028,8 @@ EOF
             uberOrderArriving
             uberOrderComplete
             buildingLinkPackageReceived
+            timeToPetVisitStarted
+            timeToPetVisitCompleted
           ];
 
       # Core settings. Location/units are left for the onboarding UI to ask.
