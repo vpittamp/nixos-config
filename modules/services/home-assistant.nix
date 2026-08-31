@@ -594,9 +594,22 @@ EOF
             mode = "single";
           };
 
+          # Launch an app on the Samsung TVs via the samsungtv_smart
+          # integration's `app` play_media type. This used to be
+          # media_player.select_source against the core `samsungtv` entities,
+          # but on these 2024 DU7200-series TVs the core integration exposes
+          # only TV/HDMI as sources (Samsung removed the installed-apps API),
+          # so every app name failed with "does not support source <app>".
+          # samsungtv_smart instead launches via the TV's app-control
+          # websocket channel (ms.application.start), verified working on the
+          # 65" at 114 on 2026-08-31. App names map to real numeric app ids:
+          # Internet/YouTube/Netflix ids verified on the UN65DU7200FXZA
+          # (org.tizen.browser is only a launch alias there); the remaining
+          # ids are the standard community values for this TV family and are
+          # unverified on these specific sets.
           tv_launch_app = {
             alias = "TV — Launch App";
-            description = "Launch an application (YouTube, Netflix, Prime Video, Disney+, Plex, Spotify, Apple TV, Browser) on the TV";
+            description = "Launch an application (YouTube, Netflix, Prime Video, Disney+, Plex, Spotify, Apple TV, Internet browser) on the TV";
             icon = "mdi:youtube-tv";
             fields = {
               app = {
@@ -615,19 +628,20 @@ EOF
                 ];
               };
               entity_id = {
-                description = "Target TV media player entity (optional)";
-                example = "media_player.65_crystal_uhd_un65du7200fxza";
+                description = "Target TV media player entity (optional; defaults to the 65\" at 114, then the 55\" at 215)";
+                example = "media_player.living_room_65_crystal_uhd_smart";
                 required = false;
                 selector.entity.domain = "media_player";
               };
             };
             sequence = [{
-              action = "media_player.select_source";
+              action = "media_player.play_media";
               target = {
-                entity_id = "{% if entity_id is defined and entity_id %}{{ entity_id }}{% elif states('media_player.65_crystal_uhd_un65du7200fxza') not in ['unknown', 'unavailable'] %}{% if states('media_player.65_crystal_uhd_un65du7200fxza') != '' %}media_player.65_crystal_uhd_un65du7200fxza{% else %}media_player.55_crystal_uhd_un55du7200fxza{% endif %}{% else %}media_player.55_crystal_uhd_un55du7200fxza{% endif %}";
+                entity_id = "{% if entity_id is defined and entity_id %}{{ entity_id }}{% elif states('media_player.living_room_65_crystal_uhd_smart') not in ['unknown', 'unavailable'] %}media_player.living_room_65_crystal_uhd_smart{% else %}media_player.bedroom_55_crystal_uhd_smart{% endif %}";
               };
               data = {
-                source = "{{ app }}";
+                media_content_type = "app";
+                media_content_id = "{{ {'YouTube': '111299001912', 'Netflix': '3201907018807', 'Internet': '3202010022079', 'Prime Video': '3201910019365', 'Disney+': '3201901017640', 'Plex': '3201512006963', 'Spotify': '3201606009684', 'Apple TV': '3201807016597'}[app] }}";
               };
             }];
             mode = "single";
