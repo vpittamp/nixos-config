@@ -30,7 +30,7 @@ PanelWindow {
     property var spaceEntries: []
     property bool panelReady: false
     property bool herdrSpacesExpanded: false
-    readonly property var panelScreen: root.findScreenByOutputName(root.panelOutputName) || root.activeScreen
+    readonly property var panelScreen: root.panelHostScreen()
     screen: panelScreen
     visible: root.panelVisible
     color: "transparent"

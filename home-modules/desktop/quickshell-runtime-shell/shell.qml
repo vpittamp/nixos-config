@@ -2236,6 +2236,21 @@ ShellRoot {
         return screens[0];
     }
 
+    // Screen hosting the runtime sidebar. With panelOutputPolicy "primary"
+    // (the only policy; plumbed through the Nix module but previously never
+    // enforced) the sidebar is dedicated to the configured primary output —
+    // on ryzen that is DP-1, the center monitor — no matter which monitor's
+    // bar chip opened it and no matter which monitor has focus. The
+    // click/focus context (panelOutputName / activeScreen) only applies when
+    // no configured primary output is active (e.g. laptop clamshell), so the
+    // sidebar still has somewhere to go.
+    function panelHostScreen() {
+        if (stringOrEmpty(shellConfig.panelOutputPolicy) === "primary" && configuredPrimaryActive()) {
+            return primaryScreen;
+        }
+        return findScreenByOutputName(panelOutputName) || activeScreen;
+    }
+
     function dashboardWorkspacesForOutput(outputName) {
         const outputs = arrayOrEmpty(dashboard.outputs);
         const target = stringOrEmpty(outputName);
