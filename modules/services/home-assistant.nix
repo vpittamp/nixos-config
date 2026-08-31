@@ -685,26 +685,47 @@ EOF
         # Motion push for the Circle View cameras and iOS SMS desktop notification
         automation =
           let
+            # Stable, privacy-bounded event contract consumed by Workflow
+            # Builder's Home Assistant trigger adapter. Home Assistant adds the
+            # event envelope (context and time_fired); event_data stays focused
+            # on fields agents can safely route on. Do not add SMS bodies or
+            # other free-form personal content here.
+            homeActivity = data: {
+              event = "home_215_activity";
+              event_data = {
+                schema_version = 1;
+                home_id = "215";
+              } // data;
+            };
+
             motion = room: entity: {
               id = "motion-${room}";
               alias = "Motion — ${entity}";
-              description = "Push to iPhone when the ${entity} camera sees motion";
+              description = "Publish activity and push to iPhone when the ${entity} camera sees motion";
               triggers = [{
                 platform = "state";
                 entity_id = "binary_sensor.${room}_motion";
                 to = "on";
               }];
               conditions = [ ];
-              actions = [{
-                # mobile_app's own notify service (notify.send_message on the
-                # entity rejects the nested push "data" extras).
-                action = "notify.mobile_app_iphone_2";
-                data = {
-                  title = "${entity} — motion";
-                  message = "Motion detected by the ${entity} camera.";
-                  data.url = "/cameras";
-                };
-              }];
+              actions = [
+                (homeActivity {
+                  kind = "camera_motion";
+                  entity_id = "binary_sensor.${room}_motion";
+                  area = room;
+                  state = "on";
+                })
+                {
+                  # mobile_app's own notify service (notify.send_message on the
+                  # entity rejects the nested push "data" extras).
+                  action = "notify.mobile_app_iphone_2";
+                  data = {
+                    title = "${entity} — motion";
+                    message = "Motion detected by the ${entity} camera.";
+                    data.url = "/cameras";
+                  };
+                }
+              ];
               mode = "single";
             };
 
@@ -715,7 +736,7 @@ EOF
             vinodArrivesHome = {
               id = "vinod-arrives-home";
               alias = "Presence — Vinod arrives home";
-              description = "Desktop notification when Vinod's iPhone enters the Home zone";
+              description = "Publish activity and notify the desktop when Vinod's iPhone enters the Home zone";
               triggers = [{
                 platform = "state";
                 entity_id = "person.vinod";
@@ -725,21 +746,29 @@ EOF
                 condition = "template";
                 value_template = "{{ trigger.from_state.state not in ['unavailable', 'unknown'] }}";
               }];
-              actions = [{
-                action = "shell_command.broadcast_desktop_notification";
-                data = {
-                  title = "🏠 Vinod arrived home";
-                  message = "Detected by iPhone location at {{ now().strftime('%I:%M %p') }}.";
-                  app_name = "Home Assistant";
-                };
-              }];
+              actions = [
+                (homeActivity {
+                  kind = "presence_arrived";
+                  entity_id = "person.vinod";
+                  person = "vinod";
+                  state = "home";
+                })
+                {
+                  action = "shell_command.broadcast_desktop_notification";
+                  data = {
+                    title = "🏠 Vinod arrived home";
+                    message = "Detected by iPhone location at {{ now().strftime('%I:%M %p') }}.";
+                    app_name = "Home Assistant";
+                  };
+                }
+              ];
               mode = "single";
             };
 
             vinodLeavesHome = {
               id = "vinod-leaves-home";
               alias = "Presence — Vinod leaves home";
-              description = "Desktop notification when Vinod's iPhone exits the Home zone";
+              description = "Publish activity and notify the desktop when Vinod's iPhone exits the Home zone";
               triggers = [{
                 platform = "state";
                 entity_id = "person.vinod";
@@ -749,14 +778,22 @@ EOF
                 condition = "template";
                 value_template = "{{ trigger.to_state.state not in ['unavailable', 'unknown'] }}";
               }];
-              actions = [{
-                action = "shell_command.broadcast_desktop_notification";
-                data = {
-                  title = "🚗 Vinod left home";
-                  message = "Detected by iPhone location at {{ now().strftime('%I:%M %p') }}.";
-                  app_name = "Home Assistant";
-                };
-              }];
+              actions = [
+                (homeActivity {
+                  kind = "presence_departed";
+                  entity_id = "person.vinod";
+                  person = "vinod";
+                  state = "away";
+                })
+                {
+                  action = "shell_command.broadcast_desktop_notification";
+                  data = {
+                    title = "🚗 Vinod left home";
+                    message = "Detected by iPhone location at {{ now().strftime('%I:%M %p') }}.";
+                    app_name = "Home Assistant";
+                  };
+                }
+              ];
               mode = "single";
             };
 
@@ -766,7 +803,7 @@ EOF
             # intentionally not notified. All trigger on the template sensors
             # (see the `template` block above), so trigger.to_state is always
             # the freshly rendered value.
-            uberNotify = { suffix, alias, description, to, message, conditions ? [ ] }:
+            uberNotify = { suffix, alias, description, to, message, activityKind, activityData ? { }, conditions ? [ ] }:
               let
                 baseTrigger = {
                   platform = "state";
@@ -778,14 +815,22 @@ EOF
                 alias = "Uber Eats — ${alias}";
                 inherit description conditions;
                 triggers = [ (baseTrigger // to) ];
-                actions = [{
-                  action = "shell_command.broadcast_desktop_notification";
-                  data = {
-                    title = "🛵 ${alias}";
-                    inherit message;
-                    app_name = "Uber Eats";
-                  };
-                }];
+                actions = [
+                  (homeActivity ({
+                    kind = activityKind;
+                    entity_id = "sensor.uber_eats_order_stage";
+                    provider = "uber_eats";
+                    stage = "{{ trigger.to_state.state }}";
+                  } // activityData))
+                  {
+                    action = "shell_command.broadcast_desktop_notification";
+                    data = {
+                      title = "🛵 ${alias}";
+                      inherit message;
+                      app_name = "Uber Eats";
+                    };
+                  }
+                ];
                 mode = "single";
               };
 
@@ -793,6 +838,8 @@ EOF
               suffix = "order-placed";
               alias = "Order placed";
               description = "Desktop notification when a new Uber Eats order is detected";
+              activityKind = "delivery_order_placed";
+              activityData.restaurant = "{{ states('sensor.uber_eats_restaurant') }}";
               to = { }; # any transition, gated by the condition below
               conditions = [{
                 condition = "template";
@@ -809,6 +856,11 @@ EOF
               suffix = "order-picked-up";
               alias = "On the way";
               description = "Desktop notification when the driver picks up the order";
+              activityKind = "delivery_order_picked_up";
+              activityData = {
+                restaurant = "{{ states('sensor.uber_eats_restaurant') }}";
+                eta = "{{ states('sensor.uber_eats_eta') }}";
+              };
               to = { to = "picked up"; };
               message = "{% set eta = states('sensor.uber_eats_eta') %}{{ states('sensor.uber_eats_restaurant') }} order picked up{% if eta not in ['none', 'unavailable', 'unknown', 'No ETT Available'] %} — ETA {{ eta }}{% endif %}.";
             };
@@ -817,6 +869,8 @@ EOF
               suffix = "order-arriving";
               alias = "Arriving now";
               description = "Desktop notification when the driver is at the door";
+              activityKind = "delivery_order_arriving";
+              activityData.minutes_remaining = "{{ states('sensor.uber_eats_minutes_remaining') }}";
               to = { to = "arriving"; };
               message = "{% set mins = states('sensor.uber_eats_minutes_remaining') %}Your order is arriving{% if mins | float(none) is not none %} — about {{ mins }} min out{% endif %}. Head to the door.";
             };
@@ -832,14 +886,90 @@ EOF
                 from = "on";
               }];
               conditions = [ ];
-              actions = [{
-                action = "shell_command.broadcast_desktop_notification";
-                data = {
-                  title = "✅ Uber Eats — order complete";
-                  message = "Delivered or canceled — if you did not get your food, check the Uber Eats app.";
-                  app_name = "Uber Eats";
-                };
+              actions = [
+                (homeActivity {
+                  kind = "delivery_order_complete";
+                  entity_id = "binary_sensor.vinod_pittampalli_uber_eats_active_order";
+                  provider = "uber_eats";
+                  state = "complete";
+                })
+                {
+                  action = "shell_command.broadcast_desktop_notification";
+                  data = {
+                    title = "✅ Uber Eats — order complete";
+                    message = "Delivered or canceled — if you did not get your food, check the Uber Eats app.";
+                    app_name = "Uber Eats";
+                  };
+                }
+              ];
+              mode = "single";
+            };
+
+            buildingLinkPackageReceived = {
+              id = "buildinglink-package-received";
+              alias = "BuildingLink — Package received";
+              description = "Publish activity when BuildingLink reports an increase in held packages";
+              triggers = [{
+                platform = "state";
+                entity_id = "sensor.buildinglink_packages";
               }];
+              conditions = [{
+                condition = "template";
+                value_template = "{{ trigger.from_state is not none and trigger.to_state is not none and trigger.from_state.state | int(-1) >= 0 and trigger.to_state.state | int(-1) > trigger.from_state.state | int(-1) }}";
+              }];
+              actions = [
+                (homeActivity {
+                  kind = "package_received";
+                  entity_id = "sensor.buildinglink_packages";
+                  provider = "buildinglink";
+                  package_count = "{{ trigger.to_state.state | int }}";
+                  package_delta = "{{ (trigger.to_state.state | int) - (trigger.from_state.state | int) }}";
+                })
+              ];
+              mode = "queued";
+            };
+
+            timeToPetVisitStarted = {
+              id = "time-to-pet-visit-started";
+              alias = "Time To Pet — Visit started";
+              description = "Publish activity when a Time To Pet visit starts";
+              triggers = [{
+                platform = "state";
+                entity_id = "binary_sensor.time_to_pet_visit_in_progress";
+                from = "off";
+                to = "on";
+              }];
+              conditions = [ ];
+              actions = [
+                (homeActivity {
+                  kind = "pet_visit_started";
+                  entity_id = "binary_sensor.time_to_pet_visit_in_progress";
+                  provider = "time_to_pet";
+                  state = "in_progress";
+                })
+              ];
+              mode = "single";
+            };
+
+            timeToPetVisitCompleted = {
+              id = "time-to-pet-visit-completed";
+              alias = "Time To Pet — Visit completed";
+              description = "Publish activity when a Time To Pet visit completes";
+              triggers = [{
+                platform = "state";
+                entity_id = "binary_sensor.time_to_pet_visit_in_progress";
+                from = "on";
+                to = "off";
+              }];
+              conditions = [ ];
+              actions = [
+                (homeActivity {
+                  kind = "pet_visit_completed";
+                  entity_id = "binary_sensor.time_to_pet_visit_in_progress";
+                  provider = "time_to_pet";
+                  state = "complete";
+                })
+              ];
               mode = "single";
             };
 
@@ -897,6 +1027,9 @@ EOF
             uberOrderPickedUp
             uberOrderArriving
             uberOrderComplete
+            buildingLinkPackageReceived
+            timeToPetVisitStarted
+            timeToPetVisitCompleted
           ];
 
       # Core settings. Location/units are left for the onboarding UI to ask.
