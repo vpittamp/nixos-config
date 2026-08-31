@@ -341,6 +341,15 @@ in
   # surface-control udev rules (SAM sysfs permissions)
   services.udev.packages = [ pkgs.surface-control ];
 
+  # MSHW0092 touchpad (045E:0933): hid-generic claims it at boot, presenting
+  # it as a plain "Mouse" (no ID_INPUT_TOUCHPAD) so libinput/Sway ignore it.
+  # Force it onto hid-multitouch the moment the device appears. Broken on
+  # every boot since ~2026-08-17; a manual rebind on 2026-08-30 restored it.
+  services.udev.extraRules = ''
+    ACTION=="add", SUBSYSTEM=="hid", KERNEL=="0018:045E:0933.*", \
+      RUN+="/bin/sh -c 'echo %k > /sys/bus/hid/drivers/hid-generic/unbind 2>/dev/null; echo %k > /sys/bus/hid/drivers/hid-multitouch/bind'"
+  '';
+
   # Add user to required groups
   users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" "input" "onepassword" "tss" ];
 
