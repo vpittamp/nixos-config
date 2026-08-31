@@ -662,6 +662,120 @@ EOF
             }];
             mode = "single";
           };
+
+          # Programmatic URL navigation on the 215 TV's Internet app, via
+          # samsungtv_smart's `browser` play_media type (launches
+          # org.tizen.browser with the URL as its launch payload). Requires the
+          # TV on with a live websocket session; silently no-ops otherwise.
+          # Targets media_player.bedroom_55_crystal_uhd_smart — the
+          # samsungtv_smart config entry "55 Crystal UHD Smart" (set up
+          # 2026-08-31 via config flow against 192.168.1.72; the entity id
+          # comes from the TV's own SmartThings device name, not the entry
+          # title). The core `samsungtv` entity does NOT support `browser`
+          # (only app/channel), so do not repoint this at
+          # media_player.55_crystal_uhd_un55du7200fxza.
+          # Exposed to MCP clients as a tool via the mcp_server integration's
+          # LLM API (script fields become tool parameters).
+          samsung_tv_open_url = {
+            alias = "Samsung TV — Open URL in Browser";
+            description = "Open a URL in the web browser of the 55\" Samsung TV in 215 (turns on the Internet app and navigates to the URL)";
+            icon = "mdi:web";
+            fields = {
+              url = {
+                description = "Full URL to open, e.g. https://example.com/dashboard";
+                example = "https://example.com";
+                required = true;
+                selector.text = { };
+              };
+            };
+            sequence = [{
+              action = "media_player.play_media";
+              target.entity_id = "media_player.bedroom_55_crystal_uhd_smart";
+              data = {
+                media_content_type = "browser";
+                media_content_id = "{{ url }}";
+              };
+            }];
+            mode = "single";
+          };
+
+          # Companion to samsung_tv_open_url: types text into whatever input
+          # field has focus on the TV (search boxes, login forms), via
+          # samsungtv_smart's `send_text` play_media type.
+          samsung_tv_send_text = {
+            alias = "Samsung TV — Send Text";
+            description = "Type text into the focused input field on the 55\" Samsung TV in 215 (e.g. a browser search or login field)";
+            icon = "mdi:keyboard";
+            fields = {
+              text = {
+                description = "Text to type into the focused field";
+                example = "nasa live stream";
+                required = true;
+                selector.text = { };
+              };
+            };
+            sequence = [{
+              action = "media_player.play_media";
+              target.entity_id = "media_player.bedroom_55_crystal_uhd_smart";
+              data = {
+                media_content_type = "send_text";
+                media_content_id = "{{ text }}";
+              };
+            }];
+            mode = "single";
+          };
+
+          # Same pair for the 65" TV in the 114 home (ryzen instance). Targets
+          # media_player.living_room_65_crystal_uhd_smart — the samsungtv_smart
+          # config entry "65 Crystal UHD Smart" (set up 2026-08-31 via config
+          # flow against 10.0.0.159). These scripts exist on both instances
+          # (shared module) but only work on the ryzen/114 one; on surface-pro3
+          # the target entity does not exist and a call will fail.
+          samsung_tv_65_open_url = {
+            alias = "Samsung TV 65 — Open URL in Browser";
+            description = "Open a URL in the web browser of the 65\" Samsung TV in 114 (turns on the Internet app and navigates to the URL)";
+            icon = "mdi:web";
+            fields = {
+              url = {
+                description = "Full URL to open, e.g. https://example.com/dashboard";
+                example = "https://example.com";
+                required = true;
+                selector.text = { };
+              };
+            };
+            sequence = [{
+              action = "media_player.play_media";
+              target.entity_id = "media_player.living_room_65_crystal_uhd_smart";
+              data = {
+                media_content_type = "browser";
+                media_content_id = "{{ url }}";
+              };
+            }];
+            mode = "single";
+          };
+
+          samsung_tv_65_send_text = {
+            alias = "Samsung TV 65 — Send Text";
+            description = "Type text into the focused input field on the 65\" Samsung TV in 114 (e.g. a browser search or login field)";
+            icon = "mdi:keyboard";
+            fields = {
+              text = {
+                description = "Text to type into the focused field";
+                example = "nasa live stream";
+                required = true;
+                selector.text = { };
+              };
+            };
+            sequence = [{
+              action = "media_player.play_media";
+              target.entity_id = "media_player.living_room_65_crystal_uhd_smart";
+              data = {
+                media_content_type = "send_text";
+                media_content_id = "{{ text }}";
+              };
+            }];
+            mode = "single";
+          };
         };
 
         ios = {
