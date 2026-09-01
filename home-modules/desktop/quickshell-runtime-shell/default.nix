@@ -3322,7 +3322,15 @@ print("#%02x%02x%02x" % (px[0], px[1], px[2]))')"
   # the unit dead. No-op when the unit is not active: a shell that is down
   # picks up the new config at next login anyway.
   restartShellScript = pkgs.writeShellScriptBin "quickshell-runtime-shell-restart" ''
-    set -euo pipefail
+    # NOTE: no `set -e` — every step below is best-effort so the script always
+    # reaches the `start` at the end. 2026-09-01: a rebuild (`nh os test`)
+    # ran inside this unit's cgroup (invoked from a shell-spawned terminal);
+    # the cgroup-wide `systemctl kill` SIGTERMed the whole rebuild tree, the
+    # user manager got EPERM on the root-owned processes, the kill command
+    # failed, `set -e` aborted this script before the `start`, and systemd
+    # treated the externally-signaled main process as a clean stop (no
+    # Restart=on-failure) — the session was left with no shell UI at all.
+    set -uo pipefail
     export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}"
     export DBUS_SESSION_BUS_ADDRESS="''${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
     systemctl=${pkgs.systemd}/bin/systemctl
@@ -3334,14 +3342,39 @@ print("#%02x%02x%02x" % (px[0], px[1], px[2]))')"
     fi
 
     "$systemctl" --user is-active --quiet quickshell-runtime-shell.service || exit 0
-    "$systemctl" --user kill quickshell-runtime-shell.service
-    # Wait for the old process to fully exit; starting while the unit is
-    # still deactivating can lose the race and leave the shell down.
+
+    main_pid="$("$systemctl" --user show --property=MainPID --value quickshell-runtime-shell.service 2>/dev/null || echo 0)"
+
+    # Capture the shell's direct children (its python/deno/osk/touch helper
+    # processes) BEFORE signaling anything. The sweep below must target only
+    # these PIDs — never the whole cgroup, which also contains foreign
+    # processes the shell launched (terminals, snippet runs, and anything run
+    # from them, e.g. a nixos-rebuild).
+    child_pids="$(${pkgs.procps}/bin/ps -o pid= --ppid "$main_pid" 2>/dev/null || true)"
+
+    # Signal ONLY the shell's main process.
+    "$systemctl" --user kill --kill-whom=main quickshell-runtime-shell.service || true
+
+    # Best-effort sweep of the captured helper children so they don't leak
+    # across the restart.
+    for pid in $child_pids; do
+      ${pkgs.coreutils}/bin/kill -TERM "$pid" 2>/dev/null || true
+    done
+
+    # Wait for the old main process to fully exit; starting while it is still
+    # alive can lose the race and leave the shell down. Gate on MainPID
+    # rather than is-active: foreign processes lingering in the cgroup can
+    # hold the unit in deactivating long after the shell itself is gone.
     for _ in $(${pkgs.coreutils}/bin/seq 1 100); do
-      "$systemctl" --user is-active --quiet quickshell-runtime-shell.service || break
+      main_pid="$("$systemctl" --user show --property=MainPID --value quickshell-runtime-shell.service 2>/dev/null || echo 0)"
+      if [ -z "$main_pid" ] || [ "$main_pid" = "0" ]; then
+        break
+      fi
       ${pkgs.coreutils}/bin/sleep 0.1
     done
-    "$systemctl" --user start quickshell-runtime-shell.service
+
+    "$systemctl" --user reset-failed quickshell-runtime-shell.service 2>/dev/null || true
+    "$systemctl" --user start quickshell-runtime-shell.service || true
   '';
 
   # ---- Crash → agent ---------------------------------------------------
