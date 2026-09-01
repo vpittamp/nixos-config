@@ -40,23 +40,44 @@ let
     const endpointUrl = process.env.FABRIC_MCP_URL || "${cfg.url}";
     const endpoint = new URL(endpointUrl);
 
+    // MCP Streamable HTTP: the server assigns a session id on initialize and
+    // requires it on every subsequent request, and may answer with an SSE
+    // stream instead of a plain JSON body. Both must be handled or the server
+    // rejects the request (observed as MCP error -32600 at client startup).
+    let sessionId = null;
+
+    function parseBody(contentType, body) {
+      if (contentType && contentType.includes("text/event-stream")) {
+        const dataLines = body.split("\n")
+          .filter(l => l.startsWith("data:"))
+          .map(l => l.slice(5).trim())
+          .filter(l => l.length > 0);
+        return dataLines[dataLines.length - 1] || "";
+      }
+      return body;
+    }
+
     async function post(jsonObj) {
       const data = JSON.stringify(jsonObj);
       return new Promise((resolve, reject) => {
+        const headers = {
+          "Authorization": `Bearer ''${token}`,
+          "Content-Type": "application/json",
+          "Accept": "application/json, text/event-stream",
+          "Content-Length": Buffer.byteLength(data)
+        };
+        if (sessionId) headers["MCP-Session-Id"] = sessionId;
         const req = https.request({
           hostname: endpoint.hostname,
           port: endpoint.port || (endpoint.protocol === "https:" ? 443 : 80),
           path: endpoint.pathname + endpoint.search,
           method: "POST",
-          headers: {
-            "Authorization": `Bearer ''${token}`,
-            "Content-Type": "application/json",
-            "Content-Length": Buffer.byteLength(data)
-          }
+          headers
         }, res => {
+          if (res.headers["mcp-session-id"]) sessionId = res.headers["mcp-session-id"];
           let body = "";
           res.on("data", chunk => body += chunk);
-          res.on("end", () => resolve(body));
+          res.on("end", () => resolve(parseBody(res.headers["content-type"], body)));
         });
         req.on("error", reject);
         req.write(data);
@@ -76,7 +97,8 @@ let
           return;
         }
         const resp = await post(msg);
-        process.stdout.write(resp.trim() + "\n");
+        const out = resp.trim();
+        if (out) process.stdout.write(out + "\n");
       } catch (err) {
         console.error("Fabric MCP Relay error:", err.message);
       }

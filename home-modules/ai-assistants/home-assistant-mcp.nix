@@ -36,6 +36,9 @@ let
       "$mcp_url"
       --transport
       http-only
+      # Plain-HTTP URL over the tailnet (surface-pro.tail286401.ts.net:8123);
+      # mcp-remote refuses non-HTTPS non-localhost URLs without this flag.
+      --allow-http
       --header
       'Authorization:''${HASS_MCP_AUTH_HEADER}'
     )
