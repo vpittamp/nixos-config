@@ -225,7 +225,7 @@ ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 
 AUTH = "Zpm670i03k"
-HOST = "192.168.1.195:7345"
+HOST = "192.168.1.194:7345"
 
 KEYMAP = {
     "OK": [(4, 1)],
@@ -1020,7 +1020,7 @@ EOF
             timeToPetVisitStarted = {
               id = "time-to-pet-visit-started";
               alias = "Time To Pet — Visit started";
-              description = "Publish activity when a Time To Pet visit starts";
+              description = "Publish activity and notify desktops when a Time To Pet visit starts";
               triggers = [{
                 platform = "state";
                 entity_id = "binary_sensor.time_to_pet_visit_in_progress";
@@ -1035,6 +1035,14 @@ EOF
                   provider = "time_to_pet";
                   state = "in_progress";
                 })
+                {
+                  action = "shell_command.broadcast_desktop_notification";
+                  data = {
+                    title = "🐾 Sitter arrived";
+                    message = "{% set visits = trigger.to_state.attributes.visits or [] %}{% if visits %}{% set v = visits[0] %}{{ v.staff | default('The sitter') }} started {{ v.service | default('the visit') }} for {{ v.pets | default('the pets') }}.{% else %}A Time To Pet visit just started.{% endif %}";
+                    app_name = "Time To Pet";
+                  };
+                }
               ];
               mode = "single";
             };
@@ -1042,7 +1050,7 @@ EOF
             timeToPetVisitCompleted = {
               id = "time-to-pet-visit-completed";
               alias = "Time To Pet — Visit completed";
-              description = "Publish activity when a Time To Pet visit completes";
+              description = "Publish activity and notify desktops when a Time To Pet visit completes";
               triggers = [{
                 platform = "state";
                 entity_id = "binary_sensor.time_to_pet_visit_in_progress";
@@ -1057,6 +1065,16 @@ EOF
                   provider = "time_to_pet";
                   state = "complete";
                 })
+                {
+                  action = "shell_command.broadcast_desktop_notification";
+                  data = {
+                    # The binary sensor just turned off, so the completed
+                    # visit's details live on trigger.from_state, not to_state.
+                    title = "🐾 Visit complete";
+                    message = "{% set visits = trigger.from_state.attributes.visits or [] %}{% if visits %}{% set v = visits[0] %}{{ v.staff | default('The sitter') }} finished {{ v.service | default('the visit') }} for {{ v.pets | default('the pets') }}.{% else %}The Time To Pet visit just wrapped up.{% endif %}";
+                    app_name = "Time To Pet";
+                  };
+                }
               ];
               mode = "single";
             };
