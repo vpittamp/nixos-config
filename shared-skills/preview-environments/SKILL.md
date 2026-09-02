@@ -148,12 +148,17 @@ first and investigate — do not delete members by hand.
    before drilling into raw step timings.
 4. Call `development_run_start` with the environment name, intent, selected
    target IDs, and optional public builder profile.
+   The canonical planning workflow deterministically resolves explicit paths,
+   routes, nearest tests, and boundary files before graph expansion; broad
+   scopes widen only for a named unresolved dependency.
 5. Use only `development_run_get`, `development_run_apply`,
    `development_run_follow_output`, `development_run_verify`,
    `development_run_submit`, and `development_run_cancel`.
 6. Use `development_run_checkpoint`, `development_run_fork`,
    `development_run_handoff`, or `development_run_reproduce` when needed. They
-   operate on the same run and provenance.
+   operate on the same run and provenance. Fork must restore the selected
+   pushed checkpoint atomically before the first model turn and expose the
+   expected base/restored SHA plus scope evidence.
 7. After terminal telemetry grace, verify sealed evidence through
    `list_execution_evidence`, `get_execution_evidence`, and one bounded package
    part or telemetry query.
@@ -168,6 +173,15 @@ Cancellation is host-owned and durable. The runtime may preempt a process-local
 provider stream only after persisting the request; `agent.turn_preempted` proves
 that fast path but not terminal cleanup. Cross-pod delivery still converges
 through Dapr state and the parent DevelopmentRun.
+
+After current-generation verification, the workflow persists a monotonic
+accepted-source candidate before optional demo capture or delivery. A later
+artifact failure is retryable against that immutable candidate and must not
+release it. An attached builder session remains parent-owned while the run is
+active: `stop_interactive_session` returns 409
+`active_development_run_session`; use `development_run_cancel` and allow the
+parent to order evidence and cleanup. Direct session stop is valid after the
+run is `delivered`, `failed`, or `cancelled`.
 
 A generic checkpoint continuation is intentionally outside the active
 DevelopmentRun. It is permitted only after the source execution is terminal,

@@ -147,7 +147,9 @@ harness hosts; pod IP `:8002` (direct-host) only for dedicated
 `agent-session-*` per-session pods. After a host is reaped the
 child's return dict is read from the parent's orchestrator history rows in
 `wfstate_state` (`encode(value,'escape')`, then unescape). A transport loss
-mid-probe records SKIPPED, never a verdict.
+mid-probe records SKIPPED, never a verdict. Every individual HTTP fetch has a
+five-second `AbortSignal` deadline inside the larger command timeout, so a
+wedged host cannot stall the runtime matrix.
 
 ## Flipping `conformanceVerified`
 
@@ -278,19 +280,19 @@ per-session host is built".
 
 ## Current State
 
-Verified: `dapr-agent-py`, `dapr-agent-py-local`,
-`claude-code-cli`, `codex-cli`, `kimi-code-cli`, `agy-cli`.
+Verified: `dapr-agent-py`, `dapr-agent-py-local`, `cua-agent-py`,
+`cua-browser-agent-py`, `claude-code-cli`, `codex-cli`, `kimi-code-cli`,
+`agy-cli`.
 
 Unverified, with cause:
 
 | Runtime                                | Why                                                                                              |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `claude-code-cli-glm`                  | live SKIPPED: zai credential expired                                                             |
-| `cua-agent-py`, `cua-browser-agent-py` | live SKIPPED: `AGENT_RUNTIME_CUA_DEFAULT_IMAGE` unset on dev                                     |
+| `claude-code-cli-glm`                  | live SKIPPED: linked credential unavailable                                                       |
 | `browser-use-agent`                    | static FAIL: not auto-turn; violates §2 top-level `maxIterations` (`input.child_input_accepted`) and §5 `includeOutput` (`lifecycle.include_output_terminal_only`) |
 
 Re-read the generated table in the contract doc for the live value; the list
-above is the state as of 2026-08-30.
+above is the state as of 2026-09-02.
 
 ## Add A New Runtime
 

@@ -6,6 +6,7 @@ let
 
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
   contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
+  kiotaMcp = config.modules.aiAssistants.kiotaMcp;
   homeAssistantMcp = config.modules.aiAssistants.homeAssistantMcp;
   fabricMcp = config.modules.aiAssistants.fabricMcp;
 
@@ -237,6 +238,18 @@ env_vars = [
 ]
 startup_timeout_sec = 30
 tool_timeout_sec = 120
+''}
+
+${lib.optionalString kiotaMcp.enable ''
+[mcp_servers.kiota]
+args = []
+command = "${kiotaMcp.proxyCommand}"
+enabled = true
+env_vars = [
+  "KIOTA_MCP_URL",
+]
+startup_timeout_sec = 30
+tool_timeout_sec = 300
 ''}
 
 ${lib.optionalString homeAssistantMcp.enable ''

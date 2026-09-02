@@ -93,6 +93,7 @@ in
     # AI Assistant configurations
     ../ai-assistants/workflow-builder-mcp.nix
     ../ai-assistants/context-graph-mcp.nix
+    ../ai-assistants/kiota-mcp.nix
     ../ai-assistants/home-assistant-mcp.nix
     ../ai-assistants/fabric-mcp.nix
     ../ai-assistants/claude-code.nix
@@ -126,6 +127,7 @@ in
   modules.tools.fleetKubeconfigs.enable = true;  # `sync-fleet-kubeconfigs` → token-free fleet kubectl over Tailscale
   modules.aiAssistants.workflowBuilderMcp.enable = builtins.elem hostName [ "ryzen" "thinkpad" "surface" ];
   modules.aiAssistants.contextGraphMcp.enable = builtins.elem hostName [ "ryzen" "thinkpad" "surface" ];
+  modules.aiAssistants.kiotaMcp.enable = builtins.elem hostName [ "ryzen" "thinkpad" "surface" ];
   modules.aiAssistants.homeAssistantMcp.enable = builtins.elem hostName [ "ryzen" "thinkpad" "surface" ];
   modules.aiAssistants.fabricMcp.enable = builtins.elem hostName [ "ryzen" "thinkpad" "surface" ];
   programs.pwa-url-router.enable = false;  # Feature 113: DISABLED - using Chrome as default browser

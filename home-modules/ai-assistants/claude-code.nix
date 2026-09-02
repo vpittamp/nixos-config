@@ -5,6 +5,7 @@ let
 
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
   contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
+  kiotaMcp = config.modules.aiAssistants.kiotaMcp;
   homeAssistantMcp = config.modules.aiAssistants.homeAssistantMcp;
   fabricMcp = config.modules.aiAssistants.fabricMcp;
 
@@ -518,6 +519,14 @@ lib.mkIf enableClaudeCode {
         # tailnet-scoped; see home-modules/ai-assistants/context-graph-mcp.nix.
         context-graph = {
           command = "${contextGraphMcp.proxyCommand}";
+          args = [];
+        };
+      })
+      // (lib.optionalAttrs kiotaMcp.enable {
+        # Kiota generated-actions MCP (OpenAPI → action packages) over the
+        # tailnet — auth-less, tailnet-scoped; see home-modules/ai-assistants/kiota-mcp.nix.
+        kiota = {
+          command = "${kiotaMcp.proxyCommand}";
           args = [];
         };
       })

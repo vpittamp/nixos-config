@@ -82,6 +82,12 @@ an interactive CLI remains active, and Dapr Agent browser tools persist their
 evidence after tool calls. Terminal video flush and package sealing complete the
 record but are not the first capture boundary.
 
+Before Graphify analysis, deterministic intent scoping resolves explicit paths,
+parameterized routes, nearest tests, and repository boundary files. Broad
+requested scopes are fallback bounds; only a named unresolved dependency
+authorizes expansion. The run retains the bounded
+`development-intent-scope/v1` receipt.
+
 ## Terminal Contract
 
 Success means required gates and delivery receipts passed, persistent changes
@@ -93,6 +99,16 @@ An infrastructure no-op does not acquire ownership or run readiness. Cleanup
 orders application adoption release before infrastructure restoration and must
 restore the exact baseline before ArgoCD resumes.
 
+Current-generation verification persists a generation-fenced accepted-source
+candidate before optional demo capture or delivery. General run writes preserve
+it, execution rebind clears it explicitly, and a downstream artifact failure
+may retry against the accepted SHA without recapturing or releasing source.
+
+An attached interactive session is owned by its active DevelopmentRun.
+Independent stop is refused with 409 `active_development_run_session`; cancel
+through the parent. Direct stop is allowed after the run is `delivered`,
+`failed`, or `cancelled`.
+
 Cancellation is persisted by the host before a runtime-specific local
 preemption is attempted. Closing provider I/O and emitting
 `agent.turn_preempted` can shorten the active turn, but neither is terminal
@@ -102,3 +118,9 @@ physical restoration, and the evidence seal converge.
 A checkpoint continuation from a terminal source is an independent recovery
 session, not a DevelopmentRun command. It retains read-only lineage but carries
 no preview tuple, adapter, receiver, delivery, or `wfb-development` authority.
+
+`development_run_fork` is different: it creates a lifecycle-owned run and
+atomically restores the selected durable checkpoint before its first model
+turn. The receipt binds the expected base SHA, restored SHA, immutable target
+scope, checkpoint id, and parent lineage; restore or scope failure rejects the
+fork instead of starting from a clean checkout.

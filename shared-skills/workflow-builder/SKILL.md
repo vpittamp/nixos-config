@@ -23,6 +23,10 @@ and browser adapters that cannot separate their loop from their tools are
 `dapr-agents` applications are a different thing; use `dapr-agents-workflow`
 for those.
 
+Creating a new versioned action from OpenAPI is a separate authoring workflow;
+use `generated-actions`. This skill remains the owner for discovering and
+calling an action that is already in the catalog.
+
 ## Start From Source
 
 ```bash
@@ -87,72 +91,18 @@ actions to navigate and capture pixels, then pass the resulting image content
 to K3. Remove model-specific text-only browser workarounds only after proving
 the supported control and capture path still covers the workflow.
 
+For routine `dapr-agent-py` development and conformance canaries, prefer a
+published APM test agent whose effective model resolves to GLM 5.3 Flash or
+Kimi K3 unless the test targets provider-specific behavior. The script must
+name that published agent directly; do not restore inline `model`, `effort`,
+`agentType`, aliases, spreads, or computed agent authority.
+
 ## Native CLI Runtime Contract
 
-`claude-code-cli`, `codex-cli`, `kimi-code-cli`, `agy-cli`, and other
-`interactive-cli` runtimes run the official vendor binary — never an SDK
-reimplementation — in one of two execution modes. Do not confuse the mode with
-the registry field: `capabilities.cliExecutionMode` accepts only `native-tui`
-and asserts terminal-attachability, which the workflow bridge requires of every
-`interactiveTerminal` runtime (agy included) alongside the registry-owned
-`cliAdapter`. The per-turn mode is an adapter env switch, reported back as
-`executionMode` in the start result:
-
-- `native-tui` — the binary runs inside Herdr's PTY and prompts are injected
-  into it. Default for claude, codex, and kimi; required for attached
-  human sessions, which need a live terminal.
-- `headless-print` — each turn is its own subprocess speaking the vendor's
-  structured stdio protocol (claude `-p --output-format stream-json --verbose`,
-  kimi `--prompt --output-format stream-json`, codex `exec --json`, agy
-  `-p --output-format stream-json`), with turn continuity through that CLI's
-  own resume handle. Default and only supported mode for `agy-cli`, whose TUI
-  wedges under pty injection; opt-in for the others via
-  `CLI_AGENT_{CLAUDE,KIMI,CODEX}_HEADLESS=1`. No vendor here offers ACP —
-  print mode is the structured-transport equivalent.
-
-- Preserve user-scoped subscription OAuth delivery through `cliAuth` and the
-  session Secret path. Do not replace it with a provider API key or an SDK
-  client. Headless print mode is NOT such a replacement: it runs the same
-  binary under the same subscription token (verified live — a headless turn
-  reports the subscription's own rate-limit window, not API billing), so the
-  auth contract is unchanged in either execution mode.
-- For `app-live` or `system-live` preview development, public profiles are
-  `dapr-agent-py`, `claude-code-cli`, `codex-cli`, `kimi-code-cli`, and
-  `agy-cli`. Fixture-local `*-host` values are internal adapter mappings and
-  must not be exposed as caller input. `adk-agent-py` is retired.
-- In a persistent CLI profile, edit the seeded host checkout and run
-  `wfb-development apply`, `observe`, or `verify`. The application reconstructs
-  the parent DevelopmentRun and compiler-owned adapter from session identity.
-  When supervised watch mode is active, run `wfb-development await-sync` with
-  `--wait --repo <edited-checkout>` and require `applied` before inspecting the
-  result; the verdict covers the primary checkout and every imported repository.
-  Inspect through the session's Playwright MCP. Submission and cancellation are
-  parent-run gates; arbitrary event payloads and unrelated workflow actions are
-  rejected. Never copy an OAuth Secret or CLI pod into the vCluster.
-- Kimi Code uses device-login OAuth from the exact
-  `$KIMI_CODE_HOME/credentials/kimi-code.json` file. Capture and rotate only
-  that file; remove Kimi and Moonshot API-key variables before launching the
-  CLI.
-- Workflow kickoff is accepted only after the native composer reports a
-  positive receipt. Native hooks normally own completion, failure, permission,
-  and compaction events. Transcript ingestion is append-only and retains a
-  durable high-water mark so a restarted wrapper does not duplicate events.
-- Some CLIs can terminate a turn before emitting a stop hook. After a bounded
-  grace period, a transcript terminal failure may fail the turn; a later native
-  stop or failure hook cancels that fallback. Terminal pixels remain diagnostic
-  evidence, never completion authority.
-- Persist native transcripts with prompt, response, and tool content intact.
-  Treat them as queryable execution evidence; do not apply blanket content
-  redaction.
-- A missing kickoff receipt fails the child with
-  `native_tui_kickoff_not_accepted`. Dynamic-script `agent()` resolves errored
-  journal entries to `null`, so required calls must check and reject `null`.
-- `CLI_AGENT_WORKFLOW_BATCH=0` exists only as compatibility configuration for
-  older images. Current runtime source has no workflow batch branch.
-- Borrow Omnigent's explicit capability declarations, session-scoped homes,
-  and supervised high-water transcript ingestion where they strengthen this
-  adapter. Do not introduce a second lifecycle, scheduling, or durable-state
-  authority beside Dapr, Kueue, the BFF, and JuiceFS.
+Interactive CLI runtimes execute the official vendor binary through the
+registry-owned adapter. Read `references/native-cli-runtime-contract.md` before
+changing execution modes, OAuth delivery, transcript ingestion, lifecycle
+events, or persistent preview behavior.
 
 ## Host Modes and Where Tools Run
 
@@ -227,6 +177,7 @@ the tools run (`docs/harness-host.md`):
 | Task                             | Read or inspect                                                                        |
 | -------------------------------- | -------------------------------------------------------------------------------------- |
 | Author a script                  | `docs/dynamic-script-authoring-guide.md`                                               |
+| Create or promote a generated action | Use `generated-actions`; source contract is `docs/generated-actions.md`            |
 | Understand execution/replay      | `docs/dynamic-script-workflows.md` and script-engine code/tests                        |
 | Connect an external MCP client   | `docs/workflow-mcp-server.md`                                                          |
 | Attach tools to spawned agents   | `docs/mcp-agent-workflows.md`, MCP resolution code, and piece-runtime manifests        |
@@ -253,7 +204,8 @@ the tools run (`docs/harness-host.md`):
 - `args` is the validated runtime input. Keep `meta` literal and compatible with
   the current script spec.
 - Discover action slugs through the action catalog. Do not guess or restore a
-  removed action type.
+  removed action type. Use `generated-actions` to add a new `gen/*` action;
+  never insert one directly into the database or function registry.
 - Use schema-constrained agent output when downstream script code needs a stable
   object. Preserve actual image parts for vision; stringified screenshot
   metadata is not image input.
@@ -273,6 +225,13 @@ the tools run (`docs/harness-host.md`):
   `development_run_follow_output`; checkpoint, fork, handoff, and reproduction
   use their corresponding `development_run_*` commands on the same run. Generic
   workflow continuation is not a second preview-development path.
+- DevelopmentRun fork restores a durable checkpoint atomically before the first
+  model turn and proves its base/restored SHA, immutable scope, and lineage.
+  Current-generation verification persists an accepted candidate before
+  optional demo or delivery work, so downstream failure does not discard it.
+- Do not stop a builder session independently while its DevelopmentRun is
+  active. A 409 `active_development_run_session` is an ownership guard; call
+  `development_run_cancel`. Direct stop is valid after the parent is terminal.
 - A `system-live` stacks tree with no rendered infrastructure delta is a
   successful no-op: it acquires no temporary ownership and has no readiness
   work. Cancellation releases application adoption before infrastructure
