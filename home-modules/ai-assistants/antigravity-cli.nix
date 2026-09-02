@@ -18,9 +18,10 @@
 
 let
   # Pinned to nixpkgs master rather than pkgs-unstable: the unstable channel
-  # lags master on this package (1.1.8 vs 1.1.11 as of 2026-08-07). See the
-  # nixpkgs-antigravity input in flake.nix, which carries the TODO to revert
-  # this to `pkgs-unstable.antigravity-cli` once the channel catches up.
+  # lags master on this package (unstable 1.1.19 vs master 1.1.24 as of
+  # 2026-09-02). See the nixpkgs-antigravity input in flake.nix, which carries
+  # the TODO to revert this to `pkgs-unstable.antigravity-cli` once the channel
+  # catches up.
   antigravityCliPackage = (import inputs.nixpkgs-antigravity {
     inherit (pkgs.stdenv.hostPlatform) system;
     config.allowUnfree = true;
