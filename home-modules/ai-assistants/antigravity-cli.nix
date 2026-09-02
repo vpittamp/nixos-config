@@ -32,6 +32,7 @@ let
 
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
   contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
+  kiotaMcp = config.modules.aiAssistants.kiotaMcp;
   homeAssistantMcp = config.modules.aiAssistants.homeAssistantMcp;
   fabricMcp = config.modules.aiAssistants.fabricMcp;
 
@@ -65,6 +66,17 @@ let
         timeoutSeconds = 120;
         strictArgumentValidation = true;
         enabledTools = contextGraphMcp.toolNames;
+      };
+    })
+    // (lib.optionalAttrs kiotaMcp.enable {
+      # Kiota generated-actions MCP (OpenAPI → action packages) over the
+      # tailnet — auth-less, tailnet-scoped; see home-modules/ai-assistants/kiota-mcp.nix.
+      "kiota" = {
+        command = "${kiotaMcp.proxyCommand}";
+        args = [];
+        timeoutSeconds = 300;
+        strictArgumentValidation = true;
+        enabledTools = kiotaMcp.toolNames;
       };
     })
     // (lib.optionalAttrs homeAssistantMcp.enable {

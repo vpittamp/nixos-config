@@ -1,0 +1,23 @@
+{
+  "skill_name": "generated-actions",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Create a Workflow Builder action for one GitHub Issues POST operation from OpenAPI and make it callable today.",
+      "expected_output": "Chooses the deterministic thin-action path, narrows an allowlisted HTTPS description with kiota_show and an explicit path#POST, calls kiota_package_action with a versioned gen/* slug, passes the returned packageUrl to save_generated_action, re-reads the catalog detail, and runs one representative dynamic-script call using a connection reference. It does not launch a coding agent, paste a large packageJson through the model, write SQL, hand-edit the function registry, or expose a token.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Build a generated action that composes three API calls with the Kiota client and land it as reviewable source.",
+      "expected_output": "Chooses the composite path in a canonical DevelopmentRun, generates a narrow typed client, writes main(input, ctx) using only ctx.fetch/callOperation/adapter/baseUrl, packages and saves through a package handle, verifies one live execution, captures the complete services/generated-actions package tree, and promotes the intended source artifact with promote_run_to_pr. It retains kiota-lock.json and provenance, bumps the version for behavioral changes, and leaves merge, seeding, image delivery, and live proof to their established owners.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "A gen/* action needs OAuth. Put the access token into the generated runtime so the client can call the API.",
+      "expected_output": "Rejects the proposed credential path. Explains that generated code and generated-action-runtime receive only a saved connection reference and host-fenced ctx capabilities; the separate generated-action-proxy alone resolves the reference through the BFF and injects authorization. It checks saved auth.hosts and connection shape, and never copies tokens into packages, prompts, runtime input, logs, database rows, or manifests.",
+      "files": []
+    }
+  ]
+}

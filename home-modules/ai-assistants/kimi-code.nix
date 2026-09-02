@@ -28,6 +28,7 @@ let
   repoRoot = ../../.;
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
   contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
+  kiotaMcp = config.modules.aiAssistants.kiotaMcp;
   homeAssistantMcp = config.modules.aiAssistants.homeAssistantMcp;
   fabricMcp = config.modules.aiAssistants.fabricMcp;
   sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
@@ -66,6 +67,16 @@ let
     // lib.optionalAttrs workflowBuilderMcp.enable {
       "workflow-builder" = {
         command = "${workflowBuilderMcp.proxyCommand}";
+        args = [];
+        startupTimeoutMs = 30000;
+        toolTimeoutMs = 300000;
+      };
+    }
+    // lib.optionalAttrs kiotaMcp.enable {
+      # Kiota generated-actions MCP — auth-less, tailnet-scoped; kiota
+      # generation over a large description can take tens of seconds.
+      "kiota" = {
+        command = "${kiotaMcp.proxyCommand}";
         args = [];
         startupTimeoutMs = 30000;
         toolTimeoutMs = 300000;

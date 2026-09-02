@@ -154,6 +154,11 @@ running, and read the return dict from `wfstate_state` afterwards.
   must be terminal, unchanged calls resolve from the imported `done` journal,
   only changed or lost calls re-dispatch. This is the retry primitive; a
   relaunch pays for the whole prefix again and creates a second run.
+- `stop_interactive_session` — refuses 409
+  `active_development_run_session` while the session owns an active
+  DevelopmentRun workspace. Use `development_run_cancel` so source, evidence,
+  and receiver cleanup stay parent-owned; direct stop is valid after the run is
+  terminal.
 - If the client's tool list lacks one of these, reconnect the MCP client
   before concluding the server lacks it.
 

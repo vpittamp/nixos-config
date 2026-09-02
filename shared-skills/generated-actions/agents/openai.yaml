@@ -1,0 +1,4 @@
+interface:
+  display_name: "Generated Actions"
+  short_description: "Create and promote Kiota-backed Workflow Builder actions."
+  default_prompt: "Use $generated-actions to create, validate, save, promote, or debug a versioned Workflow Builder gen/* action from an OpenAPI description while preserving credential and delivery boundaries."

@@ -35,7 +35,7 @@ let
   # single run, so any id in the catalogue is reachable without a rebuild.
   #
   # GLM-specific MCP servers are appended with --mcp-config; the base servers
-  # (workflow-builder, context-graph, homeassistant, fabric) arrive separately
+  # (workflow-builder, context-graph, kiota, homeassistant, fabric) arrive separately
   # via the claude-code-hm-plugin the HM module hangs off finalPackage, and the
   # two config sources merge by server name.
   #
