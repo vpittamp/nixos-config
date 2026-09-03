@@ -1084,9 +1084,8 @@ EOF
               alias = "Time To Pet — Upcoming visit reminder";
               description = "Notify desktops 30 minutes before a scheduled Time To Pet visit begins";
               triggers = [{
-                trigger = "time";
-                at = "sensor.time_to_pet_next_visit";
-                offset = "-00:30:00";
+                trigger = "template";
+                value_template = "{% set next = states('sensor.time_to_pet_next_visit') %}{{ next not in ['unavailable', 'unknown', ''] and now() >= as_datetime(next) - timedelta(minutes=30) and now() < as_datetime(next) }}";
               }];
               conditions = [{
                 condition = "template";
