@@ -1084,8 +1084,8 @@ EOF
               alias = "Time To Pet — Upcoming visit reminder";
               description = "Notify desktops 30 minutes before a scheduled Time To Pet visit begins";
               triggers = [{
-                platform = "time";
-                entity_id = "sensor.time_to_pet_next_visit";
+                trigger = "time";
+                at = "sensor.time_to_pet_next_visit";
                 offset = "-00:30:00";
               }];
               conditions = [{
