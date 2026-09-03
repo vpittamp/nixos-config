@@ -18,8 +18,8 @@ from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, FEED_DAYS_AHEAD, FEED_DAYS_BAC
 _LOGGER = logging.getLogger(__name__)
 
 
-class TimeToPetCoordinator(DataUpdateCoordinator[list[dict]]):
-    """Polls the Time To Pet client portal for scheduled visits."""
+class TimeToPetCoordinator(DataUpdateCoordinator[dict[str, list[dict]]]):
+    """Polls the Time To Pet client portal for scheduled visits and pending requests."""
 
     def __init__(
         self, hass: HomeAssistant, client: TimeToPetClient, entry: ConfigEntry
@@ -33,12 +33,12 @@ class TimeToPetCoordinator(DataUpdateCoordinator[list[dict]]):
         self.client = client
         self.entry = entry
 
-    async def _async_update_data(self) -> list[dict]:
+    async def _async_update_data(self) -> dict[str, list[dict]]:
         today = dt_util.now().date()
         start = today - timedelta(days=FEED_DAYS_BACK)
         end = today + timedelta(days=FEED_DAYS_AHEAD)
         try:
-            return await self.client.async_get_events(start, end)
+            return await self.client.async_get_data(start, end)
         except TimeToPetAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except TimeToPetApiError as err:

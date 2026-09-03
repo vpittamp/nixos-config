@@ -1071,7 +1071,114 @@ EOF
                     # The binary sensor just turned off, so the completed
                     # visit's details live on trigger.from_state, not to_state.
                     title = "🐾 Visit complete";
-                    message = "{% set visits = trigger.from_state.attributes.visits or [] %}{% if visits %}{% set v = visits[0] %}{{ v.staff | default('The sitter') }} finished {{ v.service | default('the visit') }} for {{ v.pets | default('the pets') }}.{% else %}The Time To Pet visit just wrapped up.{% endif %}";
+                    message = "{% set visits = trigger.from_state.attributes.visits or [] %}{% set dur = ((as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) / 60) | round %}{% if visits %}{% set v = visits[0] %}{{ v.staff | default('The sitter') }} finished {{ v.service | default('the visit') }} for {{ v.pets | default('the pets') }}{% if dur > 0 %} ({{ dur }} min duration){% endif %}.{% else %}The Time To Pet visit just wrapped up.{% endif %}";
+                    app_name = "Time To Pet";
+                  };
+                }
+              ];
+              mode = "single";
+            };
+
+            timeToPetVisitReminder = {
+              id = "time-to-pet-visit-reminder";
+              alias = "Time To Pet — Upcoming visit reminder";
+              description = "Notify desktops 30 minutes before a scheduled Time To Pet visit begins";
+              triggers = [{
+                platform = "time";
+                entity_id = "sensor.time_to_pet_next_visit";
+                offset = "-00:30:00";
+              }];
+              conditions = [{
+                condition = "template";
+                value_template = "{{ states('sensor.time_to_pet_next_visit') not in ['unavailable', 'unknown'] and states('binary_sensor.time_to_pet_visit_in_progress') != 'on' }}";
+              }];
+              actions = [{
+                action = "shell_command.broadcast_desktop_notification";
+                data = {
+                  title = "🐾 Sitter arriving in 30m";
+                  message = "{% set v = state_attr('sensor.time_to_pet_next_visit', 'service') %}{% set s = state_attr('sensor.time_to_pet_next_visit', 'staff') %}{% set p = state_attr('sensor.time_to_pet_next_visit', 'pets') %}{% set t = as_timestamp(states('sensor.time_to_pet_next_visit')) | timestamp_custom('%I:%M %p') %}{{ s | default('The sitter') }} is scheduled for {{ v | default('a visit') }}{% if p %} with {{ p }}{% endif %} at {{ t }}.";
+                  app_name = "Time To Pet";
+                };
+              }];
+              mode = "single";
+            };
+
+            timeToPetScheduleUpdated = {
+              id = "time-to-pet-schedule-updated";
+              alias = "Time To Pet — Schedule updated";
+              description = "Notify desktops when a scheduled visit is rescheduled or reassigned";
+              triggers = [{
+                platform = "state";
+                entity_id = "sensor.time_to_pet_next_visit";
+              }];
+              conditions = [{
+                condition = "template";
+                value_template = ''
+                  {{ trigger.from_state is not none and trigger.to_state is not none
+                     and trigger.from_state.state not in ['unavailable', 'unknown']
+                     and trigger.to_state.state not in ['unavailable', 'unknown']
+                     and trigger.from_state.attributes.id is defined
+                     and trigger.to_state.attributes.id is defined
+                     and trigger.from_state.attributes.id == trigger.to_state.attributes.id
+                     and (trigger.from_state.state != trigger.to_state.state or trigger.from_state.attributes.staff != trigger.to_state.attributes.staff) }}
+                '';
+              }];
+              actions = [
+                (homeActivity {
+                  kind = "pet_schedule_updated";
+                  entity_id = "sensor.time_to_pet_next_visit";
+                  provider = "time_to_pet";
+                  state = "rescheduled";
+                })
+                {
+                  action = "shell_command.broadcast_desktop_notification";
+                  data = {
+                    title = "🐾 Visit rescheduled";
+                    message = ''
+                      {% set v = trigger.to_state.attributes.service | default('visit') %}
+                      {% set p = trigger.to_state.attributes.pets | default('the pets') %}
+                      {% if trigger.from_state.attributes.staff != trigger.to_state.attributes.staff %}
+                      {{ p }}'s {{ v }} was reassigned from {{ trigger.from_state.attributes.staff }} to {{ trigger.to_state.attributes.staff }}.
+                      {% else %}
+                      {{ trigger.to_state.attributes.staff | default('The sitter') }}'s {{ v }} for {{ p }} was rescheduled to {{ as_timestamp(trigger.to_state.state) | timestamp_custom('%I:%M %p') }} (was {{ as_timestamp(trigger.from_state.state) | timestamp_custom('%I:%M %p') }}).
+                      {% endif %}
+                    '';
+                    app_name = "Time To Pet";
+                  };
+                }
+              ];
+              mode = "single";
+            };
+
+            timeToPetRequestApproved = {
+              id = "time-to-pet-request-approved";
+              alias = "Time To Pet — Request approved";
+              description = "Notify desktops when a pending service request is approved";
+              triggers = [{
+                platform = "state";
+                entity_id = "sensor.time_to_pet_pending_requests";
+              }];
+              conditions = [{
+                condition = "template";
+                value_template = ''
+                  {{ trigger.from_state is not none and trigger.to_state is not none
+                     and trigger.from_state.state not in ['unavailable', 'unknown']
+                     and trigger.to_state.state not in ['unavailable', 'unknown']
+                     and trigger.from_state.state | int(0) > trigger.to_state.state | int(0) }}
+                '';
+              }];
+              actions = [
+                (homeActivity {
+                  kind = "pet_request_approved";
+                  entity_id = "sensor.time_to_pet_pending_requests";
+                  provider = "time_to_pet";
+                  state = "approved";
+                })
+                {
+                  action = "shell_command.broadcast_desktop_notification";
+                  data = {
+                    title = "🐾 Request approved";
+                    message = "Your Time To Pet service request was approved by Boston Dog Butlers.";
                     app_name = "Time To Pet";
                   };
                 }
@@ -1136,6 +1243,9 @@ EOF
             buildingLinkPackageReceived
             timeToPetVisitStarted
             timeToPetVisitCompleted
+            timeToPetVisitReminder
+            timeToPetScheduleUpdated
+            timeToPetRequestApproved
           ];
 
       # Core settings. Location/units are left for the onboarding UI to ask.

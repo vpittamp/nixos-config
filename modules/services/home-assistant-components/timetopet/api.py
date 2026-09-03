@@ -19,6 +19,7 @@ from .const import (
     EVENT_FEED_URL,
     LOGIN_AJAX_URL,
     LOGIN_PAGE_URL,
+    PENDING_EVENT_FEED_URL,
     USER_AGENT,
 )
 
@@ -67,6 +68,8 @@ def summarize_event(event: dict) -> dict:
         "in_progress": bool(event.get("inProgress")),
         "pets": event.get("pet_string"),
         "id": event.get("id"),
+        "duration": event.get("duration"),
+        "description": event.get("description"),
     }
     return {k: v for k, v in out.items() if v not in (None, "")}
 
@@ -136,25 +139,12 @@ class TimeToPetClient:
         """Validate credentials (used by the config flow)."""
         await self._login()
 
-    async def async_get_events(
-        self, start: dt.date, end: dt.date
-    ) -> list[dict]:
-        """Return scheduled/completed visit records in [start, end)."""
-        if not self._logged_in:
-            await self._login()
-        try:
-            return await self._fetch_feed(start, end)
-        except TimeToPetAuthError:
-            # Session cookie expired — log in once more and retry.
-            await self._login()
-            return await self._fetch_feed(start, end)
-
-    async def _fetch_feed(self, start: dt.date, end: dt.date) -> list[dict]:
+    async def _fetch_feed(self, url: str, start: dt.date, end: dt.date) -> list[dict]:
         session = await self._ensure_session()
         params = {"start": start.isoformat(), "end": end.isoformat()}
         try:
             async with session.get(
-                EVENT_FEED_URL, params=params, allow_redirects=False
+                url, params=params, allow_redirects=False
             ) as resp:
                 if resp.status in (301, 302, 303, 307, 308, 401, 403):
                     raise TimeToPetAuthError("Portal session expired")
@@ -172,3 +162,40 @@ class TimeToPetClient:
                 f"Unexpected event feed payload: {type(data).__name__}"
             )
         return data
+
+    async def async_get_events(
+        self, start: dt.date, end: dt.date
+    ) -> list[dict]:
+        """Return scheduled/completed visit records in [start, end)."""
+        if not self._logged_in:
+            await self._login()
+        try:
+            return await self._fetch_feed(EVENT_FEED_URL, start, end)
+        except TimeToPetAuthError:
+            # Session cookie expired — log in once more and retry.
+            await self._login()
+            return await self._fetch_feed(EVENT_FEED_URL, start, end)
+
+    async def async_get_pending_events(
+        self, start: dt.date, end: dt.date
+    ) -> list[dict]:
+        """Return pending visit requests in [start, end)."""
+        if not self._logged_in:
+            await self._login()
+        try:
+            return await self._fetch_feed(PENDING_EVENT_FEED_URL, start, end)
+        except TimeToPetAuthError:
+            await self._login()
+            return await self._fetch_feed(PENDING_EVENT_FEED_URL, start, end)
+
+    async def async_get_data(
+        self, start: dt.date, end: dt.date
+    ) -> dict[str, list[dict]]:
+        """Return both scheduled and pending events."""
+        events = await self.async_get_events(start, end)
+        try:
+            pending = await self.async_get_pending_events(start, end)
+        except Exception as err:
+            _LOGGER.debug("Failed to fetch pending event feed: %s", err)
+            pending = []
+        return {"events": events, "pending": pending}

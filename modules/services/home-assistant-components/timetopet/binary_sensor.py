@@ -47,9 +47,15 @@ class TimeToPetVisitInProgressSensor(
         )
 
     def _in_progress_events(self) -> list[dict]:
+        if isinstance(self.coordinator.data, dict):
+            events = self.coordinator.data.get("events", [])
+        elif isinstance(self.coordinator.data, list):
+            events = self.coordinator.data
+        else:
+            events = []
         return [
             e
-            for e in (self.coordinator.data or [])
+            for e in events
             if e.get("inProgress") and not is_cancelled(e)
         ]
 

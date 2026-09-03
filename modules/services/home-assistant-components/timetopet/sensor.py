@@ -33,6 +33,8 @@ async def async_setup_entry(
             TimeToPetNextVisitSensor(coordinator, entry),
             TimeToPetUpcomingVisitsSensor(coordinator, entry),
             TimeToPetVisitsTodaySensor(coordinator, entry),
+            TimeToPetLastCompletedVisitSensor(coordinator, entry),
+            TimeToPetPendingRequestsSensor(coordinator, entry),
         ]
     )
 
@@ -45,9 +47,23 @@ def _device_info(entry: ConfigEntry) -> DeviceInfo:
     )
 
 
+def _events_data(coordinator: TimeToPetCoordinator) -> list[dict]:
+    if isinstance(coordinator.data, dict):
+        return coordinator.data.get("events", [])
+    if isinstance(coordinator.data, list):
+        return coordinator.data
+    return []
+
+
+def _pending_data(coordinator: TimeToPetCoordinator) -> list[dict]:
+    if isinstance(coordinator.data, dict):
+        return coordinator.data.get("pending", [])
+    return []
+
+
 def _live_events(coordinator: TimeToPetCoordinator) -> list[dict]:
     """Events that are not cancelled."""
-    return [e for e in (coordinator.data or []) if not is_cancelled(e)]
+    return [e for e in _events_data(coordinator) if not is_cancelled(e)]
 
 
 def _upcoming_events(coordinator: TimeToPetCoordinator) -> list[dict]:
@@ -64,6 +80,19 @@ def _upcoming_events(coordinator: TimeToPetCoordinator) -> list[dict]:
         if end > now:
             events.append(event)
     return sorted(events, key=lambda e: parse_event_time(e.get("start")))
+
+
+def _completed_events(coordinator: TimeToPetCoordinator) -> list[dict]:
+    """Completed events, newest first."""
+    events = []
+    for event in _live_events(coordinator):
+        if event.get("status") == "Completed" and not event.get("inProgress"):
+            events.append(event)
+    return sorted(
+        events,
+        key=lambda e: parse_event_time(e.get("end")) or dt_util.now(),
+        reverse=True,
+    )
 
 
 class TimeToPetNextVisitSensor(
@@ -161,3 +190,64 @@ class TimeToPetVisitsTodaySensor(
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {"visits": [summarize_event(e) for e in self._todays_events()]}
+
+
+class TimeToPetLastCompletedVisitSensor(
+    CoordinatorEntity[TimeToPetCoordinator], SensorEntity
+):
+    """Timestamp and summary of the most recently completed visit."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Last completed visit"
+    _attr_icon = "mdi:check-circle-outline"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(
+        self, coordinator: TimeToPetCoordinator, entry: ConfigEntry
+    ) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_last_completed_visit"
+        self._attr_device_info = _device_info(entry)
+
+    @property
+    def native_value(self):
+        completed = _completed_events(self.coordinator)
+        if not completed:
+            return None
+        return parse_event_time(completed[0].get("end"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        completed = _completed_events(self.coordinator)
+        if not completed:
+            return {}
+        return summarize_event(completed[0])
+
+
+class TimeToPetPendingRequestsSensor(
+    CoordinatorEntity[TimeToPetCoordinator], SensorEntity
+):
+    """Number of service requests awaiting company approval."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Pending requests"
+    _attr_icon = "mdi:clock-alert-outline"
+    _attr_native_unit_of_measurement = "requests"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self, coordinator: TimeToPetCoordinator, entry: ConfigEntry
+    ) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_pending_requests"
+        self._attr_device_info = _device_info(entry)
+
+    @property
+    def native_value(self) -> int:
+        return len(_pending_data(self.coordinator))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "requests": [summarize_event(e) for e in _pending_data(self.coordinator)]
+        }
