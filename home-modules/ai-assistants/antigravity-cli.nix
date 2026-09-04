@@ -36,6 +36,7 @@ let
   kiotaMcp = config.modules.aiAssistants.kiotaMcp;
   homeAssistantMcp = config.modules.aiAssistants.homeAssistantMcp;
   fabricMcp = config.modules.aiAssistants.fabricMcp;
+  linkedinMcp = config.modules.aiAssistants.linkedinMcp;
 
   mcpServers =
     (lib.optionalAttrs workflowBuilderMcp.enable {
@@ -94,6 +95,14 @@ let
         command = "${fabricMcp.proxyCommand}";
         args = [];
         timeoutSeconds = 120;
+      };
+    })
+    // (lib.optionalAttrs linkedinMcp.enable {
+      # LinkedIn MCP server (Patchright browser automation).
+      "linkedin" = {
+        command = "${linkedinMcp.command}";
+        args = [];
+        timeoutSeconds = linkedinMcp.timeoutSeconds;
       };
     })
     // (lib.optionalAttrs enableBrowserMcpServers {
