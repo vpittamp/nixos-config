@@ -212,7 +212,11 @@ let
   # (langfuse-auth.sh, sync-jwks-to-azure.sh, setup-1password-entra-sso.sh,
   # deploy-nixos-ssh.sh) need it back on PATH first; `nix shell nixpkgs#azure-cli`
   # covers a one-off run.
-  cloudTools = [ ];
+  cloudTools = with pkgs; [
+    (google-cloud-sdk.withExtraComponents [
+      google-cloud-sdk.components.gke-gcloud-auth-plugin
+    ])
+  ];
 
   # Documentation and help
   documentation = with pkgs; [

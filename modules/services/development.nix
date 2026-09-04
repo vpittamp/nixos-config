@@ -46,8 +46,9 @@
     # terraform removed 2026-08-23 (slimming, ~113 MiB); ~/.terraform.d last written
     # 2026-03-03. Infrastructure here is Talos + GitOps, not Terraform.
     # awscli2 # Commented out - not currently used, slow to build
-    # azure-cli-bin # Moved to user packages for Codespaces compatibility
-    google-cloud-sdk
+    (google-cloud-sdk.withExtraComponents [
+      google-cloud-sdk.components.gke-gcloud-auth-plugin
+    ])
     hcloud # Hetzner Cloud CLI
 
     # Development tools
