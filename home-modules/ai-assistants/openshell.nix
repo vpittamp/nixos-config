@@ -18,6 +18,7 @@ let
     auth_mode = "mtls";
   };
   openshellConfigRoot = "${config.home.homeDirectory}/.config/openshell";
+  activeGatewaySeed = pkgs.writeText "openshell-active-gateway" "${gatewayName}\n";
   preferredKubeconfig = "${config.home.homeDirectory}/.kube/stacks/config";
   ryzenGatewaySync = pkgs.writeShellScriptBin "openshell-ryzen-sync" ''
     set -euo pipefail
@@ -193,10 +194,33 @@ lib.mkMerge [
   (lib.mkIf enableRyzenGateway {
     home.packages = [ ryzenGatewaySync ];
 
-    home.sessionVariables.OPENSHELL_GATEWAY = gatewayName;
-
-    xdg.configFile."openshell/active_gateway".text = "${gatewayName}\n";
+    # This module REGISTERS a gateway; the CLI owns which one is ACTIVE.
+    #
+    # Both of those used to be declared here, and together they made a second
+    # gateway unusable. `active_gateway` was an xdg.configFile — a symlink into
+    # the read-only store — so `openshell gateway select` could only ever fail
+    # with "Read-only file system (os error 30)". And OPENSHELL_GATEWAY pinned
+    # the choice regardless, because the environment variable outranks the file
+    # in the CLI's resolution order. Every command against any other gateway
+    # needed an explicit `-g`, and ryzen-internal is dormant.
+    #
+    # The registration stays declarative. The selection is seeded once, as a
+    # real file, and never touched again.
     xdg.configFile."openshell/gateways/${gatewayName}/metadata.json".text = gatewayMetadata;
+
+    home.activation.openshellSeedActiveGateway = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      active="${openshellConfigRoot}/active_gateway"
+      # Migration: the previous generation left a store symlink here. Removing
+      # it is what makes the file writable; home-manager's own cleanup already
+      # ran by writeBoundary, so this only catches a stale link.
+      if [ -L "$active" ]; then
+        $DRY_RUN_CMD ${pkgs.coreutils}/bin/rm -f "$active"
+      fi
+      if [ ! -e "$active" ]; then
+        $DRY_RUN_CMD ${pkgs.coreutils}/bin/mkdir -p ${openshellConfigRoot}
+        $DRY_RUN_CMD ${pkgs.coreutils}/bin/install -m600 ${activeGatewaySeed} "$active"
+      fi
+    '';
 
     home.activation.openshellRyzenGateway = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       # Bound this network sync: it runs kubectl against the ryzen cluster, which
