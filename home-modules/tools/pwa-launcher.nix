@@ -16,6 +16,8 @@
 # - Remains compatible with i3pm domain-based PWA matching
 
 let
+  chromeFlags = import ../../shared/chrome-flags.nix { inherit lib; };
+
   hostName =
     if osConfig != null && osConfig ? networking && osConfig.networking ? hostName
     then osConfig.networking.hostName
@@ -156,7 +158,7 @@ let
       --no-first-run
       --no-default-browser-check
       --password-store=basic
-      --disable-features=DesktopPWAsElidedExtensionsMenu
+      ${lib.concatStringsSep "\n      " (map (arg: lib.escapeShellArg arg) chromeFlags.pwaArgs)}
     )
 
     # Append per-PWA Chrome flags from registry (e.g. --js-flags for heap limits)

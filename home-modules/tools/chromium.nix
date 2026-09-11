@@ -9,15 +9,11 @@ let
 
   pwaSitesConfig = import ../../shared/pwa-sites.nix { inherit lib hostName; };
   pwaSites = pwaSitesConfig.pwaSites;
+  chromeFlags = import ../../shared/chrome-flags.nix { inherit lib; };
 
   ryzenCaptureSafeChromeArgs = lib.optionals (hostName == "ryzen") [
     "--disable-accelerated-video-decode"
     "--disable-zero-copy"
-  ];
-
-  geminiChromeArgs = [
-    "--enable-features=OptimizationGuideModelDownloading,PromptAPIForGeminiNano,WriterAPIForGeminiNano,RewriterAPIForGeminiNano,SummarizationAPIForGeminiNano"
-    "--optimization-guide-model-execution-override-command-line-flag"
   ];
 
   pwaRouteEntries =
@@ -1038,7 +1034,7 @@ let
       cmd=(
         ${pkgs.google-chrome}/bin/google-chrome-stable
         ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) ryzenCaptureSafeChromeArgs)}
-        ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) geminiChromeArgs)}
+        ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) chromeFlags.chromeArgs)}
         ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) extraArgs)}
         "$@"
       )
@@ -1077,6 +1073,7 @@ let
     set -euo pipefail
     exec ${pkgs.google-chrome}/bin/google-chrome-stable \
       ${lib.concatStringsSep "\n      " (map (arg: lib.escapeShellArg arg) ryzenCaptureSafeChromeArgs)} \
+      ${lib.concatStringsSep "\n      " (map (arg: lib.escapeShellArg arg) chromeFlags.webmcpDevtoolsArgs)} \
       --remote-debugging-address=${sharedBrowserMcp.chromeDevtoolsBrowserHost} \
       --remote-debugging-port=${toString sharedBrowserMcp.chromeDevtoolsBrowserPort} \
       --user-data-dir=${lib.escapeShellArg sharedBrowserMcp.chromeDevtoolsProfileDir} \
@@ -1231,6 +1228,30 @@ in
   # We still patch the writable manifest files on activation so the Chrome-level
   # host path goes through our system launcher, which fixes the peer GID 1Password
   # uses to authenticate the native messaging helper on Linux.
+
+  # Sync WebMCP and PWA experimental feature flags into Chrome's Local State
+  # so chrome://flags reflects them in the UI.
+  home.activation.configureChromeExperiments = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    EXPERIMENTS_JSON='${builtins.toJSON chromeFlags.labsExperiments}'
+    for state_file in "$HOME/.config/google-chrome/Local State" "$HOME/.local/share/google-chrome-private/Local State"; do
+      state_dir="$(${pkgs.coreutils}/bin/dirname "$state_file")"
+      if [ -d "$state_dir" ]; then
+        if [ -f "$state_file" ]; then
+          tmp="$(${pkgs.coreutils}/bin/mktemp)"
+          if ${pkgs.jq}/bin/jq --argjson exps "$EXPERIMENTS_JSON" '
+            .browser = (.browser // {}) |
+            .browser.enabled_labs_experiments = (((.browser.enabled_labs_experiments // []) + $exps) | unique)
+          ' "$state_file" > "$tmp"; then
+            ${pkgs.coreutils}/bin/mv -f "$tmp" "$state_file"
+          else
+            ${pkgs.coreutils}/bin/rm -f "$tmp"
+          fi
+        else
+          echo "{\"browser\":{\"enabled_labs_experiments\":$EXPERIMENTS_JSON}}" > "$state_file"
+        fi
+      fi
+    done
+  '';
 
   home.activation.fixOnePasswordNativeHosts = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     ${onePasswordNativeHostFixScript}
