@@ -23,6 +23,9 @@
       gh-enhance = pkgs.callPackage ./gh-enhance.nix { };
       diffnav = pkgs.callPackage ./diffnav.nix { };
 
+      # K9s — Kubernetes TUI pinned to v0.51.0
+      k9s = pkgs.callPackage ./k9s.nix { };
+
       # Kimi WebBridge — browser control CLI/MCP bridge for Chrome
       kimi-webbridge = pkgs.callPackage ./kimi-webbridge.nix { };
 

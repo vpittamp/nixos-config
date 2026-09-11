@@ -1924,15 +1924,12 @@ rm -f -- "$0" >/dev/null 2>&1 || true
         launch_transport = launch_transport or "local_helper"
 
         if app_name == "k9s":
-            kubeconfig_path = Path.home() / ".kube" / "stacks" / "config"
-            if not kubeconfig_path.is_file():
-                sync_cmd = self._which("sync-stacks-kubeconfigs")
-                if not sync_cmd:
-                    raise RuntimeError("Expected kubeconfig not found and sync-stacks-kubeconfigs is unavailable")
-                self._run_command([sync_cmd], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                if not kubeconfig_path.is_file():
-                    raise RuntimeError("Expected kubeconfig not found after sync")
-            environment["KUBECONFIG"] = str(kubeconfig_path)
+            stacks_kubeconfig = Path.home() / ".kube" / "stacks" / "config"
+            default_kubeconfig = Path.home() / ".kube" / "config"
+            if stacks_kubeconfig.is_file():
+                environment.setdefault("KUBECONFIG", str(stacks_kubeconfig))
+            elif default_kubeconfig.is_file():
+                environment.setdefault("KUBECONFIG", str(default_kubeconfig))
 
         launch_id = str((spec.get("launch") or {}).get("launch_id") or "").strip()
 

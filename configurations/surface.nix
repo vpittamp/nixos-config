@@ -96,7 +96,7 @@ in
       # packages/with-terminfo.nix and configurations/thinkpad.nix.
       lazygit = (import ../packages/with-terminfo.nix { pkgs = prev; }) pkgs-lazygit.lazygit "lazygit";
       lazydocker = (import ../packages/with-terminfo.nix { pkgs = prev; }) pkgs-lazygit.lazydocker "lazydocker";
-      k9s = (import ../packages/with-terminfo.nix { pkgs = prev; }) prev.k9s "k9s";
+      k9s = (import ../packages/with-terminfo.nix { pkgs = prev; }) (prev.callPackage ../packages/k9s.nix { k9s = prev.k9s; }) "k9s";
       gh-dash = prev.callPackage ../packages/gh-dash.nix { };
       gh-enhance = prev.callPackage ../packages/gh-enhance.nix { };
       diffnav = prev.callPackage ../packages/diffnav.nix { };

@@ -124,7 +124,7 @@ in
   modules.tools.yazi.enable = true;
   modules.tools.fzf-file-search.enable = true;  # Floating fzf file search
   modules.tools.docker.enable = true; # Docker with 1Password integration
-  modules.tools.remoteKubeconfig.enable = true;
+  modules.tools.remoteKubeconfig.enable = false; # Retired: superseded by fleetKubeconfigs (sync-fleet-kubeconfigs)
   modules.tools.fleetKubeconfigs.enable = true;  # `sync-fleet-kubeconfigs` → token-free fleet kubectl over Tailscale
   modules.aiAssistants.workflowBuilderMcp.enable = builtins.elem hostName [ "ryzen" "thinkpad" "surface" ];
   modules.aiAssistants.contextGraphMcp.enable = builtins.elem hostName [ "ryzen" "thinkpad" "surface" ];

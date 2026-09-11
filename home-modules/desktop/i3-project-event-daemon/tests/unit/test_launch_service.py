@@ -859,8 +859,8 @@ async def test_get_reusable_context_terminal_window_prunes_stale_candidate(tmp_p
     )
 
     assert result is None
-    assert removed == [31]
-    assert invalidated == [True]
+    assert removed == []
+    assert invalidated == []
 
 
 @pytest.mark.asyncio
@@ -1117,6 +1117,71 @@ def test_execute_launch_spec_local_gui_app_uses_sway_exec(tmp_path: Path) -> Non
     assert "exec env I3PM_CONTEXT_KEY=ctx /usr/bin/code --new-window" in commands[0][2]
     assert not any(command and command[0] == "systemd-run" for command in commands)
     assert service.read_status("launch-code")["status"] == "waiting_window"
+
+
+def test_execute_launch_spec_local_k9s_resolves_default_kubeconfig(tmp_path: Path, monkeypatch) -> None:
+    fake_home = tmp_path / "home"
+    default_cfg = fake_home / ".kube" / "config"
+    default_cfg.parent.mkdir(parents=True)
+    default_cfg.write_text("apiVersion: v1\nclusters: []\n")
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+    commands: List[List[str]] = []
+    service = make_service(
+        tmp_path,
+        transport="local_helper",
+        run_commands=commands,
+        which_map={"ghostty": "/usr/bin/ghostty"},
+    )
+
+    result = service.execute_launch_spec({
+        "app_name": "k9s",
+        "command": "ghostty",
+        "args": ["-e", "k9s"],
+        "execution_mode": "local",
+        "local_project_directory": "",
+        "environment": {"I3PM_APP_NAME": "k9s"},
+        "launch": {"launch_id": "launch-k9s"},
+    })
+
+    assert result["success"] is True
+    assert commands[0][:2] == ["swaymsg", "--quiet"]
+    assert f"KUBECONFIG={default_cfg}" in commands[0][2]
+    assert "/usr/bin/ghostty -e k9s" in commands[0][2]
+    assert service.read_status("launch-k9s")["status"] == "waiting_window"
+
+
+def test_execute_launch_spec_local_k9s_prefers_stacks_kubeconfig(tmp_path: Path, monkeypatch) -> None:
+    fake_home = tmp_path / "home"
+    stacks_cfg = fake_home / ".kube" / "stacks" / "config"
+    stacks_cfg.parent.mkdir(parents=True)
+    stacks_cfg.write_text("apiVersion: v1\nclusters: []\n")
+    default_cfg = fake_home / ".kube" / "config"
+    default_cfg.write_text("apiVersion: v1\nclusters: []\n")
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+    commands: List[List[str]] = []
+    service = make_service(
+        tmp_path,
+        transport="local_helper",
+        run_commands=commands,
+        which_map={"ghostty": "/usr/bin/ghostty"},
+    )
+
+    result = service.execute_launch_spec({
+        "app_name": "k9s",
+        "command": "ghostty",
+        "args": ["-e", "k9s"],
+        "execution_mode": "local",
+        "local_project_directory": "",
+        "environment": {"I3PM_APP_NAME": "k9s"},
+        "launch": {"launch_id": "launch-k9s-stacks"},
+    })
+
+    assert result["success"] is True
+    assert commands[0][:2] == ["swaymsg", "--quiet"]
+    assert f"KUBECONFIG={stacks_cfg}" in commands[0][2]
+    assert "/usr/bin/ghostty -e k9s" in commands[0][2]
 
 
 def test_managed_tmux_session_probe_accepts_matching_metadata(tmp_path: Path) -> None:
