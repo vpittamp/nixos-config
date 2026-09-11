@@ -105,7 +105,7 @@ let
 
     def is_candidate_process(proc) -> bool:
         cmdline = proc["cmdline"]
-        if any(marker in cmdline for marker in ("chrome-devtools-mcp", "@playwright/mcp", "playwright-mcp")):
+        if any(marker in cmdline for marker in ("chrome-devtools-mcp", "@playwright/mcp", "playwright-mcp", "agent-browser")):
             return True
         if any(profile_dir in cmdline for profile_dir in PROFILE_DIRS):
             return True

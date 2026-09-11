@@ -4,10 +4,7 @@ let
   repoRoot = ../../.;
 
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
-  contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
   kiotaMcp = config.modules.aiAssistants.kiotaMcp;
-  homeAssistantMcp = config.modules.aiAssistants.homeAssistantMcp;
-  fabricMcp = config.modules.aiAssistants.fabricMcp;
 
   # Use claude-code from the dedicated flake for latest version
   # Fall back to nixpkgs-unstable if flake not available
@@ -343,8 +340,6 @@ lib.mkIf enableClaudeCode {
           "mcp__workflow-builder__validate_workflow_script"
           "mcp__workflow-builder__run_workflow_script"
           "mcp__workflow-builder__save_workflow_script"
-          "mcp__homeassistant"
-          "mcp__fabric"
         ];
       };
 
@@ -514,33 +509,11 @@ lib.mkIf enableClaudeCode {
           args = [];
         };
       })
-      // (lib.optionalAttrs contextGraphMcp.enable {
-        # Graph memory (Neo4j context graph) over the tailnet — auth-less,
-        # tailnet-scoped; see home-modules/ai-assistants/context-graph-mcp.nix.
-        context-graph = {
-          command = "${contextGraphMcp.proxyCommand}";
-          args = [];
-        };
-      })
       // (lib.optionalAttrs kiotaMcp.enable {
         # Kiota generated-actions MCP (OpenAPI → action packages) over the
         # tailnet — auth-less, tailnet-scoped; see home-modules/ai-assistants/kiota-mcp.nix.
         kiota = {
           command = "${kiotaMcp.proxyCommand}";
-          args = [];
-        };
-      })
-      // (lib.optionalAttrs homeAssistantMcp.enable {
-        # Home Assistant MCP server (Streamable HTTP) via authenticated mcp-remote proxy.
-        homeassistant = {
-          command = "${homeAssistantMcp.proxyCommand}";
-          args = [];
-        };
-      })
-      // (lib.optionalAttrs fabricMcp.enable {
-        # Microsoft Fabric Core MCP server (Streamable HTTP) via authenticated mcp-remote proxy.
-        fabric = {
-          command = "${fabricMcp.proxyCommand}";
           args = [];
         };
       });

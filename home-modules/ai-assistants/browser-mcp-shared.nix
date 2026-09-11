@@ -25,5 +25,6 @@ rec {
 
   legacyBrowserProfileDirs = [
     "/tmp/codex-chrome-about-blank"
+    "/tmp/agent-browser-profile-"
   ];
 }

@@ -232,7 +232,7 @@ ${lib.optionalString contextGraphMcp.enable ''
 [mcp_servers.context-graph]
 args = []
 command = "${contextGraphMcp.proxyCommand}"
-enabled = true
+enabled = false
 env_vars = [
   "CONTEXT_GRAPH_MCP_URL",
 ]
@@ -256,7 +256,7 @@ ${lib.optionalString homeAssistantMcp.enable ''
 [mcp_servers.homeassistant]
 args = []
 command = "${homeAssistantMcp.proxyCommand}"
-enabled = true
+enabled = false
 env_vars = [
   "DBUS_SESSION_BUS_ADDRESS",
   "DISPLAY",
@@ -277,7 +277,7 @@ ${lib.optionalString fabricMcp.enable ''
 [mcp_servers.fabric]
 args = []
 command = "${fabricMcp.proxyCommand}"
-enabled = true
+enabled = false
 env_vars = [
   "DBUS_SESSION_BUS_ADDRESS",
   "DISPLAY",
@@ -319,7 +319,7 @@ args = [
     "1440x900",
 ]
 command = "${nodeNpx}"
-enabled = true
+enabled = false
 startup_timeout_sec = 60
 tool_timeout_sec = 120
 
