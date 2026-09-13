@@ -115,8 +115,13 @@ let
       }
 
       if [ "$last_tier" -lt 1 ]; then
-        act 1 "bringing up '${cfg.connection}' (NetworkManager may have given up)" \
-          nmcli connection up "${cfg.connection}"
+        ${if cfg.connection == null then ''
+          act 1 "reconnecting ${cfg.interface}, letting NetworkManager pick a profile" \
+            nmcli device connect ${cfg.interface}
+        '' else ''
+          act 1 "bringing up '${cfg.connection}' (NetworkManager may have given up)" \
+            nmcli connection up "${cfg.connection}"
+        ''}
         exit 0
       fi
 
@@ -165,9 +170,19 @@ in
     };
 
     connection = lib.mkOption {
-      type = lib.types.str;
+      type = lib.types.nullOr lib.types.str;
+      default = null;
       example = "Linksys 416";
-      description = "NetworkManager profile name to bring up at tier 1.";
+      description = ''
+        NetworkManager profile to bring up at tier 1.
+
+        Null -- the default -- means "nmcli device connect <interface>", which
+        lets NetworkManager pick the best available profile by
+        autoconnect-priority. That is the correct setting for any machine that
+        roams: forcing one named profile up would fight the user every time
+        they are legitimately on another network. Name a profile only on a host
+        that is never meant to be anywhere else.
+      '';
     };
 
     gateway = lib.mkOption {

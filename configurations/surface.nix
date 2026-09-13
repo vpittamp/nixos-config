@@ -50,6 +50,12 @@ in
     ../modules/services/onepassword.nix
     # Feature 117: System service removed - now runs as home-manager user service
 
+    # Wi-Fi profile hygiene + link watchdog. Shared with surface-pro3, which
+    # lost 18h43m to a stale profile on 2026-09-12; this machine carries the
+    # same leftovers. See the modules for the full account.
+    ../modules/services/nm-profile-hygiene.nix
+    ../modules/services/wifi-watchdog.nix
+
     # Bare metal optimizations (Podman, printing; no KVM/fingerprint on Surface)
     ../modules/services/bare-metal.nix
 
@@ -186,6 +192,10 @@ in
   # but switching backends here would need the profile re-provisioned).
   networking.networkmanager.enable = true;
 
+  # Wi-Fi power save off. Same Marvell 88W8897 (mwifiex_pcie) as surface-pro3,
+  # whose Bluetooth half wedges on its own; see home-assistant-watchdog.nix.
+  networking.networkmanager.wifi.powersave = false;
+
   # Declarative Wi-Fi profile for the home network. The PSK is NOT in this
   # repo: it is substituted at runtime from /etc/NetworkManager/secrets.env on
   # the surface (root:root 0600, provisioned out-of-band during bring-up).
@@ -194,9 +204,19 @@ in
     profiles."Linksys 416" = {
       connection = {
         id = "Linksys 416";
-        uuid = "c520f3e2-03e0-4e0e-9ea3-58ba99f8dd59";
+        # This was c520f3e2-... until 2026-09-13, and that profile was inert:
+        # NetworkManager dedupes by UUID, not by name, so the stateful
+        # /etc copy (9e721534-...) loaded as a *second* 'Linksys 416' and was
+        # the one actually activated. Adopting the installed UUID makes this
+        # declaration replace that profile instead of shadow-boxing with it.
+        uuid = "9e721534-4b7b-4dcf-bcbd-002b934c2402";
         type = "wifi";
         interface-name = "wlp2s0";
+        autoconnect = true;
+        # Must outrank the roaming profiles kept below. Everything was tied at
+        # 0, which is how surface-pro3 came to prefer a dead setup SSID over
+        # the house network and lost 18h43m on 2026-09-12.
+        autoconnect-priority = 100;
       };
       wifi = {
         mode = "infrastructure";
@@ -213,6 +233,32 @@ in
         method = "auto";
       };
     };
+  };
+
+  # Profile hygiene. 'XFSETUP-37B4' -- an Xfinity gateway setup SSID saved on
+  # this machine's install day -- is the same stale profile that took
+  # surface-pro3 off the network for 18h43m on 2026-09-12, and it is still
+  # sitting here. Drop it, and drop the superseded /etc copy of the declared
+  # profile above.
+  #
+  # Unlike surface-pro3, this machine travels, so `keep` is not empty: networks
+  # you join in the field are legitimately stateful and must not be deleted by
+  # a rebuild. Only genuinely dead profiles are pruned, and the priority above
+  # is what guarantees the house network still wins at home.
+  services.nmProfileHygiene = {
+    enable = true;
+    keep = [ "sprinkles" "iPhone (2)" ];
+  };
+
+  # Wi-Fi link watchdog. This laptop is not the automation hub, so the settings
+  # are the cautious ones: connection is left null so tier 1 is "reconnect the
+  # device and let NetworkManager pick by priority" rather than forcing the
+  # house profile up while you are on someone else's network, and rebootAfter
+  # stays off because there is always a user present to notice.
+  services.wifiWatchdog = {
+    enable = true;
+    interface = "wlp2s0";
+    kernelModule = "mwifiex_pcie";
   };
 
   # Fonts - Nerd Fonts for desktop shell glyph icons

@@ -59,6 +59,7 @@ in
     # Wi-Fi link watchdog — this host is reachable only over Wi-Fi and has no
     # local user to notice when NetworkManager stops trying. See the module.
     ../modules/services/wifi-watchdog.nix
+    ../modules/services/nm-profile-hygiene.nix
 
     # Bare metal essentials (no Podman/printing here — see below)
     ../modules/services/bare-metal.nix
@@ -258,84 +259,14 @@ in
     };
   };
 
-  # ensureProfiles writes to /run/NetworkManager/system-connections and never
-  # touches /etc, so declaring the profile above does not by itself remove the
-  # stale ones that caused the outage -- they keep competing. Prune them.
-  #
-  # /etc and /run are both connection directories. NetworkManager dedupes by
-  # UUID, not by filename, so a leftover /etc profile with a *different* UUID
-  # loads as a second connection of the same name (this is the live state on
-  # the surface: two 'Linksys 416' entries, 9e721534... from /etc and
-  # c520f3e2... from /run). Reusing the installed UUID above avoids that here,
-  # and this unit removes the now-redundant /etc copy so there is exactly one
-  # source of truth.
-  #
-  # The guard matters more than the pruning. This host is reachable only over
-  # Wi-Fi and has no local user, so deleting its last working profile while the
-  # declared replacement is unusable strands it until someone walks over to it
-  # -- the precise failure this whole change exists to prevent. So the house
-  # network's profile is only removed once the generated one is on disk with a
-  # real substituted PSK; if /etc/NetworkManager/secrets.env is missing or the
-  # variable did not expand, the old file stays and the host stays reachable.
-  systemd.services.nm-prune-foreign-profiles = {
-    description = "Remove undeclared NetworkManager profiles (see ensureProfiles above)";
-    wantedBy = [ "multi-user.target" ];
-    # Strictly after ensure-profiles, which is itself after NetworkManager.
-    # Ordering this unit *before* NetworkManager as well would close a cycle
-    # (NM -> ensure-profiles -> prune -> NM) that systemd would break by
-    # silently dropping one edge. Running late is fine: the declared profile
-    # carries autoconnect-priority 100 against the strays' 0, so it wins the
-    # boot-time autoconnect even while they still exist, and they are gone
-    # seconds later.
-    after = [ "NetworkManager-ensure-profiles.service" ];
-    requires = [ "NetworkManager-ensure-profiles.service" ];
-    path = [ pkgs.networkmanager ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-    };
-    script = ''
-      etc=/etc/NetworkManager/system-connections
-      run=/run/NetworkManager/system-connections
-      keep="Linksys 416"
-
-      [ -d "$etc" ] || exit 0
-      shopt -s nullglob
-
-      # Is the declared replacement actually usable? An unexpanded "$VAR" or an
-      # empty psk means secrets.env did not do its job.
-      declared_ok=0
-      if [ -r "$run/$keep.nmconnection" ]; then
-        psk=$(grep -m1 '^psk=' "$run/$keep.nmconnection" 2>/dev/null | cut -d= -f2- || true)
-        case "$psk" in
-          ""|'$'*) ;;
-          *) declared_ok=1 ;;
-        esac
-      fi
-
-      for f in "$etc"/*.nmconnection; do
-        name=$(basename "$f" .nmconnection)
-        if [ "$name" = "$keep" ]; then
-          if [ "$declared_ok" -eq 1 ]; then
-            echo "declared '$keep' is valid; removing superseded $f"
-            rm -f "$f"
-          else
-            echo "WARNING: declared '$keep' missing or has an unsubstituted PSK."
-            echo "WARNING: keeping $f so this host stays reachable. Check /etc/NetworkManager/secrets.env."
-          fi
-          continue
-        fi
-        echo "pruning undeclared NetworkManager profile: $name"
-        rm -f "$f"
-        pruned=1
-      done
-
-      # NetworkManager is already running by now, so make it forget what we just
-      # deleted instead of leaving the profiles live in memory until a restart.
-      if [ "''${pruned:-0}" -eq 1 ]; then
-        nmcli connection reload || true
-      fi
-    '';
+  # Remove the stale profiles that caused the outage. ensureProfiles writes to
+  # /run and never touches /etc, so declaring the profile above does not by
+  # itself displace them -- they keep competing. Nothing here is meant to be
+  # stateful: this host never leaves the house, so any profile that is not the
+  # declared one is by definition a leftover.
+  services.nmProfileHygiene = {
+    enable = true;
+    keep = [ ];
   };
 
   # Wi-Fi link watchdog. NetworkManager giving up permanently is what turned a
