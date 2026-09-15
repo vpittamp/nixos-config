@@ -221,6 +221,13 @@ in
       wifi = {
         mode = "infrastructure";
         ssid = "Linksys 416";
+        # Pin to 5GHz. The house mesh serves this SSID on both bands and this
+        # machine clung to the congested 2.4GHz node (channel 2) at 89% while a
+        # 5GHz node (channel 44) sat at 100% -- measured 300-1200ms gateway
+        # latency on 2026-09-15 until the session was restarted. Travel
+        # profiles (sprinkles, iPhone (2)) are separate and unaffected; if the
+        # 5GHz nodes are ever down this profile will not fall back to 2.4GHz.
+        band = "a";
       };
       wifi-security = {
         auth-alg = "open";
