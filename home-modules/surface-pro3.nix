@@ -110,4 +110,32 @@
       show_confirmation = false;
     };
   };
+
+  # 2026-09-09: headless-hub display management. This host runs the house's
+  # Home Assistant and nobody looks at its panel, but logind never raises the
+  # idle hint on this seat (IdleHint stays "no" with IdleSinceHint=0), so the
+  # runtime shell's idle screen-off (idle.screenOffSeconds) never fires here.
+  # Force the outputs off on a timer instead: any local input wakes the panel
+  # for a look, and the next tick re-blanks it.
+  systemd.user.services.display-off = {
+    Unit.Description = "Power off all sway outputs (headless hub panel management)";
+    Service = {
+      Type = "oneshot";
+      ExecStart = "${pkgs.writeShellScript "display-off" ''
+        set -u
+        sock="$(ls "$XDG_RUNTIME_DIR"/sway-ipc.*.sock 2>/dev/null | head -1)"
+        [ -n "$sock" ] || exit 0
+        ${pkgs.sway}/bin/swaymsg --socket "$sock" 'output * power off' || true
+      ''}";
+    };
+  };
+
+  systemd.user.timers.display-off = {
+    Unit.Description = "Keep the hub's panel powered off";
+    Timer = {
+      OnStartupSec = "2min";
+      OnUnitActiveSec = "2min";
+    };
+    Install.WantedBy = [ "timers.target" ];
+  };
 }
