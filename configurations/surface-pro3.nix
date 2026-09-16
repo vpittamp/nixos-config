@@ -192,7 +192,23 @@ in
   # Haswell, and this generation defaults to intel_pstate anyway.
   boot.kernelParams = [
     "i915.enable_fbc=1"           # Framebuffer compression (power saving)
+    # reboot=pci: the SP3's UEFI hangs on the default warm reboot path, which
+    # is why the 2026-09-15 mwifiex oops left the machine dark for 8.5h until a
+    # manual power button press -- systemd finished "System Reboot" but the
+    # firmware never came back. Force the PCI reboot path so panics and
+    # watchdog resets actually power-cycle.
+    "reboot=pci"
   ];
+
+  # Panic policy: this is a headless automation hub with nobody watching the
+  # console. An oops in the Marvell Wi-Fi driver (mwifiex_pcie_work, twice on
+  # 2026-09-15 alone) leaves the kernel half-dead with HA unreachable; turn it
+  # into an immediate reboot (10s) instead. Paired with reboot=pci above, a
+  # driver crash becomes ~60s of downtime instead of hours.
+  boot.kernel.sysctl = {
+    "kernel.panic_on_oops" = 1;
+    "kernel.panic" = 10;
+  };
 
   systemd.services.home-manager-vpittamp = {
     serviceConfig = {
