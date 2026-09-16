@@ -1185,6 +1185,48 @@ EOF
               mode = "single";
             };
 
+            # TEMPORARY DIAGNOSTIC (2026-09-03): iPhone SMS notifications have
+            # never carried message content even though the HA->desktop
+            # pipeline is proven (webhook test with a known payload renders
+            # correctly). Capture the raw trigger payload of the next real
+            # SMS into a persistent notification so we can see which delivery
+            # path (webhook JSON/form/query vs ios.action_fired event) the
+            # Shortcut uses and what field names it actually sends.
+            # REMOVE after the payload shape is known.
+            iosSmsDebugCapture = {
+              id = "ios-sms-debug-capture";
+              alias = "iOS SMS — DEBUG payload capture";
+              description = "Temporary: dump the raw SMS trigger payload into a persistent notification";
+              triggers = [
+                {
+                  platform = "webhook";
+                  webhook_id = "ios_sms_received";
+                  allowed_methods = [ "POST" ];
+                  local_only = false;
+                }
+                {
+                  platform = "event";
+                  event_type = "ios_sms_received";
+                }
+                {
+                  platform = "event";
+                  event_type = "ios.action_fired";
+                  event_data = {
+                    actionName = "sms_received";
+                  };
+                }
+              ];
+              conditions = [ ];
+              actions = [{
+                action = "persistent_notification.create";
+                data = {
+                  title = "SMS debug capture ({{ trigger.platform }})";
+                  message = "{% set p = trigger.json if (trigger.platform == 'webhook' and trigger.json is mapping and trigger.json) else (trigger.data if (trigger.platform == 'webhook' and trigger.data) else (trigger.query if (trigger.platform == 'webhook' and trigger.query) else (trigger.event.data if (trigger.platform == 'event' and trigger.event.data is defined) else {}))) %}{% if p is mapping %}{% for k, v in p.items() %}{{ k }} = {{ v | string | truncate(80, true) }}\n{% endfor %}{% else %}payload not a mapping: {{ p | string | truncate(200, true) }}{% endif %}";
+                };
+              }];
+              mode = "queued";
+            };
+
             iosSmsNotification = {
               id = "ios-sms-received-notification";
               alias = "iOS SMS Received — Desktop Notification";
@@ -1232,6 +1274,7 @@ EOF
             (motion "bedroom" "Bedroom")
             (motion "kitchen" "Kitchen")
             (motion "hallway" "Hallway")
+            iosSmsDebugCapture
             iosSmsNotification
             vinodArrivesHome
             vinodLeavesHome
