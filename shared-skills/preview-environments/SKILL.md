@@ -1,6 +1,6 @@
 ---
 name: preview-environments
-description: "Operate and prove Workflow Builder PreviewEnvironment lifecycles and canonical DevelopmentRuns on the dev cluster. Use for Previews inventory, system-live/app-live/candidate profiles, target selection, Dapr Agents or CLI builders, HMR, DevelopmentOutput, MCP development_run tools, checkpoint/fork/handoff/reproduce, delivery receipts, sleep/wake, durable evidence, and signed 12-check teardown. Use workflow-builder for ordinary workflows, and gitops for persistent delivery."
+description: "Operate and prove Workflow Builder PreviewEnvironment lifecycles and canonical DevelopmentRuns on the dev cluster. Use for Previews inventory, system-live/app-live/candidate profiles, target selection, Dapr Agents or CLI builders, HMR, DevelopmentOutput, MCP development_run tools, checkpoint/fork/handoff/reproduce, delivery receipts, sleep/wake, durable evidence, and signed 12-check teardown. Use workflow-builder for ordinary workflows, gitops for persistent delivery, and software-factory for the Delivery Board cards that bind these previews."
 ---
 
 # Preview Environments

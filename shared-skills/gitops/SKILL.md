@@ -1,6 +1,6 @@
 ---
 name: gitops
-description: "Operate PittampalliOrg/stacks delivery and recovery, with dev as the default shared target. Use for ArgoCD or argocd-agent health, Source Hydrator and GitOps Promoter, hub Tekton builds, release and runtime image pins, generated overlays, deployment inventory, secrets, Tailscale exposure, Dapr workload readiness, Workflow MCP deployment/auth wiring, and live rollout proof. Use kubernetes-capacity for shared capacity policy, preview-environments for PreviewEnvironment lifecycles, platform-monitoring for the signal pipeline, notification kinds, and Drasi/CDC health, and cluster-desired-state for full cluster recreation."
+description: "Operate PittampalliOrg/stacks delivery and recovery, with dev as the default shared target. Use for ArgoCD or argocd-agent health, Source Hydrator and GitOps Promoter, hub Tekton builds, the artifact release lane (publisher/reviewer/merger, atomic cohorts, stall alarm), build admission epochs, release and runtime image pins, generated overlays, deployment inventory, secrets, Tailscale exposure, Dapr workload readiness, Workflow MCP deployment/auth wiring, and live rollout proof. Use kubernetes-capacity for shared capacity policy, preview-environments for PreviewEnvironment lifecycles, platform-monitoring for the signal pipeline, notification kinds, and Drasi/CDC health, cluster-desired-state for full cluster recreation, and software-factory for the Delivery Board issue-to-merged-PR lane."
 ---
 
 # GitOps
@@ -54,7 +54,8 @@ lane resolves an existing image before it builds.
 | ----------- | ------------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------- |
 | PR head     | `pull_request` — open, **non-draft**, base `main`, **same-repo head**          | `pr-build-workflow-builder-<head sha12>` | `hub/image-build` on the HEAD, pending -> final    |
 | Merge queue | `merge_group` — base `refs/heads/main`, head `refs/heads/gh-readonly-queue/...` | `mq-build-workflow-builder-<sha12>`      | `hub/image-build` on the queue commit             |
-| Push (main) | `push` to `main`, per-image path CEL                                          | `outer-loop-<image>-*`                   | `hub/build-<image>` from `finally`                |
+| Push (main) | `push` to `main`, per-image path CEL                                          | `outer-loop-<image>-<sha12>`             | `hub/build-<image>` from `finally`                |
+| Repair      | `repository_dispatch`, `action: factory-build-repair`, one artifact per call  | `outer-loop-<image>-r<5>` (generateName) | `hub/build-<image>` from `finally`                |
 | Dev images  | `push` to `main`, dev-image inputs                                            | `outer-loop-dev-images-*`                | `hub/build-dev-images` from `finally`             |
 
 - **PR head.** Every non-draft, same-repository PR push builds the exact head and
@@ -78,6 +79,25 @@ lane resolves an existing image before it builds.
   `preview/immutable-acceptance` receipt for a content-equivalent image) >
   **`build`**. Because GitHub fast-forwards `main` to the queue commit, the push
   lane normally lands on `reuse-exact` and skips its build.
+- **Repair lane.** The push lane's run name is **fixed** (`outer-loop-<image>-<sha12>`),
+  so a webhook redelivery is an `AlreadyExists` no-op — but that also means a
+  *failed* push build can never be retried under the same name. The repair lane
+  exists for exactly that: `TriggerTemplate-outer-loop-repair.yaml` uses
+  `generateName: <run_prefix>-r`, so repairs are `outer-loop-<image>-r<5 chars>`
+  and repeatable. It is driven by `repository_dispatch` with
+  `action: factory-build-repair` and **one artifact per dispatch**.
+  Two traps, both paid for in outages:
+  - The dispatch payload must carry a nested `body.repository`. Splatting
+    `**repository_payload()` at the top level produces a payload no trigger
+    matches: the EventListener answers **202 and starts nothing**.
+  - Admission stamps `triggers.tekton.dev/trigger` with the *trigger's own* name,
+    so a repair run is labelled `<image>-repair`, not `<image>`. The
+    `ValidatingAdmissionPolicy` must admit both. Express that as a **disjunction**
+    (`x == a || x == b`), never a list literal: `variables.imageName` is `dyn`
+    and `variables.imageName + '-repair'` is `string`, so a list of the two fails
+    API-server CEL compilation and wedges the Argo sync. **`kubectl apply
+    --dry-run=server` is the authority** — a Go native-CEL unit test passes on the
+    broken form because it binds `variables` as `cel.DynType`.
 - **Measured end to end.** A PR whose head was already built merges to live on
   dev in **~3.5 min** (queue build ~30 s via `reuse-tree`, push lane
   `reuse-exact`, then pin -> sync -> rollout). A cold build adds **~5.5 min**.
@@ -210,6 +230,70 @@ timeout.
 - **Resolve rebase conflicts in generated files by re-running the renderer on top
   of `main`, never by hand-merging.** Never hand-edit a generated image-pin
   ConfigMap or kustomization.
+
+## Artifact Release Lane
+
+Release candidates are reconciled from **Tekton Results archive evidence**, not
+from a build's say-so. Three actors, each with its own authority:
+
+| Actor    | Where                                                                 | Does                                                       |
+| -------- | --------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Publisher | hub Deployment `artifact-publisher-observer`, ns `tekton-results`    | `artifact_release_host.py publish --interval 30`; opens the release PR |
+| Reviewer | `.github/workflows/review-artifact-publication.yml`                   | independently re-derives the publication and attests it     |
+| Merger   | `.github/workflows/merge-artifact-publication.yml`                    | merges the attested PR                                      |
+
+The publisher holds **only** `repositories:[stacks] {contents:write,
+pull_requests:write}` — no `statuses:write`, no cluster egress. Do not widen it
+to make it report; the reviewer already has both authority and an audience.
+
+- **The release PR carries TWO commits and MUST be merged with `--merge`.**
+  One moves `CODE_REVISION` in
+  `packages/components/hub-management/manifests/artifact-publisher/deployment.yaml`
+  (the reader), the other moves `targetRevision` in
+  `packages/components/hub-management/apps/artifact-publisher.yaml` (the
+  manifest). **`--squash` orphans the commit the ArgoCD Application names**, so
+  `main` goes red *after* the merge while the cluster keeps serving happily.
+  Moving only one of the two is the same defect in slow motion — it caused an
+  18-minute publication outage.
+- **Atomic cohorts.** `policy.cohorts(selected)` groups artifacts by
+  `name.removesuffix("-dev")`. A `-dev` artifact joins its cohort only when it is
+  itself selected, and a cohort publishes whole or not at all.
+- **`ambiguous-artifact`.** Candidate matches are keyed by
+  `digest(asdict(item))`; more than one distinct match is rejected outright.
+  **Builds are not reproducible** — the same source has produced different
+  digests — so "rebuild it and compare" is not a recovery strategy.
+- **Stalls are invisible by construction.** A stalled window leaves no PR, no
+  pin, and no alert, and it disappears once a later release covers it
+  (survivorship bias). `scripts/gitops/report_release_stalls.py` is the alarm:
+  it fails a scheduled review on any obligation owed longer than
+  `STALL_SECONDS = 3600` or any unactivated epoch, emitting `::error::` lines.
+  Read `stalled` and `unactivatedEpochs` in the review record; healthy looks like
+  `OWED: 0, stalled: none`.
+- **Do NOT automate the `sourceAnchor` write.** It is no longer the cycle-cost
+  lever — the publisher already skips windows the pins cover.
+
+## Admission Epoch
+
+Build admission is pinned to an epoch: `factory-build-epoch.json` (a digest over
+every epoch-stamped manifest under `outer-loop-builds/`), the TriggerTemplates,
+and `ValidatingAdmissionPolicy-factory-build-epoch.yaml`. An epoch has two
+states, and the difference matters more than anything else in this section:
+
+- **DECLARED** — every field but `epoch` is null. Nothing is bound yet.
+- **ACTIVATED** — carries `effectiveSince` plus digest-bound proof.
+
+**An epoch that is declared and never activated is UNRECOVERABLE**: builds are
+refused and no later change repairs it. Treat activation as part of the same
+operation that declares, never as follow-up work.
+
+- `freeze_admission_epoch.py` *discovers* the epoch-stamped templates from
+  document shape. Its `TEMPLATES` tuple is kept only because
+  `probe_admission_epoch.py` indexes it positionally and every recorded proof
+  carries that script's sha256 — do not reorder it.
+- `validate_admission_activation.py` is the activation clock
+  (`ACTIVATION_DEADLINE_SECONDS = 3600`). Note the deliberate asymmetry with the
+  stall clock: **an age it cannot resolve counts as OVERDUE**, because an
+  activation whose timing cannot be established is the case that strands builds.
 
 ## Sync Latency Facts
 
@@ -415,6 +499,12 @@ error.
 
 `PittampalliOrg/stacks`: `AGENTS.md`; `docs/gitops-architecture-overview.md`,
 `docs/outer-loop-promotion.md`, `docs/capacity-management.md`;
+`docs/artifact-publication-cutover.md` (the release lane's SSOT),
+`docs/release-path-reconciliation.md`, `docs/main-build-admission.md`;
+`scripts/gitops/artifact_release_*.py`,
+`scripts/gitops/{freeze_admission_epoch,probe_admission_epoch,validate_admission_activation,report_release_stalls}.py`;
+`packages/components/hub-management/{manifests,apps}/artifact-publisher/`;
+`.github/workflows/{review,merge}-artifact-publication.yml`;
 `packages/components/hub-tekton/manifests/outer-loop-builds/`;
 `packages/components/{hub-management,hub-spoke-appsets,workloads}/`;
 `scripts/gitops/{render-workflow-builder-release-overlays,validate-image-pin-single-writer,validate-workflow-builder-release-pins}.sh`;

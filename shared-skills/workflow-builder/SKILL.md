@@ -1,6 +1,6 @@
 ---
 name: workflow-builder
-description: "Author, save, run, inspect, or debug Workflow Builder dynamic-script workflows and durable agent sessions. Use for Workflow MCP workspace auth, host and preview runs, live traces, sealed evidence, script primitives, saved agents, runtime-registry routing and host modes (per-session-pod, harness), event-log context strategy, runtime admission (conformanceVerified, 409 override), structured output, action catalog, MCP connections, goals, artifacts, lifecycle stop/purge, and failed executions. Use runtime-conformance to verify a runtime, agent-session-recovery for run recovery, preview-environments for previews."
+description: "Author, save, run, inspect, or debug Workflow Builder dynamic-script workflows and durable agent sessions. Use for Workflow MCP workspace auth, host and preview runs, live traces, sealed evidence, script primitives, saved agents, runtime-registry routing and host modes (per-session-pod, harness), event-log context strategy, runtime admission (conformanceVerified, 409 override), structured output, action catalog, MCP connections, goals, artifacts, lifecycle stop/purge, and failed executions. Use runtime-conformance to verify a runtime, agent-session-recovery for run recovery, preview-environments for previews, and software-factory for the Delivery Board issue-to-merged-PR lane."
 ---
 
 # Workflow Builder

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Software Factory"
+  short_description: "Operate the Delivery Board issue-to-merged-PR lane."
+  default_prompt: "Use $software-factory to determine why this card is not moving, which phase or policy is holding it, and how to unblock that hop."
