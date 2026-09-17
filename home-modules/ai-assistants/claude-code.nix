@@ -32,6 +32,7 @@ let
   enableClaudeCode = pkgs.stdenv.isLinux;
 
   # Auto-import all .md files from .claude/commands/ as slash commands
+  # (excluding goal.md to prevent collision with native Claude Code goal functionality)
   # This creates an attribute set where keys are command names (without .md)
   # and values are the file contents
   commandFiles = builtins.readDir (repoRoot + "/.claude/commands");
@@ -41,7 +42,7 @@ let
         (lib.removeSuffix ".md" name)
         (builtins.readFile (repoRoot + "/.claude/commands/${name}"))
     )
-    (lib.filterAttrs (n: v: v == "regular" && lib.hasSuffix ".md" n) commandFiles);
+    (lib.filterAttrs (n: v: v == "regular" && lib.hasSuffix ".md" n && n != "goal.md") commandFiles);
   sharedSkillsDir = repoRoot + "/shared-skills";
   sharedSkillEntries = if builtins.pathExists sharedSkillsDir then builtins.readDir sharedSkillsDir else {};
   sharedSkillDirs = lib.filterAttrs (_: t: t == "directory" || t == "symlink") sharedSkillEntries;
@@ -153,6 +154,11 @@ lib.mkIf enableClaudeCode {
     # refresh the writable copy. Declarative settings win on every rebuild.
     if [ -L "$_dst" ]; then run ${pkgs.coreutils}/bin/rm -f "$_dst"; fi
     run ${pkgs.coreutils}/bin/install -m 0644 "$_src" "$_dst"
+
+    # Remove deprecated goal slash command to prevent collision with native Claude Code goal functionality
+    if [ -e "$HOME/.claude/commands/goal.md" ]; then
+      run ${pkgs.coreutils}/bin/rm -f "$HOME/.claude/commands/goal.md"
+    fi
   '';
 
   home.activation.patchClaudePlugins = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
