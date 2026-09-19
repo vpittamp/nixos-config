@@ -188,17 +188,17 @@ theme = "dark"
 vim_mode = true
 web_search = "live"
 
-# Codex feature flags (verified against `codex features list`, Codex 0.139.0).
+# Codex feature flags (verified against `codex features list`, Codex 0.155.1).
 # Every `stable`-stage feature (shell_snapshot, unified_exec, multi_agent, hooks,
-# fast_mode, plugins, browser_use, computer_use, ...) is already default-on, so we
-# only pin the few that matter for this setup. `goals` graduated to `stable` in
-# 0.139; `memories`/`prevent_idle_sleep` are still `experimental`-stage (default-on)
-# and pinned here so they survive future default flips. The remaining off-by-default
-# flags are either `under development` (incomplete) or niche `experimental` infra
-# (external_migration, network_proxy) — intentionally left off.
+# fast_mode, plugins, browser_use, computer_use, memories, goals, ...) is already
+# default-on, so we only pin the few that matter for this setup. `goals` and
+# `memories` are both `stable`; `prevent_idle_sleep` is still `experimental`-stage
+# (default-on) and pinned here so it survives future default flips. The remaining
+# off-by-default flags are either `under development` (incomplete) or niche
+# `experimental` infra (network_proxy, worktrees) — intentionally left off.
 [features]
-goals = true              # Persistent thread goals + automatic continuation (now stable)
-memories = true           # Generate/use memories across conversations (/memories)
+goals = true              # Persistent thread goals + automatic continuation (stable)
+memories = true           # Generate/use memories across conversations (/memories) (stable)
 prevent_idle_sleep = true # Keep machine awake while a thread is actively running
 
 [mcp_servers.openaiDeveloperDocs]
