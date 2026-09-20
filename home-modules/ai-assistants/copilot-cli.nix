@@ -1,6 +1,8 @@
 { config, pkgs, lib, pkgs-unstable ? pkgs, ... }:
 
 let
+  repoRoot = ../../.;
+
   # GitHub Copilot CLI - use nixpkgs package (built from npm @github/copilot)
   # To bump version ahead of nixpkgs, override src + npmDepsHash
   copilotCliPackage = pkgs-unstable.github-copilot-cli or pkgs.github-copilot-cli;
@@ -16,7 +18,20 @@ let
         --unset NODE_OPTIONS
     '';
   };
+  sharedSkillsDir = repoRoot + "/shared-skills";
+  sharedSkillEntries = if builtins.pathExists sharedSkillsDir then builtins.readDir sharedSkillsDir else {};
+  sharedSkillDirs = lib.filterAttrs (_: t: t == "directory" || t == "symlink") sharedSkillEntries;
+  sharedSkillHomeFiles = lib.mapAttrs'
+    (name: _:
+      lib.nameValuePair ".copilot/skills/${name}" {
+        source = sharedSkillsDir + "/${name}";
+        recursive = true;
+        force = true;
+      }
+    )
+    sharedSkillDirs;
 in
 {
   home.packages = [ copilotCliWrapped ];
+  home.file = sharedSkillHomeFiles;
 }

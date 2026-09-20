@@ -17,6 +17,8 @@
 #   - hooks / skills (Antigravity CLI keeps Agent Skills, Hooks, Subagents)
 
 let
+  repoRoot = ../../.;
+
   # Pinned to nixpkgs master rather than pkgs-unstable: the unstable channel
   # lags master on this package (unstable 1.1.19 vs master 1.1.24 as of
   # 2026-09-02). See the nixpkgs-antigravity input in flake.nix, which carries
@@ -123,9 +125,23 @@ let
   antigravityMcpConfigJson = pkgs.writeText "antigravity-mcp_config.json" (
     builtins.toJSON { inherit mcpServers; } + "\n"
   );
+
+  sharedSkillsDir = repoRoot + "/shared-skills";
+  sharedSkillEntries = if builtins.pathExists sharedSkillsDir then builtins.readDir sharedSkillsDir else {};
+  sharedSkillDirs = lib.filterAttrs (_: t: t == "directory" || t == "symlink") sharedSkillEntries;
+  sharedSkillHomeFiles = lib.mapAttrs'
+    (name: _:
+      lib.nameValuePair ".gemini/antigravity-cli/skills/${name}" {
+        source = sharedSkillsDir + "/${name}";
+        recursive = true;
+        force = true;
+      }
+    )
+    sharedSkillDirs;
 in
 {
   home.packages = [ antigravityCliPackage ];
+  home.file = sharedSkillHomeFiles;
 
   home.activation.materializeAntigravityMcpConfig = lib.mkIf enableMcpConfig (lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     set -euo pipefail

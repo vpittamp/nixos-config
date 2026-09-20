@@ -1,0 +1,4 @@
+interface:
+  display_name: "TypeSafe AI"
+  short_description: "Build AI software using TypeSafe System One primitives."
+  default_prompt: "Use $typesafe-ai to design and build typed System One judgments."
