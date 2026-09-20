@@ -1,0 +1,4 @@
+interface:
+  display_name: "Herdr"
+  short_description: "Control Herdr terminal multiplexer and agent panes."
+  default_prompt: "Use $herdr to inspect and control Herdr workspaces, tabs, and panes."
