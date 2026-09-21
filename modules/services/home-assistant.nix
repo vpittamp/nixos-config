@@ -2,10 +2,16 @@
 #
 # Added 2026-08-08. The version is whatever the pinned nixpkgs carries —
 # 2026.6.1 at the current lock (2026-06-10 nixos-unstable). Upstream latest is
-# 2026.8.x, but nixpkgs packaged it only after this lock's date; tracking
+# 2026.9.x, but nixpkgs packaged it only after this lock's date; tracking
 # monthly upstream releases means a full nixpkgs input bump, i.e. a whole-
 # system rebuild — better done on the normal channel-bump cadence (with CI
 # pushing to pittampalli.cachix.org) than ad-hoc on a 2-core / 3.7 GiB host.
+#
+# EXCEPTION (2026-09-19): surface-pro3 overrides services.home-assistant.package
+# with HA 2026.9.x from the nixpkgs-ha flake input (configurations/
+# surface-pro3.nix), because the Jev custom component below declares HA >= 2026.9
+# as its minimum. ryzen stays on the pinned version. Drop the override (and the
+# flake input) once the main nixpkgs bump carries HA >= 2026.9.
 #
 # Integrations referenced in `config` below are auto-detected by the module's
 # useComponent logic, so adding e.g. a `mqtt = { };` block here is enough — do
@@ -17,6 +23,11 @@
 # other direction (HomeKit Bridge — exposes HA entities back to Apple Home).
 { config, lib, pkgs, ... }:
 
+let
+  # The Jev integration (and its question config/automation below) is home 215
+  # only; ryzen runs this same module for home 114 and must evaluate unchanged.
+  is215 = config.networking.hostName == "surface-pro3";
+in
 {
   services.home-assistant = {
     enable = true;
@@ -85,6 +96,19 @@
     customComponents =
       let
         py = config.services.home-assistant.package.python3Packages;
+
+        # Build components against the CONFIGURED HA package's python, not the
+        # main pkgs set's: surface-pro3 overrides
+        # services.home-assistant.package (HA 2026.9.x from nixpkgs-ha), and a
+        # component built with pkgs.buildHomeAssistantComponent would use the
+        # main pin's python3Packages while `py` deps use the overridden
+        # package's — the build then fails on mixed python interpreters.
+        # On hosts without the override this is identical to
+        # pkgs.buildHomeAssistantComponent.
+        buildHAComponent = pkgs.callPackage "${pkgs.path}/pkgs/servers/home-assistant/build-custom-component" {
+          home-assistant = config.services.home-assistant.package;
+        };
+
         python-ember-mug = py.buildPythonPackage rec {
           pname = "python-ember-mug";
           version = "1.4.0b2";
@@ -107,7 +131,7 @@
           doCheck = false;
         };
 
-        ember-mug-component = pkgs.buildHomeAssistantComponent rec {
+        ember-mug-component = buildHAComponent rec {
           owner = "sopelj";
           domain = "ember_mug";
           version = "1.5.0";
@@ -128,7 +152,7 @@
         # exchanges them for an OAuth token against BuildingLink's resident
         # portal. No YAML, no extraComponents entry — config_flow integrations
         # are picked up from customComponents alone.
-        buildinglink-component = pkgs.buildHomeAssistantComponent rec {
+        buildinglink-component = buildHAComponent rec {
           owner = "yakattack77";
           domain = "buildinglink";
           version = "0.1.1";
@@ -147,14 +171,14 @@
         # logs into the client portal with email/password (config flow, stored
         # in the config entry) and polls the portal's JSON event feed for
         # scheduled/completed visits.
-        timetopet-component = pkgs.buildHomeAssistantComponent {
+        timetopet-component = buildHAComponent {
           owner = "pittampalli";
           domain = "timetopet";
           version = "0.1.0";
           src = ./home-assistant-components/timetopet;
         };
 
-        uber-eats-component = pkgs.buildHomeAssistantComponent rec {
+        uber-eats-component = buildHAComponent rec {
           owner = "zodyking";
           domain = "uber_eats";
           version = "1.4.7";
@@ -166,7 +190,7 @@
           };
         };
 
-        samsungtv-smart-component = pkgs.buildHomeAssistantComponent rec {
+        samsungtv-smart-component = buildHAComponent rec {
           owner = "ollo69";
           domain = "samsungtv_smart";
           version = "0.14.5";
@@ -183,6 +207,41 @@
             casttube
           ];
         };
+
+        # TypeSafe Jev decision model (https://github.com/AboveColin/HA-Jev):
+        # typed questions (noul/choice/score) over live entity state, answered as
+        # sensors plus jev.* actions for automations. Requires HA >= 2026.9, so
+        # it is only packaged on surface-pro3 (is215), which overrides
+        # services.home-assistant.package — see the header comment. The API key
+        # is entered once in the UI config flow from 1Password
+        # (op://hub-eso/TYPESAFE-API-KEY/password), same pattern as the OpenAI
+        # key; it is never written into the Nix store or this repo.
+        jevclient = py.buildPythonPackage rec {
+          pname = "jevclient";
+          version = "1.1.0";
+          pyproject = true;
+          src = py.fetchPypi {
+            inherit pname version;
+            hash = "sha256-1gxHf4yzNCWVpqXThG2ApdNITXqlnLqh7SjkSIHyehc=";
+          };
+          nativeBuildInputs = with py; [ setuptools ];
+          propagatedBuildInputs = with py; [ aiohttp ];
+          pythonImportsCheck = [ "jevclient" ];
+          doCheck = false;
+        };
+
+        jev-component = buildHAComponent rec {
+          owner = "AboveColin";
+          domain = "jev";
+          version = "1.9.0";
+          src = pkgs.fetchFromGitHub {
+            owner = "AboveColin";
+            repo = "HA-Jev";
+            rev = version;
+            hash = "sha256-UK+uv2/HsWQqqT4Pr11pyr+QRDOwNwWBxPiSCxN4eHs=";
+          };
+          dependencies = [ jevclient ];
+        };
       in
       [
         ember-mug-component
@@ -190,7 +249,7 @@
         timetopet-component
         uber-eats-component
         samsungtv-smart-component
-      ];
+      ] ++ lib.optional is215 jev-component;
 
     config =
       let
@@ -1268,6 +1327,41 @@ EOF
               }];
               mode = "queued";
             };
+            # Jev (215 only): the bedroom TV is on, the room's motion camera has
+            # seen nobody, and the Jev noul cleared its 0.7 threshold for 10
+            # minutes straight. Notification only for this first iteration — no
+            # actuation until the question's answers prove out.
+            jevTvLeftOnUnwatched = {
+              id = "jev-tv-left-on-unwatched";
+              alias = "Jev — Bedroom TV left on unwatched";
+              description = "Push to iPhone when Jev decides the bedroom TV is playing to an empty room";
+              triggers = [{
+                platform = "state";
+                entity_id = "binary_sensor.jev_tv_left_on_unwatched";
+                to = "on";
+                for = "00:10:00";
+              }];
+              conditions = [ ];
+              actions = [
+                (homeActivity {
+                  kind = "tv_left_on_unwatched";
+                  entity_id = "binary_sensor.jev_tv_left_on_unwatched";
+                  provider = "jev";
+                  state = "on";
+                  probability = "{{ trigger.to_state.attributes.probability }}";
+                })
+                {
+                  action = "notify.mobile_app_iphone_2";
+                  data = {
+                    title = "TV left on";
+                    message = "The bedroom TV is still playing and nobody has been in there for a while.";
+                    data.url = "/cameras";
+                  };
+                }
+              ];
+              mode = "single";
+            };
+
           in
           [
             (motion "living_room" "Living Room")
@@ -1288,7 +1382,7 @@ EOF
             timeToPetVisitReminder
             timeToPetScheduleUpdated
             timeToPetRequestApproved
-          ];
+          ] ++ lib.optional is215 jevTvLeftOnUnwatched;
 
       # Core settings. Location/units are left for the onboarding UI to ask.
       homeassistant = {
@@ -1300,6 +1394,41 @@ EOF
         internal_url = "http://192.168.1.161:8123";
         external_url = "http://100.106.239.88:8123";
       };
+    }
+    # Jev questions (215 only). The API key is not here — it is entered once in
+    # the UI config flow (op://hub-eso/TYPESAFE-API-KEY/password); these YAML
+    # questions attach to that config entry. Entity ids derived from the
+    # integration source (entity.py: device "Jev" + has_entity_name + question
+    # name): sensor.jev_tv_left_on_unwatched + binary_sensor variant.
+    // lib.optionalAttrs is215 {
+      jev = [
+        {
+          name = "Bedroom TV";
+          # Evaluated every 5 min, and immediately (5s debounce) when either
+          # watched entity changes.
+          scan_interval = 300;
+          entities = [
+            "media_player.bedroom_55_crystal_uhd_smart"
+            "binary_sensor.bedroom_motion"
+          ];
+          questions = [
+            {
+              name = "TV left on unwatched";
+              type = "noul";
+              instructions = "Is the TV on but nobody is in the bedroom watching it?";
+              background = ''
+                The bedroom motion sensor is a Circle View camera: it reports "on"
+                while it sees movement and clears a few minutes after the room
+                empties. The TV is a Samsung smart TV that is often left playing
+                after someone leaves the room or falls asleep.
+              '';
+              # >= 0.7 turns on binary_sensor.jev_tv_left_on_unwatched, which the
+              # automation below triggers on.
+              threshold = 0.7;
+            }
+          ];
+        }
+      ];
     };
   };
 }

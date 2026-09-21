@@ -584,6 +584,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-ha": {
+      "locked": {
+        "lastModified": 1789684949,
+        "narHash": "sha256-ZKhUe/2IJUq1JhKxKMu8rbkgSGmPP2ZCqlIPn40aGCM=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "e554fab72f81915600f3f449b786fd9af40439a5",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "nixpkgs-lazygit": {
       "locked": {
         "lastModified": 1781074563,
@@ -735,6 +751,7 @@
         "nixpkgs": "nixpkgs_4",
         "nixpkgs-antigravity": "nixpkgs-antigravity",
         "nixpkgs-bleeding": "nixpkgs-bleeding",
+        "nixpkgs-ha": "nixpkgs-ha",
         "nixpkgs-lazygit": "nixpkgs-lazygit",
         "onepassword-shell-plugins": "onepassword-shell-plugins",
         "quickshell": "quickshell",

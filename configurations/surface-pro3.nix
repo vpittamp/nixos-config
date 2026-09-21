@@ -29,6 +29,12 @@ let
     system = pkgs.stdenv.hostPlatform.system;
     config.allowUnfree = true;
   };
+  # HA >= 2026.9 for the Jev integration without bumping the main channel (see
+  # flake.nix nixpkgs-ha)
+  pkgs-ha = import inputs.nixpkgs-ha {
+    system = pkgs.stdenv.hostPlatform.system;
+    config.allowUnfree = true;
+  };
 in
 {
   imports = [
@@ -48,11 +54,12 @@ in
 
     # Services
     ../modules/services/networking.nix
+    ../modules/services/keyd.nix
     ../modules/services/onepassword.nix
     ../modules/services/development.nix
 
-    # Home Assistant Core — see that file for the version rationale (pinned
-    # nixpkgs carries 2026.6.1; upstream 2026.8.x needs a full channel bump).
+    # Home Assistant Core — version override below; the module file carries the
+    # full rationale.
     ../modules/services/home-assistant.nix
     ../modules/services/home-assistant-watchdog.nix
 
@@ -92,6 +99,13 @@ in
     #
     ../modules/services/cachix-deploy.nix
   ];
+
+  # HA >= 2026.9 for the Jev integration (HA-Jev 1.9.0 declares 2026.9 as its
+  # minimum; the main nixpkgs lock carries 2026.6.1). Only this host runs Jev
+  # (home 215) — ryzen/114 stays on the main pin until the next channel bump.
+  # The NixOS module resolves extraComponents/availableComponents against this
+  # overridden package. See flake.nix nixpkgs-ha.
+  services.home-assistant.package = pkgs-ha.home-assistant;
 
   # Kept byte-identical to configurations/surface.nix on purpose: these overlays
   # decide store paths, and CI already builds and pushes the `surface` closure to

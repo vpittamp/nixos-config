@@ -46,6 +46,13 @@
     # and revert that module to `pkgs-unstable.antigravity-cli`.
     nixpkgs-antigravity.url = "github:NixOS/nixpkgs/0cd0e3ba11707bc5c6430170f9eb516a89905798";
 
+    # HA 2026.9+ for surface-pro3's Home Assistant only: the HA-Jev integration
+    # (modules/services/home-assistant.nix) requires HA >= 2026.9 while the main
+    # lock carries 2026.6.1. Same shape as the nixpkgs-lazygit pin. Consumed by
+    # configurations/surface-pro3.nix (services.home-assistant.package).
+    # TODO(jev-pin): drop this input once the main nixpkgs bump carries HA >= 2026.9.
+    nixpkgs-ha.url = "github:NixOS/nixpkgs/nixos-unstable";
+
     # Flake organization
     flake-parts = {
       url = "github:hercules-ci/flake-parts";
