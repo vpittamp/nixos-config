@@ -38,6 +38,8 @@ home-modules/       # User environment
 | `Alt+Ctrl+Tab` / 3-finger swipe ↑ | Window exposé grouped by monitor |
 | `Mod+grave` / `Mod+Escape` | Cycle focused app's windows / toggle last window (no UI) |
 | `Mod+Shift+D` | Cast toggle — TV as wireless display / stop |
+| `CapsLock` / `Mod+Ctrl+Space` | Command bar — say what you want in plain words |
+| `Shift+CapsLock` | Command bar, listening (voice) |
 | `Mod+Ctrl+K` | Keybinding cheat sheet (launcher "Keys" mode; also `Ctrl+6` / `;k` inside the launcher) |
 
 Bindings are declared once in `home-modules/desktop/sway-keybindings-data.nix`
@@ -62,9 +64,10 @@ runtime-shell hide notifications
 runtime-shell call showOsd brightness 55            # any function on the shell target
 ```
 
-Surfaces: `launcher` `keybindings` `panel` `settings` `expose` `agent-monitor`
-`power-menu` `notifications` `display-selector` `audio` `bluetooth` `cast`
-`lock` (summon only — it cannot be hidden over IPC).
+Surfaces: `launcher` `command` `keybindings` `panel` `settings` `expose`
+`agent-monitor` `power-menu` `notifications` `display-selector` `audio`
+`bluetooth` `cast` `lock` (summon only — it cannot be hidden over IPC).
+`command` takes `{"voice":true}` / `{"debug":true}` / `{"query":"..."}`.
 The OSD (volume / mic / brightness / touch-mode scale) is reactive for
 PipeWire changes from any source and driven by IPC for brightness.
 
@@ -179,6 +182,77 @@ locked with no way to unlock (red fallback screen) — the unit has
 restart to unlock via the lock-flag hooks. If the lock ever misbehaves:
 Ctrl+Alt+F2, unlock by ending the session (`loginctl terminate-session
 <id>`), log back in.
+
+## Natural-Language Command Bar (`jev`)
+
+`CapsLock` opens a text bar; type or speak one line and it runs one of this
+desktop's own commands. `Shift+CapsLock` opens it already listening.
+`Super+Ctrl+Space` / `Super+Ctrl+Shift+Space` are the same two on hosts without
+keyd. CapsLock reaches sway as `F19` because a lock key cannot be bound —
+`modules/services/keyd.nix` does the remap, so **caps-locking is gone** on
+every host that imports keyd (thinkpad, surface, surface-pro3). It is `F19`
+and not `F20` because xkb's `symbols/inet` hands `<FK20>` to
+`XF86AudioMicMute` (F21–F24 are the touchpad keys, F13–F18 are
+XF86Tools/Launch5–9); sending F20 silently toggled the microphone instead.
+
+Routing is TypeSafe's **jev** (`docs.typesafe.ai`), which answers *typed
+questions* rather than generating text. One request carries a routing choice
+over every function plus every function's closed-set arguments; only the chosen
+function's answers are read. **Nothing is generated** — every value that can
+reach a command is a key in an options attrset Nix wrote, so a wrong answer
+runs the wrong one of *our* commands, never an arbitrary one.
+
+```bash
+jev run "make the screen dimmer"       # dispatch and run
+jev plan "put this window on 3"        # resolve it, run nothing
+jev explain "is it too bright"         # every probability behind the call
+jev watch                              # debug REPL: a line in, the judgement out
+jev functions                          # the catalog
+jev doctor                             # key, API, and binary check
+```
+
+**Confidence gates the run.** It is the *least* certain judgement behind the
+call, not the product of them all — one wrong argument spoils the result, and a
+product would punish a function merely for taking more arguments. At or above
+`autoThreshold` (0.6) it runs; below it the bar shows the resolved call and
+waits for Enter; below `rejectThreshold` (0.3) it refuses. `power_action`
+(suspend, reboot, shut down, log out) always asks, whatever the confidence.
+
+**Debug mode** (`Ctrl+D` in the bar, or `jev explain` / `jev watch`) shows the
+routing distribution with its runners-up, each argument's own distribution, the
+`stated` gate that decided whether an argument was mentioned at all, and the
+token/latency cost. With it on, the bar re-plans as you type (750 ms debounce;
+`plan` never executes anything), so the classification visibly moves as a
+sentence finishes — that is how to find out *why* a phrasing lands where it
+does. Each fire is a paid request.
+
+**Voice** (`Ctrl+Space` in the bar, or the mic chip) runs the existing voxtype
+dictation. The field goes read-only while listening: voxtype types into
+whatever holds keyboard focus — which is this window — and read-only is what
+drops those keystrokes, so the words arrive once, from voxtype's transcript
+file. When the mic closes and the transcript settles, the sentence dispatches
+on its own.
+
+```
+home-modules/desktop/jev-commands/
+  catalog.nix        the functions: description, argv template, closed sets
+  default.nix        options, spec generation, the `jev` wrapper
+  jev_dispatch.py    questions -> one API call -> argv -> run
+```
+
+The catalog's option sets come from the same files the rest of the desktop
+reads — `app-registry-data.nix` for `launch_app`, `themes.nix` for `set_theme`,
+the runtime-shell surface ids for `open_surface` — so it cannot offer an app
+that is not installed or a theme that does not exist. `argv` is a template:
+`%name%` is substituted (a list value expands to several arguments, a null one
+drops the token), `%text%` is the raw sentence and `%text:json%` its escaped
+spelling for the runtime-shell payloads. Add a function by adding an attrset to
+`catalog.nix`, or out of tree via `programs.jev-commands.extraFunctions`.
+
+The TypeSafe key is read from `op://hub-eso/TYPESAFE-API-KEY/password` with
+`op read` on first use and cached in `$XDG_RUNTIME_DIR/jev/api-key` (tmpfs,
+0600, gone at logout). Only the `op://` reference is in the Nix store.
+`TYPESAFE_API_KEY` skips 1Password entirely.
 
 ## Walker/Elephant Launcher
 

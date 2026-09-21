@@ -10,7 +10,10 @@
 #
 # `hidden` marks bindings that are implementation detail (modifier-release
 # commits for the hold-to-switch rings) and should not appear in the viewer.
-{ lib, modifier, hasRuntimeShell }:
+# `capsLockIsF19` is whether keyd is remapping CapsLock on this host
+# (modules/services/keyd.nix). A cheat sheet that promises CapsLock on a
+# machine where the key still types capitals would be worse than no sheet.
+{ lib, modifier, hasRuntimeShell, capsLockIsF19 ? false }:
 
 let
   mod = modifier;
@@ -67,6 +70,20 @@ let
         (bind "Ctrl+Shift+space" "exec 1password --quick-access" "1Password quick access")
         (bind "Ctrl+backslash" "exec 1password --fill" "1Password autofill")
         (bind "${mod}+y" "exec i3pm run yazi" "Yazi file manager")
+      ] ++ lib.optionals (hasRuntimeShell && capsLockIsF19) [
+        # The natural-language command bar. CapsLock is the primary key: a lock
+        # key cannot be bound in sway at all, so keyd sends F19 for it (see
+        # modules/services/keyd.nix for why F19 and not F20 — xkb hands F20 to
+        # XF86AudioMicMute), and CapsLock is the largest key on this keyboard
+        # doing the least work.
+        (bind "F19" "exec toggle-command-bar" "Command bar — say what you want in plain words (CapsLock)")
+        (bind "Shift+F19" "exec toggle-voice-command" "Command bar, listening — speak the command (Shift+CapsLock)")
+      ] ++ lib.optionals hasRuntimeShell [
+        # The same bar, on every host: the keyd remap only exists on the ones
+        # that import it.
+        (bind "${mod}+Ctrl+space" "exec toggle-command-bar" "Command bar — say what you want in plain words")
+        (bind "${mod}+Ctrl+Shift+space" "exec toggle-voice-command" "Command bar, listening — speak the command")
+      ] ++ [
         (bind "${mod}+Shift+t" "exec btop" "System monitor (btop)")
       ];
     }

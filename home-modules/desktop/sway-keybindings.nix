@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, osConfig ? null, ... }:
 
 let
   modifier = config.wayland.windowManager.sway.config.modifier;
@@ -23,8 +23,11 @@ let
   # The bindings themselves live in sway-keybindings-data.nix as a described
   # list, so the runtime shell's Keys cheat sheet is generated from the same
   # source sway runs. Add or change bindings there, not here.
+  # CapsLock only reaches sway (as F19) where keyd is remapping it.
+  capsLockIsF19 = osConfig != null
+    && lib.attrByPath [ "services" "keyd" "enable" ] false osConfig;
   keybindingData = import ./sway-keybindings-data.nix {
-    inherit lib modifier hasRuntimeShell;
+    inherit lib modifier hasRuntimeShell capsLockIsF19;
   };
 in
 {

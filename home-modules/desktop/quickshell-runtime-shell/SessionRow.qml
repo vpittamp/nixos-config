@@ -44,6 +44,23 @@ Rectangle {
     readonly property string primaryLabel: rootObject.sessionPrimaryLabel(session)
     readonly property string secondaryLabel: rootObject.sessionSecondaryLabel(session)
     readonly property string activityLabel: rootObject.sessionActivityChipLabel(session)
+    // What jev read off this agent's own screen. Empty when there is no
+    // verdict, or when the verdict was too unsure to show — in which case the
+    // row stays exactly as it was before this feature existed.
+    readonly property string askGlyph: rootObject.sessionAskGlyph(session)
+    readonly property string alarmGlyph: rootObject.sessionAlarmGlyph(session)
+    readonly property color alarmColor: rootObject.sessionAlarmColor(session)
+    readonly property bool hasAlarm: !Qt.colorEqual(alarmColor, "transparent")
+    readonly property string judgementLede: rootObject.sessionJudgementLede(session)
+    readonly property real judgementWeight: rootObject.sessionJudgementOpacity(session)
+    // Set by the surface that wants hover detail (the herdr panel). Null
+    // everywhere else, so the launcher and the switchers get the glyph without
+    // a popup following the pointer around.
+    property var tooltipWindow: null
+    readonly property bool judgementTooltipActive: tooltipWindow !== null
+        && surfaceVisible
+        && effectiveHovered
+        && judgementGlyph.visible
     readonly property string activitySymbol: rootObject.sessionBadgeSymbol(session)
     readonly property string activityState: rootObject.sessionBadgeState(session)
     readonly property string gitChipText: rootObject.sessionGitChipText(session)
@@ -198,6 +215,30 @@ Rectangle {
         height: railHeight
         radius: 1
         color: Qt.alpha(colorsObject.subtle, 0.55)
+    }
+
+    // Alarm rail: the one loud thing in the row, and only for looping, an
+    // irreversible step, or work nobody asked for. It sits outboard of the
+    // status rail so geometry separates the two before colour does, and it
+    // breathes rather than blinking — a pulse reads as "look here" without
+    // demanding the eye the way a blink does.
+    Rectangle {
+        id: alarmRail
+        visible: hasAlarm
+        anchors.left: parent.left
+        anchors.leftMargin: 3
+        anchors.verticalCenter: parent.verticalCenter
+        width: 3
+        height: railHeight
+        radius: 1
+        color: alarmColor
+
+        SequentialAnimation on opacity {
+            running: alarmRail.visible && surfaceVisible
+            loops: Animation.Infinite
+            NumberAnimation { to: 0.45; duration: 1100; easing.type: Easing.InOutSine }
+            NumberAnimation { to: 1.0; duration: 1100; easing.type: Easing.InOutSine }
+        }
     }
 
     // Status rail: carries the canonical status hue (not the launcher accent)
@@ -424,8 +465,35 @@ Rectangle {
             }
         }
 
+        // What this session wants, as a shape. Deliberately not a colour: the
+        // status hue at the row edge already owns colour, and two colour
+        // languages in one row is two things to learn instead of one.
+        //
+        // Clicking it opens the reasoning rather than focusing the session —
+        // the glyph is the claim, and the claim should be the thing you can
+        // interrogate. A nested MouseArea cannot do that: the row's own
+        // handler sits at z 10 and swallows every press, which is why the
+        // close button is a named hitbox tested inside that handler. This
+        // follows the same route.
+        // What this session wants, as a shape. Deliberately not a colour: the
+        // status hue at the row edge already owns colour, and two colour
+        // languages in one row is two things to learn instead of one.
+        //
+        // An indicator, not a button — hovering the row is what asks why.
+        Text {
+            id: judgementGlyph
+            visible: askGlyph.length > 0 || alarmGlyph.length > 0
+            Layout.alignment: Qt.AlignVCenter
+            font.family: Theme.glyphFamily
+            font.pixelSize: compact ? Theme.fs(12) : Theme.fs(13)
+            text: alarmGlyph.length > 0 ? alarmGlyph : askGlyph
+            color: hasAlarm ? alarmColor : colorsObject.textDim
+            opacity: judgementWeight
+        }
+
         ColumnLayout {
             Layout.fillWidth: true
+            Layout.minimumWidth: compact ? 84 : 110
             spacing: compact ? 1 : 2
 
             Text {
@@ -446,11 +514,16 @@ Rectangle {
             Text {
                 font.family: Theme.fontFamily
                 Layout.fillWidth: true
-                text: secondaryLabel
-                color: isCurrent ? colorsObject.textDim : (selected ? colorsObject.textDim : colorsObject.subtle)
+                // The verdict speaks in the secondary line when there is one:
+                // "permission" or "looping · needs a decision" tells you what
+                // to do with this row, and the repo/branch does not.
+                text: judgementLede.length > 0 ? judgementLede : secondaryLabel
+                color: hasAlarm
+                    ? alarmColor
+                    : (isCurrent ? colorsObject.textDim : (selected ? colorsObject.textDim : colorsObject.subtle))
                 font.pixelSize: compact ? rootObject.fontCaption : rootObject.fontLabel
                 elide: Text.ElideRight
-                opacity: idleTextOpacity
+                opacity: judgementLede.length > 0 ? idleTextOpacity * judgementWeight : idleTextOpacity
             }
         }
 
@@ -542,7 +615,10 @@ Rectangle {
         }
 
         Rectangle {
-            visible: rootObject.sessionGitChipVisible(session)
+            // In a compact row the branch chip yields to the verdict: the
+            // reason to look at this row right now outranks which branch it
+            // is on, and both will not fit.
+            visible: rootObject.sessionGitChipVisible(session) && !(compact && judgementLede.length > 0)
             height: chipHeight
             radius: rootObject.radiusBadge
             color: rootObject.sessionGitChipBackground(session)
@@ -717,6 +793,15 @@ Rectangle {
             }
 
         }
+    }
+
+    JudgementTooltip {
+        anchorWindow: sessionRow.tooltipWindow
+        anchorItem: sessionRow
+        colors: colorsObject
+        rootObject: sessionRow.rootObject
+        session: sessionRow.session
+        active: sessionRow.judgementTooltipActive
     }
 
     MouseArea {

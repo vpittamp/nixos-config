@@ -20,6 +20,13 @@ Item {
     property alias brightnessRestartTimerRef: brightnessRestartTimer
     property alias lidPolicyRestartTimerRef: lidPolicyRestartTimer
     property alias launcherFocusTimerRef: launcherFocusTimer
+    property alias commandBarFocusTimerRef: commandBarFocusTimer
+    property alias commandPlanDebounceRef: commandPlanDebounce
+    property alias commandRunProcessRef: commandRunProcess
+    property alias commandPlanProcessRef: commandPlanProcess
+    property alias commandRanTimerRef: commandRanTimer
+    property alias commandTranscriptTimerRef: commandTranscriptTimer
+    property alias commandVoiceSettleTimerRef: commandVoiceSettleTimer
     property alias osdHideTimerRef: osdHideTimer
     property alias notificationStoreRef: notificationStore
     property alias agentUsageRefreshProcessRef: agentUsageRefreshProcess
@@ -400,6 +407,118 @@ Item {
         }
     }
 
+
+    // ----- Natural-language command bar -----
+    // `jev` is the dispatcher (home-modules/desktop/jev-commands): it calls
+    // TypeSafe once, resolves the sentence to one of this desktop's commands,
+    // and either runs it or hands back a plan waiting for confirmation.
+    Timer {
+        id: commandBarFocusTimer
+        interval: 40
+        repeat: false
+        onTriggered: {
+            if (!shellRoot.commandField) {
+                return;
+            }
+            shellRoot.commandField.forceActiveFocus();
+            shellRoot.commandField.selectAll();
+        }
+    }
+
+    // Debug mode re-plans as you type. The interval is long because each fire
+    // is a paid API call, and the point is to watch the routing settle as a
+    // sentence finishes — not to bill a request per keystroke.
+    Timer {
+        id: commandPlanDebounce
+        interval: 750
+        repeat: false
+        onTriggered: shellRoot.planCommandPreview()
+    }
+
+    Process {
+        id: commandRunProcess
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: shellRoot.parseCommandResult(text)
+        }
+        stderr: StdioCollector {
+            onStreamFinished: {
+                if (text && text.trim()) {
+                    console.warn("jev.run:", text.trim());
+                }
+            }
+        }
+    }
+
+    Process {
+        id: commandPlanProcess
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: shellRoot.parseCommandPreview(text)
+        }
+        stderr: StdioCollector {
+            onStreamFinished: {
+                if (text && text.trim()) {
+                    console.warn("jev.plan:", text.trim());
+                }
+            }
+        }
+    }
+
+    // A command that ran leaves its verdict up long enough to be read, then
+    // gets out of the way. Long enough to see what happened; short enough that
+    // the bar is not still sitting over the window it just acted on.
+    Timer {
+        id: commandRanTimer
+        interval: 1600
+        repeat: false
+        onTriggered: {
+            if (shellRoot.commandBarVisible && !shellRoot.commandVoice
+                && shellRoot.commandPlan && shellRoot.commandPlan.status === "executed"
+                && !shellRoot.commandDebug) {
+                shellRoot.closeCommandBar();
+            }
+        }
+    }
+
+    // Voice transcript mirror. voxtype writes its running transcript to
+    // $XDG_RUNTIME_DIR/voxtype/transcript-current.txt; the helper resolves that
+    // path (the shell never sees XDG_RUNTIME_DIR itself) and prints it. Polled
+    // rather than watched because it only runs while the mic is open.
+    Timer {
+        id: commandTranscriptTimer
+        interval: 250
+        repeat: true
+        running: false
+        onTriggered: {
+            if (!shellRoot.commandBarVisible) {
+                commandTranscriptTimer.stop();
+                return;
+            }
+            if (!commandTranscriptProcess.running) {
+                commandTranscriptProcess.running = true;
+            }
+        }
+    }
+
+    Process {
+        id: commandTranscriptProcess
+        command: [runtimeConfig.voiceTranscriptBin]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: shellRoot.applyVoiceTranscript(text)
+        }
+    }
+
+    // After the mic closes, voxtype still has the tail of the sentence to
+    // write. Keep mirroring for a moment, then submit what arrived.
+    Timer {
+        id: commandVoiceSettleTimer
+        interval: 1200
+        repeat: false
+        onTriggered: shellRoot.commitVoiceCommand()
+    }
+
     // ----- Notification persistence -----
     FileView {
         id: notificationStore
@@ -435,6 +554,20 @@ Item {
         onFileChanged: reload()
         onLoaded: shellRoot.applyThemeState(text())
         onLoadFailed: shellRoot.applyThemeState("")
+    }
+
+    // ----- Agent judgements -----
+    // agent-judge writes this atomically; the shell only ever reads it, so a
+    // watch is the whole integration. A missing file is the normal state on a
+    // machine with no agents running, not an error.
+    FileView {
+        id: agentJudgementStore
+        path: runtimeConfig.agentJudgementStore
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: shellRoot.parseAgentJudgements(text())
+        onLoadFailed: shellRoot.parseAgentJudgements("")
     }
 
     // ----- Agent usage records -----

@@ -25,6 +25,14 @@ ShellRoot {
         id: shellConfig
     }
 
+    readonly property var commandField: commandBarWindow ? commandBarWindow.commandFieldRef : null
+    readonly property var commandBarFocusTimer: runtimeServices ? runtimeServices.commandBarFocusTimerRef : null
+    readonly property var commandPlanDebounce: runtimeServices ? runtimeServices.commandPlanDebounceRef : null
+    readonly property var commandRunProcess: runtimeServices ? runtimeServices.commandRunProcessRef : null
+    readonly property var commandPlanProcess: runtimeServices ? runtimeServices.commandPlanProcessRef : null
+    readonly property var commandRanTimer: runtimeServices ? runtimeServices.commandRanTimerRef : null
+    readonly property var commandTranscriptTimer: runtimeServices ? runtimeServices.commandTranscriptTimerRef : null
+    readonly property var commandVoiceSettleTimer: runtimeServices ? runtimeServices.commandVoiceSettleTimerRef : null
     readonly property var launcherField: launcherWindow ? launcherWindow.launcherFieldRef : null
     readonly property var launcherList: launcherWindow ? launcherWindow.launcherListRef : null
     readonly property var sessionPreviewFlick: launcherWindow ? launcherWindow.sessionPreviewFlickRef : null
@@ -8327,6 +8335,700 @@ function normalizeLauncherMode(mode) {
         showLauncher("keys", "");
     }
 
+    // ----- Agent judgements -----
+    // `agent-judge` (home-modules/desktop/jev-commands/agent_judge.py) reads
+    // each herdr pane's own screen and asks jev what that session is waiting
+    // for, whether it is going wrong, whether something irreversible is in
+    // play, and whether it has wandered off its task. Verdicts arrive as a
+    // watched JSON file, keyed by pane.
+    //
+    // The display rules here are the whole point of the feature:
+    //
+    //   The detail is a hover tooltip, not something opened and closed. There
+    //   is nothing to dismiss, nothing moves, and which row a detail belongs
+    //   to is unambiguous by construction: it is the one under the pointer.
+    //
+    //   The list never reorders. A row that moves while you are reading or
+    //   reaching for it is worse than a row in an unhelpful place, so the
+    //   verdict changes what a row SAYS and never where it sits. The ordered
+    //   walk — cheapest first — lives in `agent-judge show`, where nothing
+    //   moves under you.
+    //
+    //   Only alarms are allowed to be loud. If every row can shout, none is
+    //   heard, and the alarms are precisely the things selective attention
+    //   never discovers on its own.
+    //
+    //   Confidence becomes opacity. An unsure judgement recedes; below the
+    //   dispatcher's show threshold the row renders nothing new at all and
+    //   falls back to the plain herdr status. The UI degrades honestly.
+    property var agentJudgements: ({})
+    property int agentJudgementsUpdatedAt: 0
+
+    function parseAgentJudgements(payload) {
+        const raw = stringOrEmpty(payload).trim();
+        if (!raw) {
+            agentJudgements = ({});
+            return;
+        }
+        try {
+            const parsed = JSON.parse(raw);
+            const verdicts = parsed && parsed.verdicts;
+            agentJudgements = (verdicts && typeof verdicts === "object") ? verdicts : ({});
+            agentJudgementsUpdatedAt = Number(parsed && parsed.updated_at) || 0;
+        } catch (error) {
+            agentJudgements = ({});
+        }
+    }
+
+    // Verdicts are keyed host:pane. Pane ids are unique per herdr rather than
+    // globally, so the host is what keeps a remote session from picking up a
+    // local pane's verdict by sharing its id — and it is the same host key the
+    // rows are already grouped and coloured by.
+    function sessionJudgement(session) {
+        if (!session) {
+            return null;
+        }
+        const paneId = stringOrEmpty(session.pane_id);
+        const hostKey = sessionHostKey(session);
+        if (!paneId || !hostKey) {
+            return null;
+        }
+        const verdict = agentJudgements[hostKey + ":" + paneId];
+        return (verdict && verdict.display) ? verdict : null;
+    }
+
+    function judgementAlarms(verdict) {
+        return (verdict && verdict.alarms && verdict.alarms.length) ? verdict.alarms : [];
+    }
+
+    // FiraCode Nerd Font. Shapes, not colours: the status hue already means
+    // something at the row edge and a second colour language would fight it.
+    readonly property var askGlyphs: ({
+        "permission": "\uF084",           // key
+        "pick_one": "\uF126",             // fork
+        "judgement": "\uF059",            // question
+        "blocked_external": "\uF252",     // hourglass
+        "finished_done": "\uF00C",        // check
+        "finished_incomplete": "\uF05E",  // ban
+        "nothing": ""
+    })
+
+    readonly property var alarmGlyphs: ({
+        "risky": "\uF071",    // warning triangle
+        "struggling": "\uF021",  // going round again
+        "drifted": "\uF074"   // wandered off
+    })
+
+    // Where a working agent sits on the progress scale. Shapes again, not
+    // colours — and `circling` deliberately shares its glyph with the
+    // `struggling` alarm, because struggling IS circling that has persisted:
+    // the rail is what separates a rough patch from a trajectory.
+    readonly property var progressGlyphs: ({
+        "advancing": "\uF062",      // arrow up
+        "grinding": "\uF042",       // half-filled
+        "circling": "\uF021",       // round again
+        "losing ground": "\uF063"   // arrow down
+    })
+
+    function sessionAskGlyph(session) {
+        const verdict = sessionJudgement(session);
+        if (!verdict) {
+            return "";
+        }
+        const ask = stringOrEmpty(askGlyphs[stringOrEmpty(verdict.ask_kind)]);
+        if (ask.length > 0) {
+            return ask;
+        }
+        // An agent that wants nothing is the commonest case and was the blind
+        // spot: keyed only off what it wants, a working session showed nothing
+        // at all. If there is a reading of how it is GOING, show that instead.
+        const condition = stringOrEmpty(verdict.condition);
+        if (condition && condition !== "unknown") {
+            return stringOrEmpty(progressGlyphs[stringOrEmpty(verdict.progress_label)]);
+        }
+        return "";
+    }
+
+    function sessionAlarmGlyph(session) {
+        const alarms = judgementAlarms(sessionJudgement(session));
+        return alarms.length ? stringOrEmpty(alarmGlyphs[alarms[0]]) : "";
+    }
+
+    function sessionAlarmColor(session) {
+        const alarms = judgementAlarms(sessionJudgement(session));
+        if (!alarms.length) {
+            return "transparent";
+        }
+        // Red is reserved for the irreversible. Everything else that is merely
+        // wrong is amber, so red keeps meaning something specific.
+        return alarms[0] === "risky" ? colors.red : colors.amber;
+    }
+
+    function sessionJudgementLede(session) {
+        const verdict = sessionJudgement(session);
+        return verdict ? stringOrEmpty(verdict.lede) : "";
+    }
+
+    function sessionJudgementEvidence(session) {
+        const verdict = sessionJudgement(session);
+        return verdict ? stringOrEmpty(verdict.evidence) : "";
+    }
+
+    // Confidence as weight. A 0.6 judgement should look like a 0.6 judgement;
+    // the floor keeps it legible rather than invisible.
+    function sessionJudgementOpacity(session) {
+        const verdict = sessionJudgement(session);
+        if (!verdict) {
+            return 1.0;
+        }
+        const confidence = Number(verdict.confidence) || 0;
+        return Math.max(0.45, Math.min(1.0, 0.45 + confidence * 0.55));
+    }
+
+    // The ambient channel: what the bar chip says without anything being
+    // opened. "Agents 9 · 2 1" is the whole feature for a user who
+    // never opens the panel.
+    function agentJudgementSummary() {
+        const sessions = panelSessions();
+        let cheap = 0;
+        let alarms = 0;
+        for (let i = 0; i < sessions.length; i += 1) {
+            const verdict = sessionJudgement(sessions[i]);
+            if (!verdict) {
+                continue;
+            }
+            if (judgementAlarms(verdict).length) {
+                alarms += 1;
+            } else if (Number(verdict.cost) === 1 && stringOrEmpty(verdict.ask_kind) !== "finished_done") {
+                cheap += 1;
+            }
+        }
+        return { cheap: cheap, alarms: alarms };
+    }
+
+    function agentJudgementSummaryText() {
+        const summary = agentJudgementSummary();
+        const parts = [];
+        if (summary.cheap > 0) {
+            parts.push("\uF084" + summary.cheap);
+        }
+        if (summary.alarms > 0) {
+            parts.push("\uF071" + summary.alarms);
+        }
+        return parts.join("  ");
+    }
+
+    // The session the drawer is describing, resolved live. Returns null when
+    // the pane has gone or its verdict has dropped below the show threshold,
+    // which is also how the drawer closes itself rather than describing
+    // something that is no longer there.
+    // The ranked distribution behind `ask_kind`, for the detail pane: a
+    // verdict is an assertion, the runners-up are what make it checkable.
+    function judgementAskRanking(session) {
+        const verdict = sessionJudgement(session);
+        const distribution = verdict && verdict.ask_distribution;
+        if (!distribution) {
+            return [];
+        }
+        const rows = [];
+        const keys = Object.keys(distribution);
+        for (let i = 0; i < keys.length; i += 1) {
+            rows.push({ option: keys[i], probability: Number(distribution[keys[i]]) || 0 });
+        }
+        rows.sort(function (a, b) { return b.probability - a.probability; });
+        return rows.slice(0, 4);
+    }
+
+    function judgementFlagRows(session) {
+        const verdict = sessionJudgement(session);
+        if (!verdict) {
+            return [];
+        }
+        const alarms = judgementAlarms(verdict);
+        const names = ["repeating", "frustration", "needs_input", "risky", "drifted"];
+        const rows = [];
+        for (let i = 0; i < names.length; i += 1) {
+            rows.push({
+                name: names[i],
+                probability: Number(verdict[names[i]]) || 0,
+                raised: alarms.indexOf(names[i]) >= 0
+            });
+        }
+        return rows;
+    }
+
+    // ---- how it is going ----
+    // The ordinal dimensions, as bars the detail can draw. Normalised here so
+    // the tooltip never has to know that progress runs 0-3 and understanding
+    // 0-2.
+    function judgementScoreRows(session) {
+        const verdict = sessionJudgement(session);
+        if (!verdict) {
+            return [];
+        }
+        return [
+            {
+                name: "progress",
+                value: Number(verdict.progress) || 0,
+                span: 3,
+                fraction: (Number(verdict.progress) || 0) / 3,
+                confidence: Number(verdict.progress_confidence) || 0,
+                label: judgementProgressLabel(Number(verdict.progress) || 0)
+            },
+            {
+                name: "understanding",
+                value: Number(verdict.understanding) || 0,
+                span: 2,
+                fraction: (Number(verdict.understanding) || 0) / 2,
+                confidence: Number(verdict.understanding_confidence) || 0,
+                label: judgementUnderstandingLabel(Number(verdict.understanding) || 0)
+            }
+        ];
+    }
+
+    function judgementProgressLabel(value) {
+        if (value < 0.75) { return "losing ground"; }
+        if (value < 1.75) { return "circling"; }
+        if (value < 2.5) { return "grinding"; }
+        return "advancing";
+    }
+
+    function judgementUnderstandingLabel(value) {
+        if (value < 0.75) { return "guessing"; }
+        if (value < 1.5) { return "hunting"; }
+        return "diagnosed";
+    }
+
+    function sessionCondition(session) {
+        const verdict = sessionJudgement(session);
+        return verdict ? stringOrEmpty(verdict.condition) : "";
+    }
+
+    function judgementHealthLine(session) {
+        const verdict = sessionJudgement(session);
+        if (!verdict || !stringOrEmpty(verdict.condition) || verdict.condition === "unknown") {
+            return "";
+        }
+        const trend = Number(verdict.trend) || 0;
+        const arrow = trend <= -0.05 ? "falling" : (trend >= 0.05 ? "rising" : "flat");
+        return stringOrEmpty(verdict.condition) + "   health "
+            + (Number(verdict.health) || 0).toFixed(2) + "   " + arrow
+            + "   over " + (Number(verdict.observations) || 0) + " observations"
+            + (Number(verdict.minutes) ? ("   " + verdict.minutes + "m on task") : "");
+    }
+
+    // The health series, for the sparkline. Only observations taken while the
+    // agent was working describe a trajectory; an idle stretch is not a dip.
+    function judgementHealthSeries(session) {
+        const verdict = sessionJudgement(session);
+        const history = verdict && verdict.history;
+        if (!history || !history.length) {
+            return [];
+        }
+        const rows = [];
+        for (let i = 0; i < history.length; i += 1) {
+            if (history[i] && history[i].working) {
+                rows.push(Number(history[i].health) || 0);
+            }
+        }
+        return rows.slice(Math.max(0, rows.length - 16));
+    }
+
+    // The screen as it was sent, capped. This is the part that makes a verdict
+    // checkable rather than merely asserted: "looping, 0.94" is a claim, and
+    // the three identical FAILED lines underneath it are the evidence.
+    function judgementExcerptLines(session) {
+        const verdict = sessionJudgement(session);
+        const text = verdict ? stringOrEmpty(verdict.excerpt) : "";
+        if (!text) {
+            return [];
+        }
+        const rows = text.split("\n");
+        return rows.slice(Math.max(0, rows.length - 8));
+    }
+
+    function judgementCostLine(session) {
+        const verdict = sessionJudgement(session);
+        const trace = verdict && verdict.trace;
+        if (!trace) {
+            return "";
+        }
+        const usage = trace.usage || {};
+        const age = agentJudgementsUpdatedAt > 0
+            ? Math.max(0, Math.round(Date.now() / 1000) - Number(verdict.judged_at || 0))
+            : 0;
+        return "rev " + stringOrEmpty(verdict.revision) + "   judged " + age + "s ago   "
+            + (usage.input_tokens || "?") + " in / " + (usage.output_tokens || "?") + " out   "
+            + (trace.latencyMs || "?") + " ms   " + stringOrEmpty(trace.model);
+    }
+
+    // ----- Natural-language command bar -----
+    // One line of text (typed or dictated) goes to `jev`, which routes it to
+    // one of this desktop's own commands and fills that command's arguments
+    // from closed sets. See home-modules/desktop/jev-commands.
+    //
+    // The bar never runs anything itself: every decision about whether a call
+    // is confident enough to run belongs to the dispatcher, which knows the
+    // thresholds, and the bar only renders the verdict and relays Enter.
+    property bool commandBarVisible: false
+    property string commandText: ""
+    // idle | thinking | done — `done` means a result is on screen, whatever
+    // that result was (ran, needs confirming, refused, no match).
+    property string commandStatus: "idle"
+    property var commandPlan: null
+    property string commandError: ""
+    property bool commandDebug: false
+    property bool commandVoice: false
+    // Guards the TextField's two-way binding the way launcherNormalizingInput
+    // does: setting .text from here must not look like the user typing.
+    property bool commandNormalizing: false
+    // Set only when *we* started dictation, so closing the bar stops a mic we
+    // opened and leaves alone one the user opened from the bar chip.
+    property bool commandVoiceOwned: false
+    readonly property real commandAutoThreshold: shellConfig.jevAutoThreshold
+
+    function showCommandBar(payload) {
+        const options = payload || {};
+        commandBarVisible = true;
+        commandError = "";
+        commandStatus = "idle";
+        commandPlan = null;
+        if (options.debug !== undefined) {
+            commandDebug = !!options.debug;
+        }
+        setCommandText(stringOrEmpty(options.query));
+        commandBarFocusTimer.restart();
+        if (options.voice) {
+            startCommandVoice();
+        }
+    }
+
+    function closeCommandBar() {
+        if (commandVoice) {
+            stopCommandVoice();
+        }
+        commandBarVisible = false;
+        commandStatus = "idle";
+        commandPlan = null;
+        commandError = "";
+        setCommandText("");
+        if (commandPlanDebounce.running) {
+            commandPlanDebounce.stop();
+        }
+    }
+
+    onCommandBarVisibleChanged: {
+        if (!commandBarVisible) {
+            oskSurfaceClosed();
+        }
+    }
+
+    // Escape is layered: it backs out of dictation first, then out of a result
+    // waiting to be confirmed, and only then closes the bar. Closing outright
+    // would throw away the thing the user is most likely still looking at.
+    function escapeCommandBar() {
+        if (commandVoice) {
+            stopCommandVoice();
+            return;
+        }
+        if (commandPlan !== null && stringOrEmpty(commandPlan.status) === "confirm") {
+            commandPlan = null;
+            commandStatus = "idle";
+            return;
+        }
+        closeCommandBar();
+    }
+
+    function setCommandText(value) {
+        const next = stringOrEmpty(value);
+        commandText = next;
+        if (commandField && commandField.text !== next) {
+            commandNormalizing = true;
+            commandField.text = next;
+            commandNormalizing = false;
+        }
+    }
+
+    function updateCommandInput(value) {
+        commandText = stringOrEmpty(value);
+        commandError = "";
+        // A result belongs to the sentence that produced it. Editing the
+        // sentence retires it rather than leaving a stale verdict on screen
+        // under new words.
+        if (commandStatus !== "thinking") {
+            commandPlan = null;
+            commandStatus = "idle";
+        }
+        if (commandDebug) {
+            commandPlanDebounce.restart();
+        }
+    }
+
+    function toggleCommandDebug() {
+        commandDebug = !commandDebug;
+        if (commandDebug && commandText.trim() && commandPlan === null) {
+            commandPlanDebounce.restart();
+        } else if (!commandDebug && commandPlanDebounce.running) {
+            commandPlanDebounce.stop();
+        }
+    }
+
+    // ---- dispatch ---------------------------------------------------------
+    // The dispatcher resolves the TypeSafe key itself, from the op:// reference
+    // baked into its wrapper: the shell's own environment carries no 1Password
+    // session and nothing secret is passed from here.
+    function submitCommandBar() {
+        const text = commandText.trim();
+        if (!text || commandStatus === "thinking") {
+            return;
+        }
+        if (commandVoice && voxtypeListening()) {
+            // Enter while the mic is open means "that's the sentence" — stop
+            // recording and let the transcript's arrival submit it.
+            stopCommandVoice();
+            return;
+        }
+
+        // A plan that carries a token is one the dispatcher has already
+        // resolved and set aside — whether it stopped for confirmation or was
+        // a debug-mode preview. Enter runs *that* call, so confirming never
+        // costs a second request and never re-resolves the sentence into a
+        // different command than the one on screen.
+        if (commandPlan !== null && stringOrEmpty(commandPlan.token)) {
+            commandStatus = "thinking";
+            commandRunProcess.command = [
+                shellConfig.jevBin, "confirm", stringOrEmpty(commandPlan.token), "--json", "--detach"
+            ];
+            commandRunProcess.running = true;
+            return;
+        }
+
+        commandStatus = "thinking";
+        commandError = "";
+        commandRunProcess.command = [shellConfig.jevBin, "run", "--json", "--detach", text];
+        commandRunProcess.running = true;
+    }
+
+    // Debug mode's live preview. `plan` resolves and prints; it never runs
+    // anything, which is what makes it safe to fire on every pause in typing.
+    function planCommandPreview() {
+        const text = commandText.trim();
+        if (!text || !commandDebug || commandStatus === "thinking") {
+            return;
+        }
+        if (commandPlanProcess.running) {
+            commandPlanProcess.running = false;
+        }
+        commandPlanProcess.command = [shellConfig.jevBin, "plan", "--json", text];
+        commandPlanProcess.running = true;
+    }
+
+    function parseCommandResult(payload) {
+        commandStatus = "done";
+        const raw = stringOrEmpty(payload).trim();
+        if (!raw) {
+            commandError = "jev returned nothing";
+            commandPlan = null;
+            return;
+        }
+        let parsed = null;
+        try {
+            parsed = JSON.parse(raw);
+        } catch (error) {
+            commandError = raw.split("\n")[0].slice(0, 200);
+            commandPlan = null;
+            return;
+        }
+        if (parsed && parsed.status === "error") {
+            commandError = stringOrEmpty(parsed.error) || "dispatch failed";
+            commandPlan = null;
+            return;
+        }
+        commandError = "";
+        commandPlan = parsed;
+        if (parsed && parsed.status === "executed") {
+            commandRanTimer.restart();
+        }
+    }
+
+    // A preview must not overwrite a real result, and must not resurrect a bar
+    // the user has already closed.
+    function parseCommandPreview(payload) {
+        if (!commandBarVisible || !commandDebug || commandStatus === "thinking") {
+            return;
+        }
+        parseCommandResult(payload);
+        commandStatus = "done";
+    }
+
+    // ---- voice ------------------------------------------------------------
+    // voxtype types its transcript into whatever holds keyboard focus, which is
+    // this window. The field is read-only while dictating so those keystrokes
+    // are dropped, and the text arrives instead from voxtype's own transcript
+    // file — one source, in order, with no risk of the words landing twice.
+    function startCommandVoice() {
+        if (commandVoice) {
+            return;
+        }
+        commandVoice = true;
+        setCommandText("");
+        commandPlan = null;
+        commandStatus = "idle";
+        commandError = "";
+        if (!voxtypeRawListening()) {
+            commandVoiceOwned = true;
+            runDictationAction("start");
+        }
+        commandTranscriptTimer.restart();
+    }
+
+    function stopCommandVoice() {
+        if (!commandVoice) {
+            return;
+        }
+        commandVoice = false;
+        if (commandVoiceOwned && voxtypeRawListening()) {
+            runDictationAction("stop");
+        }
+        commandVoiceOwned = false;
+        // Keep polling briefly: the last words land after the mic closes, and
+        // the transcript poll is what submits them.
+        commandVoiceSettleTimer.restart();
+    }
+
+    function toggleCommandVoice() {
+        if (commandVoice) {
+            stopCommandVoice();
+        } else {
+            startCommandVoice();
+        }
+    }
+
+    function applyVoiceTranscript(payload) {
+        const text = stringOrEmpty(payload).trim();
+        if (!text || !commandBarVisible) {
+            return;
+        }
+        if (text !== commandText) {
+            setCommandText(text);
+            commandError = "";
+        }
+    }
+
+    // The mic closed and the transcript settled: a spoken command is a finished
+    // sentence, so it goes without a second keystroke.
+    function commitVoiceCommand() {
+        commandTranscriptTimer.stop();
+        if (!commandBarVisible || commandVoice || voxtypeActive()) {
+            return;
+        }
+        if (commandText.trim() && commandStatus !== "thinking" && commandPlan === null) {
+            submitCommandBar();
+        }
+    }
+
+    // ---- rendering helpers -------------------------------------------------
+    function commandConfidence() {
+        return commandPlan ? Number(commandPlan.confidence || 0) : 0;
+    }
+
+    function commandVerdictLine() {
+        if (!commandPlan) {
+            return "";
+        }
+        const status = stringOrEmpty(commandPlan.status);
+        if (status === "unmatched") {
+            return "no action matches that";
+        }
+        return stringOrEmpty(commandPlan.display) || stringOrEmpty(commandPlan.function);
+    }
+
+    function commandHintLine() {
+        if (!commandPlan) {
+            return "";
+        }
+        switch (stringOrEmpty(commandPlan.status)) {
+        case "executed":
+            return "done — " + stringOrEmpty(commandPlan.summary);
+        case "ready":
+            return stringOrEmpty(commandPlan.token)
+                ? "Enter runs it — " + stringOrEmpty(commandPlan.summary)
+                : stringOrEmpty(commandPlan.summary);
+        case "confirm":
+            return commandPlan.confirm
+                ? "this one always asks first — Enter to run it, Esc to drop it"
+                : "not sure enough to run on its own (weakest: "
+                    + stringOrEmpty(commandPlan.weakest || "which action")
+                    + ") — Enter to run it anyway, Esc to drop it";
+        case "rejected":
+            return "too unsure to act on; say it another way";
+        case "unmatched":
+            return "nothing in the catalog does that — Ctrl+D shows what was considered";
+        default:
+            return stringOrEmpty(commandPlan.summary);
+        }
+    }
+
+    function commandLegendLine() {
+        const parts = ["Enter run", "Esc close"];
+        parts.push(commandVoice ? "Ctrl+Space stop dictating" : "Ctrl+Space dictate");
+        parts.push(commandDebug ? "Ctrl+D hide reasoning" : "Ctrl+D show reasoning");
+        return parts.join("   •   ");
+    }
+
+    function commandTrace() {
+        return (commandPlan && commandPlan.trace) ? commandPlan.trace : null;
+    }
+
+    function commandTraceCostLine() {
+        const trace = commandTrace();
+        if (!trace) {
+            return "";
+        }
+        const usage = trace.usage || {};
+        return trace.questions + " questions   "
+            + (usage.input_tokens || "?") + " in / " + (usage.output_tokens || "?") + " out   "
+            + (trace.latencyMs || "?") + " ms   "
+            + stringOrEmpty(trace.model) + "   "
+            + "runs on its own at " + Number(trace.autoThreshold || 0).toFixed(2);
+    }
+
+    function commandCandidates() {
+        const trace = commandTrace();
+        return (trace && trace.candidates) ? trace.candidates.slice(0, 6) : [];
+    }
+
+    function commandArguments() {
+        return (commandPlan && commandPlan.arguments) ? commandPlan.arguments : [];
+    }
+
+    function commandArgumentLine(argument) {
+        if (!argument) {
+            return "";
+        }
+        const value = argument.omitted ? "omitted, default stands" : String(argument.value);
+        let line = argument.name + " = " + value + "   p " + Number(argument.probability || 0).toFixed(2);
+        if (argument.stated !== undefined && argument.stated !== null) {
+            line += "   mentioned? " + Number(argument.stated).toFixed(2);
+        }
+        return line;
+    }
+
+    // The three likeliest values for one argument, so a close call between two
+    // options is visible as a close call rather than as a single answer.
+    function commandArgumentOptions(argument) {
+        if (!argument || !argument.distribution) {
+            return [];
+        }
+        const rows = [];
+        const keys = Object.keys(argument.distribution);
+        for (let i = 0; i < keys.length; i += 1) {
+            rows.push({ option: keys[i], probability: Number(argument.distribution[keys[i]]) });
+        }
+        rows.sort(function (a, b) { return b.probability - a.probability; });
+        return rows.slice(0, 3);
+    }
+
     // ----- Generic surface IPC -----
     // One registry of everything the shell can show, keyed by a stable id, so
     // `runtime-shell summon|hide|toggle <id> [json]` reaches any surface. Each
@@ -8346,6 +9048,11 @@ function normalizeLauncherMode(mode) {
                 isOpen: function () { return launcherVisible; },
                 open: function (payload) { showLauncher(stringOrEmpty(payload.mode) || "apps", stringOrEmpty(payload.query)); },
                 close: function () { closeLauncher(); }
+            },
+            "command": {
+                isOpen: function () { return commandBarVisible; },
+                open: function (payload) { showCommandBar(payload); },
+                close: function () { closeCommandBar(); }
             },
             "keybindings": {
                 isOpen: function () { return launcherVisible && launcherMode === "keys"; },
@@ -10953,6 +11660,13 @@ function normalizeLauncherMode(mode) {
     }
 
     Windows.AgentMonitorWindow {
+        shellRoot: shellRootRef
+        runtimeConfig: shellConfig
+        colors: shellRootRef.colors
+    }
+
+    Windows.CommandBarWindow {
+        id: commandBarWindow
         shellRoot: shellRootRef
         runtimeConfig: shellConfig
         colors: shellRootRef.colors

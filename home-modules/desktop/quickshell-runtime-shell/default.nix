@@ -37,6 +37,8 @@ let
     inherit lib;
     modifier = swayModifier;
     hasRuntimeShell = true;
+    capsLockIsF19 = osConfig != null
+      && lib.attrByPath [ "services" "keyd" "enable" ] false osConfig;
   };
   toggleKeys =
     let keys = if lib.isList cfg.toggleKey then cfg.toggleKey else [ cfg.toggleKey ];
@@ -265,6 +267,7 @@ let
     cp -r ${./windows} "$out/windows"
     cp ${./SessionRow.qml} "$out/SessionRow.qml"
     cp ${./BarTooltip.qml} "$out/BarTooltip.qml"
+    cp ${./JudgementTooltip.qml} "$out/JudgementTooltip.qml"
     cp ${./PanelHero.qml} "$out/PanelHero.qml"
     cp ${./PanelSlider.qml} "$out/PanelSlider.qml"
     cp ${./PanelSectionHeader.qml} "$out/PanelSectionHeader.qml"
@@ -293,6 +296,7 @@ QtObject {
   readonly property int idleLockSeconds: ${toString cfg.idle.lockSeconds}
   readonly property string lockPamService: "${cfg.lock.pamService}"
   readonly property string agentUsageDir: "${agentUsageDir}"
+  readonly property string agentJudgementStore: "${agentJudgementStore}"
   readonly property var themes: ${builtins.toJSON (lib.mapAttrs (_: t: removeAttrs t [ "terminal" ]) themesExport)}
   readonly property string defaultTheme: "${themeName}"
   readonly property string themeStatePath: "${themeStatePath}"
@@ -301,6 +305,9 @@ QtObject {
   readonly property string restartBin: "${restartShellScript}/bin/quickshell-runtime-shell-restart"
   readonly property string reminderBin: "${runtimeReminderScript}/bin/runtime-reminder"
   readonly property string captureBin: "${captureScript}/bin/capture"
+  readonly property string jevBin: "${jevBin}"
+  readonly property real jevAutoThreshold: ${toString jevAutoThreshold}
+  readonly property string voiceTranscriptBin: "${voiceTranscriptScript}/bin/quickshell-voice-transcript"
   readonly property string nightlightBin: "${nightlightScript}/bin/quickshell-nightlight"
   readonly property string tailscaleStatusBin: "${tailscaleStatusScript}/bin/quickshell-tailscale-status"
   readonly property string tailscaleActionBin: "${tailscaleActionScript}/bin/quickshell-tailscale-action"
@@ -2982,10 +2989,11 @@ Usage: runtime-shell <command> [args]
   call <function> [args...]         call any function on the shell IPC target
   ping                              exit 0 when the shell answers
 
-Surfaces: launcher, keybindings, panel, settings, expose, agent-monitor,
-  power-menu, notifications, display-selector, audio, bluetooth, cast
+Surfaces: launcher, command, keybindings, panel, settings, expose,
+  agent-monitor, power-menu, notifications, display-selector, audio,
+  bluetooth, cast
 Payloads: launcher {"mode":"files","query":"nix"}  panel {"section":"sessions"}
-  settings {"section":"devices"}
+  settings {"section":"devices"}  command {"voice":true,"debug":true}
 USAGE
     }
 
@@ -3010,6 +3018,50 @@ USAGE
       ping) exec "$ipc" call shell ping ;;
       *) usage; exit 2 ;;
     esac
+  '';
+
+  # ---- Natural-language command bar -------------------------------------
+  # The dispatcher itself lives in home-modules/desktop/jev-commands. The shell
+  # only needs its path and the threshold it gates on, so the bar can say what
+  # "runs on its own" means without owning the decision.
+  jevCfg = config.programs.jev-commands or null;
+  # Where agent-judge writes what each AI session is waiting for. Read from
+  # the module that owns it so the two cannot disagree about the path.
+  agentJudgementStore =
+    if jevCfg != null && jevCfg ? judgementStore && jevCfg.judgementStore != ""
+    then jevCfg.judgementStore
+    else "${config.xdg.stateHome}/quickshell-runtime-shell/agents/judgements.json";
+  jevBin =
+    if jevCfg != null && jevCfg.enable
+    then "${jevCfg.package}/bin/jev"
+    else "${config.home.profileDirectory}/bin/jev";
+  jevAutoThreshold = if jevCfg != null then jevCfg.autoThreshold else 0.6;
+
+  # voxtype's running transcript, resolved where XDG_RUNTIME_DIR is actually
+  # set. The shell spawns its children with no environment of its own, so the
+  # path cannot be built in QML — and baking /run/user/<uid> into the store
+  # would be a guess at a number this module does not know.
+  voiceTranscriptScript = pkgs.writeShellScriptBin "quickshell-voice-transcript" ''
+    set -euo pipefail
+    export PATH=${pkgs.coreutils}/bin:$PATH
+    file="''${XDG_RUNTIME_DIR:-/tmp}/voxtype/transcript-current.txt"
+    [ -r "$file" ] || exit 0
+    cat "$file"
+  '';
+
+  # Entry points for the bar, one per keybinding. Separate scripts rather than
+  # one taking a flag, because a keybinding is a name: CapsLock opens it to
+  # type into, Shift+CapsLock opens it already listening.
+  toggleCommandBarScript = pkgs.writeShellScriptBin "toggle-command-bar" ''
+    exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell toggle command '{}'
+  '';
+
+  toggleVoiceCommandScript = pkgs.writeShellScriptBin "toggle-voice-command" ''
+    exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell toggle command '{"voice":true}'
+  '';
+
+  toggleCommandDebugScript = pkgs.writeShellScriptBin "toggle-command-bar-debug" ''
+    exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell toggle command '{"debug":true}'
   '';
 
   # Brightness keys: brightnessctl stays authoritative (works with the shell
@@ -3918,6 +3970,10 @@ in
       toggleDockScript
       togglePowerMenuScript
       runtimeShellCliScript
+      toggleCommandBarScript
+      toggleVoiceCommandScript
+      toggleCommandDebugScript
+      voiceTranscriptScript
       toggleKeybindingsHelpScript
       brightnessKeyScript
       lockSessionScript

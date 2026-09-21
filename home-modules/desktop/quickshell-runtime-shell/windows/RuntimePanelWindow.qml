@@ -1402,6 +1402,10 @@ PanelWindow {
                                     rootObject: root
                                     colorsObject: colors
                                     surfaceVisible: root.panelVisible
+                                    // The herdr panel is the surface that
+                                    // explains itself; the popup anchors into
+                                    // this window and opens left of the row.
+                                    tooltipWindow: panelWindow
                                     session: liveSession
                                     selected: false
                                     currentOverrideSet: true
@@ -1417,7 +1421,8 @@ PanelWindow {
                                 }
                             }
                         }
-                    }
+
+}
                 }
             }
 

@@ -272,6 +272,18 @@ PanelWindow {
                             font.pixelSize: root.fontLabel
                             font.weight: Font.DemiBold
                         }
+
+                        // The whole feature for someone who never opens the
+                        // panel: how many sessions want a keystroke, and how
+                        // many are in trouble. It is already on screen, so it
+                        // costs no attention to read and none to ignore.
+                        Text {
+                            font.family: Theme.glyphFamily
+                            visible: text.length > 0
+                            text: root.agentJudgementSummaryText()
+                            color: root.agentJudgementSummary().alarms > 0 ? colors.amber : colors.textDim
+                            font.pixelSize: root.fontLabel
+                        }
                     }
 
                     MouseArea {
