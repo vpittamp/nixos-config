@@ -277,9 +277,9 @@ lib.mkIf enableClaudeCode {
         ''}";
       };
 
-      # Default to Claude Fable 5 (public Mythos-class model, launched 2026-06-09).
+      # Default to Claude Opus 5.5, the newest model (available from claude-code 2.1.280).
       # Access is server-gated by plan entitlement; Claude Code falls back if unavailable.
-      model = "claude-fable-5";
+      model = "claude-opus-5-5";
       theme = "dark";
       # Terminal UI renderer: "fullscreen" uses the flicker-free alt-screen
       # renderer with virtualized scrollback (equivalent to /tui fullscreen).
