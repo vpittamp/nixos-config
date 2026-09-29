@@ -69,6 +69,10 @@ let
     (key: cmd: { inherit key cmd; hidden = false; } // describeSwayCommand cmd)
     (lib.filterAttrs (key: cmd: cmd != null && !(lib.elem key describedKeys)) swayKeybindings);
   keyNames = {
+    # CapsLock reaches sway as F19 (modules/services/keyd.nix). The sheet is
+    # for a person looking at a keyboard, so it names the key they can see.
+    F19 = "CapsLock";
+    "Shift+F19" = "Shift + CapsLock";
     XF86MonBrightnessUp = "Brightness Up";
     XF86MonBrightnessDown = "Brightness Down";
     XF86KbdBrightnessUp = "Kbd Backlight Up";
@@ -81,10 +85,18 @@ let
     XF86AudioNext = "Next Track";
     XF86AudioPrev = "Previous Track";
   };
-  humanKey = key: keyNames.${key} or (lib.replaceStrings
-    [ "Mod4" "Mod1" "Control" "bracketright" "bracketleft" "backslash" "grave" "slash" "minus" "space" "Return" "Escape" "+" ]
-    [ "Super" "Alt" "Ctrl" "]" "[" "\\" "`" "/" "-" "Space" "Enter" "Esc" " + " ]
-    key);
+  # A bindsym key may carry sway's own flags (`--no-repeat`, `--release`,
+  # `--locked`). They belong to the binding, not to the key a reader presses,
+  # so they come off before the key is named or looked up.
+  bareKey = key: lib.concatStringsSep " "
+    (lib.filter (part: part != "" && !(lib.hasPrefix "--" part))
+      (lib.splitString " " key));
+  humanKey = key:
+    let bare = bareKey key;
+    in keyNames.${bare} or (lib.replaceStrings
+      [ "Mod4" "Mod1" "Control" "bracketright" "bracketleft" "backslash" "grave" "slash" "minus" "space" "Return" "Escape" "+" ]
+      [ "Super" "Alt" "Ctrl" "]" "[" "\\" "`" "/" "-" "Space" "Enter" "Esc" " + " ]
+      bare);
   keybindingEntries = map
     (b: { key = humanKey b.key; raw = b.key; command = b.cmd; description = b.desc; group = b.group; })
     (lib.filter (b: !b.hidden) (describedBindings ++ undescribedBindings));
@@ -3056,6 +3068,12 @@ USAGE
     exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell toggle command '{}'
   '';
 
+  # CapsLock, both edges. The shell decides what a tap and a hold mean — see
+  # commandKeyPress/commandKeyRelease in shell.qml — because push-to-talk needs
+  # the real key release, not a synthesised one.
+  commandKeyPressScript = mkIpcScript "command-key-press" "commandKeyPress" "";
+  commandKeyReleaseScript = mkIpcScript "command-key-release" "commandKeyRelease" "";
+
   toggleVoiceCommandScript = pkgs.writeShellScriptBin "toggle-voice-command" ''
     exec ${runtimeShellIpcScript}/bin/quickshell-runtime-shell-ipc call shell toggle command '{"voice":true}'
   '';
@@ -3972,6 +3990,8 @@ in
       runtimeShellCliScript
       toggleCommandBarScript
       toggleVoiceCommandScript
+      commandKeyPressScript
+      commandKeyReleaseScript
       toggleCommandDebugScript
       voiceTranscriptScript
       toggleKeybindingsHelpScript
@@ -4127,9 +4147,47 @@ in
       # forever), so this only relays the request over IPC — the shell
       # restarts immediately when unlocked or defers to unlock when locked.
       # No flag files: they race with the lock engaging mid-activation.
+      #
+      # The request is deferred until `switch-to-configuration` has exited,
+      # for a reason that cost a working CapsLock to find: the unit's KillMode
+      # is the default control-group, so restarting the shell SIGKILLs every
+      # process in its cgroup — and a rebuild started from a terminal the
+      # shell itself spawned is *in* that cgroup. NixOS activation stops
+      # changed units, runs the activation scripts (this hook), and only then
+      # starts them again, so killing it here leaves every changed system
+      # service stopped. That is exactly how `keyd` ended up dead with its new
+      # config on disk and CapsLock typing capitals again.
+      #
+      # Waiting on the process rather than sleeping a guessed interval: the
+      # window is however long the rest of the activation takes, which is not
+      # a constant. systemd-run puts the wait outside this activation's own
+      # cgroup, so the waiter cannot be killed by the very restart it is
+      # scheduling.
       set -u
       export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-      ${runtimeShellCliScript}/bin/runtime-shell call requestRestart >/dev/null 2>&1 || true
+
+      # No fixed --unit name on purpose: a second rebuild while a waiter is
+      # still pending would collide, systemd-run would fail, and the `||`
+      # fallback below would restart the shell immediately — which is the bug
+      # this hook exists to avoid. An auto-named transient unit per rebuild
+      # costs nothing, and two requests collapse into one restart anyway.
+      ${pkgs.systemd}/bin/systemd-run --user --quiet --collect \
+        --description="Restart the runtime shell once the rebuild finishes" \
+        ${pkgs.bash}/bin/bash -c '
+          # comm is truncated to 15 characters, and the binary is reached
+          # through a NixOS wrapper, so both spellings occur and the journal
+          # shows both: "switch-to-confi" for the wrapper and
+          # ".switch-to-conf" for .switch-to-configuration-wrapped. Matching
+          # on comm rather than the full command line (-f) is deliberate —
+          # -f would match this very script, whose own arguments contain the
+          # pattern, and wait for itself forever.
+          for _ in $(${pkgs.coreutils}/bin/seq 1 300); do
+            ${pkgs.procps}/bin/pgrep -x '"'"'(\.switch-to-conf|switch-to-confi)'"'"' >/dev/null 2>&1 || break
+            ${pkgs.coreutils}/bin/sleep 1
+          done
+          ${runtimeShellCliScript}/bin/runtime-shell call requestRestart >/dev/null 2>&1 || true
+        ' >/dev/null 2>&1 || \
+        ${runtimeShellCliScript}/bin/runtime-shell call requestRestart >/dev/null 2>&1 || true
     '';
 
     home.activation.runtimeShellPostActivationHook = lib.hm.dag.entryAfter [ "writeBoundary" ] ''

@@ -76,8 +76,17 @@ let
         # modules/services/keyd.nix for why F19 and not F20 — xkb hands F20 to
         # XF86AudioMicMute), and CapsLock is the largest key on this keyboard
         # doing the least work.
-        (bind "F19" "exec toggle-command-bar" "Command bar — say what you want in plain words (CapsLock)")
-        (bind "Shift+F19" "exec toggle-voice-command" "Command bar, listening — speak the command (Shift+CapsLock)")
+        # Both edges of CapsLock. A tap opens the bar to type into; holding it
+        # opens the mic and releasing closes it and sends what was said. The
+        # shell owns that distinction (commandKeyPress/commandKeyRelease) —
+        # keyd only passes the key through, so the release is the real one.
+        # `--no-repeat` so autorepeat cannot re-fire the press while held.
+        (bind "--no-repeat F19" "exec command-key-press"
+          "Command bar — tap to type, hold to talk")
+        (hiddenBind "--release F19" "exec command-key-release"
+          "Release CapsLock: end a tap, or end push-to-talk")
+        (bind "--no-repeat Shift+F19" "exec toggle-voice-command"
+          "Command bar, listening — speak the command (hands-free toggle)")
       ] ++ lib.optionals hasRuntimeShell [
         # The same bar, on every host: the keyd remap only exists on the ones
         # that import it.

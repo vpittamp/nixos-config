@@ -50,18 +50,24 @@ apply_layout() {
   "$HOME/.local/bin/lid-clamshell" auto
 }
 
-# Re-apply when the per-output enable/disable preferences change. The Quickshell
-# displays dialog writes output-states.json (via `i3pm display toggle-output`);
-# lid-clamshell reads it to decide which externals stay live. No inotify is
-# available here, so poll the file's mtime. The first observation only records
-# the baseline (no apply), so this never double-applies at startup.
+# Re-apply when the per-output enable/disable preferences change or when the
+# laptop lid state changes. The Quickshell displays dialog writes output-states.json
+# (via `i3pm display toggle-output`); lid-clamshell reads it to decide which
+# externals stay live. Watching the lid state here guarantees that opening or
+# closing the laptop recovers within 1s even if Sway's lid bindswitch is missed.
 watch_output_states() {
   local last_mtime="" cur_mtime
+  local last_lid="" cur_lid
   while :; do
     cur_mtime="$(stat -c %Y "$STATE_FILE" 2>/dev/null || echo "")"
+    cur_lid="$(cat /proc/acpi/button/lid/*/state 2>/dev/null || echo "")"
     if [ -n "$cur_mtime" ] && [ "$cur_mtime" != "$last_mtime" ]; then
       [ -n "$last_mtime" ] && apply_layout
       last_mtime="$cur_mtime"
+    fi
+    if [ -n "$cur_lid" ] && [ "$cur_lid" != "$last_lid" ]; then
+      [ -n "$last_lid" ] && apply_layout
+      last_lid="$cur_lid"
     fi
     sleep 1
   done

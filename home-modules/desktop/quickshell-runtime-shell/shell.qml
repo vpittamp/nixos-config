@@ -27,6 +27,7 @@ ShellRoot {
 
     readonly property var commandField: commandBarWindow ? commandBarWindow.commandFieldRef : null
     readonly property var commandBarFocusTimer: runtimeServices ? runtimeServices.commandBarFocusTimerRef : null
+    readonly property var commandKeyHoldTimer: runtimeServices ? runtimeServices.commandKeyHoldTimerRef : null
     readonly property var commandPlanDebounce: runtimeServices ? runtimeServices.commandPlanDebounceRef : null
     readonly property var commandRunProcess: runtimeServices ? runtimeServices.commandRunProcessRef : null
     readonly property var commandPlanProcess: runtimeServices ? runtimeServices.commandPlanProcessRef : null
@@ -2483,7 +2484,10 @@ ShellRoot {
         const name = stringOrEmpty(output && output.name);
         const make = stringOrEmpty(output && output.make).toLowerCase();
         const model = stringOrEmpty(output && output.model).toLowerCase();
-        if (name === "eDP-1" || make.indexOf("boe") !== -1) {
+        if (name === "eDP-1" || make.indexOf("boe") !== -1 || make.indexOf("panasonic") !== -1) {
+            if (shellConfig.hostName && shellConfig.hostName.indexOf("surface") !== -1) {
+                return "Surface";
+            }
             return "ThinkPad";
         }
         if (model.indexOf("verbatim") !== -1 || model.indexOf("mt17") !== -1) {
@@ -2491,6 +2495,9 @@ ShellRoot {
         }
         if (make.indexOf("samsung") !== -1 || model.indexOf("samsung") !== -1) {
             return "Samsung";
+        }
+        if (make.indexOf("hewlett") !== -1 || make.indexOf("hp") !== -1 || model.indexOf("e202") !== -1 || model.indexOf("hp") !== -1) {
+            return "HP E202";
         }
         return name;
     }
@@ -2504,6 +2511,9 @@ ShellRoot {
         if (make.indexOf("samsung") !== -1 || model.indexOf("samsung") !== -1) {
             return "samsung";
         }
+        if (make.indexOf("hewlett") !== -1 || make.indexOf("hp") !== -1 || model.indexOf("e202") !== -1 || model.indexOf("hp") !== -1) {
+            return "hp";
+        }
         return "";
     }
 
@@ -2511,6 +2521,7 @@ ShellRoot {
         // Role-based presets, resolved deterministically by lid-clamshell.
         return [
             { id: "all", label: "All" },
+            { id: "hp", label: "+ HP Monitor" },
             { id: "verbatim", label: "+ Verbatim" },
             { id: "samsung", label: "+ Samsung" },
             { id: "laptop", label: "Laptop only" }
@@ -2518,16 +2529,18 @@ ShellRoot {
     }
 
     function displayRolesPresent(outputs) {
-        let verb = false, sam = false;
+        let verb = false, sam = false, hp = false;
         for (let i = 0; i < outputs.length; i += 1) {
             const role = displayRoleOfOutput(outputs[i]);
             if (role === "verbatim") {
                 verb = true;
             } else if (role === "samsung") {
                 sam = true;
+            } else if (role === "hp") {
+                hp = true;
             }
         }
-        return { verbatim: verb, samsung: sam };
+        return { verbatim: verb, samsung: sam, hp: hp };
     }
 
     function activeDisplayPresetId() {
@@ -2535,6 +2548,9 @@ ShellRoot {
         const roles = displayRolesPresent(displayMapOutputs());
         if (roles.verbatim && roles.samsung) {
             return "all";
+        }
+        if (roles.hp) {
+            return "hp";
         }
         if (roles.verbatim) {
             return "verbatim";
@@ -2548,6 +2564,9 @@ ShellRoot {
     function displayPresetAvailable(presetId) {
         // Only offer presets whose monitor is actually connected.
         const roles = displayRolesPresent(allDisplayOutputs());
+        if (presetId === "hp") {
+            return roles.hp;
+        }
         if (presetId === "verbatim") {
             return roles.verbatim;
         }
@@ -2555,7 +2574,7 @@ ShellRoot {
             return roles.samsung;
         }
         if (presetId === "all") {
-            return roles.verbatim || roles.samsung;
+            return roles.verbatim || roles.samsung || roles.hp;
         }
         return true; // "laptop" is always available
     }
@@ -8894,6 +8913,53 @@ function normalizeLauncherMode(mode) {
         // Keep polling briefly: the last words land after the mic closes, and
         // the transcript poll is what submits them.
         commandVoiceSettleTimer.restart();
+    }
+
+    // ---- push to talk ------------------------------------------------------
+    // CapsLock reaches us as F19 (modules/services/keyd.nix), bound on both
+    // press and release so the *shell* decides what a tap and a hold mean.
+    // keyd could discriminate them itself with timeout(), but its hold action
+    // would have to stay held for the whole press for push-to-talk to see a
+    // release, and a plain remap passing the real press and release through is
+    // a guarantee rather than a hope. It is also the pattern the Alt-Tab and
+    // Super-Tab rings already use.
+    //
+    // Tap: the text bar, as before. Hold: the mic opens while the key is down
+    // and closes when it comes up, which is what a held key means everywhere
+    // else. Release goes through stopCommandVoice(), so the settle timer still
+    // collects the tail of the sentence voxtype has yet to write and submits
+    // it — releasing ends the recording, it does not discard it.
+    property bool commandKeyVoiceHold: false
+
+    function commandKeyPress() {
+        if (commandKeyHoldTimer.running || commandKeyVoiceHold) {
+            return;
+        }
+        commandKeyHoldTimer.restart();
+    }
+
+    function commandKeyHoldReached() {
+        commandKeyVoiceHold = true;
+        if (!commandBarVisible) {
+            showCommandBar({ "voice": true });
+        } else if (!commandVoice) {
+            startCommandVoice();
+        }
+    }
+
+    function commandKeyRelease() {
+        if (commandKeyHoldTimer.running) {
+            // Came up before the threshold: an ordinary tap.
+            commandKeyHoldTimer.stop();
+            toggleSurface("command", "{}");
+            return;
+        }
+        if (commandKeyVoiceHold) {
+            commandKeyVoiceHold = false;
+            if (commandVoice) {
+                stopCommandVoice();
+            }
+        }
     }
 
     function toggleCommandVoice() {

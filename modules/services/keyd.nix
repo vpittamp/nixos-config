@@ -32,9 +32,22 @@
             #
             # <FK19> is the one key in that range that resolves to a plain
             # F19 — in the base inet block and in every vendor file.
-            # Shift+CapsLock (Shift+F19) opens the same bar listening.
             # Caps-locking itself is gone, which is the point: it was the
             # largest key on the keyboard doing the least work.
+            #
+            # A plain remap, both edges passed through: sway binds F19 on
+            # press AND on release, and the shell decides what a tap and a
+            # hold mean (commandKeyPress/commandKeyRelease in shell.qml).
+            #
+            # This was briefly `timeout(f19, 250, S-f19)`, which let keyd do
+            # the discrimination. That is the wrong layer for it. Push-to-talk
+            # needs the mic to close when the key comes up, so it needs a real
+            # release event for the whole duration of the press — and whether
+            # keyd's hold action stays held or fires once is not something the
+            # config can state. A straight remap makes the press and release
+            # the hardware's own, which is a guarantee. It also keeps the
+            # tap/hold threshold next to the behaviour it governs instead of
+            # in a different module.
             capslock = "f19";
           };
         };

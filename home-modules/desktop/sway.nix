@@ -173,6 +173,8 @@ let
       else if role == "secondary" then "HDMI-A-1"
       else if role == "tertiary" then "DP-2"
       else "DP-3"
+    else if hostName == "surface" then
+      if role == "secondary" then "DP-3" else "eDP-1"
     else
       # Laptop default: everything on eDP-1, optional HDMI for secondary
       if role == "secondary" then "HDMI-A-1" else "eDP-1";
@@ -335,10 +337,101 @@ let
       ];
     };
   };
+  surfaceMonitorProfiles = {
+    extended = {
+      name = "extended";
+      description = "Extended desktop (HP E202 above Surface Laptop)";
+      default = true;
+      outputs = [
+        {
+          name = "DP-3";
+          enabled = true;
+          scale = 1.0;
+          position = {
+            x = 0;
+            y = 0;
+            width = 1600;
+            height = 900;
+          };
+        }
+        {
+          name = "eDP-1";
+          enabled = true;
+          scale = 1.5;
+          position = {
+            x = 0;
+            y = 900;
+            width = 2256;
+            height = 1504;
+          };
+        }
+      ];
+    };
+    clamshell = {
+      name = "clamshell";
+      description = "External HP monitor only (DP-3)";
+      outputs = [
+        {
+          name = "DP-3";
+          enabled = true;
+          scale = 1.0;
+          position = {
+            x = 0;
+            y = 0;
+            width = 1600;
+            height = 900;
+          };
+        }
+        {
+          name = "eDP-1";
+          enabled = false;
+          scale = 1.5;
+          position = {
+            x = 0;
+            y = 900;
+            width = 2256;
+            height = 1504;
+          };
+        }
+      ];
+    };
+    laptop = {
+      name = "laptop";
+      description = "Surface Laptop built-in display only (eDP-1)";
+      outputs = [
+        {
+          name = "eDP-1";
+          enabled = true;
+          scale = 1.5;
+          position = {
+            x = 0;
+            y = 0;
+            width = 2256;
+            height = 1504;
+          };
+        }
+        {
+          name = "DP-3";
+          enabled = false;
+          scale = 1.0;
+          position = {
+            x = 0;
+            y = 0;
+            width = 1600;
+            height = 900;
+          };
+        }
+      ];
+    };
+  };
   managedMonitorProfiles =
-    if isRyzen then ryzenMonitorProfiles else { };
+    if isRyzen then ryzenMonitorProfiles
+    else if hostName == "surface" then surfaceMonitorProfiles
+    else { };
   managedProfileDefault =
-    if isRyzen then "default" else "";
+    if isRyzen then "default"
+    else if hostName == "surface" then "extended"
+    else "";
   hasManagedMonitorProfiles = (builtins.length (builtins.attrNames managedMonitorProfiles)) > 0;
 
   # Generate profile files for headless mode
@@ -347,6 +440,7 @@ let
       name = "sway/monitor-profiles/${name}.json";
       value = {
         text = builtins.toJSON (managedMonitorProfiles.${name});
+        force = true;
       };
     }) (builtins.attrNames managedMonitorProfiles));
   # Feature 001: Import validated application definitions with monitor role preferences
@@ -363,6 +457,8 @@ let
     fallbackOutputs = primary:
       if isRyzen then
         builtins.filter (o: o != primary) [ "DP-1" "HDMI-A-1" "DP-2" "DP-3" ]
+      else if hostName == "surface" then
+        builtins.filter (o: o != primary) [ "eDP-1" "DP-3" ]
       else
         builtins.filter (o: o != primary) [ "eDP-1" "HDMI-A-1" ];
 
@@ -512,7 +608,7 @@ in
           scale = "1.25";
           position = "0,0";
         };
-      } else {
+      } else ({
         # Standard laptop display.
         # ThinkPad: 1920x1200 @ ~162 PPI — 1.25 gives comfortable UI size.
         # Surface Laptop 2: 2256x1504 @ ~201 PPI — at 1.25 the effective density
@@ -524,7 +620,7 @@ in
         # so it takes the same 1.5 (1440x960 logical, ~144 effective DPI).
         "eDP-1" = {
           scale = if hiDpiPanel then "1.5" else "1.25";
-          position = "0,0";
+          position = if hostName == "surface" then "0,900" else "0,0";
         };
 
         # External monitor (auto-detect, 1:1 scaling), right of the built-in
@@ -537,7 +633,14 @@ in
             else if hostName == "surface-pro3" then "1440,0"
             else "1536,0";
         };
-      };
+      } // lib.optionalAttrs (hostName == "surface") {
+        # HP E202 external monitor directly above the Surface Laptop panel (1600x900 @ 1.0x native)
+        "DP-3" = {
+          scale = "1.0";
+          mode = "1600x900@60Hz";
+          position = "0,0";
+        };
+      });
 
       # Input configuration (FR-006)
       input =
@@ -1257,6 +1360,10 @@ in
           HDMI-A-1
           DP-1
           DP-2
+        ''
+        else if hostName == "surface" then ''
+          DP-3
+          eDP-1
         ''
         else ''
           eDP-1

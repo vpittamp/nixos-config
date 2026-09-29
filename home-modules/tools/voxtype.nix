@@ -15,10 +15,11 @@
 # auto-stopped within ~1s. Toggle mode makes external toggles authoritative so
 # recording holds until you stop it.
 #
-# Accuracy notes:
-# - The default packaged binary is the Vulkan build, so whisper.cpp runs
-#   GPU-accelerated on the Intel iGPU. That headroom lets us run
-#   large-v3-turbo instead of a smaller/faster but less accurate model.
+# Accuracy and latency notes:
+# - The packaged binary is the ONNX (AVX2) build and the engine is Parakeet.
+#   The Vulkan/whisper.cpp pairing it replaced was GPU-accelerated and still
+#   took ~35s for a 3.5s command, because Whisper pads to a 30-second window
+#   whatever you say; see `parakeetModel` below for the measurements.
 # - The model file itself is runtime data managed by voxtype under
 #   ~/.local/share/voxtype/models; only the engine/model selection is
 #   declarative here.
@@ -27,9 +28,28 @@
 # - [text].replacements deterministically fixes domain terms whisper mis-hears.
 { pkgs, ... }:
 let
-  # Whisper model selection. Shared between the config.toml below and the
-  # ExecStartPre bootstrap so the declared model and the auto-downloaded file
-  # can never drift. voxtype stores it as ggml-<model>.bin under the models dir.
+  # The transcription engine. Parakeet, not Whisper, and the reason is latency
+  # rather than taste: Whisper pads every clip to a fixed 30-second window, so
+  # transcription cost is constant regardless of how short the utterance was.
+  # Measured on this machine with the daemon's model already resident:
+  #
+  #   3.5s of audio -> 35.4s     11s of audio -> 33.3s    (whisper large-v3-turbo)
+  #   3.5s of audio ->  0.48s    11s of audio ->  1.42s   (parakeet-tdt-0.6b-v3-int8)
+  #
+  # ~70x on a spoken command, and the cost is finally proportional to what was
+  # said. Accuracy does not pay for it: Parakeet v3 scores 6.34% WER on the
+  # Open ASR Leaderboard against Whisper large-v3's ~7.4%. It is also a 640 MB
+  # int8 model rather than a 1.6 GB one, which is most of a gigabyte back on a
+  # 7.7 GB laptop.
+  #
+  # Requires the `onnx-avx2` build (see packages/voxtype.nix) — the Whisper-only
+  # variants do not carry this engine. English-heavy use is the assumption:
+  # Parakeet covers 25 languages to Whisper's 99, so a host that needs the long
+  # tail should set engine = "whisper" and accept the latency.
+  parakeetModel = "parakeet-tdt-0.6b-v3-int8";
+
+  # Kept for the fallback path and the bootstrap, so a machine that switches
+  # back to Whisper still finds its weights.
   whisperModel = "large-v3-turbo";
 
   # Model files are runtime data (not declaratively managed by Nix), so a fresh
@@ -43,12 +63,13 @@ let
     models_dir="''${XDG_DATA_HOME:-$HOME/.local/share}/voxtype/models"
     voxtype=/run/current-system/sw/bin/voxtype
 
-    if [ ! -f "$models_dir/ggml-${whisperModel}.bin" ]; then
-      echo "voxtype: whisper model '${whisperModel}' missing, downloading..." >&2
+    # Parakeet lands as a directory of .onnx files, not a single ggml blob.
+    if [ ! -d "$models_dir/${parakeetModel}" ]; then
+      echo "voxtype: parakeet model '${parakeetModel}' missing, downloading..." >&2
       # `setup` also tries to rewrite the home-manager-managed (read-only)
-      # config.toml and exits non-zero on that; the model file itself is still
+      # config.toml and exits non-zero on that; the model itself is still
       # saved, so we tolerate the failure.
-      "$voxtype" setup --download --model ${whisperModel} --quiet || true
+      "$voxtype" setup --download --model ${parakeetModel} --quiet || true
     fi
 
     if [ ! -f "$models_dir/ggml-silero-vad.bin" ]; then
@@ -203,7 +224,7 @@ in
   };
 
   xdg.configFile."voxtype/config.toml".text = ''
-    engine = "whisper"
+    engine = "parakeet"
     state_file = "auto"
 
     [hotkey]
@@ -223,6 +244,12 @@ in
     [osd]
     enabled = false
 
+    [parakeet]
+    model = "${parakeetModel}"
+
+    # Kept so switching `engine` back to "whisper" needs no other edit. The
+    # weights are no longer downloaded by default; `voxtype setup --download
+    # --model ${whisperModel}` fetches them.
     [whisper]
     model = "${whisperModel}"
     language = "en"

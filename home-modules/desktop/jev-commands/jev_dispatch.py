@@ -142,7 +142,7 @@ def build_questions(spec: dict[str, Any]) -> dict[str, Any]:
                     "type": "choice",
                     "instructions": meta["question"],
                     "criteria": {
-                        option: body.get("description") or option
+                        option: option_criterion(option, body)
                         for option, body in meta["options"].items()
                     },
                 }
@@ -155,6 +155,22 @@ def build_questions(spec: dict[str, Any]) -> dict[str, Any]:
 
 # --------------------------------------------------------------------------
 # reading the answers back
+
+
+def option_criterion(option: str, body: dict[str, Any]) -> Any:
+    """What one option of a choice says to the model.
+
+    Usually a sentence. TypeSafe also accepts an object per option, and its
+    field names are not reserved — `what` / `not_for` / `examples` is the
+    documented remedy for options that sit next to each other in meaning, where
+    a sentence apiece leaves the probability split between them. Passed through
+    untouched so the catalogs can reach for it per option rather than per
+    argument, and so an option that needs no help stays one line.
+    """
+    description = body.get("description")
+    if isinstance(description, dict):
+        return description
+    return description or option
 
 
 def resolve_arguments(

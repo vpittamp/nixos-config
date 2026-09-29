@@ -39,7 +39,8 @@ home-modules/       # User environment
 | `Mod+grave` / `Mod+Escape` | Cycle focused app's windows / toggle last window (no UI) |
 | `Mod+Shift+D` | Cast toggle — TV as wireless display / stop |
 | `CapsLock` / `Mod+Ctrl+Space` | Command bar — say what you want in plain words |
-| `Shift+CapsLock` | Command bar, listening (voice) |
+| `CapsLock` (hold) | Push to talk — mic opens while held, releasing sends it |
+| `Shift+CapsLock` | Command bar, listening (hands-free toggle) |
 | `Mod+Ctrl+K` | Keybinding cheat sheet (launcher "Keys" mode; also `Ctrl+6` / `;k` inside the launcher) |
 
 Bindings are declared once in `home-modules/desktop/sway-keybindings-data.nix`
@@ -186,9 +187,20 @@ Ctrl+Alt+F2, unlock by ending the session (`loginctl terminate-session
 ## Natural-Language Command Bar (`jev`)
 
 `CapsLock` opens a text bar; type or speak one line and it runs one of this
-desktop's own commands. `Shift+CapsLock` opens it already listening.
+desktop's own commands. **Holding** `CapsLock` is push-to-talk: the mic opens
+after 250ms and closes when you let go, and the sentence dispatches on its own
+once voxtype's transcript settles. `Shift+CapsLock` is the hands-free
+equivalent — it toggles listening and stays on until you speak or press Esc.
 `Super+Ctrl+Space` / `Super+Ctrl+Shift+Space` are the same two on hosts without
-keyd. CapsLock reaches sway as `F19` because a lock key cannot be bound —
+keyd.
+
+keyd only remaps the key (`capslock = f19`); sway binds `F19` on **both** press
+and release and the shell decides what a tap and a hold mean
+(`commandKeyPress` / `commandKeyRelease` in `shell.qml`). Push-to-talk needs a
+real key release for the whole duration of the press, which a plain remap
+guarantees and keyd's `timeout()` hold action does not — it is also the pattern
+the Alt-Tab and Super-Tab rings already use. CapsLock reaches sway as `F19`
+because a lock key cannot be bound —
 `modules/services/keyd.nix` does the remap, so **caps-locking is gone** on
 every host that imports keyd (thinkpad, surface, surface-pro3). It is `F19`
 and not `F20` because xkb's `symbols/inet` hands `<FK20>` to
@@ -239,6 +251,16 @@ home-modules/desktop/jev-commands/
   default.nix        options, spec generation, the `jev` wrapper
   jev_dispatch.py    questions -> one API call -> argv -> run
 ```
+
+Home Assistant's half of the catalog is generated at *runtime* instead
+(`ha_catalog.py`), because a house changes without a rebuild. Top-down/bottom-up
+shades are two entities per window, so identity and rail are asked separately:
+"shade 1" picks the window, and a second yes/no asks whether a rail was named at
+all — it usually is not, and the default that stands is the **bottom** rail.
+Height is its own function (`set_shade_position`), so "open shade 1 to 25%"
+resolves. Option criteria there are structured (`what` / `not_for` /
+`examples`), which is what separates 25% from a crack, and stopping a shade from
+closing it; the comments in that file carry the measurements behind each level.
 
 The catalog's option sets come from the same files the rest of the desktop
 reads — `app-registry-data.nix` for `launch_app`, `themes.nix` for `set_theme`,

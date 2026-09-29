@@ -16,7 +16,9 @@ Two things the entity list will not give you for free:
 
   Covers are named "Shade 5 Top", which says nothing about where they are —
   the room is in the entity_id (`cover.living_room_shade_5_top`) and nowhere
-  else. So descriptions are built from both.
+  else. So descriptions are built from both. They also come in rail pairs, one
+  window per two entities; see `rail_pairs` for why that is split apart rather
+  than offered as ten flat choices.
 
   Half the media players are duplicates or unplugged. An option the model can
   pick but the house cannot act on is worse than no option, so anything
@@ -41,6 +43,18 @@ from jev_api import JevError, hass_token
 # than anything a person asks for out loud. `button.*` here is almost entirely
 # "Shade 4 Calibrate" and "Shade 4 Identify".
 SKIP_NAME = re.compile(r"\b(calibrate|identify|firmware|update|restart|reboot)\b", re.IGNORECASE)
+
+# A top-down/bottom-up shade is one window and two entities: "Shade 1 Bottom"
+# rises from the sill, "Shade 1 Top" comes down from the head. Both answer to
+# "shade 1", so offering all ten as flat choices made "open shade 1" a coin
+# flip between two options that mean almost the same thing — and a split
+# distribution is exactly what the confidence gate stops the bar on, on a
+# sentence that was never ambiguous to the person who said it.
+RAIL = re.compile(r"^(?P<stem>.+)_(?P<rail>top|bottom)$")
+
+# The rail word trailing a friendly name, so "Shade 1 Bottom" can be asked
+# about as the whole window rather than one of its halves.
+TRAILING_RAIL = re.compile(r"\s*\b(top|bottom)\b\s*$", re.IGNORECASE)
 
 # Rooms, recovered from the entity_id because the friendly names do not always
 # carry them. Longest first so `master_bedroom` wins over `bedroom`.
@@ -121,6 +135,54 @@ def areas_with(entities: list[dict[str, Any]], domain: str) -> dict[str, list[st
     return grouped
 
 
+def rail_pairs(
+    entities: list[dict[str, Any]]
+) -> tuple[dict[str, dict[str, dict[str, Any]]], list[dict[str, Any]]]:
+    """Covers split into rail-paired shades and everything else.
+
+    A stem counts as a shade only when BOTH rails are present, because the argv
+    composes `<stem>_<rail>`: a stem missing its partner would compose an entity
+    id that does not exist, which is the one thing a closed set is supposed to
+    make impossible. A lone rail is therefore demoted to an ordinary cover and
+    named in full, and a house of plain blinds produces no shade functions at
+    all rather than a broken one.
+    """
+    stems: dict[str, dict[str, dict[str, Any]]] = {}
+    singles: list[dict[str, Any]] = []
+    for entity in entities:
+        entity_id = entity["entity_id"]
+        if not entity_id.startswith("cover.") or not usable(entity):
+            continue
+        match = RAIL.match(entity_id)
+        if match:
+            stems.setdefault(match["stem"], {})[match["rail"]] = entity
+        else:
+            singles.append(entity)
+
+    paired: dict[str, dict[str, dict[str, Any]]] = {}
+    for stem, rails in sorted(stems.items()):
+        if "top" in rails and "bottom" in rails:
+            paired[stem] = rails
+        else:
+            singles.extend(rails.values())
+    return paired, singles
+
+
+def describe_shade(stem: str, rails: dict[str, dict[str, Any]]) -> str:
+    """What one whole shade — both rails — is called.
+
+    The friendly name belongs to a rail ("Shade 1 Bottom"), so the rail word is
+    dropped: the choice is naming a window, and the rail is a separate question.
+    """
+    bottom = rails["bottom"]
+    name = (bottom.get("attributes") or {}).get("friendly_name") or stem.split(".", 1)[1]
+    name = TRAILING_RAIL.sub("", name).strip() or name
+    area = area_of(stem)
+    if area and area.split()[-1].lower() not in name.lower():
+        return f"{name}, in the {area}"
+    return name
+
+
 def build(entities: list[dict[str, Any]], call_bin: str) -> dict[str, Any]:
     functions: dict[str, Any] = {}
 
@@ -192,32 +254,198 @@ def build(entities: list[dict[str, Any]], call_bin: str) -> dict[str, Any]:
                                   "turn_off": {"description": "off, disable, stop it"},
                                   "toggle": {"description": "flip it"}}}})
 
-    covers = options_for(entities, "cover")
-    if covers:
-        fn("move_cover", "Open or close a blind or shade",
-           "Raise, lower or stop a window covering — a shade, a blind, a curtain.",
-           [call_bin, "cover", "%action%", "%cover%"],
-           {"cover": {"type": "choice", "question": "Which shade or blind did they mean?",
-                      "options": covers},
-            "action": {"type": "choice", "question": "Should it go up, down, or stop?",
-                       "options": {"open_cover": {"description": "open, up, raise, let the light in"},
-                                   "close_cover": {"description": "close, down, lower, shut it"},
-                                   "stop_cover": {"description": "stop, halt it where it is"}}}})
+    # ---- window coverings ------------------------------------------------
+    # Three things the flat "pick one of ten entities" shape got wrong, and
+    # what replaces each:
+    #
+    #   "open shade 1" had to choose between Shade 1 Top and Shade 1 Bottom on
+    #   descriptions that differ by one word. Identity and rail are now two
+    #   questions: which shade (unambiguous — the numbers are unique house-wide)
+    #   and, separately, whether the sentence named a rail at all. It usually
+    #   did not, and the default that stands is the bottom rail, which is what
+    #   "the shade" means to the person saying it.
+    #
+    #   "open shade 1 to 25%" could not be said at all — the only actions were
+    #   open, close and stop, though every one of these reports SET_POSITION.
+    #   Height is its own function for the same reason `dim_light` is separate
+    #   from `set_light`: an action argument that silently changes which service
+    #   is called is a coupling two answers have to agree on.
+    #
+    #   Room-wide commands moved both rails, so "open the living room shades"
+    #   also raised the upper halves nobody asked about.
+    paired, singles = rail_pairs(entities)
 
-    cover_areas = areas_with(entities, "cover")
+    # Shared by both shade functions. `default` is a *value*, not an option key
+    # — it is substituted into the argv untouched — so it spells the suffix.
+    rail = {
+        "type": "choice",
+        "question": "Did they mean the lower half of the shade or the upper half?",
+        "options": {
+            "bottom": {"value": "_bottom",
+                       "description": "The lower half, which rises from the window sill. This is "
+                                      "the one a bare 'shade 3' means, with no rail named"},
+            "top": {"value": "_top",
+                    "description": "The upper half, which comes down from the top of the window. "
+                                   "Only when the command says top or upper"},
+        },
+        "stated": "Does the command actually say top or bottom — upper or lower — "
+                  "rather than just naming the shade?",
+        "default": "_bottom",
+    }
+
+    # Round numbers people say out loud, as structured criteria: TypeSafe
+    # accepts an object per option and reserves none of its field names, which
+    # is the documented way to separate options that sit next to each other in
+    # meaning.
+    #
+    # Levels were chosen by measuring, not by taste. A 10 percent level reads
+    # as the same vague "barely open" idea as 25 and split the user's own
+    # example — "open shade 1 to 25%" — 0.62/0.37, then 0.52/0.47 once both
+    # descriptions led with their numeral, and still only reached 0.60 with
+    # `not_for` clauses holding them apart. Dropping it and folding "a crack"
+    # into the quarter puts that sentence at 0.89 and lifts 75 percent from
+    # 0.77 to 0.85. 90 survives the same test at 0.69 because "nearly all the
+    # way up" and "fully open" are further apart than a crack and a quarter.
+    #
+    # A closed set cannot spell 43%, so the question asks for the nearest
+    # instead of pretending otherwise. TypeSafe's Score primitive would
+    # interpolate it — its probability-weighted mean across ordered levels is
+    # very nearly a percentage — but the fraction it returns measures the
+    # model's *uncertainty between adjacent levels*, not a quantity someone
+    # asked for, and reading it as a position would mean exempting this
+    # argument from the confidence gate every other one obeys. A shade 7% off
+    # is not worth that hole.
+    position = {
+        "type": "choice",
+        "question": "How far open should the shade end up? Pick the nearest.",
+        "options": {
+            "0": {"description": {
+                "what": "Fully closed, all the way down, the window completely covered",
+                "examples": ["shut the shade", "all the way down", "close it completely"]}},
+            "25": {"description": {
+                "what": "A quarter of the way up — also a crack, barely open. Around 25 percent",
+                "examples": ["25%", "a quarter of the way", "to 25 percent",
+                             "just a crack", "barely open"]}},
+            "50": {"description": {
+                "what": "Halfway — half open, the middle. Around 50 percent",
+                "not_for": "75 percent, which is three quarters; a stray 5 elsewhere in the "
+                           "sentence, such as a shade's number, is not the position",
+                "examples": ["halfway", "half open", "50%", "to the middle"]}},
+            "75": {"description": {
+                "what": "Three quarters of the way up. Around 75 percent",
+                "not_for": "Half open, which is 50, or nearly all the way up, which is nearer 90",
+                "examples": ["75%", "to 75 percent", "three quarters of the way",
+                             "open shade 5 to 75%", "mostly open"]}},
+            "90": {"description": {
+                "what": "Nearly all the way up, but not fully. Around 90 percent",
+                "not_for": "Three quarters, which is nearer 75, or fully open, which is 100",
+                "examples": ["90%", "nearly all the way up", "almost fully open"]}},
+            "100": {"description": {
+                "what": "Fully open, all the way up, the window uncovered",
+                "examples": ["all the way up", "wide open", "100 percent", "fully open"]}},
+        },
+    }
+
+    # The exclusions have to be symmetric. With one only on `stop`, "stop shade
+    # 1" still went to `close` at 0.59 — "shut it" reads as a plausible gloss of
+    # "stop it", and nothing on the close side said otherwise. Each option now
+    # names what it is not, which is what separates a command about ending up
+    # covered from one about interrupting movement.
+    move_actions = {
+        "type": "choice",
+        "question": "What should the shade do?",
+        "options": {
+            "open_cover": {"description": {
+                "what": "Raise it all the way up, uncovering the window",
+                "not_for": "Halting a shade that is already moving, which is stop",
+                "examples": ["open it", "put it up", "raise shade 1", "let the light in"]}},
+            "close_cover": {"description": {
+                "what": "Lower it all the way down, covering the window",
+                "not_for": "Halting a shade that is already moving, which is stop — closing is "
+                           "about where it ends up, not about interrupting it",
+                "examples": ["close it", "put it down", "shut the shade", "block the light"]}},
+            "stop_cover": {"description": {
+                "what": "Halt a shade that is moving right now and leave it wherever it has "
+                        "got to, neither open nor shut",
+                "not_for": "Lowering or closing the shade; stopping names the interruption, "
+                           "not the end position",
+                "examples": ["stop", "stop shade 1", "halt it", "stop the shade there",
+                             "that is far enough"]}},
+        },
+    }
+
+    if paired:
+        shades = {stem: {"description": describe_shade(stem, rails)}
+                  for stem, rails in paired.items()}
+        which_shade = {"type": "choice", "question": "Which shade did they name?",
+                       "options": shades}
+
+        fn("move_shade", "Open or close a shade",
+           "Raise, lower or stop one named shade — open shade 1, close shade 3, stop "
+           "it there. Use this when the command names no particular height.",
+           [call_bin, "cover", "%action%", "%shade%%rail%"],
+           {"shade": which_shade, "rail": rail, "action": move_actions})
+
+        fn("set_shade_position", "Set a shade to a particular height",
+           "Put one named shade at a particular height rather than fully open or shut "
+           "— open shade 1 to 25 percent, put shade 3 halfway, bring shade 2 down to a "
+           "quarter. Use this whenever a fraction or a percentage is named.",
+           [call_bin, "cover", "set_cover_position", "%shade%%rail%", "position=%position%"],
+           {"shade": which_shade, "rail": rail, "position": position})
+
+    if singles:
+        # Anything without a rail partner: a plain blind, a curtain, or half a
+        # shade whose other rail is unavailable. Named in full, no rail question.
+        covers = {entity["entity_id"]: {"description": describe(entity)}
+                  for entity in sorted(singles, key=lambda e: e["entity_id"])}
+        which_cover = {"type": "choice", "question": "Which blind or curtain did they mean?",
+                       "options": covers}
+
+        fn("move_cover", "Open or close a blind or curtain",
+           "Raise, lower or stop a window covering that is one piece — a roller blind, "
+           "a curtain — rather than a two-rail shade.",
+           [call_bin, "cover", "%action%", "%cover%"],
+           {"cover": which_cover, "action": move_actions})
+
+        fn("set_cover_position", "Set a blind or curtain to a particular height",
+           "Put a one-piece window covering at a particular height rather than fully "
+           "open or shut.",
+           [call_bin, "cover", "set_cover_position", "%cover%", "position=%position%"],
+           {"cover": which_cover, "position": position})
+
+    # Room-wide. The targets are the bottom rails plus any one-piece covers:
+    # "open the living room shades" means the halves that cover the window, not
+    # the upper ones. A top rail is reached by naming its shade, which is the
+    # same rule the single-shade functions follow. (The rail cannot be a
+    # separate argument here the way it is above, because a room expands to a
+    # list of entity ids and a list cannot be composed inside a token.)
+    cover_areas: dict[str, list[str]] = {}
+    for stem, rails in paired.items():
+        area = area_of(stem)
+        if area:
+            cover_areas.setdefault(area, []).append(rails["bottom"]["entity_id"])
+    for entity in singles:
+        area = area_of(entity["entity_id"])
+        if area:
+            cover_areas.setdefault(area, []).append(entity["entity_id"])
+
     if cover_areas:
-        fn("move_room_covers", "Open or close every blind in a room",
+        which_room = {"type": "choice", "question": "Which room's shades?",
+                      "options": {area: {"description": f"every shade in the {area}",
+                                         "value": sorted(ids)}
+                                  for area, ids in sorted(cover_areas.items())}}
+
+        fn("move_room_covers", "Open or close every shade in a room",
            "Raise or lower all of the shades in a whole room at once, rather than one "
            "named shade.",
            [call_bin, "cover", "%action%", "%room%"],
-           {"room": {"type": "choice", "question": "Which room's shades?",
-                     "options": {area: {"description": f"every shade in the {area}",
-                                        "value": ids}
-                                 for area, ids in sorted(cover_areas.items())}},
-            "action": {"type": "choice", "question": "Up or down?",
-                       "options": {"open_cover": {"description": "open, up, raise"},
-                                   "close_cover": {"description": "close, down, lower"},
-                                   "stop_cover": {"description": "stop them"}}}})
+           {"room": which_room, "action": move_actions})
+
+        fn("set_room_cover_position", "Set every shade in a room to a height",
+           "Put all of a room's shades at the same particular height — the living room "
+           "shades halfway, the bedroom shades to a quarter.",
+           [call_bin, "cover", "set_cover_position", "%room%", "position=%position%"],
+           {"room": which_room, "position": position})
 
     players = options_for(entities, "media_player")
     if players:

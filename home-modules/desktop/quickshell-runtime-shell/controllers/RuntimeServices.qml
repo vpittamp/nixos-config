@@ -21,6 +21,7 @@ Item {
     property alias lidPolicyRestartTimerRef: lidPolicyRestartTimer
     property alias launcherFocusTimerRef: launcherFocusTimer
     property alias commandBarFocusTimerRef: commandBarFocusTimer
+    property alias commandKeyHoldTimerRef: commandKeyHoldTimer
     property alias commandPlanDebounceRef: commandPlanDebounce
     property alias commandRunProcessRef: commandRunProcess
     property alias commandPlanProcessRef: commandPlanProcess
@@ -423,6 +424,17 @@ Item {
             shellRoot.commandField.forceActiveFocus();
             shellRoot.commandField.selectAll();
         }
+    }
+
+    // How long CapsLock must stay down before it means "hold to talk" rather
+    // than "tap for the bar". Short enough that the mic feels immediate,
+    // long enough that an unhurried tap is still a tap. Nothing happens at
+    // the press itself, so a tap costs no latency: it resolves on release.
+    Timer {
+        id: commandKeyHoldTimer
+        interval: 250
+        repeat: false
+        onTriggered: shellRoot.commandKeyHoldReached()
     }
 
     // Debug mode re-plans as you type. The interval is long because each fire
@@ -1669,6 +1681,22 @@ Item {
         // `runtime-shell call replayNotifications 3`
         function replayNotifications(count: string): string {
             return shellRoot.replayNotifications(count);
+        }
+
+        // Both edges of CapsLock (F19). The press/release split is what makes
+        // holding the key push-to-talk: the shell starts a hold timer on the
+        // way down and decides on the way up whether that was a tap or the end
+        // of a recording. Only functions declared on this handler are callable
+        // over IPC — a function on shellRoot alone answers "Function not
+        // found."
+        function commandKeyPress(): string {
+            shellRoot.commandKeyPress();
+            return "ok";
+        }
+
+        function commandKeyRelease(): string {
+            shellRoot.commandKeyRelease();
+            return "ok";
         }
 
         function toggleKeybindings() {

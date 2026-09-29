@@ -84,6 +84,13 @@ SAMSUNG_W="2560"
 SAMSUNG_H="1440"
 SAMSUNG_SCALE="1.6"
 
+# HP E202 / standard 20" 1600x900 desktop monitor (~92 PPI).
+# Native 1.0 scale keeps text sharp and UI elements appropriately sized (not oversized).
+HP_MODE="1600x900@60Hz"
+HP_W="1600"
+HP_H="900"
+HP_SCALE="1.0"
+
 # Names of currently-connected external physical outputs (not the built-in
 # panel, not a virtual VNC HEADLESS output).
 external_outputs() {
@@ -133,6 +140,7 @@ output_edid() {
 }
 is_verbatim() { output_edid "$1" | grep -qiE 'verbatim|MT17'; }
 is_samsung()  { output_edid "$1" | grep -qi  'samsung'; }
+is_hp()       { output_edid "$1" | grep -qiE 'hp|hewlett packard'; }
 
 # False (returns 1) only when output-states.json explicitly disables this output;
 # unknown or missing outputs default to enabled.
@@ -185,7 +193,7 @@ logical_dims() {
 # Echoes "<panel_x> <panel_y>": where the built-in panel goes in extended mode
 # (below the Samsung when present, else to the right of the externals, at y=0).
 place_externals() {
-  local out verb="" sam="" others=() w h
+  local out verb="" sam="" hp="" others=() w h
   while read -r out; do
     [ -n "$out" ] || continue
     # Honor the UI enable/disable preference: a disabled external is turned off
@@ -196,6 +204,7 @@ place_externals() {
     fi
     if   is_verbatim "$out"; then verb="$out"
     elif is_samsung  "$out"; then sam="$out"
+    elif is_hp       "$out"; then hp="$out"
     else others+=("$out"); fi
   done < <(external_outputs)
 
@@ -218,6 +227,13 @@ place_externals() {
     # Panel tucks in below the Samsung when the lid is open.
     panel_x="$sam_x"
     panel_y="$(logical_width "$SAMSUNG_H" "$SAMSUNG_SCALE")"
+  elif [ -n "$hp" ]; then
+    local hp_x="$edge"
+    swaymsg "output $hp enable mode $HP_MODE position $hp_x 0 scale $HP_SCALE" >/dev/null 2>&1 || true
+    edge=$(( hp_x + $(logical_width "$HP_W" "$HP_SCALE") ))
+    # Panel tucks in below the HP monitor when the lid is open.
+    panel_x="$hp_x"
+    panel_y="$(logical_width "$HP_H" "$HP_SCALE")"
   else
     panel_x="$edge"
     panel_y=0
@@ -230,8 +246,8 @@ place_externals() {
     [ -n "${w:-}" ] && [ "$w" != "null" ] || continue
     swaymsg "output $out enable mode ${w}x${h} position $edge 0 scale $EXTERNAL_SCALE" >/dev/null 2>&1 || true
     edge=$(( edge + $(logical_width "$w" "$EXTERNAL_SCALE") ))
-    # With no Samsung anchor, keep the panel to the right of these too.
-    [ -n "$sam" ] || panel_x="$edge"
+    # With no top-anchor (Samsung/HP), keep the panel to the right of these too.
+    [ -n "$sam" ] || [ -n "$hp" ] || panel_x="$edge"
   done
 
   echo "$panel_x $panel_y"
@@ -247,10 +263,11 @@ layout_extended() {
   # Built-in panel is the anchor (lid open). Recognized externals are placed
   # relative to it by EDID:
   #   Samsung  -> directly above the panel (same x, top-aligned column).
+  #   HP E202  -> directly above the panel (same x, top-aligned column).
   #   Verbatim -> parallel to the panel on its left, raised VERBATIM_RAISE px.
   #   others   -> tiled left-to-right to the right of the panel, panel-top aligned.
   # Connector-agnostic: identity is by EDID, never by DP-x connector name.
-  local out verb="" sam="" others=()
+  local out verb="" sam="" hp="" others=()
   while read -r out; do
     [ -n "$out" ] || continue
     # Honor the UI enable/disable preference.
@@ -260,6 +277,7 @@ layout_extended() {
     fi
     if   is_verbatim "$out"; then verb="$out"
     elif is_samsung  "$out"; then sam="$out"
+    elif is_hp       "$out"; then hp="$out"
     else others+=("$out"); fi
   done < <(external_outputs)
 
@@ -271,11 +289,13 @@ layout_extended() {
     [ -n "${vnw0:-}" ] && [ "$vnw0" != "null" ] && vw="$(logical_width "$vnw0" "$VERBATIM_SCALE")"
   fi
   local sh=0; [ -n "$sam" ] && sh="$(logical_width "$SAMSUNG_H" "$SAMSUNG_SCALE")"
+  local hph=0; [ -n "$hp" ] && hph="$(logical_width "$HP_H" "$HP_SCALE")"
 
-  # Panel origin: reserve room above it (Samsung column and/or the Verbatim
+  # Panel origin: reserve room above it (Samsung column, HP monitor, and/or the Verbatim
   # raise) and to its left (the Verbatim).
   local top_gap=0
   [ -n "$sam" ] && top_gap="$sh"
+  [ -n "$hp" ] && [ "$hph" -gt "$top_gap" ] && top_gap="$hph"
   [ -n "$verb" ] && [ "$VERBATIM_RAISE" -gt "$top_gap" ] && top_gap="$VERBATIM_RAISE"
   local panel_x=0; [ -n "$verb" ] && panel_x="$vw"
   local panel_y="$top_gap"
@@ -285,6 +305,11 @@ layout_extended() {
   # Samsung directly above the panel.
   if [ -n "$sam" ]; then
     swaymsg "output $sam enable mode $SAMSUNG_MODE position $panel_x $(( panel_y - sh )) scale $SAMSUNG_SCALE" >/dev/null 2>&1 || true
+  fi
+
+  # HP monitor directly above the panel.
+  if [ -n "$hp" ]; then
+    swaymsg "output $hp enable mode $HP_MODE position $panel_x $(( panel_y - hph )) scale $HP_SCALE" >/dev/null 2>&1 || true
   fi
 
   # Verbatim parallel to the panel on its left, sitting VERBATIM_RAISE px higher.
@@ -357,18 +382,20 @@ run_auto() {
 # output-states.json by EDID role (connector names are unstable, so presets are
 # expressed in roles, not DP-x names), then re-apply the layout. The built-in
 # panel always stays enabled here — the lid governs whether it is actually on.
-#   all      -> Verbatim + Samsung on
-#   verbatim -> Verbatim on, Samsung off
-#   samsung  -> Samsung on, Verbatim off
-#   laptop   -> both externals off (built-in panel only)
+#   all      -> Verbatim + Samsung + HP on
+#   hp       -> HP on, others off
+#   verbatim -> Verbatim on, others off
+#   samsung  -> Samsung on, others off
+#   laptop   -> all externals off (built-in panel only)
 apply_preset() {
-  local preset="${1:-}" want_verb want_sam
+  local preset="${1:-}" want_verb want_sam want_hp
   case "$preset" in
-    all)      want_verb=true;  want_sam=true ;;
-    verbatim) want_verb=true;  want_sam=false ;;
-    samsung)  want_verb=false; want_sam=true ;;
-    laptop)   want_verb=false; want_sam=false ;;
-    *) echo "unknown preset: '$preset' (want all|verbatim|samsung|laptop)" >&2; return 1 ;;
+    all)      want_verb=true;  want_sam=true;  want_hp=true ;;
+    hp)       want_verb=false; want_sam=false; want_hp=true ;;
+    verbatim) want_verb=true;  want_sam=false; want_hp=false ;;
+    samsung)  want_verb=false; want_sam=true;  want_hp=false ;;
+    laptop)   want_verb=false; want_sam=false; want_hp=false ;;
+    *) echo "unknown preset: '$preset' (want all|hp|verbatim|samsung|laptop)" >&2; return 1 ;;
   esac
 
   local pairs out enabled
@@ -377,6 +404,7 @@ apply_preset() {
     [ -n "$out" ] || continue
     if   is_verbatim "$out"; then enabled="$want_verb"
     elif is_samsung  "$out"; then enabled="$want_sam"
+    elif is_hp       "$out"; then enabled="$want_hp"
     else enabled="true"; fi   # leave unrecognized externals on
     pairs+="$out $enabled"$'\n'
   done < <(external_outputs)
@@ -408,7 +436,7 @@ case "$action" in
   auto)   run_auto ;;
   preset) apply_preset "${2:-}" ;;
   *)
-    echo "usage: lid-clamshell {close|open|auto|preset <all|verbatim|samsung|laptop>}" >&2
+    echo "usage: lid-clamshell {close|open|auto|preset <all|hp|verbatim|samsung|laptop>}" >&2
     exit 1
     ;;
 esac
