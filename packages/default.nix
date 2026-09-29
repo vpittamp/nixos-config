@@ -32,6 +32,9 @@
       # Read-only prediction markets MCP server (Kalshi/Polymarket/PredictIt)
       prediction-markets-mcp = pkgs.callPackage ./prediction-markets-mcp.nix { };
 
+      # OpenAI Codex CLI — 0.159.1 with GPT-6.1 Sol support
+      codex = pkgs.callPackage ./codex.nix { };
+
       # Cachix Deploy specification
       # Build with: nix build .#deploy
       # Used by GitHub Actions to trigger deployments to agents
