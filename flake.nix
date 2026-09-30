@@ -34,15 +34,8 @@
     nixpkgs-lazygit.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     # Antigravity CLI — Google's Gemini-CLI successor (announced 2026-05-19, I/O 2026).
-    # Gemini CLI sunsets requests for Google AI Pro/Ultra/Free on 2026-06-18.
-    #
-    # Was consumed from `pkgs-unstable`, but the unstable channel lags master:
-    # as of 2026-09-29 nixos-unstable still lags master on antigravity-cli
-    # (pinned to 1.2.9). See the nixpkgs-antigravity input below. Consumed by
-    # home-modules/ai-assistants/antigravity-cli.nix.
-    # TODO(antigravity-pin): drop this input once nixpkgs-unstable catches up,
-    # and revert that module to `pkgs-unstable.antigravity-cli`.
-    nixpkgs-antigravity.url = "github:NixOS/nixpkgs/7443ed75ba3e89e0922cb8e3f89d07b116bb7018";
+    # Packaged in packages/antigravity-cli.nix tracking upstream releases directly (1.2.14).
+
 
     # HA 2026.9+ for surface-pro3's Home Assistant only: the HA-Jev integration
     # (modules/services/home-assistant.nix) requires HA >= 2026.9 while the main

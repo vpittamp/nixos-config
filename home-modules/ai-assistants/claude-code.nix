@@ -522,6 +522,16 @@ lib.mkIf enableClaudeCode {
           command = "${kiotaMcp.proxyCommand}";
           args = [];
         };
-      });
+      })
+      // {
+        vercel = {
+          command = "${pkgs.nodejs}/bin/npx";
+          args = [
+            "-y"
+            "mcp-remote"
+            "https://mcp.vercel.com"
+          ];
+        };
+      };
   };
 }

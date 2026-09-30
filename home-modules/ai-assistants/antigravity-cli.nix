@@ -19,15 +19,9 @@
 let
   repoRoot = ../../.;
 
-  # Pinned to nixpkgs master rather than pkgs-unstable: the unstable channel
-  # lags master on this package (unstable 1.1.19 vs master 1.1.24 as of
-  # 2026-09-02). See the nixpkgs-antigravity input in flake.nix, which carries
-  # the TODO to revert this to `pkgs-unstable.antigravity-cli` once the channel
-  # catches up.
-  antigravityCliPackage = (import inputs.nixpkgs-antigravity {
-    inherit (pkgs.stdenv.hostPlatform) system;
-    config.allowUnfree = true;
-  }).antigravity-cli;
+  # Self-contained package in packages/antigravity-cli.nix tracks upstream releases
+  # ahead of nixpkgs (version 1.2.14 includes Gemini 3.5 Flash/Pro).
+  antigravityCliPackage = pkgs.callPackage ../../packages/antigravity-cli.nix { };
 
   sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
   nodeNpx = "${pkgs.nodejs_22}/bin/npx";
@@ -118,7 +112,18 @@ let
         ];
         timeoutSeconds = 300;
       };
-    });
+    })
+    // {
+      "vercel" = {
+        command = nodeNpx;
+        args = [
+          "-y"
+          "mcp-remote"
+          "https://mcp.vercel.com"
+        ];
+        timeoutSeconds = 120;
+      };
+    };
 
   enableMcpConfig = mcpServers != { };
 
