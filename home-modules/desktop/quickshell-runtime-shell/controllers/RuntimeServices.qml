@@ -1233,6 +1233,10 @@ Item {
         stdout: SplitParser {
             splitMarker: "\n"
             onRead: function (data) {
+                if (shellRoot.launcherMode === "jev") {
+                    shellRoot.parseJevResults(data);
+                    return;
+                }
                 if (shellRoot.launcherMode === "files") {
                     shellRoot.parseFileResults(data);
                     return;
@@ -1263,12 +1267,14 @@ Item {
         stderr: SplitParser {
             splitMarker: "\n"
             onRead: function (data) {
-                if (!shellRoot.launcherVisible || (shellRoot.launcherMode !== "apps" && shellRoot.launcherMode !== "files" && shellRoot.launcherMode !== "urls" && shellRoot.launcherMode !== "runner" && shellRoot.launcherMode !== "snippets" && shellRoot.launcherMode !== "onepassword" && shellRoot.launcherMode !== "clipboard")) {
+                if (!shellRoot.launcherVisible || (shellRoot.launcherMode !== "jev" && shellRoot.launcherMode !== "apps" && shellRoot.launcherMode !== "files" && shellRoot.launcherMode !== "urls" && shellRoot.launcherMode !== "runner" && shellRoot.launcherMode !== "snippets" && shellRoot.launcherMode !== "onepassword" && shellRoot.launcherMode !== "clipboard")) {
                     return;
                 }
                 const message = data && data.trim();
                 if (message) {
-                    if (shellRoot.launcherMode === "files") {
+                    if (shellRoot.launcherMode === "jev") {
+                        shellRoot.launcherError = "Unable to load Jev results";
+                    } else if (shellRoot.launcherMode === "files") {
                         shellRoot.launcherError = "Unable to load file results";
                     } else if (shellRoot.launcherMode === "urls") {
                         shellRoot.launcherError = "Unable to load Chrome URL results";
@@ -1289,7 +1295,7 @@ Item {
             }
         }
         onExited: function () {
-            if (shellRoot.launcherMode === "apps" || shellRoot.launcherMode === "files" || shellRoot.launcherMode === "urls" || shellRoot.launcherMode === "runner" || shellRoot.launcherMode === "snippets" || shellRoot.launcherMode === "onepassword" || shellRoot.launcherMode === "clipboard") {
+            if (shellRoot.launcherMode === "jev" || shellRoot.launcherMode === "apps" || shellRoot.launcherMode === "files" || shellRoot.launcherMode === "urls" || shellRoot.launcherMode === "runner" || shellRoot.launcherMode === "snippets" || shellRoot.launcherMode === "onepassword" || shellRoot.launcherMode === "clipboard") {
                 shellRoot.launcherLoading = false;
             }
         }

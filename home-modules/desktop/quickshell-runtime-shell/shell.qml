@@ -951,7 +951,7 @@ ShellRoot {
     property string settingsCommandError: ""
     property int settingsCommandSelectedIndex: 0
     property var settingsCommandEntries: []
-    property string launcherMode: "apps"
+    property string launcherMode: "jev"
     property string launcherAppFilter: "all"
     property bool launcherSessionSwitcherActive: false
     property int launcherSessionSwitcherPendingDelta: 0
@@ -1145,6 +1145,17 @@ ShellRoot {
         }
     ]
     readonly property var launcherModesModel: [
+        {
+            id: "jev",
+            label: "Jev",
+            title: "Jev Smart Search",
+            placeholder: "Search apps, files, or Chrome URLs/tabs...",
+            help: "Enter launch/open  •  Ctrl+Enter location/copy  •  Tab switch mode  •  Ctrl+J Jev",
+            icon: "system-search",
+            fallbackGlyph: "✦",
+            accentColorKey: "violet",
+            accentBgKey: "violetBg"
+        },
         {
             id: "apps",
             label: "Apps",
@@ -4972,7 +4983,7 @@ function normalizeLauncherMode(mode) {
             closeLauncher();
             return;
         }
-        showLauncher("apps", "");
+        showLauncher("jev", "");
     }
 
     function cycleLauncherMode(delta) {
@@ -5019,6 +5030,9 @@ function normalizeLauncherMode(mode) {
 
     function launcherStatusText() {
         if (launcherLoading) {
+            if (launcherMode === "jev") {
+                return "Evaluating with Jev...";
+            }
             if (launcherMode === "files") {
                 return "Searching files";
             }
@@ -5041,6 +5055,9 @@ function normalizeLauncherMode(mode) {
                 return "Searching apps";
             }
             return "Searching with Elephant";
+        }
+        if (launcherMode === "jev") {
+            return launcherEntries.length ? launcherEntries.length + " candidate" + (launcherEntries.length === 1 ? "" : "s") : "No matching candidates";
         }
         if (launcherMode === "files") {
             return launcherEntries.length ? launcherEntries.length + " file result" + (launcherEntries.length === 1 ? "" : "s") : "No matching files";
@@ -5088,6 +5105,9 @@ function normalizeLauncherMode(mode) {
         if (launcherError) {
             return launcherError;
         }
+        if (launcherMode === "jev") {
+            return "No apps, files, or Chrome URLs match the current query";
+        }
         if (launcherMode === "files") {
             return "No files match the current query";
         }
@@ -5128,7 +5148,13 @@ function normalizeLauncherMode(mode) {
         let nextMode = launcherMode;
         let nextQuery = stringOrEmpty(rawInput);
 
-        if (nextQuery === "/" || nextQuery.indexOf("/") === 0) {
+        if (nextQuery === "?" || nextQuery.indexOf("? ") === 0) {
+            nextMode = "jev";
+            nextQuery = nextQuery.slice(1).replace(/^\s+/, "");
+        } else if (nextQuery.indexOf(";j") === 0) {
+            nextMode = "jev";
+            nextQuery = nextQuery.slice(2).replace(/^\s+/, "");
+        } else if (nextQuery === "/" || nextQuery.indexOf("/") === 0) {
             nextMode = "files";
             nextQuery = nextQuery.slice(1).replace(/^\s+/, "");
         } else if (nextQuery.indexOf(";u") === 0) {
@@ -8173,6 +8199,9 @@ function normalizeLauncherMode(mode) {
     }
 
     function launcherEntryAccentColor(entry) {
+        if (stringOrEmpty(entry && entry.provider) === "jev" || stringOrEmpty(entry && entry.confidence_label).length > 0) {
+            return colors.violet;
+        }
         const kind = stringOrEmpty(entry && entry.kind);
         const hostTokenData = entry && entry.host_token ? entry.host_token : null;
         if (kind === "session" || kind === "window") {
@@ -9290,6 +9319,13 @@ function normalizeLauncherMode(mode) {
             launcherQueryProcess.running = false;
         }
 
+        if (launcherMode === "jev") {
+            launcherLoading = true;
+            launcherQueryProcess.command = [shellConfig.jevLauncherQueryBin, "mixed", launcherQuery, "25"];
+            launcherQueryProcess.running = true;
+            return;
+        }
+
         if (launcherMode === "files") {
             launcherLoading = true;
             launcherQueryProcess.command = [shellConfig.fileListBin, launcherQuery, "40", "20"];
@@ -9366,6 +9402,31 @@ function normalizeLauncherMode(mode) {
         launcherLoading = true;
         launcherQueryProcess.command = [shellConfig.launcherQueryBin, launcherQuery, "20", "20", launcherAppFilter];
         launcherQueryProcess.running = true;
+    }
+
+    function parseJevResults(data) {
+        if (launcherMode !== "jev" || !launcherVisible) {
+            return;
+        }
+
+        const raw = stringOrEmpty(data).trim();
+        if (!raw) {
+            setLauncherEntries([]);
+            launcherLoading = false;
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(raw);
+            setLauncherEntries(Array.isArray(parsed) ? parsed : []);
+            launcherLoading = false;
+            launcherError = "";
+        } catch (error) {
+            setLauncherEntries([]);
+            launcherLoading = false;
+            launcherError = "Unable to load Jev results";
+            console.warn("launcher.jev.parse:", raw, error);
+        }
     }
 
     function parseUrlResults(data) {
@@ -9703,14 +9764,19 @@ function normalizeLauncherMode(mode) {
             return;
         }
         if (kind === "url" || kind === "search") {
-            const url = stringOrEmpty(entry && entry.url);
+            const url = stringOrEmpty(entry && (entry.url || entry.identifier));
             const mode = stringOrEmpty(actionMode || "preferred") || "preferred";
-            if (!url) {
+            const swayWinId = (entry && entry.sway_window_id !== undefined && entry.sway_window_id !== null) ? String(entry.sway_window_id) : "";
+            if (!url && !swayWinId) {
                 return;
             }
 
             closeLauncher();
-            runDetached([shellConfig.urlOpenBin, mode, url]);
+            const openArgs = [shellConfig.urlOpenBin, mode, url];
+            if (swayWinId) {
+                openArgs.push(swayWinId);
+            }
+            runDetached(openArgs);
             return;
         }
         if (kind === "runner") {
@@ -9755,6 +9821,17 @@ function normalizeLauncherMode(mode) {
 
             closeLauncher();
             runDetached([shellConfig.launcherCommandActionBin, mode, command]);
+            return;
+        }
+
+        if (kind === "app") {
+            const identifier = stringOrEmpty(entry && entry.identifier);
+            if (!identifier) {
+                return;
+            }
+
+            closeLauncher();
+            runDetached([shellConfig.launcherLaunchBin, identifier]);
             return;
         }
 

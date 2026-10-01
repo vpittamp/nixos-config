@@ -114,6 +114,7 @@ let
     cp ${./agent_judge.py} "$out/agent_judge.py"
     cp ${./ha_catalog.py} "$out/ha_catalog.py"
     cp ${./ha_call.py} "$out/ha_call.py"
+    cp ${./jev_launcher.py} "$out/jev_launcher.py"
   '';
 
   jevScript = pkgs.writeShellApplication {
@@ -124,6 +125,18 @@ let
       export JEV_API_KEY_REF="''${JEV_API_KEY_REF:-${cfg.apiKeyReference}}"
       export JEV_FRAGMENT_DIR="''${JEV_FRAGMENT_DIR:-${fragmentDir}}"
       exec python3 ${jevLib}/jev_dispatch.py "$@"
+    '';
+  };
+
+  # The Jev-powered launcher search engine: scores candidate files and Chrome URLs/tabs
+  jevLauncherScript = pkgs.writeShellApplication {
+    name = "quickshell-jev-launcher-query";
+    runtimeInputs = [ pkgs.python3 pkgs.fd pkgs.sway pkgs.git ];
+    text = ''
+      export JEV_SPEC=${specFile}
+      export JEV_API_KEY_REF="''${JEV_API_KEY_REF:-${cfg.apiKeyReference}}"
+      export JEV_FRAGMENT_DIR="''${JEV_FRAGMENT_DIR:-${fragmentDir}}"
+      exec python3 ${jevLib}/jev_launcher.py "$@"
     '';
   };
 
@@ -452,6 +465,12 @@ in
       readOnly = true;
       description = "The generated question spec, for inspection and tests.";
     };
+
+    launcherPackage = lib.mkOption {
+      type = lib.types.package;
+      readOnly = true;
+      description = "The `quickshell-jev-launcher-query` search engine.";
+    };
   };
 
   config = lib.mkMerge [
@@ -460,9 +479,10 @@ in
       programs.jev-commands.specFile = specFile;
       programs.jev-commands.agentJudgePackage = agentJudgeScript;
       programs.jev-commands.judgementStore = judgementStorePath;
+      programs.jev-commands.launcherPackage = jevLauncherScript;
     }
     (lib.mkIf cfg.enable {
-      home.packages = [ jevScript setBrightnessScript agentJudgeScript ];
+      home.packages = [ jevScript setBrightnessScript agentJudgeScript jevLauncherScript ];
     })
 
     (lib.mkIf (cfg.enable && cfg.homeAssistant.enable) {

@@ -351,11 +351,12 @@ QtObject {
   readonly property string daemonActionBin: "${daemonActionScript}/bin/quickshell-daemon-action"
   readonly property string daemonHealthBin: "${daemonHealthScript}/bin/quickshell-daemon-health"
   readonly property string launcherQueryBin: "${launcherQueryScript}/bin/quickshell-app-launcher-query"
+  readonly property string jevLauncherQueryBin: "${jevLauncherBin}"
   readonly property string launcherLaunchBin: "${launcherLaunchScript}/bin/quickshell-elephant-launcher-launch"
   readonly property string fileListBin: "${fileListScript}/bin/quickshell-elephant-file-list"
   readonly property string fileActionBin: "${fileActionScript}/bin/quickshell-elephant-file-action"
-  readonly property string urlListBin: "${config.home.profileDirectory}/bin/chrome-url-list"
-  readonly property string urlOpenBin: "${config.home.profileDirectory}/bin/chrome-url-open"
+  readonly property string urlListBin: "${urlListScript}/bin/quickshell-jev-url-list"
+  readonly property string urlOpenBin: "${chromeUrlActivateScript}/bin/quickshell-chrome-url-activate"
   readonly property string runnerListBin: "${runnerListScript}/bin/quickshell-runner-list"
   readonly property string snippetsListBin: "${snippetsListScript}/bin/quickshell-snippets-list"
   readonly property string snippetsManageBin: "${snippetsManageScript}/bin/quickshell-snippets-manage"
@@ -1871,132 +1872,7 @@ PY
       limit=40
     fi
 
-    export QUICKSHELL_FILE_QUERY="$query"
-    export QUICKSHELL_FILE_LIMIT="$limit"
-
-    # Elephant's files query surface currently returns empty/crashes in this environment,
-    # so use the same search roots/ignore shape with fd + fzf filtering for QuickShell.
-    exec ${lib.getExe pkgs.python3} - <<'PY'
-import json
-import os
-import subprocess
-from pathlib import Path
-
-query = os.environ.get("QUICKSHELL_FILE_QUERY", "").strip()
-limit = int(os.environ.get("QUICKSHELL_FILE_LIMIT", "40") or "40")
-home = Path.home()
-
-roots = []
-
-
-def add_root(value: str) -> None:
-    if not value:
-        return
-    path = Path(value).expanduser()
-    if not path.is_dir():
-        return
-    resolved = str(path.resolve())
-    if resolved not in roots:
-        roots.append(resolved)
-
-
-context_json = "{}"
-try:
-    context_run = subprocess.run(
-        ["${config.home.profileDirectory}/bin/i3pm", "context", "current", "--json"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    context_json = context_run.stdout or "{}"
-except Exception:
-    context_json = "{}"
-
-try:
-    context = json.loads(context_json)
-except Exception:
-    context = {}
-
-add_root(str(context.get("local_directory") or context.get("directory") or ""))
-add_root(str(home))
-add_root("/etc/nixos")
-
-if not roots:
-    print("[]")
-    raise SystemExit(0)
-
-fd_cmd = [
-    "${lib.getExe pkgs.fd}",
-    "--hidden",
-    "--ignore-vcs",
-    "--absolute-path",
-    "--type",
-    "file",
-    "--type",
-    "directory",
-    "--exclude",
-    ".cache",
-    "--exclude",
-    ".local/share/Trash",
-    "--exclude",
-    ".npm",
-    "--exclude",
-    ".cargo",
-    "--exclude",
-    "node_modules",
-    "--exclude",
-    ".nix-profile",
-    ".",
-    *roots,
-]
-
-fd_run = subprocess.run(fd_cmd, capture_output=True, text=True, check=False)
-candidates = [line.strip() for line in fd_run.stdout.splitlines() if line.strip()]
-if not candidates:
-    print("[]")
-    raise SystemExit(0)
-
-if query:
-    fzf_run = subprocess.run(
-        ["${lib.getExe pkgs.fzf}", "--filter", query, "--scheme=path"],
-        input="\n".join(candidates) + "\n",
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    filtered = fzf_run.stdout.splitlines()
-else:
-    filtered = candidates
-
-results = []
-seen = set()
-for raw in filtered:
-    value = raw.strip()
-    if not value or value in seen:
-        continue
-    seen.add(value)
-    path = Path(value)
-    is_dir = path.is_dir()
-    display_name = path.name or value
-    if is_dir and not display_name.endswith("/"):
-        display_name += "/"
-    results.append(
-        {
-            "kind": "file",
-            "identifier": value,
-            "text": display_name,
-            "subtext": str(path if is_dir else path.parent),
-            "icon": "folder" if is_dir else "",
-            "state": ["directory"] if is_dir else ["file"],
-            "actions": ["open", "opendir"],
-            "provider": "files",
-        }
-    )
-    if len(results) >= limit:
-        break
-
-print(json.dumps(results))
-PY
+    exec ${jevLauncherBin} files "$query" "$limit"
   '';
 
   fileActionScript = pkgs.writeShellScriptBin "quickshell-elephant-file-action" ''
@@ -2029,6 +1905,120 @@ PY
     fi
 
     exec ${pkgs.glib}/bin/gio open "$target"
+  '';
+
+  urlListScript = pkgs.writeShellScriptBin "quickshell-jev-url-list" ''
+    set -euo pipefail
+
+    query="''${1:-}"
+    limit="''${2:-30}"
+
+    if ! [[ "$limit" =~ ^[0-9]+$ ]]; then
+      limit=30
+    fi
+
+    exec ${jevLauncherBin} urls "$query" "$limit"
+  '';
+
+  chromeUrlActivateScript = pkgs.writeShellScriptBin "quickshell-chrome-url-activate" ''
+    set -euo pipefail
+
+    mode="''${1:-preferred}"
+    target="''${2:-}"
+    sway_win_id="''${3:-}"
+
+    if [[ -z "$target" && -z "$sway_win_id" ]]; then
+      echo "missing url or target" >&2
+      exit 1
+    fi
+
+    export QUICK_URL_MODE="$mode"
+    export QUICK_URL_TARGET="$target"
+    export QUICK_URL_SWAY_ID="$sway_win_id"
+
+    exec ${lib.getExe pkgs.python3} - <<'PY'
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from urllib.parse import urlsplit
+
+mode = os.environ.get("QUICK_URL_MODE", "preferred")
+target = os.environ.get("QUICK_URL_TARGET", "")
+sway_id = os.environ.get("QUICK_URL_SWAY_ID", "")
+
+# 1. Copy mode
+if mode == "copy":
+    text_to_copy = target
+    if text_to_copy.startswith("sway:"):
+        text_to_copy = ""
+    if text_to_copy:
+        for cmd in [["${pkgs.wl-clipboard}/bin/wl-copy", text_to_copy], ["${pkgs.xclip}/bin/xclip", "-selection", "clipboard"]]:
+            try:
+                subprocess.run(cmd, input=text_to_copy.encode("utf-8"), check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                sys.exit(0)
+            except Exception:
+                pass
+    sys.exit(0)
+
+# 2. Sway window direct focus if sway_id given or target is sway:<id>
+win_id = sway_id
+if not win_id and target.startswith("sway:"):
+    win_id = target[5:]
+
+if win_id:
+    swaymsg = "${pkgs.sway}/bin/swaymsg"
+    try:
+        subprocess.run([swaymsg, f"[id={win_id}]", "focus"], check=False)
+        sys.exit(0)
+    except Exception:
+        pass
+
+# 3. PWA check if mode == "preferred"
+if mode == "preferred" and target.startswith(("http://", "https://")):
+    pwa_registry_file = Path.home() / ".config" / "i3" / "pwa-registry.json"
+    if pwa_registry_file.is_file():
+        try:
+            reg = json.loads(pwa_registry_file.read_text(encoding="utf-8"))
+            routes = reg.get("routes", {}) if isinstance(reg, dict) else {}
+            parsed = urlsplit(target)
+            host = parsed.netloc.lower().split(":", 1)[0]
+            path = (parsed.path or "").rstrip("/")
+            candidates = []
+            cur = path
+            while cur:
+                candidates.append(host + cur)
+                cur = cur.rsplit("/", 1)[0]
+            candidates.append(host)
+            if host.startswith("www."):
+                bare = host[4:]
+                cur = path
+                while cur:
+                    candidates.append(bare + cur)
+                    cur = cur.rsplit("/", 1)[0]
+                candidates.append(bare)
+
+            for key in candidates:
+                route = routes.get(key)
+                if isinstance(route, dict) and route.get("ulid"):
+                    ulid = str(route["ulid"])
+                    launch_pwa = shutil.which("launch-pwa-by-name") or "${config.home.profileDirectory}/bin/launch-pwa-by-name"
+                    subprocess.Popen([launch_pwa, ulid, target])
+                    sys.exit(0)
+        except Exception:
+            pass
+
+# 4. Standard browser open & focus
+chrome_bin = shutil.which("google-chrome-i3pm") or shutil.which("google-chrome") or "${config.home.profileDirectory}/bin/google-chrome-i3pm"
+if target and not target.startswith("sway:"):
+    subprocess.Popen([chrome_bin, target])
+
+# Bring chrome window to focus
+swaymsg = "${pkgs.sway}/bin/swaymsg"
+subprocess.run([swaymsg, '[app_id="^google-chrome.*"] focus'], check=False)
+PY
   '';
 
   runnerListScript = pkgs.writeShellScriptBin "quickshell-runner-list" ''
@@ -3047,6 +3037,10 @@ USAGE
     if jevCfg != null && jevCfg.enable
     then "${jevCfg.package}/bin/jev"
     else "${config.home.profileDirectory}/bin/jev";
+  jevLauncherBin =
+    if jevCfg != null && jevCfg.enable && (jevCfg ? launcherPackage)
+    then "${jevCfg.launcherPackage}/bin/quickshell-jev-launcher-query"
+    else "${config.home.profileDirectory}/bin/quickshell-jev-launcher-query";
   jevAutoThreshold = if jevCfg != null then jevCfg.autoThreshold else 0.6;
 
   # voxtype's running transcript, resolved where XDG_RUNTIME_DIR is actually

@@ -202,6 +202,11 @@ PanelWindow {
                     }
 
                     Keys.onPressed: function (event) {
+                        if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_J) {
+                            root.setLauncherMode("jev");
+                            event.accepted = true;
+                            return;
+                        }
                         if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_2) {
                             root.setLauncherMode("urls");
                             event.accepted = true;
@@ -272,7 +277,27 @@ PanelWindow {
                             break;
                         case Qt.Key_Return:
                         case Qt.Key_Enter:
-                            if (root.launcherMode === "onepassword") {
+                            if (root.launcherMode === "jev") {
+                                const selectedEntry = root.activeLauncherEntry();
+                                const entryKind = root.stringOrEmpty(selectedEntry && selectedEntry.kind);
+                                if (entryKind === "file") {
+                                    if (event.modifiers & Qt.ControlModifier) {
+                                        root.activateSelectedLauncherEntry("opendir");
+                                    } else {
+                                        root.activateSelectedLauncherEntry("open");
+                                    }
+                                } else if (entryKind === "app") {
+                                    root.activateSelectedLauncherEntry();
+                                } else {
+                                    if (event.modifiers & Qt.ControlModifier) {
+                                        root.activateSelectedLauncherEntry("copy");
+                                    } else if (event.modifiers & Qt.ShiftModifier) {
+                                        root.activateSelectedLauncherEntry("browser");
+                                    } else {
+                                        root.activateSelectedLauncherEntry("preferred");
+                                    }
+                                }
+                            } else if (root.launcherMode === "onepassword") {
                                 if (event.modifiers & Qt.ControlModifier) {
                                     root.activateSelectedLauncherEntry("otp");
                                 } else if (event.modifiers & Qt.ShiftModifier) {
@@ -510,7 +535,7 @@ PanelWindow {
                                     Component.onCompleted: resetMotionVisuals()
 
                                     width: launcherList.width
-                                    height: sessionEntry || windowEntry || clipboardImageEntry || snippetEntry || urlEntry || fileEntry ? 62 : 56
+                                    height: sessionEntry || windowEntry || clipboardImageEntry || snippetEntry || urlEntry || fileEntry || (appEntry && root.launcherMode === "jev") ? 62 : 56
                                     radius: Theme.rad(8)
                                     clip: true
                                     color: sessionEntry ? "transparent" : (selected ? colors.blueBg : (entryMouse.containsMouse ? colors.cardAlt : "transparent"))
@@ -654,6 +679,66 @@ PanelWindow {
                                                 color: selected ? colors.textDim : colors.subtle
                                                 font.pixelSize: Theme.fs(10)
                                                 elide: Text.ElideRight
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            visible: root.stringOrEmpty(entry && entry.confidence_label).length > 0
+                                            height: 20
+                                            radius: Theme.rad(6)
+                                            color: colors.violetBg
+                                            border.color: colors.violet
+                                            border.width: 1
+                                            Layout.preferredWidth: jevConfidenceChipText.implicitWidth + 12
+
+                                            Text {
+                                                font.family: Theme.fontFamily
+                                                id: jevConfidenceChipText
+                                                anchors.centerIn: parent
+                                                text: root.stringOrEmpty(entry && entry.confidence_label)
+                                                color: colors.violet
+                                                font.pixelSize: Theme.fs(8)
+                                                font.weight: Font.DemiBold
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            visible: fileEntry
+                                            height: 20
+                                            radius: Theme.rad(6)
+                                            color: colors.tealBg
+                                            border.color: colors.teal
+                                            border.width: 1
+                                            Layout.preferredWidth: fileTypeChipText.implicitWidth + 12
+
+                                            Text {
+                                                font.family: Theme.fontFamily
+                                                id: fileTypeChipText
+                                                anchors.centerIn: parent
+                                                text: (root.arrayOrEmpty(entry && entry.state).indexOf("directory") !== -1) ? "FOLDER" : "FILE"
+                                                color: colors.teal
+                                                font.pixelSize: Theme.fs(8)
+                                                font.weight: Font.DemiBold
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            visible: appEntry && root.launcherMode === "jev"
+                                            height: 20
+                                            radius: Theme.rad(6)
+                                            color: (root.arrayOrEmpty(entry && entry.state).indexOf("pwa") !== -1) ? colors.tealBg : colors.blueBg
+                                            border.color: (root.arrayOrEmpty(entry && entry.state).indexOf("pwa") !== -1) ? colors.teal : colors.blue
+                                            border.width: 1
+                                            Layout.preferredWidth: appTypeChipText.implicitWidth + 12
+
+                                            Text {
+                                                font.family: Theme.fontFamily
+                                                id: appTypeChipText
+                                                anchors.centerIn: parent
+                                                text: (root.arrayOrEmpty(entry && entry.state).indexOf("pwa") !== -1) ? "PWA" : "APP"
+                                                color: (root.arrayOrEmpty(entry && entry.state).indexOf("pwa") !== -1) ? colors.teal : colors.blue
+                                                font.pixelSize: Theme.fs(8)
+                                                font.weight: Font.DemiBold
                                             }
                                         }
 
