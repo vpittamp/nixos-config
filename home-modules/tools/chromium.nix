@@ -20,8 +20,9 @@ let
     builtins.concatMap
       (pwa:
         let
-          domains = if pwa ? routing_domains && pwa.routing_domains != [ ] then pwa.routing_domains else [ pwa.domain ];
+          domains = if pwa ? routing_domains then pwa.routing_domains else [ pwa.domain ];
           paths = if pwa ? routing_paths then pwa.routing_paths else [ ];
+          pathBaseDomains = if domains != [ ] then domains else [ pwa.domain ];
           mkEntry = key: {
             name = key;
             value = {
@@ -40,7 +41,7 @@ let
                   normalizedPath = if lib.hasPrefix "/" path then path else "/${path}";
                   cleanPath = lib.removeSuffix "/" normalizedPath;
                 in
-                map (domain: mkEntry "${domain}${cleanPath}") domains)
+                map (domain: mkEntry "${domain}${cleanPath}") pathBaseDomains)
               paths;
         in
         domainEntries ++ pathEntries)

@@ -131,6 +131,27 @@ let
       routing_domains = [ "chatgpt.com" "www.chatgpt.com" "chat.openai.com" ];
     }
 
+    # ChatGPT Dots
+    {
+      name = "ChatGPT Dots";
+      url = "https://chatgpt.com/dots/home";
+      domain = "chatgpt.com";
+      icon = iconPath "chatgpt-dots.png";
+      description = "ChatGPT Dots - Always-on AI Assistants";
+      categories = "Network;Development;";
+      keywords = "ai;chatgpt;dots;openai;assistant;agent;";
+      scope = "https://chatgpt.com/dots/";
+      ulid = "01M3WW6GJVJNVNFST40FG3VKXS";
+      # App registry metadata
+      app_scope = "global";
+      preferred_workspace = 177;
+      preferred_monitor_role = "secondary";
+      # Feature 113: URL routing - only dots-specific paths, not general chatgpt.com
+      routing_domains = [ ];
+      routing_paths = [ "/dots" ];
+      auth_domains = [ "auth0.openai.com" ];
+    }
+
     # GitHub
     {
       name = "GitHub";
