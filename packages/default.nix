@@ -39,6 +39,10 @@
       antigravity-cli = pkgs.callPackage ./antigravity-cli.nix { };
       agy = pkgs.callPackage ./antigravity-cli.nix { };
 
+      # 1Password CLI & GUI — latest upstream releases (2.39.0 / 8.12.38)
+      _1password-cli = pkgs.callPackage ./onepassword-cli.nix { };
+      _1password-gui = pkgs.callPackage ./onepassword-gui.nix { };
+
       # Cachix Deploy specification
       # Build with: nix build .#deploy
       # Used by GitHub Actions to trigger deployments to agents

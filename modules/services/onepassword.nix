@@ -171,6 +171,13 @@ in
     # ========== BASE CONFIGURATION ==========
     # Always applied when 1Password is enabled
     {
+      nixpkgs.overlays = [
+        (final: prev: {
+          _1password-cli = prev.callPackage ../../packages/onepassword-cli.nix { };
+          _1password-gui = prev.callPackage ../../packages/onepassword-gui.nix { };
+        })
+      ];
+
       # Core packages - CLI always, GUI conditionally
       # The GUI is installed by programs._1password-gui below (that module puts
       # cfg.package into systemPackages itself, with the polkit override applied).
