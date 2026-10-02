@@ -39,6 +39,9 @@
       antigravity-cli = pkgs.callPackage ./antigravity-cli.nix { };
       agy = pkgs.callPackage ./antigravity-cli.nix { };
 
+      # GitHub Copilot — agent-native desktop app (github/app)
+      github-copilot = pkgs.callPackage ./github-copilot.nix { };
+
       # 1Password CLI & GUI — latest upstream releases (2.39.0 / 8.12.38)
       _1password-cli = pkgs.callPackage ./onepassword-cli.nix { };
       _1password-gui = pkgs.callPackage ./onepassword-gui.nix { };
