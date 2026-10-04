@@ -621,10 +621,39 @@ def rank_with_jev(
     query: str,
     candidates: List[Dict[str, Any]],
     mode: str = "mixed",
-) -> List[Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Use TypeSafe SystemOne (jev) to evaluate and rank the candidates."""
+    app_count = sum(1 for c in candidates if c.get("kind") == "app")
+    file_count = sum(1 for c in candidates if c.get("kind") == "file")
+    url_count = sum(1 for c in candidates if c.get("kind") in ("url", "search"))
+
+    fallback_meta: Dict[str, Any] = {
+        "status": "fallback",
+        "model": "lexical",
+        "latency_ms": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "choice": "",
+        "choice_confidence": 0.0,
+        "none_probability": 0.0,
+        "lead": 0.0,
+        "certainty": "fallback",
+        "query": query,
+        "candidate_counts": {
+            "apps": app_count,
+            "files": file_count,
+            "urls": url_count,
+            "total": len(candidates),
+        },
+        "distribution": [],
+    }
+
     if not query.strip() or not candidates or evaluate is None:
-        return candidates
+        for cand in candidates:
+            cand["lexical_score"] = round(float(cand.get("_score", 0.0)), 1)
+            cand["confidence"] = 0.0
+            cand.pop("_score", None)
+        return candidates, fallback_meta
 
     # Build choice criteria
     criteria: Dict[str, str] = {}
@@ -632,14 +661,18 @@ def rank_with_jev(
 
     for idx, cand in enumerate(candidates):
         cid = f"c_{idx}"
+        cand["cid"] = cid
+        cand["lexical_score"] = round(float(cand.get("_score", 0.0)), 1)
         key_to_candidate[cid] = cand
         if cand["kind"] == "file":
-            criteria[cid] = f"File: {cand['text']} in {cand['subtext']} (path: {cand['identifier']})"
+            crit = f"File: {cand['text']} in {cand['subtext']} (path: {cand['identifier']})"
         elif cand["kind"] == "app":
-            criteria[cid] = f"Application: {cand['text']} ({cand['subtext']})"
+            crit = f"Application: {cand['text']} ({cand['subtext']})"
         else:
             source = cand.get("source", "url").title()
-            criteria[cid] = f"Chrome {source}: {cand['text']} ({cand.get('domain', '')} — {cand.get('url', cand['identifier'])})"
+            crit = f"Chrome {source}: {cand['text']} ({cand.get('domain', '')} — {cand.get('url', cand['identifier'])})"
+        criteria[cid] = crit
+        cand["criteria"] = crit
 
     criteria["none"] = "None of these match what the user is looking for"
 
@@ -667,27 +700,96 @@ def rank_with_jev(
         response = evaluate(state=query, questions=questions)
         answer = response.get("answers", {}).get("pick", {})
         probabilities = answer.get("probabilities") or answer.get("distribution") or {}
+        model = response.get("model", "jev-latest")
+        latency_ms = response.get("latencyMs", 0)
+        usage = response.get("usage") or {}
+        input_tokens = usage.get("input_tokens", 0)
+        output_tokens = usage.get("output_tokens", 0)
+        choice_id = answer.get("choice", "")
+        choice_conf = float(answer.get("confidence", 0.0) or 0.0)
+        none_prob = round(float(probabilities.get("none", 0.0) or 0.0), 2)
 
         # Annotate candidates with Jev confidence
         for cid, cand in key_to_candidate.items():
             prob = float(probabilities.get(cid, 0.0) or 0.0)
             cand["confidence"] = round(prob, 2)
-            if prob >= 0.05:
+            if prob >= 0.01:
                 cand["confidence_label"] = f"✦ {int(prob * 100)}%"
 
         # Sort candidates primarily by Jev confidence, secondarily by lexical score
         candidates.sort(key=lambda x: (-float(x.get("confidence", 0.0)), -float(x.get("_score", 0.0))))
 
-    except Exception as exc:
+        top_prob = float(candidates[0].get("confidence", 0.0)) if candidates else 0.0
+        second_prob = float(candidates[1].get("confidence", 0.0)) if len(candidates) > 1 else 0.0
+        lead = round(top_prob - second_prob, 2)
+        certainty = "high" if lead >= 0.25 else ("competing" if len(candidates) > 1 and second_prob >= 0.15 else "normal")
+
+        for idx, cand in enumerate(candidates):
+            c_conf = float(cand.get("confidence", 0.0))
+            cand["is_top"] = (idx == 0 and c_conf > 0.0)
+            cand["is_runner_up"] = (idx == 1 and c_conf > 0.0)
+            cand["delta_top"] = round(c_conf - top_prob, 2) if idx > 0 else 0.0
+
+        distribution = [
+            {
+                "cid": cand.get("cid", f"c_{i}"),
+                "identifier": cand.get("identifier", ""),
+                "text": cand.get("text", ""),
+                "kind": cand.get("kind", ""),
+                "confidence": float(cand.get("confidence", 0.0)),
+                "criteria": cand.get("criteria", ""),
+                "is_top": cand.get("is_top", False),
+            }
+            for i, cand in enumerate(candidates[:6])
+        ]
+        if none_prob > 0.0:
+            distribution.append({
+                "cid": "none",
+                "identifier": "none",
+                "text": "None of these match",
+                "kind": "none",
+                "confidence": none_prob,
+                "criteria": "None of these match what the user is looking for",
+                "is_top": False,
+            })
+
+        meta: Dict[str, Any] = {
+            "status": "ok",
+            "model": model,
+            "latency_ms": latency_ms,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "choice": choice_id,
+            "choice_confidence": round(choice_conf, 2),
+            "none_probability": none_prob,
+            "lead": lead,
+            "certainty": certainty,
+            "query": query,
+            "candidate_counts": {
+                "apps": app_count,
+                "files": file_count,
+                "urls": url_count,
+                "total": len(candidates),
+            },
+            "distribution": distribution,
+        }
+
+    except Exception:
         # On API failure/timeout, fall back gracefully to lexical sort
         for cand in candidates:
             cand.setdefault("confidence", 0.0)
+            cand.setdefault("cid", "")
+            cand.setdefault("criteria", "")
+            cand["is_top"] = False
+            cand["is_runner_up"] = False
+            cand["delta_top"] = 0.0
+        meta = fallback_meta
 
     # Clean up private score
     for cand in candidates:
         cand.pop("_score", None)
 
-    return candidates
+    return candidates, meta
 
 
 def main() -> None:
@@ -714,8 +816,12 @@ def main() -> None:
         urls = search_candidate_urls(query, limit=part)
         candidates = apps + files + urls
 
-    ranked = rank_with_jev(query, candidates, mode=mode)
-    print(json.dumps(ranked[:limit]))
+    ranked, meta = rank_with_jev(query, candidates, mode=mode)
+    output = {
+        "meta": meta,
+        "candidates": ranked[:limit],
+    }
+    print(json.dumps(output))
 
 
 if __name__ == "__main__":

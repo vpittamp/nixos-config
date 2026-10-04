@@ -953,6 +953,8 @@ ShellRoot {
     property var settingsCommandEntries: []
     property string launcherMode: "jev"
     property string launcherAppFilter: "all"
+    property var jevLauncherMeta: ({})
+    property bool jevInspectorOpen: true
     property bool launcherSessionSwitcherActive: false
     property int launcherSessionSwitcherPendingDelta: 0
     property bool launcherWindowSwitcherActive: false
@@ -5427,6 +5429,17 @@ function normalizeLauncherMode(mode) {
         return entry;
     }
 
+    function activeJevEntry() {
+        if (launcherMode !== "jev") {
+            return null;
+        }
+        return activeLauncherEntry();
+    }
+
+    function toggleJevInspector() {
+        jevInspectorOpen = !jevInspectorOpen;
+    }
+
     function clearSessionPreview() {
         sessionPreviewTargetKey = "";
         sessionPreview = emptySessionPreview();
@@ -9412,17 +9425,28 @@ function normalizeLauncherMode(mode) {
         const raw = stringOrEmpty(data).trim();
         if (!raw) {
             setLauncherEntries([]);
+            jevLauncherMeta = {};
             launcherLoading = false;
             return;
         }
 
         try {
             const parsed = JSON.parse(raw);
-            setLauncherEntries(Array.isArray(parsed) ? parsed : []);
+            if (Array.isArray(parsed)) {
+                setLauncherEntries(parsed);
+                jevLauncherMeta = {};
+            } else if (parsed && typeof parsed === "object") {
+                setLauncherEntries(Array.isArray(parsed.candidates) ? parsed.candidates : []);
+                jevLauncherMeta = parsed.meta || {};
+            } else {
+                setLauncherEntries([]);
+                jevLauncherMeta = {};
+            }
             launcherLoading = false;
             launcherError = "";
         } catch (error) {
             setLauncherEntries([]);
+            jevLauncherMeta = {};
             launcherLoading = false;
             launcherError = "Unable to load Jev results";
             console.warn("launcher.jev.parse:", raw, error);

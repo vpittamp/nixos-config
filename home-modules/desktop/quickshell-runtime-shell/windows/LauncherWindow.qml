@@ -53,12 +53,25 @@ PanelWindow {
             readonly property int availableHeight: parent.height - oskReserve
             anchors.centerIn: parent
             anchors.verticalCenterOffset: -Math.round(oskReserve / 2)
-            width: Math.min(root.launcherMode === "sessions" && root.activeLauncherSessionEntry() !== null ? 980 : 760, parent.width - 96)
+            width: Math.min(
+                (root.launcherMode === "sessions" && root.activeLauncherSessionEntry() !== null) ||
+                (root.launcherMode === "clipboard" && root.activeClipboardEntry() !== null) ||
+                (root.launcherMode === "jev" && root.jevInspectorOpen && root.launcherEntries.length > 0)
+                ? 1040 : 760,
+                parent.width - 96
+            )
             // The 96px breathing margin is a luxury of large screens; with the
             // keyboard up on a small logical desktop it is the difference
             // between showing results and showing less than one, so it shrinks
             // to 32 before the results do.
             height: Math.min(560, availableHeight - (availableHeight > 656 ? 96 : 32))
+
+            Behavior on width {
+                NumberAnimation {
+                    duration: 140
+                    easing.type: Easing.OutQuad
+                }
+            }
 
             Behavior on height {
                 NumberAnimation {
@@ -202,6 +215,11 @@ PanelWindow {
                     }
 
                     Keys.onPressed: function (event) {
+                        if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_I) {
+                            root.toggleJevInspector();
+                            event.accepted = true;
+                            return;
+                        }
                         if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_J) {
                             root.setLauncherMode("jev");
                             event.accepted = true;
@@ -461,6 +479,181 @@ PanelWindow {
                     }
                 }
 
+                RowLayout {
+                    id: jevTelemetryRibbon
+                    visible: root.launcherMode === "jev" && !!root.jevLauncherMeta && !!root.jevLauncherMeta.model && !root.launcherLoading
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    Rectangle {
+                        height: 22
+                        radius: Theme.rad(6)
+                        color: colors.violetBg
+                        border.color: colors.violet
+                        border.width: 1
+                        Layout.preferredWidth: jevModelChipRow.implicitWidth + 14
+
+                        RowLayout {
+                            id: jevModelChipRow
+                            anchors.centerIn: parent
+                            spacing: 4
+                            Text {
+                                font.family: Theme.fontFamily
+                                text: "✦"
+                                color: colors.violet
+                                font.pixelSize: Theme.fs(8)
+                                font.weight: Font.Bold
+                            }
+                            Text {
+                                font.family: Theme.fontFamily
+                                text: root.stringOrEmpty(root.jevLauncherMeta && root.jevLauncherMeta.model) || "jev-latest"
+                                color: colors.violet
+                                font.pixelSize: Theme.fs(8)
+                                font.weight: Font.DemiBold
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        height: 22
+                        radius: Theme.rad(6)
+                        color: (root.jevLauncherMeta && root.jevLauncherMeta.latency_ms > 500) ? colors.amberBg : colors.cardAlt
+                        border.color: (root.jevLauncherMeta && root.jevLauncherMeta.latency_ms > 500) ? colors.amber : colors.lineSoft
+                        border.width: 1
+                        Layout.preferredWidth: jevLatencyChipRow.implicitWidth + 12
+
+                        RowLayout {
+                            id: jevLatencyChipRow
+                            anchors.centerIn: parent
+                            spacing: 3
+                            Text {
+                                font.family: Theme.fontFamily
+                                text: "⚡"
+                                font.pixelSize: Theme.fs(8)
+                            }
+                            Text {
+                                font.family: Theme.fontFamily
+                                text: (root.jevLauncherMeta && root.jevLauncherMeta.latency_ms ? root.jevLauncherMeta.latency_ms : 0) + "ms"
+                                color: (root.jevLauncherMeta && root.jevLauncherMeta.latency_ms > 500) ? colors.amber : colors.textDim
+                                font.pixelSize: Theme.fs(8)
+                                font.weight: Font.DemiBold
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        visible: !!root.jevLauncherMeta && (root.jevLauncherMeta.input_tokens > 0)
+                        height: 22
+                        radius: Theme.rad(6)
+                        color: colors.cardAlt
+                        border.color: colors.lineSoft
+                        border.width: 1
+                        Layout.preferredWidth: jevTokensText.implicitWidth + 12
+
+                        Text {
+                            font.family: Theme.fontFamily
+                            id: jevTokensText
+                            anchors.centerIn: parent
+                            text: (root.jevLauncherMeta ? root.jevLauncherMeta.input_tokens : 0) + " in • " + (root.jevLauncherMeta ? root.jevLauncherMeta.output_tokens : 0) + " out"
+                            color: colors.subtle
+                            font.pixelSize: Theme.fs(8)
+                            font.weight: Font.Medium
+                        }
+                    }
+
+                    Rectangle {
+                        visible: !!root.jevLauncherMeta && !!root.jevLauncherMeta.candidate_counts
+                        height: 22
+                        radius: Theme.rad(6)
+                        color: colors.cardAlt
+                        border.color: colors.lineSoft
+                        border.width: 1
+                        Layout.preferredWidth: jevCountsText.implicitWidth + 12
+
+                        Text {
+                            font.family: Theme.fontFamily
+                            id: jevCountsText
+                            anchors.centerIn: parent
+                            text: (root.jevLauncherMeta && root.jevLauncherMeta.candidate_counts ?
+                                   (root.jevLauncherMeta.candidate_counts.apps + " apps • " +
+                                    root.jevLauncherMeta.candidate_counts.files + " files • " +
+                                    root.jevLauncherMeta.candidate_counts.urls + " URLs") : "")
+                            color: colors.textDim
+                            font.pixelSize: Theme.fs(8)
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
+                    Rectangle {
+                        visible: !!root.jevLauncherMeta && root.jevLauncherMeta.certainty === "high"
+                        height: 22
+                        radius: Theme.rad(6)
+                        color: colors.tealBg
+                        border.color: colors.teal
+                        border.width: 1
+                        Layout.preferredWidth: jevCertaintyText.implicitWidth + 12
+
+                        Text {
+                            font.family: Theme.fontFamily
+                            id: jevCertaintyText
+                            anchors.centerIn: parent
+                            text: "Lead +" + Math.round((root.jevLauncherMeta ? root.jevLauncherMeta.lead : 0) * 100) + "%"
+                            color: colors.teal
+                            font.pixelSize: Theme.fs(8)
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
+                    Rectangle {
+                        visible: !!root.jevLauncherMeta && root.jevLauncherMeta.certainty === "competing"
+                        height: 22
+                        radius: Theme.rad(6)
+                        color: colors.amberBg
+                        border.color: colors.amber
+                        border.width: 1
+                        Layout.preferredWidth: jevCompetingText.implicitWidth + 12
+
+                        Text {
+                            font.family: Theme.fontFamily
+                            id: jevCompetingText
+                            anchors.centerIn: parent
+                            text: "Competing Choices"
+                            color: colors.amber
+                            font.pixelSize: Theme.fs(8)
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
+                    Item {
+                        Layout.fillWidth: true
+                    }
+
+                    Rectangle {
+                        height: 22
+                        radius: Theme.rad(6)
+                        color: root.jevInspectorOpen ? colors.violetBg : colors.cardAlt
+                        border.color: root.jevInspectorOpen ? colors.violet : colors.lineSoft
+                        border.width: 1
+                        Layout.preferredWidth: jevInspectorBtnText.implicitWidth + 14
+
+                        Text {
+                            font.family: Theme.fontFamily
+                            id: jevInspectorBtnText
+                            anchors.centerIn: parent
+                            text: root.jevInspectorOpen ? "✦ Hide Cockpit (Ctrl+I)" : "✦ Jev Cockpit (Ctrl+I)"
+                            color: root.jevInspectorOpen ? colors.violet : colors.textDim
+                            font.pixelSize: Theme.fs(8)
+                            font.weight: Font.DemiBold
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.toggleJevInspector()
+                        }
+                    }
+                }
+
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
@@ -483,8 +676,8 @@ PanelWindow {
                         Rectangle {
                             Layout.fillHeight: true
                             Layout.fillWidth: true
-                            Layout.minimumWidth: ((root.launcherMode === "clipboard") || (root.launcherMode === "sessions" && root.activeLauncherSessionEntry() !== null)) && root.launcherEntries.length > 0 ? 280 : 0
-                            Layout.preferredWidth: root.launcherMode === "clipboard" && root.launcherEntries.length > 0 ? 340 : (root.launcherMode === "sessions" && root.activeLauncherSessionEntry() !== null ? 360 : -1)
+                            Layout.minimumWidth: ((root.launcherMode === "clipboard") || (root.launcherMode === "sessions" && root.activeLauncherSessionEntry() !== null) || (root.launcherMode === "jev" && root.jevInspectorOpen && root.launcherEntries.length > 0)) && root.launcherEntries.length > 0 ? 320 : 0
+                            Layout.preferredWidth: root.launcherMode === "clipboard" && root.launcherEntries.length > 0 ? 340 : (root.launcherMode === "sessions" && root.activeLauncherSessionEntry() !== null ? 360 : (root.launcherMode === "jev" && root.jevInspectorOpen && root.launcherEntries.length > 0 ? 460 : -1))
                             radius: Theme.rad(8)
                             color: "transparent"
                             border.width: 0
@@ -538,8 +731,8 @@ PanelWindow {
                                     height: sessionEntry || windowEntry || clipboardImageEntry || snippetEntry || urlEntry || fileEntry || (appEntry && root.launcherMode === "jev") ? 62 : 56
                                     radius: Theme.rad(8)
                                     clip: true
-                                    color: sessionEntry ? "transparent" : (selected ? colors.blueBg : (entryMouse.containsMouse ? colors.cardAlt : "transparent"))
-                                    border.color: sessionEntry ? "transparent" : (selected ? colors.blue : (entryMouse.containsMouse ? colors.borderStrong : "transparent"))
+                                    color: sessionEntry ? "transparent" : (selected ? (root.launcherMode === "jev" ? colors.violetBg : colors.blueBg) : (entryMouse.containsMouse ? colors.cardAlt : "transparent"))
+                                    border.color: sessionEntry ? "transparent" : (selected ? (root.launcherMode === "jev" ? colors.violet : colors.blue) : (entryMouse.containsMouse ? colors.borderStrong : "transparent"))
                                     border.width: sessionEntry ? 0 : 1
 
                                     RootComponents.SessionRow {
@@ -567,6 +760,27 @@ PanelWindow {
                                         radius: 3
                                         color: accentColor
                                         opacity: selected ? 1 : (entryMouse.containsMouse ? 0.75 : 0.5)
+                                    }
+
+                                    Rectangle {
+                                        id: jevProbabilityBar
+                                        visible: root.launcherMode === "jev" && entry && entry.confidence !== undefined && Number(entry.confidence) > 0
+                                        anchors.left: parent.left
+                                        anchors.bottom: parent.bottom
+                                        anchors.leftMargin: 4
+                                        anchors.bottomMargin: 1
+                                        height: 2.5
+                                        radius: 1
+                                        width: Math.max(4, Math.round((parent.width - 8) * Math.min(1.0, Number(entry.confidence))))
+                                        color: colors.violet
+                                        opacity: boolOrFalse(entry && entry.is_top) ? 0.95 : (selected ? 0.8 : 0.45)
+
+                                        Behavior on width {
+                                            NumberAnimation {
+                                                duration: 180
+                                                easing.type: Easing.OutQuad
+                                            }
+                                        }
                                     }
 
                                     RowLayout {
@@ -686,7 +900,7 @@ PanelWindow {
                                             visible: root.stringOrEmpty(entry && entry.confidence_label).length > 0
                                             height: 20
                                             radius: Theme.rad(6)
-                                            color: colors.violetBg
+                                            color: boolOrFalse(entry && entry.is_top) ? colors.violet : colors.violetBg
                                             border.color: colors.violet
                                             border.width: 1
                                             Layout.preferredWidth: jevConfidenceChipText.implicitWidth + 12
@@ -695,10 +909,30 @@ PanelWindow {
                                                 font.family: Theme.fontFamily
                                                 id: jevConfidenceChipText
                                                 anchors.centerIn: parent
-                                                text: root.stringOrEmpty(entry && entry.confidence_label)
-                                                color: colors.violet
+                                                text: (boolOrFalse(entry && entry.is_top) ? "★ TOP " : "") + root.stringOrEmpty(entry && entry.confidence_label)
+                                                color: boolOrFalse(entry && entry.is_top) ? colors.bg : colors.violet
                                                 font.pixelSize: Theme.fs(8)
                                                 font.weight: Font.DemiBold
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            visible: boolOrFalse(entry && entry.is_runner_up) && Number(entry && entry.delta_top !== undefined ? entry.delta_top : 0) < 0
+                                            height: 20
+                                            radius: Theme.rad(6)
+                                            color: colors.cardAlt
+                                            border.color: colors.lineSoft
+                                            border.width: 1
+                                            Layout.preferredWidth: jevDeltaChipText.implicitWidth + 10
+
+                                            Text {
+                                                font.family: Theme.fontFamily
+                                                id: jevDeltaChipText
+                                                anchors.centerIn: parent
+                                                text: Math.round(Number(entry && entry.delta_top !== undefined ? entry.delta_top : 0) * 100) + "%"
+                                                color: colors.subtle
+                                                font.pixelSize: Theme.fs(8)
+                                                font.weight: Font.Medium
                                             }
                                         }
 
@@ -1354,6 +1588,350 @@ PanelWindow {
                                             text: "No preview available"
                                             color: colors.subtle
                                             font.pixelSize: Theme.fs(11)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: launcherJevInspectorPane
+                            readonly property var activeEntry: root.activeLauncherEntry()
+                            visible: root.launcherMode === "jev" && root.jevInspectorOpen && root.launcherEntries.length > 0
+                            Layout.fillHeight: true
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 320
+                            radius: Theme.rad(8)
+                            color: colors.cardAlt
+                            border.color: colors.lineSoft
+                            border.width: 1
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 14
+                                anchors.rightMargin: 14
+                                anchors.topMargin: 14
+                                anchors.bottomMargin: 14
+                                spacing: 10
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Rectangle {
+                                        height: 20
+                                        radius: Theme.rad(6)
+                                        color: colors.violetBg
+                                        border.color: colors.violet
+                                        border.width: 1
+                                        Layout.preferredWidth: jevPaneTitleText.implicitWidth + 12
+
+                                        RowLayout {
+                                            id: jevPaneTitleText
+                                            anchors.centerIn: parent
+                                            spacing: 4
+                                            Text {
+                                                font.family: Theme.fontFamily
+                                                text: "✦"
+                                                color: colors.violet
+                                                font.pixelSize: Theme.fs(8)
+                                                font.weight: Font.Bold
+                                            }
+                                            Text {
+                                                font.family: Theme.fontFamily
+                                                text: "Jev Reasoning"
+                                                color: colors.violet
+                                                font.pixelSize: Theme.fs(8)
+                                                font.weight: Font.DemiBold
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        font.family: Theme.fontFamily
+                                        Layout.fillWidth: true
+                                        text: root.stringOrEmpty(root.jevLauncherMeta && root.jevLauncherMeta.model) || "SystemOne"
+                                        color: colors.subtle
+                                        font.pixelSize: Theme.fs(9)
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Rectangle {
+                                        visible: !!root.jevLauncherMeta && !!root.jevLauncherMeta.latency_ms
+                                        height: 18
+                                        radius: Theme.rad(5)
+                                        color: colors.panel
+                                        border.color: colors.lineSoft
+                                        border.width: 1
+                                        Layout.preferredWidth: jevPaneLatencyText.implicitWidth + 8
+
+                                        Text {
+                                            font.family: Theme.fontFamily
+                                            id: jevPaneLatencyText
+                                            anchors.centerIn: parent
+                                            text: (root.jevLauncherMeta ? root.jevLauncherMeta.latency_ms : 0) + "ms"
+                                            color: colors.textDim
+                                            font.pixelSize: Theme.fs(8)
+                                            font.weight: Font.Medium
+                                        }
+                                    }
+                                }
+
+                                ScrollView {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    clip: true
+                                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                                    ColumnLayout {
+                                        width: parent.width - 4
+                                        spacing: 12
+
+                                        // Section 1: Probability Spectrum Chart
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 6
+
+                                            Text {
+                                                font.family: Theme.fontFamily
+                                                text: "DECISION SPECTRUM"
+                                                color: colors.subtle
+                                                font.pixelSize: Theme.fs(8)
+                                                font.weight: Font.Bold
+                                            }
+
+                                            Repeater {
+                                                model: (root.jevLauncherMeta && root.jevLauncherMeta.distribution) ? root.jevLauncherMeta.distribution : []
+
+                                                delegate: Rectangle {
+                                                    required property var modelData
+                                                    required property int index
+                                                    readonly property var distItem: modelData
+                                                    readonly property int itemIdx: index
+                                                    readonly property double probVal: distItem && distItem.confidence !== undefined ? Number(distItem.confidence) : 0.0
+                                                    readonly property string itemKind: root.stringOrEmpty(distItem && distItem.kind)
+                                                    readonly property bool isSelected: launcherJevInspectorPane.activeEntry && (root.stringOrEmpty(launcherJevInspectorPane.activeEntry.cid) === root.stringOrEmpty(distItem && distItem.cid) || (itemIdx === root.launcherSelectedIndex))
+
+                                                    Layout.fillWidth: true
+                                                    height: 38
+                                                    radius: Theme.rad(6)
+                                                    color: isSelected ? colors.violetBg : (distRowMouse.containsMouse ? colors.panelAlt : colors.panel)
+                                                    border.color: isSelected ? colors.violet : (distRowMouse.containsMouse ? colors.lineSoft : "transparent")
+                                                    border.width: 1
+
+                                                    ColumnLayout {
+                                                        anchors.fill: parent
+                                                        anchors.margins: 6
+                                                        spacing: 3
+
+                                                        RowLayout {
+                                                            Layout.fillWidth: true
+                                                            spacing: 6
+
+                                                            Rectangle {
+                                                                height: 14
+                                                                radius: 3
+                                                                color: itemKind === "app" ? colors.blueBg : (itemKind === "file" ? colors.tealBg : (itemKind === "none" ? colors.amberBg : colors.blueBg))
+                                                                border.color: itemKind === "app" ? colors.blue : (itemKind === "file" ? colors.teal : (itemKind === "none" ? colors.amber : colors.blue))
+                                                                border.width: 1
+                                                                Layout.preferredWidth: distKindText.implicitWidth + 6
+
+                                                                Text {
+                                                                    font.family: Theme.fontFamily
+                                                                    id: distKindText
+                                                                    anchors.centerIn: parent
+                                                                    text: itemKind.toUpperCase()
+                                                                    color: itemKind === "app" ? colors.blue : (itemKind === "file" ? colors.teal : (itemKind === "none" ? colors.amber : colors.blue))
+                                                                    font.pixelSize: Theme.fs(7)
+                                                                    font.weight: Font.Bold
+                                                                }
+                                                            }
+
+                                                            Text {
+                                                                font.family: Theme.fontFamily
+                                                                Layout.fillWidth: true
+                                                                text: root.stringOrEmpty(distItem && distItem.text)
+                                                                color: isSelected ? colors.violet : colors.text
+                                                                font.pixelSize: Theme.fs(9)
+                                                                font.weight: isSelected ? Font.Bold : Font.DemiBold
+                                                                elide: Text.ElideRight
+                                                            }
+
+                                                            Text {
+                                                                font.family: Theme.fontFamily
+                                                                text: Math.round(probVal * 100) + "%"
+                                                                color: isSelected ? colors.violet : (probVal >= 0.25 ? colors.text : colors.subtle)
+                                                                font.pixelSize: Theme.fs(9)
+                                                                font.weight: Font.Bold
+                                                            }
+                                                        }
+
+                                                        Rectangle {
+                                                            Layout.fillWidth: true
+                                                            height: 4
+                                                            radius: 2
+                                                            color: colors.lineSoft
+
+                                                            Rectangle {
+                                                                height: parent.height
+                                                                radius: 2
+                                                                width: Math.max(2, Math.round(parent.width * Math.min(1.0, probVal)))
+                                                                color: isSelected ? colors.violet : (itemKind === "none" ? colors.amber : (probVal >= 0.25 ? colors.teal : colors.blueMuted))
+
+                                                                Behavior on width {
+                                                                    NumberAnimation {
+                                                                        duration: 180
+                                                                        easing.type: Easing.OutQuad
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    MouseArea {
+                                                        id: distRowMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            if (itemIdx < root.launcherEntries.length) {
+                                                                root.updateLauncherPointerSelection(itemIdx);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Section 2: Selected Candidate Analysis
+                                        ColumnLayout {
+                                            visible: !!launcherJevInspectorPane.activeEntry
+                                            Layout.fillWidth: true
+                                            spacing: 6
+
+                                            Text {
+                                                font.family: Theme.fontFamily
+                                                text: "CANDIDATE ANALYSIS"
+                                                color: colors.subtle
+                                                font.pixelSize: Theme.fs(8)
+                                                font.weight: Font.Bold
+                                            }
+
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                radius: Theme.rad(6)
+                                                color: colors.panel
+                                                border.color: colors.lineSoft
+                                                border.width: 1
+                                                implicitHeight: activeCandCol.implicitHeight + 16
+
+                                                ColumnLayout {
+                                                    id: activeCandCol
+                                                    anchors.fill: parent
+                                                    anchors.margins: 8
+                                                    spacing: 6
+
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 6
+
+                                                        Text {
+                                                            font.family: Theme.fontFamily
+                                                            Layout.fillWidth: true
+                                                            text: root.stringOrEmpty(launcherJevInspectorPane.activeEntry && launcherJevInspectorPane.activeEntry.text)
+                                                            color: colors.text
+                                                            font.pixelSize: Theme.fs(11)
+                                                            font.weight: Font.Bold
+                                                            elide: Text.ElideRight
+                                                        }
+
+                                                        Rectangle {
+                                                            height: 16
+                                                            radius: 3
+                                                            color: colors.violetBg
+                                                            border.color: colors.violet
+                                                            border.width: 1
+                                                            Layout.preferredWidth: activeProbText.implicitWidth + 8
+
+                                                            Text {
+                                                                font.family: Theme.fontFamily
+                                                                id: activeProbText
+                                                                anchors.centerIn: parent
+                                                                text: "✦ " + Math.round((launcherJevInspectorPane.activeEntry && launcherJevInspectorPane.activeEntry.confidence ? Number(launcherJevInspectorPane.activeEntry.confidence) : 0) * 100) + "%"
+                                                                color: colors.violet
+                                                                font.pixelSize: Theme.fs(8)
+                                                                font.weight: Font.Bold
+                                                            }
+                                                        }
+                                                    }
+
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 8
+
+                                                        Text {
+                                                            font.family: Theme.fontFamily
+                                                            text: "Lexical Score: " + (launcherJevInspectorPane.activeEntry && launcherJevInspectorPane.activeEntry.lexical_score ? launcherJevInspectorPane.activeEntry.lexical_score : "0.0")
+                                                            color: colors.textDim
+                                                            font.pixelSize: Theme.fs(8)
+                                                        }
+
+                                                        Text {
+                                                            font.family: Theme.fontFamily
+                                                            visible: !!launcherJevInspectorPane.activeEntry && launcherJevInspectorPane.activeEntry.delta_top !== undefined && Number(launcherJevInspectorPane.activeEntry.delta_top) < 0
+                                                            text: "Delta: " + Math.round(Number((launcherJevInspectorPane.activeEntry && launcherJevInspectorPane.activeEntry.delta_top !== undefined) ? launcherJevInspectorPane.activeEntry.delta_top : 0) * 100) + "%"
+                                                            color: colors.amber
+                                                            font.pixelSize: Theme.fs(8)
+                                                        }
+                                                    }
+
+                                                    Rectangle {
+                                                        Layout.fillWidth: true
+                                                        height: 1
+                                                        color: colors.lineSoft
+                                                    }
+
+                                                    Text {
+                                                        font.family: Theme.fontFamily
+                                                        text: "CRITERIA PRESENTED TO MODEL"
+                                                        color: colors.subtle
+                                                        font.pixelSize: Theme.fs(7)
+                                                        font.weight: Font.Bold
+                                                    }
+
+                                                    Text {
+                                                        font.family: "JetBrainsMono Nerd Font"
+                                                        Layout.fillWidth: true
+                                                        wrapMode: Text.Wrap
+                                                        text: root.stringOrEmpty(launcherJevInspectorPane.activeEntry && launcherJevInspectorPane.activeEntry.criteria) || "(No criteria recorded)"
+                                                        color: colors.textDim
+                                                        font.pixelSize: Theme.fs(8)
+                                                    }
+
+                                                    Rectangle {
+                                                        Layout.fillWidth: true
+                                                        height: 1
+                                                        color: colors.lineSoft
+                                                    }
+
+                                                    Text {
+                                                        font.family: Theme.fontFamily
+                                                        text: "TARGET PATH / IDENTIFIER"
+                                                        color: colors.subtle
+                                                        font.pixelSize: Theme.fs(7)
+                                                        font.weight: Font.Bold
+                                                    }
+
+                                                    Text {
+                                                        font.family: "JetBrainsMono Nerd Font"
+                                                        Layout.fillWidth: true
+                                                        elide: Text.ElideMiddle
+                                                        text: root.stringOrEmpty(launcherJevInspectorPane.activeEntry && launcherJevInspectorPane.activeEntry.identifier)
+                                                        color: colors.blue
+                                                        font.pixelSize: Theme.fs(8)
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
