@@ -1678,13 +1678,14 @@ PanelWindow {
                                 }
 
                                 ScrollView {
+                                    id: jevInspectorScroll
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
                                     clip: true
                                     ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
                                     ColumnLayout {
-                                        width: parent.width - 4
+                                        width: jevInspectorScroll.availableWidth
                                         spacing: 12
 
                                         // Section 1: Probability Spectrum Chart
@@ -1704,16 +1705,26 @@ PanelWindow {
                                                 model: (root.jevLauncherMeta && root.jevLauncherMeta.distribution) ? root.jevLauncherMeta.distribution : []
 
                                                 delegate: Rectangle {
+                                                    id: distDelegateRect
                                                     required property var modelData
                                                     required property int index
                                                     readonly property var distItem: modelData
                                                     readonly property int itemIdx: index
                                                     readonly property double probVal: distItem && distItem.confidence !== undefined ? Number(distItem.confidence) : 0.0
                                                     readonly property string itemKind: root.stringOrEmpty(distItem && distItem.kind)
+                                                    readonly property string itemMainText: root.stringOrEmpty(distItem && distItem.text)
+                                                    readonly property string itemSubText: {
+                                                        const sub = root.stringOrEmpty(distItem && (distItem.subtext || distItem.identifier));
+                                                        if (!sub || sub === itemMainText) {
+                                                            return "";
+                                                        }
+                                                        return sub;
+                                                    }
                                                     readonly property bool isSelected: launcherJevInspectorPane.activeEntry && (root.stringOrEmpty(launcherJevInspectorPane.activeEntry.cid) === root.stringOrEmpty(distItem && distItem.cid) || (itemIdx === root.launcherSelectedIndex))
 
                                                     Layout.fillWidth: true
-                                                    height: 38
+                                                    width: parent ? parent.width : 0
+                                                    height: 40
                                                     radius: Theme.rad(6)
                                                     color: isSelected ? colors.violetBg : (distRowMouse.containsMouse ? colors.panelAlt : colors.panel)
                                                     border.color: isSelected ? colors.violet : (distRowMouse.containsMouse ? colors.lineSoft : "transparent")
@@ -1721,7 +1732,10 @@ PanelWindow {
 
                                                     ColumnLayout {
                                                         anchors.fill: parent
-                                                        anchors.margins: 6
+                                                        anchors.leftMargin: 8
+                                                        anchors.rightMargin: 8
+                                                        anchors.topMargin: 5
+                                                        anchors.bottomMargin: 5
                                                         spacing: 3
 
                                                         RowLayout {
@@ -1749,12 +1763,24 @@ PanelWindow {
 
                                                             Text {
                                                                 font.family: Theme.fontFamily
-                                                                Layout.fillWidth: true
-                                                                text: root.stringOrEmpty(distItem && distItem.text)
+                                                                text: itemMainText
                                                                 color: isSelected ? colors.violet : colors.text
                                                                 font.pixelSize: Theme.fs(9)
                                                                 font.weight: isSelected ? Font.Bold : Font.DemiBold
                                                                 elide: Text.ElideRight
+                                                                Layout.maximumWidth: itemSubText !== "" ? Math.round(distDelegateRect.width * 0.46) : -1
+                                                                Layout.fillWidth: itemSubText === ""
+                                                            }
+
+                                                            Text {
+                                                                visible: itemSubText !== ""
+                                                                font.family: Theme.fontFamily
+                                                                Layout.fillWidth: true
+                                                                text: itemSubText
+                                                                color: isSelected ? colors.violet : colors.subtle
+                                                                opacity: isSelected ? 0.85 : 1.0
+                                                                font.pixelSize: Theme.fs(8)
+                                                                elide: itemKind === "file" ? Text.ElideMiddle : Text.ElideRight
                                                             }
 
                                                             Text {
@@ -1763,6 +1789,7 @@ PanelWindow {
                                                                 color: isSelected ? colors.violet : (probVal >= 0.25 ? colors.text : colors.subtle)
                                                                 font.pixelSize: Theme.fs(9)
                                                                 font.weight: Font.Bold
+                                                                Layout.alignment: Qt.AlignRight
                                                             }
                                                         }
 
@@ -1794,6 +1821,13 @@ PanelWindow {
                                                         hoverEnabled: true
                                                         cursorShape: Qt.PointingHandCursor
                                                         onClicked: {
+                                                            const targetCid = root.stringOrEmpty(distItem && distItem.cid);
+                                                            for (let i = 0; i < root.launcherEntries.length; i++) {
+                                                                if (root.stringOrEmpty(root.launcherEntries[i] && root.launcherEntries[i].cid) === targetCid) {
+                                                                    root.updateLauncherPointerSelection(i);
+                                                                    return;
+                                                                }
+                                                            }
                                                             if (itemIdx < root.launcherEntries.length) {
                                                                 root.updateLauncherPointerSelection(itemIdx);
                                                             }
