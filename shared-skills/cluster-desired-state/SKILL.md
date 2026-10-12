@@ -1,12 +1,14 @@
 ---
 name: cluster-desired-state
-description: "Plan, recreate, repair, or audit the PittampalliOrg hub, dev, and ryzen clusters end to end. Use for full-cluster desired state, provisioning order, argocd-agent enrollment, GitOps branch ownership, Tailscale secret transport, hub or spoke recovery, and post-rebuild convergence. Use talos-clusters for a narrow Talos node or capacity change and gitops for an application rollout or drift incident."
+description: "Plan, recreate, repair, or audit the PittampalliOrg hub and dev clusters end to end. Use for full-cluster desired state, provisioning order, argocd-agent enrollment, GitOps branch ownership, Tailscale secret transport, hub or spoke recovery, and post-rebuild convergence. Use talos-clusters for a narrow Talos node or capacity change and gitops for an application rollout or drift incident."
 ---
 
 # Cluster Desired State
 
 Use this skill for the ordered path from infrastructure to a healthy fleet. Do
-not treat this skill as a snapshot of live versions or resource counts.
+not treat this skill as a snapshot of live versions or resource counts. Hub and
+dev are active targets; the Ryzen cluster is retired. Its retained source
+profiles are historical, not an active factory lane or permission to recreate it.
 
 ## Authority
 
@@ -38,7 +40,7 @@ resource against current source before using it.
 | ------- | --------------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------- |
 | `hub`   | Management plane, principal, build and promotion services | Hub ArgoCD                                                   | Hydrated `env/hub`                     |
 | `dev`   | Active shared workload spoke                              | Managed argocd-agent; applications are authored from the hub | Hydrated and promoted `env/spokes-dev` |
-| `ryzen` | Local development spoke                                   | Autonomous argocd-agent and local ArgoCD                     | `main` directly through `root-ryzen`   |
+| `ryzen` (retired) | Historical profile | No active factory delivery | Historical `root-ryzen` definition only |
 
 The hub secret root is 1Password-backed. Spokes consume hub-mirrored secrets
 through the Tailscale transport contract. Verify the current ExternalSecret and
@@ -51,12 +53,14 @@ Identity path on a spoke.
 | ------------------------------------ | -------------------------------------------------------------------------------- |
 | Recreate or verify the hub           | `deployment/scripts/recreate-hub.sh` and `deployment/scripts/hub-verify-gate.sh` |
 | Recreate dev                         | `deployment/scripts/talos-hetzner/recreate-dev.sh`                               |
-| Recreate ryzen                       | `deployment/scripts/bootstrap-spoke-cluster.sh --recreate --ts-host-passthrough` |
 | Enroll or repair dev agent mapping   | `deployment/scripts/argocd-agent/enroll-dev-agent.sh`                            |
-| Enroll or repair ryzen agent mapping | `deployment/scripts/argocd-agent/enroll-ryzen-agent.sh`                          |
 | Narrow Talos resize or upgrade       | Use the `talos-clusters` skill                                                   |
 | Shared quota or dynamic concurrency  | Use the `kubernetes-capacity` skill                                              |
 | Application drift or image delivery  | Use the `gitops` skill                                                           |
+
+Historical Ryzen bootstrap/enrollment scripts remain in source for provenance;
+using them requires an explicit task to reactivate that target. Do not run them
+for a hub/dev recovery or for a failed factory admission.
 
 Read each script's `--help` and source before execution. The wrapper scripts own
 ordering, secret transport, agent enrollment, Headlamp credential refresh, and

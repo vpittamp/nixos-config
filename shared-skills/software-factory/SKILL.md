@@ -1,6 +1,6 @@
 ---
 name: software-factory
-description: "Operate the Workflow Builder Delivery Board and software factory on dev — the issue-to-merged-PR lane. Use for board cards and phases, intake subscriptions and reconcile cadence, factory policy and auto-start, phase runs and attempts, the preview environment a build phase binds, and reading live board state. Use gitops for the stacks release lane and image pins, preview-environments for PreviewEnvironment lifecycles and DevelopmentRuns, and workflow-builder for dynamic-script workflows and durable agent sessions."
+description: "Operate the Workflow Builder Delivery Board on dev from issue intake through verified delivery and cleanup. Use for autonomous phase policy, delegated approvals, preview builds, evaluator repair, independent review, automated attestation/binding and live board state. Use gitops for the protected release/promotion lane and preview-environments for lifecycle operations."
 ---
 
 # Software Factory
