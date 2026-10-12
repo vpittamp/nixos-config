@@ -5,188 +5,148 @@ description: "Operate the Workflow Builder Delivery Board and software factory o
 
 # Software Factory
 
-The Delivery Board is the issue-to-merged-PR factory: GitHub issues and pull
-requests become cards, and cards walk phases that dispatch agent runs.
+Operate the workspace Delivery Board from issue intake through protected source
+delivery, verified deployment and cleanup. Prefer the typed Workflow MCP tools;
+the factory's durable owner advances each item. This skill describes current
+operations, not permission to start or mutate unrelated work.
 
-`PittampalliOrg/workflow-builder` **`docs/delivery-board.md` is the source of
-truth — read it first.** This skill carries the operational knowledge that the
-document does not: how to read live state, and the traps that cost outages.
+## Read the current contract
 
-Resolve disagreements in this order: live database and cluster > application
-code (`src/lib/domain/software-factory.ts`, `src/lib/server/application/`) >
-`docs/delivery-board.md` > this skill.
+Start with Workflow Builder `docs/delivery-board.md` and
+`docs/software-factory.md`; use `docs/factory-runtime-completion.md` for host
+review publication and Hub signing. Verify fresh repository revisions before
+source claims. Resolve disagreements using live scoped evidence and current
+application/domain code, then documentation, then this skill.
 
-## Two Boards, One Card Model
+Call `get_workflow_context`, then `get_software_factory` before proposing a
+repair. The authenticated workspace owns these operations; an MCP transport
+session ID is not workflow authority. Inspect `get_factory_item({cardId})` for
+the current attempt, owner decision, findings, review evidence and transitions.
 
-| Board    | Source                | Phases                                                          |
-| -------- | ---------------------- | ----------------------------------------------------------------- |
-| `work`   | GitHub **issues**     | `intake` → `triage` → `assessed` → `planning` → `planned` → `building` → `review` → `completing` → `done` |
-| `review` | GitHub **pull requests** | `reviewing` / `rereviewing` → merged                          |
+## Normal autonomous lane
 
-Phases are `resting` (waiting for an event) or `working` (an agent run is
-dispatched). `failed` is **resting, not terminal** — a failed card can be sent
-back to `triage`, `planning`, `building`, or `completing`.
+Work cards follow intake → triage → assessed → planning → planned → building →
+review → completing → done. Review cards follow reviewing/rereviewing →
+reviewed → merged or changes_requested. A failed card is resting and repairable;
+it is not the same as canceled. Read the attempt's terminal outcome envelope,
+not Dapr COMPLETED, to decide whether its work succeeded.
 
-Pull requests are dropped from the issues listing, because a PR filed as a Work
-card is a card nobody can complete.
+Intake requires a repository subscription with the work/review lanes enabled.
+An authenticated webhook alone does not establish that subscription. Source
+reconciliation ensures one durable item owner; it does not dispatch a second
+owner. Before diagnosing missing intake, verify the selected repository/lane,
+source readability and actual last reconciliation time. The declared reconcile
+schedule and the received ticks are separate evidence.
 
-## Intake Is Subscription-Gated
+Inspect the complete policy with `get_software_factory`. To change it, preserve
+the current row and use `set_factory_policy`; do not invent fields from an old
+example or write SQL. Separate switches authorize separate effects:
 
-A board does not track a repository because an authenticated webhook arrived
-from it. `delivery_intake_subscriptions` is `(project_id, repo)` with
-`takes_work` / `takes_review` lanes; a delivery for an unsubscribed repo is
-acknowledged and dropped. **Check the subscription before calling missing intake
-a bug.**
+- `phases`: automatic/manual/disabled for each working phase. A single manual
+  triage or planning phase can intentionally leave downstream work waiting.
+- `acceptWork`: delegates acceptance of code tasks, including features and docs.
+- `approvePlans`: delegates plan approval.
+- `mergePullRequests`: lets the factory request protected merge admission after
+  required evidence. It does not bypass independent review or GitHub rules.
+- `resolveIssues`: governs supported non-code dispositions separately.
+- `completionEvidence`: deployment for code that changes a running service;
+  documentation uses its explicit reviewed-merge/no-runtime-change contract.
+- `verification`: required or advisory evidence according to the selected plan.
 
-The reconciler re-reads the repository through an authenticated client and never
-writes webhook payload contents into application state. It fails closed in three
-distinguishable ways: closed → `done`/`canceled`; unreadable (502/403/timeout)
-→ **leaves the card alone**, reports `unreadable`, marks the pass `degraded`;
-404 → also leaves it alone, because a vanished issue needs a person.
+Check other resting items before changing workspace-wide policy. Honor existing
+user approval delegation; do not repeatedly request approval already granted.
+For an unattended test, record any manual phase start, approval, retry or source
+write as an intervention instead of labeling the assisted sequence autonomous.
 
-### Cadence, and why it is the whole latency
+## Runtime and implementation
 
-The reconcile job is a **Dapr Job** (`delivery-board-reconcile`) upserted at pod
-boot, configured by env on the workflow-builder Deployment:
+The registry's `defaultRuntimeId` selects new work; `legacyDefaultRuntimeId`
+preserves old records. As of the 2026-10-12 verified source, new work defaults
+to `dapr-mastra`; Python remains explicitly selectable. Read `builderProfile`,
+`phaseRuntime`, published role packages and effective agent configuration for
+the particular attempt. Do not switch an existing durable history by changing
+a default or treat a pod label as runtime identity.
 
-| Env                                  | Note                                              |
-| ------------------------------------ | --------------------------------------------------- |
-| `DELIVERY_BOARD_RECONCILE_ENABLED`   | must be `"true"`; code default is OFF               |
-| `DELIVERY_BOARD_RECONCILE_SCHEDULE`  | `/^@every\s+\d+(ms\|s\|m\|h)$/`; code default `@every 15m` |
-| `DELIVERY_BOARD_RECONCILE_LIMIT`     | default 50                                          |
+The build phase owns a PreviewEnvironment and canonical DevelopmentRun. Read
+its exact generation and readiness on the lifecycle authority before calling
+a pending attempt stalled. Capacity admission, preview boot, application sync,
+auth/exposure and execution progress are different waits. A successful launch
+request or Ready pod does not prove all of them. Follow the current owner reason
+and server refresh interval; do not launch another build while this one waits.
 
-The design says the webhook makes the board *fast* and the timer makes it
-*correct*. **On this fleet the fast path does not exist**: the
-`PittampalliOrg/workflow-builder` `issues` webhook delivers to
-`argo-events-hub`, and nothing delivers to the BFF's own
-`/api/internal/github/webhook`. The timer is therefore the *only* path that
-notices a new issue, and **its interval is the intake latency** — measured at
-8m30s on a 15m schedule before dev was moved to `@every 1m`. If you are asked
-why a fresh issue has no card, check the last tick time before anything else.
+For browser acceptance, the route and data must belong to the signed-in preview
+workspace. Registered factory-board fixtures exercise only their documented
+routes and capabilities. For another UI, use its actual page and supported
+preview-owned data with `fixture:null`; do not freeze criteria requiring rows,
+runs or events that the fixture cannot produce. Keep internal state/timing and
+absent data edge cases in meaningful unit/component controls. A critic's source
+requirement failure returns to implementation for the same item; environment or
+missing-proof failures remain incomplete with their actual cause.
 
-A pass is cheap: it reads the still-open items (`unchanged=2` on a board with
-163 closed cards), not the whole history.
+## Independent review, attestation and delivery
 
-Verify a schedule change actually took: both pods must log
-`[delivery-board] scheduled Dapr Job 'delivery-board-reconcile' (@every 1m)`,
-and tick timestamps must be that far apart. `POST
-/api/internal/delivery-board/reconcile` drives the same pass by hand.
+Normal factory review supplies a typed verdict, exact reviewed head and retained
+evidence. The admitted Hub source publisher posts the reviewer App attestation
+and requests binding refresh. The normal owner handles queue admission; the
+separately admitted Hub signer propagates eligible source verdicts to the exact
+native merge group. The release publisher/reviewer/merger owns image delivery.
+These are separate authorities and separately observable effects.
 
-## Policy And Auto-Start
+Do not run workstation attestation, manual binding refresh or queue signing for
+a normal factory subject that has handed those writers to the Hub. Respect the
+current writer interlock and subject-bound recovery authorization. Never
+self-attest or turn a local source review into merge or deployment permission.
+`factory:bypass` excludes factory intake for an authorized factory repair; it
+does not waive independent review, required CI or protected landing.
 
-Policy is one JSON row per project in **`factory_policies`** (migration 0194;
-it replaced `delivery_board_automation`, which 0194 drops — a stale local copy
-of that older migration file will mislead you). Read and write it with the
-`get_software_factory` and `set_factory_policy` MCP tools rather than SQL.
+Read current exact-head checks and current native queue membership. A source
+SHA, temporary PR merge SHA and native queue group SHA are different subjects.
+Reconcile historical pre-attestation binding failures against the actual latest
+qualified check; do not resend an already successful write. Unknown write
+effects require readback, not another write.
 
-```json
-{"version":1,
- "phases":{"work.triage":"manual","work.planning":"automatic","work.building":"automatic",
-           "work.completing":"automatic","review.reviewing":"automatic","review.rereviewing":"automatic"},
- "acceptWork":true,"approvePlans":true,"mergePullRequests":true,
- "completionEvidence":"deployment","builderProfile":"dapr-agent-py",
- "maxDispatchAttempts":5,"maxReworkAttempts":3,"phaseTimeoutSeconds":3600,
- "verification":"advisory"}
-```
+For deployment completion, join merged source → immutable build/digest →
+committed release/promotion → named native application sync → owned workload
+readiness/runtime image → the changed user path. Use the item's `releaseLane`
+and the workspace `releaseChain` for diagnosis, keeping their exact subjects
+and missing stages distinct. A merge, green build, advanced pin or healthy
+parent application alone is insufficient. Use `gitops` for this boundary.
 
-**"Auto-start" is not a switch — it is the `phases` map.** A single phase left
-`"manual"` stops every card at that phase while everything downstream looks
-correctly configured. `work.triage: "manual"` is the usual culprit: cards pile
-up in `intake` and the board looks broken. Set the phase to `"automatic"`.
+## Recovery and terminal cleanup
 
-A card stops on its own at any phase requiring `accept` or `merge` approval;
-neither is delegable. `merge` is read from the pull request, never inferred from
-"closed", so a closed-unmerged PR cannot record it.
+`repair_factory_item` is attempt-scoped: retry a failed latest attempt, reconcile
+existing owner/delivery facts, or cancel through canonical lifecycle cleanup.
+Choose the narrow supported action after reading the actual owner finding.
+Do not force board or execution rows terminal, reset history or blanket retry
+semantic refusals. Budgets are ceilings for specific work, not instructions to
+repeat a failed prefix; inspect the effective limits before tuning them.
 
-The domain refuses an automatic entry into a working phase unless
-`autoStartRuns` is true — and it **fails closed on an unreadable setting**, so
-"off" and "I could not read it" look identical from outside. Read the row.
+An active DevelopmentRun owns its builder session. Cancel the parent through
+`development_run_cancel`; stopping one session is not canceling the workflow.
+Do not reuse a deterministic instance ID until canonical closure is confirmed.
+Credit valid checkpoint/recovery evidence where its source, protocol and
+generation remain applicable; use the controller's typed handoff/reproduce
+lane rather than claiming a generic restart restored a checkpoint.
 
-## The Build Phase Binds A Preview Environment
+Done and session-terminated projections do not prove physical resource absence.
+Confirm current task-owned runtime/hands cleanup with canonical provider or
+complete scoped native metadata. List snapshots must be complete and maintain
+one revision within pagination; combine pre/post CR inventories and validate
+native ownership. Unrelated cluster revision movement between separate complete
+reads is not itself a task resource. Preserve evidence and archives. Shared
+Mastra/Python harness Deployments and Hub/dev controllers are intentional
+services, not per-run cleanup targets. Use `preview-environments` for signed
+preview teardown and `agent-session-recovery` for durable run forensics.
 
-`building` provisions a preview environment named
-`factory-<cardId lowercased, non-alphanumerics stripped, 20 chars>`
-(`factoryPreviewEnvironmentName`) and waits for it. This is where cards stall
-most often, and the stall is usually **not** about the card.
+## Evidence and targets
 
-- `DEAD_PREVIEW_PHASES` = `failed, terminating, absent, slept, expired`
-  (`software-factory.ts`). A phase in that set makes the factory null its
-  binding and call `ensure()` again.
-- **Trap — the BFF and the cluster can disagree.** `get_preview_environment` has
-  been observed reporting `phase: "failed"` at the same moment the hub
-  `PreviewEnvironment` CR read `Provisioning` / `Ready=False /
-  WaitingForApplication`. Because `failed` is a dead phase, the factory re-binds
-  a still-provisioning environment instead of waiting for it. **Always read the
-  hub CR before believing a "failed" preview**, and note the CR lives in
-  namespace `preview-system` on hub — a namespace-less `kubectl get` returns
-  `NotFound` and looks like a deleted environment.
-- **Trap — fresh preview vclusters race their own CRDs.** A per-card vcluster
-  starts empty; if the workflow-builder Application syncs before agent-sandbox
-  is installed, Argo fails with `failed to discover server resources for group
-  version extensions.agents.x-k8s.io/v1alpha1` and retries with backoff. A
-  long-lived warm-pool environment on the same profile is `Synced/Healthy`,
-  which is the fastest way to tell a provisioning race from a real gap: compare
-  the two vclusters' pods for `agent-sandbox-controller`.
+Maintain a stage ledger with exact source/review/build/generation/digest
+subjects, outcomes, observation times, interventions and remaining gaps.
+Reuse qualified evidence until a material change invalidates its claim; recheck
+only the affected boundary. Preserve failed attempts and setup failures with
+their real classifications. One successful observed chain establishes that
+chain, not statistical reliability or every replay/fault guarantee.
 
-## Reading Live State
-
-Board state is in the dev `workflow_builder` database. Prefer the MCP tools
-(`get_software_factory`, `get_factory_item`) — `get_software_factory` can exceed
-the tool-result limit, so slice the saved file rather than re-calling it.
-
-For direct reads, **the app pod has no `psql`**. Use the app's own driver, which
-also keeps `DATABASE_URL` inside the pod:
-
-```bash
-POD=$(kubectl --context dev -n workflow-builder get pods -l app=workflow-builder \
-      -o jsonpath='{.items[0].metadata.name}')
-cat > /tmp/q.mjs <<'JS'
-import postgres from "/app/node_modules/postgres/src/index.js";   // ESM ignores NODE_PATH
-const sql = postgres(process.env.DATABASE_URL, { max: 1, ssl: false });
-console.log(JSON.stringify(await sql`select source_number, board, phase from delivery_cards
-  where source_kind='issue' and phase not in ('done','canceled')`, null, 1));
-await sql.end();
-JS
-kubectl --context dev -n workflow-builder exec -i "pod/$POD" -c workflow-builder -- \
-  sh -c 'cat > /tmp/q.mjs && node /tmp/q.mjs' < /tmp/q.mjs
-```
-
-Three details that each cost a failed attempt: `/app` is **read-only** but
-`/tmp` is writable; ESM resolution ignores `NODE_PATH`, so import the driver by
-absolute path; and `postgresql-cnpg-app` points at database `app`, which is
-empty — `DATABASE_URL` is the right one.
-
-Tables worth knowing: `delivery_cards`, `delivery_card_events` (append-only,
-`seq`-ordered), `delivery_intake_subscriptions`, `factory_policies`,
-`factory_ticks` (per-tick result JSON — **the fastest way to see why a card is
-not moving**), `factory_attempts`.
-
-A tick result reads like
-`{"state":"attention","cardId":"…","reason":"…","pollSeconds":15}`. `attention`
-means the factory wants a person; the `reason` names the blocker verbatim.
-
-## Traps
-
-- A card in `building` with `phase_run_execution_id = null` for minutes is
-  almost always blocked on its preview environment, not on an agent.
-- `created=0` on a tick with a new issue open means the repo is unsubscribed,
-  the lane is off (`takes_work`), or the issue arrived after the pass — check in
-  that order.
-- A pass that could not list the repository still refreshes existing cards and
-  reports `listingError`; `summarizeReconcile()` marks it `degraded`. **A
-  degraded pass is not proof of board freshness.**
-- Enabling automation applies to *every* open card, not just the one in front of
-  you. Check what else is resting in `intake` before flipping a phase.
-
-## Canonical Sources
-
-`PittampalliOrg/workflow-builder`: `docs/delivery-board.md` (SSOT);
-`src/lib/domain/{software-factory,delivery-board,delivery-intake}.ts`;
-`src/lib/server/application/{software-factory,delivery-intake,delivery-journey}.ts`;
-`src/lib/server/application/adapters/delivery-intake-job-deps.ts`;
-`src/routes/api/internal/delivery-board/reconcile/+server.ts`;
-`drizzle/0187_delivery_board.sql` through `drizzle/0196_factory_events_notify.sql`.
-
-`PittampalliOrg/stacks`:
-`packages/components/workloads/workflow-builder/manifests/Deployment-workflow-builder.yaml`
-(the `DELIVERY_BOARD_RECONCILE_*` env).
+Dev is the workload target and Hub owns management/delivery. Ryzen is retired.
+Do not redirect this workflow to it or introduce a local workstation writer to
+make an automated test appear successful.

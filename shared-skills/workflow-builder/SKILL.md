@@ -15,8 +15,9 @@ A saved dynamic workflow contains script source plus metadata. The durable
 script pump evaluates deterministic primitives, journals dispatched work, and
 replays from recorded results. Agent calls cross the runtime-registry port;
 every runtime declares an explicit `hostMode`. The architecture is harness-first
-brains-from-hands (`docs/agent-runtime-comparison.md`): `dapr-agent-harness` is
-the only standing brain for the Dapr family, and its hands are replaceable — an
+brains-from-hands (`docs/agent-runtime-comparison.md`): the platform default
+for new work is `dapr-mastra`, with the replicated `dapr-mastra-harness` brain;
+explicit Python work uses `dapr-agent-harness`. Their hands are replaceable — an
 OpenShell shared workspace, or a credential-free SEA sandbox executor. CLI, CUA,
 and browser adapters that cannot separate their loop from their tools are
 `per-session-pod` capability exceptions, never a fallback. Standalone Python
@@ -36,7 +37,8 @@ git -C "$WFB_ROOT" fetch origin
 git -C "$WFB_ROOT" status --short --branch
 ```
 
-Use a clean worktree for edits. Resolve details from current docs, types, tests,
+Verify HEAD and origin/main separately after fetching; an old main checkout
+may not have moved. Use a clean worktree for edits. Resolve details from current docs, types, tests,
 runtime registry, and live target instead of hard-coding a remembered model,
 runtime, action slug, or user/project ID.
 
@@ -111,8 +113,10 @@ the tools run (`docs/harness-host.md`):
 
 | hostMode | Loop runs on | Tools run in | Transport | Credentials |
 | --- | --- | --- | --- | --- |
+| `harness` + `openshell-shared` (`dapr-mastra`, default for new work) | replicated `dapr-mastra-harness` | owner-authenticated per-run OpenShell workspace | Dapr invoke to the Mastra harness | provider/platform credentials stay with the harness; hands receive no platform credentials |
+| `harness` + `sandbox-executor` (`dapr-mastra-local`, explicit selection) | Mastra harness | scoped sandbox executor | Dapr invoke plus owner-scoped executor transport | executor holds only its execution credential |
 | `per-session-pod` (CLI, browser, and `cua-*` adapters) | the `agent-host-<gen>` Sandbox pod | the same pod | dedicated `agent-session-*` app-id reached by pod IP on port 8002 | loop and tools share the pod's secrets |
-| `harness` + `openshell-shared` (`dapr-agent-py`, the canonical default) | static-app-id `dapr-agent-harness` Deployment (2 replicas, PDB) | the per-run OpenShell workspace named by `childInput.sandboxName`; NO per-session host is built (`runtimeSandboxName` null, `runtimeHostOwned` false) | Dapr invoke to the harness | OpenShell receives no platform credentials at all |
+| `harness` + `openshell-shared` (`dapr-agent-py`, explicitly selectable; legacy default) | static-app-id `dapr-agent-harness` Deployment (2 replicas, PDB) | the per-run OpenShell workspace named by `childInput.sandboxName`; NO per-session host is built (`runtimeSandboxName` null, `runtimeHostOwned` false) | Dapr invoke to the harness | OpenShell receives no platform credentials at all |
 | `harness` + `sandbox-executor` (`dapr-agent-py-local`) | the same harness Deployment | the per-session pod as a sandbox executor via `POST /executor/exec` | Dapr invoke to the harness; harness -> executor with the executor token | executor pod: no daprd, no provider keys, no `DATABASE_URL`, no `INTERNAL_API_TOKEN`; only its per-session `SANDBOX_EXECUTOR_TOKEN` from Secret `agent-host-cred-<gen>` |
 
 - The `shared-pool` host mode, `agent-runtime-pool-*` workloads, the standing
@@ -130,6 +134,25 @@ the tools run (`docs/harness-host.md`):
   readiness probe gates on `ok`.
 - Resilience proven live (executor pod and harness replica each deleted
   mid-turn; same execution finishes): `agent-session-recovery`.
+
+## Error feedback and evidence size
+
+Separate a completed tool failure from an unknown effect. A returned command
+failure or deterministic tool refusal carries its actual cause to the model so
+it can change arguments/approach; it does not by itself fail the harness or
+retry that same completed effect. Transient transport/activity failures use
+the admitted durable retry path. Lost acknowledgements and ambiguous mutations
+remain journal/reconciliation problems, never permission to repeat a write.
+Model authentication/schema refusals and prompt-window errors have their own
+classification; do not classify every HTTP400 as infrastructure or every
+sandbox error as a terminal workflow failure. Read the current Mastra domain
+and activity adapters before changing these rules.
+
+For large output use bounded projections/cursors or sealed artifact references
+and fetch only the relevant segment. Clamped trace output is not the complete
+artifact. Do not raise transport/state ceilings indiscriminately or turn an
+old configured budget into a permanent recommendation. Preserve full scoped
+evidence through the existing archive contract without printing credentials.
 
 ## Context Strategy
 

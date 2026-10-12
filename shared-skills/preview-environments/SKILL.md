@@ -181,7 +181,9 @@ release it. An attached builder session remains parent-owned while the run is
 active: `stop_interactive_session` returns 409
 `active_development_run_session`; use `development_run_cancel` and allow the
 parent to order evidence and cleanup. Direct session stop is valid after the
-run is `delivered`, `failed`, or `cancelled`.
+run is terminal, including `delivered`, `submission-ready`, `failed`, or
+`cancelled`. `submission-ready` is a no-delivery terminal outcome, not a merged
+or deployed change; cleanup and session ownership readers must recognize it.
 
 A generic checkpoint continuation is intentionally outside the active
 DevelopmentRun. It is permitted only after the source execution is terminal,
@@ -189,6 +191,25 @@ materializes a detached tree that may have no `.git`, and has no
 `wfb-development`, receiver, preview synchronization, or submission authority.
 Use `development_run_handoff` or `development_run_reproduce` to remain inside
 the canonical preview-development lifecycle.
+
+## Acceptance data and completion evidence
+
+Use the signed-in preview's own workspace and supported seed data. Host workspace
+slugs or registered board fixtures are not proof that a different preview page
+contains the data a browser criterion needs. Browser statements must describe
+behavior the critic can observe; internal ordering/timing and missing live data
+cases belong in meaningful source/component controls. On a source requirement
+failure, return feedback to the same implementation item and require fresh
+judgment of its changed candidate. Missing environment/proof remains incomplete.
+
+Keep real browser/source acceptance, accepted candidate, demo capture, source
+delivery, protected merge, persistent deployment and physical teardown separate.
+Retain valid qualified evidence at its exact tuple and recheck only a materially
+changed boundary. A review or image build is not a user-path proof; a terminal
+session projection is not hands absence. Shared harness services are intentional;
+only run-owned resources belong in cleanup. Complete each paginated metadata
+inventory at one revision and combine pre/post CR observations; do not require
+unrelated cluster revisions to stop changing between separate complete reads.
 
 ## Targets And Builders
 
@@ -199,7 +220,8 @@ new page, workflow, MCP schema, or transport.
 
 Public builder profiles are:
 
-- `dapr-agent-py`
+- `dapr-mastra` (default for new work; existing runs keep their stamped runtime)
+- `dapr-agent-py` (explicit Python selection)
 - `claude-code-cli`
 - `codex-cli`
 - `kimi-code-cli`

@@ -10,6 +10,21 @@ The DurableSessionRuntime contract (`docs/durable-session-runtime-contract.md`
 `services/shared/runtime-registry.json` is the swap-safety admission bit and is
 flipped ONLY on gate-checked `static=PASS` AND `live=PASS`.
 
+## Defaults and proof scope
+
+`defaultRuntimeId` currently selects `dapr-mastra` for new work; existing records
+retain their runtime, with `legacyDefaultRuntimeId` resolving old unstamped
+Python records. Default selection, capability admission and conformance are
+different claims. Preserve existing Python histories and explicitly selectable
+Python agents. A source-only Dapr upgrade candidate is not an adopted runtime.
+
+Credit a static/live result only for its recorded subject and protocol/hands
+scope. In particular, historical sandbox-executor loss controls do not establish
+every canonical OpenShell or newer history/ContinueAsNew case. Ordinary workflow
+completion, a synthetic generator restart, and actual Dapr history replay are
+different evidence. Do not repeat an unaffected complete matrix for a new goal;
+recheck the affected contract boundary when its subject changes.
+
 ## Start From Source
 
 ```bash
@@ -45,8 +60,9 @@ it via `sys.path`, no service imports another):
   Verdict: PASS iff every check PASS; SKIPPED iff any SKIPPED and none FAIL;
   otherwise FAIL; MISSING with no results.
 
-If a constant and the doc disagree, the doc wins: fix the constant, never
-loosen a check in an adapter.
+Resolve disagreements against the canonical contract, current registry and
+gate-checked evidence. Update stale prose or a proven incorrect constant with
+its rationale; do not loosen enforcement merely to match an old document.
 
 ## Static Lane
 
@@ -58,9 +74,12 @@ only the Dapr sidecar stubbed:
 | `services/dapr-agent-py`     | `dapr-agent-py`, `dapr-agent-py-local`, `cua-agent-py`, `cua-browser-agent-py` |
 | `services/cli-agent-py`      | `claude-code-cli`, `claude-code-cli-glm`, `codex-cli`, `kimi-code-cli`, `agy-cli` |
 | `services/browser-use-agent` | `browser-use-agent`                                                           |
+| `services/dapr-mastra` | `dapr-mastra`, `dapr-mastra-local`; Node runtime exercised by `tests/conformance/run.py` |
 
-Each is `tests/conformance/test_runtime_contract.py` and writes the file named
-by `RUNTIME_CONFORMANCE_RESULTS`.
+The Python hosts use `tests/conformance/test_runtime_contract.py`; Mastra uses
+`pnpm conformance` in `services/dapr-mastra` via its Python/Node bridge. All write
+the file named by `RUNTIME_CONFORMANCE_RESULTS`; the current static runner
+collects all four services. Read that runner before assuming every host is Python.
 
 ```bash
 cd "$WFB_ROOT"
@@ -204,8 +223,8 @@ every other agent runs on — pin it on one agent
   and is a 400.
 - Scope: the honoured ref becomes the `agentImage` of THAT ONE per-session host
   request (SEA: `image = request.agentImage or class_config.agentHostImage`) and
-  nothing else. It never replaces a shared Deployment: `dapr-agent-harness`, the
-  only standing brain, is untouched. (The `runtime-image-ref.ts` header still
+  nothing else. It never replaces a shared Deployment: the selected shared
+  Mastra or Python harness is untouched. (The `runtime-image-ref.ts` header still
   says "the runtime pools" — stale since wfb #1970 retired them.)
 - Switch: the SAME one as the unverified-runtime refusal, not a second flag.
   Without `agentConfig.allowUnverifiedRuntime: true` (literal boolean) or
@@ -231,7 +250,7 @@ every other agent runs on — pin it on one agent
 | `dapr-agent-py-local` | yes — lands on the sandbox-executor pod; the harness image is untouched |
 | `claude-code-cli`, `claude-code-cli-glm`, `codex-cli`, `kimi-code-cli`, `agy-cli` | yes — `cli-agent-py-sandbox` |
 | `cua-agent-py`, `cua-browser-agent-py` | yes — `cua-agent-py-sandbox` (unexercised on dev) |
-| `dapr-agent-py` | NO — `imageRepository: null`: the loop is on the shared harness and the tools in the OpenShell shared workspace |
+| `dapr-mastra`, `dapr-agent-py` | NO — `imageRepository: null`: the loop is on the shared harness and the tools in the OpenShell shared workspace |
 | `browser-use-agent` | NO — warm-pool lane, not a per-session Kueue host |
 
 A runtime with no per-session image refuses LOUDLY rather than silently running
@@ -278,7 +297,7 @@ per-session host is built".
 5. Remove `runtimeImageRef` (or the canary) when done. Promotion still goes
    through the release pins — this is a test lane, never a delivery path.
 
-## Current State
+## Historical sample (2026-09-02)
 
 Verified: `dapr-agent-py`, `dapr-agent-py-local`, `cua-agent-py`,
 `cua-browser-agent-py`, `claude-code-cli`, `codex-cli`, `kimi-code-cli`,
@@ -337,7 +356,7 @@ above is the state as of 2026-09-02.
 - `services/shared/runtime-registry.json`,
   `services/shared/runtime-conformance-results.json`
 - `scripts/runtime-conformance/{run-static.sh,merge.py,gate.py,live.py}`
-- `services/{dapr-agent-py,cli-agent-py,browser-use-agent}/tests/conformance/`
+- `services/{dapr-agent-py,cli-agent-py,browser-use-agent,dapr-mastra}/tests/conformance/`
 - `src/lib/server/agents/swap-safety.ts`
 - `src/lib/agents/runtime-image-ref.ts`,
   `src/lib/server/agents/runtime-image-override.ts`,

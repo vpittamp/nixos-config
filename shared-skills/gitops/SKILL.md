@@ -5,9 +5,10 @@ description: "Operate PittampalliOrg/stacks delivery and recovery, with dev as t
 
 # GitOps
 
-Default shared delivery and live verification to `dev`. Operate `ryzen`, dormant
-environments, or destructive hub recovery only when the user explicitly names
-that target.
+Hub owns management and delivery; dev is the shared workload and verification
+target. Ryzen is retired and is not an active delivery lane. Historical source
+profiles are not permission to resume it. Scope any destructive Hub recovery to
+the user's explicit task and current operational authorization.
 
 ## Authority And Worktrees
 
@@ -35,7 +36,7 @@ into skill text. Discover them from source and the target cluster.
 | ------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | `dev`   | App merge to GitHub; hub Tekton builds GHCR and updates release metadata plus generated dev overlay | Source Hydrator -> GitOps Promoter -> `env/spokes-dev` -> managed dev agent |
 | `hub`   | `stacks/main` dry source and generated hub state                                                    | Source Hydrator -> Promoter -> `env/hub` -> hub ArgoCD                      |
-| `ryzen` | Explicit GitHub `main` manifest/image pin                                                           | Local autonomous ArgoCD `root-ryzen`; no Promoter lane                      |
+| `ryzen` (retired) | Historical profile only | No active factory delivery or verification target |
 
 The hub is the build and fleet-observation plane. Reconciliation operations run
 on the target's local ArgoCD under argocd-agent. A hub status mirror may not
@@ -103,41 +104,50 @@ lane resolves an existing image before it builds.
   `reuse-exact`, then pin -> sync -> rollout). A cold build adds **~5.5 min**.
   Build lanes carry `retries: 1`; failed PipelineRuns are kept **7 days**.
 
-## Merging Pull Requests
+## Protected source landing and factory automation
 
-- **workflow-builder `main` is behind a merge queue** (ruleset "main merge
-  queue", squash, ALLGREEN). Required contexts on both the PR head and the queue
-  commit: `ci-required` (the aggregator job in `pr-checks.yml`, green only when
-  every CI job succeeded) and `hub/image-build`. On the head that status comes
-  from the hub PR-head lane; wfb's `image-build-deferred` job is a *fallback*
-  that waits ~150 s and posts a deferred success only when the hub posted
-  nothing (drafts, forks, lost webhooks).
-- Enqueue with `gh pr merge <n> --squash --auto` or the GraphQL
-  `enqueuePullRequest` mutation. **`PUT /pulls/<n>/merge` does not work on
-  workflow-builder.** A queue entry is dropped when any queue-commit check fails
-  (flaky suites included) — confirm the failure is not real, then re-enqueue.
-- **stacks `main` is protected by ruleset "main required checks"**: required
-  context `stacks-ci-required`, no deletion or force-push, and **App 2970091 is
-  the only bypass actor — humans cannot push to `main`**. Merge with
-  `PUT /pulls/<n>/merge` once that check is green.
-- `.github/workflows/ci-required.yml` runs the spoke-env integrity check inline,
-  then waits (15 min cap, two quiet polls) for every other `github-actions` check
-  run on the head SHA. A path-gated validator that never registered a check run
-  reads as pass — that is the design, not a bug.
-- **Trap:** a stacks PR whose head predates `ci-required.yml` never gets the
-  required check and is blocked forever. Close/reopen does not help; rebase onto
-  `main`.
-- Read outcomes from `GET /repos/<r>/commits/<sha>/check-runs` plus the `hub/*`
-  commit statuses. `preview/gate`, `preview/immutable-acceptance`,
-  `preview/activation-images`, and `pr-preview` are **advisory** — never wait on
-  them and never add the `preview` label to turn them green. A PR preview is an
-  interactive review tool: label `preview` only when a person wants to use it to
-  judge the change. While an acceptance you care about is running, keep `main`
-  still; its evidence binds to the baked image and any merge invalidates it.
-- Watchers: one at a time, REST only, poll every >=3 minutes (the GraphQL budget
-  is shared with subagents); stop on any failing check run. Never `pkill -f` a
-  watcher from inside another background command whose own command line contains
-  the pattern.
+Read the current native repository rules and exact-head required checks rather
+than hard-coding a ruleset from an old incident. Workflow Builder uses its native
+merge queue; stacks uses its protected reconciler/release lane. Normal factory
+subjects have one durable owner and admitted Hub source-publisher, binding and
+queue-signing roles. Respect any workstation-writer handover; do not self-attest,
+request a direct merge, sign a queue group or manually pin to finish an automated
+test. A factory:bypass repair still needs independent review and protected landing.
+
+Independent source review/attestation, keyless binding refresh, enqueue,
+merge-group signing, protected merge and release deployment are distinct facts.
+Read the PR's actual native `mergeQueueEntry` head/base, then same-group runs and
+checks; recheck the tuple before an admitted effect. Never substitute a temporary
+PR merge SHA or guessed synthetic group. A null group head is formation/pending,
+not permission to enqueue again. Source green is not group green.
+
+The stacks required-CI aggregator requires every declared applicable workflow
+for the immutable event/checkout comparison. It does not use a quiet window or
+treat an expected workflow's missing run as success. PR-path selection is bound
+to the actual immutable merge checkout/base/head; a historical REST files/base
+list can include paths absent from that patch. Distinguish missing, pending and
+failed receipts before retrying or extending a timeout. Keep exact head, event,
+PR membership and latest-attempt qualification.
+
+Read checks plus relevant commit statuses at their exact subject. An older
+binding failure may predate a later qualified attestation; reread/evaluate the
+actual binding outcome instead of duplicating a write. Advisory preview statuses
+do not become required merely because they are red; retain them as observations
+and use current native rules. Unknown write effects require readback, never an
+automatic resend or alternate signer.
+
+Keep one owner for each watcher and honor source-issued refresh times and rate
+budgets. Do not repeatedly read broad historical Actions inventories. Preserve
+qualified immutable evidence and rerun only when a material source/configuration
+change invalidates it or a specific integration boundary remains uncovered.
+Changing main alone does not establish invalidation of every frozen acceptance
+tuple. Verify the actual generation, source, catalog, digest and reviewed diff.
+
+For actual deployment follow merged source → build/digest → committed release →
+promotion → named native application successful sync → full owned readiness and
+the changed user path. Earlier build/rollout duration measurements are historical
+observations, not a fixed current SLA. Never turn Ready signer pods or source
+staging into evidence of an actual App-authenticated signing/publication effect.
 
 ## Failure Signals
 

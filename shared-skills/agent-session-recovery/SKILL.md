@@ -10,6 +10,32 @@ Durable state is the authority; the execution row, the pod, and the Dapr
 judge outcome only by the terminal envelope, and intervene only through the
 Lifecycle Controller.
 
+## Scope the owner and the failure
+
+New work defaults to the registry's `dapr-mastra`; Python histories and explicit
+Python work stay pinned to their own runtime. Read the actual runtime app-id and
+history stamp before applying a recipe. The table below describes earlier
+Python/executor observations, not a guarantee for every Mastra protocol/hands
+generation. Never infer real Dapr replay from restarting a generator.
+
+A completed sandbox/command refusal is tool feedback so the model can change
+approach. Transient activity failures retry durably; unknown mutation outcomes
+must reconcile with their owner receipt before another effect. A sandbox failure
+does not automatically imply brain failure. Preserve the cause in events and
+terminal outcomes instead of replacing it with a generic recovery label.
+
+Cancel an active DevelopmentRun through its parent lifecycle command, not only
+its agent session. Confirm exact-current execution/generation cleanup receipts,
+then verify task-owned physical resources. A terminated session or empty DB
+workspace rows alone is insufficient; a shared Mastra/Python harness is an
+intentional service. `submission-ready` is terminal without source delivery.
+
+Reuse qualified checkpoint/closure evidence at its recorded subject; a fresh
+start is valid when requested or the old history cannot be safely continued.
+Do not treat this skill as authority for a fault injection, runtime-state edit
+or broad private-history/log/SQL read. Honor current scope and existing user
+authorization; prefer typed runtime/trace/lifecycle tools before bounded forensics.
+
 ## Start From Source
 
 ```bash
@@ -25,7 +51,7 @@ Canonical: `docs/workflow-lifecycle-termination.md` (lifecycle SSOT),
 compaction projection), `docs/dynamic-script-workflows.md` ("lost child
 completions").
 
-## Recovery Classes (proven on dev)
+## Recovery Classes (historical scoped Python proofs on dev)
 
 | Loss                                   | What happens                                                                                                                                             | Evidence of a clean recovery                                                                                                                                                                                                       |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -114,8 +140,9 @@ select key, length(value)
   from agent_py_state where key ilike '%_workflow_<instance lower>%';               -- durable entry (append-only)
 ```
 
-Deleting the `_compaction:` key restores the verbatim transcript; it is the
-only reversible state edit in this skill.
+A compaction checkpoint is a projection over the retained transcript. Direct
+checkpoint-state edits are break-glass operations, not routine context recovery;
+use supported event/continuation reads and the documented lifecycle owner first.
 
 Orchestrator history (`wfstate_state`), key
 `workflow-orchestrator||dapr.internal.workflow-builder.workflow-orchestrator.workflow||<parentInstance>||history-N`:
@@ -183,8 +210,9 @@ running, and read the return dict from `wfstate_state` afterwards.
 - Never hand-edit `workflow_executions`, `sessions`, `workflow_script_calls`,
   or `agent_runs` rows to a terminal status; the reconciler and the envelope
   own that write.
-- Never relaunch a run to "retry" a lost call; use `resume_workflow_execution`
-  or wait for the repoll lane.
+- Do not relaunch merely to recover a known journaled lost call; use the
+  supported resume/repoll path when the source is eligible. This does not forbid
+  a user-authorized fresh run when continuation is unsafe or unnecessary.
 - Never delete a working harness replica, orchestrator pod, or executor
   sandbox to "fix" a stuck turn before reading the durable state (session
   timeline, journal, `wfstate_state` history, host status).
