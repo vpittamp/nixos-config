@@ -45,4 +45,3 @@ follows is the delivery view.
    report `Synced`/`Healthy` on old content.
 8. **Live?** Deployment image and env, pod readiness, `daprd` state, then the
    authenticated user path.
-
