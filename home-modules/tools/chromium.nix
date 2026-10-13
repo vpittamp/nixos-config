@@ -1072,16 +1072,19 @@ let
   # tooling can manage the process directly.
   chromeCodexDevtoolsWrapper = lib.hiPrio (pkgs.writeShellScriptBin "google-chrome-codex-devtools" ''
     set -euo pipefail
-    exec ${pkgs.google-chrome}/bin/google-chrome-stable \
-      ${lib.concatStringsSep "\n      " (map (arg: lib.escapeShellArg arg) ryzenCaptureSafeChromeArgs)} \
-      ${lib.concatStringsSep "\n      " (map (arg: lib.escapeShellArg arg) chromeFlags.webmcpDevtoolsArgs)} \
-      --remote-debugging-address=${sharedBrowserMcp.chromeDevtoolsBrowserHost} \
-      --remote-debugging-port=${toString sharedBrowserMcp.chromeDevtoolsBrowserPort} \
-      --user-data-dir=${lib.escapeShellArg sharedBrowserMcp.chromeDevtoolsProfileDir} \
-      --no-first-run \
-      --disable-extensions \
-      --disable-component-extensions-with-background-pages \
+    cmd=(
+      ${pkgs.google-chrome}/bin/google-chrome-stable
+      ${lib.concatStringsSep "\n      " (map (arg: lib.escapeShellArg arg) ryzenCaptureSafeChromeArgs)}
+      ${lib.concatStringsSep "\n      " (map (arg: lib.escapeShellArg arg) chromeFlags.webmcpDevtoolsArgs)}
+      --remote-debugging-address=${sharedBrowserMcp.chromeDevtoolsBrowserHost}
+      --remote-debugging-port=${toString sharedBrowserMcp.chromeDevtoolsBrowserPort}
+      --user-data-dir=${lib.escapeShellArg sharedBrowserMcp.chromeDevtoolsProfileDir}
+      --no-first-run
+      --disable-extensions
+      --disable-component-extensions-with-background-pages
       "$@"
+    )
+    exec "''${cmd[@]}"
   '');
 
   # Cluster CA certificate for *.cnoe.localtest.me
@@ -1234,7 +1237,7 @@ in
   # so chrome://flags reflects them in the UI.
   home.activation.configureChromeExperiments = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     EXPERIMENTS_JSON='${builtins.toJSON chromeFlags.labsExperiments}'
-    for state_file in "$HOME/.config/google-chrome/Local State" "$HOME/.local/share/google-chrome-private/Local State"; do
+    for state_file in "$HOME/.config/google-chrome/Local State" "$HOME/.local/share/google-chrome-private/Local State" "${sharedBrowserMcp.chromeDevtoolsProfileDir}/Local State"; do
       state_dir="$(${pkgs.coreutils}/bin/dirname "$state_file")"
       if [ -d "$state_dir" ]; then
         if [ -f "$state_file" ]; then

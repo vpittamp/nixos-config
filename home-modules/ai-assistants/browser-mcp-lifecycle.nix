@@ -2,6 +2,7 @@
 
 let
   shared = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
+  chromeFlags = import ../../shared/chrome-flags.nix { inherit lib; };
   enableBrowserMcpServices = shared.enableBrowserMcpServers;
 
   managedBrowserServiceName = "mcp-chrome-devtools-browser.service";
@@ -297,19 +298,23 @@ let
     mkdir -p "${shared.chromeDevtoolsProfileDir}"
     chmod 700 "${shared.chromeDevtoolsProfileDir}"
 
-    exec ${pkgs.google-chrome}/bin/google-chrome-stable \
-      --headless=new \
-      --remote-debugging-address=${shared.chromeDevtoolsBrowserHost} \
-      --remote-debugging-port=${toString shared.chromeDevtoolsBrowserPort} \
-      --user-data-dir="${shared.chromeDevtoolsProfileDir}" \
-      --no-first-run \
-      --disable-extensions \
-      --disable-component-extensions-with-background-pages \
-      --disable-background-networking \
-      --disable-component-update \
-      --disable-features=MediaRouter,OptimizationHints,Translate \
-      --password-store=basic \
+    cmd=(
+      ${pkgs.google-chrome}/bin/google-chrome-stable
+      --headless=new
+      ${lib.concatStringsSep "\n      " (map (arg: lib.escapeShellArg arg) chromeFlags.webmcpDevtoolsArgs)}
+      --remote-debugging-address=${shared.chromeDevtoolsBrowserHost}
+      --remote-debugging-port=${toString shared.chromeDevtoolsBrowserPort}
+      --user-data-dir="${shared.chromeDevtoolsProfileDir}"
+      --no-first-run
+      --disable-extensions
+      --disable-component-extensions-with-background-pages
+      --disable-background-networking
+      --disable-component-update
+      --disable-features=MediaRouter,OptimizationHints,Translate
+      --password-store=basic
       about:blank
+    )
+    exec "''${cmd[@]}"
   '';
 in
 {

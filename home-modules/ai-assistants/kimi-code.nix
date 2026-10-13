@@ -101,7 +101,7 @@ let
     // lib.optionalAttrs enableBrowserMcpServers {
       chrome-devtools = {
         command = nodeNpx;
-        args = [ "-y" "chrome-devtools-mcp@latest" "--browserUrl" "${sharedBrowserMcp.chromeDevtoolsBrowserUrl}" ];
+        args = sharedBrowserMcp.chromeDevtoolsMcpArgs;
         startupTimeoutMs = 30000;
         toolTimeoutMs = 120000;
       };

@@ -494,6 +494,9 @@ let
         args = [
           "-y"
           "chrome-devtools-mcp@latest"
+          "--categoryExperimentalWebmcp"
+          "--chrome-arg=--enable-features=WebMCP,WebMCPTesting,DevToolsWebMCPSupport,WebMCPDeclarativeFileInput,WebMCPFormAssociatedCustomElements,AIPromptAPIToolUse"
+          "--chrome-arg=--enable-webmcp-testing"
           "--isolated"
           "--headless"
           "--executablePath"

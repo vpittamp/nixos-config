@@ -13,6 +13,14 @@ rec {
   chromeDevtoolsBrowserUrl =
     "http://${chromeDevtoolsBrowserHost}:${toString chromeDevtoolsBrowserPort}";
 
+  chromeDevtoolsMcpArgs = [
+    "-y"
+    "chrome-devtools-mcp@latest"
+    "--categoryExperimentalWebmcp"
+    "--browserUrl"
+    chromeDevtoolsBrowserUrl
+  ];
+
   sharedBrowserProfilesRoot = "${config.xdg.dataHome}/mcp/browser-profiles";
   chromeDevtoolsProfileDir = "${sharedBrowserProfilesRoot}/chrome-devtools";
 

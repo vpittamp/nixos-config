@@ -40,6 +40,12 @@ rec {
     "WebMCPDeclarativeFileInput"
     "WebMCPFormAssociatedCustomElements"
 
+    # Prompt API Tool Calling (for client-side models using WebMCP)
+    "AIPromptAPIToolUse"
+    "AIPromptAPIStructuredOutput"
+    "AIPromptAPIMultimodalInput"
+    "AIPromptAPIForExtension"
+
     # Desktop PWAs
     "DesktopPWAsTabStrip"
     "DesktopPWAsTabStripSettings"
@@ -81,6 +87,10 @@ rec {
       "DevToolsWebMCPSupport"
       "WebMCPDeclarativeFileInput"
       "WebMCPFormAssociatedCustomElements"
+      "AIPromptAPIToolUse"
+      "AIPromptAPIStructuredOutput"
+      "AIPromptAPIMultimodalInput"
+      "AIPromptAPIForExtension"
     ]}"
     "--enable-webmcp-testing"
   ];
@@ -90,6 +100,7 @@ rec {
   labsExperiments = [
     "devtools-webmcp-support@1"
     "enable-webmcp-testing@1"
+    "prompt-api-tool-use@1"
     "top-chrome-touch-ui@3"
     "top-chrome-touch-ui@1"
     "enable-desktop-pwas-tab-strip@1"

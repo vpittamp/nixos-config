@@ -281,7 +281,7 @@ tool_timeout_sec = 120
 
 ${lib.optionalString enableBrowserMcpServers ''
 [mcp_servers.chrome-devtools]
-args = ["-y", "chrome-devtools-mcp@latest", "--browserUrl", "${chromeDevtoolsBrowserUrl}"]
+args = ${builtins.toJSON sharedBrowserMcp.chromeDevtoolsMcpArgs}
 command = "${nodeNpx}"
 enabled = true
 startup_timeout_sec = 30
