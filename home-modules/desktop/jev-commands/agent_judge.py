@@ -566,6 +566,8 @@ def judge(agent: dict[str, Any], lines: int, previous: dict[str, Any] | None) ->
     ask = answers["ask_kind"]
     kind = ask["choice"]
     ask_confidence = float(ask.get("confidence", 0.0))
+    if working and kind in ("finished_done", "finished_incomplete"):
+        kind = "nothing"
     flags = {name: float(answers[name]["noul"]) for name in ("risky", "drifted")}
 
     alarm = env_float("AGENT_JUDGE_ALARM_THRESHOLD", 0.7)

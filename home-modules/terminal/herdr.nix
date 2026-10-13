@@ -42,16 +42,40 @@ in
     '';
     text = ''
       id = "agy"
-      version = "2026.08.21.3"
+      version = "2026.10.13.1"
       min_engine_version = 1
-      updated_at = "2026-08-21T00:00:00Z"
+      updated_at = "2026-10-13T00:00:00Z"
       aliases = ["antigravity", "antigravity-cli"]
 
       [[rules]]
       id = "permission_prompt"
       state = "blocked"
       priority = 300
-      region = "bottom_non_empty_lines(12)"
+      region = "bottom_non_empty_lines(2)"
+      visible_blocker = true
+      contains = ["navigate", "tab amend"]
+
+      [[rules]]
+      id = "question_prompt"
+      state = "blocked"
+      priority = 290
+      region = "bottom_non_empty_lines(2)"
+      visible_blocker = true
+      contains = ["navigate", "esc skip"]
+
+      [[rules]]
+      id = "trust_prompt"
+      state = "blocked"
+      priority = 280
+      region = "bottom_non_empty_lines(8)"
+      visible_blocker = true
+      contains = ["do you trust the contents of this project?", "yes, i trust this folder", "enter confirm"]
+
+      [[rules]]
+      id = "legacy_permission_prompt"
+      state = "blocked"
+      priority = 270
+      region = "whole_recent"
       visible_blocker = true
       contains = ["requesting permission for:"]
       any = [
@@ -60,20 +84,52 @@ in
       ]
 
       [[rules]]
+      id = "esc_cancel_footer_working"
+      state = "working"
+      priority = 220
+      region = "bottom_non_empty_lines(4)"
+      visible_working = true
+      any = [
+        { line_regex = ['(?i)^\s*esc to cancel\b'] },
+        { regex = ['(?m)^\s*─{3,}\s*esc to cancel\b'] },
+        { line_regex = ['(?i)\([^\n)]*\besc to cancel\)'] },
+      ]
+
+      [[rules]]
       id = "spinner_working"
       state = "working"
       priority = 200
       region = "bottom_non_empty_lines(12)"
       visible_working = true
-      line_regex = ['^\s*[\u2800-\u28FF]+\s+\p{Alphabetic}+\w*ing\b']
+      any = [
+        { line_regex = ['^\s*[\u2801-\u28FF]+\s+\S'] },
+        { line_regex = ['^\s*●\s+Running\b'] },
+      ]
+
+      [[rules]]
+      id = "background_tasks_working"
+      state = "working"
+      priority = 180
+      region = "bottom_non_empty_lines(5)"
+      visible_working = true
+      line_regex = ['(?i)(?:·\s*|\b)[1-9][0-9]*\s+tasks?(?:\(s\))?\b']
 
       [[rules]]
       id = "prompt_idle"
       state = "idle"
       priority = 100
-      region = "bottom_non_empty_lines(12)"
+      region = "bottom_non_empty_lines(4)"
       visible_idle = true
-      line_regex = ['^>\s*$']
+      any = [
+        { contains = ["? for shortcuts"] },
+        { contains = ["navigate", "enter select", "tab complete"] },
+      ]
+      not = [
+        { contains = ["esc to cancel"] },
+        { line_regex = ['(?i)(?:·\s*|\b)[1-9][0-9]*\s+tasks?(?:\(s\))?\b'] },
+        { line_regex = ['^\s*[\u2801-\u28FF]+\s+\S'] },
+        { line_regex = ['^\s*●\s+Running\b'] },
+      ]
     '';
   };
 
