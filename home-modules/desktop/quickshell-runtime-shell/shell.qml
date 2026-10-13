@@ -4138,7 +4138,15 @@ ShellRoot {
             return [];
         }
         const devices = adapter.devices;
-        return arrayOrEmpty(devices && devices.values ? devices.values : devices);
+        const raw = arrayOrEmpty(devices && devices.values ? devices.values : devices);
+        const paired = [];
+        for (let i = 0; i < raw.length; i += 1) {
+            const dev = raw[i];
+            if (boolOrFalse(dev && (dev.paired || dev.bonded))) {
+                paired.push(dev);
+            }
+        }
+        return paired;
     }
 
     function bluetoothConnectedDevices() {

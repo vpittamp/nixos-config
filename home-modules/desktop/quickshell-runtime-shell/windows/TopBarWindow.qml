@@ -264,6 +264,7 @@ PanelWindow {
 
                         Text {
                             font.family: Theme.fontFamily
+                            font.features: ({ "tnum": 1 })
                             id: agentMonitorLabel
                             text: agentMonitorChip.agentSessionsCount > 0
                                 ? ("Agents " + agentMonitorChip.agentSessionsCount)
@@ -345,6 +346,7 @@ PanelWindow {
 
                         Text {
                             font.family: Theme.fontFamily
+                            font.features: ({ "tnum": 1 })
                             Layout.alignment: Qt.AlignVCenter
                             text: root.agentUsageChipLabel() + root.chipCaret()
                             color: root.agentsPopupVisible ? colors.blue : root.neutralChipText(agentUsageMouse.containsMouse)
@@ -496,6 +498,7 @@ PanelWindow {
 
                     Text {
                         font.family: Theme.fontFamily
+                        font.features: ({ "tnum": 1 })
                         Layout.alignment: Qt.AlignVCenter
                         id: clockLabel
                         text: root.topBarTimeText()
@@ -560,6 +563,7 @@ PanelWindow {
 
                         Text {
                             font.family: Theme.fontFamily
+                            font.features: ({ "tnum": 1 })
                             text: root.captureElapsedText()
                             color: colors.red
                             font.pixelSize: root.fontLabel
@@ -663,6 +667,7 @@ PanelWindow {
 
                     Text {
                         font.family: Theme.fontFamily
+                        font.features: ({ "tnum": 1 })
                         id: generationLabel
                         anchors.centerIn: parent
                         text: root.systemGenerationLabel()
@@ -714,6 +719,7 @@ PanelWindow {
 
                     Text {
                         font.family: Theme.fontFamily
+                        font.features: ({ "tnum": 1 })
                         id: memoryLabel
                         anchors.centerIn: parent
                         text: root.systemStatsMemoryLabel()
@@ -760,6 +766,7 @@ PanelWindow {
 
                     Text {
                         font.family: Theme.fontFamily
+                        font.features: ({ "tnum": 1 })
                         id: diskLabel
                         anchors.centerIn: parent
                         text: root.systemStatsDiskLabel()
@@ -901,6 +908,7 @@ PanelWindow {
 
                     Text {
                         font.family: Theme.fontFamily
+                        font.features: ({ "tnum": 1 })
                         id: networkLabel
                         anchors.centerIn: parent
                         text: root.networkLabel()
@@ -964,6 +972,7 @@ PanelWindow {
                         Text {
                             Layout.alignment: Qt.AlignVCenter
                             font.family: Theme.fontFamily
+                            font.features: ({ "tnum": 1 })
                             text: root.tailscaleChipLabel() + root.chipCaret()
                             color: root.tailscalePopupVisible ? colors.blue : (root.tailscaleRunning() ? root.neutralChipText(tailscaleMouse.containsMouse) : colors.subtle)
                             font.pixelSize: root.fontLabel
@@ -1016,6 +1025,7 @@ PanelWindow {
 
                     Text {
                         font.family: Theme.fontFamily
+                        font.features: ({ "tnum": 1 })
                         id: notificationLabel
                         anchors.centerIn: parent
                         text: root.notificationLabel()
@@ -1084,9 +1094,11 @@ PanelWindow {
 
                         Text {
                             font.family: Theme.fontFamily
+                            font.features: ({ "tnum": 1 })
                             id: audioLabel
                             Layout.alignment: Qt.AlignVCenter
                             text: root.audioLabel() + root.chipCaret()
+                            visible: text.length > 0
                             color: root.audioChipText(audioMouse.containsMouse)
                             font.pixelSize: root.fontLabel
                             font.weight: Font.Medium
@@ -1151,9 +1163,11 @@ PanelWindow {
 
                         Text {
                             font.family: Theme.fontFamily
+                            font.features: ({ "tnum": 1 })
                             id: bluetoothLabel
                             Layout.alignment: Qt.AlignVCenter
                             text: root.bluetoothLabel() + root.chipCaret()
+                            visible: text.length > 0
                             color: root.neutralChipText(bluetoothMouse.containsMouse)
                             font.pixelSize: root.fontLabel
                             font.weight: Font.Medium
@@ -1217,6 +1231,7 @@ PanelWindow {
 
                         Text {
                             font.family: Theme.fontFamily
+                            font.features: ({ "tnum": 1 })
                             text: root.batteryLabel()
                             color: root.batteryChipText(batteryMouse.containsMouse)
                             font.pixelSize: root.fontLabel
@@ -1254,7 +1269,20 @@ PanelWindow {
                         delegate: Rectangle {
                             required property var modelData
                             readonly property var trayItem: modelData
-                            visible: trayItem.status !== Status.Passive || systemTrayRow.pinnedTrayIds.indexOf(root.stringOrEmpty(trayItem.id).toLowerCase()) !== -1
+                            readonly property string resolvedIconSource: {
+                                const iconName = root.stringOrEmpty(trayItem.icon);
+                                if (!iconName) {
+                                    return "";
+                                }
+                                if (iconName.startsWith("image://") || iconName.startsWith("file://") || iconName.startsWith("qrc:/")) {
+                                    return iconName;
+                                }
+                                if (iconName.startsWith("/")) {
+                                    return "file://" + iconName;
+                                }
+                                return Quickshell.iconPath(iconName, true);
+                            }
+                            visible: resolvedIconSource !== "" && (trayItem.status !== Status.Passive || systemTrayRow.pinnedTrayIds.indexOf(root.stringOrEmpty(trayItem.id).toLowerCase()) !== -1)
                             width: 24
                             height: 22
                             radius: root.radiusControl - 1
@@ -1277,10 +1305,7 @@ PanelWindow {
                             IconImage {
                                 anchors.centerIn: parent
                                 implicitSize: 14
-                                source: {
-                                    const iconName = root.stringOrEmpty(trayItem.icon);
-                                    return iconName ? Quickshell.iconPath(iconName, true) : "";
-                                }
+                                source: parent.resolvedIconSource
                                 visible: source !== ""
                                 mipmap: true
                             }
