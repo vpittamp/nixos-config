@@ -20,7 +20,7 @@ let
   repoRoot = ../../.;
 
   # Self-contained package in packages/antigravity-cli.nix tracks upstream releases
-  # ahead of nixpkgs (version 1.2.14 includes Gemini 3.5 Flash/Pro).
+  # ahead of nixpkgs (version 1.3.4 includes Gemini 4 Argon).
   antigravityCliPackage = pkgs.callPackage ../../packages/antigravity-cli.nix { };
 
   sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
@@ -104,12 +104,7 @@ let
     // (lib.optionalAttrs enableBrowserMcpServers {
       "chrome-devtools" = {
         command = nodeNpx;
-        args = [
-          "-y"
-          "chrome-devtools-mcp@latest"
-          "--browserUrl"
-          "${sharedBrowserMcp.chromeDevtoolsBrowserUrl}"
-        ];
+        args = sharedBrowserMcp.chromeDevtoolsMcpArgs;
         timeoutSeconds = 300;
       };
     })

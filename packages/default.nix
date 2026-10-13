@@ -35,7 +35,7 @@
       # OpenAI Codex CLI — 0.159.2 with GPT-6.1 Sol support
       codex = pkgs.callPackage ./codex.nix { };
 
-      # Google Antigravity CLI — 1.2.14 with Gemini 3.5 Flash/Pro
+      # Google Antigravity CLI — 1.3.4 with Gemini 4 Argon
       antigravity-cli = pkgs.callPackage ./antigravity-cli.nix { };
       agy = pkgs.callPackage ./antigravity-cli.nix { };
 

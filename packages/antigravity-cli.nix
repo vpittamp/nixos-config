@@ -1,5 +1,5 @@
 # Google Antigravity CLI (`agy`) — Google's Gemini-CLI successor.
-# Version 1.2.14 includes Gemini 3.5 Flash/Pro and updated model catalogs.
+# Version 1.3.4 includes Gemini 4 Argon and updated model catalogs.
 { lib
 , stdenvNoCC
 , fetchurl
@@ -8,8 +8,8 @@
 }:
 
 let
-  version = "1.2.14";
-  buildId = "4571742832820224";
+  version = "1.3.4";
+  buildId = "5524158944247808";
   wholeVersion = "${version}-${buildId}";
 
   throwSystem = throw "Unsupported system: ${stdenvNoCC.hostPlatform.system}";
@@ -17,15 +17,15 @@ let
   sourceData = {
     x86_64-linux = fetchurl {
       url = "https://storage.googleapis.com/antigravity-public/antigravity-cli/${wholeVersion}/linux-x64/cli_linux_x64.tar.gz";
-      hash = "sha256-aM9NIhy2LgKJJFQ509N/WZvcjgxOHj2uA/MmRjoMJtw=";
+      hash = "sha256-216B6N7nLSgssftfzZjcWkNoBzDXHj1jemfIdOwHetM=";
     };
     aarch64-linux = fetchurl {
       url = "https://storage.googleapis.com/antigravity-public/antigravity-cli/${wholeVersion}/linux-arm/cli_linux_arm64.tar.gz";
-      hash = "sha256-O0DDuqskW0OkEAfB22TfUfXxYrYFn8xKRQRzHyaJ0wE=";
+      hash = "sha256-VhYaGEnv9QH+rRm8fEd+6A8md2v0cP2gHBGcw0WhgYw=";
     };
     aarch64-darwin = fetchurl {
       url = "https://storage.googleapis.com/antigravity-public/antigravity-cli/${wholeVersion}/darwin-arm/cli_mac_arm64.tar.gz";
-      hash = "sha256-Ro7cxFS2uxwyHY1CWRoWrOTRodYopPHOla0jbJ7kzBk=";
+      hash = "sha256-7eKBScVoxp9Um3lqYUK6WStEKUERrPi3nNv/rnTnIUc=";
     };
   };
 in
@@ -48,7 +48,35 @@ stdenvNoCC.mkDerivation {
   installPhase = ''
     runHook preInstall
 
-    install -Dm755 antigravity $out/bin/agy
+    install -Dm755 antigravity $out/libexec/antigravity
+
+    mkdir -p $out/bin
+    cat > $out/bin/agy <<EOF
+#!/bin/sh
+has_model=0
+for arg in "\$@"; do
+  case "\$arg" in
+    --model|--model=*)
+      has_model=1
+      break
+      ;;
+  esac
+done
+
+if [ "\$has_model" -eq 0 ]; then
+  case "\''${1:-}" in
+    agent|agents|changelog|help|install|mcp|mic-serve|models|plugin|plugins|remote-control|update|version)
+      exec "$out/libexec/antigravity" "\$@"
+      ;;
+    *)
+      exec "$out/libexec/antigravity" --model gemini-4-argon "\$@"
+      ;;
+  esac
+else
+  exec "$out/libexec/antigravity" "\$@"
+fi
+EOF
+    chmod +x $out/bin/agy
 
     runHook postInstall
   '';
