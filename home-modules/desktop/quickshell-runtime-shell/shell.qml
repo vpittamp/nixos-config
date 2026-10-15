@@ -2727,11 +2727,12 @@ ShellRoot {
             return;
         }
         const targetOutput = stringOrEmpty(outputName) || primaryOutputName || focusedOutputName() || "";
-        powerMenuVisible = false;
-        audioPopupVisible = false;
-        bluetoothPopupVisible = false;
-        displaySelectorOutputName = targetOutput;
-        displaySelectorVisible = true;
+        const shouldOpen = !(displaySelectorVisible && stringOrEmpty(displaySelectorOutputName) === targetOutput);
+        closeBarPopups();
+        if (shouldOpen) {
+            displaySelectorOutputName = targetOutput;
+            displaySelectorVisible = true;
+        }
     }
 
     function closeDisplaySelector() {
@@ -3877,6 +3878,9 @@ ShellRoot {
     function audioSinkKind(node) {
         const name = stringOrEmpty(node && node.name).toLowerCase();
         const hay = (name + " " + stringOrEmpty(node && node.description)).toLowerCase();
+        if (hay.indexOf("homepod") >= 0 || hay.indexOf("airplay") >= 0 || name.indexOf("raop") === 0) {
+            return "AirPlay speaker";
+        }
         if (name.indexOf("bluez") === 0 || hay.indexOf("bluetooth") >= 0) {
             return "Bluetooth";
         }
@@ -3969,6 +3973,9 @@ ShellRoot {
             return;
         }
 
+        if (delta > 0 && boolOrFalse(node.audio.muted)) {
+            node.audio.muted = false;
+        }
         const current = Math.max(0, Number(node.audio.volume || 0));
         node.audio.volume = Math.max(0, Math.min(1.5, current + delta));
     }
@@ -11707,20 +11714,24 @@ function normalizeLauncherMode(mode) {
     }
 
 
-    // Click-away scrim for the top-bar display selector popup. Declared BEFORE
-    // the bars so its layer surface is created first and therefore sits BELOW the
-    // bars and the bar's popup (the card stays clickable, on top). It is always
-    // mapped but only captures input while the popup is open — otherwise its mask
-    // is empty, so it renders nothing and clicks pass straight through to the
-    // windows underneath. Clicking anywhere outside the card closes the popup.
+    // Click-away scrim for all top-bar chip popups (displays, audio, bluetooth,
+    // cast, power, tailscale, agents, calendar). Declared BEFORE TopBarWindow so
+    // its layer surface is created first and therefore sits BELOW the bars and
+    // their PopupWindows (keeping both the popup cards and the top-bar chips
+    // clickable on top). It stays mapped at all times with an empty input mask
+    // when idle, and captures clicks outside the popup/bar only on the output
+    // that currently has an open popup.
     Variants {
         model: shellRootRef.useFallbackScreenWindows ? [] : Quickshell.screens
         delegate: PanelWindow {
             required property var modelData
+            readonly property string scrimOutputName: shellRootRef.screenOutputName(modelData)
+            readonly property bool popupOpenHere: shellRootRef.anyBarPopupOpenOnOutput(scrimOutputName)
             screen: modelData
             visible: true
             color: "transparent"
             exclusiveZone: 0
+            focusable: false
             WlrLayershell.namespace: "i3pm-display-scrim"
             WlrLayershell.layer: WlrLayer.Top
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
@@ -11728,7 +11739,7 @@ function normalizeLauncherMode(mode) {
             anchors.bottom: true
             anchors.left: true
             anchors.right: true
-            mask: shellRootRef.displaySelectorVisible ? scrimFullRegion : scrimEmptyRegion
+            mask: popupOpenHere ? scrimFullRegion : scrimEmptyRegion
 
             Region {
                 id: scrimEmptyRegion
@@ -11741,8 +11752,9 @@ function normalizeLauncherMode(mode) {
             MouseArea {
                 id: scrimCatcher
                 anchors.fill: parent
-                enabled: shellRootRef.displaySelectorVisible
-                onClicked: shellRootRef.closeDisplaySelector()
+                enabled: popupOpenHere
+                acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                onPressed: shellRootRef.closeBarPopups()
             }
         }
     }
@@ -11753,40 +11765,6 @@ function normalizeLauncherMode(mode) {
             shellRoot: shellRootRef
             runtimeConfig: shellConfig
             colors: shellRootRef.colors
-        }
-    }
-
-    // Click-away backdrop for the top-bar chip popups (volume / bluetooth / power
-    // / displays). QuickShell's PopupWindow has no built-in dismiss-on-click-
-    // outside, so this transparent layer covers the screen BELOW the bar whenever a
-    // popup is open on that monitor; a press anywhere on it closes the popup. It is
-    // pointer-only (focusable:false, keyboardFocus None) so it never grabs the
-    // keyboard or steals focus, and it leaves the top bar strip uncovered so the
-    // chips stay clickable (re-click to toggle, click another chip to switch).
-    Variants {
-        model: shellRootRef.useFallbackScreenWindows ? [] : Quickshell.screens
-        delegate: PanelWindow {
-            required property var modelData
-            readonly property string backdropOutputName: shellRootRef.screenOutputName(modelData)
-            screen: modelData
-            visible: shellRootRef.anyBarPopupOpenOnOutput(backdropOutputName)
-            color: "transparent"
-            anchors.left: true
-            anchors.right: true
-            anchors.bottom: true
-            implicitHeight: Math.max(0, (modelData ? modelData.height : 1080) - Math.round(shellConfig.barHeight * Theme.scale))
-            exclusiveZone: 0
-            focusable: false
-            aboveWindows: true
-            WlrLayershell.namespace: "i3pm-bar-popup-backdrop"
-            WlrLayershell.layer: WlrLayer.Top
-            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-
-            MouseArea {
-                anchors.fill: parent
-                acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-                onPressed: shellRootRef.closeBarPopups()
-            }
         }
     }
 

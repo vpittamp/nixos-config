@@ -332,6 +332,9 @@ in
     # Chrome policy for native Gemini and Generative AI features
     ../modules/desktop/chrome-gemini.nix
 
+    # Chrome policy for Google's Model Context Tool Inspector (WebMCP) extension
+    ../modules/desktop/chrome-webmcp.nix
+
     # Sunshine game streaming (Intel Quick Sync hardware encoding)
     ../modules/desktop/sunshine.nix
 

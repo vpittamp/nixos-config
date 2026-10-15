@@ -370,7 +370,7 @@ PanelWindow {
                                 root.cycleAgentUsage();
                                 return;
                             }
-                            const open = !root.agentsPopupVisible;
+                            const open = !(root.agentsPopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName);
                             root.closeBarPopups();
                             root.barPopupOutputName = topBarWindow.topOutputName;
                             root.agentsPopupVisible = open;
@@ -505,19 +505,20 @@ PanelWindow {
                         color: root.clockPopupVisible ? colors.blue : colors.text
                         font.pixelSize: root.fontLabel
                         font.weight: Font.DemiBold
+                    }
+                }
 
-                        MouseArea {
-                            anchors.fill: parent
-                            anchors.margins: -4
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                if (root.clockPopupVisible) {
-                                    root.clockPopupVisible = false;
-                                    return;
-                                }
-                                root.openClockPopup(topBarWindow.topOutputName);
-                            }
+                MouseArea {
+                    id: centerMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (root.clockPopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName) {
+                            root.closeBarPopups();
+                            return;
                         }
+                        root.openClockPopup(topBarWindow.topOutputName);
                     }
                 }
             }
@@ -991,7 +992,7 @@ PanelWindow {
                                 root.tailscaleCopy(root.tailscaleState.self ? root.tailscaleState.self.ip : "", "Tailscale IP");
                                 return;
                             }
-                            const open = !root.tailscalePopupVisible;
+                            const open = !(root.tailscalePopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName);
                             root.closeBarPopups();
                             root.barPopupOutputName = topBarWindow.topOutputName;
                             if (open) {
@@ -1116,10 +1117,10 @@ PanelWindow {
                                 root.toggleMute();
                                 return;
                             }
-                            root.displaySelectorVisible = false;
-                            root.bluetoothPopupVisible = false;
+                            const open = !(root.audioPopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName);
+                            root.closeBarPopups();
                             root.barPopupOutputName = topBarWindow.topOutputName;
-                            root.audioPopupVisible = !root.audioPopupVisible;
+                            root.audioPopupVisible = open;
                         }
                         onWheel: function (wheel) {
                             root.changeVolume(wheel.angleDelta.y > 0 ? 0.05 : -0.05);
@@ -1185,10 +1186,10 @@ PanelWindow {
                                 root.toggleBluetoothEnabled();
                                 return;
                             }
-                            root.displaySelectorVisible = false;
-                            root.audioPopupVisible = false;
+                            const open = !(root.bluetoothPopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName);
+                            root.closeBarPopups();
                             root.barPopupOutputName = topBarWindow.topOutputName;
-                            root.bluetoothPopupVisible = !root.bluetoothPopupVisible;
+                            root.bluetoothPopupVisible = open;
                         }
                     }
                 }
@@ -1282,6 +1283,11 @@ PanelWindow {
                                 }
                                 return Quickshell.iconPath(iconName, true);
                             }
+                            readonly property string trayTooltipText: {
+                                const title = root.stringOrEmpty(trayItem.tooltipTitle) || root.stringOrEmpty(trayItem.title) || root.stringOrEmpty(trayItem.id);
+                                const desc = root.stringOrEmpty(trayItem.tooltipDescription);
+                                return desc && desc !== title ? (title + "\n" + desc) : title;
+                            }
                             visible: resolvedIconSource !== "" && (trayItem.status !== Status.Passive || systemTrayRow.pinnedTrayIds.indexOf(root.stringOrEmpty(trayItem.id).toLowerCase()) !== -1)
                             width: 24
                             height: 22
@@ -1314,16 +1320,30 @@ PanelWindow {
                                 id: trayMouse
                                 anchors.fill: parent
                                 hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
                                 acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
                                 onClicked: function (mouse) {
-                                    if (mouse.button === Qt.RightButton) {
+                                    root.closeBarPopups();
+                                    const point = parent.mapToItem(topBarBackground, parent.width / 2, parent.height);
+                                    const px = Math.round(point.x);
+                                    const py = Math.round(point.y);
+
+                                    if (mouse.button === Qt.MiddleButton) {
                                         trayItem.secondaryActivate();
                                         return;
                                     }
 
-                                    if (trayItem.onlyMenu || trayItem.hasMenu) {
-                                        const point = parent.mapToItem(topBarBackground, parent.width / 2, parent.height);
-                                        trayItem.display(topBarWindow, point.x, point.y);
+                                    if (mouse.button === Qt.RightButton) {
+                                        if (trayItem.hasMenu || trayItem.onlyMenu) {
+                                            trayItem.display(topBarWindow, px, py);
+                                        } else {
+                                            trayItem.secondaryActivate();
+                                        }
+                                        return;
+                                    }
+
+                                    if (trayItem.onlyMenu) {
+                                        trayItem.display(topBarWindow, px, py);
                                         return;
                                     }
 
@@ -1332,6 +1352,14 @@ PanelWindow {
                                 onWheel: function (wheel) {
                                     trayItem.scroll(wheel.angleDelta.y > 0 ? 1 : -1, false);
                                 }
+                            }
+
+                            RootComponents.BarTooltip {
+                                anchorWindow: topBarWindow
+                                anchorItem: trayMouse
+                                active: trayMouse.containsMouse && parent.trayTooltipText !== ""
+                                text: parent.trayTooltipText
+                                colors: topBarWindow.colors
                             }
 
                         }
@@ -1377,13 +1405,11 @@ PanelWindow {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
-                            root.powerMenuVisible = false;
-                            root.audioPopupVisible = false;
-                            root.bluetoothPopupVisible = false;
-                            root.displaySelectorVisible = false;
+                            const open = !(root.castPopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName);
+                            root.closeBarPopups();
                             root.barPopupOutputName = topBarWindow.topOutputName;
-                            root.castPopupVisible = !root.castPopupVisible;
-                            if (root.castWatcherProcess && !root.castWatcherProcess.running) {
+                            root.castPopupVisible = open;
+                            if (open && root.castWatcherProcess && !root.castWatcherProcess.running) {
                                 root.castWatcherProcess.running = true;
                             }
                         }
@@ -1430,9 +1456,10 @@ PanelWindow {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
-                            root.displaySelectorVisible = false;
+                            const open = !(root.powerMenuVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName);
+                            root.closeBarPopups();
                             root.barPopupOutputName = topBarWindow.topOutputName;
-                            root.powerMenuVisible = !root.powerMenuVisible;
+                            root.powerMenuVisible = open;
                         }
                     }
                 }

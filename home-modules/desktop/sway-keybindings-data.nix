@@ -207,6 +207,9 @@ let
         (bind "Shift+Print"
           (if hasRuntimeShell then "exec capture screenshot region" else "exec grim -g \"$(slurp)\" - | wl-copy")
           "Screenshot a region")
+        (bind "${mod}+Shift+s"
+          (if hasRuntimeShell then "exec capture screenshot region" else "exec grim -g \"$(slurp)\" - | wl-copy")
+          "Screenshot a region (MX Keys Screen Capture)")
         (bind "Control+Print"
           (if hasRuntimeShell then "exec capture screenshot window" else "exec grim ~/Pictures/screenshot-$(date +%Y%m%d_%H%M%S).png")
           "Screenshot the focused window")
@@ -226,27 +229,28 @@ let
       bindings = [
         # With the runtime shell the keys go through quickshell-brightness-key,
         # which runs the same brightnessctl step and then shows the OSD.
-        (bind "XF86MonBrightnessUp"
+        (bind "--locked XF86MonBrightnessUp"
           (if hasRuntimeShell then "exec quickshell-brightness-key display up" else "exec brightnessctl set +5%")
           "Screen brightness up")
-        (bind "XF86MonBrightnessDown"
+        (bind "--locked XF86MonBrightnessDown"
           (if hasRuntimeShell then "exec quickshell-brightness-key display down" else "exec brightnessctl set 5%-")
           "Screen brightness down")
         # ThinkPad: tpacpi::kbd_backlight, Apple Silicon: kbd_backlight
-        (bind "XF86KbdBrightnessUp"
+        (bind "--locked XF86KbdBrightnessUp"
           (if hasRuntimeShell then "exec quickshell-brightness-key keyboard up" else "exec brightnessctl -d '*kbd_backlight*' -n 5 set +10%")
           "Keyboard backlight up")
-        (bind "XF86KbdBrightnessDown"
+        (bind "--locked XF86KbdBrightnessDown"
           (if hasRuntimeShell then "exec quickshell-brightness-key keyboard down" else "exec brightnessctl -d '*kbd_backlight*' -n 5 set 10%-")
           "Keyboard backlight down")
         # wpctl, not pactl: PipeWire ships wpctl on every host; pactl was never installed.
-        (bind "XF86AudioRaiseVolume" "exec wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+" "Volume up")
-        (bind "XF86AudioLowerVolume" "exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-" "Volume down")
-        (bind "XF86AudioMute" "exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle" "Mute / unmute")
-        (bind "XF86AudioMicMute" "exec wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle" "Mute / unmute microphone")
-        (bind "XF86AudioPlay" "exec playerctl play-pause" "Play / pause")
-        (bind "XF86AudioNext" "exec playerctl next" "Next track")
-        (bind "XF86AudioPrev" "exec playerctl previous" "Previous track")
+        # Raising volume also unmutes so pressing Volume Up while muted immediately restores audio.
+        (bind "--locked XF86AudioRaiseVolume" "exec sh -c 'wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 && wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+'" "Volume up")
+        (bind "--locked XF86AudioLowerVolume" "exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-" "Volume down")
+        (bind "--locked XF86AudioMute" "exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle" "Mute / unmute")
+        (bind "--locked XF86AudioMicMute" "exec wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle" "Mute / unmute microphone")
+        (bind "--locked XF86AudioPlay" "exec playerctl play-pause" "Play / pause")
+        (bind "--locked XF86AudioNext" "exec playerctl next" "Next track")
+        (bind "--locked XF86AudioPrev" "exec playerctl previous" "Previous track")
       ];
     }
   ];

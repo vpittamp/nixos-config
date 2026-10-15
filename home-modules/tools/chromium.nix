@@ -1025,6 +1025,37 @@ let
     EOF
   '';
 
+  ensureChromeLocalStateScript = pkgs.writeShellScript "ensure-chrome-local-state" ''
+    set -eu
+    EXPERIMENTS_JSON='${builtins.toJSON chromeFlags.labsExperiments}'
+    for state_file in "$HOME/.config/google-chrome/Local State" "$HOME/.local/share/google-chrome-private/Local State" "${sharedBrowserMcp.chromeDevtoolsProfileDir}/Local State"; do
+      state_dir="$(${pkgs.coreutils}/bin/dirname "$state_file")"
+      if [ -d "$state_dir" ]; then
+        if [ -f "$state_file" ]; then
+          tmp="$(${pkgs.coreutils}/bin/mktemp)"
+          if ${pkgs.jq}/bin/jq --argjson exps "$EXPERIMENTS_JSON" '
+            .browser = (.browser // {}) |
+            .browser.enabled_labs_experiments = (((.browser.enabled_labs_experiments // []) + $exps) | unique) |
+            .variations_country = "us" |
+            .variations_permanent_consistency_country = ["149.0.7827.102", "us"] |
+            .glic = ((.glic // {}) + {"launcher_enabled": true}) |
+            if (.profile? | type) == "object" and (.profile.info_cache? | type) == "object" then
+              .profile.info_cache |= with_entries(.value.is_glic_eligible = true)
+            else
+              .
+            end
+          ' "$state_file" > "$tmp"; then
+            ${pkgs.coreutils}/bin/mv -f "$tmp" "$state_file"
+          else
+            ${pkgs.coreutils}/bin/rm -f "$tmp"
+          fi
+        else
+          echo "{\"browser\":{\"enabled_labs_experiments\":$EXPERIMENTS_JSON},\"variations_country\":\"us\",\"glic\":{\"launcher_enabled\":true}}" > "$state_file"
+        fi
+      fi
+    done
+  '';
+
   mkChromeWrapper =
     {
       name,
@@ -1032,6 +1063,9 @@ let
     }:
     lib.hiPrio (pkgs.writeShellScriptBin name ''
       set -euo pipefail
+      if ! [ -L "$HOME/.config/google-chrome/SingletonLock" ]; then
+        ${ensureChromeLocalStateScript} || true
+      fi
       cmd=(
         ${pkgs.google-chrome}/bin/google-chrome-stable
         ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) ryzenCaptureSafeChromeArgs)}
@@ -1233,28 +1267,10 @@ in
   # host path goes through our system launcher, which fixes the peer GID 1Password
   # uses to authenticate the native messaging helper on Linux.
 
-  # Sync WebMCP and PWA experimental feature flags into Chrome's Local State
-  # so chrome://flags reflects them in the UI.
+  # Sync WebMCP, Glic, and PWA experimental feature flags into Chrome's Local State
+  # so chrome://flags and Gemini in Chrome (chrome://glic) stay enabled.
   home.activation.configureChromeExperiments = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    EXPERIMENTS_JSON='${builtins.toJSON chromeFlags.labsExperiments}'
-    for state_file in "$HOME/.config/google-chrome/Local State" "$HOME/.local/share/google-chrome-private/Local State" "${sharedBrowserMcp.chromeDevtoolsProfileDir}/Local State"; do
-      state_dir="$(${pkgs.coreutils}/bin/dirname "$state_file")"
-      if [ -d "$state_dir" ]; then
-        if [ -f "$state_file" ]; then
-          tmp="$(${pkgs.coreutils}/bin/mktemp)"
-          if ${pkgs.jq}/bin/jq --argjson exps "$EXPERIMENTS_JSON" '
-            .browser = (.browser // {}) |
-            .browser.enabled_labs_experiments = (((.browser.enabled_labs_experiments // []) + $exps) | unique)
-          ' "$state_file" > "$tmp"; then
-            ${pkgs.coreutils}/bin/mv -f "$tmp" "$state_file"
-          else
-            ${pkgs.coreutils}/bin/rm -f "$tmp"
-          fi
-        else
-          echo "{\"browser\":{\"enabled_labs_experiments\":$EXPERIMENTS_JSON}}" > "$state_file"
-        fi
-      fi
-    done
+    ${ensureChromeLocalStateScript}
   '';
 
   home.activation.fixOnePasswordNativeHosts = lib.hm.dag.entryAfter [ "writeBoundary" ] ''

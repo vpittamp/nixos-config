@@ -33,6 +33,18 @@ rec {
     "RewriterAPIForGeminiNano"
     "SummarizationAPIForGeminiNano"
 
+    # Gemini in Chrome (Glic) native sidebar / panel component (chrome://glic)
+    "Glic"
+    "GlicRollout"
+    "GlicTieredRollout"
+    "GlicTieredRolloutV2"
+    "GlicToolbarHeightSidePanel"
+    "GlicActor"
+    "GlicActorUi"
+    "GlicLiveMode"
+    "GlicMultiInstance"
+    "GlicZeroStateSuggestions"
+
     # WebMCP (Web Model Context Protocol)
     "WebMCP"
     "WebMCPTesting"
@@ -98,6 +110,11 @@ rec {
   # Flags to populate in Chrome's Local State ("browser": { "enabled_labs_experiments": [...] })
   # This makes chrome://flags explicitly reflect the enabled state in the UI.
   labsExperiments = [
+    "glic@1"
+    "glic-actor@1"
+    "glic-live-mode@1"
+    "glic-detached@1"
+    "glic-toolbar-height-side-panel@1"
     "devtools-webmcp-support@1"
     "enable-webmcp-testing@1"
     "prompt-api-tool-use@1"

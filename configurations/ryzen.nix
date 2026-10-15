@@ -147,6 +147,9 @@ in
     # Chrome policy for native Gemini and Generative AI features
     ../modules/desktop/chrome-gemini.nix
 
+    # Chrome policy for Google's Model Context Tool Inspector (WebMCP) extension
+    ../modules/desktop/chrome-webmcp.nix
+
     # Sunshine game streaming (NVIDIA NVENC hardware encoding)
     ../modules/desktop/sunshine.nix
 
@@ -861,6 +864,9 @@ in
   # Bluetooth manager GUI
   services.blueman.enable = true;
 
+  # Logitech Unifying Receiver / MX Keys wireless keyboard support (udev rules + solaar CLI)
+  hardware.logitech.wireless.enable = true;
+
   # ========== FINGERPRINT AUTHENTICATION ==========
   # Fingerprint reader support (USB fingerprint reader)
   # Enroll fingerprint with: fprintd-enroll
@@ -919,6 +925,11 @@ in
   environment.systemPackages = with pkgs; [
     # Terminal
     ghostty
+
+    # Media key controls (MPRIS play/pause/next/prev) and top-bar mixer/network dialogs
+    playerctl
+    pavucontrol
+    networkmanagerapplet
 
     # Voxtype - Push-to-talk speech-to-text (Vulkan, works in tmux/CLI)
     (callPackage ../packages/voxtype.nix { })
@@ -1016,7 +1027,11 @@ in
   networking.firewall = {
     enable = true;
     allowedTCPPorts = [ 22 ];       # SSH
-    allowedUDPPorts = [ 5353 ];     # mDNS (5353) for Chrome Chromecast / TV discovery on LAN
+    allowedUDPPorts = [
+      5353  # mDNS (5353) for Chrome Chromecast / TV / AirPlay discovery on LAN
+      6001  # AirPlay 2 / RAOP UDP control channel (HomePod audio bridge)
+      6002  # AirPlay 2 / RAOP UDP NTP timing channel (HomePod audio bridge)
+    ];
     # Phase 4: OTEL remote-session sink (port 4320) retired — cross-host
     # sessions now flow through the K8s session-aggregator instead.
     interfaces."tailscale0".allowedTCPPorts = lib.mkAfter [ 21116 21118 ];  # RustDesk direct IP (Ollama 11434 dropped: services.ollama disabled)
@@ -1050,6 +1065,34 @@ in
           "default.clock.min-quantum" = 32;
           "default.clock.max-quantum" = 1024;
         };
+      };
+
+      # Virtual sink for on-demand AirPlay 2 streaming to Office HomePod Mini.
+      # Select "HomePod (Office)" in the QuickShell Audio popup to route audio
+      # to the HomePod; select any other output (e.g. Bluetooth headset or Pro)
+      # to immediately disconnect from the HomePod.
+      "95-homepod-sink" = {
+        "context.objects" = [
+          {
+            factory = "adapter";
+            args = {
+              "factory.name" = "support.null-audio-sink";
+              "node.name" = "sink-homepod-office";
+              "node.description" = "HomePod (Office)";
+              "node.nick" = "HomePod (Office)";
+              "media.class" = "Audio/Sink";
+              "device.icon-name" = "audio-speakers";
+              "audio.rate" = 44100;
+              "audio.channels" = 2;
+              "audio.position" = [ "FL" "FR" ];
+              "monitor.channel-volumes" = false;
+              "monitor.passthrough" = true;
+              "latencyOffsetNsec" = 265000000;
+              "priority.driver" = 500;
+              "priority.session" = 500;
+            };
+          }
+        ];
       };
     };
 
@@ -1201,6 +1244,7 @@ in
 
         headset_mac="70:BF:92:F4:7E:5D"
         sink_name="bluez_output.70_BF_92_F4_7E_5D.1"
+        was_present=0
 
         while true; do
           if ! ${pkgs.bluez}/bin/bluetoothctl info "$headset_mac" 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'Connected: yes'; then
@@ -1208,8 +1252,14 @@ in
           fi
 
           if ${pkgs.wireplumber}/bin/wpctl status 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q 'Jabra Evolve2 85'; then
-            ${pkgs.wireplumber}/bin/wpctl set-default "$sink_name" >/dev/null 2>&1 || true
-            ${pkgs.wireplumber}/bin/wpctl set-mute "$sink_name" 0 >/dev/null 2>&1 || true
+            # Only auto-select the Jabra sink when it first connects, so manual
+            # switching to HomePod (Office) or onboard audio is respected while
+            # the headset remains connected.
+            if [ "$was_present" -eq 0 ]; then
+              ${pkgs.pulseaudio}/bin/pactl set-default-sink "$sink_name" >/dev/null 2>&1 || true
+              ${pkgs.pulseaudio}/bin/pactl set-sink-mute "$sink_name" 0 >/dev/null 2>&1 || true
+              was_present=1
+            fi
 
             # A silent stream keeps BlueZ from suspending the A2DP transport,
             # which is where this headset/controller pair times out.
@@ -1217,17 +1267,60 @@ in
               | ${pkgs.pipewire}/bin/pw-cat \
                   --playback \
                   --target "$sink_name" \
+                  --properties='{"node.dont-reconnect":true}' \
                   --raw \
                   --format s16 \
                   --rate 48000 \
                   --channels 2 \
                   --volume 0.001 \
-                  -
+                  - || true
+          else
+            was_present=0
           fi
 
           sleep 2
         done
       '';
+    };
+  };
+
+  systemd.user.services.logitech-mx-keys-fn-swap = {
+    description = "Ensure Logitech MX Keys top row defaults to media/system keys (fn-swap=true)";
+    wantedBy = [ "sway-session.target" ];
+    partOf = [ "sway-session.target" ];
+    after = [ "sway-session.target" ];
+
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = pkgs.writeShellScript "logitech-mx-keys-fn-swap" ''
+        ${pkgs.solaar}/bin/solaar config "MX Keys" fn-swap true >/dev/null 2>&1 || true
+      '';
+    };
+  };
+
+  systemd.user.services.ryzen-homepod-audio-bridge = {
+    description = "On-demand PipeWire to Office HomePod (AirPlay 2) audio bridge";
+    wantedBy = [ "sway-session.target" ];
+    partOf = [ "sway-session.target" ];
+    after = [ "pipewire.service" "wireplumber.service" "sway-session.target" ];
+
+    environment = {
+      HOMEPOD_SINK_NAME = "sink-homepod-office";
+      HOMEPOD_IDENTIFIER = "E6:46:E9:DD:E0:B6";
+      HOMEPOD_FALLBACK_HOST = "10.0.0.100";
+      HOMEPOD_CONTROL_PORT = "6001";
+      HOMEPOD_TIMING_PORT = "6002";
+      PACTL_BIN = "${pkgs.pulseaudio}/bin/pactl";
+      PAREC_BIN = "${pkgs.pulseaudio}/bin/parec";
+      PW_DUMP_BIN = "${pkgs.pipewire}/bin/pw-dump";
+      PW_CLI_BIN = "${pkgs.pipewire}/bin/pw-cli";
+    };
+
+    serviceConfig = {
+      Restart = "always";
+      RestartSec = 2;
+      ExecStart = "${pkgs.python3.withPackages (ps: [ ps.pyatv ])}/bin/python3 ${../home-modules/desktop/scripts/homepod-audio-bridge.py}";
     };
   };
 
