@@ -304,7 +304,7 @@ PanelWindow {
                     }
                 }
 
-                // AI subscription usage (Claude Code / Codex): session-window
+                // AI subscription usage (Claude Code / Codex): weekly-window
                 // percentage on the chip, full panel on click. Self-hiding: a
                 // machine with no usage record draws nothing here.
                 Rectangle {

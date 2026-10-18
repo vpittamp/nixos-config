@@ -792,15 +792,20 @@ ShellRoot {
         const record = agentUsageCurrent();
         if (!record) return "";
         const limits = agentUsageLimits(record);
-        let session = null;
+        let weekly = null;
         for (let i = 0; i < limits.length; i += 1) {
-            if (/session/i.test(limits[i].label)) { session = limits[i]; break; }
+            if (/^weekly\b/i.test(limits[i].label)) { weekly = limits[i]; break; }
         }
-        if (!session && limits.length) session = limits[0];
+        if (!weekly) {
+            for (let i = 0; i < limits.length; i += 1) {
+                if (/weekly/i.test(limits[i].label)) { weekly = limits[i]; break; }
+            }
+        }
+        if (!weekly && limits.length) weekly = limits[0];
         // Compact on purpose: the agent's mark is the chip's icon, so the
-        // label is just the session window used (or today's tokens when the
+        // label is just the weekly window used (or today's tokens when the
         // account has no live limits) — the bar is tight on a 1504px panel.
-        return session ? session.percent + "%" : formatTokenCount(record.todayTotalTokens);
+        return weekly ? weekly.percent + "%" : formatTokenCount(record.todayTotalTokens);
     }
 
     function agentUsageChipPercent() {
