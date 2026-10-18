@@ -305,11 +305,12 @@ PanelWindow {
                 }
 
                 // AI subscription usage (Claude Code / Codex): weekly-window
-                // percentage on the chip, full panel on click. Self-hiding: a
-                // machine with no usage record draws nothing here.
+                // percentages for all ready agents on the chip, full panel on
+                // click. Self-hiding: a machine with no usage record draws
+                // nothing here.
                 Rectangle {
                     id: agentUsageChip
-                    readonly property var usageRecord: root.agentUsageCurrent()
+                    readonly property var usageRecords: root.agentUsageList()
                     readonly property int worstPercent: root.agentUsageChipPercent()
                     visible: root.agentUsageAvailable()
                     radius: root.radiusControl
@@ -332,26 +333,38 @@ PanelWindow {
                     RowLayout {
                         id: agentUsageRow
                         anchors.centerIn: parent
-                        spacing: 5
+                        spacing: 8
 
-                        Image {
-                            Layout.alignment: Qt.AlignVCenter
-                            source: agentUsageChip.usageRecord ? root.agentUsageIcon(agentUsageChip.usageRecord.id) : ""
-                            sourceSize.width: 12
-                            sourceSize.height: 12
-                            width: 12
-                            height: 12
-                            smooth: true
-                        }
+                        Repeater {
+                            model: agentUsageChip.usageRecords
 
-                        Text {
-                            font.family: Theme.fontFamily
-                            font.features: ({ "tnum": 1 })
-                            Layout.alignment: Qt.AlignVCenter
-                            text: root.agentUsageChipLabel() + root.chipCaret()
-                            color: root.agentsPopupVisible ? colors.blue : root.neutralChipText(agentUsageMouse.containsMouse)
-                            font.pixelSize: root.fontLabel
-                            font.weight: Font.Medium
+                            delegate: RowLayout {
+                                required property var modelData
+                                required property int index
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 4
+
+                                Image {
+                                    Layout.alignment: Qt.AlignVCenter
+                                    source: root.agentUsageIcon(modelData.id)
+                                    sourceSize.width: 12
+                                    sourceSize.height: 12
+                                    width: 12
+                                    height: 12
+                                    smooth: true
+                                }
+
+                                Text {
+                                    font.family: Theme.fontFamily
+                                    font.features: ({ "tnum": 1 })
+                                    Layout.alignment: Qt.AlignVCenter
+                                    text: root.agentUsageRecordChipLabel(modelData)
+                                        + (index === agentUsageChip.usageRecords.length - 1 ? root.chipCaret() : "")
+                                    color: root.agentsPopupVisible ? colors.blue : root.neutralChipText(agentUsageMouse.containsMouse)
+                                    font.pixelSize: root.fontLabel
+                                    font.weight: Font.Medium
+                                }
+                            }
                         }
                     }
 
@@ -370,7 +383,22 @@ PanelWindow {
                                 root.cycleAgentUsage();
                                 return;
                             }
-                            const open = !(root.agentsPopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName);
+                            const records = agentUsageChip.usageRecords;
+                            let clickedId = "";
+                            if (records.length > 0) {
+                                const idx = Math.min(records.length - 1, Math.max(0, Math.floor((mouse.x / Math.max(1, agentUsageChip.width)) * records.length)));
+                                clickedId = root.stringOrEmpty(records[idx] && records[idx].id);
+                            }
+                            const wasOpenHere = root.agentsPopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName;
+                            const currentRecord = root.agentUsageCurrent();
+                            const currentId = root.stringOrEmpty(currentRecord && currentRecord.id);
+                            if (clickedId && clickedId !== currentId) {
+                                root.selectAgentUsage(clickedId);
+                                if (wasOpenHere) {
+                                    return;
+                                }
+                            }
+                            const open = !wasOpenHere;
                             root.closeBarPopups();
                             root.barPopupOutputName = topBarWindow.topOutputName;
                             root.agentsPopupVisible = open;

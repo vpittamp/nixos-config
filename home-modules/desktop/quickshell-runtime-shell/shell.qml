@@ -654,6 +654,7 @@ ShellRoot {
         const id = stringOrEmpty(agentId);
         if (id === "claude") return "Claude";
         if (id === "codex") return "Codex";
+        if (id === "gemini") return "Gemini";
         return id ? id.charAt(0).toUpperCase() + id.slice(1) : "Agent";
     }
 
@@ -661,6 +662,7 @@ ShellRoot {
         const id = stringOrEmpty(agentId);
         if (id === "claude") return "file://" + shellConfig.claudeIcon;
         if (id === "codex") return "file://" + shellConfig.codexIcon;
+        if (id === "gemini") return "file://" + shellConfig.geminiIcon;
         return "file://" + shellConfig.aiFallbackIcon;
     }
 
@@ -788,31 +790,38 @@ ShellRoot {
         return "updated " + hours + "h ago";
     }
 
-    function agentUsageChipLabel() {
-        const record = agentUsageCurrent();
+    function agentUsageRecordChipLabel(record) {
         if (!record) return "";
         const limits = agentUsageLimits(record);
-        let weekly = null;
+        let primary = null;
         for (let i = 0; i < limits.length; i += 1) {
-            if (/^weekly\b/i.test(limits[i].label)) { weekly = limits[i]; break; }
+            if (/^weekly\b/i.test(limits[i].label)) { primary = limits[i]; break; }
         }
-        if (!weekly) {
-            for (let i = 0; i < limits.length; i += 1) {
-                if (/weekly/i.test(limits[i].label)) { weekly = limits[i]; break; }
-            }
-        }
-        if (!weekly && limits.length) weekly = limits[0];
+        if (!primary && limits.length) primary = limits[0];
         // Compact on purpose: the agent's mark is the chip's icon, so the
-        // label is just the weekly window used (or today's tokens when the
-        // account has no live limits) — the bar is tight on a 1504px panel.
-        return weekly ? weekly.percent + "%" : formatTokenCount(record.todayTotalTokens);
+        // label is just the weekly window used (or primary limit / today's
+        // tokens when the account has no weekly bucket) — the bar is tight.
+        return primary ? primary.percent + "%" : formatTokenCount(record.todayTotalTokens);
+    }
+
+    function agentUsageChipLabel() {
+        const list = agentUsageList();
+        if (!list.length) return "";
+        const parts = [];
+        for (let i = 0; i < list.length; i += 1) {
+            const label = agentUsageRecordChipLabel(list[i]);
+            if (label) parts.push(label);
+        }
+        return parts.join(" · ");
     }
 
     function agentUsageChipPercent() {
-        const record = agentUsageCurrent();
-        const limits = record ? agentUsageLimits(record) : [];
+        const list = agentUsageList();
         let worst = -1;
-        for (let i = 0; i < limits.length; i += 1) worst = Math.max(worst, limits[i].percent);
+        for (let j = 0; j < list.length; j += 1) {
+            const limits = agentUsageLimits(list[j]);
+            for (let i = 0; i < limits.length; i += 1) worst = Math.max(worst, limits[i].percent);
+        }
         return worst;
     }
     property bool audioPopupVisible: false

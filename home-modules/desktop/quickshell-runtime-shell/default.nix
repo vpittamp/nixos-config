@@ -3106,14 +3106,15 @@ USAGE
   # script writes them atomically to the usage dir, which the shell watches.
   # Adding an agent is adding a collector: the panel renders whatever appears.
   agentUsageDir = "${config.xdg.stateHome}/quickshell-runtime-shell/agents/usage";
-  agentUsageAgents = [ "claude" "codex" ];
+  agentUsageAgents = [ "claude" "codex" "gemini" ];
   agentUsageCollector = name: pkgs.writeShellScriptBin "quickshell-agent-usage-${name}" ''
+    export PATH=${lib.makeBinPath [ pkgs.libsecret ]}:"''${PATH:-}"
     exec ${lib.getExe pkgs.python3} ${./agent-usage + "/${name}.py"} "$@"
   '';
   agentUsageCollectors = map agentUsageCollector agentUsageAgents;
   agentUsageUpdateScript = pkgs.writeShellScriptBin "quickshell-agent-usage-update" ''
     set -uo pipefail
-    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils ]}:"''${PATH:-}"
+    export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils pkgs.libsecret ]}:"''${PATH:-}"
     usage_dir="${agentUsageDir}"
     mkdir -p "$usage_dir"
     pids=()
