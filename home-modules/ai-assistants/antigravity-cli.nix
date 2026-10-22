@@ -20,7 +20,7 @@ let
   repoRoot = ../../.;
 
   # Self-contained package in packages/antigravity-cli.nix tracks upstream releases
-  # ahead of nixpkgs (version 1.3.4 includes Gemini 4 Argon).
+  # ahead of nixpkgs (version 1.4.5 includes Gemini 4 Argon).
   antigravityCliPackage = pkgs.callPackage ../../packages/antigravity-cli.nix { };
 
   sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };

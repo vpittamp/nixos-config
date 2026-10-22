@@ -32,10 +32,10 @@
       # Read-only prediction markets MCP server (Kalshi/Polymarket/PredictIt)
       prediction-markets-mcp = pkgs.callPackage ./prediction-markets-mcp.nix { };
 
-      # OpenAI Codex CLI — 0.159.2 with GPT-6.1 Sol support
+      # OpenAI Codex CLI — 0.163.0 with GPT-6.1 Sol support
       codex = pkgs.callPackage ./codex.nix { };
 
-      # Google Antigravity CLI — 1.3.4 with Gemini 4 Argon
+      # Google Antigravity CLI — 1.4.5 with Gemini 4 Argon
       antigravity-cli = pkgs.callPackage ./antigravity-cli.nix { };
       agy = pkgs.callPackage ./antigravity-cli.nix { };
 

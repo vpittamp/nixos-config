@@ -1,6 +1,6 @@
 # OpenAI Codex CLI — AI coding agent for terminal workflows.
 # Shipped by OpenAI as a self-contained release package (native binary + code-mode host).
-# Version 0.159.2 with GPT-6.1 Sol support.
+# Version 0.163.0 with GPT-6.1 Sol support.
 { lib
 , stdenv
 , fetchurl
@@ -15,7 +15,7 @@
 }:
 
 let
-  version = "0.159.2";
+  version = "0.163.0";
 
   platformMap = {
     "x86_64-linux" = "x86_64-unknown-linux-musl";
@@ -26,8 +26,8 @@ let
     or (throw "Unsupported platform for codex: ${stdenv.hostPlatform.system}");
 
   nativeHashes = {
-    "x86_64-unknown-linux-musl" = "0svs6fhzig9rqvkl7p3nmmgx0k1j247g3hny82r7hi5r2fkjjbcy";
-    "aarch64-unknown-linux-musl" = "0brindphxrajmcgmy7wbwz1p82qdki9j7yf748z7xpyacfj29985";
+    "x86_64-unknown-linux-musl" = "10i128i1fzqbhfb6xg16m28h06qjp62zrxs0wl6ynq85pz34c9jq";
+    "aarch64-unknown-linux-musl" = "1yr7b627bjd0m21c6wnbin4b6j6yhmn2v443g63q9qfk34nwz3lx";
   };
 
   nativeBinary = fetchurl {

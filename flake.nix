@@ -34,7 +34,7 @@
     nixpkgs-lazygit.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     # Antigravity CLI — Google's Gemini-CLI successor (announced 2026-05-19, I/O 2026).
-    # Packaged in packages/antigravity-cli.nix tracking upstream releases directly (1.3.4).
+    # Packaged in packages/antigravity-cli.nix tracking upstream releases directly (1.4.5).
 
 
     # HA 2026.9+ for surface-pro3's Home Assistant only: the HA-Jev integration
