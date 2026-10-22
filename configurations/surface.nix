@@ -68,6 +68,9 @@ in
     # Chrome policy for Kimi WebBridge extension (force-install in all Chrome profiles)
     ../modules/desktop/chrome-kimi-webbridge.nix
 
+    # Chrome policy for OpenAI ChatGPT extension (force-install in all Chrome profiles)
+    ../modules/desktop/chrome-chatgpt.nix
+
     # Chrome managed bookmarks (one entry per PWA, generated from pwa-sites.nix)
     ../modules/desktop/chrome-bookmarks.nix
 

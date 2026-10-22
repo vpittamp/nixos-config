@@ -79,6 +79,7 @@ in
     ../modules/desktop/firefox-1password.nix
     ../modules/desktop/chrome-claude.nix
     ../modules/desktop/chrome-kimi-webbridge.nix
+    ../modules/desktop/chrome-chatgpt.nix
     ../modules/desktop/chrome-bookmarks.nix
     ../modules/desktop/chrome-sync.nix
     ../modules/desktop/chrome-gemini.nix
