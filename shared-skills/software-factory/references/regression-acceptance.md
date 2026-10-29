@@ -22,7 +22,16 @@ authority before resending; never resend a changed request under the same key.
 ## Shape rules (each was a real refusal)
 
 - At most 32 cases + preservationCases, summed over all obligations. caseId ≤32 chars.
-- D298: every controlPath needs ≥1 cause case AND ≥1 preservation case selecting it.
+- D298: for vitest, every controlPath must be selected by a cause case and by a
+  preservation case **when the obligation has a preservation role**. An empty
+  preservationCases array is allowed. Pytest may include unselected support
+  controls such as conftest.py; unittest uses native test IDs rather than path
+  prefixes. Do not apply vitest's per-control selection rule to those recipes.
+  Source: `factoryRegressionSelectionRefusal` in workflow-builder's
+  `src/lib/domain/factory-regression-control-admission.ts`, with the native
+  reporter parity controls in its sibling test. The retained #4081 decisions
+  had unused controls within a populated role; they do not establish a
+  requirement to add a preservation role.
 - A not-required `reason` is ≤400 characters.
 - Control paths are REPO-ROOT relative for EVERY recipe. `pytest-9.1.1-sandbox-execution-api/v1`
   also takes repo-root controls (`services/sandbox-execution-api/...`); it only adds that
