@@ -200,6 +200,23 @@ in
             rev = "v${version}";
             hash = "sha256-J3+HD/jMJDIBSiVJnHvjOJ3yswck+DV3XpPqIoR5/sU=";
           };
+          # 2024 DU7200 Tizen HTTP server on :8001 omits `Connection: close` on
+          # 200 OK responses ( even when the client sends `Connection: close` )
+          # and never reads a second HTTP request on a kept-alive socket.
+          # Close the aiohttp response transport (`resp.close()`) after reading
+          # the body so the socket is not returned to the keep-alive pool, and
+          # fall back to `self._ws.is_connected` if `_async_load_device_info`
+          # transiently returns None so a single missed HTTP poll cannot flip
+          # the entity state to `off`.
+          postPatch = ''
+            substituteInPlace custom_components/samsungtv_smart/api/samsungws.py \
+              --replace-fail 'verify_ssl=False)' 'verify_ssl=False, headers={"Connection": "close"})' \
+              --replace-fail $'            async with req as resp:\n                return _process_api_response(await resp.text())' \
+                $'            async with req as resp:\n                resp_text = await resp.text()\n                resp.close()\n                return _process_api_response(resp_text)'
+            substituteInPlace custom_components/samsungtv_smart/media_player.py \
+              --replace-fail 'return info is not None and info["device"]["PowerState"] == "on"' \
+                $'if info is not None:\n                return info["device"]["PowerState"] == "on"'
+          '';
           dependencies = with py; [
             websocket-client
             wakeonlan

@@ -223,6 +223,10 @@ in
   boot.kernel.sysctl = {
     "kernel.panic_on_oops" = 1;
     "kernel.panic" = 10;
+    # Prevent cross-interface ARP flux when both USB Ethernet (enp0s20u1c2) and
+    # Wi-Fi (wlp1s0) are active on 192.168.1.0/24.
+    "net.ipv4.conf.all.arp_ignore" = 1;
+    "net.ipv4.conf.all.arp_announce" = 2;
   };
 
   systemd.services.home-manager-vpittamp = {

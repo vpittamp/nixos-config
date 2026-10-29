@@ -166,6 +166,10 @@ in
     "vm.dirty_background_ratio" = 5;
     "vm.dirty_ratio" = 10;
     "vm.laptop_mode" = 5;
+    # Prevent cross-interface ARP flux when both USB Ethernet and Wi-Fi
+    # (wlp2s0) are connected to the same LAN subnet.
+    "net.ipv4.conf.all.arp_ignore" = 1;
+    "net.ipv4.conf.all.arp_announce" = 2;
   };
 
   # Boot configuration for standard x86_64 UEFI
