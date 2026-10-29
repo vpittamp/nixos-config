@@ -24,8 +24,10 @@ authority before resending; never resend a changed request under the same key.
 - At most 32 cases + preservationCases, summed over all obligations. caseId ≤32 chars.
 - D298: every controlPath needs ≥1 cause case AND ≥1 preservation case selecting it.
 - A not-required `reason` is ≤400 characters.
-- Control paths are REPO-ROOT relative. All recipes run from the repository root except
-  `pytest-9.1.1-sandbox-execution-api/v1` (service-rooted). `src/routes/x.test.ts` for a
+- Control paths are REPO-ROOT relative for EVERY recipe. `pytest-9.1.1-sandbox-execution-api/v1`
+  also takes repo-root controls (`services/sandbox-execution-api/...`); it only adds that
+  service's import root. Since D397 (#4142), acceptance refuses a control that is neither a
+  planned changePath nor present at the baseline. `src/routes/x.test.ts` for a
   function-router test resolves to nothing and fails at review with
   "regression candidate controls are missing/duplicated" (D397).
 - `vitest-4.1.2-structured/v1` runs with `config:false` on the ROOT node graph. A test that
