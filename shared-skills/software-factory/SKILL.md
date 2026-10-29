@@ -83,6 +83,10 @@ absent data edge cases in meaningful unit/component controls. A critic's source
 requirement failure returns to implementation for the same item; environment or
 missing-proof failures remain incomplete with their actual cause.
 
+## Regression acceptance
+
+Before calling `accept_factory_regression`, read `references/regression-acceptance.md`. It covers plan versus direct-PR authority, `expectedHeadSha: null` for plans, the D339-only edit, the 32-case and D298 rules, repo-root control paths, and which recipes can collect which tests.
+
 ## Independent review, attestation and delivery
 
 Normal factory review supplies a typed verdict, exact reviewed head and retained
