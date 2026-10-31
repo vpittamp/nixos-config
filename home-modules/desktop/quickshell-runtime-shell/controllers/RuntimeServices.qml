@@ -1684,6 +1684,26 @@ Item {
             return shellRoot.cycleAgentUsage();
         }
 
+        function selectAgentUsage(agentId: string): string {
+            return shellRoot.selectAgentUsage(agentId);
+        }
+
+        function agentUsageStatus(): string {
+            return JSON.stringify({
+                selected: shellRoot.agentUsageSelected,
+                currentId: shellRoot.currentAgentUsageId,
+                readyIds: shellRoot.agentUsageReadyIds,
+                chipLabel: shellRoot.agentUsageChipLabel(),
+                chipPercent: shellRoot.agentUsageChipPercent(),
+                labels: shellRoot.agentUsageReadyIds.map(function (id) {
+                    return {
+                        id: id,
+                        label: shellRoot.agentUsageRecordChipLabel(shellRoot.agentUsageRecords[id])
+                    };
+                })
+            });
+        }
+
         // `runtime-shell call replayNotifications 3`
         function replayNotifications(count: string): string {
             return shellRoot.replayNotifications(count);

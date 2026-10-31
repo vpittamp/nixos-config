@@ -558,45 +558,71 @@ ShellRoot {
         }
     }
 
-    // ----- Agent usage (Claude Code / Codex subscriptions) -----
+    // ----- Agent usage (Claude Code / Codex / Antigravity subscriptions) -----
     // Records are whatever quickshell-agent-usage-update wrote to
     // agentUsageDir; RuntimeServices file-watches one FileView per agent and
     // hands the JSON here. Nothing below knows how the numbers were made.
     property var agentUsageRecords: ({})
-    property string agentUsageSelected: ""
+    property var agentUsageReadyIds: []
+    property string agentUsageSelected: "claude"
     property bool agentUsageRefreshing: false
+    readonly property string currentAgentUsageId: {
+        const sel = stringOrEmpty(agentUsageSelected);
+        if (sel && agentUsageRecords[sel] && boolOrFalse(agentUsageRecords[sel].ready)) {
+            return sel;
+        }
+        return agentUsageReadyIds.length > 0 ? stringOrEmpty(agentUsageReadyIds[0]) : "";
+    }
+    readonly property var currentAgentUsageRecord: currentAgentUsageId ? (agentUsageRecords[currentAgentUsageId] || null) : null
 
     function setAgentUsageRecord(agentId, text) {
-        const id = stringOrEmpty(agentId);
+        const id = stringOrEmpty(agentId).trim();
         if (!id) {
             return;
         }
+        const raw = stringOrEmpty(text).trim();
         let record = null;
-        try {
-            const raw = stringOrEmpty(text).trim();
-            record = raw ? JSON.parse(raw) : null;
-        } catch (error) {
-            console.warn("agents.record:", id, error);
-            record = null;
+        if (raw) {
+            try {
+                record = JSON.parse(raw);
+            } catch (error) {
+                console.warn("agents.record:", id, error);
+                record = null;
+            }
+        }
+        // Ignore transient empty/failed reads during atomic file replacement so
+        // an in-place refresh never drops a ready agent or resets selection.
+        if (!record || typeof record !== "object") {
+            if (agentUsageRecords[id]) {
+                return;
+            }
+            return;
         }
         const next = Object.assign({}, agentUsageRecords);
-        if (record && typeof record === "object") {
-            next[id] = record;
-        } else {
-            delete next[id];
-        }
+        next[id] = record;
         agentUsageRecords = next;
-        if (!agentUsageSelected || !agentUsageRecords[agentUsageSelected]) {
-            const list = agentUsageList();
-            agentUsageSelected = list.length ? stringOrEmpty(list[0].id) : "";
+
+        const order = arrayOrEmpty(shellConfig.agentUsageAgents);
+        const readyIds = [];
+        for (let i = 0; i < order.length; i += 1) {
+            const candidateId = stringOrEmpty(order[i]);
+            const candidate = next[candidateId];
+            if (candidate && boolOrFalse(candidate.ready)) {
+                readyIds.push(candidateId);
+            }
+        }
+        if (readyIds.join(",") !== agentUsageReadyIds.join(",")) {
+            agentUsageReadyIds = readyIds;
+        }
+        if (!agentUsageSelected || order.indexOf(agentUsageSelected) < 0) {
+            agentUsageSelected = readyIds.length ? readyIds[0] : (order.length ? stringOrEmpty(order[0]) : "");
         }
     }
 
     function agentUsageList() {
-        const order = arrayOrEmpty(shellConfig.agentUsageAgents);
         const out = [];
-        for (let i = 0; i < order.length; i += 1) {
-            const record = agentUsageRecords[order[i]];
+        for (let i = 0; i < agentUsageReadyIds.length; i += 1) {
+            const record = agentUsageRecords[agentUsageReadyIds[i]];
             if (record && boolOrFalse(record.ready)) {
                 out.push(record);
             }
@@ -605,36 +631,33 @@ ShellRoot {
     }
 
     function agentUsageAvailable() {
-        return agentUsageList().length > 0;
+        return agentUsageReadyIds.length > 0;
     }
 
     function agentUsageCurrent() {
-        const selected = agentUsageRecords[agentUsageSelected];
-        if (selected && boolOrFalse(selected.ready)) {
-            return selected;
-        }
-        const list = agentUsageList();
-        return list.length ? list[0] : null;
+        return currentAgentUsageRecord;
     }
 
     function selectAgentUsage(agentId) {
-        if (agentUsageRecords[stringOrEmpty(agentId)]) {
-            agentUsageSelected = stringOrEmpty(agentId);
+        const id = stringOrEmpty(agentId).trim();
+        if (!id) {
+            return "invalid agent id";
         }
+        const order = arrayOrEmpty(shellConfig.agentUsageAgents);
+        if (agentUsageRecords[id] || order.indexOf(id) >= 0) {
+            agentUsageSelected = id;
+            return "ok";
+        }
+        return "unknown agent: " + id;
     }
 
     function cycleAgentUsage() {
-        const list = agentUsageList();
-        if (!list.length) {
+        if (!agentUsageReadyIds.length) {
             return "no agent usage records";
         }
-        let index = -1;
-        for (let i = 0; i < list.length; i += 1) {
-            if (stringOrEmpty(list[i].id) === agentUsageSelected) {
-                index = i;
-            }
-        }
-        agentUsageSelected = stringOrEmpty(list[(index + 1) % list.length].id);
+        const current = currentAgentUsageId;
+        const index = agentUsageReadyIds.indexOf(current);
+        agentUsageSelected = stringOrEmpty(agentUsageReadyIds[(index + 1) % agentUsageReadyIds.length]);
         return "ok";
     }
 
@@ -790,18 +813,24 @@ ShellRoot {
         return "updated " + hours + "h ago";
     }
 
+    function agentUsageWeeklyLimit(record) {
+        const limits = agentUsageLimits(record);
+        for (let i = 0; i < limits.length; i += 1) {
+            if (/^weekly\b/i.test(limits[i].label)) return limits[i];
+        }
+        for (let i = 0; i < limits.length; i += 1) {
+            if (/weekly|7-day/i.test(limits[i].label)) return limits[i];
+        }
+        return limits.length ? limits[0] : null;
+    }
+
     function agentUsageRecordChipLabel(record) {
         if (!record) return "";
-        const limits = agentUsageLimits(record);
-        let primary = null;
-        for (let i = 0; i < limits.length; i += 1) {
-            if (/^weekly\b/i.test(limits[i].label)) { primary = limits[i]; break; }
-        }
-        if (!primary && limits.length) primary = limits[0];
+        const weekly = agentUsageWeeklyLimit(record);
         // Compact on purpose: the agent's mark is the chip's icon, so the
         // label is just the weekly window used (or primary limit / today's
         // tokens when the account has no weekly bucket) — the bar is tight.
-        return primary ? primary.percent + "%" : formatTokenCount(record.todayTotalTokens);
+        return weekly ? weekly.percent + "%" : formatTokenCount(record.todayTotalTokens);
     }
 
     function agentUsageChipLabel() {
@@ -819,8 +848,8 @@ ShellRoot {
         const list = agentUsageList();
         let worst = -1;
         for (let j = 0; j < list.length; j += 1) {
-            const limits = agentUsageLimits(list[j]);
-            for (let i = 0; i < limits.length; i += 1) worst = Math.max(worst, limits[i].percent);
+            const weekly = agentUsageWeeklyLimit(list[j]);
+            if (weekly) worst = Math.max(worst, weekly.percent);
         }
         return worst;
     }
@@ -9270,7 +9299,12 @@ function normalizeLauncherMode(mode) {
             },
             "agents": {
                 isOpen: function () { return agentsPopupVisible; },
-                open: function (payload) { openBarPopup(payload, function () { agentsPopupVisible = true; }); },
+                open: function (payload) {
+                    if (payload && payload.agent) {
+                        selectAgentUsage(payload.agent);
+                    }
+                    openBarPopup(payload, function () { agentsPopupVisible = true; });
+                },
                 close: function () { agentsPopupVisible = false; }
             },
             "lock": {
@@ -11766,6 +11800,7 @@ function normalizeLauncherMode(mode) {
             MouseArea {
                 id: scrimCatcher
                 anchors.fill: parent
+                anchors.topMargin: Math.round(shellConfig.topBarHeight * Theme.scale)
                 enabled: popupOpenHere
                 acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
                 onPressed: shellRootRef.closeBarPopups()

@@ -24,35 +24,35 @@ let
   antigravityCliPackage = pkgs.callPackage ../../packages/antigravity-cli.nix { };
 
   sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
-  nodeNpx = "${pkgs.nodejs_22}/bin/npx";
+  nodeNpx = "${pkgs.nodejs}/bin/npx";
   enableBrowserMcpServers = sharedBrowserMcp.enableBrowserMcpServers;
+  antigravityMcpStateRoot = "${config.xdg.stateHome}/antigravity/mcp";
+  playwrightProfileDir = sharedBrowserMcp.codexPlaywrightProfileDir;
+  playwrightOutputDir = "${antigravityMcpStateRoot}/playwright";
+  chromiumConfig = lib.optionalAttrs enableBrowserMcpServers {
+    chromiumBin = "${pkgs.google-chrome}/bin/google-chrome-stable";
+  };
 
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
   contextGraphMcp = config.modules.aiAssistants.contextGraphMcp;
   kiotaMcp = config.modules.aiAssistants.kiotaMcp;
   homeAssistantMcp = config.modules.aiAssistants.homeAssistantMcp;
   fabricMcp = config.modules.aiAssistants.fabricMcp;
-  linkedinMcp = config.modules.aiAssistants.linkedinMcp;
 
   mcpServers =
-    (lib.optionalAttrs workflowBuilderMcp.enable {
+    {
+      openaiDeveloperDocs = {
+        url = "https://developers.openai.com/mcp";
+        timeoutSeconds = 60;
+      };
+    }
+    // (lib.optionalAttrs workflowBuilderMcp.enable {
       "workflow-builder" = {
         # Use the same authenticated proxy as the other local AI clients so
         # workspace identity and optional session lineage have one contract.
         command = "${workflowBuilderMcp.proxyCommand}";
         args = [];
         timeoutSeconds = 300;
-        strictArgumentValidation = true;
-        enabledTools = [
-          "get_workflow_context"
-          "list_workflows"
-          "get_workflow"
-          "execute_workflow"
-          "get_workflow_script_spec"
-          "validate_workflow_script"
-          "run_workflow_script"
-          "save_workflow_script"
-        ];
       };
     })
     // (lib.optionalAttrs contextGraphMcp.enable {
@@ -61,9 +61,8 @@ let
       "context-graph" = {
         command = "${contextGraphMcp.proxyCommand}";
         args = [];
+        disabled = true;
         timeoutSeconds = 120;
-        strictArgumentValidation = true;
-        enabledTools = contextGraphMcp.toolNames;
       };
     })
     // (lib.optionalAttrs kiotaMcp.enable {
@@ -73,8 +72,6 @@ let
         command = "${kiotaMcp.proxyCommand}";
         args = [];
         timeoutSeconds = 300;
-        strictArgumentValidation = true;
-        enabledTools = kiotaMcp.toolNames;
       };
     })
     // (lib.optionalAttrs homeAssistantMcp.enable {
@@ -82,6 +79,7 @@ let
       "homeassistant" = {
         command = "${homeAssistantMcp.proxyCommand}";
         args = [];
+        disabled = true;
         timeoutSeconds = 120;
       };
     })
@@ -90,35 +88,40 @@ let
       "fabric" = {
         command = "${fabricMcp.proxyCommand}";
         args = [];
+        disabled = true;
         timeoutSeconds = 120;
-      };
-    })
-    // (lib.optionalAttrs linkedinMcp.enable {
-      # LinkedIn MCP server (Patchright browser automation).
-      "linkedin" = {
-        command = "${linkedinMcp.command}";
-        args = [];
-        timeoutSeconds = linkedinMcp.timeoutSeconds;
       };
     })
     // (lib.optionalAttrs enableBrowserMcpServers {
       "chrome-devtools" = {
         command = nodeNpx;
         args = sharedBrowserMcp.chromeDevtoolsMcpArgs;
-        timeoutSeconds = 300;
+        timeoutSeconds = 120;
       };
-    })
-    // {
-      "vercel" = {
+      "playwright" = {
         command = nodeNpx;
         args = [
           "-y"
-          "mcp-remote"
-          "https://mcp.vercel.com"
+          "@playwright/mcp@latest"
+          "--browser"
+          "chromium"
+          "--executable-path"
+          "${chromiumConfig.chromiumBin}"
+          "--user-data-dir"
+          "${playwrightProfileDir}"
+          "--output-dir"
+          "${playwrightOutputDir}"
+          "--viewport-size"
+          "1440x900"
         ];
+        disabled = true;
+        env = {
+          PLAYWRIGHT_SKIP_CHROMIUM_DOWNLOAD = "true";
+          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+        };
         timeoutSeconds = 120;
       };
-    };
+    });
 
   enableMcpConfig = mcpServers != { };
 
@@ -148,7 +151,6 @@ in
 
     CONFIG="$HOME/.gemini/config/mcp_config.json"
     SRC="${antigravityMcpConfigJson}"
-    TEMP="$(${pkgs.coreutils}/bin/mktemp)"
 
     ${pkgs.coreutils}/bin/mkdir -p "$HOME/.gemini/config"
 
@@ -156,15 +158,9 @@ in
       ${pkgs.coreutils}/bin/rm -f "$CONFIG"
     fi
 
-    if [ -s "$CONFIG" ]; then
-      if ! ${pkgs.jq}/bin/jq -s '.[0] * .[1]' "$CONFIG" "$SRC" > "$TEMP"; then
-        ${pkgs.coreutils}/bin/cp "$SRC" "$TEMP"
-      fi
-    else
-      ${pkgs.coreutils}/bin/cp "$SRC" "$TEMP"
-    fi
-
-    ${pkgs.coreutils}/bin/install -m 0644 "$TEMP" "$CONFIG"
-    ${pkgs.coreutils}/bin/rm -f "$TEMP"
+    # Install a fresh writable copy from the declarative Nix config so removed
+    # servers and stale per-server keys (e.g. legacy `serverUrl` or `enabledTools`)
+    # cannot survive across rebuilds.
+    ${pkgs.coreutils}/bin/install -m 0644 "$SRC" "$CONFIG"
   '');
 }

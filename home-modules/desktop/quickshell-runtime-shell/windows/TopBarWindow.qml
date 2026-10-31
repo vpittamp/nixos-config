@@ -86,6 +86,13 @@ PanelWindow {
         border.color: topBarWindow.isFocusedBar ? colors.blueMuted : colors.border
         border.width: 1
 
+        MouseArea {
+            anchors.fill: parent
+            enabled: root.anyBarPopupOpenOnOutput(topBarWindow.topOutputName)
+            acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+            onPressed: root.closeBarPopups()
+        }
+
         // The three sections are ANCHORED, not cells of a RowLayout. A RowLayout
         // with two fillWidth siblings splits the leftover space in equal shares,
         // so the "centred" block only lands on the midpoint when the left and
@@ -304,19 +311,20 @@ PanelWindow {
                     }
                 }
 
-                // AI subscription usage (Claude Code / Codex): weekly-window
-                // percentages for all ready agents on the chip, full panel on
-                // click. Self-hiding: a machine with no usage record draws
-                // nothing here.
+                // AI subscription usage (Claude Code / Codex / Antigravity):
+                // weekly-window percentages for all ready agents on the chip,
+                // full panel on click. Self-hiding: a machine with no usage
+                // record draws nothing here.
                 Rectangle {
                     id: agentUsageChip
-                    readonly property var usageRecords: root.agentUsageList()
+                    readonly property var readyIds: root.agentUsageReadyIds
                     readonly property int worstPercent: root.agentUsageChipPercent()
-                    visible: root.agentUsageAvailable()
+                    readonly property bool popupOpenHere: root.agentsPopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName
+                    visible: readyIds.length > 0
                     radius: root.radiusControl
-                    color: root.stateChipFill(root.agentsPopupVisible, agentUsageMouse.containsMouse, colors.blueBg)
+                    color: root.stateChipFill(popupOpenHere, agentUsageMouse.containsMouse, colors.blueBg)
                     border.color: Theme.textChips ? "transparent"
-                        : root.agentsPopupVisible ? colors.blue
+                        : popupOpenHere ? colors.blue
                         : worstPercent >= 90 ? colors.red
                         : worstPercent >= 70 ? colors.amber
                         : root.neutralChipBorder(agentUsageMouse.containsMouse)
@@ -336,17 +344,21 @@ PanelWindow {
                         spacing: 8
 
                         Repeater {
-                            model: agentUsageChip.usageRecords
+                            id: agentUsageRepeater
+                            model: agentUsageChip.readyIds
 
                             delegate: RowLayout {
-                                required property var modelData
+                                required property string modelData
                                 required property int index
+                                readonly property string agentId: root.stringOrEmpty(modelData)
+                                readonly property var record: root.agentUsageRecords[agentId] || null
+                                readonly property bool selected: agentUsageChip.popupOpenHere && agentId === root.currentAgentUsageId
                                 Layout.alignment: Qt.AlignVCenter
                                 spacing: 4
 
                                 Image {
                                     Layout.alignment: Qt.AlignVCenter
-                                    source: root.agentUsageIcon(modelData.id)
+                                    source: root.agentUsageIcon(parent.agentId)
                                     sourceSize.width: 12
                                     sourceSize.height: 12
                                     width: 12
@@ -358,9 +370,9 @@ PanelWindow {
                                     font.family: Theme.fontFamily
                                     font.features: ({ "tnum": 1 })
                                     Layout.alignment: Qt.AlignVCenter
-                                    text: root.agentUsageRecordChipLabel(modelData)
-                                        + (index === agentUsageChip.usageRecords.length - 1 ? root.chipCaret() : "")
-                                    color: root.agentsPopupVisible ? colors.blue : root.neutralChipText(agentUsageMouse.containsMouse)
+                                    text: root.agentUsageRecordChipLabel(parent.record)
+                                        + (parent.index === agentUsageChip.readyIds.length - 1 ? root.chipCaret() : "")
+                                    color: parent.selected ? colors.blue : root.neutralChipText(agentUsageMouse.containsMouse)
                                     font.pixelSize: root.fontLabel
                                     font.weight: Font.Medium
                                 }
@@ -383,25 +395,38 @@ PanelWindow {
                                 root.cycleAgentUsage();
                                 return;
                             }
-                            const records = agentUsageChip.usageRecords;
+                            const rowPt = agentUsageMouse.mapToItem(agentUsageRow, mouse.x, mouse.y);
                             let clickedId = "";
-                            if (records.length > 0) {
-                                const idx = Math.min(records.length - 1, Math.max(0, Math.floor((mouse.x / Math.max(1, agentUsageChip.width)) * records.length)));
-                                clickedId = root.stringOrEmpty(records[idx] && records[idx].id);
-                            }
-                            const wasOpenHere = root.agentsPopupVisible && root.stringOrEmpty(root.barPopupOutputName) === topBarWindow.topOutputName;
-                            const currentRecord = root.agentUsageCurrent();
-                            const currentId = root.stringOrEmpty(currentRecord && currentRecord.id);
-                            if (clickedId && clickedId !== currentId) {
-                                root.selectAgentUsage(clickedId);
-                                if (wasOpenHere) {
-                                    return;
+                            let bestDist = Infinity;
+                            for (let i = 0; i < agentUsageRepeater.count; i += 1) {
+                                const item = agentUsageRepeater.itemAt(i);
+                                if (!item || !item.agentId) {
+                                    continue;
+                                }
+                                const left = item.x;
+                                const right = item.x + item.width;
+                                const dist = rowPt.x < left ? (left - rowPt.x) : (rowPt.x > right ? (rowPt.x - right) : 0);
+                                if (dist < bestDist) {
+                                    bestDist = dist;
+                                    clickedId = item.agentId;
                                 }
                             }
-                            const open = !wasOpenHere;
+                            const wasOpenHere = agentUsageChip.popupOpenHere;
+                            const currentId = root.currentAgentUsageId;
+                            if (wasOpenHere) {
+                                if (clickedId && clickedId !== currentId) {
+                                    root.selectAgentUsage(clickedId);
+                                    return;
+                                }
+                                root.closeBarPopups();
+                                return;
+                            }
+                            if (clickedId) {
+                                root.selectAgentUsage(clickedId);
+                            }
                             root.closeBarPopups();
                             root.barPopupOutputName = topBarWindow.topOutputName;
-                            root.agentsPopupVisible = open;
+                            root.agentsPopupVisible = true;
                         }
                     }
                 }
@@ -2910,11 +2935,12 @@ PanelWindow {
 
         Rectangle {
             id: agentUsageCard
-            readonly property var record: root.agentUsageCurrent()
+            readonly property string currentId: root.currentAgentUsageId
+            readonly property var record: root.currentAgentUsageRecord
             readonly property var limits: root.agentUsageLimits(record)
             readonly property var days: root.agentUsageDays(record)
             readonly property var models: root.agentUsageModels(record)
-            readonly property var agents: root.agentUsageList()
+            readonly property var agentIds: root.agentUsageReadyIds
             implicitWidth: 380
             implicitHeight: agentUsageColumn.implicitHeight + 24
             radius: Theme.rad(12)
@@ -2994,15 +3020,16 @@ PanelWindow {
                 // Subscription switch, only when more than one agent reports.
                 RowLayout {
                     Layout.fillWidth: true
-                    visible: agentUsageCard.agents.length > 1
+                    visible: agentUsageCard.agentIds.length > 1
                     spacing: 6
 
                     Repeater {
-                        model: agentUsageCard.agents
+                        model: agentUsageCard.agentIds
 
                         delegate: Rectangle {
-                            required property var modelData
-                            readonly property bool current: agentUsageCard.record && root.stringOrEmpty(modelData.id) === root.stringOrEmpty(agentUsageCard.record.id)
+                            required property string modelData
+                            readonly property string agentId: root.stringOrEmpty(modelData)
+                            readonly property bool current: agentId === agentUsageCard.currentId
                             radius: Theme.rad(7)
                             color: current ? colors.blueBg : colors.cardAlt
                             border.color: current ? colors.blue : colors.border
@@ -3014,7 +3041,7 @@ PanelWindow {
                                 font.family: Theme.fontFamily
                                 id: agentSwitchLabel
                                 anchors.centerIn: parent
-                                text: root.agentUsageShortName(modelData.id)
+                                text: root.agentUsageShortName(parent.agentId)
                                 color: parent.current ? colors.blue : colors.text
                                 font.pixelSize: Theme.fs(9)
                                 font.weight: Font.DemiBold
@@ -3023,7 +3050,7 @@ PanelWindow {
                             MouseArea {
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: root.selectAgentUsage(modelData.id)
+                                onPressed: root.selectAgentUsage(parent.agentId)
                             }
                         }
                     }
