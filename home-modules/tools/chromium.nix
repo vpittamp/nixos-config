@@ -1060,18 +1060,86 @@ let
     {
       name,
       extraArgs ? [ ],
+      reuseExistingWindow ? true,
     }:
     lib.hiPrio (pkgs.writeShellScriptBin name ''
       set -euo pipefail
       if ! [ -L "$HOME/.config/google-chrome/SingletonLock" ]; then
         ${ensureChromeLocalStateScript} || true
       fi
+
+      filtered_args=()
+      bypass_reuse=${if reuseExistingWindow then "0" else "1"}
+      has_target_arg=0
+
+      for arg in "$@"; do
+        case "$arg" in
+          --app=*|--app-id=*|--incognito|--user-data-dir=*|--class=*|--profile-directory=Profile*|--remote-debugging-*|--headless*|--version|-v|--help|-h|--product-version)
+            bypass_reuse=1
+            filtered_args+=("$arg")
+            ;;
+          --new-window)
+            filtered_args+=("$arg")
+            ;;
+          -*)
+            filtered_args+=("$arg")
+            ;;
+          *)
+            has_target_arg=1
+            filtered_args+=("$arg")
+            ;;
+        esac
+      done
+
+      if [ "$bypass_reuse" -eq 0 ]; then
+        sway_sock="''${SWAYSOCK:-}"
+        if [ -z "$sway_sock" ] || [ ! -S "$sway_sock" ]; then
+          sway_sock="$(${pkgs.coreutils}/bin/ls -t "/run/user/$(${pkgs.coreutils}/bin/id -u)"/sway-ipc.*.sock 2>/dev/null | ${pkgs.coreutils}/bin/head -n1 || true)"
+        fi
+
+        existing_state=""
+        if [ -n "$sway_sock" ] && [ -S "$sway_sock" ]; then
+          existing_state="$(
+            SWAYSOCK="$sway_sock" ${pkgs.sway}/bin/swaymsg -t get_tree 2>/dev/null \
+              | ${pkgs.jq}/bin/jq -r '
+                  [.. | objects
+                   | select(.app_id? == "google-chrome" or .window_properties?.class? == "Google-chrome")
+                   | "\(.id)\t\(.focused // false)"
+                  ] | first // empty
+                ' || true
+          )"
+        fi
+
+        if [ -n "$existing_state" ]; then
+          existing_con_id="''${existing_state%%	*}"
+          existing_focused="''${existing_state#*	}"
+
+          reused_args=()
+          for arg in "''${filtered_args[@]}"; do
+            if [ "$arg" != "--new-window" ]; then
+              reused_args+=("$arg")
+            fi
+          done
+          filtered_args=("''${reused_args[@]}")
+
+          SWAYSOCK="$sway_sock" ${pkgs.sway}/bin/swaymsg "[con_id=$existing_con_id] focus" >/dev/null 2>&1 || true
+
+          if [ "$has_target_arg" -eq 0 ]; then
+            exit 0
+          fi
+
+          if [ "$existing_focused" != "true" ]; then
+            ${pkgs.coreutils}/bin/sleep 0.08
+          fi
+        fi
+      fi
+
       cmd=(
         ${pkgs.google-chrome}/bin/google-chrome-stable
         ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) ryzenCaptureSafeChromeArgs)}
         ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) chromeFlags.chromeArgs)}
         ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) extraArgs)}
-        "$@"
+        "''${filtered_args[@]}"
       )
       exec "''${cmd[@]}"
     '');
@@ -1093,6 +1161,7 @@ let
   # Separate user-data-dir ensures this runs as a distinct Chrome process
   chromePrivateWrapper = mkChromeWrapper {
     name = "google-chrome-private";
+    reuseExistingWindow = false;
     extraArgs = [
       "--incognito"
       "--user-data-dir=${config.xdg.dataHome}/google-chrome-private"
@@ -1248,6 +1317,34 @@ in
     Comment=Google Chrome with i3pm URL bridge
     Exec=${chromeWrapper}/bin/google-chrome-i3pm %U
     Terminal=false
+    Icon=google-chrome
+    Categories=Network;WebBrowser;
+    MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/about;x-scheme-handler/unknown;x-scheme-handler/ftp;x-scheme-handler/mailto;x-scheme-handler/webcal;application/pdf;
+    StartupWMClass=Google-chrome
+  '';
+  home.file.".local/share/applications/google-chrome.desktop".text = ''
+    [Desktop Entry]
+    Version=1.0
+    Type=Application
+    Name=Google Chrome
+    Comment=Google Chrome with i3pm URL bridge
+    Exec=${chromeWrapper}/bin/google-chrome-i3pm %U
+    Terminal=false
+    NoDisplay=true
+    Icon=google-chrome
+    Categories=Network;WebBrowser;
+    MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/about;x-scheme-handler/unknown;x-scheme-handler/ftp;x-scheme-handler/mailto;x-scheme-handler/webcal;application/pdf;
+    StartupWMClass=Google-chrome
+  '';
+  home.file.".local/share/applications/com.google.Chrome.desktop".text = ''
+    [Desktop Entry]
+    Version=1.0
+    Type=Application
+    Name=Google Chrome
+    Comment=Google Chrome with i3pm URL bridge
+    Exec=${chromeWrapper}/bin/google-chrome-i3pm %U
+    Terminal=false
+    NoDisplay=true
     Icon=google-chrome
     Categories=Network;WebBrowser;
     MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/about;x-scheme-handler/unknown;x-scheme-handler/ftp;x-scheme-handler/mailto;x-scheme-handler/webcal;application/pdf;
