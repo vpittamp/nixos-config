@@ -359,7 +359,20 @@ logical product data, NATS state, and mutable workspaces are disposable.
 - Receiver compile, diff-scope, generation, and health decisions are
   authoritative.
 - Verification is impact-derived from catalog gates and may include service,
-  route, contract, render, runtime, browser, and telemetry checks.
+  route, contract, render, runtime, browser, and telemetry checks. In
+  `preview-host-development.js`, `CONTROL_PROGRESS_LEASED_STAGES.validation = true`
+  (`D676a`) leases progress across active validation/regression tool calls up to
+  `CONTROL_HARD_BUDGET_CEILING_MINUTES.validation = 30`, and on a
+  `budget-continuation` attempt restoring an unchanged checkpoint,
+  `continueFactoryRegressionContext` (`D676b`) supersedes predecessor
+  `completed-known` measurement epochs without requiring an environment-failure
+  validation receipt.
+- Unstaged session runtime provisioning leases (`runtimeProvisioningAppId IS NULL`)
+  expire after `90 seconds` (`D679c`), unattached sessions where `runtimeAppId`
+  and `daprInstanceId` are `null` report `runtimeLinked: false` and release
+  immediately to `disposition: "cleanup", preservation: "none"` (`D679d`,
+  `D680c`), and refused pre-run `handoff` resume commands (`instanceId: null`)
+  are classified as `closed-unstarted` (`D680a`, `D680b`).
 - `submit` performs current-base preflight and returns linked, idempotent
   delivery receipts. The agent never chooses branch, repository, commit, PR, or
   CI coordinates.

@@ -85,7 +85,7 @@ missing-proof failures remain incomplete with their actual cause.
 
 ## Regression acceptance
 
-Before calling `accept_factory_regression`, read `references/regression-acceptance.md`. It covers plan versus direct-PR authority, `expectedHeadSha: null` for plans, the D339-only edit, the 32-case and D298 rules, repo-root control paths, and which recipes can collect which tests.
+Before calling `accept_factory_regression`, read `references/regression-acceptance.md`. It covers plan versus direct-PR authority, `expectedHeadSha: null` for plans, the D339-only edit, the 32-case and D298 rules, repo-root control paths, which recipes can collect which tests, the R1 `factory-regression-proof` required status check on `workflow-builder` `main` (ruleset `21820326`), `.factory/regressions/<64-hex>.json` materialization, and the Two-Key Procedure (`D-L181`) for changes to `FACTORY_REGRESSION_CI_PROTECTED_FILES`.
 
 ## Independent review, attestation and delivery
 

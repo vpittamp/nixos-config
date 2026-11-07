@@ -239,7 +239,24 @@ to make it report; the reviewer already has both authority and an audience.
   Read `stalled` and `unactivatedEpochs` in the review record; healthy looks like
   `OWED: 0, stalled: none`.
 - **Do NOT automate the `sourceAnchor` write.** It is no longer the cycle-cost
-  lever — the publisher already skips windows the pins cover.
+  lever — the publisher already skips windows the pins cover. However, if
+  historical unsettled authority-held windows accumulate behind `sourceAnchor`
+  and inflate `artifact-publisher` / `artifact-authority` scan latency (`D671`,
+  `stacks#16330`), advance `sourceAnchor` in
+  `packages/components/hub-management/manifests/artifact-publisher/config.json`
+  through a reviewed PR.
+- **Event-driven post-build release wake (`D671`, `stacks#16330`).** Push-to-`main`
+  image build pipelines (`Pipeline-outer-loop-build.yaml` and
+  `Pipeline-outer-loop-dev-images.yaml`) invoke `Task-outer-loop-release-wake`
+  (`outer-loop-release-wake`) in `finally` after image publication to wake
+  `artifact-publisher-observer` immediately (`0–2m` release PR open vs waiting
+  for the polling interval), keeping `merge -> live` within `<= 20m`.
+- **Canonical Kubernetes `resource.Quantity` formatting (`D662`, `stacks#16313`).**
+  Always write exact binary/SI multiples in their canonical Kubernetes form (for
+  example, `memory: 4Gi` rather than `memory: 4096Mi` in
+  `Cluster-postgresql-cnpg.yaml`) so ArgoCD client-side `predictedLiveState`
+  matches API-server normalized `liveState` and does not hold the parent
+  Application in a 5-minute selective self-heal `OutOfSync` loop.
 
 ## Admission Epoch
 
