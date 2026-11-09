@@ -35,7 +35,7 @@
 
 let
   pname = "kimi-code";
-  version = "0.39.0";
+  version = "2.5.2";
   nodejs = nodejs_22;
 in
 buildNpmPackage {
@@ -44,7 +44,7 @@ buildNpmPackage {
   src = fetchurl {
     url = "https://registry.npmjs.org/@moonshot-ai/kimi-code/-/kimi-code-${version}.tgz";
     # npm dist.integrity is already an SRI hash — use it verbatim.
-    hash = "sha512-T+8IwTc3etpNQhJXbB6wNppLvC4URWBR0SycDM2mb2ObXmqwn8xbOKzaItQQ63ZxjyV6zSHQDaogw0BjlHmtvA==";
+    hash = "sha512-a7UuugqQuPBHB2ZMiu8ezAFIwJ0dn6xanuRnTqa2pXXu12ng7kvigAlXy47TxNKpnyj8vgaNStedTv4kbqSCuA==";
   };
 
   postPatch = ''
@@ -53,7 +53,7 @@ buildNpmPackage {
     mv package.json.tmp package.json
   '';
 
-  npmDepsHash = "sha256-yerS1+K3MEx6+wcLBE1nNaAUnePkroJP17OzZ5yZqUw=";
+  npmDepsHash = "sha256-Y+FyHdajOqcCFWukRDn//+9fYPtJ/z/Q4OxdVHjSNFA=";
 
   nativeBuildInputs = [ makeWrapper ];
 
