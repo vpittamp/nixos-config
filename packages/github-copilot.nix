@@ -20,16 +20,16 @@
 
 let
   pname = "github-copilot";
-  version = "1.1.33";
+  version = "1.1.35";
 
   # Select architecture-specific source
   src = fetchurl (
     if stdenv.isx86_64 then {
       url = "https://github.com/github/app/releases/download/v${version}/GitHub-Copilot-linux-x64.AppImage";
-      sha256 = "sha256-dnv9huQOhf9+uM6rHFswooOgQoPmE8Ti7UoW+0gzQOE=";
+      sha256 = "sha256-if+uIPI4fAohjB6eAbXrSmPDfmmqZEtIKQFVNmj0zMU=";
     } else if stdenv.isAarch64 then {
       url = "https://github.com/github/app/releases/download/v${version}/GitHub-Copilot-linux-arm64.AppImage";
-      sha256 = "sha256-onxQ8iHcpUhxtxkdvOcV+PJBeLG6IxmfxZ/dFjDTgWg=";
+      sha256 = "sha256-9lU6hKJzZgxC1VLQMDmuVYylnnQJ5hnVP3Un9dHV9Xo=";
     } else throw "Unsupported platform for github-copilot"
   );
 

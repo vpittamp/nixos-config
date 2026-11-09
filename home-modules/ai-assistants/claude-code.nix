@@ -277,9 +277,10 @@ lib.mkIf enableClaudeCode {
         ''}";
       };
 
-      # Default to Claude Opus 5.5, the newest model (available from claude-code 2.1.280).
+      # Default to Claude Opus 5.5 with high effort.
       # Access is server-gated by plan entitlement; Claude Code falls back if unavailable.
       model = "claude-opus-5-5";
+      effortLevel = "high";
       theme = "dark";
       # Terminal UI renderer: "fullscreen" uses the flicker-free alt-screen
       # renderer with virtualized scrollback (equivalent to /tui fullscreen).
