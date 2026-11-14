@@ -1667,6 +1667,7 @@ async def test_herdr_service_runs_remote_proxy_command(monkeypatch):
     assert result["connection_key"] == "vpittamp@ryzen:22"
     assert calls[0][0][-4:] == ["i3pm", "herdr-proxy", "snapshot", "--json"]
     assert calls[0][0][:2] == ["ssh", "-o"]
+    assert "Compression=yes" in calls[0][0]
     assert calls[0][1]["timeout"] == 1.25
 
 

@@ -2954,6 +2954,7 @@ class HerdrService:
         cmd = [
             "ssh",
             "-o", "BatchMode=yes",
+            "-o", "Compression=yes",
             # Interactive remote pane-focus goes through this prefix. The old
             # values (ConnectTimeout=1, ConnectionAttempts=1, ServerAlive 1/1)
             # made a cold connect or a single ~1s tailnet blip drop the command,

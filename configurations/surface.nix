@@ -531,6 +531,22 @@ in
     allowedTCPPorts = [ 22 ];  # SSH
     allowedUDPPorts = [ 5353 ];  # mDNS for Chrome Chromecast / TV discovery on LAN
     checkReversePath = "loose";  # For Tailscale
+    # Mobile hotspot TTL/Hop-Limit normalization: when tethered to an iPhone
+    # hotspot, the phone decrements outgoing TTL/Hop-Limit by 1 (64 -> 63),
+    # which triggers carrier tether throttling (~600 Kbps on Verizon, especially
+    # on IPv6 where iOS Router Advertisements force hoplimit=64). Bump only
+    # default-TTL/HL (64 -> 65) on Wi-Fi egress so packets leave the phone at 64
+    # while preserving TTL/HL=255 required by RFC 4861 IPv6 NDP and RFC 6762 mDNS.
+    extraCommands = ''
+      iptables -t mangle -C POSTROUTING -o wlp2s0 -m ttl --ttl-eq 64 -j TTL --ttl-set 65 2>/dev/null \
+        || iptables -t mangle -A POSTROUTING -o wlp2s0 -m ttl --ttl-eq 64 -j TTL --ttl-set 65
+      ip6tables -t mangle -C POSTROUTING -o wlp2s0 -m hl --hl-eq 64 -j HL --hl-set 65 2>/dev/null \
+        || ip6tables -t mangle -A POSTROUTING -o wlp2s0 -m hl --hl-eq 64 -j HL --hl-set 65
+    '';
+    extraStopCommands = ''
+      iptables -t mangle -D POSTROUTING -o wlp2s0 -m ttl --ttl-eq 64 -j TTL --ttl-set 65 2>/dev/null || true
+      ip6tables -t mangle -D POSTROUTING -o wlp2s0 -m hl --hl-eq 64 -j HL --hl-set 65 2>/dev/null || true
+    '';
   };
 
   # ========== ADVANCED AUDIO (BARE METAL) ==========

@@ -26,6 +26,7 @@ in
         IdentityFile ~/.ssh/nixos_desktop_ops_ed25519
         IdentitiesOnly yes
         ForwardAgent no
+        Compression yes
         StrictHostKeyChecking accept-new
         ControlMaster auto
         ControlPersist 10m
