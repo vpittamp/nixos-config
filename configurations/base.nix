@@ -112,6 +112,12 @@
     KeepFree = "5G";
   };
 
+  # Cap systemd journal disk usage so noisy services cannot bloat /var/log/journal.
+  services.journald.extraConfig = ''
+    SystemMaxUse=1G
+    MaxRetentionSec=14day
+  '';
+
   # Core Nix configuration
   nix = {
     # Pin the daemon/client to the latest stable Nix to avoid 2.31.2 crash bug

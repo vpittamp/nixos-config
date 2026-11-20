@@ -696,7 +696,7 @@ let
       command = "1password";
       parameters = "";
       scope = "global";
-      expected_class = "1password";
+      expected_class = "com.onepassword.OnePassword";
       preferred_workspace = 22;
       icon = iconPath "1password.svg";
       nix_package = "pkgs._1password-gui";

@@ -628,14 +628,6 @@ in
         return polkit.Result.YES;
       }
     });
-
-    // Allow 1Password CLI to use biometric unlock via polkit
-    polkit.addRule(function(action, subject) {
-      if (action.id == "com.1password.1Password.unlock" &&
-          subject.isInGroup("wheel")) {
-        return polkit.Result.AUTH_SELF;
-      }
-    });
   '';
 
   # Automatic garbage collection
