@@ -37,6 +37,7 @@ in
     # Project management (works with Sway via IPC)
     # Feature 117: i3-project-daemon now runs as user service
     ./services/i3-project-daemon.nix
+    ./services/codex-sessions-archive.nix
     ./tools/i3pm-deno.nix
     ./tools/i3pm-diagnostic.nix
     ./tools/disk-guardrails.nix
@@ -63,6 +64,9 @@ in
   home.packages = [
     sunshineWebUi
   ];
+
+  # Archive completed Codex CLI session months (>30d) to Google Drive via rclone
+  services.codex-sessions-archive.enable = true;
 
   # Feature 117: i3 project event listener daemon (user service)
   programs.i3-project-daemon = {

@@ -3117,7 +3117,6 @@ USAGE
     export PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.gnused pkgs.jq pkgs.util-linux pkgs.findutils pkgs.libsecret ]}:"''${PATH:-}"
     usage_dir="${agentUsageDir}"
     mkdir -p "$usage_dir"
-    pids=()
     collect() {
       local agent="$1"; shift
       local record tmp
@@ -3133,12 +3132,11 @@ USAGE
       printf '%s\n' "$record" >"$tmp"
       mv "$tmp" "$usage_dir/$agent.json"
     }
+    status=0
     ${lib.concatMapStringsSep "\n" (name: ''
       collector=${agentUsageCollector name}/bin/quickshell-agent-usage-${name}
-      collect ${name} "$@" & pids+=($!)
+      collect ${name} "$@" || status=1
     '') agentUsageAgents}
-    status=0
-    for pid in "''${pids[@]}"; do wait "$pid" || status=1; done
     exit $status
   '';
 
@@ -3440,6 +3438,60 @@ print("#%02x%02x%02x" % (px[0], px[1], px[2]))')"
 
     "$systemctl" --user reset-failed quickshell-runtime-shell.service 2>/dev/null || true
     "$systemctl" --user start quickshell-runtime-shell.service || true
+  '';
+
+  # Quickshell creates a fresh $XDG_RUNTIME_DIR/quickshell/by-id/<id> directory
+  # on every start and writes an unbounded log.qslog there; orphaned instances
+  # from restarts/crashes are never reaped and will eventually fill the
+  # /run/user/<uid> tmpfs (breaking i3-project-daemon launch.open with ENOSPC).
+  pruneRuntimeDirScript = pkgs.writeShellScript "quickshell-prune-runtime" ''
+    set -uo pipefail
+    runtime_dir="''${XDG_RUNTIME_DIR:-/run/user/$(${pkgs.coreutils}/bin/id -u)}/quickshell"
+    by_id="$runtime_dir/by-id"
+    by_pid="$runtime_dir/by-pid"
+    [ -d "$by_id" ] || exit 0
+
+    declare -A live_ids=()
+    if [ -d "$by_pid" ]; then
+      for link in "$by_pid"/*; do
+        [ -L "$link" ] || continue
+        pid="$(${pkgs.coreutils}/bin/basename "$link")"
+        if [[ "$pid" =~ ^[0-9]+$ ]] && [ -d "/proc/$pid" ]; then
+          target="$(${pkgs.coreutils}/bin/readlink -f "$link" 2>/dev/null || true)"
+          if [ -n "$target" ] && [ "$(${pkgs.coreutils}/bin/dirname "$target")" = "$by_id" ]; then
+            live_ids["$(${pkgs.coreutils}/bin/basename "$target")"]=1
+          fi
+        else
+          ${pkgs.coreutils}/bin/rm -f "$link" 2>/dev/null || true
+        fi
+      done
+    fi
+
+    for dir in "$by_id"/*; do
+      [ -d "$dir" ] || continue
+      id="$(${pkgs.coreutils}/bin/basename "$dir")"
+      if [ -z "''${live_ids[$id]:-}" ]; then
+        ${pkgs.coreutils}/bin/rm -rf "$dir" 2>/dev/null || true
+      else
+        # Cap live detailed log files at 64 MiB so long-running sessions never
+        # exhaust the /run/user/<uid> tmpfs.
+        for logfile in "$dir/log.qslog" "$dir/log.log"; do
+          if [ -f "$logfile" ]; then
+            size="$(${pkgs.coreutils}/bin/stat -c%s "$logfile" 2>/dev/null || echo 0)"
+            if [ "$size" -gt 67108864 ]; then
+              ${pkgs.coreutils}/bin/truncate -s 0 "$logfile" 2>/dev/null || true
+            fi
+          fi
+        done
+      fi
+    done
+
+    for sub in "$runtime_dir/by-shell" "$runtime_dir/by-path"; do
+      [ -d "$sub" ] || continue
+      ${pkgs.findutils}/bin/find "$sub" -xtype l -delete 2>/dev/null || true
+      ${pkgs.findutils}/bin/find "$sub" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+    done
+    exit 0
   '';
 
   # ---- Crash → agent ---------------------------------------------------
@@ -4067,10 +4119,22 @@ in
       Service = {
         Type = "oneshot";
         ExecStart = "${agentUsageUpdateScript}/bin/quickshell-agent-usage-update";
+        Nice = 19;
+        IOSchedulingClass = "idle";
+        CPUQuota = "50%";
         Environment = [
           "PATH=${config.home.profileDirectory}/bin:/run/current-system/sw/bin:%h/.local/bin:/run/wrappers/bin"
         ];
         TimeoutStartSec = "180s";
+      };
+    };
+
+    systemd.user.services.quickshell-runtime-prune = {
+      Unit.Description = "Prune stale Quickshell runtime dirs and cap live qslog size";
+      Service = {
+        Type = "oneshot";
+        ExecStart = "${pruneRuntimeDirScript}";
+        Nice = 19;
       };
     };
     # Night light: started/stopped by quickshell-nightlight (Displays popup),
@@ -4200,6 +4264,16 @@ in
       Install.WantedBy = [ "timers.target" ];
     };
 
+    systemd.user.timers.quickshell-runtime-prune = {
+      Unit.Description = "Periodically prune stale Quickshell runtime dirs and cap live qslog";
+      Timer = {
+        OnStartupSec = "5min";
+        OnUnitActiveSec = "1h";
+        RandomizedDelaySec = "5min";
+      };
+      Install.WantedBy = [ "timers.target" ];
+    };
+
     xdg.configFile."quickshell/${cfg.configName}" = {
       source = shellConfigDir;
       recursive = true;
@@ -4245,6 +4319,7 @@ in
       };
       Service = {
         Type = "simple";
+        ExecStartPre = "-${pruneRuntimeDirScript}";
         ExecStart = "${quickshellBin} -c ${cfg.configName}";
         Restart = "on-failure";
         RestartSec = "1s";

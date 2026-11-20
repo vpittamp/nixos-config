@@ -307,6 +307,10 @@ def scan_native_codex_sessions():
     try:
       with path.open(errors="replace") as handle:
         for raw in handle:
+          # Cheap substring pre-filter before JSON parsing avoids decoding
+          # massive tool-output / screenshot lines across multi-GB session logs.
+          if '"token_count"' not in raw and '"turn_context"' not in raw:
+            continue
           try:
             entry = json.loads(raw)
           except Exception:

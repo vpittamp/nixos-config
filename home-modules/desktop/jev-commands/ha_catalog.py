@@ -551,6 +551,11 @@ def main(argv: list[str] | None = None) -> int:
     node.add_argument("--out", default=os.environ.get("HA_FRAGMENT") or "ha.json")
     node.add_argument("--call-bin", default=os.environ.get("HA_CALL_BIN") or "ha-call")
     node.add_argument("--quiet", action="store_true")
+    node.add_argument(
+        "--skip-if-locked",
+        action="store_true",
+        help="exit 0 instead of 1 when 1Password is locked (for background timers)",
+    )
     node.set_defaults(func=cmd_refresh)
 
     node = sub.add_parser("entities", help="list what the house exposes")
@@ -561,6 +566,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args)
     except JevError as exc:
+        if getattr(args, "skip_if_locked", False) and "1Password" in str(exc):
+            print(f"ha-catalog: skipping refresh ({exc})", file=sys.stderr)
+            return 0
         print(f"ha-catalog: {exc}", file=sys.stderr)
         return 1
 

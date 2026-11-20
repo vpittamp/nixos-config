@@ -1410,8 +1410,8 @@ PanelWindow {
                             RootComponents.BarTooltip {
                                 anchorWindow: topBarWindow
                                 anchorItem: trayMouse
-                                active: trayMouse.containsMouse && parent.trayTooltipText !== ""
-                                text: parent.trayTooltipText
+                                active: trayMouse.containsMouse && Boolean(parent.trayTooltipText)
+                                text: parent.trayTooltipText || ""
                                 colors: topBarWindow.colors
                             }
 

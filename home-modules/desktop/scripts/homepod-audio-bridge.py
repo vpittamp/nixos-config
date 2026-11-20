@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
+import errno
 import json
 import logging
 import os
@@ -457,10 +458,17 @@ async def run_streaming_session(
         exc = stream_task.exception()
         if exc:
             LOG.warning("HomePod stream ended with error: %s", exc)
+            if isinstance(exc, OSError) and exc.errno == errno.EADDRINUSE:
+                raise exc
         else:
             LOG.info("HomePod stream closed by receiver")
         return False
     finally:
+        playback_mgr = getattr(atv.stream, "playback_manager", None)
+        stream_client = getattr(playback_mgr, "stream_client", None) if playback_mgr else None
+        if stream_client is not None:
+            with suppress(Exception):
+                stream_client.stop()
         await source.close()
         if not stream_task.done():
             stream_task.cancel()
@@ -505,6 +513,7 @@ async def main() -> None:
     )
     was_selected = False
     wait_for_active_audio = False
+    retry_backoff = 2.0
 
     while not shutdown_event.is_set():
         default_sink = get_default_sink()
@@ -514,6 +523,7 @@ async def main() -> None:
             # User just switched default output to HomePod (Office)
             was_selected = True
             wait_for_active_audio = False
+            retry_backoff = 2.0
             apply_sink_latency_offset(HOMEPOD_SINK, SINK_LATENCY_OFFSET_NSEC)
             move_movable_sink_inputs(HOMEPOD_SINK)
 
@@ -521,6 +531,7 @@ async def main() -> None:
             # User switched away from HomePod (Office) to another sink (e.g. Bluetooth)
             was_selected = False
             wait_for_active_audio = False
+            retry_backoff = 2.0
             if default_sink:
                 move_movable_sink_inputs(default_sink)
 
@@ -532,16 +543,33 @@ async def main() -> None:
             stop_stream = asyncio.Event()
             try:
                 clean_stop = await run_streaming_session(loop, stop_stream)
-                if not clean_stop:
+                if clean_stop:
+                    retry_backoff = 2.0
+                else:
                     # If the HomePod closed the session while Ryzen is silent,
                     # wait for active app audio before reconnecting so we don't
                     # fight Siri / iPhone AirPlay when Ryzen is idle.
                     if not has_active_app_streams_on_homepod():
                         wait_for_active_audio = True
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(retry_backoff)
+                    retry_backoff = min(retry_backoff * 2.0, 60.0)
+            except OSError as exc:
+                if exc.errno == errno.EADDRINUSE:
+                    # pyatv can leak its fixed RAOP UDP sockets (6001/6002) inside
+                    # this process on abnormal stream teardown; exit so systemd
+                    # restarts with clean file descriptors instead of looping forever.
+                    LOG.error(
+                        "RAOP UDP port already in use (%s); exiting so systemd restarts cleanly",
+                        exc,
+                    )
+                    sys.exit(1)
+                LOG.warning("HomePod session failed: %s (retrying in %.0fs)", exc, retry_backoff)
+                await asyncio.sleep(retry_backoff)
+                retry_backoff = min(retry_backoff * 2.0, 60.0)
             except Exception as exc:
-                LOG.warning("HomePod session failed: %s", exc)
-                await asyncio.sleep(2.5)
+                LOG.warning("HomePod session failed: %s (retrying in %.0fs)", exc, retry_backoff)
+                await asyncio.sleep(retry_backoff)
+                retry_backoff = min(retry_backoff * 2.0, 60.0)
         else:
             await asyncio.sleep(0.35)
 

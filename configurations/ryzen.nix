@@ -893,21 +893,13 @@ in
     # greetd.fprintAuth = true;
   };
 
-  # Polkit rules for fingerprint and 1Password integration
+  # Polkit rules for fingerprint enrollment (1Password rules live in modules/services/onepassword.nix)
   security.polkit.extraConfig = lib.mkAfter ''
     // Allow wheel users to enroll fingerprints without password
     polkit.addRule(function(action, subject) {
       if (action.id == "net.reactivated.fprint.device.enroll" &&
           subject.isInGroup("wheel")) {
         return polkit.Result.YES;
-      }
-    });
-
-    // Allow 1Password CLI to use biometric unlock via polkit
-    polkit.addRule(function(action, subject) {
-      if (action.id == "com.1password.1Password.unlock" &&
-          subject.isInGroup("wheel")) {
-        return polkit.Result.AUTH_SELF;
       }
     });
   '';

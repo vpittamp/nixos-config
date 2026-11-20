@@ -659,17 +659,6 @@ in
   # Automatic mounting of USB drives
   services.udisks2.enable = true;
 
-  # Polkit rules for 1Password integration
-  security.polkit.extraConfig = lib.mkAfter ''
-    // Allow 1Password CLI to use biometric unlock via polkit
-    polkit.addRule(function(action, subject) {
-      if (action.id == "com.1password.1Password.unlock" &&
-          subject.isInGroup("wheel")) {
-        return polkit.Result.AUTH_SELF;
-      }
-    });
-  '';
-
   # Installed from the 25.11 installer; keep in sync with the channel the
   # system was born on.
   system.stateVersion = "25.11";

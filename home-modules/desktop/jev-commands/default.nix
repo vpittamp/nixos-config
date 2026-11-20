@@ -492,7 +492,7 @@ in
         Unit.Description = "Rebuild the jev Home Assistant catalog from the live house";
         Service = {
           Type = "oneshot";
-          ExecStart = "${haCatalogScript}/bin/ha-catalog refresh --quiet";
+          ExecStart = "${haCatalogScript}/bin/ha-catalog refresh --quiet --skip-if-locked";
         };
       };
 

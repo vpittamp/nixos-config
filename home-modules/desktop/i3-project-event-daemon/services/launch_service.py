@@ -75,6 +75,7 @@ class LaunchService:
         self._remove_window = remove_window
         self._invalidate_window_tree_cache = invalidate_window_tree_cache
         self._launch_reconcile_tasks: Dict[str, asyncio.Task] = {}
+        self._last_launch_prune_at: float = 0.0
 
     @staticmethod
     def _quote(value: Any) -> str:
@@ -175,7 +176,49 @@ class LaunchService:
         status_file = self.status_file(launch_key)
         status_file.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_json(status_file, payload)
+        self._maybe_prune_old_launch_files()
         return payload
+
+    def _maybe_prune_old_launch_files(
+        self,
+        *,
+        max_keep: int = 40,
+        max_age_seconds: int = 3600,
+        min_interval_seconds: float = 60.0,
+    ) -> int:
+        """Remove stale launch status/spec files so $XDG_RUNTIME_DIR stays bounded."""
+        now = time.time()
+        if (now - self._last_launch_prune_at) < min_interval_seconds:
+            return 0
+        self._last_launch_prune_at = now
+        runtime_dir = self.runtime_dir()
+        if not runtime_dir.exists():
+            return 0
+        try:
+            status_files = sorted(
+                runtime_dir.glob("*.status.json"),
+                key=lambda item: item.stat().st_mtime,
+                reverse=True,
+            )
+        except OSError:
+            return 0
+        removed = 0
+        cutoff = now - max_age_seconds
+        for idx, path in enumerate(status_files):
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                continue
+            if idx < max_keep and mtime >= cutoff:
+                continue
+            launch_id = path.name[: -len(".status.json")]
+            for candidate in (path, runtime_dir / f"{launch_id}.spec.json"):
+                try:
+                    candidate.unlink(missing_ok=True)
+                    removed += 1
+                except OSError:
+                    pass
+        return removed
 
     def read_status(self, launch_id: str) -> Dict[str, Any]:
         """Return persisted status for a deterministic launch id."""
