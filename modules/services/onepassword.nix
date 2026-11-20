@@ -305,37 +305,25 @@ in
       # - CLI operations can share the desktop app's unlock state
       security.polkit.enable = true;
       security.polkit.extraConfig = ''
-        // Allow 1Password to use system authentication service for unlock
-        // This enables biometric-like unlock via polkit (password prompt)
+        // Allow 1Password desktop unlock via polkit with session caching
+        // (AUTH_SELF_KEEP avoids back-to-back re-prompts right after unlock).
         polkit.addRule(function(action, subject) {
-          var onePasswordActions = [
-            "com.1password.1Password.authorizationhelper",
-            "com.1password.1Password.unlock",
-            "com.1password.1Password.authprompt",
-            "com.onepassword.op.authorizationhelper",
-            "com.1password.1password.authprompt",
-            "com.1password.1password.unlock"
-          ];
-          if (onePasswordActions.indexOf(action.id) !== -1) {
-            if (subject.user == "${cfg.user}") {
-              return polkit.Result.AUTH_SELF;
-            }
+          if (action.id == "com.1password.1Password.unlock" &&
+              subject.user == "${cfg.user}") {
+            return polkit.Result.AUTH_SELF_KEEP;
           }
         });
 
-        // Allow 1Password to prompt for SSH key usage without re-authentication
+        // Authorize 1Password CLI and SSH agent requests without extra polkit
+        // prompts once the desktop app is unlocked. Herdr/Ghostty/agent
+        // subprocesses cannot share 1Password's per-terminal CLI cache, so
+        // gating on app unlock (instead of prompting per subprocess) avoids
+        // repetitive prompts.
         polkit.addRule(function(action, subject) {
-          if (action.id == "com.1password.1Password.authorizeSshAgent" &&
+          if ((action.id == "com.1password.1Password.authorizeCLI" ||
+               action.id == "com.1password.1Password.authorizeSshAgent") &&
               subject.user == "${cfg.user}") {
             return polkit.Result.YES;
-          }
-        });
-
-        // Allow 1Password CLI to share lock state with desktop app
-        polkit.addRule(function(action, subject) {
-          if (action.id == "com.1password.op.cli.unlock" &&
-              subject.user == "${cfg.user}") {
-            return polkit.Result.AUTH_SELF;
           }
         });
       '';
