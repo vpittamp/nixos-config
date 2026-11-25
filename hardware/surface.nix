@@ -17,7 +17,9 @@
     "sd_mod"        # SATA/SCSI disk support
   ];
   boot.initrd.kernelModules = [ ];
-  boot.kernelModules = [ "kvm-intel" ];
+  # The precision touchpad must use hid-multitouch, not hid-generic.
+  # Load it explicitly so input discovery does not depend on a late udev rebind.
+  boot.kernelModules = [ "kvm-intel" "hid-multitouch" ];
   boot.extraModulePackages = [ ];
 
   # NOTE: the soldered BC501 NVMe is flaky on this unit — it once failed to
