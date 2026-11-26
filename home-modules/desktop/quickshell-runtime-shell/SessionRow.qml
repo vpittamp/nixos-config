@@ -35,7 +35,7 @@ Rectangle {
     //
     // Per row the two are mutually exclusive by the !isCurrent guard below.
     // Across rows the shell root's global gate guarantees it on the surfaces
-    // that bind currentOverride live (RuntimePanelWindow, AgentMonitorWindow).
+    // that bind currentOverride live, such as RuntimePanelWindow.
     // LauncherWindow and WindowSwitcherWindow instead freeze `row_current` into
     // their entries at list-build time, so there a stale tier A could in
     // principle sit beside a live tier B — only if herdr's focused pane moved

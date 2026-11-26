@@ -224,9 +224,13 @@ in
     "kernel.panic_on_oops" = 1;
     "kernel.panic" = 10;
     # Prevent cross-interface ARP flux when both USB Ethernet (enp0s20u1c2) and
-    # Wi-Fi (wlp1s0) are active on 192.168.1.0/24.
+    # Wi-Fi (wlp1s0) are active on the same LAN subnet, and prevent Docker's
+    # ipv6 forwarding sysctl from advertising surface-pro3 as an IPv6 router
+    # (IsRouter=1 in Neighbor Advertisements) across both NICs to Apple TVs.
     "net.ipv4.conf.all.arp_ignore" = 1;
     "net.ipv4.conf.all.arp_announce" = 2;
+    "net.ipv6.conf.all.forwarding" = lib.mkForce 0;
+    "net.ipv6.conf.default.forwarding" = lib.mkForce 0;
   };
 
   systemd.services.home-manager-vpittamp = {
@@ -266,12 +270,12 @@ in
   # pick a dead setup SSID over the house network.
   networking.networkmanager.ensureProfiles = {
     environmentFiles = [ "/etc/NetworkManager/secrets.env" ];
-    profiles."Linksys 416" = {
+    profiles.sprinkles = {
       connection = {
-        id = "Linksys 416";
-        # Reuses the UUID of the profile installed on 2026-08-07 so this
-        # replaces it in place rather than racing a duplicate.
-        uuid = "36f3e2d8-989b-4efe-9a98-09f3c37766f3";
+        id = "sprinkles";
+        # Reuses the UUID of the existing sprinkles profile on surface-pro3 so
+        # this replaces it in place rather than racing a duplicate.
+        uuid = "287c6570-1d38-4a58-ab56-a4f481b57aed";
         type = "wifi";
         interface-name = "wlp1s0";
         autoconnect = true;
@@ -279,12 +283,15 @@ in
       };
       wifi = {
         mode = "infrastructure";
-        ssid = "Linksys 416";
+        ssid = "sprinkles";
+        # Pin to 5GHz so mwifiex_pcie never falls back to congested 2.4GHz
+        # when 5GHz is available (2.4GHz exhibited 300-1300ms latency and packet loss).
+        band = "a";
       };
       wifi-security = {
         auth-alg = "open";
         key-mgmt = "wpa-psk";
-        psk = "$LINKSYS416_PSK";
+        psk = "$SPRINKLES_PSK";
       };
       ipv4.method = "auto";
       ipv6 = {
@@ -293,6 +300,44 @@ in
       };
     };
   };
+
+  # Enforce single-homed networking when docked on Gigabit Ethernet (enp*):
+  # disconnect wlp1s0 whenever wired Ethernet is up so surface-pro3 never
+  # dual-homes on 10.0.0.0/24 (preventing mDNS/IPv6 flapping and keeping the
+  # Marvell mwifiex_pcie radio idle so it cannot contend on 5GHz or crash the
+  # PCIe bus), and automatically bring sprinkles back up on wlp1s0 if Ethernet
+  # is ever unplugged.
+  networking.networkmanager.dispatcherScripts = [
+    {
+      source = pkgs.writeShellScript "90-prefer-wired-over-wifi" ''
+        iface="''${1:-}"
+        action="''${2:-}"
+        nmcli="${pkgs.networkmanager}/bin/nmcli"
+
+        wired_connected() {
+          "$nmcli" -t -f DEVICE,TYPE,STATE device status 2>/dev/null \
+            | ${pkgs.gnugrep}/bin/grep -Eq '^enp[^:]*:ethernet:(connected|connecting)'
+        }
+
+        case "$iface:$action" in
+          enp*:up|enp*:dhcp4-change)
+            "$nmcli" --wait 0 device disconnect wlp1s0 >/dev/null 2>&1 &
+            ;;
+          wlp1s0:up|wlp1s0:dhcp4-change)
+            if wired_connected; then
+              "$nmcli" --wait 0 device disconnect wlp1s0 >/dev/null 2>&1 &
+            fi
+            ;;
+          enp*:down)
+            if ! wired_connected; then
+              "$nmcli" --wait 0 connection up sprinkles ifname wlp1s0 >/dev/null 2>&1 &
+            fi
+            ;;
+        esac
+      '';
+      type = "basic";
+    }
+  ];
 
   # Remove the stale profiles that caused the outage. ensureProfiles writes to
   # /run and never touches /etc, so declaring the profile above does not by
@@ -311,7 +356,7 @@ in
   services.wifiWatchdog = {
     enable = true;
     interface = "wlp1s0";
-    connection = "Linksys 416";
+    connection = "sprinkles";
     kernelModule = "mwifiex_pcie";
     rebootAfter = true;
   };

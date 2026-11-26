@@ -73,6 +73,15 @@ rec {
     "--top-chrome-touch-ui=enabled"
     "--enable-webmcp-testing"
     "--optimization-guide-model-execution-override-command-line-flag"
+    # Chrome 149's chrome://glic webview onBeforeRequest only allows
+    # https://gemini.google.com and https://www.google.com by default
+    # (kGlicAllowedOriginsOverride). After GlicClearCookiesOnFirstSync clears
+    # the glic storage partition on startup, gemini.google.com/glic redirects
+    # through accounts.google.com/ServiceLogin?osid=1 to mint an origin-bound
+    # OSID cookie, which the webview aborts with ERR_BLOCKED_BY_CLIENT and then
+    # times out to "Something went wrong". Upstream Chromium fixed this later in
+    # guest_util.cc IsGuestOriginAllowed() by always allowing accounts.google.com.
+    "--glic-webui-allowed-origins=https://gemini.google.com https://www.google.com https://accounts.google.com"
   ];
 
   # Features to disable for PWAs

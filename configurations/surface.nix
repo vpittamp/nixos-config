@@ -208,15 +208,12 @@ in
   # the surface (root:root 0600, provisioned out-of-band during bring-up).
   networking.networkmanager.ensureProfiles = {
     environmentFiles = [ "/etc/NetworkManager/secrets.env" ];
-    profiles."Linksys 416" = {
+    profiles.sprinkles = {
       connection = {
-        id = "Linksys 416";
-        # This was c520f3e2-... until 2026-09-13, and that profile was inert:
-        # NetworkManager dedupes by UUID, not by name, so the stateful
-        # /etc copy (9e721534-...) loaded as a *second* 'Linksys 416' and was
-        # the one actually activated. Adopting the installed UUID makes this
-        # declaration replace that profile instead of shadow-boxing with it.
-        uuid = "9e721534-4b7b-4dcf-bcbd-002b934c2402";
+        id = "sprinkles";
+        # Adopts the installed sprinkles UUID on surface so this declaration
+        # replaces the stateful /etc copy instead of shadow-boxing with it.
+        uuid = "eb3c5827-82c0-4727-af6b-c2dbe99a3a72";
         type = "wifi";
         interface-name = "wlp2s0";
         autoconnect = true;
@@ -227,19 +224,16 @@ in
       };
       wifi = {
         mode = "infrastructure";
-        ssid = "Linksys 416";
-        # Pin to 5GHz. The house mesh serves this SSID on both bands and this
-        # machine clung to the congested 2.4GHz node (channel 2) at 89% while a
-        # 5GHz node (channel 44) sat at 100% -- measured 300-1200ms gateway
-        # latency on 2026-09-15 until the session was restarted. Travel
-        # profiles (sprinkles, iPhone (2)) are separate and unaffected; if the
-        # 5GHz nodes are ever down this profile will not fall back to 2.4GHz.
+        ssid = "sprinkles";
+        # Pin to 5GHz so mwifiex_pcie does not cling to 2.4GHz when 5GHz is
+        # available (2.4GHz measured 300-1200ms gateway latency). Travel
+        # profiles (iPhone (2)) are separate and unaffected.
         band = "a";
       };
       wifi-security = {
         auth-alg = "open";
         key-mgmt = "wpa-psk";
-        psk = "$LINKSYS416_PSK";
+        psk = "$SPRINKLES_PSK";
       };
       ipv4.method = "auto";
       ipv6 = {
@@ -261,7 +255,7 @@ in
   # is what guarantees the house network still wins at home.
   services.nmProfileHygiene = {
     enable = true;
-    keep = [ "sprinkles" "iPhone (2)" ];
+    keep = [ "iPhone (2)" ];
   };
 
   # Wi-Fi link watchdog. This laptop is not the automation hub, so the settings
@@ -400,15 +394,6 @@ in
 
   # surface-control udev rules (SAM sysfs permissions)
   services.udev.packages = [ pkgs.surface-control ];
-
-  # MSHW0092 touchpad (045E:0933): hid-generic claims it at boot, presenting
-  # it as a plain "Mouse" (no ID_INPUT_TOUCHPAD) so libinput/Sway ignore it.
-  # Force it onto hid-multitouch the moment the device appears. Broken on
-  # every boot since ~2026-08-17; a manual rebind on 2026-08-30 restored it.
-  services.udev.extraRules = ''
-    ACTION=="add", SUBSYSTEM=="hid", KERNEL=="0018:045E:0933.*", \
-      RUN+="/bin/sh -c 'echo %k > /sys/bus/hid/drivers/hid-generic/unbind 2>/dev/null; echo %k > /sys/bus/hid/drivers/hid-multitouch/bind'"
-  '';
 
   # Add user to required groups
   users.users.vpittamp.extraGroups = [ "wheel" "networkmanager" "video" "seat" "input" "onepassword" "tss" ];

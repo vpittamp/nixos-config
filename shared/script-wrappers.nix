@@ -56,8 +56,15 @@ let
     }
   '';
 
+  # Immutable Nix-store fallback for hosts deployed remotely without a local
+  # /etc/nixos checkout (e.g., surface-pro3).
+  scriptsStore = ../scripts;
+
   # Generate a wrapper script for a given script path relative to flake root
   makeScriptWrapper = { name, scriptPath, extraInputs ? [], description ? "" }:
+    let
+      storeScriptRel = lib.removePrefix "scripts/" scriptPath;
+    in
     pkgs.writeShellApplication {
       inherit name;
       runtimeInputs = commonInputs ++ extraInputs;
@@ -67,7 +74,10 @@ let
         ${flakeRootFunction}
         FLAKE_ROOT="$(get_flake_root)"
         export FLAKE_ROOT
-        exec "$FLAKE_ROOT/${scriptPath}" "$@"
+        if [[ -e "$FLAKE_ROOT/${scriptPath}" ]]; then
+          exec "$FLAKE_ROOT/${scriptPath}" "$@"
+        fi
+        exec "${scriptsStore}/${storeScriptRel}" "$@"
       '';
     };
 

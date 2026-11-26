@@ -204,6 +204,7 @@ in
     Unit = {
       Description = "Voxtype voice-to-text daemon (toggle mode + VAD)";
       Documentation = "https://voxtype.io";
+      ConditionPathExists = "/run/current-system/sw/bin/voxtype";
       PartOf = [ "graphical-session.target" ];
       After = [ "graphical-session.target" ];
     };

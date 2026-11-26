@@ -1825,10 +1825,6 @@ Item {
             shellRoot.toggleExpose();
         }
 
-        function toggleAgentMonitor() {
-            shellRoot.toggleAgentMonitor("");
-        }
-
         function focusLastSession() {
             shellRoot.focusLastSession();
         }

@@ -85,7 +85,6 @@ let
     { id = "power-menu"; description = "the power menu — lock, suspend, restart, shut down"; }
     { id = "calendar"; description = "the calendar and the list of pending reminders"; }
     { id = "agents"; description = "AI coding subscription usage — plan limits, tokens, resets"; }
-    { id = "agent-monitor"; description = "the live AI agent monitor overlay"; }
   ];
 
   catalog = import ./catalog.nix {

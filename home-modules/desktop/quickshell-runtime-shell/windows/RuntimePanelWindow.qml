@@ -17,8 +17,8 @@ PanelWindow {
     readonly property QtObject root: shellRoot
     id: panelWindow
 
-    // Keep both ListView models keyed by stable identity (same pattern as
-    // AgentMonitorWindow): the row content resolves live dashboard data by key,
+    // Keep both ListView models keyed by stable identity. The row content
+    // resolves live dashboard data by key,
     // but status/focus ticks no longer reset delegates under the pointer and
     // drop click releases.
     readonly property int dashboardGeneration: root.dashboardGeneration(root.dashboard)

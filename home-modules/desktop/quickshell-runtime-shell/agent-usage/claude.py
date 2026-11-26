@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # Ported from Omarchy (basecamp/omarchy, quattro branch, bin/omarchy-agent-usage-claude),
-# MIT License, Copyright (c) Basecamp / David Heinemeier Hansson. Only the cache
-# location was changed; the record contract is unchanged so the shell panel
-# and any future collector share one shape.
+# MIT License, Copyright (c) Basecamp / David Heinemeier Hansson.
 # omarchy:summary=Print the Claude Code usage record as JSON
 # omarchy:args=[--force] [--limits-only]
 # omarchy:hidden=true
@@ -25,20 +23,24 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 AGENT_ID = "claude"
 AGENT_NAME = "Claude Code"
 AUTH_HELP = "Run `claude auth login` to restore authoritative usage."
 USAGE_ENDPOINT = "https://api.anthropic.com/api/oauth/usage"
 PROBE_MIN_INTERVAL_SECONDS = 15
+REFRESH_LEAD_MS = 4 * 60 * 1000
+REFRESH_RETRY_SECONDS = 120
 
 
 def config_dir() -> Path:
@@ -581,20 +583,92 @@ def merge_stats(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
 # ------------------------------------------------------------------- limits
 
 
-# The access token, its expiry, and the display-safe plan label from the
-# CLI's login. Nothing else leaves the credential store: the token goes
-# nowhere but the Authorization header of the limits probe, and only the
-# plan label may travel into the printed record.
-def oauth_login(claude_dir: Path) -> tuple[str, int, str]:
+class OAuthLogin(NamedTuple):
+  access_token: str = ""
+  expires_at_ms: int = 0
+  plan: str = ""
+  can_refresh: bool = False
+
+
+def oauth_login(claude_dir: Path) -> OAuthLogin:
   try:
-    data = json.loads((claude_dir / ".credentials.json").read_text(encoding="utf-8"))
-  except Exception:
-    return "", 0, ""
-  login = data.get("claudeAiOauth")
+    login = json.loads((claude_dir / ".credentials.json").read_text(encoding="utf-8")).get("claudeAiOauth")
+  except (OSError, ValueError, AttributeError):
+    return OAuthLogin()
   if not isinstance(login, dict):
-    return "", 0, ""
+    return OAuthLogin()
   plan = plan_label(str(login.get("rateLimitTier") or ""), str(login.get("subscriptionType") or ""))
-  return str(login.get("accessToken") or ""), number(login.get("expiresAt")), plan
+  return OAuthLogin(str(login.get("accessToken") or ""), number(login.get("expiresAt")), plan, bool(login.get("refreshToken")))
+
+
+def refresh_due(login: OAuthLogin) -> bool:
+  return login.can_refresh and (
+    not login.access_token or 0 < login.expires_at_ms <= time.time() * 1000 + REFRESH_LEAD_MS
+  )
+
+
+def cli_usage_cache(claude_dir: Path) -> dict[str, Any]:
+  settings = claude_dir / ".claude.json" if os.environ.get("CLAUDE_CONFIG_DIR") else Path.home() / ".claude.json"
+  try:
+    cache = json.loads(settings.read_text(encoding="utf-8")).get("cachedUsageUtilization")
+  except (OSError, ValueError, AttributeError):
+    return {}
+  return cache if isinstance(cache, dict) else {}
+
+
+def refresh_oauth_login(claude_dir: Path, login: OAuthLogin) -> tuple[OAuthLogin, dict[str, Any]]:
+  if not refresh_due(login):
+    return login, {}
+  cli = shutil.which("claude")
+  if cli is None:
+    return login, {}
+
+  digest = hashlib.sha1(os.fsencode(claude_dir)).hexdigest()[:16]
+  with (cache_root() / f"claude-refresh-{digest}.lock").open("a+") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    # The CLI or another collector may already have renewed this login.
+    login = oauth_login(claude_dir)
+    lock.seek(0)
+    now = time.time()
+    if not refresh_due(login) or now - number(lock.read()) < REFRESH_RETRY_SECONDS:
+      return login, {}
+    previous_usage = number(cli_usage_cache(claude_dir).get("fetchedAtMs"))
+    if now - previous_usage / 1000 < REFRESH_RETRY_SECONDS:
+      # A cached /usage can exit without waiting for the CLI's token refresh.
+      return login, {}
+
+    lock.seek(0)
+    lock.truncate()
+    lock.write(str(round(now)))
+    lock.flush()
+
+    env = dict(os.environ)
+    # Use the saved first-party login even if the shell inherited an API key,
+    # gateway, or an alternate provider from a different Claude session.
+    for name in (
+      "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+      "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
+      "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
+    ):
+      env.pop(name, None)
+    try:
+      # /usage is a local command. Claude Code owns token rotation and writes
+      # its credentials before requesting usage. No prompt or session is kept.
+      subprocess.run(
+        [cli, "-p", "--safe-mode", "--strict-mcp-config", "--no-session-persistence",
+         "--output-format", "json", "--tools", "", "--max-turns", "0", "--", "/usage"],
+        cwd=claude_dir, env=env, stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=45, check=False,
+      )
+    except (OSError, subprocess.TimeoutExpired):
+      pass
+
+    updated_login = oauth_login(claude_dir)
+    usage = cli_usage_cache(claude_dir)
+    payload = usage.get("utilization")
+    if number(usage.get("fetchedAtMs")) > previous_usage and isinstance(payload, dict):
+      return updated_login, payload
+    return updated_login, {}
 
 
 def plan_label(tier: str, subscription: str) -> str:
@@ -743,6 +817,10 @@ def probe_limits(access_token: str) -> dict[str, Any]:
       "helpText": "Couldn't reach Anthropic's usage endpoint. Retrying shortly. Local Claude Code stats are still shown.",
     }
 
+  return parse_limits(payload)
+
+
+def parse_limits(payload: dict[str, Any]) -> dict[str, Any]:
   weekly = usage_bucket(payload, "seven_day_oauth_apps") or usage_bucket(payload, "seven_day")
   session = usage_bucket(payload, "five_hour")
   raw = [session.get("utilization") if session else None, weekly.get("utilization") if weekly else None]
@@ -795,7 +873,7 @@ def usable_cached_limits(cached: dict[str, Any]) -> list[dict[str, Any]]:
   return [entry for entry in entries if isinstance(entry, dict) and limit_window_open(entry, now)]
 
 
-def collect_limits(access_token: str, expires_at_ms: int, force: bool) -> dict[str, Any]:
+def collect_limits(login: OAuthLogin, force: bool, refreshed_usage: dict[str, Any]) -> dict[str, Any]:
   result = {"limits": [], "usageStatusText": "", "authHelpText": AUTH_HELP}
 
   # A panel that is opened and shut repeatedly must not turn into a request
@@ -805,34 +883,27 @@ def collect_limits(access_token: str, expires_at_ms: int, force: bool) -> dict[s
   cached = read_fresh_json(probe_cache, float("inf")) or {}
   fallback = usable_cached_limits(cached)
 
-  # Probing needs a live token and only the Claude Code CLI can mint one: it
-  # refreshes the credential file when it runs, so a machine left alone long
-  # enough finds the saved token lapsed. Say so — an empty limits list with
-  # nothing else set hides the whole section and explains nothing — and keep
-  # showing the last numbers whose window has not since reset.
-  if access_token == "":
+  expired = 0 < login.expires_at_ms <= time.time() * 1000
+  if not login.access_token or expired:
     result["limits"] = fallback
-    result["usageStatusText"] = "Waiting for auth"
-    return result
-  if expires_at_ms > 0 and expires_at_ms <= time.time() * 1000:
-    result["limits"] = fallback
-    result["usageStatusText"] = "Sign-in expired"
-    result["authHelpText"] = (
-      "Claude Code's saved sign-in expired"
-      + (" — showing the last known limits." if fallback else ".")
-      + " Start Claude Code, or run `claude auth login`, to refresh it."
-    )
+    if login.can_refresh:
+      result["usageStatusText"] = "Claude usage refresh pending"
+      result["authHelpText"] = "The widget will retry renewing the saved login. If this persists, run `claude auth login`."
+    else:
+      result["usageStatusText"] = "Sign-in expired" if expired else "Waiting for auth"
     return result
 
   # --force is a person asking for fresh numbers, so it skips the reuse window
   # entirely; the interval is there to absorb repeated panel opens, not to
   # overrule someone who pressed refresh.
   fetched_at = number(cached.get("fetchedAtMs")) / 1000
-  if fallback and not force and time.time() - fetched_at < PROBE_MIN_INTERVAL_SECONDS:
+  if fallback and not refreshed_usage and not force and time.time() - fetched_at < PROBE_MIN_INTERVAL_SECONDS:
     result["limits"] = fallback
     return result
 
-  probe = probe_limits(access_token)
+  # /usage fetched the same payload during renewal. Reuse it instead of
+  # immediately spending another request against the usage endpoint.
+  probe = parse_limits(refreshed_usage) if refreshed_usage else probe_limits(login.access_token)
   if probe["ok"]:
     result["limits"] = probe["limits"]
     write_json(probe_cache, {"fetchedAtMs": round(time.time() * 1000), "limits": probe["limits"]})
@@ -883,17 +954,17 @@ def main() -> int:
   if opencode is not None:
     stats = merge_stats(stats, opencode)
 
-  access_token, expires_at_ms, plan = oauth_login(claude_dir)
-  limits = collect_limits(access_token, expires_at_ms, args.force)
+  login, refreshed_usage = refresh_oauth_login(claude_dir, oauth_login(claude_dir))
+  limits = collect_limits(login, args.force, refreshed_usage)
 
   record = {
     "schemaVersion": 1,
     "id": AGENT_ID,
     "name": AGENT_NAME,
     "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
-    "ready": number(stats.get("totalPrompts")) > 0 or len(limits["limits"]) > 0,
+    "ready": bool(number(stats.get("totalPrompts")) > 0 or limits["limits"] or login.access_token or login.can_refresh),
     "hasLocalStats": True,
-    "tierLabel": plan,
+    "tierLabel": login.plan,
     "usageStatusText": limits["usageStatusText"],
     "authHelpText": limits["authHelpText"],
     "limits": limits["limits"],

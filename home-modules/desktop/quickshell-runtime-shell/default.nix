@@ -43,9 +43,13 @@ let
   toggleKeys =
     let keys = if lib.isList cfg.toggleKey then cfg.toggleKey else [ cfg.toggleKey ];
     in lib.unique (map (key: lib.replaceStrings [ "$mod" ] [ swayModifier ] key) keys);
-  runtimeShellOwnedBindings =
-    (map (key: { inherit key; cmd = "exec toggle-runtime-panel"; desc = "Toggle the runtime panel"; group = "Shell"; hidden = false; }) toggleKeys)
-    ++ [ { key = "${swayModifier}+Shift+a"; cmd = "exec toggle-agent-monitor"; desc = "Toggle the AI-agents monitor strip"; group = "Shell"; hidden = false; } ];
+  runtimeShellOwnedBindings = map (key: {
+    inherit key;
+    cmd = "exec toggle-runtime-panel";
+    desc = "Toggle Herdr Monitor";
+    group = "Shell";
+    hidden = false;
+  }) (lib.unique (toggleKeys ++ [ "${swayModifier}+Shift+a" ]));
   describedBindings = keybindingData.bindings ++ runtimeShellOwnedBindings;
   describedKeys = map (b: b.key) describedBindings;
   describeSwayCommand = cmd:
@@ -377,6 +381,7 @@ QtObject {
   readonly property string claudeIcon: "${../../../assets/icons/claude.svg}"
   readonly property string geminiIcon: "${../../../assets/icons/gemini.png}"
   readonly property string kimiIcon: "${../../../assets/icons/kimi.svg}"
+  readonly property string zaiIcon: "${../../../assets/icons/zai.svg}"
   readonly property string aiFallbackIcon: "${../../../assets/icons/ai-chatbot.svg}"
   readonly property string tailscaleIcon: "${../../../assets/icons/tailscale.svg}"
   // Per-host Herdr glyphs (local herdr.svg + herdr-<host>.svg remotes) used by
@@ -2992,7 +2997,7 @@ Usage: runtime-shell <command> [args]
   ping                              exit 0 when the shell answers
 
 Surfaces: launcher, command, keybindings, panel, settings, expose,
-  agent-monitor, power-menu, notifications, display-selector, audio,
+  power-menu, notifications, display-selector, audio,
   bluetooth, cast
 Payloads: launcher {"mode":"files","query":"nix"}  panel {"section":"sessions"}
   settings {"section":"devices"}  command {"voice":true,"debug":true}
@@ -3100,17 +3105,22 @@ USAGE
     fi
   '';
 
-  # ---- Agent usage (Claude Code / Codex subscriptions) ------------------
-  # Collectors are Omarchy's (MIT, vendored under ./agent-usage with only the
-  # cache path changed). Each prints one display-ready JSON record; the update
-  # script writes them atomically to the usage dir, which the shell watches.
-  # Adding an agent is adding a collector: the panel renders whatever appears.
+  # Each collector prints one usage record. The updater writes it atomically
+  # to the directory watched by the shell.
   agentUsageDir = "${config.xdg.stateHome}/quickshell-runtime-shell/agents/usage";
-  agentUsageAgents = [ "claude" "codex" "gemini" ];
-  agentUsageCollector = name: pkgs.writeShellScriptBin "quickshell-agent-usage-${name}" ''
-    export PATH=${lib.makeBinPath [ pkgs.libsecret ]}:"''${PATH:-}"
-    exec ${lib.getExe pkgs.python3} ${./agent-usage + "/${name}.py"} "$@"
-  '';
+  agentUsageAgents = [ "claude" "codex" "gemini" "kimi" "zai" ];
+  zaiCodingPlan = import ../../../shared/zai-coding-plan.nix;
+  agentUsageCollector = name:
+    let subscription = builtins.elem name [ "kimi" "zai" ]; in
+    pkgs.writeShellScriptBin "quickshell-agent-usage-${name}" ''
+      export PATH=${lib.makeBinPath [ pkgs.libsecret ]}:"''${PATH:-}"
+      ${lib.optionalString (name == "zai") ''
+        export ZAI_API_KEY_REF=${lib.escapeShellArg zaiCodingPlan.apiKeyReference}
+        # The NixOS wrapper can connect to the desktop app using CLI integration.
+        export PATH=/run/wrappers/bin:"$PATH"
+      ''}
+      exec ${lib.getExe pkgs.python3} ${./agent-usage + (if subscription then "/subscription.py" else "/${name}.py")} ${lib.optionalString subscription name} "$@"
+    '';
   agentUsageCollectors = map agentUsageCollector agentUsageAgents;
   agentUsageUpdateScript = pkgs.writeShellScriptBin "quickshell-agent-usage-update" ''
     set -uo pipefail
@@ -3761,7 +3771,6 @@ USAGE
   togglePowerMenuScript = mkIpcScript "toggle-runtime-power-menu" "togglePowerMenu" "";
   toggleKeybindingsHelpScript = mkIpcScript "toggle-keybindings-help" "toggleKeybindings" "";
   toggleLauncherScript = mkIpcScript "toggle-app-launcher" "toggleLauncher" "";
-  toggleAgentMonitorScript = mkIpcScript "toggle-agent-monitor" "toggleAgentMonitor" "";
   toggleSettingsScript = mkIpcScript "toggle-runtime-settings" "toggleSettings" "";
   showRuntimeDevicesScript = pkgs.writeShellScriptBin "show-runtime-devices" ''
     set -euo pipefail
@@ -4057,7 +4066,6 @@ in
       agentUsageUpdateScript
     ] ++ agentUsageCollectors ++ [
       toggleLauncherScript
-      toggleAgentMonitorScript
       toggleSettingsScript
       showRuntimeDevicesScript
       showRuntimeDisplaysScript

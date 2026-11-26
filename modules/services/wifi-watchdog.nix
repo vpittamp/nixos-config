@@ -68,12 +68,18 @@ let
       # -- that is exactly the state the host was stuck in -- so an empty result
       # must fall through to the escalation path, never to a clean exit.
       gw="${cfg.gateway}"
+      primary_dev=$(ip route show default 2>/dev/null | awk '/^default/ {print $5; exit}')
       if [ -z "$gw" ]; then
         gw=$(ip route show default 2>/dev/null | awk '/^default/ {print $3; exit}')
       fi
 
       reachable() {
         [ -n "$gw" ] || return 1
+        if [ -n "$primary_dev" ] && [ "$primary_dev" != "${cfg.interface}" ]; then
+          if ping -c ${toString cfg.pingCount} -W ${toString cfg.pingTimeout} -I "$primary_dev" "$gw" >/dev/null 2>&1; then
+            return 0
+          fi
+        fi
         ping -c ${toString cfg.pingCount} -W ${toString cfg.pingTimeout} -I ${cfg.interface} "$gw" >/dev/null 2>&1
       }
 

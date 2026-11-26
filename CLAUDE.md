@@ -66,7 +66,7 @@ runtime-shell call showOsd brightness 55            # any function on the shell 
 ```
 
 Surfaces: `launcher` `command` `keybindings` `panel` `settings` `expose`
-`agent-monitor` `power-menu` `notifications` `display-selector` `audio`
+`power-menu` `notifications` `display-selector` `audio`
 `bluetooth` `cast` `lock` (summon only — it cannot be hidden over IPC).
 `command` takes `{"voice":true}` / `{"debug":true}` / `{"query":"..."}`.
 The OSD (volume / mic / brightness / touch-mode scale) is reactive for

@@ -281,6 +281,181 @@ let
     fps = 30;
     bitrate = 7000;
   };
+  mac80211Xb8Fix =
+    let
+      kernel = config.boot.kernelPackages.kernel;
+      srcDir = pkgs.writeTextDir "mac80211_xb8_fix.c" ''
+        #include <linux/module.h>
+        #include <linux/kernel.h>
+        #include <linux/kmod.h>
+        #include <linux/kprobes.h>
+        #include <linux/ieee80211.h>
+        #include <net/cfg80211.h>
+
+        /*
+         * Workaround for Technicolor CGM4981COM (Xfinity XB8) firmware bug:
+         * The AP sets all 16 bytes of HT Operation basic_set (EID 61) to 0xff,
+         * claiming that 4 spatial streams (MCS 0-76 + reserved bits) are mandatory
+         * basic HT rates. Linux 6.x mac80211 ieee80211_verify_sta_ht_mcs_support()
+         * rejects HT/VHT/HE when any bit in basic_set is not in the STA's 2x2 rx_mask,
+         * logging "required MCSes not supported, disabling HT" and dropping Wi-Fi 6
+         * clients down to 20 MHz legacy 802.11a/g (18-54 Mbps).
+         */
+        struct xb8_elems_parse_params {
+          u32 mode;
+          const u8 *start;
+          size_t len;
+        };
+
+        static void sanitize_ies_buf(const u8 *data, size_t len)
+        {
+          const struct element *elem;
+          struct ieee80211_ht_operation *ht_op;
+          struct ieee80211_ht_cap *ht_cap;
+          struct ieee80211_vht_cap *vht_cap;
+          int i;
+          bool bogus = false;
+
+          if (!data || !len)
+            return;
+
+          elem = cfg80211_find_elem(WLAN_EID_HT_OPERATION, data, len);
+          if (elem && elem->datalen >= sizeof(*ht_op)) {
+            ht_op = (struct ieee80211_ht_operation *)elem->data;
+            for (i = 1; i < IEEE80211_HT_MCS_MASK_LEN; i++) {
+              if (ht_op->basic_set[i] != 0) {
+                bogus = true;
+                break;
+              }
+            }
+            if (bogus) {
+              memset(&ht_op->basic_set[1], 0, sizeof(ht_op->basic_set) - 1);
+              pr_info_ratelimited("mac80211_xb8_fix: sanitized bogus HT basic_set MCS mask from AP\n");
+            }
+          }
+
+          elem = cfg80211_find_elem(WLAN_EID_HT_CAPABILITY, data, len);
+          if (elem && elem->datalen >= sizeof(*ht_cap)) {
+            ht_cap = (struct ieee80211_ht_cap *)elem->data;
+            if (ht_cap->mcs.tx_params == 0xff) {
+              ht_cap->mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
+              memset(&ht_cap->mcs.rx_mask[4], 0, 6);
+              ht_cap->mcs.rx_highest = 0;
+            }
+          }
+
+          elem = cfg80211_find_elem(WLAN_EID_VHT_CAPABILITY, data, len);
+          if (elem && elem->datalen >= sizeof(*vht_cap)) {
+            u32 cap;
+            vht_cap = (struct ieee80211_vht_cap *)elem->data;
+            cap = le32_to_cpu(vht_cap->vht_cap_info);
+            if ((cap & IEEE80211_VHT_CAP_SU_BEAMFORMER_CAPABLE) &&
+                !(cap & IEEE80211_VHT_CAP_BEAMFORMEE_STS_MASK)) {
+              cap |= (3U << IEEE80211_VHT_CAP_BEAMFORMEE_STS_SHIFT);
+              vht_cap->vht_cap_info = cpu_to_le32(cap);
+            }
+            /* Restrict STA->AP TX to 1 spatial stream (NSS 1, MCS 0-9) for +3 dB SNR */
+            vht_cap->supp_mcs.rx_mcs_map = cpu_to_le16(0xfffe);
+          }
+
+          elem = cfg80211_find_ext_elem(WLAN_EID_EXT_HE_CAPABILITY, data, len);
+          if (elem && elem->datalen >= 1 + sizeof(struct ieee80211_he_cap_elem) + 4) {
+            __le16 *rx_mcs_80 = (__le16 *)(elem->data + 1 + sizeof(struct ieee80211_he_cap_elem));
+            /* Restrict STA->AP HE TX to 1 spatial stream (NSS 1, MCS 0-11) for +3 dB SNR */
+            *rx_mcs_80 = cpu_to_le16(0xfffe);
+          }
+        }
+
+        static void sanitize_bss_ies(const struct cfg80211_bss_ies *ies)
+        {
+          if (ies && ies->len)
+            sanitize_ies_buf(ies->data, ies->len);
+        }
+
+        static int handler_pre(struct kprobe *p, struct pt_regs *regs)
+        {
+        #if defined(__x86_64__)
+          struct cfg80211_bss *cbss = (struct cfg80211_bss *)regs->dx;
+
+          if (cbss) {
+            rcu_read_lock();
+            sanitize_bss_ies(rcu_dereference(cbss->ies));
+            sanitize_bss_ies(rcu_dereference(cbss->beacon_ies));
+            sanitize_bss_ies(rcu_dereference(cbss->proberesp_ies));
+            rcu_read_unlock();
+          }
+        #endif
+          return 0;
+        }
+
+        static int handler_parse_pre(struct kprobe *p, struct pt_regs *regs)
+        {
+        #if defined(__x86_64__)
+          struct xb8_elems_parse_params *params =
+            (struct xb8_elems_parse_params *)regs->di;
+
+          if (params && params->start && params->len > 0 && params->len < 4096)
+            sanitize_ies_buf(params->start, params->len);
+        #endif
+          return 0;
+        }
+
+        static struct kprobe kp = {
+          .symbol_name = "ieee80211_determine_chan_mode",
+          .pre_handler = handler_pre,
+        };
+
+        static struct kprobe kp_parse = {
+          .symbol_name = "ieee802_11_parse_elems_full",
+          .pre_handler = handler_parse_pre,
+        };
+
+        static int __init mac80211_xb8_fix_init(void)
+        {
+          int ret;
+
+          request_module("mac80211");
+          ret = register_kprobe(&kp);
+          if (ret < 0)
+            return ret;
+          ret = register_kprobe(&kp_parse);
+          if (ret < 0) {
+            unregister_kprobe(&kp);
+            return ret;
+          }
+          pr_info("mac80211_xb8_fix: loaded kprobes on %s and %s\n",
+                  kp.symbol_name, kp_parse.symbol_name);
+          return 0;
+        }
+
+        static void __exit mac80211_xb8_fix_exit(void)
+        {
+          unregister_kprobe(&kp_parse);
+          unregister_kprobe(&kp);
+          pr_info("mac80211_xb8_fix: unloaded\n");
+        }
+
+        module_init(mac80211_xb8_fix_init);
+        module_exit(mac80211_xb8_fix_exit);
+        MODULE_SOFTDEP("pre: mac80211");
+        MODULE_LICENSE("GPL");
+        MODULE_DESCRIPTION("Sanitize bogus Xfinity XB8 HT basic_set MCS mask in mac80211");
+      '';
+    in
+    pkgs.stdenv.mkDerivation {
+      pname = "mac80211-xb8-fix";
+      version = kernel.version;
+      dontUnpack = true;
+      nativeBuildInputs = kernel.moduleBuildDependencies;
+      buildPhase = ''
+        cp ${srcDir}/mac80211_xb8_fix.c .
+        echo "obj-m += mac80211_xb8_fix.o" > Makefile
+        make -C ${kernel.dev}/lib/modules/${kernel.modDirVersion}/build M=$(pwd) modules
+      '';
+      installPhase = ''
+        install -D -m 644 mac80211_xb8_fix.ko $out/lib/modules/${kernel.modDirVersion}/updates/mac80211_xb8_fix.ko
+      '';
+    };
 in
 {
   imports = [
@@ -448,7 +623,7 @@ in
   # not in swapDevices) and can be deleted to reclaim 16 GiB.
   boot.resumeDevice = "/dev/disk/by-uuid/2d05acef-3fb1-4264-be73-8a71fcaeab1d";
 
-  # Memory management tweaks
+  # Memory management + TCP congestion control for Wi-Fi
   boot.kernel.sysctl = {
     "vm.swappiness" = 10;
     "vm.vfs_cache_pressure" = 50;
@@ -456,6 +631,10 @@ in
     "vm.dirty_ratio" = 10;
     # Laptop-optimized writeback (less aggressive)
     "vm.laptop_mode" = 5;
+    "net.ipv4.tcp_congestion_control" = lib.mkForce "cubic";
+    "net.core.default_qdisc" = lib.mkForce "fq_codel";
+    "net.ipv4.tcp_limit_output_bytes" = 262144;
+    "net.ipv6.conf.wlp0s20f3.disable_ipv6" = 1;
   };
 
   # Boot configuration for standard x86_64 UEFI
@@ -477,6 +656,15 @@ in
     "i915.force_probe=*"          # Force probe for newer Intel GPUs if needed
   ];
 
+  # Workaround for Xfinity XB8 (Technicolor CGM4981COM) HT Operation basic_set=0xff
+  # and VHT Beamformee-STS=0 bugs on 2x2 Intel iwlwifi cards, plus CAM power scheme.
+  boot.extraModulePackages = [ mac80211Xb8Fix ];
+  boot.kernelModules = [ "mac80211_xb8_fix" ];
+  boot.extraModprobeConfig = ''
+    options iwlwifi power_save=0 bt_coex_active=0 disable_11ax=1 11n_disable=8 amsdu_size=4
+    options iwlmvm power_scheme=1
+  '';
+
   # Feature 117: i3-project-daemon now runs as home-manager user service
   # No systemd dependency needed - user service binds to graphical-session.target
   systemd.services.home-manager-vpittamp = {
@@ -488,23 +676,15 @@ in
     };
   };
 
-  # NetworkManager for WiFi
+  # NetworkManager for WiFi (default wpa_supplicant backend).
+  # NOTE: Do NOT use wifi.backend = "iwd" here: iwd 3.12 sends an incomplete
+  # NL80211_ATTR_HT_CAPABILITY_MASK on connect against the Xfinity XB8 gateway,
+  # causing Linux 6.18 mac80211 to log "wlan0: required MCSes not supported,
+  # disabling HT" and fall back to legacy 802.11a/g (18-54 Mbps) instead of
+  # Wi-Fi 6/6E (802.11ax HE).
   networking.networkmanager = {
     enable = true;
-    wifi.backend = "iwd";  # IWD is generally better on Intel WiFi
-  };
-
-  # Enable IWD for WiFi (better for Intel WiFi cards)
-  networking.wireless.iwd = {
-    enable = true;
-    settings = {
-      General = {
-        EnableNetworkConfiguration = true;
-      };
-      Settings = {
-        AutoConnect = true;
-      };
-    };
+    wifi.powersave = false;
   };
 
   # Fonts - Nerd Fonts for desktop shell glyph icons

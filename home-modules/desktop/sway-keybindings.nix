@@ -10,14 +10,8 @@ let
     in map (key: lib.replaceStrings ["$mod"] [modifier] key) keys;
   monitoringPanelBindings =
     if hasRuntimeShell
-    then lib.listToAttrs (map (key: lib.nameValuePair key "exec toggle-runtime-panel") (lib.unique toggleKeyList))
-    else {};
-  # Minimalist AI-agents monitor strip (e.g. watch the TV PWA fullscreen while
-  # keeping an eye on agents). Keybind because a bar chip is hidden under a
-  # fullscreen app.
-  agentMonitorBindings =
-    if hasRuntimeShell
-    then { "${modifier}+Shift+a" = "exec toggle-agent-monitor"; }
+    then lib.listToAttrs (map (key: lib.nameValuePair key "exec toggle-runtime-panel")
+      (lib.unique (toggleKeyList ++ [ "${modifier}+Shift+a" ])))
     else {};
 
   # The bindings themselves live in sway-keybindings-data.nix as a described
@@ -33,6 +27,5 @@ in
 {
   wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault (
     keybindingData.attrs
-    // monitoringPanelBindings
-    // agentMonitorBindings);
+    // monitoringPanelBindings);
 }

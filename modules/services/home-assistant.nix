@@ -255,7 +255,7 @@ in
             owner = "AboveColin";
             repo = "HA-Jev";
             rev = version;
-            hash = "sha256-UK+uv2/HsWQqqT4Pr11pyr+QRDOwNwWBxPiSCxN4eHs=";
+            hash = "sha256-8xjsnBZHUxLK6fKKUAmUb0mR5pQkLNHjYxV71CxoJNA=";
           };
           dependencies = [ jevclient ];
         };
@@ -301,7 +301,7 @@ ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 
 AUTH = "Zpm670i03k"
-HOST = "192.168.1.194:7345"
+HOST = "10.0.0.65:7345"
 
 KEYMAP = {
     "OK": [(4, 1)],
@@ -1408,7 +1408,7 @@ EOF
         # Companion-app routing: the app switches on reachability, and
         # notification tap-throughs resolve away from home via the tailnet
         # (surface-pro3 = 100.106.239.88). Never port-forward 8123 instead.
-        internal_url = "http://192.168.1.161:8123";
+        internal_url = "http://10.0.0.133:8123";
         external_url = "http://100.106.239.88:8123";
       };
     }

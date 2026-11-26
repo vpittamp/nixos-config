@@ -558,7 +558,7 @@ ShellRoot {
         }
     }
 
-    // ----- Agent usage (Claude Code / Codex / Antigravity subscriptions) -----
+    // ----- AI subscriptions -----
     // Records are whatever quickshell-agent-usage-update wrote to
     // agentUsageDir; RuntimeServices file-watches one FileView per agent and
     // hands the JSON here. Nothing below knows how the numbers were made.
@@ -678,6 +678,8 @@ ShellRoot {
         if (id === "claude") return "Claude";
         if (id === "codex") return "Codex";
         if (id === "gemini") return "Gemini";
+        if (id === "kimi") return "Kimi";
+        if (id === "zai") return "Z.ai";
         return id ? id.charAt(0).toUpperCase() + id.slice(1) : "Agent";
     }
 
@@ -686,6 +688,8 @@ ShellRoot {
         if (id === "claude") return "file://" + shellConfig.claudeIcon;
         if (id === "codex") return "file://" + shellConfig.codexIcon;
         if (id === "gemini") return "file://" + shellConfig.geminiIcon;
+        if (id === "kimi") return "file://" + shellConfig.kimiIcon;
+        if (id === "zai") return "file://" + shellConfig.zaiIcon;
         return "file://" + shellConfig.aiFallbackIcon;
     }
 
@@ -754,7 +758,13 @@ ShellRoot {
                 resetText: agentUsageResetText(limit.resetsAt)
             });
         }
-        return out;
+        return out.sort((a, b) => agentUsageLimitOrder(a) - agentUsageLimitOrder(b));
+    }
+
+    function agentUsageLimitOrder(limit) {
+        if (/^weekly\b/i.test(limit.label)) return 0;
+        if (/\b(?:weekly|7[ -]*(?:day|d))\b/i.test(limit.label)) return 1;
+        return 2;
     }
 
     function agentUsageMeterColor(percent) {
@@ -815,22 +825,13 @@ ShellRoot {
 
     function agentUsageWeeklyLimit(record) {
         const limits = agentUsageLimits(record);
-        for (let i = 0; i < limits.length; i += 1) {
-            if (/^weekly\b/i.test(limits[i].label)) return limits[i];
-        }
-        for (let i = 0; i < limits.length; i += 1) {
-            if (/weekly|7-day/i.test(limits[i].label)) return limits[i];
-        }
-        return limits.length ? limits[0] : null;
+        return limits.length && agentUsageLimitOrder(limits[0]) < 2 ? limits[0] : null;
     }
 
     function agentUsageRecordChipLabel(record) {
         if (!record) return "";
         const weekly = agentUsageWeeklyLimit(record);
-        // Compact on purpose: the agent's mark is the chip's icon, so the
-        // label is just the weekly window used (or primary limit / today's
-        // tokens when the account has no weekly bucket) — the bar is tight.
-        return weekly ? weekly.percent + "%" : formatTokenCount(record.todayTotalTokens);
+        return weekly ? weekly.percent + "%" : "—";
     }
 
     function agentUsageChipLabel() {
@@ -945,11 +946,6 @@ ShellRoot {
     property string barPopupOutputName: ""
     property bool displaySelectorVisible: false
     property string displaySelectorOutputName: ""
-    // Minimalist always-on-top AI-agents monitor strip: lets you watch a
-    // fullscreen app (e.g. the TV PWA) while keeping an eye on agent sessions.
-    // Overlay layer, no keyboard grab, narrow side strip.
-    property bool agentMonitorVisible: false
-    property string agentMonitorOutputName: ""
     property bool launcherVisible: false
     property bool launcherLoading: false
     property bool launcherNormalizingInput: false
@@ -8604,39 +8600,6 @@ function normalizeLauncherMode(mode) {
         return Math.max(0.45, Math.min(1.0, 0.45 + confidence * 0.55));
     }
 
-    // The ambient channel: what the bar chip says without anything being
-    // opened. "Agents 9 · 2 1" is the whole feature for a user who
-    // never opens the panel.
-    function agentJudgementSummary() {
-        const sessions = panelSessions();
-        let cheap = 0;
-        let alarms = 0;
-        for (let i = 0; i < sessions.length; i += 1) {
-            const verdict = sessionJudgement(sessions[i]);
-            if (!verdict) {
-                continue;
-            }
-            if (judgementAlarms(verdict).length) {
-                alarms += 1;
-            } else if (Number(verdict.cost) === 1 && stringOrEmpty(verdict.ask_kind) !== "finished_done") {
-                cheap += 1;
-            }
-        }
-        return { cheap: cheap, alarms: alarms };
-    }
-
-    function agentJudgementSummaryText() {
-        const summary = agentJudgementSummary();
-        const parts = [];
-        if (summary.cheap > 0) {
-            parts.push("\uF084" + summary.cheap);
-        }
-        if (summary.alarms > 0) {
-            parts.push("\uF071" + summary.alarms);
-        }
-        return parts.join("  ");
-    }
-
     // The session the drawer is describing, resolved live. Returns null when
     // the pane has gone or its verdict has dropped below the show threshold,
     // which is also how the drawer closes itself rather than describing
@@ -9251,11 +9214,6 @@ function normalizeLauncherMode(mode) {
                 isOpen: function () { return exposeVisible; },
                 open: function () { if (!exposeVisible) { openExpose(); } },
                 close: function () { closeExpose(); }
-            },
-            "agent-monitor": {
-                isOpen: function () { return agentMonitorVisible; },
-                open: function (payload) { if (!agentMonitorVisible) { toggleAgentMonitor(output(payload)); } },
-                close: function () { closeAgentMonitor(); }
             },
             "power-menu": {
                 isOpen: function () { return powerMenuVisible; },
@@ -9946,7 +9904,6 @@ function normalizeLauncherMode(mode) {
         // Pin the panel to the monitor that requested it (bar button click).
         // When empty (keybinding/IPC, no monitor context) the panel falls back
         // to root.activeScreen via RuntimePanelWindow's screen binding.
-        agentMonitorVisible = false;
         panelOutputName = stringOrEmpty(outputName);
         panelVisible = true;
         panelSection = "runtime";
@@ -10475,27 +10432,6 @@ function normalizeLauncherMode(mode) {
         } else {
             exposeSelectedIndex = (focusedIdx + delta + entries.length) % entries.length;
         }
-    }
-
-    // One-shot path (3-finger swipe): open and stay until click/Enter/Esc.
-    // Minimalist agent-monitor side strip toggle. Captures the focused output so
-    // it appears on the monitor you're watching (e.g. the TV's Samsung).
-    function toggleAgentMonitor(outputName) {
-        if (agentMonitorVisible) {
-            agentMonitorVisible = false;
-            return;
-        }
-        panelVisible = false;
-        audioPopupVisible = false;
-        bluetoothPopupVisible = false;
-        displaySelectorVisible = false;
-        notificationCenterVisible = false;
-        agentMonitorOutputName = stringOrEmpty(outputName) || focusedOutputName();
-        agentMonitorVisible = true;
-    }
-
-    function closeAgentMonitor() {
-        agentMonitorVisible = false;
     }
 
     // Gesture-toggle: the same 3-finger swipe-up that opens the exposé also
@@ -11856,12 +11792,6 @@ function normalizeLauncherMode(mode) {
     }
 
     Windows.NotificationDetailWindow {
-        shellRoot: shellRootRef
-        runtimeConfig: shellConfig
-        colors: shellRootRef.colors
-    }
-
-    Windows.AgentMonitorWindow {
         shellRoot: shellRootRef
         runtimeConfig: shellConfig
         colors: shellRootRef.colors

@@ -22,8 +22,9 @@ let
 
   # Static, secret-free: the only sensitive value is an `op://` reference that
   # `op run` resolves at launch. Living in the store means no mktemp to leak.
+  zaiCodingPlan = import ../../shared/zai-coding-plan.nix;
   glmEnvFile = pkgs.writeText "claude-glm.env" ''
-    ANTHROPIC_AUTH_TOKEN="op://hub-eso/ZAI-API-KEY/password"
+    ANTHROPIC_AUTH_TOKEN="${zaiCodingPlan.apiKeyReference}"
     ANTHROPIC_BASE_URL="https://api.z.ai/api/anthropic"
     CLAUDE_CODE_AUTO_COMPACT_WINDOW="1000000"
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1"
