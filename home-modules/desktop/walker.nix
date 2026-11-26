@@ -134,6 +134,14 @@ let
     echo "Generation: $GEN"
   '';
 
+  # Claude-in-Chrome lists browsers as "Browser N"; this maps each one to the
+  # host it runs on by reading the extension's stored bridgeDeviceId.
+  chromeBrowsersScript = pkgs.writers.writePython3Bin "chrome-browsers" {
+    libraries = [ pkgs.python3Packages.plyvel ];
+    flakeIgnore = [ "E501" ];
+  } (builtins.replaceStrings [ "@ssh@" "@wlcopy@" ] [ "${pkgs.openssh}/bin/ssh" "${pkgs.wl-clipboard}/bin/wl-copy" ]
+    (builtins.readFile ./chrome-browsers.py));
+
   elephantDefaultSnippets = [
     {
       name = "rebuild";
@@ -149,6 +157,11 @@ let
       name = "ai status";
       snippet = "snippet-run \"AI CLI Status\" -- ai-cli-status";
       description = "Show AI CLI processes (Claude, Codex, Gemini) across thinkpad and ryzen";
+    }
+    {
+      name = "chrome browsers";
+      snippet = "snippet-run \"Chrome Browsers\" -- chrome-browsers";
+      description = "Map each Claude-in-Chrome browser (deviceId) to the host it runs on";
     }
     {
       name = "sync kubeconfigs";
@@ -1070,6 +1083,7 @@ in
     snippetRun
     nixosRebuildScript
     aiCliStatusScript
+    chromeBrowsersScript
     clipboardHistoryScript
     walkerOpenInNvim
     walkerOnePasswordCacheRefresh
