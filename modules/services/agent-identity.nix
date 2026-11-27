@@ -4,32 +4,29 @@
 # separate OS user instead of the owner. That user:
 #   - authors on GitHub as the App `pittampalli-agent-author` (installation
 #     token minted on dev, fetched on demand; contents/issues/pull_requests on
-#     PittampalliOrg/stacks and PittampalliOrg/workflow-builder only, no
-#     workflows, no admin);
+#     PittampalliOrg/stacks and PittampalliOrg/workflow-builder only);
 #   - reads dev (and, after the stacks follow-up, hub) through ServiceAccounts
-#     with the built-in `view` role; it has no admin kube context at all;
-#   - cannot read the owner's home (gh token, kubeconfig, 1Password socket,
-#     SSH keys, browser profile, reviewer App key), is in no privileged group,
-#     has no sudo;
-#   - cannot reach the tailnet (whose apiserver proxies and Headlamp
-#     authenticate by DEVICE identity, i.e. as the owner) or the host's
-#     loopback listeners (browser DevTools port, local MCP servers): enforced
-#     by an nftables table keyed on the agent uid, and in daily use by running
-#     every agent session inside its own network namespace (pasta) that has
-#     internet and a private loopback.
+#     with the built-in `view` role; it has no other kube context;
+#   - cannot read the owner's home, is in no privileged group, has no sudo,
+#     no subordinate uid range and no SSH login (unless keys are configured,
+#     and then without forwarding);
+#   - has every login land in its own user+network+mount namespace (private
+#     loopback, private /tmp, internet via pasta), and an nftables table keyed
+#     on its uid that rejects host-local, tailnet and container destinations
+#     for anything it runs outside that namespace.
 #
-# Owner runbook and verification: docs/AGENT_IDENTITY.md.
+# Owner runbook: docs/AGENT_IDENTITY.md. Not enabled by default on any host.
 { config, lib, pkgs, ... }:
 
 let
-  inherit (lib) mkEnableOption mkOption mkIf mkMerge types concatStringsSep optionalString;
+  inherit (lib) mkEnableOption mkOption mkIf mkMerge mkAfter mkForce types concatStringsSep optionalString;
   cfg = config.services.agentIdentity;
 
   scriptsDir = ../../scripts/agent-identity;
 
   subst = text: builtins.replaceStrings
-    [ "@agentUser@" "@ownerUser@" "@stateDir@" "@cacheDir@" "@runDir@" "@allowedRepos@" "@botLogin@" "@botEmail@" ]
-    [ cfg.user cfg.ownerUser cfg.stateDir cfg.cacheDir cfg.runDir (concatStringsSep " " cfg.github.repositories) cfg.github.botLogin cfg.github.botEmail ]
+    [ "@agentUser@" "@agentUid@" "@ownerUser@" "@stateDir@" "@cacheDir@" "@runDir@" "@allowedRepos@" "@botLogin@" "@botEmail@" ]
+    [ cfg.user (toString cfg.uid) cfg.ownerUser cfg.stateDir cfg.cacheDir cfg.runDir (concatStringsSep " " cfg.github.repositories) cfg.github.botLogin cfg.github.botEmail ]
     text;
 
   mkScript = { name, file, runtimeInputs, extraSubst ? (t: t), excludeShellChecks ? [ ], bashOptions ? [ "errexit" "nounset" "pipefail" ] }:
@@ -50,11 +47,23 @@ let
     runtimeInputs = with pkgs; [ coreutils util-linux passt ];
   };
 
+  agentNetnsPublish = mkScript {
+    name = "agent-netns-publish";
+    file = "agent-netns-publish.sh";
+    runtimeInputs = with pkgs; [ coreutils procps ];
+  };
+
   agentEnter = mkScript {
     name = "agent-enter";
     file = "agent-enter.sh";
-    runtimeInputs = with pkgs; [ coreutils util-linux ];
+    runtimeInputs = with pkgs; [ coreutils util-linux systemd gawk ];
   };
+
+  # Login shell of the agent user: every login (sudo -i, su -, ssh, sftp)
+  # lands inside the agent namespace, or fails.
+  agentLoginShell = (pkgs.writeShellScriptBin "agent-login-shell" ''
+    exec ${agentEnter}/bin/agent-enter ${pkgs.bashInteractive}/bin/bash --login "$@"
+  '').overrideAttrs (_: { passthru.shellPath = "/bin/agent-login-shell"; });
 
   # sudo is the setuid wrapper from the inherited PATH (/run/wrappers/bin);
   # writeShellApplication prepends runtimeInputs and keeps the caller's PATH.
@@ -80,45 +89,56 @@ let
   agentIdentityVerify = mkScript {
     name = "agent-identity-verify";
     file = "agent-identity-verify.sh";
-    # A FAIL is recorded and the run continues: no errexit. pass/fail always
-    # return 0, so `test && pass || fail` is a correct if/else (SC2015); the
-    # probe script is single-quoted on purpose (SC2016).
+    # A FAIL is recorded and the run continues: no errexit. The probe script
+    # is single-quoted on purpose (SC2016).
     bashOptions = [ "nounset" "pipefail" ];
-    excludeShellChecks = [ "SC2015" "SC2016" ];
-    runtimeInputs = [ pkgs.coreutils pkgs.curl pkgs.gnugrep pkgs.gawk pkgs.iproute2 pkgs.python3 pkgs.getent ];
+    excludeShellChecks = [ "SC2016" ];
+    runtimeInputs = [ pkgs.coreutils pkgs.curl pkgs.gnugrep pkgs.gnused pkgs.gawk pkgs.iproute2 pkgs.python3 pkgs.getent pkgs.findutils pkgs.openssh pkgs.acl ];
   };
 
   uid = toString cfg.uid;
 
-  # One rule body for both firewall backends. Numeric uid: the ruleset is
+  # One table for both firewall backends. It matches the agent uid POSITIVELY
+  # in the hooked chain and nothing else: packets without a full socket
+  # (kernel RSTs, ICMP errors, echo replies, FIN/LAST-ACK after close) and
+  # every other uid pass the hook untouched. Numeric uid: the ruleset is
   # checked at build time in a sandbox without the user database.
+  # tests/agent-identity/namespace-tests.sh exercises it in scratch namespaces.
   nftRules = ''
-    # Refused, not silently dropped. (Measured in a scratch user+net
-    # namespace: a matching-uid loopback connect does not complete, it ends
-    # in the client's connect timeout; a non-matching uid connects.)
     chain deny {
       meta l4proto tcp counter reject with tcp reset
-      counter reject
+      counter reject with icmpx admin-prohibited
+    }
+
+    chain agent_out {
+      # Name resolution through MagicDNS stays available.
+      ip daddr 100.100.100.100 meta l4proto { tcp, udp } th dport 53 accept
+      ip6 daddr fd7a:115c:a1e0::53 meta l4proto { tcp, udp } th dport 53 accept
+
+      # Published container ports (DNAT, also from host addresses).
+      ct status dnat counter jump deny
+
+      # The tailnet.
+      ${optionalString cfg.network.blockTailscaleInterface ''oifname "tailscale0" counter jump deny''}
+      ip daddr 100.64.0.0/10 counter jump deny
+      ip6 daddr fd7a:115c:a1e0::/48 counter jump deny
+
+      # Host loopback and the host's own addresses (they route via lo).
+      oifname "lo" counter jump deny
+
+      # Container and VM networks on this host.
+      oifname "docker0" counter jump deny
+      oifname "br-*" counter jump deny
+      oifname "veth*" counter jump deny
+      oifname "podman*" counter jump deny
+      oifname "virbr*" counter jump deny
+      oifname "incus*" counter jump deny
+      oifname "cni*" counter jump deny
     }
 
     chain output {
       type filter hook output priority filter; policy accept;
-      meta skuid != ${uid} accept
-
-      # Name resolution through Tailscale MagicDNS stays available.
-      ip daddr 100.100.100.100 meta l4proto { tcp, udp } th dport 53 accept
-      ip6 daddr fd7a:115c:a1e0::53 meta l4proto { tcp, udp } th dport 53 accept
-
-      # The tailnet authenticates by device, i.e. as the owner (apiserver
-      # proxies with system:masters, Headlamp, Argo CD): never for the agent.
-      ${optionalString cfg.network.blockTailscaleInterface ''oifname "tailscale0" jump deny''}
-      ip daddr 100.64.0.0/10 jump deny
-      ip6 daddr fd7a:115c:a1e0::/48 jump deny
-
-      # Host loopback (and the host's own addresses, which route via lo):
-      # the owner's browser DevTools port, local MCP servers, IDE bridges.
-      # Agent sessions get their own loopback inside agent-netns.
-      oifname "lo" jump deny
+      meta skuid ${uid} jump agent_out
     }
   '';
 
@@ -127,6 +147,8 @@ let
     ${nftRules}
     }
   '';
+
+  sshHasKeys = cfg.authorizedKeys != [ ];
 in
 {
   options.services.agentIdentity = {
@@ -141,7 +163,7 @@ in
     uid = mkOption {
       type = types.int;
       default = 2001;
-      description = "Fixed uid of the agent user (the nftables table matches it numerically).";
+      description = "Fixed uid of the agent user (the nftables table and the tailscaled ACL match it numerically).";
     };
 
     ownerUser = mkOption {
@@ -169,7 +191,7 @@ in
     runDir = mkOption {
       type = types.str;
       default = "/run/agent-identity";
-      description = "Runtime directory of agent-netns (holds netns.pid).";
+      description = "Root-owned runtime directory; holds netns.pid, written by root.";
     };
 
     github = {
@@ -205,7 +227,12 @@ in
     authorizedKeys = mkOption {
       type = types.listOf types.str;
       default = [ ];
-      description = "SSH public keys that may log in as the agent (e.g. for `herdr --remote agent@<host>`). Empty: no SSH login.";
+      description = ''
+        SSH public keys that may log in as the agent (e.g. `herdr --remote`).
+        Empty (default): sshd denies the user outright. Non-empty: keys are
+        read only from the root-owned /etc/ssh/authorized_keys.d/<user>, all
+        forwarding is off, and the login shell enters the agent namespace.
+      '';
     };
   };
 
@@ -225,6 +252,14 @@ in
           assertion = !(builtins.elem cfg.user (config.users.groups.wheel.members or [ ]));
           message = "services.agentIdentity: the agent user must not be in wheel";
         }
+        {
+          # A subordinate range would let the agent run processes under other
+          # kernel uids (newuidmap), which the uid-keyed table does not match.
+          assertion = !config.users.users.${cfg.user}.autoSubUidGidRange
+            && config.users.users.${cfg.user}.subUidRanges == [ ]
+            && config.users.users.${cfg.user}.subGidRanges == [ ];
+          message = "services.agentIdentity: the agent user must have no subordinate uid/gid range";
+        }
       ];
 
       users.groups.${cfg.user} = { gid = cfg.uid; };
@@ -236,15 +271,33 @@ in
         home = "/home/${cfg.user}";
         createHome = true;
         homeMode = "700";
-        # No privileged or owner groups: not wheel, docker, podman, onepassword,
-        # networkmanager, input, libvirtd, users.
-        extraGroups = lib.mkForce [ ];
-        # Locked password: reachable only through the owner's sudo (and SSH
-        # keys, if any are listed).
+        extraGroups = mkForce [ ];
+        # No /etc/subuid or /etc/subgid line (podman otherwise turns
+        # autoSubUidGidRange on for normal users).
+        autoSubUidGidRange = mkForce false;
+        subUidRanges = mkForce [ ];
+        subGidRanges = mkForce [ ];
+        # Locked password: reachable only through the owner's sudo.
         hashedPassword = "!";
         openssh.authorizedKeys.keys = cfg.authorizedKeys;
-        shell = pkgs.bashInteractive;
+        shell = agentLoginShell;
+        ignoreShellProgramCheck = true;
       };
+      environment.shells = [ agentLoginShell ];
+
+      # sshd (TCP and the AF_UNIX socket-activated instance share this config).
+      services.openssh.settings.DenyUsers = mkIf (!sshHasKeys) [ cfg.user ];
+      services.openssh.extraConfig = mkIf sshHasKeys (mkAfter ''
+        Match User ${cfg.user}
+          AuthorizedKeysFile /etc/ssh/authorized_keys.d/%u
+          AllowTcpForwarding no
+          AllowStreamLocalForwarding no
+          AllowAgentForwarding no
+          X11Forwarding no
+          PermitTunnel no
+          PermitUserRC no
+        Match all
+      '');
 
       # Agent processes never hold the owner's terminal (no TIOCSTI injection
       # into the owner's shell after an agent session ends).
@@ -254,10 +307,8 @@ in
       boot.kernel.sysctl."dev.tty.legacy_tiocsti" = lib.mkDefault 0;
 
       systemd.tmpfiles.rules = [
-        # Owner-placed: public server URL/CA, agent-owned 0600 token files,
-        # kubeconfig without secrets. Listing it reveals nothing.
         "d ${cfg.stateDir} 0755 root root -"
-        "d ${cfg.runDir} 0700 ${cfg.user} ${cfg.user} -"
+        "d ${cfg.runDir} 0755 root root -"
         "d ${cfg.cacheDir} 0700 ${cfg.user} ${cfg.user} -"
       ];
 
@@ -267,19 +318,32 @@ in
         agentShell
         agentIdentityProvision
         agentIdentityVerify
+        pkgs.acl
       ];
 
-      # One user+network namespace for all agent sessions, with internet via
-      # pasta and no path to host loopback. Sessions join it via agent-enter.
+      # One user+network+mount namespace for all agent sessions: internet via
+      # pasta, no path to host loopback, private /tmp, /var/tmp and /dev/shm.
+      # PrivateTmp is set up by systemd in a mount namespace owned by the
+      # initial user namespace, so inside the agent's own user namespace those
+      # mounts are locked and cannot be unmounted to reveal the host's /tmp.
       systemd.services.agent-netns = {
-        description = "Network namespace for AI agent sessions (pasta, no host loopback)";
+        description = "Namespace for AI agent sessions (pasta; private loopback and /tmp)";
         wantedBy = [ "multi-user.target" ];
         after = [ "network-online.target" "systemd-tmpfiles-setup.service" ];
         wants = [ "network-online.target" ];
+        # A rebuild must not silently cut running sessions off the network.
+        # Restart deliberately: sudo systemctl restart agent-netns.
+        restartIfChanged = false;
         serviceConfig = {
           User = cfg.user;
           Group = cfg.user;
           ExecStart = "${agentNetns}/bin/agent-netns";
+          # As root: publish the namespace holder's pid in the root-owned
+          # runtime directory, only after it has left the host namespaces.
+          ExecStartPost = "+${agentNetnsPublish}/bin/agent-netns-publish";
+          ExecStopPost = "+${pkgs.coreutils}/bin/rm -f ${cfg.runDir}/netns.pid ${cfg.runDir}/host-netns";
+          PrivateTmp = true;
+          TemporaryFileSystem = "/dev/shm:mode=1777";
           Restart = "on-failure";
           RestartSec = 5;
         };
@@ -293,12 +357,27 @@ in
           inherit agentAuthorToken;
         };
       };
+
+      system.build.agentIdentityNftRules = nftRulesFile;
     }
+
+    # tailscaled's LocalAPI socket is a 0666 file socket; through it tailscaled
+    # (root) dials the tailnet on the caller's behalf, which no uid-keyed
+    # firewall rule sees. Deny the agent uid the directory. /run/tailscale is
+    # tailscaled's RuntimeDirectory: systemd recreates it on every start and
+    # removes it on stop, so a tmpfiles ACL would be lost on the first
+    # restart. ExecStartPre runs after systemd has created the directory and
+    # before tailscaled creates the socket, so there is no window
+    # (ExecStartPost would leave one).
+    (mkIf config.services.tailscale.enable {
+      systemd.services.tailscaled.serviceConfig.ExecStartPre = [
+        "+${pkgs.acl}/bin/setfacl -m u:${uid}:--- /run/tailscale"
+      ];
+    })
 
     # Firewall backend: nftables hosts (ryzen) get a declarative table that
     # survives the NixOS ruleset flush; iptables hosts (thinkpad, surface) get
-    # the same table from a oneshot unit (iptables-nft/legacy and an nft table
-    # hook side by side; any reject wins).
+    # the same table from a oneshot unit.
     (mkIf config.networking.nftables.enable {
       networking.nftables.tables.agent-identity = {
         family = "inet";
@@ -311,7 +390,7 @@ in
     })
     (mkIf (!config.networking.nftables.enable) {
       systemd.services.agent-identity-netfilter = {
-        description = "nftables table agent-identity (agent uid: no tailnet, no host loopback)";
+        description = "nftables table agent-identity (agent uid only)";
         wantedBy = [ "multi-user.target" ];
         before = [ "network-pre.target" ];
         wants = [ "network-pre.target" ];

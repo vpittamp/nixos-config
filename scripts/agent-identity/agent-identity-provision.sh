@@ -103,8 +103,23 @@ provision() {
   printf '%s\n' "$server" | sudo install -m 0644 -o root -g root /dev/stdin "$state_dir/$name-server"
 
   # The one manual credential step. Bound token, expires after $duration.
-  kubectl --context "$context" -n agent-identity create token "$sa" --duration="$duration" \
-    | sudo install -m 0600 -o "$agent_user" -g "$agent_user" /dev/stdin "$state_dir/$name-$sa.token"
+  # Written to a root-owned 0600 temp file first and moved over the current
+  # token only when kubectl succeeded and wrote something: a failed issue
+  # never replaces a valid token with an empty file.
+  local tmp final="$state_dir/$name-$sa.token"
+  tmp="$(sudo mktemp "$state_dir/.$name-$sa.token.XXXXXX")"
+  if ! kubectl --context "$context" -n agent-identity create token "$sa" --duration="$duration" \
+      | sudo tee "$tmp" >/dev/null; then
+    sudo rm -f "$tmp"
+    die "kubectl --context $context -n agent-identity create token $sa failed; $final is unchanged"
+  fi
+  if ! sudo test -s "$tmp"; then
+    sudo rm -f "$tmp"
+    die "kubectl returned no token for $sa on '$context'; $final is unchanged"
+  fi
+  sudo chown "$agent_user:$agent_user" "$tmp"
+  sudo chmod 0600 "$tmp"
+  sudo mv -f "$tmp" "$final"
   echo "placed $state_dir/$name-$sa.token (0600 $agent_user); it expires after $duration (the API server may cap it): re-run before then"
 
   render_kubeconfig

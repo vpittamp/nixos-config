@@ -90,9 +90,10 @@ in
     # - ./thinkpad-lid-policy.nix (thinkpad-specific logind fragment)
   ];
 
-  # Lead coding agents run as `agent` (no owner credentials, App identity,
-  # read-only clusters). Owner runbook: docs/AGENT_IDENTITY.md.
-  services.agentIdentity.enable = true;
+  # Lead coding agents as OS user `agent` (docs/AGENT_IDENTITY.md). Off until
+  # the owner turns it on per host, ryzen first; a merge to main deploys every
+  # host through Cachix Deploy, so flip this line only when that host is ready.
+  services.agentIdentity.enable = false;
 
   # linux-surface support: current nixos-hardware microsoft-surface-common only
   # ships the patched kernel (the old microsoft-surface.ipts/surface-control
