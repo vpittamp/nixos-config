@@ -81,7 +81,10 @@ and clone `PittampalliOrg/workflow-builder` and `PittampalliOrg/stacks` under
 before copying it.
 
 Every login of the user lands in the namespace; if `agent-netns.service` is
-not running, the login fails. Review agent work on GitHub; do not check out
+not running, the login fails. The agent has no systemd user manager
+(`user@2001.service` is masked). `sudo -u agent <command>` without `-i` is
+the one way to run something as the agent outside its namespace; use it only
+for debugging. Review agent work on GitHub; do not check out
 agent branches in the owner's own sessions.
 
 `agent-netns.service` is not restarted by a rebuild (it would cut running

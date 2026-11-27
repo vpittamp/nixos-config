@@ -99,6 +99,11 @@ if [ "$rc" -eq 0 ]; then fail "agent can run sudo without a password"
 elif printf '%s' "$out" | grep -qiE 'password is required|not allowed|may not run sudo|not in the sudoers'; then pass "agent cannot sudo: $(printf '%s' "$out" | tail -n1)"
 else norun "sudo as the agent failed without a sudo refusal: $out"; fi
 
+um="$(systemctl is-enabled "user@$agent_uid.service" 2>&1)"
+ua="$(systemctl is-active "user@$agent_uid.service" 2>&1)"
+if [ "$um" = "masked" ] && [ "$ua" != "active" ]; then pass "no systemd user manager for $agent (user@$agent_uid.service masked, $ua)"
+else fail "user@$agent_uid.service is '$um'/'$ua': a user manager would start agent processes outside the namespace"; fi
+
 for f in /etc/subuid /etc/subgid; do
   if [ ! -r "$f" ]; then norun "$f is not readable"
   elif grep -qE "^($agent|$agent_uid):" "$f"; then fail "$f has a range for $agent: $(grep -E "^($agent|$agent_uid):" "$f")"

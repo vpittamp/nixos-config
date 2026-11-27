@@ -299,6 +299,12 @@ in
         Match all
       '');
 
+      # No systemd user manager for the agent: it runs in the host namespaces,
+      # and `systemd-run --user` through it would start agent processes outside
+      # the agent namespace. (sudo/su do not start one; sshd and console login
+      # are closed above; this also covers machinectl shell and lingering.)
+      systemd.units."user@${uid}.service".enable = false;
+
       # Agent processes never hold the owner's terminal (no TIOCSTI injection
       # into the owner's shell after an agent session ends).
       security.sudo.extraConfig = ''
