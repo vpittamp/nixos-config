@@ -133,6 +133,35 @@ Do not call a rebuild complete until all of these are demonstrated:
   after recovery.
 - Do not use ryzen as a substitute target when the request names dev or hub.
 
+## State Not In Git: GitHub Apps
+
+A rebuild does not recreate GitHub Apps; they live in the organisation and
+1Password. Verify each exists before declaring convergence, and never print a
+key while checking.
+
+| App | ID / installation | Permissions | Private key | Consumers |
+| --- | --- | --- | --- | --- |
+| `pittampalli-agent-author` (lead coding agents on the owner's workstations, created 2026-11-27) | App `5954793`, installation `186542603`, repositories `PittampalliOrg/stacks` and `PittampalliOrg/workflow-builder` only | `contents`, `issues`, `pull_requests` write; `metadata` read. No `workflows`, no administration, organisation, `statuses`, `checks`; no webhook | 1Password vault `hub-eso`, item `AGENT-AUTHOR-GITHUB-APP-PRIVATE-KEY`, field `password` | dev `agent-identity/GithubAccessToken/agent-author` -> Secret `agent-author-token` (stacks `packages/overlays/dev/agent-identity/CONTRACT.md`); workstation user `agent` (vpittamp/nixos-config `docs/AGENT_IDENTITY.md`) |
+
+Check: `gh api orgs/PittampalliOrg/installations --jq '.installations[]|select(.app_slug=="pittampalli-agent-author")|{id,repository_selection,permissions}'`
+and `op item get AGENT-AUTHOR-GITHUB-APP-PRIVATE-KEY --vault hub-eso --format json | jq -r .id`.
+
+Recreate `pittampalli-agent-author`: create an organisation App with exactly
+those permissions and no webhook, install it on the two repositories only,
+generate a private key, store it in that 1Password item and delete the
+downloaded file. A new App has a new App ID, installation ID and bot user id:
+update `appID`/`installID` in stacks
+`packages/overlays/dev/agent-identity/GithubAccessToken-agent-author.yaml` and
+`scripts/gitops/test_agent_identity_dev.py` in one pull request, and
+`services.agentIdentity.github.botEmail` in nixos-config
+(`<bot user id>+pittampalli-agent-author[bot]@users.noreply.github.com`; the id
+is `gh api 'users/pittampalli-agent-author%5Bbot%5D' --jq .id`, today
+`362024332`). A new key for the same App needs only the 1Password item.
+
+Also out of Git on each workstation: the owner-issued bound ServiceAccount
+tokens in `/var/lib/agent-identity/` (`agent-identity-provision dev|hub`,
+24 h), and the `agent` user's clones, CLI logins and `~/.claude` copy.
+
 ## Source Map
 
 Start with these current sources in `PittampalliOrg/stacks`:

@@ -123,6 +123,7 @@ in
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
+    ../modules/services/agent-identity.nix  # AI agents as OS user `agent` + GitHub App identity (docs/AGENT_IDENTITY.md)
     ../modules/services/tailscale-k8s-apiserver.nix  # expose local Talos kube-api on the tailnet (hub ArgoCD)
     # Feature 117: System service removed - now runs as home-manager user service
 
@@ -162,6 +163,10 @@ in
     # Cachix Deploy for automated deployments
     ../modules/services/cachix-deploy.nix
   ];
+
+  # Lead coding agents run as `agent` (no owner credentials, App identity,
+  # read-only clusters). Owner runbook: docs/AGENT_IDENTITY.md.
+  services.agentIdentity.enable = true;
 
   # Firefox 146+ overlay for native Wayland fractional scaling support
   nixpkgs.overlays = [
