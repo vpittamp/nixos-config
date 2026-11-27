@@ -9,7 +9,13 @@
 #   FAIL   the opposite was observed, with the value
 #   NORUN  the check could not run or saw an outcome that proves nothing
 #          (e.g. a timeout, an absent target, no positive control)
-# A refusal is never inferred from "the command failed". The run aborts
+# A refusal is never inferred from "the command failed".
+#
+# Nothing the agent can write is executed or loaded by this script: commands
+# run as the agent are only the fixed probe tool (Python -I) and, inside the
+# namespace, store-path binaries under `env -i` with HOME=/var/empty; the
+# agent's profile, rc files, PATH, site-packages and config files are never
+# used. GitHub checks use the token with curl as the owner. The run aborts
 # before any check if the agent cannot run as uid @agentUid@ inside a network
 # namespace different from the host's. Exit status = FAIL + NORUN count.
 #
@@ -21,6 +27,7 @@
 # kubeconfig, port 443).
 #
 # Substituted at build time: @agentUser@ @agentUid@ @ownerUser@ @stateDir@ @allowedRepos@ @botLogin@ @botEmail@
+#   @agentIdentityProbe@ @agentEnter@ @agentAuthorToken@ @agentGitConfig@ @agentGh@
 
 set -uo pipefail
 
@@ -43,48 +50,41 @@ norun() { printf 'NORUN  %s\n' "$*"; noruns=$((noruns + 1)); }
 [ "$(id -un)" = "$owner" ] || { echo "run as $owner (it uses sudo to act as $agent)" >&2; exit 2; }
 owner_home="$(getent passwd "$owner" | cut -d: -f6)"
 owner_uid="$(id -u "$owner")"
-py="$(command -v python3)"
+probe_bin="@agentIdentityProbe@"
+enter="@agentEnter@"
+token_bin="@agentAuthorToken@"
+git_config="@agentGitConfig@"
+agent_gh="@agentGh@"
+# Store paths of every tool run as the agent (resolved from this script's own
+# runtime inputs, never from the agent's PATH).
+kubectl_bin="$(command -v kubectl)"; git_bin="$(command -v git)"; bash_bin="$(command -v bash)"
+curl_bin="$(command -v curl)"; ls_bin="$(command -v ls)"; unshare_bin="$(command -v unshare)"
+py_bin="$(command -v python3)"
+clean_env=(/run/current-system/sw/bin/env -i HOME=/var/empty PATH=/run/current-system/sw/bin LANG=C.UTF-8)
 
-# Inside the agent namespace: the login shell enters it.
-as_agent() { sudo --user="$agent" --login -- "$@" </dev/null; }
-# Outside it, deliberately (no login shell): proves the host-side layers.
-as_agent_host() { sudo --user="$agent" -- "$@" </dev/null; }
-
-# probe <host> <port> | probe unix:<path> | probe abstract:<name>
-# prints CONNECTED | REFUSED | EACCES | TIMEOUT | NOENT | OTHER:<errno name>
-probe_src='
-import socket, sys, errno
-t = sys.argv[1]
-try:
-    if t.startswith("unix:") or t.startswith("abstract:"):
-        s = socket.socket(socket.AF_UNIX)
-        s.settimeout(4)
-        s.connect(t[5:] if t.startswith("unix:") else "\0" + t[9:])
-    else:
-        s = socket.create_connection((t, int(sys.argv[2])), timeout=4)
-    s.close(); print("CONNECTED")
-except socket.timeout: print("TIMEOUT")
-except OSError as e:
-    print({errno.ECONNREFUSED: "REFUSED", errno.EACCES: "EACCES", errno.EPERM: "EACCES", errno.ENOENT: "NOENT"}.get(e.errno, "OTHER:" + errno.errorcode.get(e.errno, str(e.errno))))
-'
-# sudo --login re-quotes the command for `shell -c` and turns newlines into
-# line continuations, so multi-line programs travel base64-encoded.
-probe_line="exec(__import__('base64').b64decode('$(printf '%s' "$probe_src" | base64 -w0)'))"
-probe_owner() { "$py" -c "$probe_line" "$@" 2>&1; }
-probe_in() { as_agent "$py" -c "$probe_line" "$@" 2>&1; }
-probe_host() { as_agent_host "$py" -c "$probe_line" "$@" 2>&1; }
+# Inside the agent namespace (agent-enter), in an empty environment.
+as_agent() { sudo --user="$agent" -- "$enter" "${clean_env[@]}" "$@" </dev/null; }
+# The fixed probe tool: outside the namespace (host side) and inside it.
+probe_host() { sudo --user="$agent" -- "$probe_bin" "$@" </dev/null 2>&1; }
+probe_in() { as_agent "$probe_bin" "$@" 2>&1; }
+probe_owner() { "$probe_bin" "$@" 2>&1; }
 
 echo "== preconditions"
-uid_host="$(as_agent_host id -u 2>&1)"
-uid_in="$(as_agent id -u 2>&1)"
-ns_host="$(as_agent_host readlink /proc/self/ns/net 2>&1)"
-ns_in="$(as_agent readlink /proc/self/ns/net 2>&1)"
+uid_host="$(probe_host id)"
+uid_in="$(probe_in id)"
+ns_host="$(probe_host netns)"
+ns_in="$(probe_in netns)"
 if [ "$uid_host" != "$agent_uid" ] || [ "$uid_in" != "$agent_uid" ] || [ -z "$ns_in" ] || [ "$ns_in" = "$ns_host" ] || [ "${ns_in#net:}" = "$ns_in" ]; then
   echo "ABORT  the agent does not run as uid $agent_uid inside its own namespace: uid outside '$uid_host', uid inside '$uid_in', net ns outside '$ns_host', inside '$ns_in'"
   echo "       (is the configuration applied, and is agent-netns.service running?) No check was run."
   exit 2
 fi
 pass "agent runs as uid $agent_uid; its sessions are in $ns_in, not the host's $ns_host"
+# The owner's interactive path still works and lands inside. (This runs the
+# agent's login profile, so it only reports; nothing below depends on it.)
+ns_login="$(sudo --user="$agent" --login -- readlink /proc/self/ns/net </dev/null 2>&1)"
+if [ "$ns_login" = "$ns_in" ]; then pass "sudo -u $agent -i lands in the agent namespace ($ns_login)"
+else fail "sudo -u $agent -i landed in '$ns_login', not the agent namespace $ns_in"; fi
 
 echo "== OS identity"
 groups_of_agent="$(id -nG "$agent")"
@@ -94,10 +94,16 @@ for g in wheel docker podman onepassword onepassword-cli networkmanager input ui
 done
 if [ -z "$bad" ]; then pass "agent groups: $groups_of_agent"; else fail "agent is in privileged/owner groups:$bad (all: $groups_of_agent)"; fi
 
-out="$(as_agent_host sudo -n true 2>&1)"; rc=$?
-if [ "$rc" -eq 0 ]; then fail "agent can run sudo without a password"
-elif printf '%s' "$out" | grep -qiE 'password is required|not allowed|may not run sudo|not in the sudoers'; then pass "agent cannot sudo: $(printf '%s' "$out" | tail -n1)"
-else norun "sudo as the agent failed without a sudo refusal: $out"; fi
+out="$(sudo -n -l -U "$agent" 2>&1)"
+if printf '%s' "$out" | grep -q "is not allowed to run sudo"; then pass "agent cannot sudo: $(printf '%s' "$out" | tail -n1)"
+else fail "agent has sudo rights: $(printf '%s' "$out" | tail -n3 | tr '\n' ' ')"; fi
+
+# sudo as the agent: only the login shell, agent-enter and the probe tool.
+out_bash="$(sudo -n -l -u "$agent" /run/current-system/sw/bin/bash 2>&1)"; rc_bash=$?
+out_probe="$(sudo -n -l -u "$agent" "$probe_bin" id 2>&1)"; rc_probe=$?
+if [ "$rc_probe" -ne 0 ]; then norun "sudo -l for the probe tool failed (control): $out_probe"
+elif [ "$rc_bash" -ne 0 ] && [ -z "$out_bash" ]; then pass "sudo refuses '-u $agent bash' (only the login shell, agent-enter and the probe tool are allowed)"
+else fail "sudo allows '-u $agent bash' outside the namespace: $out_bash"; fi
 
 um="$(systemctl is-enabled "user@$agent_uid.service" 2>&1)"
 ua="$(systemctl is-active "user@$agent_uid.service" 2>&1)"
@@ -112,26 +118,24 @@ done
 
 echo "== owner credentials are unreachable from the agent"
 check_denied() {
-  local where="$1" path="$2" out rc
-  if [ -d "$path" ]; then
-    out="$("as_agent$where" ls -- "$path" 2>&1 >/dev/null)"; rc=$?
-  else
-    out="$("as_agent$where" head -c 0 -- "$path" 2>&1)"; rc=$?
-  fi
-  if [ "$rc" -eq 0 ] && [ -z "$out" ]; then fail "agent${where:+ (outside the namespace)} can read $path"
-  elif printf '%s' "$out" | grep -q 'Permission denied'; then pass "agent${where:+ (outside)} gets Permission denied on $path"
-  else norun "agent${where:+ (outside)} on $path: not a permission refusal: $out"; fi
+  local where="$1" path="$2" r
+  r="$("probe_$where" access "$path")"
+  case "$r" in
+    EACCES) pass "agent ($where namespace) gets EACCES on $path" ;;
+    READABLE) fail "agent ($where namespace) can read $path" ;;
+    *) norun "agent ($where namespace) on $path: $r" ;;
+  esac
 }
-for where in "" "_host"; do
+for where in in host; do
   check_denied "$where" "$owner_home"
   check_denied "$where" "/run/user/$owner_uid"
 done
 # Every owner-owned file outside the home under /etc.
 while IFS= read -r f; do
-  check_denied "_host" "$f"
+  check_denied host "$f"
 done < <(find /etc -xdev -user "$owner" -type f 2>/dev/null)
 for sock in /run/docker.sock /run/podman/podman.sock; do
-  r="$(probe_host "unix:$sock")"
+  r="$(probe_host unix "$sock")"
   case "$r" in
     EACCES) pass "agent gets EACCES on $sock" ;;
     NOENT) norun "$sock does not exist" ;;
@@ -142,12 +146,12 @@ done
 
 echo "== tailscaled LocalAPI"
 ts_sock=/run/tailscale/tailscaled.sock
-r_owner="$(probe_owner "unix:$ts_sock")"
+r_owner="$(probe_owner unix "$ts_sock")"
 if [ "$r_owner" != "CONNECTED" ]; then
   norun "the owner cannot connect to $ts_sock either ($r_owner): no positive control"
 else
   for where in in host; do
-    r="$("probe_$where" "unix:$ts_sock")"
+    r="$("probe_$where" unix "$ts_sock")"
     case "$r" in
       EACCES) pass "agent ($where namespace) gets EACCES on $ts_sock (owner: CONNECTED)" ;;
       CONNECTED) fail "agent ($where namespace) can connect to $ts_sock: tailscaled would dial the tailnet for it" ;;
@@ -192,31 +196,57 @@ fi
 
 echo "== GitHub identity"
 gh_ok=1
-if out="$(as_agent agent-author-token status 2>&1)"; then
-  pass "agent-author-token status:"; printf '         %s\n' "${out//$'\n'/$'\n'         }"
+token="$(as_agent "$token_bin" token 2>"${TMPDIR:-/tmp}/.aiv-token.err")"; rc=$?
+token_err="$(cat "${TMPDIR:-/tmp}/.aiv-token.err" 2>/dev/null)"; rm -f "${TMPDIR:-/tmp}/.aiv-token.err"
+if [ "$rc" -ne 0 ] || [ -z "$token" ]; then
+  norun "agent-author-token cannot obtain a token, GitHub checks not run: $token_err"; gh_ok=0; token=""
 else
-  norun "agent-author-token cannot obtain a token, GitHub checks not run: $out"; gh_ok=0
+  pass "agent-author-token returned an installation token"
 fi
+# GitHub calls are made by THIS script (the owner) with the agent's token:
+# nothing of the agent's is executed for them.
+gh_call() { # gh_call <method> <path> [json body] -> prints "<http code> <body>"
+  local body code
+  body="$(mktemp)"
+  if [ "$1" = POST ]; then
+    code="$("$curl_bin" -q -sS -o "$body" -w '%{http_code}' -X POST --data "$3" \
+      -H @<(printf 'Authorization: Bearer %s\nAccept: application/vnd.github+json\n' "$token") "https://api.github.com/$2")"
+  else
+    code="$("$curl_bin" -q -sS -o "$body" -w '%{http_code}' \
+      -H @<(printf 'Authorization: Bearer %s\nAccept: application/vnd.github+json\n' "$token") "https://api.github.com/$2")"
+  fi
+  printf '%s %s' "$code" "$(cat "$body")"; rm -f "$body"
+}
 if [ "$gh_ok" -eq 1 ]; then
   # shellcheck disable=SC2086 # word splitting of the repository list is intended
   expected_repos="$(printf '%s\n' $allowed_repos | sort | paste -sd, -)"
-  repos="$(as_agent gh api /installation/repositories --jq '[.repositories[].full_name] | sort | join(",")' 2>&1)"
-  if [ "$repos" = "$expected_repos" ]; then pass "token reaches exactly: $repos"; else fail "token reaches '$repos', expected '$expected_repos'"; fi
-  viewer="$(as_agent gh api graphql -f query='{viewer{login}}' --jq .data.viewer.login 2>&1)"
-  if [ "$viewer" = "$bot_login" ]; then pass "GitHub viewer is $viewer"; else fail "GitHub viewer is '$viewer', expected '$bot_login'"; fi
+  r="$(gh_call GET 'installation/repositories?per_page=100')"
+  repos="$(printf '%s' "${r#* }" | jq -r '[.repositories[].full_name] | sort | join(",")' 2>/dev/null)"
+  if [ "${r%% *}" = 200 ] && [ "$repos" = "$expected_repos" ]; then pass "token reaches exactly: $repos"
+  elif [ "${r%% *}" = 200 ]; then fail "token reaches '$repos', expected '$expected_repos'"
+  else norun "installation/repositories: HTTP ${r%% *}"; fi
+  r="$(gh_call POST graphql '{"query":"{viewer{login}}"}')"
+  viewer="$(printf '%s' "${r#* }" | jq -r '.data.viewer.login // empty' 2>/dev/null)"
+  if [ "$viewer" = "$bot_login" ]; then pass "GitHub viewer is $viewer"; else fail "GitHub viewer is '$viewer' (HTTP ${r%% *}), expected '$bot_login'"; fi
   for ep in orgs/PittampalliOrg/actions/permissions repos/PittampalliOrg/stacks/hooks; do
-    out="$(as_agent gh api "$ep" 2>&1)"; rc=$?
-    if [ "$rc" -eq 0 ]; then fail "admin read $ep succeeded"
-    elif printf '%s' "$out" | grep -qE 'HTTP 403'; then pass "admin read $ep refused: $(printf '%s' "$out" | tail -n1)"
-    else norun "admin read $ep failed without HTTP 403: $(printf '%s' "$out" | tail -n1)"; fi
+    r="$(gh_call GET "$ep")"
+    case "${r%% *}" in
+      403) pass "admin read $ep refused: HTTP 403 $(printf '%s' "${r#* }" | jq -r '.message // empty' 2>/dev/null)" ;;
+      2*) fail "admin read $ep succeeded (HTTP ${r%% *})" ;;
+      *) norun "admin read $ep: HTTP ${r%% *}, not 403" ;;
+    esac
   done
-  out="$(as_agent gh auth login --with-token 2>&1)"; rc=$?
-  if [ "$rc" -eq 0 ]; then fail "gh auth login was allowed for the agent"
-  elif printf '%s' "$out" | grep -q 'is disabled'; then pass "gh auth login is refused by the wrapper"
-  else norun "gh auth login failed for another reason: $out"; fi
 fi
-name_email="$(as_agent git config --get user.name) <$(as_agent git config --get user.email)>"
-if [ "$name_email" = "$bot_login <$bot_email>" ]; then pass "git identity: $name_email"; else fail "git identity is '$name_email', expected '$bot_login <$bot_email>'"; fi
+token=""
+out="$(as_agent "$agent_gh" auth login --with-token 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ]; then fail "gh auth login was allowed for the agent"
+elif printf '%s' "$out" | grep -q 'is disabled'; then pass "the agent's gh wrapper refuses gh auth login"
+else norun "gh auth login failed for another reason: $out"; fi
+name_email="$(git config --file "$git_config" --get user.name) <$(git config --file "$git_config" --get user.email)>"
+if [ "$name_email" = "$bot_login <$bot_email>" ]; then pass "declared git identity: $name_email"; else fail "declared git identity is '$name_email', expected '$bot_login <$bot_email>'"; fi
+live="$(as_agent /run/current-system/sw/bin/readlink -f /home/"$agent"/.config/git/config 2>&1)"
+if [ "$live" = "$(readlink -f "$git_config")" ]; then pass "the agent's ~/.config/git/config is the declared one"
+else fail "the agent's ~/.config/git/config is '$live', not the declared $git_config (changed by the agent?)"; fi
 
 echo "== GitHub pushes"
 if [ "$push" -eq 0 ]; then
@@ -227,7 +257,9 @@ else
   ts="$(date -u +%Y%m%dT%H%M%SZ)"
   probe="$(cat <<EOF
 set -u
-d="\$(mktemp -d "\$HOME/.cache/agent-identity-verify.XXXXXX")"
+export GIT_CONFIG_GLOBAL=$git_config GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
+git() { $git_bin "\$@"; }
+d="\$(mktemp -d /tmp/agent-identity-verify.XXXXXX)"
 trap 'rm -rf "\$d"' EXIT
 cd "\$d"
 git init -q
@@ -258,7 +290,7 @@ else
 fi
 EOF
 )"
-  results="$(as_agent bash -c "eval \"\$(printf %s $(printf '%s' "$probe" | base64 -w0) | base64 -d)\"" 2>&1)"
+  results="$(as_agent "$bash_bin" -c "$probe" 2>&1)"
   line() { grep -m1 "RESULT $1" <<<"$results" | cut -d' ' -f2-; }
   case "$(line plain)" in
     plain-pushed*) pass "push to a scratch branch on PittampalliOrg/stacks works" ;;
@@ -280,20 +312,22 @@ EOF
 fi
 
 echo "== Kubernetes (read-only)"
-contexts="$(as_agent kubectl config get-contexts -o name 2>&1 | sort | paste -sd, -)"
+kubeconfig="$state_dir/kubeconfig"
+kc() { as_agent "$kubectl_bin" --kubeconfig "$kubeconfig" --cache-dir /tmp/agent-identity-verify-kube "$@"; }
+contexts="$(kubectl --kubeconfig "$kubeconfig" config get-contexts -o name 2>&1 | sort | paste -sd, -)"
 extra="$(printf '%s\n' "${contexts//,/$'\n'}" | grep -vxE 'dev|hub' || true)"
 if [ -z "$extra" ]; then pass "agent kube contexts: $contexts"; else fail "agent kubeconfig has other contexts: $extra"; fi
 can_i() {
   local ctx="$1" want="$2" a
   shift 2
-  a="$(as_agent kubectl --context "$ctx" auth can-i "$@" 2>&1)"
+  a="$(kc --context "$ctx" auth can-i "$@" 2>&1)"
   if [ "$a" = "$want" ]; then pass "$ctx: can-i $* -> $a"
   elif [ "$a" = "yes" ] || [ "$a" = "no" ]; then fail "$ctx: can-i $* -> $a, expected $want"
   else norun "$ctx: can-i $*: $a"; fi
 }
 check_kube() {
   local ctx="$1" sa="$2" who
-  who="$(as_agent kubectl --context "$ctx" auth whoami -o jsonpath='{.status.userInfo.username}' 2>&1)"
+  who="$(kc --context "$ctx" auth whoami -o jsonpath='{.status.userInfo.username}' 2>&1)"
   if [ "$who" != "system:serviceaccount:agent-identity:$sa" ]; then
     case "$who" in system:*|admin*|kubernetes-admin*) fail "$ctx: whoami '$who', expected system:serviceaccount:agent-identity:$sa" ;; *) norun "$ctx: cannot authenticate: $who" ;; esac
     return
@@ -310,9 +344,9 @@ mode="$(stat -c '%a %U' "$state_dir/dev-local-minter.token" 2>&1)"
 if [ "$mode" = "600 $agent" ]; then pass "bound token file mode: $mode"; else fail "bound token file $state_dir/dev-local-minter.token is '$mode', expected '600 $agent'"; fi
 
 echo "== network boundary"
-code="$(as_agent curl -s -o /dev/null -m 10 -w '%{http_code}' https://api.github.com/zen 2>&1)"
+code="$(as_agent "$curl_bin" -q -s -o /dev/null -m 10 -w '%{http_code}' https://api.github.com/zen 2>&1)"
 if [ "$code" = "200" ]; then pass "agent namespace reaches the internet (api.github.com $code)"; else fail "agent namespace cannot reach api.github.com ($code)"; fi
-if as_agent "$py" -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));s.listen();socket.create_connection(s.getsockname(),timeout=3)' 2>/dev/null; then
+if as_agent "$py_bin" -I -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));s.listen();socket.create_connection(s.getsockname(),timeout=3)' 2>/dev/null; then
   pass "agent namespace has its own working loopback"
 else
   fail "agent namespace loopback does not work"
@@ -325,7 +359,7 @@ while read -r addr; do
   [ -n "$addr" ] || continue
   host="${addr%:*}"; port="${addr##*:}"; host="${host#[}"; host="${host%]}"
   n=$((n + 1))
-  r="$(probe_in "$host" "$port")"
+  r="$(probe_in tcp "$host" "$port")"
   case "$r" in REFUSED) ;; CONNECTED) bad="$bad $addr" ;; *) odd="$odd $addr=$r" ;; esac
 done <<<"$listeners"
 if [ "$n" -eq 0 ]; then norun "no host loopback listeners to probe"
@@ -337,7 +371,7 @@ else pass "all $n host loopback listeners: connection refused inside the agent n
 first="$(printf '%s\n' "$listeners" | head -n1)"
 if [ -n "$first" ]; then
   host="${first%:*}"; port="${first##*:}"; host="${host#[}"; host="${host%]}"
-  ro="$(probe_owner "$host" "$port")"; ra="$(probe_host "$host" "$port")"
+  ro="$(probe_owner tcp "$host" "$port")"; ra="$(probe_host tcp "$host" "$port")"
   if [ "$ro" != "CONNECTED" ]; then norun "host loopback control: the owner gets $ro on $first"
   elif [ "$ra" = "REFUSED" ]; then pass "outside the namespace the agent uid is refused on host loopback $first (owner: CONNECTED)"
   elif [ "$ra" = "CONNECTED" ]; then fail "outside the namespace the agent uid reaches host loopback $first"
@@ -354,13 +388,13 @@ if [ -z "$tprobe" ]; then
   norun "no tailnet probe target (set AGENT_IDENTITY_TAILNET_PROBE=host:port)"
 else
   th="${tprobe%:*}"; tp="${tprobe##*:}"
-  ro="$(probe_owner "$th" "$tp")"
+  ro="$(probe_owner tcp "$th" "$tp")"
   if [ "$ro" != "CONNECTED" ]; then norun "tailnet control: the owner gets $ro on the probe target"
   else
     for where in in host; do
-      r="$("probe_$where" "$th" "$tp")"
+      r="$("probe_$where" tcp "$th" "$tp")"
       case "$r" in
-        REFUSED|OTHER:EHOSTUNREACH|OTHER:ENETUNREACH) pass "agent ($where namespace) refused on the tailnet probe target ($r; owner: CONNECTED)" ;;
+        REFUSED|EHOSTUNREACH|ENETUNREACH) pass "agent ($where namespace) refused on the tailnet probe target ($r; owner: CONNECTED)" ;;
         CONNECTED) fail "agent ($where namespace) reached the tailnet probe target" ;;
         *) norun "agent ($where namespace) on the tailnet probe target: $r" ;;
       esac
@@ -374,7 +408,7 @@ if command -v docker >/dev/null 2>&1; then
   for c in $(docker ps -q 2>/dev/null); do
     ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "$c" 2>/dev/null | awk '{print $1}')"
     port="$(docker inspect -f '{{range $p, $_ := .NetworkSettings.Ports}}{{$p}} {{end}}' "$c" 2>/dev/null | tr ' ' '\n' | grep '/tcp$' | head -n1 | cut -d/ -f1)"
-    if [ -n "$ip" ] && [ -n "$port" ] && [ "$(probe_owner "$ip" "$port")" = "CONNECTED" ]; then cprobe="$ip $port"; break; fi
+    if [ -n "$ip" ] && [ -n "$port" ] && [ "$(probe_owner tcp "$ip" "$port")" = "CONNECTED" ]; then cprobe="$ip $port"; break; fi
   done
 fi
 if [ -z "$cprobe" ]; then
@@ -382,9 +416,9 @@ if [ -z "$cprobe" ]; then
 else
   for where in in host; do
     # shellcheck disable=SC2086 # "ip port"
-    r="$("probe_$where" $cprobe)"
+    r="$("probe_$where" tcp $cprobe)"
     case "$r" in
-      REFUSED|OTHER:EHOSTUNREACH|OTHER:ENETUNREACH) pass "agent ($where namespace) refused on a container address ($r; owner: CONNECTED)" ;;
+      REFUSED|EHOSTUNREACH|ENETUNREACH) pass "agent ($where namespace) refused on a container address ($r; owner: CONNECTED)" ;;
       CONNECTED) fail "agent ($where namespace) reached a container address" ;;
       *) norun "agent ($where namespace) on a container address: $r" ;;
     esac
@@ -397,7 +431,7 @@ n=0; bad=""; odd=""
 while read -r name; do
   [ -n "$name" ] || continue
   n=$((n + 1))
-  r="$(probe_in "abstract:$name")"
+  r="$(probe_in abstract "$name")"
   case "$r" in REFUSED) ;; CONNECTED) bad="$bad @$name" ;; *) odd="$odd @$name=$r" ;; esac
 done <<<"$abstract"
 if [ "$n" -eq 0 ]; then norun "no host abstract sockets to probe"
@@ -408,15 +442,26 @@ else pass "all $n host abstract sockets: connection refused inside the agent nam
 echo "== private /tmp"
 marker="$(mktemp /tmp/agent-identity-verify.XXXXXX)"
 chmod 0644 "$marker"
-out="$(as_agent ls -- "$marker" 2>&1)"; rc=$?
+out="$(as_agent "$ls_bin" -- "$marker" 2>&1)"; rc=$?
 rm -f "$marker"
 if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'No such file'; then pass "the agent namespace has a private /tmp (owner's marker absent)"
 elif [ "$rc" -eq 0 ]; then fail "the agent namespace sees the host /tmp"
 else norun "private /tmp check: $out"; fi
-out="$(as_agent unshare --user --map-root-user --mount sh -c 'umount /tmp && echo UNMOUNTED' 2>&1)"
-if printf '%s' "$out" | grep -q UNMOUNTED; then fail "the agent can unmount its private /tmp (it is not locked)"
-elif printf '%s' "$out" | grep -qiE 'invalid argument|not permitted'; then pass "the private /tmp is locked: $(printf '%s' "$out" | tail -n1)"
+# umount2(2) directly: util-linux umount(8) reports a locked mount's EINVAL as "not mounted".
+out="$(as_agent "$unshare_bin" --user --map-root-user --mount "$py_bin" -I -c 'import ctypes,os;l=ctypes.CDLL(None,use_errno=True);r=l.umount2(b"/tmp",2);print("UNMOUNTED" if r==0 else os.strerror(ctypes.get_errno()))' 2>&1)"
+if [ "$out" = "UNMOUNTED" ]; then fail "the agent can unmount its private /tmp (it is not locked)"
+elif [ "$out" = "Invalid argument" ]; then pass "the private /tmp is locked (umount2: EINVAL)"
 else norun "unmount probe: $out"; fi
+
+echo "== agent processes in the host network namespace"
+# Only pasta (agent-netns.service's main process) may run as the agent in
+# the host network namespace.
+pasta_pid="$(systemctl show --property=MainPID --value agent-netns.service)"
+procs="$(sudo /run/current-system/sw/bin/sh -c 'h=$(readlink /proc/1/ns/net); for p in $(pgrep -u '"$agent_uid"'); do n=$(readlink /proc/$p/ns/net 2>/dev/null) || continue; [ "$n" = "$h" ] && echo "$p $(cat /proc/$p/comm 2>/dev/null)"; done' 2>&1)"
+others="$(printf '%s\n' "$procs" | awk -v m="$pasta_pid" 'NF && $1 != m')"
+if [ -z "$pasta_pid" ] || [ "$pasta_pid" = 0 ]; then norun "agent-netns.service has no main process"
+elif [ -z "$others" ]; then pass "no uid-$agent_uid process in the host network namespace except pasta ($pasta_pid)"
+else fail "uid-$agent_uid processes in the host network namespace: $(printf '%s' "$others" | tr '\n' ';')"; fi
 
 echo
 echo "agent-identity-verify: $fails FAIL, $noruns NORUN"

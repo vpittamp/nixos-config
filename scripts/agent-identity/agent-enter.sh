@@ -57,6 +57,8 @@ if [ "$self_ns" = "$target_ns" ]; then
 fi
 # The namespace has its own /tmp, /var/tmp and /dev/shm: a working directory
 # there does not exist inside, so start in HOME instead.
-wd="$PWD"
-case "$wd" in /tmp|/tmp/*|/var/tmp|/var/tmp/*|/dev/shm|/dev/shm/*) wd="$HOME" ;; esac
+# (Callers may run with an empty environment: no PWD, no HOME.)
+home="${HOME:-/}"
+wd="${PWD:-$(pwd)}"
+case "$wd" in /tmp|/tmp/*|/var/tmp|/var/tmp/*|/dev/shm|/dev/shm/*) wd="$home" ;; esac
 exec nsenter --target "$pid" --user --net --mount --preserve-credentials --wd="$wd" -- "$@"

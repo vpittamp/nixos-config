@@ -86,14 +86,29 @@ let
     runtimeInputs = [ pkgs.coreutils pkgs.kubectl pkgs.gnused pkgs.gnugrep ];
   };
 
+  # Fixed probes, run as the agent by the owner's verify script; the only
+  # non-login command sudoers lets anyone run as the agent outside agent-enter.
+  agentIdentityProbe = pkgs.writeScriptBin "agent-identity-probe" (
+    "#!${pkgs.python3}/bin/python3 -I\n" + builtins.readFile (scriptsDir + "/agent-identity-probe.py")
+  );
+
+  # The agent's declared git config and gh wrapper (store paths), so the
+  # verify script never runs anything from the agent's home.
+  agentHome = config.home-manager.users.${cfg.user};
+  agentGitConfig = agentHome.xdg.configFile."git/config".source;
+  agentGh = lib.findFirst (p: (p.name or "") == "gh") (throw "agent gh wrapper not found") agentHome.home.packages;
+
   agentIdentityVerify = mkScript {
     name = "agent-identity-verify";
     file = "agent-identity-verify.sh";
+    extraSubst = builtins.replaceStrings
+      [ "@agentIdentityProbe@" "@agentEnter@" "@agentAuthorToken@" "@agentGitConfig@" "@agentGh@" ]
+      [ "${agentIdentityProbe}/bin/agent-identity-probe" "${agentEnter}/bin/agent-enter" "${agentAuthorToken}/bin/agent-author-token" "${agentGitConfig}" "${agentGh}/bin/gh" ];
     # A FAIL is recorded and the run continues: no errexit. The probe script
     # is single-quoted on purpose (SC2016).
     bashOptions = [ "nounset" "pipefail" ];
     excludeShellChecks = [ "SC2016" ];
-    runtimeInputs = [ pkgs.coreutils pkgs.curl pkgs.gnugrep pkgs.gnused pkgs.gawk pkgs.iproute2 pkgs.python3 pkgs.getent pkgs.findutils pkgs.openssh pkgs.acl ];
+    runtimeInputs = [ pkgs.coreutils pkgs.curl pkgs.gnugrep pkgs.gnused pkgs.gawk pkgs.iproute2 pkgs.python3 pkgs.getent pkgs.findutils pkgs.openssh pkgs.acl pkgs.procps pkgs.kubectl pkgs.git pkgs.bash pkgs.jq pkgs.util-linux ];
   };
 
   uid = toString cfg.uid;
@@ -143,6 +158,16 @@ let
   '';
 
   nftRulesFile = pkgs.writeText "agent-identity.nft" ''
+    table inet agent-identity {
+    ${nftRules}
+    }
+  '';
+
+  # One nft transaction: declare (no-op if present), delete, re-create. nft -f
+  # applies a file atomically, so the table is never absent.
+  nftTransactionFile = pkgs.writeText "agent-identity-replace.nft" ''
+    table inet agent-identity
+    delete table inet agent-identity
     table inet agent-identity {
     ${nftRules}
     }
@@ -310,6 +335,17 @@ in
       security.sudo.extraConfig = ''
         Defaults use_pty
       '';
+      # Nobody (root included) runs commands as the agent through sudo except
+      # its login shell (`sudo -u agent -i`, which enters the agent namespace),
+      # agent-enter (which enters it or fails), and the fixed verify probes.
+      # The last matching sudoers rule wins, so these come after %wheel.
+      # `sudo -u agent <anything else>` (e.g. bash, env, python3) is refused,
+      # so it cannot casually land an agent process in the host namespaces.
+      security.sudo.configFile = mkAfter ''
+        # agent-identity: commands as ${cfg.user} only through the namespace
+        ALL ALL=(${cfg.user}) !ALL
+        ALL ALL=(${cfg.user}) NOPASSWD: /run/current-system/sw/bin/agent-login-shell, ${agentLoginShell}/bin/agent-login-shell, /run/current-system/sw/bin/agent-enter, ${agentEnter}/bin/agent-enter, /run/current-system/sw/bin/agent-identity-probe, ${agentIdentityProbe}/bin/agent-identity-probe
+      '';
       boot.kernel.sysctl."dev.tty.legacy_tiocsti" = lib.mkDefault 0;
 
       systemd.tmpfiles.rules = [
@@ -324,6 +360,8 @@ in
         agentShell
         agentIdentityProvision
         agentIdentityVerify
+        agentIdentityProbe
+        agentLoginShell
         pkgs.acl
       ];
 
@@ -343,6 +381,9 @@ in
         serviceConfig = {
           User = cfg.user;
           Group = cfg.user;
+          # Fail closed without the uid table (no unit dependency on it, so a
+          # rule change never restarts this unit).
+          ExecStartPre = "+${pkgs.nftables}/bin/nft list table inet agent-identity";
           ExecStart = "${agentNetns}/bin/agent-netns";
           # As root: publish the namespace holder's pid in the root-owned
           # runtime directory, only after it has left the host namespaces.
@@ -365,6 +406,7 @@ in
       };
 
       system.build.agentIdentityNftRules = nftRulesFile;
+      system.build.agentIdentityNftTransaction = nftTransactionFile;
     }
 
     # tailscaled's LocalAPI socket is a 0666 file socket; through it tailscaled
@@ -390,7 +432,7 @@ in
         content = nftRules;
       };
       systemd.services.agent-netns = {
-        requires = [ "nftables.service" ];
+        wants = [ "nftables.service" ];
         after = [ "nftables.service" ];
       };
     })
@@ -400,16 +442,19 @@ in
         wantedBy = [ "multi-user.target" ];
         before = [ "network-pre.target" ];
         wants = [ "network-pre.target" ];
+        # A rule change reloads (one atomic transaction) instead of
+        # stop/start, so the table is never absent.
+        reloadIfChanged = true;
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
-          ExecStartPre = "-${pkgs.nftables}/bin/nft delete table inet agent-identity";
-          ExecStart = "${pkgs.nftables}/bin/nft -f ${nftRulesFile}";
+          ExecStart = "${pkgs.nftables}/bin/nft -f ${nftTransactionFile}";
+          ExecReload = "${pkgs.nftables}/bin/nft -f ${nftTransactionFile}";
           ExecStop = "${pkgs.nftables}/bin/nft delete table inet agent-identity";
         };
       };
       systemd.services.agent-netns = {
-        requires = [ "agent-identity-netfilter.service" ];
+        wants = [ "agent-identity-netfilter.service" ];
         after = [ "agent-identity-netfilter.service" ];
       };
     })
