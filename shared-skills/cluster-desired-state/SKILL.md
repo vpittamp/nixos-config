@@ -133,6 +133,33 @@ Do not call a rebuild complete until all of these are demonstrated:
   after recovery.
 - Do not use ryzen as a substitute target when the request names dev or hub.
 
+## State Not In Git: GitHub Apps
+
+A rebuild does not recreate GitHub Apps; they live in the organisation and
+1Password. Verify each exists before declaring convergence, and never print a
+key while checking.
+
+`pittampalli-agent-author` (lead coding agents on the owner's workstations,
+created 2026-11-27): App `5954793`, installation `186542603`, repositories
+`PittampalliOrg/stacks` and `PittampalliOrg/workflow-builder` only;
+`contents`, `issues`, `pull_requests` write and `metadata` read; no
+`workflows`, administration, organisation, `statuses` or `checks`; no
+webhook. Its consumers are the dev `agent-identity` namespace and the
+workstation user `agent` (vpittamp/nixos-config `docs/AGENT_IDENTITY.md`).
+Where its private key is kept and how to recreate the App (including the
+manifests and tests that carry its IDs) is in PittampalliOrg/stacks
+`packages/overlays/dev/agent-identity/CONTRACT.md`, "The App (state not in
+Git)". A new App also has a new bot user id: update
+`services.agentIdentity.github.botEmail` in nixos-config
+(`gh api 'users/pittampalli-agent-author%5Bbot%5D' --jq .id`).
+
+Check it exists:
+`gh api orgs/PittampalliOrg/installations --jq '.installations[]|select(.app_slug=="pittampalli-agent-author")|{id,repository_selection,permissions}'`.
+
+Also out of Git on each workstation: the owner-issued bound ServiceAccount
+tokens in `/var/lib/agent-identity/` (`agent-identity-provision dev|hub`,
+24 h), and the `agent` user's clones, CLI logins and `~/.claude` copy.
+
 ## Source Map
 
 Start with these current sources in `PittampalliOrg/stacks`:

@@ -48,6 +48,7 @@ in
     ../modules/services/development.nix
     ../modules/services/networking.nix
     ../modules/services/onepassword.nix
+    ../modules/services/agent-identity.nix  # AI agents as OS user `agent` + GitHub App identity (docs/AGENT_IDENTITY.md)
     # Feature 117: System service removed - now runs as home-manager user service
 
     # Wi-Fi profile hygiene + link watchdog. Shared with surface-pro3, which
@@ -88,6 +89,11 @@ in
     #   hardware and acts as a client at most)
     # - ./thinkpad-lid-policy.nix (thinkpad-specific logind fragment)
   ];
+
+  # Lead coding agents as OS user `agent` (docs/AGENT_IDENTITY.md). Off until
+  # the owner turns it on per host, ryzen first; a merge to main deploys every
+  # host through Cachix Deploy, so flip this line only when that host is ready.
+  services.agentIdentity.enable = false;
 
   # linux-surface support: current nixos-hardware microsoft-surface-common only
   # ships the patched kernel (the old microsoft-surface.ipts/surface-control
