@@ -105,6 +105,12 @@ let
         startupTimeoutMs = 30000;
         toolTimeoutMs = 120000;
       };
+      chrome-beta-webmcp = {
+        command = nodeNpx;
+        args = sharedBrowserMcp.chromeBetaWebmcpMcpArgs;
+        startupTimeoutMs = 30000;
+        toolTimeoutMs = 120000;
+      };
       playwright = {
         command = nodeNpx;
         args = [
@@ -113,7 +119,7 @@ let
           "--browser"
           "chromium"
           "--executable-path"
-          "${pkgs.google-chrome}/bin/google-chrome-stable"
+          "${pkgs.google-chrome-beta}/bin/google-chrome-beta"
           "--user-data-dir"
           playwrightProfileDir
           "--output-dir"

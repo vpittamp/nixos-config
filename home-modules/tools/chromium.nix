@@ -57,7 +57,7 @@ let
 
     host_path="/run/wrappers/bin/1Password-BrowserSupport"
 
-    for dir in "$HOME/.config/google-chrome/NativeMessagingHosts" "$HOME/.config/chromium/NativeMessagingHosts"; do
+    for dir in "$HOME/.config/google-chrome/NativeMessagingHosts" "$HOME/.config/google-chrome-beta/NativeMessagingHosts" "$HOME/.config/chromium/NativeMessagingHosts"; do
       [ -d "$dir" ] || continue
 
       for host_name in com.1password.1password.json com.1password.browser_support.json; do
@@ -108,10 +108,10 @@ let
 
     echo "1Password Chrome native host status"
     echo "expected path: $EXPECTED_HOST_PATH"
-    echo "active Chrome/PWA path: main profile (~/.config/google-chrome)"
+    echo "active Chrome/PWA path: main profile (~/.config/google-chrome-beta)"
     echo ""
 
-    singleton_lock="$HOME/.config/google-chrome/SingletonLock"
+    singleton_lock="$HOME/.config/google-chrome-beta/SingletonLock"
     if [[ -L "$singleton_lock" ]]; then
       lock_target="$(readlink "$singleton_lock" 2>/dev/null || true)"
       lock_pid=""
@@ -137,6 +137,8 @@ let
     check_manifest "system browser-support host" "$CHROME_SYSTEM_DIR/com.1password.browser_support.json"
     check_manifest "user google-chrome host" "$HOME/.config/google-chrome/NativeMessagingHosts/com.1password.1password.json"
     check_manifest "user google-chrome browser-support host" "$HOME/.config/google-chrome/NativeMessagingHosts/com.1password.browser_support.json"
+    check_manifest "user google-chrome-beta host" "$HOME/.config/google-chrome-beta/NativeMessagingHosts/com.1password.1password.json"
+    check_manifest "user google-chrome-beta browser-support host" "$HOME/.config/google-chrome-beta/NativeMessagingHosts/com.1password.browser_support.json"
     check_manifest "user chromium host" "$HOME/.config/chromium/NativeMessagingHosts/com.1password.1password.json"
     check_manifest "user chromium browser-support host" "$HOME/.config/chromium/NativeMessagingHosts/com.1password.browser_support.json"
 
@@ -193,7 +195,7 @@ let
     STATE_DIR = HOME / ".local" / "state" / "i3pm"
     CACHE_PATH = STATE_DIR / "chrome-url-index.json"
     ROUTES_PATH = HOME / ".config" / "i3" / "chrome-url-pwa-routes.json"
-    CHROME_ROOT = HOME / ".config" / "google-chrome"
+    CHROME_ROOT = HOME / ".config" / "google-chrome-beta"
     PWA_ROOT = HOME / ".local" / "share" / "webapps"
     CACHE_MAX_AGE_SECONDS = 900
 
@@ -653,7 +655,7 @@ let
                     "url": web_search_url(query_trimmed),
                     "domain": "search",
                     "source": "search",
-                    "icon": "google-chrome",
+                    "icon": "google-chrome-beta",
                     "matched_pwa_ulid": "",
                     "matched_pwa_name": "",
                     "state": ["search"],
@@ -1028,9 +1030,9 @@ let
   ensureChromeLocalStateScript = pkgs.writeShellScript "ensure-chrome-local-state" ''
     set -eu
     EXPERIMENTS_JSON='${builtins.toJSON chromeFlags.labsExperiments}'
-    for state_file in "$HOME/.config/google-chrome/Local State" "$HOME/.local/share/google-chrome-private/Local State" "${sharedBrowserMcp.chromeDevtoolsProfileDir}/Local State"; do
+    for state_file in "$HOME/.config/google-chrome/Local State" "$HOME/.config/google-chrome-beta/Local State" "$HOME/.local/share/google-chrome-private/Local State" "${sharedBrowserMcp.chromeDevtoolsProfileDir}/Local State"; do
       state_dir="$(${pkgs.coreutils}/bin/dirname "$state_file")"
-      if [ -d "$state_dir" ]; then
+      if [ -d "$state_dir" ] && [ ! -L "$state_dir/SingletonLock" ]; then
         if [ -f "$state_file" ]; then
           tmp="$(${pkgs.coreutils}/bin/mktemp)"
           if ${pkgs.jq}/bin/jq --argjson exps "$EXPERIMENTS_JSON" '
@@ -1059,12 +1061,16 @@ let
   mkChromeWrapper =
     {
       name,
+      chromeBin ? "${pkgs.google-chrome-beta}/bin/google-chrome-beta",
+      profileDir ? "$HOME/.config/google-chrome-beta",
+      matchAppId ? "google-chrome-beta",
+      matchClass ? "Google-chrome-beta",
       extraArgs ? [ ],
       reuseExistingWindow ? true,
     }:
     lib.hiPrio (pkgs.writeShellScriptBin name ''
       set -euo pipefail
-      if ! [ -L "$HOME/.config/google-chrome/SingletonLock" ]; then
+      if ! [ -L "${profileDir}/SingletonLock" ]; then
         ${ensureChromeLocalStateScript} || true
       fi
 
@@ -1103,7 +1109,7 @@ let
             SWAYSOCK="$sway_sock" ${pkgs.sway}/bin/swaymsg -t get_tree 2>/dev/null \
               | ${pkgs.jq}/bin/jq -r '
                   [.. | objects
-                   | select(.app_id? == "google-chrome" or .window_properties?.class? == "Google-chrome")
+                   | select(.app_id? == "${matchAppId}" or .window_properties?.class? == "${matchClass}")
                    | "\(.id)\t\(.focused // false)"
                   ] | first // empty
                 ' || true
@@ -1135,7 +1141,7 @@ let
       fi
 
       cmd=(
-        ${pkgs.google-chrome}/bin/google-chrome-stable
+        ${chromeBin}
         ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) ryzenCaptureSafeChromeArgs)}
         ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) chromeFlags.chromeArgs)}
         ${lib.concatStringsSep "\n        " (map (arg: lib.escapeShellArg arg) extraArgs)}
@@ -1154,6 +1160,15 @@ let
 
   chromeWrapper = mkChromeWrapper {
     name = "google-chrome-i3pm";
+    extraArgs = [ "--load-extension=${chromeUrlExtension}" ];
+  };
+
+  chromeBetaCommandWrapper = mkChromeWrapper {
+    name = "google-chrome-beta";
+  };
+
+  chromeBetaWrapper = mkChromeWrapper {
+    name = "google-chrome-beta-i3pm";
     extraArgs = [ "--load-extension=${chromeUrlExtension}" ];
   };
 
@@ -1176,7 +1191,7 @@ let
   chromeCodexDevtoolsWrapper = lib.hiPrio (pkgs.writeShellScriptBin "google-chrome-codex-devtools" ''
     set -euo pipefail
     cmd=(
-      ${pkgs.google-chrome}/bin/google-chrome-stable
+      ${pkgs.google-chrome-beta}/bin/google-chrome-beta
       ${lib.concatStringsSep "\n      " (map (arg: lib.escapeShellArg arg) ryzenCaptureSafeChromeArgs)}
       ${lib.concatStringsSep "\n      " (map (arg: lib.escapeShellArg arg) chromeFlags.webmcpDevtoolsArgs)}
       --remote-debugging-address=${sharedBrowserMcp.chromeDevtoolsBrowserHost}
@@ -1285,8 +1300,10 @@ in
     [
       chromeCommandWrapper
       chromeStableCommandWrapper
-      pkgs.google-chrome
+      chromeBetaCommandWrapper
+      pkgs.google-chrome-beta
       chromeWrapper
+      chromeBetaWrapper
       chromePrivateWrapper
       chromeCodexDevtoolsWrapper
       onePasswordChromeStatus
@@ -1295,11 +1312,18 @@ in
       chromeUrlDebug
       chromeUrlOpen
       chromeUrlHost
-    ]
-    ++ lib.optionals (pkgs ? google-chrome-beta) [ pkgs.google-chrome-beta ]
-    ++ lib.optionals (pkgs ? google-chrome-unstable) [ pkgs.google-chrome-unstable ];
+    ];
 
   home.file.".config/google-chrome/NativeMessagingHosts/com.vpittamp.i3pm_url_bridge.json".text =
+    builtins.toJSON {
+      name = "com.vpittamp.i3pm_url_bridge";
+      description = "i3pm QuickShell URL bridge";
+      path = "${chromeUrlHost}/bin/chrome-url-host";
+      type = "stdio";
+      allowed_origins = [ "chrome-extension://${chromeUrlExtensionId}/" ];
+    };
+
+  home.file.".config/google-chrome-beta/NativeMessagingHosts/com.vpittamp.i3pm_url_bridge.json".text =
     builtins.toJSON {
       name = "com.vpittamp.i3pm_url_bridge";
       description = "i3pm QuickShell URL bridge";
@@ -1313,42 +1337,70 @@ in
     [Desktop Entry]
     Version=1.0
     Type=Application
-    Name=Google Chrome
-    Comment=Google Chrome with i3pm URL bridge
+    Name=Google Chrome Beta
+    Comment=Google Chrome Beta with i3pm URL bridge
     Exec=${chromeWrapper}/bin/google-chrome-i3pm %U
     Terminal=false
-    Icon=google-chrome
+    Icon=google-chrome-beta
     Categories=Network;WebBrowser;
     MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/about;x-scheme-handler/unknown;x-scheme-handler/ftp;x-scheme-handler/mailto;x-scheme-handler/webcal;application/pdf;
-    StartupWMClass=Google-chrome
+    StartupWMClass=google-chrome-beta
   '';
   home.file.".local/share/applications/google-chrome.desktop".text = ''
     [Desktop Entry]
     Version=1.0
     Type=Application
-    Name=Google Chrome
-    Comment=Google Chrome with i3pm URL bridge
+    Name=Google Chrome Beta
+    Comment=Google Chrome Beta with i3pm URL bridge
     Exec=${chromeWrapper}/bin/google-chrome-i3pm %U
     Terminal=false
     NoDisplay=true
-    Icon=google-chrome
+    Icon=google-chrome-beta
     Categories=Network;WebBrowser;
     MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/about;x-scheme-handler/unknown;x-scheme-handler/ftp;x-scheme-handler/mailto;x-scheme-handler/webcal;application/pdf;
-    StartupWMClass=Google-chrome
+    StartupWMClass=google-chrome-beta
   '';
   home.file.".local/share/applications/com.google.Chrome.desktop".text = ''
     [Desktop Entry]
     Version=1.0
     Type=Application
-    Name=Google Chrome
-    Comment=Google Chrome with i3pm URL bridge
+    Name=Google Chrome Beta
+    Comment=Google Chrome Beta with i3pm URL bridge
     Exec=${chromeWrapper}/bin/google-chrome-i3pm %U
     Terminal=false
     NoDisplay=true
-    Icon=google-chrome
+    Icon=google-chrome-beta
     Categories=Network;WebBrowser;
     MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/about;x-scheme-handler/unknown;x-scheme-handler/ftp;x-scheme-handler/mailto;x-scheme-handler/webcal;application/pdf;
-    StartupWMClass=Google-chrome
+    StartupWMClass=google-chrome-beta
+  '';
+  home.file.".local/share/applications/google-chrome-beta.desktop".text = ''
+    [Desktop Entry]
+    Version=1.0
+    Type=Application
+    Name=Google Chrome Beta
+    Comment=Google Chrome Beta with i3pm URL bridge
+    Exec=${chromeWrapper}/bin/google-chrome-i3pm %U
+    Terminal=false
+    NoDisplay=true
+    Icon=google-chrome-beta
+    Categories=Network;WebBrowser;
+    MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/about;x-scheme-handler/unknown;x-scheme-handler/ftp;x-scheme-handler/mailto;x-scheme-handler/webcal;application/pdf;
+    StartupWMClass=google-chrome-beta
+  '';
+  home.file.".local/share/applications/com.google.Chrome.beta.desktop".text = ''
+    [Desktop Entry]
+    Version=1.0
+    Type=Application
+    Name=Google Chrome Beta
+    Comment=Google Chrome Beta with i3pm URL bridge
+    Exec=${chromeWrapper}/bin/google-chrome-i3pm %U
+    Terminal=false
+    NoDisplay=true
+    Icon=google-chrome-beta
+    Categories=Network;WebBrowser;
+    MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/about;x-scheme-handler/unknown;x-scheme-handler/ftp;x-scheme-handler/mailto;x-scheme-handler/webcal;application/pdf;
+    StartupWMClass=google-chrome-beta
   '';
 
   # Chrome's managed policy is configured at the system level in
@@ -1392,15 +1444,20 @@ in
     Path = {
       PathChanged = [
         "%h/.config/google-chrome/NativeMessagingHosts"
+        "%h/.config/google-chrome-beta/NativeMessagingHosts"
         "%h/.config/chromium/NativeMessagingHosts"
         "%h/.config/google-chrome/NativeMessagingHosts/com.1password.1password.json"
         "%h/.config/google-chrome/NativeMessagingHosts/com.1password.browser_support.json"
+        "%h/.config/google-chrome-beta/NativeMessagingHosts/com.1password.1password.json"
+        "%h/.config/google-chrome-beta/NativeMessagingHosts/com.1password.browser_support.json"
         "%h/.config/chromium/NativeMessagingHosts/com.1password.1password.json"
         "%h/.config/chromium/NativeMessagingHosts/com.1password.browser_support.json"
       ];
       PathModified = [
         "%h/.config/google-chrome/NativeMessagingHosts/com.1password.1password.json"
         "%h/.config/google-chrome/NativeMessagingHosts/com.1password.browser_support.json"
+        "%h/.config/google-chrome-beta/NativeMessagingHosts/com.1password.1password.json"
+        "%h/.config/google-chrome-beta/NativeMessagingHosts/com.1password.browser_support.json"
         "%h/.config/chromium/NativeMessagingHosts/com.1password.1password.json"
         "%h/.config/chromium/NativeMessagingHosts/com.1password.browser_support.json"
       ];
@@ -1428,6 +1485,11 @@ in
         ${pkgs.gnused}/bin/sed -i '1s|^#!.*/\(ba\)\?sh$|#!/usr/bin/env bash|' "$HOST_FILE"
       fi
     fi
+
+    CLAUDE_MANIFEST="$HOME/.config/google-chrome/NativeMessagingHosts/com.anthropic.claude_code_browser_extension.json"
+    if [ -f "$CLAUDE_MANIFEST" ] && [ -d "$HOME/.config/google-chrome-beta/NativeMessagingHosts" ]; then
+      ${pkgs.coreutils}/bin/cp -f "$CLAUDE_MANIFEST" "$HOME/.config/google-chrome-beta/NativeMessagingHosts/com.anthropic.claude_code_browser_extension.json"
+    fi
   '';
 
   # Configure 1Password browser integration settings
@@ -1450,7 +1512,7 @@ in
   home.shellAliases = {
     chrome = "google-chrome-i3pm";
     browser = "google-chrome-i3pm";
-    chrome-beta = "google-chrome-beta";
+    chrome-beta = "google-chrome-beta-i3pm";
     chrome-dev = "google-chrome-unstable";
   };
 

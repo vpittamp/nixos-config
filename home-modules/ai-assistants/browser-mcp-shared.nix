@@ -21,6 +21,17 @@ rec {
     chromeDevtoolsBrowserUrl
   ];
 
+  # Attaches to the user's running, signed-in Chrome Beta instance once remote
+  # debugging is enabled at chrome://inspect/#remote-debugging.
+  chromeBetaWebmcpMcpArgs = [
+    "-y"
+    "chrome-devtools-mcp@latest"
+    "--autoConnect"
+    "--channel=beta"
+    "--categoryExperimentalWebmcp"
+    "--categoryExperimentalThirdParty"
+  ];
+
   sharedBrowserProfilesRoot = "${config.xdg.dataHome}/mcp/browser-profiles";
   chromeDevtoolsProfileDir = "${sharedBrowserProfilesRoot}/chrome-devtools";
 

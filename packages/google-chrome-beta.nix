@@ -256,6 +256,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
       logo_output_path="$logo_output_prefix/''${icon_size}x''${icon_size}/apps"
       mkdir -p "$logo_output_path"
       mv "$icon_file" "$logo_output_path/google-${appname}.png"
+      ln -sf "google-${appname}.png" "$logo_output_path/google-chrome.png"
     done
 
     # "--simulate-outdated-no-au" disables auto updates and browser outdated popup
@@ -291,7 +292,8 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     runHook postInstall
   '';
 
-  postInstall = lib.optionalString withSymlink ''
-    ln -s $out/bin/google-chrome-${dist} $out/bin/google-chrome
+  postInstall = ''
+    ln -sf $out/bin/google-chrome-${dist} $out/bin/google-chrome
+    ln -sf $out/bin/google-chrome-${dist} $out/bin/google-chrome-stable
   '';
 })

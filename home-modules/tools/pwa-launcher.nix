@@ -80,11 +80,15 @@ let
     # If URL argument is provided, use it instead of base URL
     TARGET_URL="''${URL:-$PWA_URL}"
 
+    CHROME_BIN="${pkgs.google-chrome-beta}/bin/google-chrome-beta"
+    CHROME_CONFIG_DIR="$HOME/.config/google-chrome-beta"
+    CHROME_PKG="google-chrome-beta"
+
     if command -v nix-usage-log-launch >/dev/null 2>&1; then
       nix-usage-log-launch \
         --source pwa \
         --app "$NAME" \
-        --package google-chrome \
+        --package "$CHROME_PKG" \
         --record-only \
         >/dev/null 2>&1 || true
     fi
@@ -96,7 +100,6 @@ let
     # Ensure Wayland variables are available
     export WAYLAND_DISPLAY=''${WAYLAND_DISPLAY:-wayland-1}
 
-    CHROME_CONFIG_DIR="$HOME/.config/google-chrome"
     SINGLETON_LOCK="$CHROME_CONFIG_DIR/SingletonLock"
     SINGLETON_COOKIE="$CHROME_CONFIG_DIR/SingletonCookie"
     SINGLETON_SOCKET="$CHROME_CONFIG_DIR/SingletonSocket"
@@ -149,7 +152,7 @@ let
     # BrowserSupport should cross that boundary.
 
     cmd=(
-      ${pkgs.google-chrome}/bin/google-chrome-stable
+      "$CHROME_BIN"
       ${lib.concatStringsSep "\n      " (map (arg: lib.escapeShellArg arg) captureSafeChromeArgs)}
       --profile-directory=Default
       ${lib.optionalString (chromeUrlExtension != null) ''--load-extension=${chromeUrlExtension}''}

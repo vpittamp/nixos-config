@@ -162,10 +162,10 @@ def get_window_identity(
 
     # Detect PWA (Firefox PWAs use FFPWA-* pattern)
     # Check if this is a PWA
-    # Chrome PWAs typically use "Google-chrome" class with specific instance
+    # Chrome PWAs typically use "Google-chrome" or "Google-chrome-beta" class with specific instance
     # Feature 039 - T079: PWA Detection
-    if actual_class == "Google-chrome" and actual_instance:
-        if actual_instance != "google-chrome":  # Not the main Chrome browser
+    if actual_class in ("Google-chrome", "Google-chrome-beta") and actual_instance:
+        if actual_instance not in ("google-chrome", "google-chrome-beta"):  # Not the main Chrome browser
             identity["is_pwa"] = True
             identity["pwa_id"] = actual_instance
 
@@ -229,7 +229,7 @@ def match_pwa_instance(
         True
     """
     # Chrome PWA (using generic class with specific instance)
-    if actual_class == "Google-chrome" and actual_instance:
+    if actual_class in ("Google-chrome", "Google-chrome-beta") and actual_instance:
         # If the expected ID is a declarative WebApp-id but Chrome reports it as the instance
         if pwa_id_expected == actual_instance:
             return True

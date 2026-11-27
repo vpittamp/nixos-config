@@ -30,7 +30,7 @@ let
   playwrightProfileDir = sharedBrowserMcp.codexPlaywrightProfileDir;
   playwrightOutputDir = "${antigravityMcpStateRoot}/playwright";
   chromiumConfig = lib.optionalAttrs enableBrowserMcpServers {
-    chromiumBin = "${pkgs.google-chrome}/bin/google-chrome-stable";
+    chromiumBin = "${pkgs.google-chrome-beta}/bin/google-chrome-beta";
   };
 
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
@@ -96,6 +96,11 @@ let
       "chrome-devtools" = {
         command = nodeNpx;
         args = sharedBrowserMcp.chromeDevtoolsMcpArgs;
+        timeoutSeconds = 120;
+      };
+      "chrome-beta-webmcp" = {
+        command = nodeNpx;
+        args = sharedBrowserMcp.chromeBetaWebmcpMcpArgs;
         timeoutSeconds = 120;
       };
       "playwright" = {

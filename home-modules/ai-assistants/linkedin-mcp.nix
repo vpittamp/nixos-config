@@ -9,7 +9,7 @@ let
     if cfg.chromePath != null then
       cfg.chromePath
     else
-      "${pkgs.google-chrome}/bin/google-chrome-stable";
+      "${pkgs.google-chrome-beta}/bin/google-chrome-beta";
 
   launcher = pkgs.writeShellScript "linkedin-mcp-server" ''
     set -euo pipefail

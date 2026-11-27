@@ -256,6 +256,8 @@ in
             chrome
             google-chrome
             google-chrome-stable
+            google-chrome-beta
+            google-chrome-unstable
           '';
           mode = "0644";
         };

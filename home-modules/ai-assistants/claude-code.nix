@@ -5,6 +5,7 @@ let
 
   workflowBuilderMcp = config.modules.aiAssistants.workflowBuilderMcp;
   kiotaMcp = config.modules.aiAssistants.kiotaMcp;
+  sharedBrowserMcp = import ./browser-mcp-shared.nix { inherit config lib pkgs; };
 
   # Use claude-code from the dedicated flake for latest version
   # Fall back to nixpkgs-unstable if flake not available
@@ -521,6 +522,24 @@ lib.mkIf enableClaudeCode {
         kiota = {
           command = "${kiotaMcp.proxyCommand}";
           args = [];
+        };
+      })
+      // (lib.optionalAttrs sharedBrowserMcp.enableBrowserMcpServers {
+        # Chrome DevTools + WebMCP MCP server attached to the managed headless Chrome Beta instance.
+        chrome-devtools = {
+          command = "${pkgs.nodejs}/bin/npx";
+          args = sharedBrowserMcp.chromeDevtoolsMcpArgs;
+          env = {
+            NODE_ENV = "production";
+          };
+        };
+        # Attaches to the user's live signed-in Chrome Beta (chrome://inspect/#remote-debugging).
+        chrome-beta-webmcp = {
+          command = "${pkgs.nodejs}/bin/npx";
+          args = sharedBrowserMcp.chromeBetaWebmcpMcpArgs;
+          env = {
+            NODE_ENV = "production";
+          };
         };
       })
       // {

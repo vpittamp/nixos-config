@@ -9,7 +9,7 @@ let
     profile_dir="$HOME/.local/share/webapps/SunshineWebUI"
     mkdir -p "$profile_dir"
 
-    exec ${pkgs.google-chrome}/bin/google-chrome-stable \
+    exec ${pkgs.google-chrome-beta}/bin/google-chrome-beta \
       --user-data-dir="$profile_dir" \
       --class=SunshineWebUI \
       --app=https://localhost:47990 \

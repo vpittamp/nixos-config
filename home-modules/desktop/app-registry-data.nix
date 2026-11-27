@@ -179,7 +179,7 @@ let
         ++ (if pwa ? auth_domains then pwa.auth_domains else [ ]));
     preferred_workspace = pwa.preferred_workspace;
     icon = pwa.icon;  # Use icon from PWA definition (absolute path)
-    nix_package = "pkgs.google-chrome";
+    nix_package = "pkgs.google-chrome-beta";
     multi_instance = false;
     fallback_behavior = "use_home";
     description = pwa.description;
@@ -298,20 +298,21 @@ let
       description = "Ghostty terminal emulator (standalone, no sesh)";
     })
 
-    # WS15: Google Chrome - Required for Claude in Chrome extension
+    # WS15: Google Chrome Beta (sole Chrome browser, with WebMCP & Claude in Chrome support)
     (mkApp {
       name = "google-chrome";
-      display_name = "Google Chrome";
+      display_name = "Google Chrome Beta";
       command = "google-chrome-i3pm";
       parameters = "";
       scope = "global";
-      expected_class = "Google-chrome";
+      expected_class = "google-chrome-beta";
       preferred_workspace = 15;
-      icon = "google-chrome";
-      nix_package = "pkgs.google-chrome";
+      icon = "google-chrome-beta";
+      nix_package = "pkgs.google-chrome-beta";
       multi_instance = false;
       fallback_behavior = "skip";
-      description = "Google Chrome browser with Claude in Chrome support";
+      aliases = [ "chrome" "chrome-beta" "beta" "google-chrome-beta" "browser" "webmcp-chrome" ];
+      description = "Google Chrome Beta browser with WebMCP and Claude in Chrome support";
     })
 
     # WS26: Dedicated debug Chrome for Codex DevTools attachment
@@ -321,11 +322,11 @@ let
       command = "google-chrome-codex-devtools";
       parameters = "";
       scope = "global";
-      expected_class = "Google-chrome";
+      expected_class = "google-chrome-beta";
       preferred_workspace = 26;
       preferred_monitor_role = "tertiary";
       icon = iconPath "google-chrome-codex-devtools.svg";
-      nix_package = "pkgs.google-chrome";
+      nix_package = "pkgs.google-chrome-beta";
       multi_instance = false;
       fallback_behavior = "skip";
       aliases = [ "chrome-devtools" "codex-browser" "debug-chrome" ];
@@ -342,11 +343,11 @@ let
       expected_class = "Google-chrome-private";
       preferred_workspace = 31;
       icon = iconPath "google-chrome-private.svg";
-      nix_package = "pkgs.google-chrome";
+      nix_package = "pkgs.google-chrome-beta";
       multi_instance = false;
       fallback_behavior = "skip";
       aliases = [ "incognito" "private" "chrome-private" ];
-      description = "Google Chrome in incognito mode for private browsing";
+      description = "Google Chrome Beta in incognito mode for private browsing";
     })
 
     # WS5: Git Tools (Primary: lazygit)
@@ -847,7 +848,7 @@ let
     preferred_workspace = 30;
     preferred_monitor_role = "tertiary";
     icon = iconPath "sunshine.svg";
-    nix_package = "pkgs.google-chrome";
+    nix_package = "pkgs.google-chrome-beta";
     multi_instance = false;
     fallback_behavior = "skip";
     aliases = [ "sunshine" "sunshine-ui" "moonlight-host" "stream-host" ];

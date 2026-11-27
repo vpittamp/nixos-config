@@ -545,11 +545,9 @@ in
       # cast device auth fails and the picker shows "No devices found".
       # (A stale 145 pin caused exactly that on 2026-07-29.)
 
-      # Chrome beta/dev channel (for testing features behind newer flags)
-
-      # Chrome 146 beta/dev channel (for testing features behind newer flags)
+      # Google Chrome Beta is the sole Chrome browser across all hosts
       google-chrome-beta = prev.callPackage ../packages/google-chrome-beta.nix { };
-      google-chrome-unstable = prev.callPackage ../packages/google-chrome-unstable.nix { };
+      google-chrome = final.google-chrome-beta;
     })
   ];
 

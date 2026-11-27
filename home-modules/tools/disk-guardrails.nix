@@ -62,6 +62,7 @@ let
         "${homeDir}/.local/share/containers" \
         "${homeDir}/.cache/.bun" \
         "${homeDir}/.cache/google-chrome" \
+        "${homeDir}/.cache/google-chrome-beta" \
         "${homeDir}/.cache/mozilla"
       do
         if [ -e "$path" ]; then

@@ -43,7 +43,7 @@ let
     # --class sets the Wayland app_id, which the sway window rule below parks.
     # Do NOT add --disable-features=MediaRouter: every CDP Cast command would
     # fail with "You must enable the Media Router feature in order to use Cast."
-    exec ${pkgs.google-chrome}/bin/google-chrome-stable \
+    exec ${pkgs.google-chrome-beta}/bin/google-chrome-beta \
       --user-data-dir="$HOME/.cache/cast-caster" \
       --remote-debugging-port=${toString castPort} \
       --class=google-chrome-cast-caster \

@@ -80,6 +80,9 @@ in
     # Chrome policy for native Gemini and Generative AI features
     ../modules/desktop/chrome-gemini.nix
 
+    # Chrome policy for Google's Model Context Tool Inspector (WebMCP) extension
+    ../modules/desktop/chrome-webmcp.nix
+
     # Cachix Deploy for automated deployments
     ../modules/services/cachix-deploy.nix
 
@@ -116,9 +119,9 @@ in
       # cast device auth fails and the picker shows "No devices found".
       # (A stale 145 pin caused exactly that on 2026-07-29.)
 
-      # Chrome beta/dev channel (for testing features behind newer flags)
+      # Google Chrome Beta is the sole Chrome browser across all hosts
       google-chrome-beta = prev.callPackage ../packages/google-chrome-beta.nix { };
-      google-chrome-unstable = prev.callPackage ../packages/google-chrome-unstable.nix { };
+      google-chrome = final.google-chrome-beta;
     })
   ];
 

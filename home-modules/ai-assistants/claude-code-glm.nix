@@ -110,6 +110,20 @@ let
       command = "${kimi-webbridge}/bin/kimi-webbridge-mcp-stdio";
       args = [ ];
     };
+    chrome-devtools = {
+      command = "${pkgs.nodejs}/bin/npx";
+      args = browserShared.chromeDevtoolsMcpArgs;
+      env = {
+        NODE_ENV = "production";
+      };
+    };
+    chrome-beta-webmcp = {
+      command = "${pkgs.nodejs}/bin/npx";
+      args = browserShared.chromeBetaWebmcpMcpArgs;
+      env = {
+        NODE_ENV = "production";
+      };
+    };
   };
 
   glmMcpConfig = pkgs.writeText "claude-glm-mcp.json"

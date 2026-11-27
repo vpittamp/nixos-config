@@ -13,7 +13,7 @@ let
   # google-chrome is already installed and used as the session browser. Both
   # @playwright/mcp and chrome-devtools-mcp drive a Chrome binary happily.
   chromiumConfig = lib.optionalAttrs enableChromiumMcpServers {
-    chromiumBin = "${pkgs.google-chrome}/bin/google-chrome-stable";
+    chromiumBin = "${pkgs.google-chrome-beta}/bin/google-chrome-beta";
   };
 
   # Use latest VSCode from unstable channel for newest features and fixes

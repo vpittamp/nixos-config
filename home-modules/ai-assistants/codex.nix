@@ -46,7 +46,7 @@ let
   # rationale: chromium was in the closure only because these MCP definitions
   # interpolated its store path (~673 MiB), while google-chrome is already installed.
   chromiumConfig = lib.optionalAttrs enableBrowserMcpServers {
-    chromiumBin = "${pkgs.google-chrome}/bin/google-chrome-stable";
+    chromiumBin = "${pkgs.google-chrome-beta}/bin/google-chrome-beta";
   };
 
   codexPackage = pkgs.callPackage ../../packages/codex.nix { };
@@ -282,6 +282,13 @@ tool_timeout_sec = 120
 ${lib.optionalString enableBrowserMcpServers ''
 [mcp_servers.chrome-devtools]
 args = ${builtins.toJSON sharedBrowserMcp.chromeDevtoolsMcpArgs}
+command = "${nodeNpx}"
+enabled = true
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.chrome-beta-webmcp]
+args = ${builtins.toJSON sharedBrowserMcp.chromeBetaWebmcpMcpArgs}
 command = "${nodeNpx}"
 enabled = true
 startup_timeout_sec = 30

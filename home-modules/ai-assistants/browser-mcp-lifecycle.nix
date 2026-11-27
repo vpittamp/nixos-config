@@ -299,7 +299,7 @@ let
     chmod 700 "${shared.chromeDevtoolsProfileDir}"
 
     cmd=(
-      ${pkgs.google-chrome}/bin/google-chrome-stable
+      ${pkgs.google-chrome-beta}/bin/google-chrome-beta
       --headless=new
       ${lib.concatStringsSep "\n      " (map (arg: lib.escapeShellArg arg) chromeFlags.webmcpDevtoolsArgs)}
       --remote-debugging-address=${shared.chromeDevtoolsBrowserHost}

@@ -61,6 +61,7 @@ let
     icon = pwa.icon;  # Include icon for workspace panel
     preferred_workspace = if pwa ? preferred_workspace then pwa.preferred_workspace else null;
     preferred_monitor_role = if pwa ? preferred_monitor_role then pwa.preferred_monitor_role else null;
+    chromeChannel = if pwa ? chromeChannel then pwa.chromeChannel else "beta";
     extraChromeFlags = if pwa ? extraChromeFlags then pwa.extraChromeFlags else [];
   }) pwaSitesConfig.pwaSites;
 
