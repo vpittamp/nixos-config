@@ -33,20 +33,23 @@ rec {
     "RewriterAPIForGeminiNano"
     "SummarizationAPIForGeminiNano"
 
-    # Gemini in Chrome (Glic) native sidebar / panel component (chrome://glic)
+    # Gemini in Chrome (Glic) native sidebar / panel component (chrome://glic).
+    # Note: Do NOT force-enable GlicActor / GlicActorUi / GlicActorEnableScriptTools
+    # or GlicTieredRolloutV2 on the command line: the first three are already
+    # FEATURE_ENABLED_BY_DEFAULT on desktop Chrome and carry Finch FeatureParams
+    # (which bare --enable-features entries reset to compiled defaults), and
+    # GlicTieredRolloutV2 defaults its eligible-tiers param to "".
     "Glic"
     "GlicRollout"
     "GlicTieredRollout"
-    "GlicTieredRolloutV2"
     "GlicToolbarHeightSidePanel"
-    "GlicActor"
-    "GlicActorUi"
     "GlicLiveMode"
     "GlicMultiInstance"
     "GlicZeroStateSuggestions"
 
     # WebMCP (Web Model Context Protocol)
     "WebMCP"
+    "DeclarativeWebMCP"
     "WebMCPTesting"
     "DevToolsWebMCPSupport"
     "WebMCPDeclarativeFileInput"
@@ -104,6 +107,7 @@ rec {
   webmcpDevtoolsArgs = [
     "--enable-features=${lib.concatStringsSep "," [
       "WebMCP"
+      "DeclarativeWebMCP"
       "WebMCPTesting"
       "DevToolsWebMCPSupport"
       "WebMCPDeclarativeFileInput"
@@ -120,11 +124,7 @@ rec {
   # This makes chrome://flags explicitly reflect the enabled state in the UI.
   labsExperiments = [
     "glic@1"
-    "glic-actor@1"
-    "glic-live-mode@1"
-    "glic-detached@1"
     "glic-toolbar-height-side-panel@1"
-    "devtools-webmcp-support@1"
     "enable-webmcp-testing@1"
     "prompt-api-tool-use@1"
     "top-chrome-touch-ui@3"

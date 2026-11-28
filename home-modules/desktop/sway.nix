@@ -863,16 +863,22 @@ in
         # System-UI floating rules — migrated from the retired sway-config-manager
         # daemon (which applied them at window::new via a JSON rules file). Static
         # for_window rules apply at map time, so no tile-then-float jump.
+        # 1Password 8 on native Wayland reports app_id "com.onepassword.OnePassword"
+        # and maps with an empty initial title. Float and center all 1Password
+        # windows/prompts on the current workspace (without forcing a move to WS 22)
+        # so authorization dialogs appear over the active app and return focus back
+        # to it when dismissed. Explicit `i3pm launch open 1password` launches are
+        # routed to WS 22 by i3-project-event-daemon via launch-notification correlation.
         {
-          criteria = { app_id = "^1[Pp]assword$"; title = "^1Password$"; };
-          command = "move container to workspace number 22, floating enable, resize set width 900 px height 600 px, move position center";
+          criteria = { app_id = "^(com\\.onepassword\\.OnePassword|1[Pp]assword)$"; };
+          command = "floating enable, move position center";
         }
         {
-          criteria = { app_id = "^1[Pp]assword$"; title = "^Quick Access"; };
+          criteria = { app_id = "^(com\\.onepassword\\.OnePassword|1[Pp]assword)$"; title = "^Quick Access"; };
           command = "floating enable, sticky enable, move position center";
         }
         {
-          criteria = { app_id = "^1[Pp]assword$"; title = "^Unlock"; };
+          criteria = { app_id = "^(com\\.onepassword\\.OnePassword|1[Pp]assword)$"; title = "^Unlock"; };
           command = "floating enable, sticky enable, move position center, focus";
         }
         {

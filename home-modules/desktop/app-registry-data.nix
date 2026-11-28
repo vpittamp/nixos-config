@@ -691,6 +691,11 @@ let
 
 
     # WS22: 1Password (global - password/passkey manager)
+    # skip_class_fallback_workspace keeps unsolicited auth / SSH / CLI / Unlock
+    # dialogs from the background `1password --silent` daemon on the active
+    # workspace instead of yanking them (and focus) to WS22. Explicit launches
+    # via `i3pm launch open 1password` still route to WS22 via Priority 1
+    # launch-notification correlation.
     (mkApp {
       name = "1password";
       display_name = "1Password";
@@ -699,6 +704,7 @@ let
       scope = "global";
       expected_class = "com.onepassword.OnePassword";
       preferred_workspace = 22;
+      skip_class_fallback_workspace = true;
       icon = iconPath "1password.svg";
       nix_package = "pkgs._1password-gui";
       multi_instance = false;

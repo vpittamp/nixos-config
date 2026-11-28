@@ -1037,9 +1037,12 @@ let
           tmp="$(${pkgs.coreutils}/bin/mktemp)"
           if ${pkgs.jq}/bin/jq --argjson exps "$EXPERIMENTS_JSON" '
             .browser = (.browser // {}) |
-            .browser.enabled_labs_experiments = (((.browser.enabled_labs_experiments // []) + $exps) | unique) |
+            .browser.enabled_labs_experiments = (
+              (((.browser.enabled_labs_experiments // []) - ["glic-actor@1", "glic-live-mode@1", "glic-detached@1", "devtools-webmcp-support@1"]) + $exps)
+              | unique
+            ) |
             .variations_country = "us" |
-            .variations_permanent_consistency_country = ["149.0.7827.102", "us"] |
+            .variations_permanent_consistency_country = ["159.0.8154.33", "us"] |
             .glic = ((.glic // {}) + {"launcher_enabled": true}) |
             if (.profile? | type) == "object" and (.profile.info_cache? | type) == "object" then
               .profile.info_cache |= with_entries(.value.is_glic_eligible = true)

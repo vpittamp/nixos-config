@@ -332,7 +332,13 @@ async def _delayed_property_recheck(
                     window_title=fresh_container.name or "",
                 )
 
-                if app_match and "preferred_workspace" in app_match:
+                if app_match and app_match.get("skip_class_fallback_workspace"):
+                    app_name = app_match.get("_matched_app_name", "unknown")
+                    logger.info(
+                        f"Skipping delayed class-fallback workspace move for window {window_id} "
+                        f"({new_class}, app={app_name}): skip_class_fallback_workspace=true"
+                    )
+                elif app_match and "preferred_workspace" in app_match:
                     preferred_ws = app_match["preferred_workspace"]
                     app_name = app_match.get("_matched_app_name", "unknown")
                     match_type = app_match.get("_match_type", "unknown")
@@ -1148,7 +1154,25 @@ async def on_window_new(
                         window_title=window_title,
                     )
 
-                    if app_match and "preferred_workspace" in app_match:
+                    if app_match and app_match.get("skip_class_fallback_workspace"):
+                        app_name = app_match.get("_matched_app_name", "unknown")
+                        match_type = app_match.get("_match_type", "unknown")
+                        decision_tree.append({
+                            "priority": 4,
+                            "name": "class_registry_match",
+                            "matched": False,
+                            "reason": "skip_class_fallback_workspace",
+                            "details": {
+                                "app_name": app_name,
+                                "match_type": match_type,
+                                "window_class": window_class,
+                            }
+                        })
+                        logger.info(
+                            f"Skipping class-fallback workspace move for window {window_id} "
+                            f"({window_class}, app={app_name}): keeping on current workspace"
+                        )
+                    elif app_match and "preferred_workspace" in app_match:
                         preferred_ws = app_match["preferred_workspace"]
                         app_name = app_match.get("_matched_app_name", "unknown")
                         match_type = app_match.get("_match_type", "unknown")
